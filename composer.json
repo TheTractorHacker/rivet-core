@@ -1,0 +1,19 @@
+{
+    "name": "rivetit/rivet-core",
+    "description": "Edition-neutral services shared by RivetIT and RivetMSP: audit, jobs, Redis helpers, MCP pipeline and ITSM building blocks.",
+    "type": "library",
+    "license": "GPL-3.0-only",
+    "homepage": "https://github.com/TheTractorHacker/rivet-core",
+    "support": {
+        "issues": "https://github.com/TheTractorHacker/rivet-core/issues",
+        "source": "https://github.com/TheTractorHacker/rivet-core"
+    },
+    "require": {
+        "php": ">=8.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "ITFlow\\": "src/"
+        }
+    }
+}
