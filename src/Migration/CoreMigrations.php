@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Migration;
 
 use RivetCore\Audit\Migration\Migration0001AuditEvents;
+use RivetCore\Jobs\Migration\Migration0002IntegrationJobs;
 
 /** The ordered list of every Core-owned migration. Append only. */
 final class CoreMigrations
@@ -14,6 +15,7 @@ final class CoreMigrations
     {
         return [
             new Migration0001AuditEvents(),
+            new Migration0002IntegrationJobs(),
         ];
     }
 }
