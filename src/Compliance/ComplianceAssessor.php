@@ -24,6 +24,8 @@ final class ComplianceAssessor
         private array $manualItems,
         private AttestationProviderInterface $attestations,
         private ClockInterface $clock,
+        /** @var array<string,string> responsibility assignments, key => party name (see ResponsibilityStore::names()) */
+        private array $responsible = [],
     ) {
     }
 
@@ -50,6 +52,7 @@ final class ComplianceAssessor
                 'detail' => $result->detail,
                 'fix_path' => $result->fixPath,
                 'metrics' => $result->metrics,
+                'responsible' => ResponsibilityStore::resolve($this->responsible, $check->id(), $check->category()),
             ];
         }
 
@@ -91,6 +94,7 @@ final class ComplianceAssessor
             'next_due_on' => $nextDue,
             'reviewer_name' => $last['reviewer_name'] ?? null,
             'note' => $last['note'] ?? null,
+            'responsible' => ResponsibilityStore::resolve($this->responsible, $item->id, $item->category),
         ];
     }
 

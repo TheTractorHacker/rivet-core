@@ -14,24 +14,41 @@ final class ReportRenderer
 
     private const MANUAL_LABELS = ['current' => 'Current', 'due_soon' => 'Due soon', 'overdue' => 'Overdue', 'never' => 'Never reviewed'];
 
-    /** @return list<list<string>> */
+    /** @return list<list<string>> a "Responsible" column is added only when at least one item has a responsible party */
     public function rows(Assessment $a, ?string $framework = null): array
     {
-        $rows = [['Type', 'Category', 'Item', 'Status', 'Summary / last review', 'Reviewer', 'Next due', 'Controls']];
+        $withParty = self::anyResponsible($a);
+        $head = ['Type', 'Category', 'Item', 'Status', 'Summary / last review', 'Reviewer', 'Next due', 'Controls'];
+        $rows = [$withParty ? array_merge($head, ['Responsible']) : $head];
         foreach ($a->automatic as $r) {
             if (!self::inFramework($r['controls'], $framework)) {
                 continue;
             }
-            $rows[] = ['Automatic', (string) $r['category'], (string) $r['title'], (string) $r['status_label'], trim($r['summary'] . ' ' . ($r['detail'] ?? '')), '', '', self::controlsText($r['controls'], $framework)];
+            $row = ['Automatic', (string) $r['category'], (string) $r['title'], (string) $r['status_label'], trim($r['summary'] . ' ' . ($r['detail'] ?? '')), '', '', self::controlsText($r['controls'], $framework)];
+            $rows[] = $withParty ? array_merge($row, [(string) ($r['responsible'] ?? 'Internal')]) : $row;
         }
         foreach ($a->manual as $r) {
             if (!self::inFramework($r['controls'], $framework)) {
                 continue;
             }
-            $rows[] = ['Manual', (string) $r['category'], (string) $r['title'], self::MANUAL_LABELS[$r['state']] ?? (string) $r['state'], $r['reviewed_on'] ? 'Reviewed ' . $r['reviewed_on'] . ($r['note'] ? ': ' . $r['note'] : '') : 'No review recorded', (string) ($r['reviewer_name'] ?? ''), (string) ($r['next_due_on'] ?? ''), self::controlsText($r['controls'], $framework)];
+            $row = ['Manual', (string) $r['category'], (string) $r['title'], self::MANUAL_LABELS[$r['state']] ?? (string) $r['state'], $r['reviewed_on'] ? 'Reviewed ' . $r['reviewed_on'] . ($r['note'] ? ': ' . $r['note'] : '') : 'No review recorded', (string) ($r['reviewer_name'] ?? ''), (string) ($r['next_due_on'] ?? ''), self::controlsText($r['controls'], $framework)];
+            $rows[] = $withParty ? array_merge($row, [(string) ($r['responsible'] ?? 'Internal')]) : $row;
         }
 
         return $rows;
+    }
+
+    private static function anyResponsible(Assessment $a): bool
+    {
+        foreach ([$a->automatic, $a->manual] as $list) {
+            foreach ($list as $r) {
+                if (!empty($r['responsible'])) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     public function csv(Assessment $a, ?string $framework = null): string
@@ -75,19 +92,20 @@ final class ReportRenderer
             }
             $h .= '<tr><td>' . $e((string) $s['label']) . '</td><td>' . $e(isset($s['score']) ? $s['score'] . '%' : 'n/a') . '</td><td>' . (int) $s['pass'] . '</td><td>' . (int) $s['warn'] . '</td><td>' . ((int) $s['fail'] + (int) $s['error']) . '</td><td>' . (int) $s['manual_current'] . '</td><td>' . ((int) $s['manual_overdue'] + (int) $s['manual_never']) . '</td></tr>';
         }
-        $h .= '</table><h2>Automatic checks</h2><table><tr><th>Category</th><th>Check</th><th>Status</th><th>Finding</th><th>Controls</th></tr>';
+        $wp = self::anyResponsible($a);
+        $h .= '</table><h2>Automatic checks</h2><table><tr><th>Category</th><th>Check</th><th>Status</th><th>Finding</th><th>Controls</th>' . ($wp ? '<th>Responsible</th>' : '') . '</tr>';
         foreach ($a->automatic as $r) {
             if (!self::inFramework($r['controls'], $fw)) {
                 continue;
             }
-            $h .= '<tr><td>' . $e((string) $r['category']) . '</td><td>' . $e((string) $r['title']) . '<br><small>' . $e((string) $r['why']) . '</small></td><td class="s-' . $e((string) $r['status']) . '">' . $e((string) $r['status_label']) . '</td><td>' . $e((string) $r['summary']) . ($r['detail'] ? '<br><small>' . $e((string) $r['detail']) . '</small>' : '') . '</td><td>' . $e(self::controlsText($r['controls'], $fw)) . '</td></tr>';
+            $h .= '<tr><td>' . $e((string) $r['category']) . '</td><td>' . $e((string) $r['title']) . '<br><small>' . $e((string) $r['why']) . '</small></td><td class="s-' . $e((string) $r['status']) . '">' . $e((string) $r['status_label']) . '</td><td>' . $e((string) $r['summary']) . ($r['detail'] ? '<br><small>' . $e((string) $r['detail']) . '</small>' : '') . '</td><td>' . $e(self::controlsText($r['controls'], $fw)) . '</td>' . ($wp ? '<td>' . $e((string) ($r['responsible'] ?? 'Internal')) . '</td>' : '') . '</tr>';
         }
-        $h .= '</table><h2>Manual checklist</h2><table><tr><th>Category</th><th>Item</th><th>State</th><th>Last review</th><th>Reviewer</th><th>Next due</th><th>Controls</th></tr>';
+        $h .= '</table><h2>Manual checklist</h2><table><tr><th>Category</th><th>Item</th><th>State</th><th>Last review</th><th>Reviewer</th><th>Next due</th><th>Controls</th>' . ($wp ? '<th>Responsible</th>' : '') . '</tr>';
         foreach ($a->manual as $r) {
             if (!self::inFramework($r['controls'], $fw)) {
                 continue;
             }
-            $h .= '<tr><td>' . $e((string) $r['category']) . '</td><td>' . $e((string) $r['title']) . '</td><td class="s-' . $e((string) $r['state']) . '">' . $e(self::MANUAL_LABELS[$r['state']] ?? (string) $r['state']) . '</td><td>' . $e((string) ($r['reviewed_on'] ?? 'Never')) . ($r['note'] ? '<br><small>' . $e((string) $r['note']) . '</small>' : '') . '</td><td>' . $e((string) ($r['reviewer_name'] ?? '')) . '</td><td>' . $e((string) ($r['next_due_on'] ?? '')) . '</td><td>' . $e(self::controlsText($r['controls'], $fw)) . '</td></tr>';
+            $h .= '<tr><td>' . $e((string) $r['category']) . '</td><td>' . $e((string) $r['title']) . '</td><td class="s-' . $e((string) $r['state']) . '">' . $e(self::MANUAL_LABELS[$r['state']] ?? (string) $r['state']) . '</td><td>' . $e((string) ($r['reviewed_on'] ?? 'Never')) . ($r['note'] ? '<br><small>' . $e((string) $r['note']) . '</small>' : '') . '</td><td>' . $e((string) ($r['reviewer_name'] ?? '')) . '</td><td>' . $e((string) ($r['next_due_on'] ?? '')) . '</td><td>' . $e(self::controlsText($r['controls'], $fw)) . '</td>' . ($wp ? '<td>' . $e((string) ($r['responsible'] ?? 'Internal')) . '</td>' : '') . '</tr>';
         }
 
         return $h . '</table></body></html>';

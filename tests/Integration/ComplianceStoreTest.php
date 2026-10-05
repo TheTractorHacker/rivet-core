@@ -103,4 +103,29 @@ final class ComplianceStoreTest extends TestCase
         $sr->unpublish();
         self::assertFalse($sr->isPublished());
     }
+
+    public function testResponsibilityAssignmentsResolveItemOverSectionOverInternal(): void
+    {
+        $this->db->execute('DELETE FROM compliance_responsibilities');
+        $r = new \RivetCore\Compliance\ResponsibilityStore($this->db);
+        $r->assign(\RivetCore\Compliance\ResponsibilityStore::sectionKey('Resilience'), 5, 'Acme MSP', 1);
+        $r->assign(\RivetCore\Compliance\ResponsibilityStore::itemKey('backup_restore_test'), 6, 'Other MSP', 1);
+        $r->assign(\RivetCore\Compliance\ResponsibilityStore::sectionKey('Resilience'), 5, 'Acme MSP Ltd', 2);
+        $names = $r->names();
+        self::assertCount(2, $names, 'reassigning replaces, it does not add');
+        $res = fn (string $id, string $cat) => \RivetCore\Compliance\ResponsibilityStore::resolve($names, $id, $cat);
+        self::assertSame('Acme MSP Ltd', $res('dr_bcp_test', 'Resilience'));
+        self::assertSame('Other MSP', $res('backup_restore_test', 'Resilience'));
+        self::assertNull($res('access_review', 'Access control'), 'unassigned means the organization itself');
+        $r->clear(\RivetCore\Compliance\ResponsibilityStore::itemKey('backup_restore_test'));
+        self::assertSame('Acme MSP Ltd', \RivetCore\Compliance\ResponsibilityStore::resolve($r->names(), 'backup_restore_test', 'Resilience'));
+        foreach ([['bogus', 'x'], ['section:', 'x'], ['section:A', '  '], ["item:a\nb", 'x']] as [$k, $n]) {
+            try {
+                $r->assign($k, null, $n, 1);
+                self::fail("accepted $k");
+            } catch (\InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
 }

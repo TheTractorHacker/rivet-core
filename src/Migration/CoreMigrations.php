@@ -10,6 +10,7 @@ use RivetCore\Automation\Migration\Migration0006AutomationRules;
 use RivetCore\Compliance\Migration\Migration0008Compliance;
 use RivetCore\Compliance\Migration\Migration0009SharedReport;
 use RivetCore\Compliance\Migration\Migration0010Subjects;
+use RivetCore\Compliance\Migration\Migration0011Responsibilities;
 use RivetCore\ITSM\Migration\Migration0004ProblemsAndChanges;
 use RivetCore\Mcp\Migration\Migration0003McpUnlinkedIdentities;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
@@ -32,6 +33,7 @@ final class CoreMigrations
             new Migration0008Compliance(),
             new Migration0009SharedReport(),
             new Migration0010Subjects(),
+            new Migration0011Responsibilities(),
         ];
     }
 }

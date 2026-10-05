@@ -76,11 +76,11 @@ final class SharedReport
         $tags = static fn (array $controls): array => array_values(array_filter(array_keys($controls), [Framework::class, 'isValid']));
         $manual = [];
         foreach ($a->manual as $r) {
-            $manual[] = ['title' => (string) $r['title'], 'category' => (string) $r['category'], 'state' => (string) $r['state'], 'reviewed_on' => $r['reviewed_on'] === null ? null : (string) $r['reviewed_on'], 'frameworks' => $tags((array) $r['controls'])];
+            $manual[] = ['title' => (string) $r['title'], 'category' => (string) $r['category'], 'state' => (string) $r['state'], 'reviewed_on' => $r['reviewed_on'] === null ? null : (string) $r['reviewed_on'], 'responsible' => isset($r['responsible']) ? (string) $r['responsible'] : null, 'frameworks' => $tags((array) $r['controls'])];
         }
         $auto = [];
         foreach ($a->automatic as $r) {
-            $auto[] = ['title' => (string) $r['title'], 'category' => (string) $r['category'], 'status' => (string) $r['status'], 'status_label' => (string) $r['status_label'], 'frameworks' => $tags((array) $r['controls'])];
+            $auto[] = ['title' => (string) $r['title'], 'category' => (string) $r['category'], 'status' => (string) $r['status'], 'status_label' => (string) $r['status_label'], 'responsible' => isset($r['responsible']) ? (string) $r['responsible'] : null, 'frameworks' => $tags((array) $r['controls'])];
         }
 
         return ['scores' => $scores, 'manual' => $manual, 'automatic' => $auto];

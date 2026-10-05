@@ -154,4 +154,21 @@ final class ComplianceEngineTest extends TestCase
             self::assertTrue(\RivetCore\Compliance\RetentionPolicy::isValidProfile($key), "$key has no retention preset");
         }
     }
+
+    public function testResponsiblePartyFlowsToTheReportOnlyWhenAssigned(): void
+    {
+        $items = [new ManualItem('backup_restore_test', 'Restore test', 'Resilience', 'w', [Framework::SOC2 => ['A1.3']], 365)];
+        $plain = (new ComplianceAssessor([], $items, $this->attest([]), $this->clock()))->assess();
+        $r = new ReportRenderer();
+        self::assertNull($plain->manual[0]['responsible']);
+        self::assertStringNotContainsString('Responsible', $r->csv($plain), 'no column when nobody outsourced anything');
+        $with = (new ComplianceAssessor([], $items, $this->attest([]), $this->clock(), ['section:Resilience' => 'Acme <MSP>']))->assess();
+        self::assertSame('Acme <MSP>', $with->manual[0]['responsible']);
+        self::assertStringContainsString('Responsible', $r->csv($with));
+        $html = $r->html($with, 'Org');
+        self::assertStringContainsString('Acme &lt;MSP&gt;', $html);
+        self::assertStringNotContainsString('Acme <MSP>', $html);
+        $view = \RivetCore\Compliance\SharedReport::view($with);
+        self::assertSame('Acme <MSP>', $view['manual'][0]['responsible']);
+    }
 }
