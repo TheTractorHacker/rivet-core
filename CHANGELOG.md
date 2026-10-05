@@ -2,6 +2,14 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.7.0
+
+### Added
+- `Retention\RetentionService`: prunes `audit_events`, `webhook_deliveries` and finished `integration_jobs` older than a horizon the edition supplies (its log-retention setting). A horizon below 1 keeps everything; pending and running jobs are never deleted.
+
+### Changed
+- CI runs on PHP 8.3 and 8.4.
+
 ## 0.6.0
 
 ### Added
