@@ -2,6 +2,12 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.4.0
+
+### Added
+- MCP: `McpConfig::resolve` (settings + environment, kill switch), `TokenClaimsGuard`, `ToolPipeline` (rate limit, permission, scoped read, audit row, standard envelope), `UnlinkedIdentityStore` + `IdentityLinker` behind an edition-supplied `AgentDirectoryInterface`, `McpDiagnostics`, `RedisMetadataCache` (PSR-16), migration `0003_mcp_unlinked_identities`.
+- Dependencies: guzzlehttp/guzzle ^7, psr/simple-cache ^3. Core does not require mcp/sdk: the editions own the SDK glue and the tool bodies.
+
 ## 0.3.0
 
 ### Added

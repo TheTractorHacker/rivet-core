@@ -6,6 +6,7 @@ namespace RivetCore\Migration;
 
 use RivetCore\Audit\Migration\Migration0001AuditEvents;
 use RivetCore\Jobs\Migration\Migration0002IntegrationJobs;
+use RivetCore\Mcp\Migration\Migration0003McpUnlinkedIdentities;
 
 /** The ordered list of every Core-owned migration. Append only. */
 final class CoreMigrations
@@ -16,6 +17,7 @@ final class CoreMigrations
         return [
             new Migration0001AuditEvents(),
             new Migration0002IntegrationJobs(),
+            new Migration0003McpUnlinkedIdentities(),
         ];
     }
 }

@@ -26,6 +26,7 @@ final class MigrationAndAuditTest extends TestCase
         $this->db = new MysqliDatabase($m);
         $this->db->execute('DROP TABLE IF EXISTS audit_events');
         $this->db->execute('DROP TABLE IF EXISTS integration_jobs');
+        $this->db->execute('DROP TABLE IF EXISTS mcp_unlinked_identities');
         $this->db->execute('DROP TABLE IF EXISTS rivet_core_migrations');
     }
 
@@ -36,8 +37,8 @@ final class MigrationAndAuditTest extends TestCase
 
     public function testAppliesThenIsIdempotent(): void
     {
-        $this->assertSame(['0001_audit_events', '0002_integration_jobs'], $this->runner()->pending());
-        $this->assertSame(['0001_audit_events', '0002_integration_jobs'], $this->runner()->run());
+        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities'], $this->runner()->pending());
+        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities'], $this->runner()->run());
         $this->assertSame([], $this->runner()->run());
         $this->assertSame([], $this->runner()->pending());
         $row = $this->db->fetchOne('SELECT * FROM rivet_core_migrations');
@@ -49,7 +50,7 @@ final class MigrationAndAuditTest extends TestCase
         $this->runner()->run();
         $this->db->execute('INSERT INTO audit_events (event_type, action) VALUES (?, ?)', ['keep', 'me']);
         $this->db->execute('DROP TABLE rivet_core_migrations');
-        $this->assertSame(['0001_audit_events', '0002_integration_jobs'], $this->runner()->run());
+        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities'], $this->runner()->run());
         $this->assertSame(1, (int) $this->db->fetchOne('SELECT COUNT(*) c FROM audit_events')['c']);
     }
 
