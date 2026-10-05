@@ -133,6 +133,12 @@ final class RedisTest extends TestCase
         $this->assertNotSame('?', $stats['version']);
         $this->assertFalse($admin->setMemory($r->client(), 1, 'allkeys-lru')['ok']);
         $this->assertFalse($admin->setMemory($r->client(), 128, 'bogus')['ok']);
-        $this->assertTrue($admin->setMemory($r->client(), 128, 'allkeys-lru')['ok']);
+        try {
+            $this->assertTrue($admin->setMemory($r->client(), 128, 'allkeys-lru')['ok']);
+        } finally {
+            // Leave the shared test server as found: other suites assert "no memory limit".
+            $r->client()->config('SET', 'maxmemory', '0');
+            $r->client()->config('SET', 'maxmemory-policy', 'noeviction');
+        }
     }
 }
