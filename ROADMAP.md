@@ -93,6 +93,7 @@ Goal: everything an edition must implement or call is final. After this mileston
 | 7 | Job worker | A worker loop with a handler registry, timeouts and the lock; today the editions' worker can only fail jobs, so the queue is unusable for real work | M |
 | 8 | Redis authentication and TLS | Password and TLS options end to end (installer generates the secret, both editions read it). The MSP's connection is hard-coded today, so this needs an MSP change first | M |
 | 9 | ~~Retention policy options~~ **Done in 0.8.0** | Separate horizons for audit and delivery logs, and compliance presets with enforced minimums (`Compliance\RetentionPolicy`); both editions get an Administration > Compliance page | S |
+| 11 | ~~Compliance status~~ **Done in 0.9.0** | A checklist engine (`Compliance\ComplianceAssessor`, `AttestationStore`, `SnapshotStore`, `ReportRenderer`) scoring ISO/IEC 27001, SOC 2, PCI DSS and HIPAA; each edition supplies its own checks and an Administration > Compliance status page with an auditor export | M |
 | 10 | Freeze review | A written pass over every public method signature, error behavior and table column | S |
 
 Exit: public API list reviewed and committed; compatibility check enforcing it; an alpha of 1.0 behavior with no open design questions.
