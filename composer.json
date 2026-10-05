@@ -10,7 +10,7 @@
     },
     "require": {
         "php": ">=8.2",
-        "guzzlehttp/guzzle": "^7.0",
+        "guzzlehttp/guzzle": "^7.0 || ^8.0",
         "predis/predis": "^3.5",
         "psr/simple-cache": "^3.0"
     },

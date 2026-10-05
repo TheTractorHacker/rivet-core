@@ -2,6 +2,11 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.4.1
+
+### Fixed
+- Accept Guzzle 8 (`^7.0 || ^8.0`); both editions already run 8.2.0. Tests pass on 8.2.0.
+
 ## 0.4.0
 
 ### Added
