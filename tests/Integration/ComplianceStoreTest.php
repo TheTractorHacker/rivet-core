@@ -67,4 +67,40 @@ final class ComplianceStoreTest extends TestCase
         self::assertNull($st->get(99999));
         self::assertNotNull($st->latestTakenAt());
     }
+
+    public function testSharedReportExposesOnlyTheReducedView(): void
+    {
+        $this->db->execute('DELETE FROM compliance_shared_report');
+        $sr = new \RivetCore\Compliance\SharedReport($this->db);
+        self::assertFalse($sr->isPublished());
+        self::assertNull($sr->current());
+        $a = new Assessment(
+            new \DateTimeImmutable('2026-10-05 10:00:00'),
+            [['id' => 'mfa', 'title' => 'MFA', 'category' => 'Access', 'why' => 'w', 'controls' => ['soc2' => ['CC6.1']], 'status' => 'fail', 'status_label' => 'Fail', 'summary' => '3 of 9 agents have no MFA', 'detail' => 'alice@example.com', 'fix_path' => 'users.php', 'metrics' => ['agents' => 9]]],
+            [['id' => 'x', 'title' => 'Access review', 'category' => 'Access', 'why' => 'w', 'controls' => ['hipaa' => ['164']], 'interval_days' => 90, 'state' => 'current', 'reviewed_on' => '2026-09-01', 'next_due_on' => '2026-12-01', 'reviewer_name' => 'Secret Person', 'note' => 'private evidence']],
+            ['all' => ['score' => 50.0], 'soc2' => ['score' => 0.0]]
+        );
+        $id = (new SnapshotStore($this->db))->save($a, 1);
+        try {
+            $sr->publish(99999, null, 1);
+            self::fail('published a missing snapshot');
+        } catch (\InvalidArgumentException) {
+            self::addToAssertionCount(1);
+        }
+        $sr->publish($id, '  Hello  ', 1);
+        $sr->publish($id, str_repeat('x', 5000), 2);
+        self::assertTrue($sr->isPublished());
+        $cur = $sr->current();
+        self::assertSame(\RivetCore\Compliance\SharedReport::NOTE_MAX, mb_strlen($cur['note']));
+        $json = json_encode($cur);
+        foreach (['alice@example.com', 'users.php', 'Secret Person', 'private evidence', '3 of 9', 'CC6.1', 'metrics'] as $leak) {
+            self::assertStringNotContainsString($leak, $json, "leaked: $leak");
+        }
+        self::assertSame('Fail', $cur['view']['automatic'][0]['status_label']);
+        self::assertSame('current', $cur['view']['manual'][0]['state']);
+        self::assertSame(50.0, $cur['view']['scores'][0]['score']);
+        self::assertSame(1, (int) $this->db->fetchOne('SELECT COUNT(*) c FROM compliance_shared_report')['c'], 'only one row ever');
+        $sr->unpublish();
+        self::assertFalse($sr->isPublished());
+    }
 }

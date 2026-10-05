@@ -2,6 +2,11 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.10.0
+
+### Added
+- `Compliance\SharedReport`: an administrator publishes one saved snapshot for portal users. Only a reduced view is exposed (framework scores, manual checklist titles/state/last-review date, automatic check titles and results); details, counts, account names, reviewer names and notes are never included. Migration `0009_compliance_shared_report`.
+
 ## 0.9.0
 
 ### Added
