@@ -39,7 +39,34 @@ class WebhookDispatcher
     }
 
     /**
-     * @return list<array{webhook_id:int,http_status:?int,duration_ms:int,error:?string}>
+     * Deliver one event to ONE endpoint, for a queued retryable job. $emittedAt (ISO-8601 UTC, as sent in the first attempt) keeps the
+     * body byte-identical across retries, so a receiver can de-duplicate and the signature stays valid. Never throws.
+     *
+     * @return array{webhook_id:int,http_status:?int,duration_ms:int,error:?string,ok:bool}
+     */
+    public function deliverTo(int $webhookId, string $eventType, array $payload, int $attempt = 1, ?string $emittedAt = null): array
+    {
+        $subscriber = null;
+        try {
+            $subscriber = $this->subscriptions instanceof WebhookSubscriptionLookupInterface ? $this->subscriptions->find($webhookId) : null;
+        } catch (\Throwable) {
+            $subscriber = null;
+        }
+        if ($subscriber === null) {
+            // The endpoint was deleted or disabled since the event was queued: nothing to retry.
+            return ['webhook_id' => $webhookId, 'http_status' => null, 'duration_ms' => 0, 'error' => 'endpoint no longer exists', 'ok' => false, 'gone' => true];
+        }
+        $body = json_encode([
+            'event' => $eventType,
+            'timestamp' => $emittedAt ?? $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z'),
+            'data' => $payload,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        return $this->sendOne($subscriber, $eventType, $body, max(1, $attempt));
+    }
+
+    /**
+     * @return list<array{webhook_id:int,http_status:?int,duration_ms:int,error:?string,ok:bool}>
      */
     public function deliver(string $eventType, array $payload): array
     {
@@ -66,7 +93,7 @@ class WebhookDispatcher
         return $results;
     }
 
-    private function sendOne(WebhookSubscription $subscriber, string $eventType, string $body): array
+    private function sendOne(WebhookSubscription $subscriber, string $eventType, string $body, int $attempt = 1): array
     {
         $signature = 'sha256=' . hash_hmac('sha256', $body, $subscriber->secret);
         $headers = ['Content-Type: application/json'];
@@ -88,14 +115,16 @@ class WebhookDispatcher
             $this->database->execute(
                 'INSERT INTO webhook_deliveries
                     (webhook_id, event_type, http_status, duration_ms, attempt_number, request_payload_json, response_body_snippet)
-                 VALUES (?, ?, ?, ?, 1, ?, ?)',
-                [$subscriber->webhookId, $eventType, $r['status'], $durationMs, $body, $snippet]
+                 VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [$subscriber->webhookId, $eventType, $r['status'], $durationMs, $attempt, $body, $snippet]
             );
         } catch (\Throwable) {
             // a logging failure must never break the caller
         }
 
-        return ['webhook_id' => $subscriber->webhookId, 'http_status' => $r['status'], 'duration_ms' => $durationMs, 'error' => $r['error']];
+        $ok = $r['error'] === null && $r['status'] !== null && $r['status'] >= 200 && $r['status'] < 300;
+
+        return ['webhook_id' => $subscriber->webhookId, 'http_status' => $r['status'], 'duration_ms' => $durationMs, 'error' => $r['error'] ?? ($ok ? null : 'HTTP ' . $r['status']), 'ok' => $ok];
     }
 
     /** @return array{status:?int,body:?string,error:?string} */

@@ -93,4 +93,51 @@ final class JobQueue
             [$status, $error, $availableAt, $jobId]
         );
     }
+
+    /** Jobs stuck in 'running' (the worker died) go back to pending so another worker picks them up. @return int how many were released */
+    public function requeueStale(int $minutes = 15): int
+    {
+        return $this->database->execute(
+            "UPDATE integration_jobs SET status = 'pending', error = 'worker stopped before finishing; retrying'
+             WHERE status = 'running' AND started_at < (NOW() - INTERVAL ? MINUTE)",
+            [max(1, $minutes)]
+        )->affectedRows;
+    }
+
+    /** @return array<string,int> counts by status */
+    public function stats(): array
+    {
+        $out = ['pending' => 0, 'running' => 0, 'completed' => 0, 'failed' => 0, 'dead_letter' => 0];
+        foreach ($this->database->fetchAll('SELECT status, COUNT(*) AS c FROM integration_jobs GROUP BY status') as $r) {
+            $out[(string) $r['status']] = (int) $r['c'];
+        }
+
+        return $out;
+    }
+
+    /** @return list<array<string,mixed>> newest first, without the payload body */
+    public function recent(int $limit = 50, ?string $status = null): array
+    {
+        $limit = max(1, min(500, $limit));
+        if ($status !== null) {
+            return $this->database->fetchAll('SELECT job_id, job_type, status, attempts, max_attempts, available_at, started_at, completed_at, error, created_at FROM integration_jobs WHERE status = ? ORDER BY job_id DESC LIMIT ?', [$status, $limit]);
+        }
+
+        return $this->database->fetchAll('SELECT job_id, job_type, status, attempts, max_attempts, available_at, started_at, completed_at, error, created_at FROM integration_jobs ORDER BY job_id DESC LIMIT ?', [$limit]);
+    }
+
+    /** Put a dead-lettered job back in the queue with a fresh set of attempts. */
+    public function retry(int $jobId): bool
+    {
+        return $this->database->execute(
+            "UPDATE integration_jobs SET status = 'pending', attempts = 0, available_at = NOW(), error = NULL WHERE job_id = ? AND status IN ('dead_letter','failed')",
+            [$jobId]
+        )->affectedRows === 1;
+    }
+
+    /** Delete finished jobs older than $days (completed only; dead letters stay until someone looks at them). @return int rows removed */
+    public function purgeCompleted(int $days): int
+    {
+        return $days < 1 ? 0 : $this->database->execute("DELETE FROM integration_jobs WHERE status = 'completed' AND completed_at < (NOW() - INTERVAL ? DAY)", [$days])->affectedRows;
+    }
 }

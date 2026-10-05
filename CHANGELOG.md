@@ -2,6 +2,13 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.15.0
+
+### Added
+- `Jobs\JobWorker` (job-type handler registry, claim loop with time/size limits, retry with backoff, `PermanentJobFailure` for no-retry failures, unknown types dead-lettered) and `JobQueue::requeueStale`, `stats`, `recent`, `retry`, `purgeCompleted`.
+- `Webhooks\WebhookDispatcher::deliverTo()`: one endpoint, one attempt, byte-identical body across retries (so signatures and receiver de-duplication hold); `WebhookSubscriptionLookupInterface` (optional companion of the subscriptions interface); results gain `ok`; the attempt number is logged.
+- Event automation: `Automation\EventContext::flatten`, `AutomationRuleStore` (validated rules for create_ticket / send_webhook / notify_user), `AutomationExecutor` (runs one rule's action through edition handlers; `{placeholders}` from the event, never in URLs or ids).
+
 ## 0.14.0
 
 ### Added
