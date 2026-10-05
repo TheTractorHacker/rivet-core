@@ -1,5 +1,5 @@
 {
-    "name": "rivetit/rivet-core",
+    "name": "rivet/rivet-core",
     "description": "Edition-neutral services shared by RivetIT and RivetMSP: audit, jobs, Redis helpers, MCP pipeline and ITSM building blocks.",
     "type": "library",
     "license": "GPL-3.0-only",
@@ -11,9 +11,24 @@
     "require": {
         "php": ">=8.2"
     },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
     "autoload": {
         "psr-4": {
-            "ITFlow\\": "src/"
+            "RivetCore\\": "src/"
         }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "RivetCore\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "scripts": {
+        "lint": "find src tests -name '*.php' -print0 | xargs -0 -n1 php -l",
+        "test": "phpunit"
     }
 }

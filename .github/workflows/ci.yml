@@ -1,0 +1,33 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: rivetcore_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mysqli
+      - run: composer install --no-interaction --prefer-dist
+      - run: composer validate
+      - run: composer lint
+      - name: Core must not reference mysqli or request globals
+        run: |
+          ! grep -rnE 'mysqli|global \$mysqli|\$GLOBALS|\$_SESSION|\$_SERVER|lookupUserPermission|enforceClientAccess' src
+      - run: vendor/bin/phpunit
+        env:
+          RIVETCORE_TEST_DB_HOST: 127.0.0.1
+          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_USER: root
+          RIVETCORE_TEST_DB_PASS: root
