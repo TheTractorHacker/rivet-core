@@ -16,6 +16,8 @@ namespace RivetCore\Compliance;
  *  - SOC 2: auditors typically sample a 6 to 12 month window; 12 months covers it.
  *  - PCI DSS 10.5.1: retain audit log history for at least 12 months.
  *  - HIPAA (45 CFR 164.316(b)(2)): required documentation is kept 6 years, which organizations apply to audit records.
+ *  - NIST SP 800-171 / CMMC (3.3.1): requires audit logs to be retained but sets no number; 12 months is the common
+ *    organization-defined value (and FedRAMP's baseline), and DFARS 7012 separately requires preserving incident data for 90 days.
  */
 final class RetentionPolicy
 {
@@ -28,6 +30,7 @@ final class RetentionPolicy
         'soc2' => ['label' => 'SOC 2', 'min_days' => 365, 'note' => 'Keeps records at least 12 months, which covers a typical audit window.'],
         'pci' => ['label' => 'PCI DSS', 'min_days' => 365, 'note' => 'Keeps records at least 12 months (PCI DSS requirement 10.5.1).'],
         'hipaa' => ['label' => 'HIPAA', 'min_days' => 2190, 'note' => 'Keeps records at least 6 years, the HIPAA documentation period.'],
+        'nist171' => ['label' => 'NIST 800-171 / CMMC', 'min_days' => 365, 'note' => 'Keeps records at least 12 months. NIST 800-171 (3.3.1) requires retaining audit logs but sets no number; 12 months is the common choice to define in your policy.'],
     ];
 
     public static function isValidProfile(string $profile): bool

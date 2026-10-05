@@ -25,6 +25,7 @@ final class RetentionPolicyTest extends TestCase
         $this->assertSame(365, RetentionPolicy::effectiveDays('iso27001', 365));
         $this->assertSame(500, RetentionPolicy::effectiveDays('iso27001', 500), 'a longer choice is kept');
         $this->assertSame(2190, RetentionPolicy::effectiveDays('hipaa', 365));
+        $this->assertSame(365, RetentionPolicy::effectiveDays('nist171', 30));
         $this->assertSame(30, RetentionPolicy::effectiveDays('none', 30));
     }
 

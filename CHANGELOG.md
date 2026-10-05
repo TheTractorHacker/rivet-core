@@ -2,6 +2,11 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.13.0
+
+### Added
+- Retention preset `nist171` (NIST SP 800-171 / CMMC): a 365-day minimum. 800-171 requires audit logs to be retained but sets no number, so this is the common organization-defined value, stated as such in the preset's note. Every compliance framework now has a retention preset, and a test enforces that the two lists stay in step.
+
 ## 0.12.0
 
 ### Added

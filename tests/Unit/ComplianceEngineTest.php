@@ -147,4 +147,11 @@ final class ComplianceEngineTest extends TestCase
         // framework filter drops items not tagged to it
         self::assertCount(1, $r->rows($a, Framework::SOC2));
     }
+
+    public function testEveryFrameworkHasARetentionPreset(): void
+    {
+        foreach (Framework::all() as $key) {
+            self::assertTrue(\RivetCore\Compliance\RetentionPolicy::isValidProfile($key), "$key has no retention preset");
+        }
+    }
 }

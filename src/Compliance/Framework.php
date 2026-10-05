@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Compliance;
 
-/** The frameworks controls can be tagged to. Four keys match RetentionPolicy::PROFILES; NIST 800-171 has no fixed retention period, so it has no retention preset. */
+/** The frameworks controls can be tagged to. Keys match RetentionPolicy::PROFILES. */
 final class Framework
 {
     public const ISO27001 = 'iso27001';
