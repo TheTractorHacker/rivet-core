@@ -2,6 +2,11 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.15.1
+
+### Added
+- `AuditService` takes an optional `afterLog` callback, called after each recorded event, so an edition can fan audit events out to webhooks and automation rules. It cannot fail or slow the audit write.
+
 ## 0.15.0
 
 ### Added

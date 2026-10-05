@@ -76,4 +76,21 @@ final class AuditServiceTest extends TestCase
         $this->expectException(DatabaseException::class);
         (new AuditService($db, $this->ctx()))->log('x', 1, 't', 1, 'a');
     }
+
+    public function testAfterLogListenerGetsTheEventAndCannotBreakTheWrite(): void
+    {
+        $db = new FakeDatabase();
+        $seen = [];
+        $svc = new AuditService($db, $this->ctx(), function (...$args) use (&$seen) {
+            $seen[] = $args;
+        });
+        $svc->log('ticket.closed', 5, 'ticket', 12, 'close', 'closed it', ['k' => 'v']);
+        $this->assertSame([['ticket.closed', 5, 'ticket', '12', 'close', 'closed it', ['k' => 'v']]], $seen);
+
+        $boom = new AuditService($db, $this->ctx(), function () {
+            throw new \RuntimeException('listener failed');
+        });
+        $boom->log('x.y', null, null, null, 'a');   // must not throw
+        $this->assertTrue(true);
+    }
 }

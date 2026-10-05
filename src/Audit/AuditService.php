@@ -19,9 +19,15 @@ final class AuditService
     private const SUMMARY_MAX = 500;
     private const USER_AGENT_MAX = 255;
 
+    /**
+     * @param (\Closure(string,?int,?string,?string,string,?string,array<string,mixed>):void)|null $afterLog called after a row is recorded
+     *        with (eventType, actorUserId, entityType, entityId, action, summary, metadata); lets an edition fan the event out to
+     *        webhooks and automation rules. Whatever it does or throws, the audit write and the caller are unaffected.
+     */
     public function __construct(
         private DatabaseInterface $database,
         private RequestContextInterface $request,
+        private ?\Closure $afterLog = null,
     ) {
     }
 
@@ -57,5 +63,13 @@ final class AuditService
                 $this->request->requestId(),
             ]
         );
+
+        if ($this->afterLog !== null) {
+            try {
+                ($this->afterLog)($eventType, $actorUserId, $entityType, $entityId === null ? null : (string) $entityId, $action, $summary, $metadata);
+            } catch (\Throwable) {
+                // fan-out is best effort
+            }
+        }
     }
 }
