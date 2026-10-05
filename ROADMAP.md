@@ -92,7 +92,7 @@ Goal: everything an edition must implement or call is final. After this mileston
 | 6 | Audit read side | An `AuditReader` with filters and pagination so editions stop querying the table directly; documented columns and event-name conventions | M |
 | 7 | Job worker | A worker loop with a handler registry, timeouts and the lock; today the editions' worker can only fail jobs, so the queue is unusable for real work | M |
 | 8 | Redis authentication and TLS | Password and TLS options end to end (installer generates the secret, both editions read it). The MSP's connection is hard-coded today, so this needs an MSP change first | M |
-| 9 | Retention policy options | Separate horizons for audit and delivery logs; the audit default decided on compliance grounds, not convenience | S |
+| 9 | ~~Retention policy options~~ **Done in 0.8.0** | Separate horizons for audit and delivery logs, and compliance presets with enforced minimums (`Compliance\RetentionPolicy`); both editions get an Administration > Compliance page | S |
 | 10 | Freeze review | A written pass over every public method signature, error behavior and table column | S |
 
 Exit: public API list reviewed and committed; compatibility check enforcing it; an alpha of 1.0 behavior with no open design questions.

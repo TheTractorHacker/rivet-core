@@ -2,6 +2,12 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.8.0
+
+### Added
+- `Compliance\RetentionPolicy`: minimum-retention presets (ISO/IEC 27001, SOC 2, PCI DSS, HIPAA) and `effectiveDays()`, which raises a stored retention to the preset's floor and treats 0 (and negative values) as "keep forever". A preset is a floor, not a compliance claim.
+- `RetentionService::prune($days, $auditDays = null)`: the audit trail can have its own horizon, independent of the delivery log and finished jobs. A horizon below 1 skips that table. Existing one-argument calls behave as before.
+
 ## 0.7.1
 
 ### Fixed

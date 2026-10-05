@@ -79,4 +79,39 @@ final class RetentionTest extends TestCase
         $this->seed();
         $this->assertSame(['audit_events' => 0, 'webhook_deliveries' => 0, 'integration_jobs' => 0], (new RetentionService($this->db))->prune(365));
     }
+
+    public function testTheAuditTrailCanHaveItsOwnHorizon(): void
+    {
+        $this->seed();
+        // general logs at 90 days, audit trail kept for 365: the 200-day-old audit row survives, the other old rows go
+        $deleted = (new RetentionService($this->db))->prune(90, 365);
+        $this->assertSame(['audit_events' => 0, 'webhook_deliveries' => 1, 'integration_jobs' => 2], $deleted);
+        $this->assertSame(2, $this->rows('audit_events'));
+    }
+
+    public function testAuditTrailCanBeKeptForeverWhileOthersArePruned(): void
+    {
+        $this->seed();
+        $deleted = (new RetentionService($this->db))->prune(90, 0);
+        $this->assertArrayNotHasKey('audit_events', $deleted, 'a horizon of 0 skips the table');
+        $this->assertSame(2, $this->rows('audit_events'));
+        $this->assertSame(1, $this->rows('webhook_deliveries'));
+    }
+
+    public function testAuditTrailCanBePrunedWhileOthersAreKept(): void
+    {
+        $this->seed();
+        $deleted = (new RetentionService($this->db))->prune(0, 90);
+        $this->assertSame(['audit_events' => 1], $deleted);
+        $this->assertSame(2, $this->rows('webhook_deliveries'));
+        $this->assertSame(5, $this->rows('integration_jobs'));
+    }
+
+    public function testBothZeroDoesNothing(): void
+    {
+        $this->seed();
+        $this->assertSame([], (new RetentionService($this->db))->prune(0, 0));
+        $this->assertSame(2, $this->rows('audit_events'));
+    }
 }
+
