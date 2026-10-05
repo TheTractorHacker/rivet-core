@@ -1054,6 +1054,7 @@ final class PdfConverter
         $stdout = '';
         $stderr = '';
         $deadline = microtime(true) + ($timeoutMs / 1000);
+        $exitFromStatus = -1;
         $timedout = false;
 
         while (true) {
@@ -1086,6 +1087,9 @@ final class PdfConverter
 
             $status = proc_get_status($proc);
             if (!$status['running']) {
+                // Before PHP 8.3 the exit code is only reported by the first proc_get_status() call that sees the
+                // process finished, and proc_close() then returns -1. Keep it.
+                $exitFromStatus = $status['exitcode'] ?? -1;
                 break;
             }
             if (microtime(true) >= $deadline) {
@@ -1110,6 +1114,9 @@ final class PdfConverter
         }
 
         $code = proc_close($proc);
+        if ($code === -1 && $exitFromStatus >= 0) {
+            $code = $exitFromStatus;
+        }
 
         return [
             'code'     => $timedout ? -1 : (int) $code,

@@ -2,6 +2,12 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.7.1
+
+### Fixed
+- `Jobs\JobQueue::markFailed()` crashed with a fatal error on the **fifth** failed attempt (the default `max_attempts`) instead of marking the job `dead_letter`: PHP cannot pass a class constant to `end()` by reference. Attempts past the backoff table now reuse the longest wait.
+- `KB\PdfConverter` rejected every PDF on PHP 8.2 ("not a readable PDF"): before PHP 8.3 the exit code is only reported by the first `proc_get_status()` call that sees the process finished, and `proc_close()` then returns -1. The converter now keeps that exit code. PHP 8.2 is Core's declared minimum, and the full suite now passes on 8.2, 8.4 and 8.5.
+
 ## 0.7.0
 
 ### Added

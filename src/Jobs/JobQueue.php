@@ -84,7 +84,7 @@ final class JobQueue
     public function markFailed(int $jobId, string $error, int $attempts, int $maxAttempts): void
     {
         $status = $attempts >= $maxAttempts ? 'dead_letter' : 'pending';
-        $minutes = self::BACKOFF_MINUTES[max(0, $attempts - 1)] ?? end(self::BACKOFF_MINUTES);
+        $minutes = self::BACKOFF_MINUTES[max(0, $attempts - 1)] ?? self::BACKOFF_MINUTES[array_key_last(self::BACKOFF_MINUTES)];
         $now = $this->database->fetchOne('SELECT NOW() AS n');
         $availableAt = (new \DateTimeImmutable((string) $now['n']))->modify("+{$minutes} minutes")->format('Y-m-d H:i:s');
 

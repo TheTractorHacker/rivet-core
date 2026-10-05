@@ -107,4 +107,22 @@ final class JobQueueTest extends TestCase
         $this->q->markFailed($id, 'final', $job['attempts'], (int) $job['max_attempts']);
         $this->assertSame('dead_letter', $this->db->fetchOne('SELECT status FROM integration_jobs WHERE job_id = ?', [$id])['status']);
     }
+
+    public function testTheDefaultFiveAttemptsEndInDeadLetterWithoutCrashing(): void
+    {
+        // max_attempts defaults to 5; attempts past the backoff table (4 entries) must reuse the longest wait.
+        $id = $this->q->enqueue('t');
+        $waits = [];
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
+            $this->db->execute('UPDATE integration_jobs SET available_at = NOW() WHERE job_id = ?', [$id]);
+            $job = $this->q->claim()[0];
+            $this->assertSame($attempt, $job['attempts']);
+            $this->q->markFailed($id, 'boom', $job['attempts'], (int) $job['max_attempts']);
+            $row = $this->db->fetchOne('SELECT status, TIMESTAMPDIFF(MINUTE, NOW(), available_at) AS m FROM integration_jobs WHERE job_id = ?', [$id]);
+            $waits[] = (int) $row['m'];
+            $this->assertSame($attempt < 5 ? 'pending' : 'dead_letter', $row['status'], "attempt $attempt");
+        }
+        $this->assertEqualsWithDelta(120, $waits[3], 1);
+        $this->assertEqualsWithDelta(120, $waits[4], 1, 'a fifth failure reuses the longest wait instead of crashing');
+    }
 }
