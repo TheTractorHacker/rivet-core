@@ -9,7 +9,8 @@ use RivetCore\Database\DatabaseInterface;
 /** Saved assessments, so an organization can show how its posture changed over time. Snapshots are evidence and are never pruned by retention. */
 final class SnapshotStore
 {
-    public function __construct(private DatabaseInterface $database)
+    /** @param int $subjectId 0 = the installation itself, otherwise the subject (for example a customer) */
+    public function __construct(private DatabaseInterface $database, private int $subjectId = 0)
     {
     }
 
@@ -18,8 +19,9 @@ final class SnapshotStore
         $trigger = in_array($trigger, ['manual', 'scheduled'], true) ? $trigger : 'manual';
 
         return (int) $this->database->execute(
-            'INSERT INTO compliance_snapshots (taken_by, trigger_type, app_version, summary_json, results_json) VALUES (?, ?, ?, ?, ?)',
+            'INSERT INTO compliance_snapshots (subject_id, taken_by, trigger_type, app_version, summary_json, results_json) VALUES (?, ?, ?, ?, ?, ?)',
             [
+                $this->subjectId,
                 $takenByUserId,
                 $trigger,
                 $appVersion === null ? null : mb_substr($appVersion, 0, 40),
@@ -33,8 +35,8 @@ final class SnapshotStore
     public function list(int $limit = 24): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT snapshot_id, taken_at, taken_by, trigger_type, app_version, summary_json FROM compliance_snapshots ORDER BY snapshot_id DESC LIMIT ?',
-            [max(1, min(500, $limit))]
+            'SELECT snapshot_id, taken_at, taken_by, trigger_type, app_version, summary_json FROM compliance_snapshots WHERE subject_id = ? ORDER BY snapshot_id DESC LIMIT ?',
+            [$this->subjectId, max(1, min(500, $limit))]
         );
         foreach ($rows as &$r) {
             $r['summaries'] = json_decode((string) $r['summary_json'], true) ?: [];
@@ -47,7 +49,7 @@ final class SnapshotStore
     /** @return array{snapshot_id:int, taken_at:string, taken_by:?int, trigger_type:string, app_version:?string, assessment:Assessment}|null */
     public function get(int $id): ?array
     {
-        $r = $this->database->fetchOne('SELECT snapshot_id, taken_at, taken_by, trigger_type, app_version, results_json FROM compliance_snapshots WHERE snapshot_id = ?', [$id]);
+        $r = $this->database->fetchOne('SELECT snapshot_id, taken_at, taken_by, trigger_type, app_version, results_json FROM compliance_snapshots WHERE snapshot_id = ? AND subject_id = ?', [$id, $this->subjectId]);
         if ($r === null) {
             return null;
         }
@@ -68,7 +70,7 @@ final class SnapshotStore
 
     public function latestTakenAt(): ?string
     {
-        $r = $this->database->fetchOne('SELECT MAX(taken_at) AS t FROM compliance_snapshots');
+        $r = $this->database->fetchOne('SELECT MAX(taken_at) AS t FROM compliance_snapshots WHERE subject_id = ?', [$this->subjectId]);
 
         return $r && $r['t'] !== null ? (string) $r['t'] : null;
     }

@@ -11,7 +11,8 @@ final class AttestationStore implements AttestationProviderInterface
 {
     public const NOTE_MAX = 2000;
 
-    public function __construct(private DatabaseInterface $database)
+    /** @param int $subjectId 0 = the installation itself, otherwise the subject (for example a customer) */
+    public function __construct(private DatabaseInterface $database, private int $subjectId = 0)
     {
     }
 
@@ -43,8 +44,8 @@ final class AttestationStore implements AttestationProviderInterface
         $note = $note === null ? null : mb_substr(trim($note), 0, self::NOTE_MAX);
 
         return (int) $this->database->execute(
-            'INSERT INTO compliance_attestations (item_id, reviewed_by, reviewer_name, reviewed_on, next_due_on, note) VALUES (?, ?, ?, ?, ?, ?)',
-            [$itemId, $reviewedByUserId, mb_substr($reviewer, 0, 200), $reviewed->format('Y-m-d'), $next?->format('Y-m-d'), $note === '' ? null : $note]
+            'INSERT INTO compliance_attestations (subject_id, item_id, reviewed_by, reviewer_name, reviewed_on, next_due_on, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [$this->subjectId, $itemId, $reviewedByUserId, mb_substr($reviewer, 0, 200), $reviewed->format('Y-m-d'), $next?->format('Y-m-d'), $note === '' ? null : $note]
         )->insertId;
     }
 
@@ -53,7 +54,8 @@ final class AttestationStore implements AttestationProviderInterface
         $rows = $this->database->fetchAll(
             'SELECT a.item_id, a.reviewed_on, a.next_due_on, a.reviewer_name, a.note
              FROM compliance_attestations a
-             WHERE a.attestation_id = (SELECT MAX(b.attestation_id) FROM compliance_attestations b WHERE b.item_id = a.item_id)'
+             WHERE a.subject_id = ? AND a.attestation_id = (SELECT MAX(b.attestation_id) FROM compliance_attestations b WHERE b.item_id = a.item_id AND b.subject_id = a.subject_id)',
+            [$this->subjectId]
         );
         $out = [];
         foreach ($rows as $r) {
@@ -73,8 +75,8 @@ final class AttestationStore implements AttestationProviderInterface
     {
         return $this->database->fetchAll(
             'SELECT attestation_id, reviewed_by, reviewer_name, reviewed_on, next_due_on, note, created_at
-             FROM compliance_attestations WHERE item_id = ? ORDER BY attestation_id DESC LIMIT ?',
-            [$itemId, max(1, min(200, $limit))]
+             FROM compliance_attestations WHERE subject_id = ? AND item_id = ? ORDER BY attestation_id DESC LIMIT ?',
+            [$this->subjectId, $itemId, max(1, min(200, $limit))]
         );
     }
 

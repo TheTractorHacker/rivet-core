@@ -2,6 +2,12 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.11.0
+
+### Added
+- `Compliance\SubjectCompliance` and `ClientChecklist`: compliance for a subject other than the installation itself (an MSP's customer): chosen frameworks, a 20-item manual checklist with sign-off, snapshots, one shared snapshot (reduced view), and an overview across subjects. Migration `0010_compliance_subjects` adds `subject_id` (0 = the installation) to `compliance_attestations` and `compliance_snapshots` and the `compliance_subjects` table.
+- `AttestationStore` and `SnapshotStore` take an optional `$subjectId` (default 0, unchanged behaviour).
+
 ## 0.10.0
 
 ### Added
