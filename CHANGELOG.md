@@ -2,6 +2,15 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.9.0
+
+### Added
+- Compliance status engine in `RivetCore\Compliance`: `CheckInterface`/`CheckResult`/`Status`, `ManualItem`, `ComplianceAssessor` (isolates failing checks, scores ISO/IEC 27001, SOC 2, PCI DSS and HIPAA), `Assessment`.
+- `AttestationStore` (append-only manual reviews with validation), `SnapshotStore` (saved assessments), `ReportRenderer` (CSV with formula neutralisation and escaped, self-contained printable HTML).
+- Shared checks `AuditTrailRecordingCheck` and `RetentionMeetsPresetCheck`.
+- Migration `0008_compliance`: tables `compliance_attestations` and `compliance_snapshots`.
+- The status view is a self-assessment aid, not a certification; control references are indicative.
+
 ## 0.8.0
 
 ### Added
