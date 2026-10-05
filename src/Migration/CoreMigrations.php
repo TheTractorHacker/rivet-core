@@ -6,8 +6,11 @@ namespace RivetCore\Migration;
 
 use RivetCore\Audit\Migration\Migration0001AuditEvents;
 use RivetCore\Jobs\Migration\Migration0002IntegrationJobs;
+use RivetCore\Automation\Migration\Migration0006AutomationRules;
 use RivetCore\ITSM\Migration\Migration0004ProblemsAndChanges;
 use RivetCore\Mcp\Migration\Migration0003McpUnlinkedIdentities;
+use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
+use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
 
 /** The ordered list of every Core-owned migration. Append only. */
 final class CoreMigrations
@@ -20,6 +23,9 @@ final class CoreMigrations
             new Migration0002IntegrationJobs(),
             new Migration0003McpUnlinkedIdentities(),
             new Migration0004ProblemsAndChanges(),
+            new Migration0005WebhookDeliveries(),
+            new Migration0006AutomationRules(),
+            new Migration0007WorkflowTables(),
         ];
     }
 }

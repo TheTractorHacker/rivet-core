@@ -2,6 +2,18 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.6.0
+
+### Added
+- Webhooks: `WebhookDispatcher` (synchronous delivery, HMAC-SHA256 body signing, configurable header prefixes, per-attempt log, never throws) with the edition supplying subscribers through `WebhookSubscriptionsInterface`; migration `0005_webhook_deliveries`.
+- Automation: `AutomationRuleEvaluator` (evaluation-only rule matching) and migration `0006_automation_rules`.
+- Workflow: `WorkflowService` (template snapshot, complete/skip/reopen/cancel, derived run status) and migration `0007_workflow_tables`.
+- KB: `DocxConverter` and `PdfConverter` with their exceptions, moved unchanged.
+- Knowledge: `CredentialReferenceRenderer` with an edition-supplied reveal control.
+
+### Changed
+- `WorkflowService::startRun` is now atomic (a failure mid-way leaves no half-created run).
+
 ## 0.5.0
 
 ### Added
