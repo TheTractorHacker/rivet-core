@@ -17,7 +17,25 @@ RivetCore 1.0.0 is a promise, not a feature count. It means:
 Principles that do not change on the way: Core never knows which edition it runs in; no `global`, superglobal or edition bootstrap inside Core; storage only through
 `DatabaseInterface`; additive, idempotent migrations that only touch Core-owned tables; every module off by default until an edition switches it on; Redis is optional and everything fails open.
 
-## Where we are (v0.7.1, verified)
+## Where we are
+
+### Shipped since 0.7.1 (status at v0.14.0)
+
+The releases after 0.7.1 went to compliance work, not to the milestones below, so the milestone numbers here no longer match the version numbers. Nothing below was dropped; the planned work is still open unless it says otherwise.
+
+| Version | What shipped |
+|---|---|
+| 0.8.0 | `RetentionPolicy` presets (ISO/IEC 27001, SOC 2, PCI DSS, HIPAA) and a separate audit-trail retention horizon |
+| 0.9.0 | Compliance status engine: `ComplianceAssessor`, `AttestationStore`, `SnapshotStore`, `ReportRenderer`, migration 0008 |
+| 0.10.0 | `SharedReport`: publish one saved snapshot, reduced, for portal users |
+| 0.11.0 | `SubjectCompliance` and `ClientChecklist`: compliance for a customer (subject) of an MSP |
+| 0.12.0 | NIST SP 800-171 / CMMC Level 2 as a fifth framework (`Nist171Map`) |
+| 0.13.0 | Retention preset `nist171` |
+| 0.14.0 | `ResponsibilityStore`: who is responsible for a section or item (the organization or a managed service provider) |
+
+Still open from the plan: the quality gates and hygiene milestone (CI matrix, static analysis, coverage), freezing the public contracts, and edition adoption. The fact table below was measured at 0.7.1 and has not been re-measured since.
+
+### Measured at v0.7.1
 
 | Fact | Value |
 |---|---|
