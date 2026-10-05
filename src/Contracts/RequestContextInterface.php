@@ -6,7 +6,7 @@ namespace RivetCore\Contracts;
 
 /**
  * Per-request facts Core may record (audit trail, rate limits) without ever
- * touching $_SERVER. The edition supplies a real implementation; CLI/cron
+ * reading superglobals. The edition supplies a real implementation; CLI/cron
  * callers can use NullRequestContext.
  */
 interface RequestContextInterface

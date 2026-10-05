@@ -12,7 +12,7 @@ use RivetCore\Database\DatabaseInterface;
  * rows; edition pages that display the trail query audit_events themselves.
  *
  * Request facts (IP, user agent, request id) come from the injected
- * RequestContextInterface, never from $_SERVER.
+ * RequestContextInterface, never from superglobals.
  */
 final class AuditService
 {

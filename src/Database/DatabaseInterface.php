@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Database;
 
 /**
- * Storage contract for RivetCore. Core code never sees mysqli (or PDO): it
+ * Storage contract for RivetCore. Core code never sees a driver-specific handle: it
  * passes SQL with positional `?` placeholders and ordinary PHP values, and
  * gets arrays or a Core-owned ExecutionResult back.
  *
