@@ -13,6 +13,9 @@ jobs:
         options: >-
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
           --health-interval=5s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7
+        ports: ['6391:6379']
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -24,10 +27,11 @@ jobs:
       - run: composer lint
       - name: Core must not reference mysqli or request globals
         run: |
-          ! grep -rnE 'mysqli|global \$mysqli|\$GLOBALS|\$_SESSION|\$_SERVER|lookupUserPermission|enforceClientAccess' src
+          ! grep -rnE 'mysqli|global \$mysqli|\$GLOBALS|\$_SESSION|\$_SERVER|getRedisClient|lookupUserPermission|enforceClientAccess' src
       - run: vendor/bin/phpunit
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1
           RIVETCORE_TEST_DB_NAME: rivetcore_test
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
+          RIVETCORE_TEST_REDIS_PORT: '6391'
