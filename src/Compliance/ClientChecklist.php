@@ -18,8 +18,9 @@ final class ClientChecklist
         $S = Framework::SOC2;
         $P = Framework::PCI;
         $H = Framework::HIPAA;
+        $N = Framework::NIST171;
 
-        return [
+        $items = [
             $m('policy_review', 'Security policy written, approved and reviewed', 'Governance', 'A management-approved policy sets direction for everything else.', [$I => ['A.5.1'], $S => ['CC1.1', 'CC5.3'], $P => ['12.1.1', '12.1.2'], $H => ['164.316(b)(1)']]),
             $m('risk_assessment', 'Risk assessment performed', 'Governance', 'Risks to data and systems are identified, ranked and treated.', [$I => ['Clause 6.1.2'], $S => ['CC3.2'], $P => ['12.3.1'], $H => ['164.308(a)(1)(ii)(A)']]),
             $m('asset_inventory', 'Inventory of systems and data', 'Governance', 'You cannot protect what you do not know about.', [$I => ['A.5.9'], $S => ['CC6.1'], $P => ['12.5.1'], $H => ['164.310(d)(1)']]),
@@ -41,7 +42,12 @@ final class ClientChecklist
             $m('pci_scope_validation', 'Cardholder-data scope and self-assessment (SAQ) completed', 'Governance', 'Where card data lives is documented and the right self-assessment filed.', [$P => ['12.5.2', 'SAQ']]),
             $m('isms_scope_soa', 'Management-system scope and statement of applicability', 'Governance', 'ISO 27001 requires a defined scope and a statement of which controls apply.', [$I => ['Clause 4.3', 'Clause 6.1.3']]),
             $m('soc2_system_description', 'System description and boundaries documented', 'Governance', 'SOC 2 reports describe the system, its boundaries and its commitments.', [$S => ['CC2.1', 'DC 200']]),
+            $m('cui_scope', 'CUI / FCI scope and data flows identified', 'Governance', 'Federal contract information and controlled unclassified information are located, marked and bounded before anything else is scoped.', [$N => ['3.1.3', '3.8.1', '3.8.4']]),
+            $m('ssp_poam', 'System security plan and plan of action maintained', 'Governance', 'NIST 800-171 and CMMC require a current SSP and a POA&M for every gap.', [$N => ['3.12.2', '3.12.4']]),
+            $m('cmmc_self_assessment', 'CMMC self-assessment or C3PAO readiness completed', 'Governance', 'The 110 practices are scored and the result recorded (and submitted where the contract requires it).', [$N => ['3.12.1']], 365),
         ];
+
+        return array_map(static fn (ManualItem $i) => new ManualItem($i->id, $i->title, $i->category, $i->why, Nist171Map::apply($i->id, $i->controls), $i->intervalDays), $items);
     }
 
     /** @return list<string> */
