@@ -2,6 +2,11 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.5.0
+
+### Added
+- ITSM: `ProblemService` and `ChangeService` (status machines, validation, resolve timestamps) on the Core-owned `problems` and `changes` tables (migration `0004_problems_and_changes`). The edition attaches tickets to problems through `TicketProblemLinkInterface`; Core never touches the tickets table. Status and transition tables are public constants so UIs can render from them instead of mirroring them by hand.
+
 ## 0.4.1
 
 ### Fixed
