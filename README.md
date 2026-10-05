@@ -5,7 +5,7 @@ Free and open source under GPL-3.0. The code is free; hosting and setup are the 
 
 ## Status
 
-Foundation + Audit. See [CHANGELOG.md](CHANGELOG.md), [ADR-001](docs/architecture/ADR-001-database-strategy.md) and the open issues.
+Audit, Redis, Cron, Jobs, MCP, ITSM, Webhooks, Automation, Workflow, KB converters, Knowledge. See [CHANGELOG.md](CHANGELOG.md), [ADR-001](docs/architecture/ADR-001-database-strategy.md) and the open issues.
 
 ## Rules
 
@@ -15,11 +15,22 @@ Foundation + Audit. See [CHANGELOG.md](CHANGELOG.md), [ADR-001](docs/architectur
 4. Every adopted module is off by default and enabled per instance.
 5. Namespace is `RivetCore\`; editions keep thin `ITFlow\` shims for existing callers.
 
-## Pilot extraction order
+## Modules
 
-1. Audit, Redis (lock, rate limit, health), Cron/JobRunner, Jobs queue, MCP pipeline
-2. ITSM (Problem, Change), KB, Knowledge
-3. Stays in each edition: UI shell, billing, client/department model, Training, Odoo
+| Module | Namespace | Core-owned tables | Edition supplies |
+|---|---|---|---|
+| Audit | `RivetCore\Audit` | `audit_events` | request context |
+| Redis, health | `RivetCore\Redis`, `Health` | - | Redis client provider |
+| Cron | `RivetCore\Cron` | - | job list |
+| Jobs | `RivetCore\Jobs` | `integration_jobs` | - |
+| MCP | `RivetCore\Mcp` | `mcp_unlinked_identities` | agent directory, SDK glue, tool queries |
+| ITSM | `RivetCore\ITSM` | `problems`, `changes` | ticket link |
+| Webhooks | `RivetCore\Webhooks` | `webhook_deliveries` | subscriptions |
+| Automation | `RivetCore\Automation` | `automation_rules` | rule execution |
+| Workflow | `RivetCore\Workflow` | `workflow_*` (4) | subject records |
+| KB, Knowledge | `RivetCore\KB`, `Knowledge` | - | media, import, reveal control |
+
+What stays in the editions, and why: [ADR-002](docs/architecture/ADR-002-modules-that-stay-in-editions.md).
 
 ## Using it from an edition
 
