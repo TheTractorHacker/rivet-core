@@ -44,7 +44,8 @@ jobs:
       - run: composer lint
       - name: Core must not reference mysqli or request globals
         run: |
-          ! grep -rnE 'mysqli|global \$mysqli|\$GLOBALS|\$_SESSION|\$_SERVER|getRedisClient|lookupUserPermission|enforceClientAccess' src
+          # src/Testing is the conformance kit: it deliberately sets request superglobals to test edition adapters, so it is exempt.
+          ! grep -rnE 'mysqli|global \$mysqli|\$GLOBALS|\$_SESSION|\$_SERVER|getRedisClient|lookupUserPermission|enforceClientAccess' src --exclude-dir=Testing
       - run: vendor/bin/phpunit
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1

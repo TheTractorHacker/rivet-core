@@ -2,6 +2,9 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.2
+CI-only fixes on top of rc.1 (no library change): PHPStan 2.3 findings in the PDF converter baseline, the "no superglobals in src" check now exempts `src/Testing` (the conformance kit sets request superglobals on purpose), and `docs/api-surface.md` prints the same text on every PHP version (`self` return types are resolved), so the stale-surface test passes on PHP 8.2 to 8.5. Use rc.2 instead of rc.1.
+
 ## 1.0.0-rc.1
 Release candidate: feature freeze. From here only bug fixes; any public API change restarts the soak (see `docs/RELEASE_GATE.md`).
 - **API frozen for review:** every type is `@api` or `@internal`, array shapes are typed everywhere (the PHPStan ignore is gone), `docs/api-surface.md` is generated and guarded by tests, `docs/api-freeze-review.md` records error behaviour and the frozen tables/columns. Deprecated through 1.x, removed in 2.0: the legacy `<prefix>-Signature` webhook header (use V2), the Closure form of the MCP loggers, the editions' `ITFlow\` shims.
