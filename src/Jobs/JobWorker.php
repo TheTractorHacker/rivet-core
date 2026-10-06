@@ -126,7 +126,7 @@ final class JobWorker
         $max = (int) $job['max_attempts'];
         $handler = $this->handlers[$type] ?? null;
         if ($handler === null) {
-            $this->queue->markFailed($id, "No handler registered for job type '{$type}'; dead-lettered (register a handler, then retry the job)", $max, $max);
+            $this->queue->markFailed($id, "No handler registered for job type '{$type}'; dead-lettered (register a handler, then retry the job)", $max, $max, $attempts);
             $out['dead']++;
 
             return;
@@ -143,13 +143,13 @@ final class JobWorker
             if ($timeout !== null && microtime(true) - $started > $timeout) {
                 throw new JobTimeout(sprintf("Job exceeded its %ds timeout for '%s' (ran %.1fs)", $timeout, $type, microtime(true) - $started));
             }
-            $this->queue->markCompleted($id, is_array($result) ? $result : []);
+            $this->queue->markCompleted($id, is_array($result) ? $result : [], $attempts);
             $out['completed']++;
         } catch (PermanentJobFailure $e) {
-            $this->queue->markFailed($id, mb_substr($e->getMessage(), 0, 2000), $max, $max);
+            $this->queue->markFailed($id, mb_substr($e->getMessage(), 0, 2000), $max, $max, $attempts);
             $out['dead']++;
         } catch (\Throwable $e) {
-            $this->queue->markFailed($id, mb_substr($e->getMessage(), 0, 2000), $attempts, $max);
+            $this->queue->markFailed($id, mb_substr($e->getMessage(), 0, 2000), $attempts, $max, $attempts);
             $attempts >= $max ? $out['dead']++ : $out['retrying']++;
         }
     }

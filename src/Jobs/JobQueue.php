@@ -131,43 +131,54 @@ final class JobQueue
         return $claimed;
     }
 
-    public function markCompleted(int $jobId, array $result = []): void
+    /**
+     * @param int|null $attempt the attempt number returned by claim(); when given, the write only lands if this run still
+     *                          owns the job (status 'running' and the same attempt), so a worker that was reclaimed cannot
+     *                          overwrite the newer run. Handlers should be idempotent: a reclaimed job can run twice.
+     * @return bool false when the job was no longer running (reclaimed or already finished) and nothing was written
+     */
+    public function markCompleted(int $jobId, array $result = [], ?int $attempt = null): bool
     {
-        $this->database->execute(
-            "UPDATE integration_jobs SET status = 'completed', completed_at = NOW(), result = ? WHERE job_id = ?",
-            [json_encode($result), $jobId]
-        );
+        return $this->database->execute(
+            "UPDATE integration_jobs SET status = 'completed', completed_at = NOW(), result = ? WHERE job_id = ? AND status = 'running'" . ($attempt === null ? '' : ' AND attempts = ?'),
+            $attempt === null ? [json_encode($result), $jobId] : [json_encode($result), $jobId, $attempt]
+        )->affectedRows === 1;
     }
 
     /**
      * @param int $attempts the job's attempts after claim() (1 on the first failure)
+     * @param int|null $claimedAttempt fence, see markCompleted(); defaults to none (only status 'running' is required)
+     * @return bool false when the job was no longer running and nothing was written
      */
-    public function markFailed(int $jobId, string $error, int $attempts, int $maxAttempts): void
+    public function markFailed(int $jobId, string $error, int $attempts, int $maxAttempts, ?int $claimedAttempt = null): bool
     {
         $status = $attempts >= $maxAttempts ? 'dead_letter' : 'pending';
         $minutes = self::BACKOFF_MINUTES[max(0, $attempts - 1)] ?? self::BACKOFF_MINUTES[array_key_last(self::BACKOFF_MINUTES)];
         $now = $this->database->fetchOne('SELECT NOW() AS n');
         $availableAt = (new \DateTimeImmutable((string) $now['n']))->modify("+{$minutes} minutes")->format('Y-m-d H:i:s');
 
-        $this->database->execute(
-            'UPDATE integration_jobs SET status = ?, error = ?, available_at = ? WHERE job_id = ?',
-            [$status, $error, $availableAt, $jobId]
-        );
+        return $this->database->execute(
+            "UPDATE integration_jobs SET status = ?, error = ?, available_at = ? WHERE job_id = ? AND status = 'running'" . ($claimedAttempt === null ? '' : ' AND attempts = ?'),
+            $claimedAttempt === null ? [$status, $error, $availableAt, $jobId] : [$status, $error, $availableAt, $jobId, $claimedAttempt]
+        )->affectedRows === 1;
     }
 
     /**
-     * Jobs stuck in 'running' (the worker died) go back to pending so another worker picks them up. A job counts as
-     * abandoned when its last heartbeat (or, with no heartbeat, its start) is older than $minutes, so a long job whose
-     * worker keeps calling heartbeat() is never reclaimed.
+     * Jobs stuck in 'running' (the worker died) go back to pending so another worker picks them up, unless they have
+     * already used all their attempts: those are dead-lettered, so a job that crashes the worker cannot loop forever. A
+     * job counts as abandoned when its last heartbeat (or, with no heartbeat, its start) is older than $minutes, so a
+     * long job whose worker keeps calling heartbeat() is never reclaimed.
      *
-     * @return int how many were released
+     * @return int how many were released or dead-lettered
      */
     public function requeueStale(int $minutes = 15): int
     {
         $last = $this->supportsHeartbeat() ? 'COALESCE(heartbeat_at, started_at)' : 'started_at';
 
         return $this->database->execute(
-            "UPDATE integration_jobs SET status = 'pending', error = 'worker stopped before finishing; retrying'
+            "UPDATE integration_jobs
+             SET error = IF(attempts >= max_attempts, 'worker stopped before finishing; attempts exhausted', 'worker stopped before finishing; retrying'),
+                 status = IF(attempts >= max_attempts, 'dead_letter', 'pending')
              WHERE status = 'running' AND {$last} < (NOW() - INTERVAL ? MINUTE)",
             [max(1, $minutes)]
         )->affectedRows;

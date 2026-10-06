@@ -16,12 +16,31 @@ namespace RivetCore\Cron;
 class JobRunner
 {
     private string $stateDir;
+    private bool $stateDirSafe;
 
+    /**
+     * Without $stateDir the default is a per-user directory in the system temp dir. Whatever directory is used must be a real
+     * directory (not a symlink), owned by the current user and not writable by anyone else; if it is not, start() refuses to run.
+     */
     public function __construct(private string $appRoot, ?string $stateDir = null)
     {
         $this->appRoot = realpath($appRoot) ?: rtrim($appRoot, '/');
-        $this->stateDir = $stateDir ?? (sys_get_temp_dir() . '/rivetcore-jobs');
-        if (!is_dir($this->stateDir)) @mkdir($this->stateDir, 0700, true);
+        $this->stateDir = $stateDir ?? (sys_get_temp_dir() . '/rivetcore-jobs-' . self::uid());
+        if (!file_exists($this->stateDir) && !is_link($this->stateDir)) @mkdir($this->stateDir, 0700, true);
+        $this->stateDirSafe = self::isPrivateDir($this->stateDir);
+    }
+
+    private static function uid(): int
+    {
+        return function_exists('posix_geteuid') ? posix_geteuid() : getmyuid();
+    }
+
+    /** A real (non-symlink) directory owned by this user that neither group nor others can write to. */
+    private static function isPrivateDir(string $dir): bool
+    {
+        $st = @lstat($dir);
+        if ($st === false || is_link($dir) || ($st['mode'] & 0170000) !== 0040000) return false;
+        return $st['uid'] === self::uid() && ($st['mode'] & 0022) === 0;
     }
 
     /** The "/var/log/x.log" a cron line appends to, if it is a plain file under /var/log. */
@@ -110,9 +129,14 @@ class JobRunner
         }
         if ($this->state($key, $script)['running']) return ['ok' => false, 'message' => 'This job is already running.'];
 
+        if (!$this->stateDirSafe) return ['ok' => false, 'message' => 'The job state directory is not private; refusing to start.'];
         $f = $this->files($key);
+        // Remove (never follow) whatever sits at the pid/log paths, then create the log exclusively so a planted symlink cannot be written through.
         @unlink($f['pid']);
-        file_put_contents($f['log'], '');
+        @unlink($f['log']);
+        $fh = @fopen($f['log'], 'x');
+        if ($fh === false) return ['ok' => false, 'message' => 'Could not create the job log.'];
+        fclose($fh);
         @chmod($f['log'], 0600);
         $inner = 'echo $$ > ' . escapeshellarg($f['pid']) . '; cd ' . escapeshellarg(dirname($script)) . ' && '
             . escapeshellarg($php) . ' ' . escapeshellarg($script) . ($args ? ' ' . implode(' ', array_map('escapeshellarg', $args)) : '')

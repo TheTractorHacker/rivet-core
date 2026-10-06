@@ -23,13 +23,26 @@ class CredentialReferenceRenderer
     {
     }
 
+    /** A whole HTML tag, with quoted attribute values (which may contain ">") kept inside it. */
+    private const TAG_PATTERN = '/(<(?:[^>"\']|"[^"]*"|\'[^\']*\')*>)/';
+
+    /**
+     * Tokens in text are swapped for the badge; a token inside a tag (an attribute value, a tag name) is removed instead, so
+     * badge markup can never break out of an attribute and alter the DOM.
+     */
     public function render(string $html): string
     {
-        return preg_replace_callback(
-            self::TOKEN_PATTERN,
-            fn (array $m) => ($this->badge)((int) $m[1]),
-            $html
-        );
+        $parts = preg_split(self::TAG_PATTERN, $html, -1, PREG_SPLIT_DELIM_CAPTURE);
+        if ($parts === false) {
+            return $html;
+        }
+        foreach ($parts as $i => $part) {
+            $parts[$i] = $i % 2 === 1
+                ? (preg_replace(self::TOKEN_PATTERN, '', $part) ?? '')
+                : (preg_replace_callback(self::TOKEN_PATTERN, fn (array $m) => ($this->badge)((int) $m[1]), $part) ?? '');
+        }
+
+        return implode('', $parts);
     }
 
     public function containsReference(string $html): bool

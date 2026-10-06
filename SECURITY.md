@@ -15,7 +15,7 @@ major's last minor. RivetIT and RivetMSP pin a tag, so a fix is released as a ne
 
 ## Scope
 
-In scope: this library (`src/`, `migrations/`), including the DOCX/PDF converters that parse untrusted files, the
+In scope: this library (`src/`, including the migration classes under `src/*/Migration/`, the webhook `UrlPolicy` and signature V2, and the Redis TLS configuration), including the DOCX/PDF converters that parse untrusted files, the
 webhook signing, the Redis lock and rate-limit helpers, and the MCP pipeline. Out of scope: the editions themselves
 (report those to RivetIT / RivetMSP), and third-party dependencies (report upstream; we track them with `composer audit`
 and Dependabot).

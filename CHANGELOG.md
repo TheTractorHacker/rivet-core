@@ -2,6 +2,18 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.17.2
+Security hardening from the 2026-10 review (all low severity, backward compatible).
+- **UrlPolicy:** also rejects 6to4 (2002::/16), Teredo (2001::/32), local-use NAT64 (64:ff9b:1::/48), 100::/64, documentation, benchmarking (198.18/15), IETF-protocol (192.0.0/24), 192.88.99/24 and multicast ranges.
+- **Webhooks:** pinned requests are sent to the vetted host spelling (a trailing-dot host can no longer skip the DNS pin) and never use a proxy (`CURLOPT_PROXY` empty, `CURLOPT_NOPROXY` `*`). New `WebhookDispatcher::pinnedUrl()`.
+- **Jobs:** `requeueStale()` dead-letters jobs that used all their attempts instead of looping them forever. `markCompleted()`/`markFailed()` only write while the job is `running` and take an optional claimed-attempt fence (the worker passes it); both now return bool. Handlers should be idempotent.
+- **JobRunner:** default state directory is per user (`rivetcore-jobs-<uid>`); the directory must be a real directory owned by the current user and not group/world writable, otherwise `start()` refuses. The log is created exclusively after removing any symlink at that path.
+- **AuditService:** every field is clamped to its column width; metadata that cannot be encoded is replaced by a marker instead of throwing; values under common secret keys (password, token, secret, authorization, api_key ...) are stored as `[redacted]`.
+- **RetentionService:** optional second constructor argument (compliance profile) raises every horizon to the preset floor inside `prune()`/`plan()`.
+- **CredentialReferenceRenderer:** the badge is only substituted in text; a token inside a tag or attribute is removed.
+- CI: `permissions: contents: read`. `SECURITY.md` no longer lists a non-existent `migrations/` directory and names the UrlPolicy, signature V2 and Redis TLS surfaces.
+- Known, not changed: the pending-identity table (migration 0003) uses a case-insensitive collation for OIDC issuer/subject; fixing it needs a schema migration and the matching edition column, so it is planned for a later release.
+
 ## 0.17.1
 CI only: the backward-compatibility checker needs PHP 8.4+ and was a dev dependency, so `composer install` failed on PHP 8.2 and 8.3 (and the lowest-dependencies job). It is now installed inside the compatibility job only. No library change.
 

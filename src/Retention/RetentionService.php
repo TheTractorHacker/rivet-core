@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Retention;
 
+use RivetCore\Compliance\RetentionPolicy;
 use RivetCore\Database\DatabaseInterface;
 
 /**
@@ -22,7 +23,11 @@ use RivetCore\Database\DatabaseInterface;
  */
 final class RetentionService
 {
-    public function __construct(private DatabaseInterface $database)
+    /**
+     * @param string|null $profile compliance preset (Compliance\RetentionPolicy); when set, every horizon is raised to that preset's
+     *                             floor for its kind inside prune()/plan(), so a caller cannot delete audit rows younger than the floor
+     */
+    public function __construct(private DatabaseInterface $database, private ?string $profile = null)
     {
     }
 
@@ -76,6 +81,12 @@ final class RetentionService
             'webhook_deliveries' => $deliveryDays ?? $days,
             'integration_jobs' => $jobDays ?? $days,
         ];
+        if ($this->profile !== null) {
+            $kinds = ['audit_events' => RetentionPolicy::KIND_AUDIT, 'webhook_deliveries' => RetentionPolicy::KIND_DELIVERIES, 'integration_jobs' => RetentionPolicy::KIND_JOBS];
+            foreach ($horizons as $table => $d) {
+                $horizons[$table] = RetentionPolicy::effectiveDaysFor($this->profile, $kinds[$table], $d);
+            }
+        }
         if (max($horizons) < 1) {
             return [];
         }

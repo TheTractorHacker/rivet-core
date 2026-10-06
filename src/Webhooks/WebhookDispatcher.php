@@ -22,7 +22,7 @@ use RivetCore\Database\DatabaseInterface;
  * retries; pass $signedAt to deliverTo() to pin it, and note that an explicit $emittedAt (with no $signedAt) pins the
  * timestamp to that instant.
  *
- * SSRF: with no UrlPolicy the dispatcher behaves as before (the edition vets URLs on save). Inject a UrlPolicy to vet
+ * SSRF (UrlPolicy is the single place; its allowedNetworks list can admit specific private LAN ranges, never loopback/link-local): with no UrlPolicy the dispatcher behaves as before (the edition vets URLs on save). Inject a UrlPolicy to vet
  * the URL on every attempt and PIN the connection to the vetted addresses (CURLOPT_RESOLVE, defeats DNS rebinding), or
  * set $requireUrlPolicy=true to make a policy mandatory (a default UrlPolicy is used when none is injected). A URL the
  * policy rejects is never contacted; the attempt is logged with error "endpoint URL not allowed".
@@ -188,13 +188,39 @@ class WebhookDispatcher
         if ($target !== null && $target['ips'] !== [] && !filter_var($target['host'], FILTER_VALIDATE_IP)) {
             $options[CURLOPT_RESOLVE] = [$target['host'] . ':' . $target['port'] . ':' . implode(',', $target['ips'])];
         }
+        if ($target !== null) {
+            // A proxy would resolve the name itself and bypass the pin; pinned requests always go direct.
+            $options[CURLOPT_PROXY] = '';
+            $options[CURLOPT_NOPROXY] = '*';
+        }
 
         return $options;
+    }
+
+    /**
+     * The URL curl must be given for a vetted target: the same host the pin (CURLOPT_RESOLVE) is keyed on, so a spelling
+     * such as "example.com." (trailing dot) cannot make curl resolve the name itself. Scheme, port, path and query are kept.
+     *
+     * @param array{host:string,port:int,ips:list<string>} $target
+     */
+    public static function pinnedUrl(string $url, array $target): string
+    {
+        $p = parse_url($url);
+        if (!is_array($p) || empty($p['scheme'])) {
+            return $url;
+        }
+        $host = str_contains($target['host'], ':') ? '[' . $target['host'] . ']' : $target['host'];
+
+        return strtolower($p['scheme']) . '://' . $host . (isset($p['port']) ? ':' . $p['port'] : '')
+            . ($p['path'] ?? '') . (isset($p['query']) ? '?' . $p['query'] : '');
     }
 
     /** @return array{status:?int,body:?string,error:?string} */
     private static function curlTransport(string $url, string $body, array $headers, int $timeout, ?array $target = null): array
     {
+        if ($target !== null) {
+            $url = self::pinnedUrl($url, $target);
+        }
         $ch = curl_init($url);
         if ($ch === false) {
             return ['status' => null, 'body' => null, 'error' => 'curl_init failed'];
