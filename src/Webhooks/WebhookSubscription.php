@@ -14,6 +14,13 @@ final readonly class WebhookSubscription
         public int $webhookId,
         public string $url,
         public string $secret,
+        /**
+         * Optional per-subscription delivery options (see WebhookDispatcher::deliverTo()): format, method, extraHeaders,
+         * template, template_encoding, format_options.
+         *
+         * @var array<string,mixed>
+         */
+        public array $options = [],
     ) {
     }
 }

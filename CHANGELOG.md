@@ -2,6 +2,15 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.21.0
+Webhook destinations, formats and events.
+- **Destinations:** `Webhooks\Destinations` / `Destination` / `DestinationField`: 24 presets with setup steps, URL hints and patterns, allowed auth modes, extra fields and HMAC verification snippets (node, python, php, bash, n8n Code node): n8n, Node-RED, Activepieces, Windmill, Huginn, Zapier, Make, Pipedream, IFTTT, Home Assistant, Apprise, ntfy, Gotify, Discord, Mattermost, Rocket.Chat, Slack, Microsoft Teams, Matrix (hookshot and client API), Telegram, generic JSON, generic form and custom template. `docs/webhook-platforms.md` is generated from them (`scripts/webhook-guides.php`, a test fails when it is stale); `docs/webhooks.md` explains signing, verification, replay protection, retries and the URL policy.
+- **Formats:** `PayloadFormatter` (json, form, slack, slack_attachments, teams, discord, ntfy, gotify, telegram, matrix, matrix_hookshot, apprise, template) with `EventSummary` turning any event into a title/summary/fields; the default `json` body is byte-identical to before.
+- **Custom templates:** `PayloadTemplate`, a safe placeholder engine (`{{path|default:"x"|json|upper|truncate:80}}`) with encoding-aware escaping, size limits and validation; no code execution.
+- **Authentication:** `Authentication` builds and validates outgoing bearer / basic / custom-header auth and redacts it for display.
+- **Dispatcher:** `WebhookDispatcher::deliverTo()` accepts per-subscription `format`, `method` (POST/PUT), extra headers and a template; signatures are computed over the exact bytes sent; header injection and forbidden headers are rejected; the `{txn}` URL placeholder gives Matrix retries a stable id.
+- **Event catalog:** `Webhooks\EventCatalog` / `EventDefinition`: 113 events in 14 groups with labels, descriptions, severities, payload fields and search tags; `search()` ranks id/label prefixes first and `matchPattern()` supports `ticket.*`, for a searchable event picker.
+
 ## 0.20.0
 - **Date ranges.** `Ui\DateRange`: one timezone-aware resolver for the editions' date filters. Keeps the legacy preset ids (`today`, `yesterday`, `thisweek`, `lastweek`, `thismonth`, `lastmonth`, `thisyear`, `lastyear`, `alltime`, `custom`) and adds `last7`, `last14`, `last30`, `last90`, `last12months`, `thisquarter`, `lastquarter`, `next7`, `next30`. Calendar-date math (DST-safe), configurable week start, safe fallbacks for invalid input, `previous()` for compare-to-previous-period, `sqlBounds()` (half-open bounds so queries can use an index instead of `DATE(column) BETWEEN`), and `toQuery()` (presets stay rolling in saved views; only custom ranges carry dates).
 
