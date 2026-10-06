@@ -163,8 +163,13 @@ final class RedisAdmin
         if ($megabytes < 64 || $megabytes > 65536) return ['ok' => false, 'persisted' => false, 'message' => 'Choose a limit between 64 MB and 65536 MB.'];
         if (!in_array($policy, self::POLICIES, true)) return ['ok' => false, 'persisted' => false, 'message' => 'Unknown eviction policy.'];
         try {
-            $c->executeRaw(['CONFIG', 'SET', 'maxmemory', (string) ($megabytes * 1048576)]);
-            $c->executeRaw(['CONFIG', 'SET', 'maxmemory-policy', $policy]);
+            // executeRaw() returns a server error (NOPERM, "unknown command") as text instead of throwing; $error says so.
+            foreach ([['maxmemory', (string) ($megabytes * 1048576)], ['maxmemory-policy', $policy]] as [$name, $value]) {
+                $c->executeRaw(['CONFIG', 'SET', $name, $value], $error);
+                if ($error) {
+                    throw new \RuntimeException('CONFIG SET refused');
+                }
+            }
         } catch (\Throwable) {
             return ['ok' => false, 'persisted' => false, 'message' => 'Redis refused the change (CONFIG may be disabled).'];
         }

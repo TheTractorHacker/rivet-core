@@ -1,0 +1,1789 @@
+{
+    "format": 1,
+    "types": {
+        "RivetCore\\Audit\\AuditPage": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(array $rows, int $total, int $page, int $pages, int $perPage)"
+            },
+            "properties": {
+                "page": "readonly int",
+                "pages": "readonly int",
+                "perPage": "readonly int",
+                "rows": "readonly array",
+                "total": "readonly int"
+            }
+        },
+        "RivetCore\\Audit\\AuditReader": {
+            "kind": "final class",
+            "constants": {
+                "DEFAULT_EXPORT_CAP": 50000,
+                "DEFAULT_PER_PAGE": 50,
+                "MAX_PER_PAGE": 200
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
+                "actors": "actors(): array",
+                "decodeMetadata": "static decodeMetadata(mixed $json): ?array",
+                "groups": "groups(): array",
+                "iterate": "iterate(array $filters = [], int $maxRows = 50000, int $chunkSize = 1000): Generator",
+                "page": "page(array $filters = [], int $page = 1, int $perPage = 50): RivetCore\\Audit\\AuditPage"
+            }
+        },
+        "RivetCore\\Audit\\AuditService": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, RivetCore\\Contracts\\RequestContextInterface $request, ?Closure $afterLog = NULL)",
+                "log": "log(string $eventType, ?int $actorUserId, ?string $entityType, mixed $entityId, string $action, ?string $summary = NULL, array $metadata = []): void"
+            }
+        },
+        "RivetCore\\Automation\\AutomationExecutor": {
+            "kind": "final class",
+            "methods": {
+                "execute": "execute(array $rule, array $context, array $handlers): array",
+                "interpolate": "static interpolate(array $config, array $context): array"
+            }
+        },
+        "RivetCore\\Automation\\AutomationRuleEvaluator": {
+            "kind": "class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
+                "conditionsMatch": "conditionsMatch(?string $conditionJson, array $eventData): bool",
+                "findMatchingRules": "findMatchingRules(string $eventType, array $eventData): array"
+            }
+        },
+        "RivetCore\\Automation\\AutomationRuleStore": {
+            "kind": "final class",
+            "constants": {
+                "ACTIONS": {
+                    "create_ticket": "Create a ticket",
+                    "send_webhook": "Send a webhook",
+                    "notify_user": "Notify a user"
+                }
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
+                "all": "all(): array",
+                "delete": "delete(int $id): void",
+                "find": "find(int $id): ?array",
+                "save": "save(?int $id, string $name, string $triggerEvent, array $conditions, string $actionType, array $config, bool $enabled): int",
+                "setEnabled": "setEnabled(int $id, bool $enabled): void"
+            }
+        },
+        "RivetCore\\Automation\\EventContext": {
+            "kind": "final class",
+            "methods": {
+                "flatten": "static flatten(array $data, string $prefix = '', int $depth = 0): array"
+            }
+        },
+        "RivetCore\\Compliance\\Assessment": {
+            "kind": "final class readonly",
+            "methods": {
+                "__construct": "__construct(DateTimeImmutable $generatedAt, array $automatic, array $manual, array $summaries)",
+                "fromArray": "static fromArray(array $data): RivetCore\\Compliance\\Assessment",
+                "toArray": "toArray(): array"
+            },
+            "properties": {
+                "automatic": "readonly array",
+                "generatedAt": "readonly DateTimeImmutable",
+                "manual": "readonly array",
+                "summaries": "readonly array"
+            }
+        },
+        "RivetCore\\Compliance\\AttestationProviderInterface": {
+            "kind": "interface",
+            "methods": {
+                "latestPerItem": "latestPerItem(): array"
+            }
+        },
+        "RivetCore\\Compliance\\AttestationStore": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Compliance\\AttestationProviderInterface"
+            ],
+            "constants": {
+                "NOTE_MAX": 2000
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, int $subjectId = 0)",
+                "history": "history(string $itemId, int $limit = 20): array",
+                "latestPerItem": "latestPerItem(): array",
+                "record": "record(string $itemId, ?int $reviewedByUserId, string $reviewerName, string $reviewedOn, ?string $nextDueOn, ?string $note, ?DateTimeImmutable $today = NULL): int"
+            }
+        },
+        "RivetCore\\Compliance\\CheckInterface": {
+            "kind": "interface",
+            "methods": {
+                "category": "category(): string",
+                "controls": "controls(): array",
+                "id": "id(): string",
+                "run": "run(): RivetCore\\Compliance\\CheckResult",
+                "title": "title(): string",
+                "why": "why(): string"
+            }
+        },
+        "RivetCore\\Compliance\\CheckResult": {
+            "kind": "final class readonly",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Compliance\\Status $status, string $summary, ?string $detail = NULL, ?string $fixPath = NULL, array $metrics = [])",
+                "error": "static error(string $summary): RivetCore\\Compliance\\CheckResult",
+                "fail": "static fail(string $summary, ?string $detail = NULL, ?string $fixPath = NULL, array $metrics = []): RivetCore\\Compliance\\CheckResult",
+                "notApplicable": "static notApplicable(string $summary, ?string $detail = NULL): RivetCore\\Compliance\\CheckResult",
+                "pass": "static pass(string $summary, ?string $detail = NULL, array $metrics = []): RivetCore\\Compliance\\CheckResult",
+                "warn": "static warn(string $summary, ?string $detail = NULL, ?string $fixPath = NULL, array $metrics = []): RivetCore\\Compliance\\CheckResult"
+            },
+            "properties": {
+                "detail": "readonly ?string",
+                "fixPath": "readonly ?string",
+                "metrics": "readonly array",
+                "status": "readonly RivetCore\\Compliance\\Status",
+                "summary": "readonly string"
+            }
+        },
+        "RivetCore\\Compliance\\Check\\AuditTrailRecordingCheck": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Compliance\\CheckInterface"
+            ],
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, bool $recordingEnabled, string $settingsPath)",
+                "category": "category(): string",
+                "controls": "controls(): array",
+                "id": "id(): string",
+                "run": "run(): RivetCore\\Compliance\\CheckResult",
+                "title": "title(): string",
+                "why": "why(): string"
+            }
+        },
+        "RivetCore\\Compliance\\Check\\RetentionMeetsPresetCheck": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Compliance\\CheckInterface"
+            ],
+            "methods": {
+                "__construct": "__construct(string $profile, int $logDays, int $auditDays, string $settingsPath)",
+                "category": "category(): string",
+                "controls": "controls(): array",
+                "id": "id(): string",
+                "run": "run(): RivetCore\\Compliance\\CheckResult",
+                "title": "title(): string",
+                "why": "why(): string"
+            }
+        },
+        "RivetCore\\Compliance\\ClientChecklist": {
+            "kind": "final class",
+            "methods": {
+                "forFrameworks": "static forFrameworks(array $frameworks): array",
+                "ids": "static ids(): array",
+                "items": "static items(): array"
+            }
+        },
+        "RivetCore\\Compliance\\ComplianceAssessor": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(array $checks, array $manualItems, RivetCore\\Compliance\\AttestationProviderInterface $attestations, RivetCore\\Contracts\\ClockInterface $clock, array $responsible = [])",
+                "assess": "assess(): RivetCore\\Compliance\\Assessment",
+                "summarize": "static summarize(array $automatic, array $manual): array"
+            }
+        },
+        "RivetCore\\Compliance\\Framework": {
+            "kind": "final class",
+            "constants": {
+                "HIPAA": "hipaa",
+                "ISO27001": "iso27001",
+                "LABELS": {
+                    "iso27001": "ISO/IEC 27001:2022",
+                    "soc2": "SOC 2 (2017 Trust Services Criteria)",
+                    "pci": "PCI DSS v4.0",
+                    "hipaa": "HIPAA Security Rule",
+                    "nist171": "NIST SP 800-171 Rev 2 / CMMC Level 2"
+                },
+                "NIST171": "nist171",
+                "PCI": "pci",
+                "SOC2": "soc2"
+            },
+            "methods": {
+                "all": "static all(): array",
+                "isValid": "static isValid(string $framework): bool"
+            }
+        },
+        "RivetCore\\Compliance\\ManualItem": {
+            "kind": "final class readonly",
+            "methods": {
+                "__construct": "__construct(string $id, string $title, string $category, string $why, array $controls, int $intervalDays = 365)"
+            },
+            "properties": {
+                "category": "readonly string",
+                "controls": "readonly array",
+                "id": "readonly string",
+                "intervalDays": "readonly int",
+                "title": "readonly string",
+                "why": "readonly string"
+            }
+        },
+        "RivetCore\\Compliance\\Nist171Map": {
+            "kind": "final class",
+            "constants": {
+                "MAP": {
+                    "audit_trail_recording": [
+                        "3.3.1",
+                        "3.3.2"
+                    ],
+                    "log_retention": [
+                        "3.3.1"
+                    ],
+                    "mfa_coverage": [
+                        "3.5.3"
+                    ],
+                    "admin_mfa": [
+                        "3.5.3",
+                        "3.1.5"
+                    ],
+                    "admin_count": [
+                        "3.1.5"
+                    ],
+                    "session_lifetime": [
+                        "3.1.10",
+                        "3.1.11"
+                    ],
+                    "https_only": [
+                        "3.13.8",
+                        "3.13.11"
+                    ],
+                    "vault_key": [
+                        "3.13.10",
+                        "3.13.16"
+                    ],
+                    "backups": [
+                        "3.8.9"
+                    ],
+                    "credential_rotation": [
+                        "3.5.7"
+                    ],
+                    "api_keys": [
+                        "3.1.1",
+                        "3.5.2"
+                    ],
+                    "dormant_agents": [
+                        "3.5.6",
+                        "3.1.1"
+                    ],
+                    "schema_current": [
+                        "3.14.1"
+                    ],
+                    "training_overdue": [
+                        "3.2.1",
+                        "3.2.2"
+                    ],
+                    "security_policy_review": [
+                        "3.12.4"
+                    ],
+                    "key_management_review": [
+                        "3.13.10"
+                    ],
+                    "risk_assessment": [
+                        "3.11.1"
+                    ],
+                    "access_review": [
+                        "3.1.1",
+                        "3.1.5"
+                    ],
+                    "offboarding_check": [
+                        "3.9.2"
+                    ],
+                    "backup_restore_test": [
+                        "3.8.9"
+                    ],
+                    "dr_bcp_test": [
+                        "3.6.1"
+                    ],
+                    "incident_response_test": [
+                        "3.6.1",
+                        "3.6.3"
+                    ],
+                    "vuln_scan_pentest": [
+                        "3.11.2",
+                        "3.11.3"
+                    ],
+                    "security_awareness": [
+                        "3.2.1",
+                        "3.2.2",
+                        "3.2.3"
+                    ],
+                    "physical_security": [
+                        "3.10.1",
+                        "3.10.2"
+                    ],
+                    "data_classification": [
+                        "3.1.3",
+                        "3.8.4"
+                    ],
+                    "policy_review": [
+                        "3.12.4"
+                    ],
+                    "asset_inventory": [
+                        "3.4.1"
+                    ],
+                    "mfa_enforced": [
+                        "3.5.3"
+                    ],
+                    "endpoint_protection": [
+                        "3.14.1",
+                        "3.14.2",
+                        "3.14.4"
+                    ],
+                    "logging_retention": [
+                        "3.3.1",
+                        "3.3.2"
+                    ],
+                    "encryption_in_place": [
+                        "3.13.8",
+                        "3.13.11",
+                        "3.13.16"
+                    ]
+                }
+            },
+            "methods": {
+                "apply": "static apply(string $itemId, array $controls): array"
+            }
+        },
+        "RivetCore\\Compliance\\ReportRenderer": {
+            "kind": "final class",
+            "constants": {
+                "DISCLAIMER": "This report is a point-in-time self-assessment generated from this system's own settings and records. It is not a certification, attestation or audit opinion, and control references are indicative; confirm them against the current text of each standard. Items marked manual rely on a person's recorded review."
+            },
+            "methods": {
+                "csv": "csv(RivetCore\\Compliance\\Assessment $a, ?string $framework = NULL): string",
+                "csvCell": "static csvCell(string $v): string",
+                "html": "html(RivetCore\\Compliance\\Assessment $a, string $orgName, ?string $framework = NULL, ?string $appVersion = NULL): string",
+                "rows": "rows(RivetCore\\Compliance\\Assessment $a, ?string $framework = NULL): array"
+            }
+        },
+        "RivetCore\\Compliance\\ResponsibilityStore": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
+                "all": "all(): array",
+                "assign": "assign(string $key, ?int $partyRef, string $partyName, ?int $byUserId): void",
+                "clear": "clear(string $key): void",
+                "itemKey": "static itemKey(string $itemId): string",
+                "names": "names(): array",
+                "resolve": "static resolve(array $names, string $itemId, string $category): ?string",
+                "sectionKey": "static sectionKey(string $category): string"
+            }
+        },
+        "RivetCore\\Compliance\\RetentionPolicy": {
+            "kind": "final class",
+            "constants": {
+                "KIND_AUDIT": "audit",
+                "KIND_DELIVERIES": "deliveries",
+                "KIND_JOBS": "jobs",
+                "NONE": "none",
+                "OPERATIONAL_MIN_DAYS": 7,
+                "OPERATIONAL_REGULATED_DAYS": 30,
+                "PROFILES": {
+                    "none": {
+                        "label": "No preset",
+                        "min_days": 0,
+                        "note": "No minimum. You choose how long records are kept."
+                    },
+                    "iso27001": {
+                        "label": "ISO/IEC 27001",
+                        "min_days": 365,
+                        "note": "Keeps records at least 12 months, the usual audit-evidence horizon."
+                    },
+                    "soc2": {
+                        "label": "SOC 2",
+                        "min_days": 365,
+                        "note": "Keeps records at least 12 months, which covers a typical audit window."
+                    },
+                    "pci": {
+                        "label": "PCI DSS",
+                        "min_days": 365,
+                        "note": "Keeps records at least 12 months (PCI DSS requirement 10.5.1)."
+                    },
+                    "hipaa": {
+                        "label": "HIPAA",
+                        "min_days": 2190,
+                        "note": "Keeps records at least 6 years, the HIPAA documentation period."
+                    },
+                    "nist171": {
+                        "label": "NIST 800-171 / CMMC",
+                        "min_days": 365,
+                        "note": "Keeps records at least 12 months. NIST 800-171 (3.3.1) requires retaining audit logs but sets no number; 12 months is the common choice to define in your policy."
+                    }
+                }
+            },
+            "methods": {
+                "describeDays": "static describeDays(int $days): string",
+                "effectiveDays": "static effectiveDays(string $profile, int $configuredDays): int",
+                "effectiveDaysFor": "static effectiveDaysFor(string $profile, string $kind, int $configuredDays): int",
+                "floorDays": "static floorDays(string $profile): int",
+                "floorDaysFor": "static floorDaysFor(string $profile, string $kind): int",
+                "isBelowFloor": "static isBelowFloor(string $profile, int $configuredDays): bool",
+                "isValidProfile": "static isValidProfile(string $profile): bool"
+            }
+        },
+        "RivetCore\\Compliance\\SharedReport": {
+            "kind": "final class",
+            "constants": {
+                "NOTE_MAX": 1000
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
+                "current": "current(): ?array",
+                "isPublished": "isPublished(): bool",
+                "publish": "publish(int $snapshotId, ?string $note, ?int $publishedBy): void",
+                "unpublish": "unpublish(): void",
+                "view": "static view(RivetCore\\Compliance\\Assessment $a): array"
+            }
+        },
+        "RivetCore\\Compliance\\SnapshotStore": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, int $subjectId = 0)",
+                "get": "get(int $id): ?array",
+                "latestTakenAt": "latestTakenAt(): ?string",
+                "list": "list(int $limit = 24): array",
+                "save": "save(RivetCore\\Compliance\\Assessment $assessment, ?int $takenByUserId, string $trigger = 'manual', ?string $appVersion = NULL): int"
+            }
+        },
+        "RivetCore\\Compliance\\Status": {
+            "kind": "enum",
+            "implements": [
+                "BackedEnum",
+                "UnitEnum"
+            ],
+            "constants": {
+                "Error": "RivetCore\\Compliance\\Status:error",
+                "Fail": "RivetCore\\Compliance\\Status:fail",
+                "NotApplicable": "RivetCore\\Compliance\\Status:na",
+                "Pass": "RivetCore\\Compliance\\Status:pass",
+                "Warn": "RivetCore\\Compliance\\Status:warn"
+            },
+            "methods": {
+                "cases": "static cases(): array",
+                "from": "static from(string|int $value): static",
+                "label": "label(): string",
+                "tryFrom": "static tryFrom(string|int $value): ?static",
+                "weight": "weight(): ?float"
+            },
+            "properties": {
+                "name": "readonly string",
+                "value": "readonly string"
+            }
+        },
+        "RivetCore\\Compliance\\SubjectCompliance": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, RivetCore\\Contracts\\ClockInterface $clock)",
+                "assess": "assess(int $subjectId): RivetCore\\Compliance\\Assessment",
+                "attestations": "attestations(int $subjectId): RivetCore\\Compliance\\AttestationStore",
+                "frameworks": "frameworks(int $subjectId): array",
+                "overview": "overview(): array",
+                "record": "record(int $subjectId, string $itemId, ?int $byUserId, string $reviewer, string $reviewedOn, ?string $nextDue, ?string $note): int",
+                "setFrameworks": "setFrameworks(int $subjectId, array $frameworks): array",
+                "share": "share(int $subjectId, int $snapshotId, ?string $note, ?int $by): void",
+                "shared": "shared(int $subjectId): ?array",
+                "snapshot": "snapshot(int $subjectId, ?int $byUserId, string $trigger = 'manual'): int",
+                "snapshots": "snapshots(int $subjectId): RivetCore\\Compliance\\SnapshotStore",
+                "unshare": "unshare(int $subjectId): void"
+            }
+        },
+        "RivetCore\\Contracts\\AccessDenied": {
+            "kind": "final class",
+            "extends": "RuntimeException",
+            "implements": [
+                "Stringable",
+                "Throwable"
+            ],
+            "methods": {
+                "__construct": "__construct(string $ability, ?string $subjectType = NULL, string|int|null $subjectId = NULL)",
+                "unless": "static unless(RivetCore\\Contracts\\AccessPolicyInterface $policy, ?int $userId, string $ability, ?string $subjectType = NULL, string|int|null $subjectId = NULL, array $context = []): void"
+            },
+            "properties": {
+                "ability": "readonly string",
+                "subjectId": "readonly string|int|null",
+                "subjectType": "readonly ?string"
+            }
+        },
+        "RivetCore\\Contracts\\AccessPolicyInterface": {
+            "kind": "interface",
+            "methods": {
+                "can": "can(?int $userId, string $ability, ?string $subjectType = NULL, string|int|null $subjectId = NULL, array $context = []): bool"
+            }
+        },
+        "RivetCore\\Contracts\\ClockInterface": {
+            "kind": "interface",
+            "methods": {
+                "now": "now(): DateTimeImmutable"
+            }
+        },
+        "RivetCore\\Contracts\\RequestContextInterface": {
+            "kind": "interface",
+            "methods": {
+                "ipAddress": "ipAddress(): ?string",
+                "requestId": "requestId(): ?string",
+                "userAgent": "userAgent(): ?string"
+            }
+        },
+        "RivetCore\\Contracts\\SettingsInterface": {
+            "kind": "interface",
+            "methods": {
+                "get": "get(string $key, mixed $default = NULL): mixed"
+            }
+        },
+        "RivetCore\\Cron\\JobCatalog": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(array $entries, array $needsArguments = [])",
+                "all": "all(): array",
+                "describe": "describe(string $scriptFile): array",
+                "dir": "dir(string $scriptFile): string",
+                "needsArguments": "needsArguments(string $scriptFile): bool"
+            }
+        },
+        "RivetCore\\Cron\\JobRunner": {
+            "kind": "class",
+            "methods": {
+                "__construct": "__construct(string $appRoot, ?string $stateDir = NULL)",
+                "argumentsFromCommand": "static argumentsFromCommand(string $command, string $script): ?array",
+                "logPathFromCommand": "static logPathFromCommand(string $command): ?string",
+                "phpBinaryFromCommand": "static phpBinaryFromCommand(string $command): string",
+                "start": "start(string $key, string $script, array $args = [], string $php = '/usr/bin/php'): array",
+                "state": "state(string $key, string $scriptPath): array",
+                "tail": "static tail(?string $path, int $lines = 8, int $bytes = 8192): array"
+            }
+        },
+        "RivetCore\\Database\\DatabaseException": {
+            "kind": "class",
+            "extends": "RuntimeException",
+            "implements": [
+                "Stringable",
+                "Throwable"
+            ],
+            "methods": []
+        },
+        "RivetCore\\Database\\DatabaseInterface": {
+            "kind": "interface",
+            "methods": {
+                "execute": "execute(string $sql, array $params = []): RivetCore\\Database\\ExecutionResult",
+                "fetchAll": "fetchAll(string $sql, array $params = []): array",
+                "fetchOne": "fetchOne(string $sql, array $params = []): ?array",
+                "transaction": "transaction(callable $callback): mixed"
+            }
+        },
+        "RivetCore\\Database\\ExecutionResult": {
+            "kind": "final class readonly",
+            "methods": {
+                "__construct": "__construct(int $affectedRows, ?int $insertId = NULL)"
+            },
+            "properties": {
+                "affectedRows": "readonly int",
+                "insertId": "readonly ?int"
+            }
+        },
+        "RivetCore\\Health\\ReadinessChecker": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, $schemaIsCurrent, ?RivetCore\\Redis\\RedisClientProviderInterface $redis = NULL)",
+                "check": "check(): array"
+            }
+        },
+        "RivetCore\\ITSM\\ChangeService": {
+            "kind": "class",
+            "constants": {
+                "RISKS": [
+                    "low",
+                    "medium",
+                    "high"
+                ],
+                "STATUSES": [
+                    "draft",
+                    "awaiting_approval",
+                    "approved",
+                    "scheduled",
+                    "in_progress",
+                    "successful",
+                    "failed",
+                    "rolled_back",
+                    "cancelled"
+                ],
+                "TRANSITIONS": {
+                    "draft": [
+                        "awaiting_approval",
+                        "cancelled"
+                    ],
+                    "awaiting_approval": [
+                        "draft",
+                        "approved",
+                        "cancelled"
+                    ],
+                    "approved": [
+                        "scheduled",
+                        "in_progress",
+                        "cancelled"
+                    ],
+                    "scheduled": [
+                        "approved",
+                        "in_progress",
+                        "cancelled"
+                    ],
+                    "in_progress": [
+                        "successful",
+                        "failed",
+                        "cancelled"
+                    ],
+                    "failed": [
+                        "rolled_back",
+                        "cancelled"
+                    ],
+                    "successful": [
+                        "rolled_back"
+                    ],
+                    "rolled_back": [],
+                    "cancelled": []
+                }
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
+                "create": "create(string $title, ?string $reason, ?string $impact, string $risk, ?string $implementationPlan, ?string $rollbackPlan, ?string $scheduledAt, ?int $createdBy): int",
+                "reschedule": "reschedule(int $changeId, string $scheduledAt): void",
+                "setStatus": "setStatus(int $changeId, string $status, ?string $scheduledAt = NULL): void"
+            }
+        },
+        "RivetCore\\ITSM\\ProblemService": {
+            "kind": "class",
+            "constants": {
+                "STATUSES": [
+                    "open",
+                    "investigating",
+                    "resolved",
+                    "closed"
+                ],
+                "TRANSITIONS": {
+                    "open": [
+                        "investigating",
+                        "resolved",
+                        "closed"
+                    ],
+                    "investigating": [
+                        "open",
+                        "resolved",
+                        "closed"
+                    ],
+                    "resolved": [
+                        "open",
+                        "investigating",
+                        "closed"
+                    ],
+                    "closed": [
+                        "open",
+                        "investigating"
+                    ]
+                }
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, RivetCore\\ITSM\\TicketProblemLinkInterface $tickets)",
+                "create": "create(string $title, ?string $description, ?int $createdBy): int",
+                "linkChange": "linkChange(int $problemId, ?int $changeId): void",
+                "linkTicket": "linkTicket(int $problemId, int $ticketId): void",
+                "setStatus": "setStatus(int $problemId, string $status): void",
+                "unlinkTicket": "unlinkTicket(int $problemId, int $ticketId): void"
+            }
+        },
+        "RivetCore\\ITSM\\TicketProblemLinkInterface": {
+            "kind": "interface",
+            "methods": {
+                "link": "link(int $ticketId, int $problemId): void",
+                "unlink": "unlink(int $ticketId, int $problemId): void"
+            }
+        },
+        "RivetCore\\Jobs\\JobContext": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(int $jobId, string $jobType, ?float $jobDeadline, ?float $runDeadline, $heartbeat = NULL)",
+                "checkpoint": "checkpoint(): void",
+                "expired": "expired(): bool",
+                "heartbeat": "heartbeat(): void",
+                "jobId": "jobId(): int",
+                "jobType": "jobType(): string",
+                "remainingSeconds": "remainingSeconds(): ?float"
+            }
+        },
+        "RivetCore\\Jobs\\JobQueue": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
+                "claim": "claim(int $limit = 10): array",
+                "enqueue": "enqueue(string $jobType, array $payload = [], ?int $integrationId = NULL, ?string $resourceType = NULL, int $priority = 0, int $maxAttempts = 5): int",
+                "heartbeat": "heartbeat(array|int $jobIds): int",
+                "markCompleted": "markCompleted(int $jobId, array $result = [], ?int $attempt = NULL): bool",
+                "markFailed": "markFailed(int $jobId, string $error, int $attempts, int $maxAttempts, ?int $claimedAttempt = NULL): bool",
+                "purgeCompleted": "purgeCompleted(int $days): int",
+                "recent": "recent(int $limit = 50, ?string $status = NULL): array",
+                "release": "release(int $jobId): bool",
+                "requeueStale": "requeueStale(int $minutes = 15): int",
+                "retry": "retry(int $jobId): bool",
+                "stats": "stats(): array",
+                "supportsHeartbeat": "supportsHeartbeat(): bool"
+            }
+        },
+        "RivetCore\\Jobs\\JobTimeout": {
+            "kind": "final class",
+            "extends": "RuntimeException",
+            "implements": [
+                "Stringable",
+                "Throwable"
+            ],
+            "methods": []
+        },
+        "RivetCore\\Jobs\\JobWorker": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Jobs\\JobQueue $queue)",
+                "has": "has(string $jobType): bool",
+                "register": "register(string $jobType, callable $handler, ?int $timeoutSeconds = NULL): RivetCore\\Jobs\\JobWorker",
+                "run": "run(int $limit = 20, int $seconds = 50): array",
+                "setDefaultTimeout": "setDefaultTimeout(?int $seconds): RivetCore\\Jobs\\JobWorker",
+                "timeoutFor": "timeoutFor(string $jobType): ?int",
+                "types": "types(): array"
+            }
+        },
+        "RivetCore\\Jobs\\PermanentJobFailure": {
+            "kind": "final class",
+            "extends": "RuntimeException",
+            "implements": [
+                "Stringable",
+                "Throwable"
+            ],
+            "methods": []
+        },
+        "RivetCore\\KB\\DocxConversionException": {
+            "kind": "class",
+            "extends": "RuntimeException",
+            "implements": [
+                "Stringable",
+                "Throwable"
+            ],
+            "methods": []
+        },
+        "RivetCore\\KB\\DocxConverter": {
+            "kind": "class",
+            "constants": {
+                "ALLOWED_TAGS_NOTE": "p h1 h2 h3 h4 h5 h6 strong em u s br ul ol li table tr th td a img"
+            },
+            "methods": {
+                "convert": "static convert(string $path): array",
+                "run": "run(string $path): array"
+            }
+        },
+        "RivetCore\\KB\\PdfConversionException": {
+            "kind": "class",
+            "extends": "RuntimeException",
+            "implements": [
+                "Stringable",
+                "Throwable"
+            ],
+            "methods": []
+        },
+        "RivetCore\\KB\\PdfConverter": {
+            "kind": "final class",
+            "methods": {
+                "convert": "static convert(string $path, ?Psr\\Log\\LoggerInterface $logger = NULL): array"
+            }
+        },
+        "RivetCore\\Knowledge\\CredentialReferenceRenderer": {
+            "kind": "class",
+            "methods": {
+                "__construct": "__construct(Closure $badge)",
+                "containsReference": "containsReference(string $html): bool",
+                "render": "render(string $html): string"
+            }
+        },
+        "RivetCore\\Mcp\\AgentDirectoryInterface": {
+            "kind": "interface",
+            "methods": {
+                "findActiveAgent": "findActiveAgent(int $userId): ?array",
+                "identityTaken": "identityTaken(string $issuer, string $subject): bool",
+                "link": "link(int $userId, string $issuer, string $subject): void",
+                "linkableAgents": "linkableAgents(): array",
+                "linkedAgents": "linkedAgents(): array",
+                "linkedCount": "linkedCount(): int",
+                "unlink": "unlink(int $userId): void"
+            }
+        },
+        "RivetCore\\Mcp\\IdentityLinker": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, RivetCore\\Mcp\\UnlinkedIdentityStore $store, RivetCore\\Mcp\\AgentDirectoryInterface $agents, Closure|Psr\\Log\\LoggerInterface|null $logError = NULL)",
+                "link": "link(int $pendingId, int $userId): array"
+            }
+        },
+        "RivetCore\\Mcp\\McpConfig": {
+            "kind": "final class",
+            "methods": {
+                "audienceValid": "static audienceValid(string $audience): bool",
+                "issuerValid": "static issuerValid(string $issuer): bool",
+                "resolve": "static resolve(RivetCore\\Contracts\\SettingsInterface $settings, callable $env, string $envPrefix): array"
+            }
+        },
+        "RivetCore\\Mcp\\McpDiagnostics": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Mcp\\AgentDirectoryInterface $agents, GuzzleHttp\\ClientInterface $http, string $envVarName = 'MCP_ENABLED', string $appName = 'this app')",
+                "run": "run(array $cfg, string $baseHost): array"
+            }
+        },
+        "RivetCore\\Mcp\\NotFoundException": {
+            "kind": "class",
+            "extends": "RuntimeException",
+            "implements": [
+                "Stringable",
+                "Throwable"
+            ],
+            "methods": []
+        },
+        "RivetCore\\Mcp\\RedisMetadataCache": {
+            "kind": "class",
+            "implements": [
+                "Psr\\SimpleCache\\CacheInterface"
+            ],
+            "methods": {
+                "__construct": "__construct(RivetCore\\Redis\\RedisClientProviderInterface $redis, string $keyPrefix = 'mcp_metadata:')",
+                "clear": "clear(): bool",
+                "delete": "delete(string $key): bool",
+                "deleteMultiple": "deleteMultiple(iterable $keys): bool",
+                "get": "get(string $key, mixed $default = NULL): mixed",
+                "getMultiple": "getMultiple(iterable $keys, mixed $default = NULL): iterable",
+                "has": "has(string $key): bool",
+                "set": "set(string $key, mixed $value, DateInterval|int|null $ttl = NULL): bool",
+                "setMultiple": "setMultiple(iterable $values, DateInterval|int|null $ttl = NULL): bool"
+            }
+        },
+        "RivetCore\\Mcp\\TokenClaimsGuard": {
+            "kind": "final class",
+            "methods": {
+                "acceptable": "static acceptable(mixed $subject, mixed $scopes, mixed $claims, string $audience, string $requiredScope = 'mcp:read', ?int $now = NULL): bool",
+                "hasDedicatedAudience": "static hasDedicatedAudience(array $claims, string $audience): bool"
+            }
+        },
+        "RivetCore\\Mcp\\ToolPipeline": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Redis\\RateLimiter $rateLimiter, RivetCore\\Audit\\AuditService $audit, RivetCore\\Contracts\\RequestContextInterface $request, int $rateLimit = 60, int $rateWindow = 60, string $source = 'mcp', Closure|Psr\\Log\\LoggerInterface|null $logError = NULL)",
+                "envelope": "static envelope(string $requestId, mixed $data, string $code, string $message): array",
+                "run": "run(?int $userId, string $tool, array $args, callable $allow, callable $body, string $roleName = 'role'): array"
+            }
+        },
+        "RivetCore\\Mcp\\UnlinkedIdentityStore": {
+            "kind": "final class",
+            "constants": {
+                "KEEP_DAYS": 30,
+                "MAX_PENDING": 200
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, Closure|Psr\\Log\\LoggerInterface|null $logError = NULL)",
+                "dismiss": "dismiss(int $pendingId): void",
+                "find": "find(int $pendingId, bool $lock = false): ?array",
+                "pending": "pending(): array",
+                "record": "record(string $issuer, string $subject, array $claims): void"
+            }
+        },
+        "RivetCore\\Migration\\CoreMigrations": {
+            "kind": "final class",
+            "methods": {
+                "all": "static all(): array"
+            }
+        },
+        "RivetCore\\Migration\\MigrationInterface": {
+            "kind": "interface",
+            "methods": {
+                "id": "id(): string",
+                "up": "up(RivetCore\\Database\\DatabaseInterface $database): void"
+            }
+        },
+        "RivetCore\\Migration\\MigrationRunner": {
+            "kind": "final class",
+            "constants": {
+                "LOCK_NAME": "rivet_core_migrations",
+                "TABLE": "rivet_core_migrations"
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, array $migrations, RivetCore\\Contracts\\ClockInterface $clock, int $lockWaitSeconds = 60)",
+                "pending": "pending(): array",
+                "run": "run(): array",
+                "status": "status(): array"
+            }
+        },
+        "RivetCore\\Redis\\CronGuard": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Redis\\LockManager $locks)",
+                "acquire": "acquire(string $job, int $ttlSeconds = 900): ?RivetCore\\Redis\\Lock"
+            }
+        },
+        "RivetCore\\Redis\\Lock": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Redis\\RedisClientProviderInterface $redis, string $key, string $token, bool $held, bool $degraded)",
+                "degraded": "degraded(): bool",
+                "extend": "extend(int $ttlSeconds): bool",
+                "held": "held(): bool",
+                "release": "release(): void"
+            }
+        },
+        "RivetCore\\Redis\\LockManager": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Redis\\RedisClientProviderInterface $redis, string $keyPrefix)",
+                "acquire": "acquire(string $name, int $ttlSeconds): RivetCore\\Redis\\Lock",
+                "run": "run(string $name, int $ttlSeconds, callable $fn): array"
+            }
+        },
+        "RivetCore\\Redis\\RateLimiter": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Redis\\RedisClientProviderInterface $redis, string $keyPrefix)",
+                "hit": "hit(string $bucket, int $limit, int $windowSeconds): array"
+            }
+        },
+        "RivetCore\\Redis\\RedisAdmin": {
+            "kind": "final class",
+            "constants": {
+                "POLICIES": [
+                    "allkeys-lru",
+                    "volatile-lru",
+                    "allkeys-lfu",
+                    "volatile-lfu",
+                    "noeviction"
+                ]
+            },
+            "methods": {
+                "__construct": "__construct(array $clearable)",
+                "clear": "clear(Predis\\Client $c, string $group): int",
+                "client": "client(RivetCore\\Redis\\RedisConnectionConfig|array $p, float $timeout = 1.0): Predis\\Client",
+                "groupCounts": "groupCounts(Predis\\Client $c, int $cap = 5000): array",
+                "setMemory": "setMemory(Predis\\Client $c, int $megabytes, string $policy): array",
+                "stats": "stats(Predis\\Client $c): array",
+                "test": "test(RivetCore\\Redis\\RedisConnectionConfig|array $p): array",
+                "validate": "static validate(string $host, int $port, int $db, string $password): ?string"
+            }
+        },
+        "RivetCore\\Redis\\RedisClientProviderInterface": {
+            "kind": "interface",
+            "methods": {
+                "client": "client(): ?Predis\\Client"
+            }
+        },
+        "RivetCore\\Redis\\RedisConnectionConfig": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(string $host, int $port = 6379, int $db = 0, ?string $password = NULL, ?string $username = NULL, bool $tls = false, bool $verifyPeer = true, ?string $caFile = NULL, ?string $certFile = NULL, ?string $keyFile = NULL)",
+                "fromArray": "static fromArray(array $p): RivetCore\\Redis\\RedisConnectionConfig",
+                "redact": "redact(string $text): string",
+                "toPredisParameters": "toPredisParameters(float $timeout = 1.0): array",
+                "validate": "validate(bool $checkFiles = false): ?string"
+            },
+            "properties": {
+                "caFile": "readonly ?string",
+                "certFile": "readonly ?string",
+                "db": "readonly int",
+                "host": "readonly string",
+                "keyFile": "readonly ?string",
+                "password": "readonly ?string",
+                "port": "readonly int",
+                "tls": "readonly bool",
+                "username": "readonly ?string",
+                "verifyPeer": "readonly bool"
+            }
+        },
+        "RivetCore\\Retention\\RetentionService": {
+            "kind": "final class",
+            "constants": {
+                "DEFAULT_BATCH": 5000
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, ?string $profile = NULL)",
+                "plan": "plan(int $days, ?int $auditDays = NULL, ?int $deliveryDays = NULL, ?int $jobDays = NULL): array",
+                "prune": "prune(int $days, ?int $auditDays = NULL, ?int $deliveryDays = NULL, ?int $jobDays = NULL, int $batchSize = 5000): array"
+            }
+        },
+        "RivetCore\\Support\\AllowAllPolicy": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Contracts\\AccessPolicyInterface"
+            ],
+            "methods": {
+                "can": "can(?int $userId, string $ability, ?string $subjectType = NULL, string|int|null $subjectId = NULL, array $context = []): bool"
+            }
+        },
+        "RivetCore\\Support\\ArraySettings": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Contracts\\SettingsInterface"
+            ],
+            "methods": {
+                "__construct": "__construct(array $values = [])",
+                "get": "get(string $key, mixed $default = NULL): mixed"
+            }
+        },
+        "RivetCore\\Support\\DenyAllPolicy": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Contracts\\AccessPolicyInterface"
+            ],
+            "methods": {
+                "can": "can(?int $userId, string $ability, ?string $subjectType = NULL, string|int|null $subjectId = NULL, array $context = []): bool"
+            }
+        },
+        "RivetCore\\Support\\ErrorLogLogger": {
+            "kind": "final class",
+            "extends": "Psr\\Log\\AbstractLogger",
+            "implements": [
+                "Psr\\Log\\LoggerInterface"
+            ],
+            "methods": {
+                "log": "log($level, Stringable|string $message, array $context = []): void",
+                "resolve": "static resolve(Closure|Psr\\Log\\LoggerInterface|null $logger): Psr\\Log\\LoggerInterface"
+            }
+        },
+        "RivetCore\\Support\\LocalNetworks": {
+            "kind": "final class",
+            "methods": {
+                "detect": "static detect(?callable $interfaces = NULL): array"
+            }
+        },
+        "RivetCore\\Support\\NullRequestContext": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Contracts\\RequestContextInterface"
+            ],
+            "methods": {
+                "ipAddress": "ipAddress(): ?string",
+                "requestId": "requestId(): ?string",
+                "userAgent": "userAgent(): ?string"
+            }
+        },
+        "RivetCore\\Support\\SystemClock": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Contracts\\ClockInterface"
+            ],
+            "methods": {
+                "now": "now(): DateTimeImmutable"
+            }
+        },
+        "RivetCore\\Ui\\DateRange": {
+            "kind": "final class",
+            "constants": {
+                "MAX_DATE": "2099-12-31",
+                "MIN_DATE": "1970-01-01"
+            },
+            "methods": {
+                "days": "days(): int",
+                "from": "from(): string",
+                "isAllTime": "isAllTime(): bool",
+                "isPreset": "static isPreset(string $id): bool",
+                "label": "label(): string",
+                "preset": "preset(): string",
+                "presets": "static presets(): array",
+                "previous": "previous(): RivetCore\\Ui\\DateRange",
+                "resolve": "static resolve(string $preset, ?string $from = NULL, ?string $to = NULL, ?DateTimeImmutable $now = NULL, ?DateTimeZone $tz = NULL, int $weekStart = 1): RivetCore\\Ui\\DateRange",
+                "sqlBounds": "sqlBounds(): array",
+                "to": "to(): string",
+                "toQuery": "toQuery(): array"
+            }
+        },
+        "RivetCore\\Ui\\IconCatalog": {
+            "kind": "final class",
+            "constants": {
+                "MAX_LENGTH": 50,
+                "VERSION": 1
+            },
+            "methods": {
+                "all": "static all(): array",
+                "byCategory": "static byCategory(): array",
+                "categories": "static categories(): array",
+                "has": "static has(string $class): bool",
+                "normalize": "static normalize(?string $input, string $default = 'fa-filter'): string",
+                "search": "static search(string $query, ?string $category = NULL, int $limit = 60): array",
+                "toJson": "static toJson(): string"
+            }
+        },
+        "RivetCore\\Webhooks\\Authentication": {
+            "kind": "final class",
+            "constants": {
+                "MAX_HEADER_NAME": 64,
+                "MAX_HEADER_VALUE": 2048,
+                "MAX_PASSWORD": 1024,
+                "MAX_TOKEN": 2048,
+                "MAX_USERNAME": 256,
+                "MODES": [
+                    "none",
+                    "bearer",
+                    "basic",
+                    "header",
+                    "hmac"
+                ]
+            },
+            "methods": {
+                "headers": "static headers(array $config): array",
+                "isForbiddenHeaderName": "static isForbiddenHeaderName(string $name): bool",
+                "isValidHeaderName": "static isValidHeaderName(string $name): bool",
+                "redact": "static redact(array $config): array",
+                "validate": "static validate(array $config): array"
+            }
+        },
+        "RivetCore\\Webhooks\\Destination": {
+            "kind": "final class readonly",
+            "methods": {
+                "__construct": "__construct(string $id, string $name, string $category, string $description, string $format, string $method, string $urlHint, ?string $urlPattern, array $authModes, string $defaultAuth, ?string $defaultAuthHeader, array $extraFields, array $headers, string $docsUrl, array $setupSteps, string $sampleCurl, array $verifySnippets, array $notes, array $formatOptions = [])",
+                "buildUrl": "buildUrl(array $values): string",
+                "toArray": "toArray(): array",
+                "urlMatches": "urlMatches(string $url): bool"
+            },
+            "properties": {
+                "authModes": "readonly array",
+                "category": "readonly string",
+                "defaultAuth": "readonly string",
+                "defaultAuthHeader": "readonly ?string",
+                "description": "readonly string",
+                "docsUrl": "readonly string",
+                "extraFields": "readonly array",
+                "format": "readonly string",
+                "formatOptions": "readonly array",
+                "headers": "readonly array",
+                "id": "readonly string",
+                "method": "readonly string",
+                "name": "readonly string",
+                "notes": "readonly array",
+                "sampleCurl": "readonly string",
+                "setupSteps": "readonly array",
+                "urlHint": "readonly string",
+                "urlPattern": "readonly ?string",
+                "verifySnippets": "readonly array"
+            }
+        },
+        "RivetCore\\Webhooks\\DestinationField": {
+            "kind": "final class readonly",
+            "methods": {
+                "__construct": "__construct(string $name, string $label, string $type, bool $required, string $help, string $target = 'option', string $option = '', string $example = '')",
+                "toArray": "toArray(): array"
+            },
+            "properties": {
+                "example": "readonly string",
+                "help": "readonly string",
+                "label": "readonly string",
+                "name": "readonly string",
+                "option": "readonly string",
+                "required": "readonly bool",
+                "target": "readonly string",
+                "type": "readonly string"
+            }
+        },
+        "RivetCore\\Webhooks\\Destinations": {
+            "kind": "final class",
+            "methods": {
+                "all": "static all(): array",
+                "byCategory": "static byCategory(): array",
+                "categoryLabels": "static categoryLabels(): array",
+                "get": "static get(string $id): ?RivetCore\\Webhooks\\Destination",
+                "has": "static has(string $id): bool",
+                "toArray": "static toArray(): array",
+                "toJson": "static toJson(): string"
+            }
+        },
+        "RivetCore\\Webhooks\\EventCatalog": {
+            "kind": "final class",
+            "methods": {
+                "all": "static all(): array",
+                "byGroup": "static byGroup(): array",
+                "get": "static get(string $id): ?RivetCore\\Webhooks\\EventDefinition",
+                "groups": "static groups(): array",
+                "has": "static has(string $id): bool",
+                "isPattern": "static isPattern(string $value): bool",
+                "matchPattern": "static matchPattern(string $pattern): array",
+                "search": "static search(string $q, ?string $group = NULL, int $limit = 200): array",
+                "toArray": "static toArray(): array",
+                "toJson": "static toJson(): string",
+                "unknown": "static unknown(array $ids): array"
+            }
+        },
+        "RivetCore\\Webhooks\\EventDefinition": {
+            "kind": "final class readonly",
+            "methods": {
+                "__construct": "__construct(string $id, string $group, string $groupLabel, string $label, string $description, string $severity, array $payloadFields, ?string $since, array $tags)",
+                "toArray": "toArray(): array"
+            },
+            "properties": {
+                "description": "readonly string",
+                "group": "readonly string",
+                "groupLabel": "readonly string",
+                "id": "readonly string",
+                "label": "readonly string",
+                "payloadFields": "readonly array",
+                "severity": "readonly string",
+                "since": "readonly ?string",
+                "tags": "readonly array"
+            }
+        },
+        "RivetCore\\Webhooks\\EventSummary": {
+            "kind": "final class",
+            "constants": {
+                "MAX_FIELDS": 10,
+                "MAX_FIELD_NAME": 40,
+                "MAX_FIELD_VALUE": 200,
+                "MAX_SUMMARY": 500,
+                "MAX_TITLE": 200
+            },
+            "methods": {
+                "clean": "static clean(string $s): string",
+                "clip": "static clip(string $s, int $max): string",
+                "fromEvent": "static fromEvent(string $type, array $data): array",
+                "isSafeUrl": "static isSafeUrl(string $u): bool"
+            }
+        },
+        "RivetCore\\Webhooks\\FormattedPayload": {
+            "kind": "final class readonly",
+            "methods": {
+                "__construct": "__construct(string $body, string $contentType, array $headers = [])"
+            },
+            "properties": {
+                "body": "readonly string",
+                "contentType": "readonly string",
+                "headers": "readonly array"
+            }
+        },
+        "RivetCore\\Webhooks\\NetworkList": {
+            "kind": "final class",
+            "constants": {
+                "MAX_ENTRIES": 16,
+                "MIN_PREFIX_V4": 8,
+                "MIN_PREFIX_V6": 48
+            },
+            "methods": {
+                "contains": "static contains(array $cidrs, string $ip): bool",
+                "parse": "static parse(array|string $input): array"
+            }
+        },
+        "RivetCore\\Webhooks\\PayloadFormatter": {
+            "kind": "final class",
+            "constants": {
+                "FORMATS": [
+                    "json",
+                    "form",
+                    "slack",
+                    "slack_attachments",
+                    "teams",
+                    "discord",
+                    "ntfy",
+                    "gotify",
+                    "telegram",
+                    "matrix",
+                    "matrix_hookshot",
+                    "apprise",
+                    "template"
+                ]
+            },
+            "methods": {
+                "format": "static format(string $format, array $event, array $options = []): RivetCore\\Webhooks\\FormattedPayload",
+                "formats": "static formats(): array",
+                "isFormat": "static isFormat(string $format): bool",
+                "markdownEscape": "static markdownEscape(string $text, bool $teams = false): string",
+                "slackEscape": "static slackEscape(string $text): string"
+            }
+        },
+        "RivetCore\\Webhooks\\PayloadTemplate": {
+            "kind": "final class",
+            "constants": {
+                "ENCODINGS": [
+                    "json",
+                    "text",
+                    "form"
+                ],
+                "FILTERS": [
+                    "default",
+                    "json",
+                    "upper",
+                    "lower",
+                    "trim",
+                    "truncate"
+                ],
+                "MAX_PLACEHOLDERS": 100,
+                "MAX_RENDERED_BYTES": 65536,
+                "MAX_TEMPLATE_BYTES": 8192
+            },
+            "methods": {
+                "placeholders": "static placeholders(string $template): array",
+                "render": "static render(string $template, array $context, string $encoding = 'json'): string",
+                "sampleContext": "static sampleContext(string $eventType): array",
+                "validate": "static validate(string $template, string $encoding = 'json'): array"
+            }
+        },
+        "RivetCore\\Webhooks\\UrlPolicy": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(bool $allowPrivate = false, ?Closure $resolver = NULL, array $allowedNetworks = [])",
+                "isPublicIp": "static isPublicIp(string $ip): bool",
+                "isSafe": "isSafe(string $url): bool",
+                "vet": "vet(string $url): ?array"
+            }
+        },
+        "RivetCore\\Webhooks\\WebhookDispatcher": {
+            "kind": "class",
+            "constants": {
+                "DEFAULT_TIMEOUT_SECONDS": 10
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, RivetCore\\Webhooks\\WebhookSubscriptionsInterface $subscriptions, RivetCore\\Contracts\\ClockInterface $clock, array $headerPrefixes = array, ?Closure $transport = NULL, int $timeoutSeconds = 10, ?RivetCore\\Webhooks\\UrlPolicy $urlPolicy = NULL, bool $requireUrlPolicy = false)",
+                "curlOptions": "static curlOptions(string $body, array $headers, int $timeout, ?array $target = NULL, string $method = 'POST'): array",
+                "deliver": "deliver(string $eventType, array $payload): array",
+                "deliverTo": "deliverTo(int $webhookId, string $eventType, array $payload, int $attempt = 1, ?string $emittedAt = NULL, ?int $signedAt = NULL, ?array $options = NULL): array",
+                "pinnedUrl": "static pinnedUrl(string $url, array $target): string",
+                "signatureV2": "static signatureV2(int $timestamp, string $body, string $secret): string"
+            }
+        },
+        "RivetCore\\Webhooks\\WebhookSubscription": {
+            "kind": "final class readonly",
+            "methods": {
+                "__construct": "__construct(int $webhookId, string $url, string $secret, array $options = [])"
+            },
+            "properties": {
+                "options": "readonly array",
+                "secret": "readonly string",
+                "url": "readonly string",
+                "webhookId": "readonly int"
+            }
+        },
+        "RivetCore\\Webhooks\\WebhookSubscriptionLookupInterface": {
+            "kind": "interface",
+            "methods": {
+                "find": "find(int $webhookId): ?RivetCore\\Webhooks\\WebhookSubscription"
+            }
+        },
+        "RivetCore\\Webhooks\\WebhookSubscriptionsInterface": {
+            "kind": "interface",
+            "methods": {
+                "forEvent": "forEvent(string $eventType): array"
+            }
+        },
+        "RivetCore\\Workflow\\WorkflowService": {
+            "kind": "class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
+                "cancelRun": "cancelRun(int $runId): void",
+                "completeTask": "completeTask(int $runTaskId, ?int $userId): void",
+                "reopenTask": "reopenTask(int $runTaskId): void",
+                "skipTask": "skipTask(int $runTaskId, string $reason, ?int $userId): void",
+                "startRun": "startRun(int $templateId, int $subjectId, ?int $startedByUserId): int"
+            }
+        }
+    },
+    "internal": [
+        "RivetCore\\Audit\\Migration\\Migration0001AuditEvents",
+        "RivetCore\\Automation\\Migration\\Migration0006AutomationRules",
+        "RivetCore\\Compliance\\Migration\\Migration0008Compliance",
+        "RivetCore\\Compliance\\Migration\\Migration0009SharedReport",
+        "RivetCore\\Compliance\\Migration\\Migration0010Subjects",
+        "RivetCore\\Compliance\\Migration\\Migration0011Responsibilities",
+        "RivetCore\\ITSM\\Migration\\Migration0004ProblemsAndChanges",
+        "RivetCore\\Jobs\\Migration\\Migration0002IntegrationJobs",
+        "RivetCore\\Jobs\\Migration\\Migration0012JobHeartbeat",
+        "RivetCore\\Mcp\\Migration\\Migration0003McpUnlinkedIdentities",
+        "RivetCore\\Testing\\DatabaseContractTestCase",
+        "RivetCore\\Webhooks\\Migration\\Migration0005WebhookDeliveries",
+        "RivetCore\\Workflow\\Migration\\Migration0007WorkflowTables"
+    ],
+    "untagged": [],
+    "migrations": [
+        "0001_audit_events",
+        "0002_integration_jobs",
+        "0003_mcp_unlinked_identities",
+        "0004_problems_and_changes",
+        "0005_webhook_deliveries",
+        "0006_automation_rules",
+        "0007_workflow_tables",
+        "0008_compliance",
+        "0009_compliance_shared_report",
+        "0010_compliance_subjects",
+        "0011_compliance_responsibilities",
+        "0012_job_heartbeat"
+    ],
+    "tables": {
+        "audit_events": {
+            "action": "varchar(50) not null",
+            "actor_user_id": "int(11) null",
+            "audit_id": "int(11) not null",
+            "created_at": "datetime not null",
+            "entity_id": "varchar(64) null",
+            "entity_type": "varchar(100) null",
+            "event_type": "varchar(100) not null",
+            "ip_address": "varchar(64) null",
+            "metadata_json": "text null",
+            "request_id": "varchar(64) null",
+            "summary": "varchar(500) null",
+            "user_agent": "varchar(255) null"
+        },
+        "automation_rules": {
+            "action_config_json": "text null",
+            "action_type": "enum('create_ticket','send_webhook','notify_user') not null",
+            "condition_json": "text null",
+            "created_at": "datetime not null",
+            "is_enabled": "tinyint(1) not null",
+            "name": "varchar(200) not null",
+            "rule_id": "int(11) not null",
+            "trigger_event": "varchar(150) not null"
+        },
+        "changes": {
+            "change_id": "int(11) not null",
+            "created_at": "datetime not null",
+            "created_by": "int(11) null",
+            "impact": "text null",
+            "implementation_plan": "text null",
+            "reason": "text null",
+            "risk": "enum('low','medium','high') not null",
+            "rollback_plan": "text null",
+            "scheduled_at": "datetime null",
+            "status": "enum('draft','awaiting_approval','approved','scheduled','in_progress','successful','failed','rolled_back','cancelled') not null",
+            "title": "varchar(255) not null"
+        },
+        "compliance_attestations": {
+            "attestation_id": "int(11) not null",
+            "created_at": "datetime not null",
+            "item_id": "varchar(64) not null",
+            "next_due_on": "date null",
+            "note": "text null",
+            "reviewed_by": "int(11) null",
+            "reviewed_on": "date not null",
+            "reviewer_name": "varchar(200) not null",
+            "subject_id": "int(11) not null"
+        },
+        "compliance_responsibilities": {
+            "assign_key": "varchar(120) not null",
+            "party_name": "varchar(200) not null",
+            "party_ref": "int(11) null",
+            "updated_at": "datetime not null",
+            "updated_by": "int(11) null"
+        },
+        "compliance_shared_report": {
+            "note": "text null",
+            "published_at": "datetime not null",
+            "published_by": "int(11) null",
+            "shared_id": "tinyint(4) not null",
+            "snapshot_id": "int(11) not null"
+        },
+        "compliance_snapshots": {
+            "app_version": "varchar(40) null",
+            "results_json": "longtext null",
+            "snapshot_id": "int(11) not null",
+            "subject_id": "int(11) not null",
+            "summary_json": "longtext null",
+            "taken_at": "datetime not null",
+            "taken_by": "int(11) null",
+            "trigger_type": "varchar(20) not null"
+        },
+        "compliance_subjects": {
+            "frameworks": "varchar(100) not null",
+            "shared_at": "datetime null",
+            "shared_by": "int(11) null",
+            "shared_note": "text null",
+            "shared_snapshot_id": "int(11) null",
+            "subject_id": "int(11) not null",
+            "updated_at": "datetime not null"
+        },
+        "integration_jobs": {
+            "attempts": "int(11) not null",
+            "available_at": "datetime not null",
+            "completed_at": "datetime null",
+            "created_at": "datetime not null",
+            "error": "text null",
+            "heartbeat_at": "datetime null",
+            "integration_id": "int(11) null",
+            "job_id": "int(11) not null",
+            "job_type": "varchar(100) not null",
+            "max_attempts": "int(11) not null",
+            "payload": "text null",
+            "priority": "int(11) not null",
+            "resource_type": "varchar(100) null",
+            "result": "text null",
+            "started_at": "datetime null",
+            "status": "enum('pending','running','completed','failed','dead_letter') not null"
+        },
+        "mcp_unlinked_identities": {
+            "attempts": "int(11) not null",
+            "display_name": "varchar(200) null",
+            "email": "varchar(200) null",
+            "first_seen_at": "datetime not null",
+            "issuer": "varchar(255) not null",
+            "last_seen_at": "datetime not null",
+            "mcp_unlinked_id": "int(11) not null",
+            "subject": "varchar(255) not null"
+        },
+        "problems": {
+            "change_problem_id": "int(11) null",
+            "created_at": "datetime not null",
+            "created_by": "int(11) null",
+            "description": "text null",
+            "problem_id": "int(11) not null",
+            "resolved_at": "datetime null",
+            "status": "enum('open','investigating','resolved','closed') not null",
+            "title": "varchar(255) not null"
+        },
+        "rivet_core_migrations": {
+            "applied_at": "datetime not null",
+            "migration_id": "varchar(100) not null"
+        },
+        "webhook_deliveries": {
+            "attempt_number": "tinyint(3) not null",
+            "created_at": "datetime not null",
+            "delivery_id": "int(11) not null",
+            "duration_ms": "int(11) not null",
+            "event_type": "varchar(150) not null",
+            "http_status": "smallint(6) null",
+            "request_payload_json": "longtext null",
+            "response_body_snippet": "varchar(1000) null",
+            "webhook_id": "int(11) not null"
+        },
+        "workflow_run_tasks": {
+            "category": "varchar(100) null",
+            "completed_at": "datetime null",
+            "completed_by": "int(11) null",
+            "default_owner": "varchar(100) null",
+            "instructions": "text null",
+            "required": "tinyint(1) not null",
+            "run_id": "int(11) not null",
+            "run_task_id": "int(11) not null",
+            "skip_reason": "varchar(500) null",
+            "sort_order": "int(11) not null",
+            "status": "enum('pending','completed','skipped') not null",
+            "title": "varchar(255) not null"
+        },
+        "workflow_runs": {
+            "completed_at": "datetime null",
+            "contact_id": "int(11) not null",
+            "notes": "text null",
+            "run_id": "int(11) not null",
+            "started_at": "datetime not null",
+            "started_by": "int(11) null",
+            "status": "enum('in_progress','completed_with_exceptions','completed','cancelled') not null",
+            "type": "enum('onboarding','offboarding') not null",
+            "workflow_template_id": "int(11) null"
+        },
+        "workflow_template_tasks": {
+            "category": "varchar(100) null",
+            "default_owner": "varchar(100) null",
+            "instructions": "text null",
+            "required": "tinyint(1) not null",
+            "sort_order": "int(11) not null",
+            "template_task_id": "int(11) not null",
+            "title": "varchar(255) not null",
+            "workflow_template_id": "int(11) not null"
+        },
+        "workflow_templates": {
+            "archived_at": "datetime null",
+            "created_at": "datetime not null",
+            "created_by": "int(11) null",
+            "description": "text null",
+            "is_active": "tinyint(1) not null",
+            "name": "varchar(200) not null",
+            "type": "enum('onboarding','offboarding') not null",
+            "updated_at": "datetime null",
+            "workflow_template_id": "int(11) not null"
+        }
+    },
+    "vocabularies": {
+        "webhook_events": [
+            "approval.decided",
+            "approval.requested",
+            "asset.created",
+            "asset.retired",
+            "asset.warranty_expiring",
+            "audit.exported",
+            "auth.login_blocked",
+            "auth.login_failed",
+            "auth.login_success",
+            "auth.mfa_failed",
+            "automation.rule_deleted",
+            "automation.rule_toggled",
+            "backup.completed",
+            "backup.failed",
+            "change.created",
+            "change.status_changed",
+            "client.archived",
+            "client.created",
+            "compliance.report_exported",
+            "compliance.report_published",
+            "compliance.report_unpublished",
+            "compliance.responsibilities_changed",
+            "compliance.review_recorded",
+            "compliance.settings_changed",
+            "compliance.snapshot_taken",
+            "contact.created",
+            "contact.hire_date_set",
+            "cron.job_refused",
+            "cron.job_started",
+            "cron.schedule_changed",
+            "employee.hired",
+            "employee.terminated",
+            "integration.google.test",
+            "integration.microsoft.test",
+            "integration.odoo.test",
+            "invoice.created",
+            "invoice.overdue",
+            "invoice.paid",
+            "job.retried",
+            "kb_article.restored",
+            "mcp.identity_linked",
+            "mcp.identity_unlinked",
+            "mcp.settings_changed",
+            "payment.received",
+            "people.import_approved",
+            "problem.created",
+            "problem.status_changed",
+            "problem.ticket_linked",
+            "problem.ticket_unlinked",
+            "redis.cleared",
+            "redis.memory_changed",
+            "redis.settings_changed",
+            "settings.lifecycle_auto_start_changed",
+            "sla.breached",
+            "sla.warning",
+            "ticket.assigned",
+            "ticket.created",
+            "ticket.escalated",
+            "ticket.replied",
+            "ticket.resolved",
+            "ticket.status_changed",
+            "training.assignment_progress_reset",
+            "training.assignment_retake",
+            "training.assignment_unwaived",
+            "training.assignment_waived",
+            "training.automation_saved",
+            "training.award_manual",
+            "training.completion_recorded",
+            "training.completion_voided",
+            "training.course_archived",
+            "training.kiosk_cooldown_cleared",
+            "training.kiosk_enroll_codes_issued",
+            "training.kiosk_enrolled",
+            "training.kiosk_expiry_changed",
+            "training.kiosk_hidden",
+            "training.kiosk_mode_changed",
+            "training.kiosk_revoked",
+            "training.kiosk_settings_changed",
+            "training.kiosk_token_reissued",
+            "training.ledger_break",
+            "training.media_purged",
+            "training.module_toggled",
+            "training.odoo_discovered",
+            "training.odoo_link_changed",
+            "training.odoo_links_checked",
+            "training.odoo_map_saved",
+            "training.odoo_outbox_changed",
+            "training.odoo_skill_created",
+            "training.odoo_target_accepted",
+            "training.odoo_writeback_saved",
+            "training.pin_odoo_unblocked",
+            "training.pin_slips_issued",
+            "training.pin_sources_refreshed",
+            "training.pin_unlocked",
+            "training.requirement_saved",
+            "training.revision_published",
+            "training.run_unlocked",
+            "training.settings_changed",
+            "training.trainer_pin_set",
+            "vault.credential_revealed",
+            "webhooks.networks_changed",
+            "workflow.action_executed",
+            "workflow.action_failed",
+            "workflow.approval_approved",
+            "workflow.approval_overridden",
+            "workflow.approval_rejected",
+            "workflow.cancelled",
+            "workflow.completed",
+            "workflow.offboarding_started",
+            "workflow.onboarding_started",
+            "workflow.task_completed",
+            "workflow.task_webhook",
+            "workflow.template_created"
+        ],
+        "webhook_destinations": [
+            "activepieces",
+            "apprise",
+            "custom-template",
+            "discord",
+            "generic-form",
+            "generic-json",
+            "gotify",
+            "home-assistant",
+            "huginn",
+            "ifttt",
+            "make",
+            "matrix-client",
+            "matrix-hookshot",
+            "mattermost",
+            "n8n",
+            "node-red",
+            "ntfy",
+            "pipedream",
+            "rocketchat",
+            "slack",
+            "teams",
+            "telegram",
+            "windmill",
+            "zapier"
+        ],
+        "webhook_formats": [
+            "apprise",
+            "discord",
+            "form",
+            "gotify",
+            "json",
+            "matrix",
+            "matrix_hookshot",
+            "ntfy",
+            "slack",
+            "slack_attachments",
+            "teams",
+            "telegram",
+            "template"
+        ],
+        "date_range_presets": [
+            "alltime",
+            "custom",
+            "last12months",
+            "last14",
+            "last30",
+            "last7",
+            "last90",
+            "lastmonth",
+            "lastquarter",
+            "lastweek",
+            "lastyear",
+            "next30",
+            "next7",
+            "thismonth",
+            "thisquarter",
+            "thisweek",
+            "thisyear",
+            "today",
+            "yesterday"
+        ],
+        "compliance_frameworks": [
+            "hipaa",
+            "iso27001",
+            "nist171",
+            "pci",
+            "soc2"
+        ],
+        "retention_profiles": [
+            "hipaa",
+            "iso27001",
+            "nist171",
+            "none",
+            "pci",
+            "soc2"
+        ]
+    }
+}

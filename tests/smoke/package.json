@@ -1,0 +1,12 @@
+{
+  "name": "rivetcore-edition-smoke",
+  "private": true,
+  "description": "Browser smoke tests an edition can run against a SCRATCH instance. Not part of the Composer package.",
+  "scripts": {
+    "check": "node --check playwright.config.js && node --check helpers.js && node --check rivetit.smoke.spec.js && node --check edition-template.smoke.spec.js",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

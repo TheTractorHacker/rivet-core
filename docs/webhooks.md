@@ -138,6 +138,7 @@ def verify_rivet_signature(raw_body: bytes, headers: dict, secret: str, toleranc
 
 **PHP**
 
+<!-- skip: defines the receiver's function only; the receiver runs in the customer's own code -->
 ```php
 function verifyRivetSignature(string $rawBody, string $header, string $secret, int $tolerance = 300): bool
 {
