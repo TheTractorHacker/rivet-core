@@ -14,8 +14,17 @@ use RivetCore\Redis\RedisConnectionConfig;
  */
 final class RedisAuthTlsTest extends TestCase
 {
-    private const PLAIN_PORT = 6397;
-    private const TLS_PORT = 6398;
+
+    /** Throwaway ports; RIVETCORE_TEST_REDIS_AUTH_PORT_BASE moves them when 6397/6398 are taken (shared dev boxes). */
+    private static function plainPort(): int
+    {
+        return (int) (getenv('RIVETCORE_TEST_REDIS_AUTH_PORT_BASE') ?: 6397);
+    }
+
+    private static function tlsPort(): int
+    {
+        return self::plainPort() + 1;
+    }
 
     /** @var array<string, resource> */
     private static array $procs = [];
@@ -34,19 +43,19 @@ final class RedisAuthTlsTest extends TestCase
         self::$dir = sys_get_temp_dir() . '/rivetcore-redis-' . getmypid();
         mkdir(self::$dir, 0700, true);
 
-        self::spawn('plain', [$bin, '--port', (string) self::PLAIN_PORT, '--bind', '127.0.0.1', '--requirepass', 'testpw', '--save', '', '--appendonly', 'no', '--dir', self::$dir]);
-        if (!self::waitFor(self::PLAIN_PORT)) {
-            self::$skip = 'could not start redis-server on port ' . self::PLAIN_PORT . '.';
+        self::spawn('plain', [$bin, '--port', (string) self::plainPort(), '--bind', '127.0.0.1', '--requirepass', 'testpw', '--save', '', '--appendonly', 'no', '--dir', self::$dir]);
+        if (!self::waitFor(self::plainPort())) {
+            self::$skip = 'could not start redis-server on port ' . self::plainPort() . '.';
 
             return;
         }
-        $c = new \Predis\Client(['host' => '127.0.0.1', 'port' => self::PLAIN_PORT, 'password' => 'testpw']);
+        $c = new \Predis\Client(['host' => '127.0.0.1', 'port' => self::plainPort(), 'password' => 'testpw']);
         $c->executeRaw(['ACL', 'SETUSER', 'alice', 'on', '>alicepw', '~*', '+@all']);
 
         if (self::makeCerts()) {
-            self::spawn('tls', [$bin, '--port', '0', '--tls-port', (string) self::TLS_PORT, '--bind', '127.0.0.1', '--tls-cert-file', self::$dir . '/srv.crt', '--tls-key-file', self::$dir . '/srv.key',
+            self::spawn('tls', [$bin, '--port', '0', '--tls-port', (string) self::tlsPort(), '--bind', '127.0.0.1', '--tls-cert-file', self::$dir . '/srv.crt', '--tls-key-file', self::$dir . '/srv.key',
                 '--tls-ca-cert-file', self::$dir . '/ca.crt', '--tls-auth-clients', 'optional', '--requirepass', 'testpw', '--save', '', '--appendonly', 'no', '--dir', self::$dir]);
-            self::$tlsReady = self::waitFor(self::TLS_PORT);
+            self::$tlsReady = self::waitFor(self::tlsPort());
         }
     }
 
@@ -137,7 +146,7 @@ final class RedisAuthTlsTest extends TestCase
 
     public function testCorrectPasswordConnects(): void
     {
-        $r = $this->admin()->test(['host' => '127.0.0.1', 'port' => self::PLAIN_PORT, 'db' => 0, 'password' => 'testpw']);
+        $r = $this->admin()->test(['host' => '127.0.0.1', 'port' => self::plainPort(), 'db' => 0, 'password' => 'testpw']);
         $this->assertTrue($r['ok'], $r['message']);
         $this->assertSame('ok', $r['reason']);
     }
@@ -145,7 +154,7 @@ final class RedisAuthTlsTest extends TestCase
     public function testMissingAndWrongPasswordAreAuthFailuresThatNeverEchoThePassword(): void
     {
         foreach ([null, 'wrongpw-12345'] as $pw) {
-            $r = $this->admin()->test(['host' => '127.0.0.1', 'port' => self::PLAIN_PORT, 'db' => 0, 'password' => $pw]);
+            $r = $this->admin()->test(['host' => '127.0.0.1', 'port' => self::plainPort(), 'db' => 0, 'password' => $pw]);
             $this->assertFalse($r['ok']);
             $this->assertSame('auth', $r['reason']);
             $this->assertStringContainsString('Authentication failed', $r['message']);
@@ -155,16 +164,16 @@ final class RedisAuthTlsTest extends TestCase
 
     public function testAclUsernameWorksAndWrongUserIsAnAuthFailure(): void
     {
-        $ok = $this->admin()->test(new RedisConnectionConfig('127.0.0.1', self::PLAIN_PORT, 0, 'alicepw', 'alice'));
+        $ok = $this->admin()->test(new RedisConnectionConfig('127.0.0.1', self::plainPort(), 0, 'alicepw', 'alice'));
         $this->assertTrue($ok['ok'], $ok['message']);
-        $bad = $this->admin()->test(new RedisConnectionConfig('127.0.0.1', self::PLAIN_PORT, 0, 'alicepw', 'mallory'));
+        $bad = $this->admin()->test(new RedisConnectionConfig('127.0.0.1', self::plainPort(), 0, 'alicepw', 'mallory'));
         $this->assertSame('auth', $bad['reason']);
         $this->assertStringContainsString('username', $bad['message']);
     }
 
     public function testClientBuiltFromTheArrayShapeTheEditionsUse(): void
     {
-        $c = $this->admin()->client(['host' => '127.0.0.1', 'port' => self::PLAIN_PORT, 'db' => 1, 'password' => 'testpw']);
+        $c = $this->admin()->client(['host' => '127.0.0.1', 'port' => self::plainPort(), 'db' => 1, 'password' => 'testpw']);
         $this->assertSame('PONG', (string) $c->ping());
     }
 
@@ -178,16 +187,16 @@ final class RedisAuthTlsTest extends TestCase
     public function testTlsWithTheRightCaConnects(): void
     {
         $this->needTls();
-        $r = $this->admin()->test(new RedisConnectionConfig('localhost', self::TLS_PORT, 0, 'testpw', null, true, true, self::$dir . '/ca.crt'));
+        $r = $this->admin()->test(new RedisConnectionConfig('localhost', self::tlsPort(), 0, 'testpw', null, true, true, self::$dir . '/ca.crt'));
         $this->assertTrue($r['ok'], $r['message']);
-        $c = $this->admin()->client(new RedisConnectionConfig('127.0.0.1', self::TLS_PORT, 0, 'testpw', null, true, true, self::$dir . '/ca.crt'));
+        $c = $this->admin()->client(new RedisConnectionConfig('127.0.0.1', self::tlsPort(), 0, 'testpw', null, true, true, self::$dir . '/ca.crt'));
         $this->assertSame('PONG', (string) $c->ping());
     }
 
     public function testTlsWithTheWrongCaIsATlsFailureNotAuth(): void
     {
         $this->needTls();
-        $r = $this->admin()->test(new RedisConnectionConfig('localhost', self::TLS_PORT, 0, 'testpw', null, true, true, self::$dir . '/other.crt'));
+        $r = $this->admin()->test(new RedisConnectionConfig('localhost', self::tlsPort(), 0, 'testpw', null, true, true, self::$dir . '/other.crt'));
         $this->assertFalse($r['ok']);
         $this->assertSame('tls', $r['reason']);
         $this->assertStringContainsString('TLS', $r['message']);
@@ -197,14 +206,14 @@ final class RedisAuthTlsTest extends TestCase
     public function testTlsWithVerificationOffConnectsToAnUntrustedServer(): void
     {
         $this->needTls();
-        $r = $this->admin()->test(new RedisConnectionConfig('127.0.0.1', self::TLS_PORT, 0, 'testpw', null, true, false));
+        $r = $this->admin()->test(new RedisConnectionConfig('127.0.0.1', self::tlsPort(), 0, 'testpw', null, true, false));
         $this->assertTrue($r['ok'], $r['message']);
     }
 
     public function testTlsToAPlainPortIsATlsFailure(): void
     {
         $this->needTls();
-        $r = $this->admin()->test(new RedisConnectionConfig('127.0.0.1', self::PLAIN_PORT, 0, 'testpw', null, true, false));
+        $r = $this->admin()->test(new RedisConnectionConfig('127.0.0.1', self::plainPort(), 0, 'testpw', null, true, false));
         $this->assertFalse($r['ok']);
         $this->assertSame('tls', $r['reason']);
     }
@@ -212,13 +221,13 @@ final class RedisAuthTlsTest extends TestCase
     public function testTlsOkButWrongPasswordIsAuth(): void
     {
         $this->needTls();
-        $r = $this->admin()->test(new RedisConnectionConfig('localhost', self::TLS_PORT, 0, 'nope', null, true, true, self::$dir . '/ca.crt'));
+        $r = $this->admin()->test(new RedisConnectionConfig('localhost', self::tlsPort(), 0, 'nope', null, true, true, self::$dir . '/ca.crt'));
         $this->assertSame('auth', $r['reason']);
     }
 
     public function testMissingCaFileIsReportedBeforeConnecting(): void
     {
-        $r = $this->admin()->test(new RedisConnectionConfig('localhost', self::TLS_PORT, 0, 'testpw', null, true, true, '/nonexistent/ca.pem'));
+        $r = $this->admin()->test(new RedisConnectionConfig('localhost', self::tlsPort(), 0, 'testpw', null, true, true, '/nonexistent/ca.pem'));
         $this->assertSame('invalid', $r['reason']);
     }
 }

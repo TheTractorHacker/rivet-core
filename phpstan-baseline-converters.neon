@@ -55,3 +55,15 @@ parameters:
 			identifier: deadCode.unreachable
 			count: 1
 			path: src/KB/PdfConverter.php
+
+		-
+			message: '#^Anonymous function has an unused use \$lines\.$#'
+			identifier: closure.unusedUse
+			count: 1
+			path: src/KB/PdfConverter.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between non\-empty\-array and null will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: src/KB/PdfConverter.php
