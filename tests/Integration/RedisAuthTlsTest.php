@@ -179,7 +179,7 @@ final class RedisAuthTlsTest extends TestCase
 
     public function testNothingListeningIsUnreachable(): void
     {
-        $r = $this->admin()->test(['host' => '127.0.0.1', 'port' => 6391, 'db' => 0, 'password' => 'testpw']);
+        $r = $this->admin()->test(['host' => '127.0.0.1', 'port' => 1, 'db' => 0, 'password' => 'testpw']);   // port 1: nothing listens (6391 is the CI Redis service)
         $this->assertSame('unreachable', $r['reason']);
         $this->assertStringNotContainsString('testpw', $r['message']);
     }

@@ -52,8 +52,10 @@ php scripts/api-surface-check.php && ok "API surface matches tests/api-surface.j
 
 if [ "${RUN_TESTS:-1}" = "1" ]; then
   step "PHPUnit (unit, integration, conformance) with poppler, MariaDB and Redis present"
-  RIVETCORE_TEST_REDIS_AUTH_PORT_BASE=6397 vendor/bin/phpunit --no-progress 2>&1 | tail -15
-  [ "${PIPESTATUS[0]}" = "0" ] && ok "PHPUnit passed" || bad "PHPUnit failed"
+  RIVETCORE_TEST_REDIS_AUTH_PORT_BASE=6397 vendor/bin/phpunit --no-progress > /tmp/phpunit.txt 2>&1
+  rc=$?
+  grep -E '^[0-9]+\) ' /tmp/phpunit.txt | head -30; tail -4 /tmp/phpunit.txt
+  [ "$rc" = "0" ] && ok "PHPUnit passed" || bad "PHPUnit failed"
 fi
 
 echo

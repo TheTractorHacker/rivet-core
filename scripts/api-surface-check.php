@@ -39,9 +39,12 @@ foreach ($it as $f) {
 }
 sort($files);
 
-$sig = static function (ReflectionMethod $m): string {
-    $params = array_map(static function (ReflectionParameter $p): string {
-        $s = ($p->getType() !== null ? $p->getType() . ' ' : '') . ($p->isPassedByReference() ? '&' : '') . ($p->isVariadic() ? '...' : '') . '$' . $p->getName();
+// PHP before 8.4 reports `self` where later versions print the class name; normalise so the snapshot is the same on every PHP.
+$ty = static fn (?ReflectionType $t, ReflectionClass $c): string => $t === null ? '' : (string) preg_replace('/\bself\b/', $c->getName(), (string) $t);
+$sig = static function (ReflectionMethod $m) use ($ty): string {
+    $cls = $m->getDeclaringClass();
+    $params = array_map(static function (ReflectionParameter $p) use ($ty, $cls): string {
+        $s = ($p->getType() !== null ? $ty($p->getType(), $cls) . ' ' : '') . ($p->isPassedByReference() ? '&' : '') . ($p->isVariadic() ? '...' : '') . '$' . $p->getName();
         if ($p->isDefaultValueAvailable()) {
             $d = $p->getDefaultValue();
             $s .= ' = ' . (is_array($d) ? ($d === [] ? '[]' : 'array') : (is_object($d) ? get_class($d) : var_export($d, true)));
@@ -51,7 +54,7 @@ $sig = static function (ReflectionMethod $m): string {
     }, $m->getParameters());
 
     return ($m->isStatic() ? 'static ' : '') . ($m->isAbstract() && !$m->getDeclaringClass()->isInterface() ? 'abstract ' : '') . ($m->isFinal() ? 'final ' : '')
-        . $m->getName() . '(' . implode(', ', $params) . ')' . ($m->getReturnType() !== null ? ': ' . $m->getReturnType() : '');
+        . $m->getName() . '(' . implode(', ', $params) . ')' . ($m->getReturnType() !== null ? ': ' . $ty($m->getReturnType(), $cls) : '');
 };
 $constValue = static function (mixed $v): mixed {
     return is_scalar($v) || $v === null ? $v : (is_array($v) ? json_decode(json_encode($v, JSON_PARTIAL_OUTPUT_ON_ERROR) ?: 'null', true) : (is_object($v) ? get_class($v) . (($v instanceof BackedEnum) ? ':' . $v->value : '') : null));
