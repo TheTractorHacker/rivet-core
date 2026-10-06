@@ -2,8 +2,8 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
-## 0.17.2
-Security hardening from the 2026-10 review (all low severity, backward compatible).
+## 0.18.1
+Security hardening from the 2026-10 review (all low severity, backward compatible). Builds on 0.18.0.
 - **UrlPolicy:** also rejects 6to4 (2002::/16), Teredo (2001::/32), local-use NAT64 (64:ff9b:1::/48), 100::/64, documentation, benchmarking (198.18/15), IETF-protocol (192.0.0/24), 192.88.99/24 and multicast ranges.
 - **Webhooks:** pinned requests are sent to the vetted host spelling (a trailing-dot host can no longer skip the DNS pin) and never use a proxy (`CURLOPT_PROXY` empty, `CURLOPT_NOPROXY` `*`). New `WebhookDispatcher::pinnedUrl()`.
 - **Jobs:** `requeueStale()` dead-letters jobs that used all their attempts instead of looping them forever. `markCompleted()`/`markFailed()` only write while the job is `running` and take an optional claimed-attempt fence (the worker passes it); both now return bool. Handlers should be idempotent.
