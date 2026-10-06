@@ -31,6 +31,8 @@ final class WorkflowFailureModesTest extends TestCase
         }
         $this->db = new MysqliDatabase($m);
         (new MigrationRunner($this->db, CoreMigrations::all(), new SystemClock()))->run();
+        // Other tests in the suite drop Core tables without clearing the runner's record, so make sure these exist (idempotent).
+        (new \RivetCore\Workflow\Migration\Migration0007WorkflowTables())->up($this->db);
         foreach (['workflow_run_tasks', 'workflow_runs', 'workflow_template_tasks', 'workflow_templates'] as $t) {
             $this->db->execute("DELETE FROM `$t`");
         }

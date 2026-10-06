@@ -370,7 +370,7 @@ $h->case('urlpolicy.vet.allowedNetwork', 'vets/s (private target admitted by all
     $p = new UrlPolicy(false, static fn (string $host): array => ['192.168.1.20'], ['192.168.1.0/24']);
     $c->loop($n(100000), static fn () => $p->vet('http://nas.example.test/in'));
 });
-$presets = array_keys(DateRange::presets());
+$presets = array_column(DateRange::presets(), 'id');
 $tz = new DateTimeZone('America/Chicago');
 $now = new DateTimeImmutable('2026-10-05 12:00:00', $tz);
 $h->case('daterange.resolve', 'resolutions/s (cycling every preset, DST zone)', function (Ctx $c) use ($presets, $tz, $now, $n): void {
