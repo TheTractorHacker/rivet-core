@@ -6,7 +6,7 @@
 | Redis, health | `RivetCore\Redis`, `Health` | none | Redis provider | Returns "not acquired"/allows the work when Redis is down |
 | Cron | `RivetCore\Cron` | none | job catalog | Refuses unknown or non-allowlisted scripts |
 | Jobs | `RivetCore\Jobs` | `integration_jobs` | job handlers | Retries with backoff, then dead-letter; `PermanentJobFailure` skips retries |
-| Webhooks | `RivetCore\Webhooks` | `webhook_deliveries` | subscriptions | HMAC-SHA256 signed; attempts recorded; caller decides retry via Jobs |
+| Webhooks | `RivetCore\Webhooks` | `webhook_deliveries` | subscriptions | HMAC-SHA256 signed; attempts recorded; caller decides retry via Jobs; optional `allowedNetworks` (CIDR list, see `NetworkList`) lets webhooks reach the server's own private LAN only (loopback, link-local/metadata, multicast never allowed); `LocalNetworks::detect()` suggests the server's networks |
 | Automation | `RivetCore\Automation` | `automation_rules` | action handlers | A failing action is recorded and does not stop other rules |
 | ITSM | `RivetCore\ITSM` | `problems`, `changes` | ticket link | Invalid status transitions are refused |
 | Workflow | `RivetCore\Workflow` | `workflow_*` | subject records | Task/run state machine refuses illegal moves |

@@ -14,6 +14,9 @@ Security hardening from the 2026-10 review (all low severity, backward compatibl
 - CI: `permissions: contents: read`. `SECURITY.md` no longer lists a non-existent `migrations/` directory and names the UrlPolicy, signature V2 and Redis TLS surfaces.
 - Known, not changed: the pending-identity table (migration 0003) uses a case-insensitive collation for OIDC issuer/subject; fixing it needs a schema migration and the matching edition column, so it is planned for a later release.
 
+## 0.18.0
+- **Webhooks to the local network only.** `Webhooks\UrlPolicy` takes an optional `allowedNetworks` list (CIDR). A private address is allowed only when it lies inside a listed network; loopback, link-local (including the cloud metadata address), multicast, broadcast and unspecified addresses are never allowed, even if listed. Every address a hostname resolves to must pass, and the vetted target is still pinned by the dispatcher. New `Webhooks\NetworkList` (`parse()` normalises and validates admin input: private ranges only, not wider than /8 (IPv4) or /48 (IPv6), at most 16 entries; `contains()`), and `Support\LocalNetworks::detect()` suggests the server's own private subnet(s) from its network interfaces (IPv4; container bridges and public addresses skipped). The old constructor signature is unchanged.
+
 ## 0.17.1
 CI only: the backward-compatibility checker needs PHP 8.4+ and was a dev dependency, so `composer install` failed on PHP 8.2 and 8.3 (and the lowest-dependencies job). It is now installed inside the compatibility job only. No library change.
 
