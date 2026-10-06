@@ -85,6 +85,7 @@ final class JobQueue
         )->affectedRows === 1;
     }
 
+    /** @param array<string,mixed> $payload */
     public function enqueue(string $jobType, array $payload = [], ?int $integrationId = null, ?string $resourceType = null, int $priority = 0, int $maxAttempts = 5): int
     {
         $result = $this->database->execute(
@@ -135,6 +136,7 @@ final class JobQueue
      * @param int|null $attempt the attempt number returned by claim(); when given, the write only lands if this run still
      *                          owns the job (status 'running' and the same attempt), so a worker that was reclaimed cannot
      *                          overwrite the newer run. Handlers should be idempotent: a reclaimed job can run twice.
+     * @param array<string,mixed> $result
      * @return bool false when the job was no longer running (reclaimed or already finished) and nothing was written
      */
     public function markCompleted(int $jobId, array $result = [], ?int $attempt = null): bool

@@ -43,6 +43,9 @@ foreach ($classes as $name => $r) {
         if ($m->getDeclaringClass()->getName() !== $name || str_starts_with($m->getName(), '__') && $m->getName() !== '__construct') {
             continue;
         }
+        if (str_contains((string) $m->getDocComment(), '@internal')) {
+            continue; // a public method tagged @internal is outside the semver promise
+        }
         $params = array_map(static function (ReflectionParameter $p): string {
             $s = ($p->getType() ? $p->getType() . ' ' : '') . ($p->isVariadic() ? '...' : '') . '$' . $p->getName();
             if ($p->isDefaultValueAvailable()) {

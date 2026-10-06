@@ -257,7 +257,10 @@ final class PayloadTemplate
         return $out;
     }
 
-    /** @param array{path:string,filters:list<array{0:string,1:mixed}>} $expr @param array<string,mixed> $context */
+    /**
+     * @param array{path:string,filters:list<array{0:string,1:mixed}>} $expr
+     * @param array<string,mixed> $context
+     */
     private static function evaluate(array $expr, array $context, string $encoding): string
     {
         $value = self::lookup($context, $expr['path']);

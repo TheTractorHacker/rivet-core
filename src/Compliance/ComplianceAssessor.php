@@ -67,7 +67,10 @@ final class ComplianceAssessor
         return new Assessment($now, $automatic, $manual, self::summarize($automatic, $manual));
     }
 
-    /** @param array<string,mixed>|null $last */
+    /**
+     * @param array<string,mixed>|null $last
+     * @return array<string,mixed>
+     */
     private function manualState(ManualItem $item, ?array $last, \DateTimeImmutable $now): array
     {
         $state = 'never';
@@ -120,6 +123,8 @@ final class ComplianceAssessor
      * @param list<array<string,mixed>> $automatic
      * @param list<array<string,mixed>> $manual
      * @return array<string, array<string,mixed>>
+     *
+     * @internal used by assess(); not part of the supported API
      */
     public static function summarize(array $automatic, array $manual): array
     {

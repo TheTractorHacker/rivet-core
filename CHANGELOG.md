@@ -2,6 +2,15 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.1
+Release candidate: feature freeze. From here only bug fixes; any public API change restarts the soak (see `docs/RELEASE_GATE.md`).
+- **API frozen for review:** every type is `@api` or `@internal`, array shapes are typed everywhere (the PHPStan ignore is gone), `docs/api-surface.md` is generated and guarded by tests, `docs/api-freeze-review.md` records error behaviour and the frozen tables/columns. Deprecated through 1.x, removed in 2.0: the legacy `<prefix>-Signature` webhook header (use V2), the Closure form of the MCP loggers, the editions' `ITFlow\` shims.
+- **Adapter conformance kit** (`RivetCore\Testing\*ConformanceTestCase`, nine cases plus the database contract case, with `docs/conformance.md`): an edition adapter that fails it must not ship. Each case is proven against a correct reference adapter and 54 deliberately broken ones.
+- **Security review 2026-10** (`docs/security/`): threat model, review, edition checklist. Fixed: unbounded webhook responses, audit evasion with oversized metadata, unredacted audit metadata reaching webhook fan-out, trailing-newline regex bypasses, header injection through event names, deep secret nesting in audit metadata, forged log lines, huge images in DOCX/PDF, a server-wide migration lock (now per schema), credentials in rule webhook URLs. Accepted and edition-side items are listed in the review.
+- **Migration 0013** adds `created_at` indexes used by retention pruning and audit date filters; `MigrationRunner` throws `MigrationInProgressException` (still a `RuntimeException`) when another run holds the lock.
+- **Docs:** a page per module, ADR-004 to ADR-009 (versioning, shims, Packagist, webhook signatures, database support, test helpers), `UPGRADING.md`, `docs/EDITION_CHECKLIST.md`, `docs/PERFORMANCE.md` with `scripts/bench.php`, `docs/RELEASE_GATE.md`.
+- `DatabaseContractTestCase` is now `@api`, consistent with ADR-009.
+
 ## 0.21.0
 Webhook destinations, formats and events.
 - **Destinations:** `Webhooks\Destinations` / `Destination` / `DestinationField`: 24 presets with setup steps, URL hints and patterns, allowed auth modes, extra fields and HMAC verification snippets (node, python, php, bash, n8n Code node): n8n, Node-RED, Activepieces, Windmill, Huginn, Zapier, Make, Pipedream, IFTTT, Home Assistant, Apprise, ntfy, Gotify, Discord, Mattermost, Rocket.Chat, Slack, Microsoft Teams, Matrix (hookshot and client API), Telegram, generic JSON, generic form and custom template. `docs/webhook-platforms.md` is generated from them (`scripts/webhook-guides.php`, a test fails when it is stale); `docs/webhooks.md` explains signing, verification, replay protection, retries and the URL policy.

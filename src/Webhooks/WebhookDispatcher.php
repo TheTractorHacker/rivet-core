@@ -16,7 +16,8 @@ use RivetCore\Database\DatabaseInterface;
  * the header names ($headerPrefixes), e.g. ['X-ITFlow', 'X-RivetIT'] to keep what existing receivers verify.
  * Redirects are never followed, only http/https are spoken (CURLOPT_PROTOCOLS) and TLS is always verified.
  *
- * Besides the legacy "<prefix>-Signature" headers (HMAC of the body; unchanged), every request carries
+ * Besides the legacy "<prefix>-Signature" headers (HMAC of the body; unchanged; the headers are `@deprecated`: V2 is the
+ * documented default, the legacy form is kept through all of 1.x and removed no earlier than 2.0), every request carries
  * X-Rivet-Timestamp (unix seconds) and X-Rivet-Signature-V2: "t=<ts>,v1=<hmac-sha256 of "<ts>.<body>">", so a
  * receiver can reject replays. The timestamp is per ATTEMPT (current clock) while the body stays byte-identical on
  * retries; pass $signedAt to deliverTo() to pin it, and note that an explicit $emittedAt (with no $signedAt) pins the
@@ -27,11 +28,19 @@ use RivetCore\Database\DatabaseInterface;
  * set $requireUrlPolicy=true to make a policy mandatory (a default UrlPolicy is used when none is injected). A URL the
  * policy rejects is never contacted; the attempt is logged with error "endpoint URL not allowed".
  *
+ * The constructor has eight parameters that grew over time: named arguments are the supported calling style
+ * (`new WebhookDispatcher(database: $db, subscriptions: $subs, clock: $clock, urlPolicy: $policy)`). Positional order is
+ * kept for compatibility; new options are only ever appended.
+ *
  * @api
  */
 class WebhookDispatcher
 {
     public const DEFAULT_TIMEOUT_SECONDS = 10;
+
+    /** Bytes of a receiver's response kept for the delivery log, and the most we read before dropping the connection. */
+    private const MAX_RESPONSE_CAPTURE_BYTES = 16384;
+    private const MAX_RESPONSE_READ_BYTES = 1048576;
 
     /** @var \Closure(string,string,list<string>,int,?array{host:string,port:int,ips:list<string>},string=):array{status:?int,body:?string,error:?string} */
     private \Closure $transport;
@@ -71,6 +80,7 @@ class WebhookDispatcher
      * The signatures cover the exact bytes sent. A URL containing {txn} gets a per-message id (hash of the body). A bad
      * header or method, or a format that cannot render, fails the attempt without contacting the endpoint.
      *
+     * @param array<string,mixed> $payload
      * @param array<string,mixed>|null $options
      * @return array{webhook_id:int,http_status:?int,duration_ms:int,error:?string,ok:bool}
      */
@@ -102,6 +112,7 @@ class WebhookDispatcher
     }
 
     /**
+     * @param array<string,mixed> $payload
      * @return list<array{webhook_id:int,http_status:?int,duration_ms:int,error:?string,ok:bool}>
      */
     public function deliver(string $eventType, array $payload): array
@@ -143,6 +154,7 @@ class WebhookDispatcher
      *
      * @param array<string,mixed> $payload
      * @param array<string,mixed> $opts
+     * @return array{webhook_id:int,http_status:?int,duration_ms:int,error:?string,ok:bool}
      */
     private function sendFormatted(WebhookSubscription $subscriber, string $eventType, array $payload, string $timestamp, array $opts, int $attempt, ?int $signedAt): array
     {
@@ -224,7 +236,7 @@ class WebhookDispatcher
         $headers = ['Content-Type: ' . $contentType, 'X-Rivet-Timestamp: ' . $ts, 'X-Rivet-Signature-V2: ' . self::signatureV2($ts, $body, $subscriber->secret)];
         foreach ($this->headerPrefixes as $prefix) {
             $headers[] = $prefix . '-Signature: ' . $signature;
-            $headers[] = $prefix . '-Event: ' . $eventType;
+            $headers[] = $prefix . '-Event: ' . preg_replace('/[\x00-\x1F\x7F]/', '', $eventType);
         }
         array_push($headers, ...$extraHeaders);
         $url = $subscriber->url;
@@ -248,7 +260,7 @@ class WebhookDispatcher
             $r = ['status' => null, 'body' => null, 'error' => 'transport failed'];
         }
         $durationMs = (int) round((microtime(true) - $start) * 1000);
-        $snippet = $r['error'] ?? ($r['body'] !== null ? substr($r['body'], 0, 1000) : null);
+        $snippet = $r['error'] ?? ($r['body'] !== null ? mb_strcut(mb_scrub($r['body'], 'UTF-8'), 0, 1000, 'UTF-8') : null);
 
         $this->logAttempt($subscriber, $eventType, $r['status'], $durationMs, $attempt, $body, $snippet);
 
@@ -279,6 +291,8 @@ class WebhookDispatcher
 
     /**
      * The curl options for one delivery. Public/static so the pinning can be asserted without a network call.
+     *
+     * @internal exposed for tests; not part of the supported API
      *
      * @param list<string> $headers
      * @param array{host:string,port:int,ips:list<string>}|null $target vetted target to pin to
@@ -319,6 +333,8 @@ class WebhookDispatcher
      * The URL curl must be given for a vetted target: the same host the pin (CURLOPT_RESOLVE) is keyed on, so a spelling
      * such as "example.com." (trailing dot) cannot make curl resolve the name itself. Scheme, port, path and query are kept.
      *
+     * @internal exposed for tests; not part of the supported API
+     *
      * @param array{host:string,port:int,ips:list<string>} $target
      */
     public static function pinnedUrl(string $url, array $target): string
@@ -333,7 +349,11 @@ class WebhookDispatcher
             . ($p['path'] ?? '') . (isset($p['query']) ? '?' . $p['query'] : '');
     }
 
-    /** @return array{status:?int,body:?string,error:?string} */
+    /**
+     * @param list<string> $headers
+     * @param array{host:string,port:int,ips:list<string>}|null $target
+     * @return array{status:?int,body:?string,error:?string}
+     */
     private static function curlTransport(string $url, string $body, array $headers, int $timeout, ?array $target = null, string $method = 'POST'): array
     {
         if ($target !== null) {
@@ -344,14 +364,32 @@ class WebhookDispatcher
             return ['status' => null, 'body' => null, 'error' => 'curl_init failed'];
         }
         curl_setopt_array($ch, self::curlOptions($body, $headers, $timeout, $target, $method));
+        // The receiver is not trusted: keep only the first bytes of its answer (we log 1000 of them) and stop reading
+        // after MAX_RESPONSE_READ_BYTES, so a hostile or broken endpoint cannot exhaust memory or hold the request open.
+        $captured = '';
+        $total = 0;
+        $aborted = false;
+        curl_setopt($ch, CURLOPT_WRITEFUNCTION, static function ($handle, string $chunk) use (&$captured, &$total, &$aborted): int {
+            $total += strlen($chunk);
+            if (strlen($captured) < self::MAX_RESPONSE_CAPTURE_BYTES) {
+                $captured .= substr($chunk, 0, self::MAX_RESPONSE_CAPTURE_BYTES - strlen($captured));
+            }
+            if ($total > self::MAX_RESPONSE_READ_BYTES) {
+                $aborted = true;
+
+                return 0; // makes curl stop with a write error; the status line has already been received
+            }
+
+            return strlen($chunk);
+        });
         $response = curl_exec($ch);
-        if ($response === false) {
+        if ($response === false && !$aborted) {
             $error = curl_error($ch) ?: 'unknown curl error';
 
             return ['status' => null, 'body' => null, 'error' => $error];
         }
         $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
-        return ['status' => $status, 'body' => (string) $response, 'error' => null];
+        return ['status' => $status, 'body' => $captured, 'error' => null];
     }
 }

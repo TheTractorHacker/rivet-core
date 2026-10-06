@@ -55,6 +55,8 @@ final class Nist171Map
     /**
      * @param array<string, list<string>> $controls
      * @return array<string, list<string>> the controls plus this item's NIST references, if it has any and none were given
+     *
+     * @internal used by the assessor and client checklist; not part of the supported API
      */
     public static function apply(string $itemId, array $controls): array
     {

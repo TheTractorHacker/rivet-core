@@ -129,7 +129,10 @@ final class PayloadFormatter
 
     // ----- chat formats -----------------------------------------------------------------------------------------
 
-    /** @param array<string,mixed> $s @return FormattedPayload */
+    /**
+     * @param array<string,mixed> $s
+     * @return FormattedPayload
+     */
     private static function slack(array $s, string $label): FormattedPayload
     {
         $fields = [];
@@ -205,7 +208,8 @@ final class PayloadFormatter
      * Discord limits: content 2000, embed title 256, description 4096, 25 fields (name 256, value 1024), footer 2048,
      * and 6000 characters across one embed.
      *
-     * @param array<string,mixed> $s @param array<string,mixed> $options
+     * @param array<string,mixed> $s
+     * @param array<string,mixed> $options
      */
     private static function discord(array $s, string $timestamp, string $app, array $options): FormattedPayload
     {
@@ -260,7 +264,10 @@ final class PayloadFormatter
         return self::json($payload);
     }
 
-    /** @param array<string,mixed> $s @param array<string,mixed> $options */
+    /**
+     * @param array<string,mixed> $s
+     * @param array<string,mixed> $options
+     */
     private static function ntfy(array $s, array $options): FormattedPayload
     {
         $prio = match ($s['severity']) { 'critical' => 5, 'warning' => 4, default => 3 };
@@ -290,7 +297,10 @@ final class PayloadFormatter
         return new FormattedPayload($text, 'text/plain; charset=utf-8', $headers);
     }
 
-    /** @param array<string,mixed> $s @param array<string,mixed> $options */
+    /**
+     * @param array<string,mixed> $s
+     * @param array<string,mixed> $options
+     */
     private static function gotify(array $s, array $options): FormattedPayload
     {
         $prio = match ($s['severity']) { 'critical' => 9, 'warning' => 6, default => 3 };
@@ -305,7 +315,10 @@ final class PayloadFormatter
         return self::json($payload);
     }
 
-    /** @param array<string,mixed> $s @param array<string,mixed> $options */
+    /**
+     * @param array<string,mixed> $s
+     * @param array<string,mixed> $options
+     */
     private static function telegram(array $s, string $label, array $options): FormattedPayload
     {
         $chat = trim((string) ($options['chat_id'] ?? ''));
@@ -345,7 +358,10 @@ final class PayloadFormatter
         ]);
     }
 
-    /** @param array<string,mixed> $s @param array<string,mixed> $options */
+    /**
+     * @param array<string,mixed> $s
+     * @param array<string,mixed> $options
+     */
     private static function matrix(array $s, string $label, bool $hookshot, array $options): FormattedPayload
     {
         $esc = static fn (string $t): string => htmlspecialchars($t, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -373,7 +389,10 @@ final class PayloadFormatter
         return self::json(['msgtype' => 'm.text', 'body' => $text, 'format' => 'org.matrix.custom.html', 'formatted_body' => $html]);
     }
 
-    /** @param array<string,mixed> $s @param array<string,mixed> $options */
+    /**
+     * @param array<string,mixed> $s
+     * @param array<string,mixed> $options
+     */
     private static function apprise(array $s, array $options): FormattedPayload
     {
         $p = [
@@ -401,7 +420,11 @@ final class PayloadFormatter
         return new FormattedPayload(http_build_query($flat, '', '&', PHP_QUERY_RFC3986), 'application/x-www-form-urlencoded');
     }
 
-    /** @param array<string,mixed> $data @param array<string,mixed> $s @param array<string,mixed> $options */
+    /**
+     * @param array<string,mixed> $data
+     * @param array<string,mixed> $s
+     * @param array<string,mixed> $options
+     */
     private static function template(string $type, string $timestamp, array $data, array $s, array $options): FormattedPayload
     {
         $template = (string) ($options['template'] ?? '');
@@ -426,7 +449,11 @@ final class PayloadFormatter
         return new FormattedPayload($body === false ? '{}' : $body, self::JSON_CT);
     }
 
-    /** Plain-text body: summary, then "Name: value" lines. */
+    /**
+     * Plain-text body: summary, then "Name: value" lines.
+     *
+     * @param array{title:string,summary:string,fields:list<array{name:string,value:string}>} $s
+     */
     private static function plain(array $s): string
     {
         $t = $s['summary'] !== '' ? $s['summary'] : $s['title'];
@@ -458,7 +485,10 @@ final class PayloadFormatter
         return (int) hexdec(ltrim(self::color($sev), '#'));
     }
 
-    /** @param array<string,mixed> $data @return array<string,mixed> */
+    /**
+     * @param array<string,mixed> $data
+     * @return array<string,mixed>
+     */
     private static function redact(array $data, int $depth = 0): array
     {
         $out = [];

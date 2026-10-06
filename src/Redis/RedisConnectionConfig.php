@@ -9,6 +9,10 @@ namespace RivetCore\Redis;
  * TLS. Editions resolve these from their own sources (environment, settings table), build a config, and let Core turn it
  * into Predis parameters, validate it and test it. The password is never part of var_dump()/print_r() output or error text.
  *
+ * The constructor has ten parameters that grew over time: named arguments are the supported calling style
+ * (`new RedisConnectionConfig(host: 'r', tls: true)`). Positional order is kept for compatibility but only host and
+ * port are guaranteed positional; new options are only ever appended.
+ *
  * @api
  */
 final class RedisConnectionConfig
@@ -58,7 +62,7 @@ final class RedisConnectionConfig
      */
     public function validate(bool $checkFiles = false): ?string
     {
-        if ($this->host === '' || strlen($this->host) > 253 || !preg_match('/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$|^\[?[0-9A-Fa-f:]+\]?$/', $this->host)) {
+        if ($this->host === '' || strlen($this->host) > 253 || !preg_match('/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\z|^\[?[0-9A-Fa-f:]+\]?\z/D', $this->host)) {
             return 'Enter a host name or IP address.';
         }
         if ($this->port < 1 || $this->port > 65535) {
@@ -71,7 +75,7 @@ final class RedisConnectionConfig
             return 'The password is too long or contains a line break.';
         }
         if ($this->username !== null) {
-            if (strlen($this->username) > 128 || !preg_match('/^[A-Za-z0-9._@:-]+$/', $this->username)) {
+            if (strlen($this->username) > 128 || !preg_match('/^[A-Za-z0-9._@:-]+\z/D', $this->username)) {
                 return 'The username may use letters, digits and . _ @ : - only (up to 128 characters).';
             }
             if ($this->password === null) {

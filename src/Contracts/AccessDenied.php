@@ -15,7 +15,11 @@ final class AccessDenied extends \RuntimeException
         parent::__construct('Not allowed: ' . $ability . ($subjectType !== null ? " on $subjectType" . ($subjectId !== null ? " #$subjectId" : '') : ''));
     }
 
-    /** Convenience for services: ask the policy and throw when it says no. */
+    /**
+     * Convenience for services: ask the policy and throw when it says no.
+     *
+     * @param array<string,mixed> $context
+     */
     public static function unless(AccessPolicyInterface $policy, ?int $userId, string $ability, ?string $subjectType = null, string|int|null $subjectId = null, array $context = []): void
     {
         if (!$policy->can($userId, $ability, $subjectType, $subjectId, $context)) {

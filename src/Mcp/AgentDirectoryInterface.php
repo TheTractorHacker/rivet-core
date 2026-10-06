@@ -9,14 +9,27 @@ namespace RivetCore\Mcp;
  * interface and never queries the edition's user table itself. Implementations run on the same connection as
  * the DatabaseInterface handed to IdentityLinker, so lookups inside link() join its transaction.
  *
+ * Contract (checked by Testing\AgentDirectoryConformanceTestCase): inactive agents are never linkable nor returned by
+ * findActiveAgent(); linking moves an agent from linkableAgents() to linkedAgents() and counts in linkedCount(); an identity is the
+ * (issuer, subject) PAIR; unlink() reverses link(); link()/unlink() for a user that does not exist, or unlink() of an unlinked
+ * agent, do nothing and do not throw; every row of linkableAgents() and linkedAgents() carries user_id, user_name and user_email.
+ *
  * @api
  */
 interface AgentDirectoryInterface
 {
-    /** Active agents without a link yet. @return list<array{user_id:int|string, user_name:string, user_email:string}> */
+    /**
+     * Active agents without a link yet.
+     *
+     * @return list<array{user_id:int|string, user_name:string, user_email:string}>
+     */
     public function linkableAgents(): array;
 
-    /** Agents that have an identity linked. @return list<array<string,mixed>> */
+    /**
+     * Agents that have an identity linked.
+     *
+     * @return list<array<string,mixed>>
+     */
     public function linkedAgents(): array;
 
     public function linkedCount(): int;

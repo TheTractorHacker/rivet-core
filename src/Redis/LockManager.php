@@ -39,7 +39,11 @@ final class LockManager
         }
     }
 
-    /** Run $fn under the lock; returns [ran, value]. ran=false means another holder had it. */
+    /**
+     * Run $fn under the lock; returns [ran, value]. ran=false means another holder had it.
+     *
+     * @return array{0:bool, 1:mixed}
+     */
     public function run(string $name, int $ttlSeconds, callable $fn): array
     {
         $lock = $this->acquire($name, $ttlSeconds);

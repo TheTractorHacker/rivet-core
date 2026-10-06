@@ -122,6 +122,7 @@ final class PdfConverter
     private const MAX_IMAGE_BYTES_EACH  = 8388608;
     private const MAX_IMAGE_BYTES_TOTAL = 25165824;
     private const MAX_IMAGES            = 100;
+    private const MAX_IMAGE_PIXELS      = 64000000;   // same cap as DocxConverter
     private const MAX_HTML_BYTES        = 4194304;
 
     // A <text> line longer than this is a malformed or hostile extraction, not
@@ -150,7 +151,7 @@ final class PdfConverter
     private int $mediaBytesUsed = 0;
 
     /**
-     * @return array{html:string,text:string,media:array,warnings:array}
+     * @return array{html:string,text:string,media:list<array{token:string,extension:string,mime:string,bytes:string}>,warnings:list<string>}
      * @throws PdfConversionException
      */
     public static function convert(string $path, ?\Psr\Log\LoggerInterface $logger = null): array
@@ -162,7 +163,7 @@ final class PdfConverter
     }
 
     /**
-     * @return array{html:string,text:string,media:array,warnings:array}
+     * @return array{html:string,text:string,media:list<array{token:string,extension:string,mime:string,bytes:string}>,warnings:list<string>}
      * @throws PdfConversionException
      */
     private function run(string $path): array
@@ -651,6 +652,7 @@ final class PdfConverter
      * independent sniffs must agree the bytes are a raster image of an allowed
      * type, and the extension comes from that verdict rather than from the name.
      */
+    /** @param list<array<string,mixed>> $pages poppler pages: w, h, fonts, lines, images */
     private function collectImages(string $dir, array &$pages): void
     {
         $root = realpath($dir);
@@ -736,6 +738,11 @@ final class PdfConverter
             $this->warn('An embedded file that claimed to be an image but does not decode was skipped.');
             return null;
         }
+        // A few KB of PNG/GIF can declare billions of pixels; whoever decodes it later (GD, a thumbnailer, a browser) would pay for it.
+        if ((int) $info[0] * (int) $info[1] > self::MAX_IMAGE_PIXELS || (int) $info[0] > 30000 || (int) $info[1] > 30000) {
+            $this->warn('An embedded image with extreme dimensions was skipped.');
+            return null;
+        }
         if (strtolower(image_type_to_mime_type($info[2])) !== $mime) {
             $this->warn('An embedded image with a mismatched type was skipped.');
             return null;
@@ -764,6 +771,8 @@ final class PdfConverter
      * mean: a title in 32pt would drag a mean upwards, but it cannot outvote the
      * thousands of characters set in body text. Everything larger is a heading;
      * everything at body size is a paragraph, list item, or an inline bold run.
+     *
+     * @param list<array<string,mixed>> $pages
      */
     private function render(array $pages): string
     {
@@ -856,7 +865,11 @@ final class PdfConverter
         return $html;
     }
 
-    /** Character-weighted modal font size. */
+    /**
+     * Character-weighted modal font size.
+     *
+     * @param list<array<string,mixed>> $pages
+     */
     private function bodySize(array $pages): float
     {
         $weight = [];
@@ -885,6 +898,9 @@ final class PdfConverter
      * of indent, or a change of font ends the paragraph. That is the whole of
      * the paragraph rule - it is geometric, so it behaves the same on a document
      * whose language we cannot read.
+     *
+     * @param array<string,mixed> $page
+     * @return list<array<string,mixed>> paragraphs: kind, html, top, ...
      */
     private function groupLines(array $page, float $bodySize, bool $sizeVaries): array
     {
@@ -923,7 +939,13 @@ final class PdfConverter
         return $paras;
     }
 
-    /** One line -> its semantic kind and its inline HTML. */
+    /**
+     * One line -> its semantic kind and its inline HTML.
+     *
+     * @param array<string,mixed> $line
+     * @param array<string,mixed> $font
+     * @return array<string,mixed>
+     */
     private function classify(array $line, array $font, float $bodySize, bool $sizeVaries): array
     {
         $text = $line['plain'];
@@ -962,6 +984,8 @@ final class PdfConverter
     /**
      * Inline runs -> escaped HTML with <strong>/<em>, dropping $skip leading
      * characters (a consumed list marker).
+     *
+     * @param array<string,mixed> $line
      */
     private function inline(array $line, int $skip): string
     {
@@ -1003,6 +1027,8 @@ final class PdfConverter
      * overlaps it. The column test is what stops a right-hand figure being
      * spliced into left-hand prose.
      *
+     * @param array<string,mixed> $page
+     * @param array<string,mixed> $para
      * @return string[] tokens, consumed
      */
     private function imagesBefore(array &$page, array $para): array
@@ -1020,7 +1046,10 @@ final class PdfConverter
         return $take;
     }
 
-    /** @return string[] */
+    /**
+     * @param array<string,mixed> $page
+     * @return string[]
+     */
     private function remainingImages(array &$page): array
     {
         $take = [];
@@ -1041,6 +1070,7 @@ final class PdfConverter
      * Run one poppler command. NO SHELL: proc_open() is given an argv array,
      * which PHP hands to execvp() directly.
      *
+     * @param list<string> $argv
      * @return array{code:int,stdout:string,stderr:string,timedout:bool}
      */
     private function exec(array $argv, string $cwd, int $timeoutMs): array

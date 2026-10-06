@@ -13,7 +13,11 @@ namespace RivetCore\Mcp;
  */
 final class TokenClaimsGuard
 {
-    /** The MCP audience must be the token's only intended recipient. */
+    /**
+     * The MCP audience must be the token's only intended recipient.
+     *
+     * @param array<string,mixed> $claims
+     */
     public static function hasDedicatedAudience(array $claims, string $audience): bool
     {
         $tokenAudience = $claims['aud'] ?? null;

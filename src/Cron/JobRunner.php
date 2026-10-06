@@ -49,7 +49,11 @@ class JobRunner
         return preg_match('~>>\s*(/var/log/[A-Za-z0-9._-]+)~', $command, $m) ? $m[1] : null;
     }
 
-    /** Arguments between the script and any redirect, only if every one is a plain --option[=value]. */
+    /**
+     * Arguments between the script and any redirect, only if every one is a plain --option[=value].
+     *
+     * @return list<string>|null
+     */
     public static function argumentsFromCommand(string $command, string $script): ?array
     {
         $rest = trim(explode($script, $command, 2)[1] ?? '');
@@ -57,7 +61,7 @@ class JobRunner
         if ($rest === '') return [];
         $args = preg_split('/\s+/', $rest);
         foreach ($args as $a) {
-            if (!preg_match('/^--[a-z][a-z-]*(=[A-Za-z0-9_.,-]+)?$/', $a)) return null;
+            if (!preg_match('/^--[a-z][a-z-]*(=[A-Za-z0-9_.,-]+)?\z/D', $a)) return null;
         }
         return $args;
     }
@@ -67,13 +71,18 @@ class JobRunner
         return preg_match('~^(/usr/bin/php[0-9.]*)\s~', $command, $m) ? $m[1] : '/usr/bin/php';
     }
 
+    /** @return array{log:string, pid:string, key:string} */
     private function files(string $key): array
     {
         $key = preg_replace('/[^A-Za-z0-9_-]/', '', $key);
         return ['log' => "{$this->stateDir}/$key.log", 'pid' => "{$this->stateDir}/$key.pid", 'key' => $key];
     }
 
-    /** Last lines of a log file with control characters removed. @return array{lines:list<string>, mtime:?int} */
+    /**
+     * Last lines of a log file with control characters removed.
+     *
+     * @return array{lines:list<string>, mtime:?int}
+     */
     public static function tail(?string $path, int $lines = 8, int $bytes = 8192): array
     {
         if (!$path || !is_file($path) || !is_readable($path)) return ['lines' => [], 'mtime' => null];
@@ -115,7 +124,10 @@ class JobRunner
         ];
     }
 
-    /** @return array{ok:bool, message:string} */
+    /**
+     * @param list<string> $args
+     * @return array{ok:bool, message:string}
+     */
     public function start(string $key, string $script, array $args = [], string $php = '/usr/bin/php'): array
     {
         $script = realpath($script) ?: '';
@@ -123,9 +135,9 @@ class JobRunner
         if ($script === '' || !$allowed || !is_file($script)) {
             return ['ok' => false, 'message' => 'That job script was not found.'];
         }
-        if (!preg_match('~^/usr/bin/php[0-9.]*$~', $php) && $php !== PHP_BINARY) return ['ok' => false, 'message' => 'Unexpected PHP binary.'];
+        if (!preg_match('~^/usr/bin/php[0-9.]*\z~D', $php) && $php !== PHP_BINARY) return ['ok' => false, 'message' => 'Unexpected PHP binary.'];
         foreach ($args as $a) {
-            if (!preg_match('/^--[a-z][a-z-]*(=[A-Za-z0-9_.,-]+)?$/', $a)) return ['ok' => false, 'message' => 'Unexpected argument.'];
+            if (!preg_match('/^--[a-z][a-z-]*(=[A-Za-z0-9_.,-]+)?\z/D', $a)) return ['ok' => false, 'message' => 'Unexpected argument.'];
         }
         if ($this->state($key, $script)['running']) return ['ok' => false, 'message' => 'This job is already running.'];
 

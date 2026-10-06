@@ -33,6 +33,7 @@ final class JobCatalog
         return $this->entries[$scriptFile]['dir'] ?? 'cron';
     }
 
+    /** @return array{label:string, description:string, run_now:bool, note:string, dir?:string} */
     public function describe(string $scriptFile): array
     {
         return $this->entries[$scriptFile] ?? ['label' => $scriptFile, 'description' => 'Custom or unrecognized job.', 'run_now' => false, 'note' => 'Not in the known job list, so it cannot be started from here.'];

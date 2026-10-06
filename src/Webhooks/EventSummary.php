@@ -135,13 +135,21 @@ final class EventSummary
         ];
     }
 
-    /** http(s) URL with no whitespace, quotes, angle brackets, pipes or credentials, at most 1000 characters. */
+    /**
+     * http(s) URL with no whitespace, quotes, angle brackets, pipes or credentials, at most 1000 characters.
+     *
+     * @internal formatter helper; not part of the supported API
+     */
     public static function isSafeUrl(string $u): bool
     {
-        return strlen($u) <= 1000 && preg_match('#^https?://[^\s<>"\'|\\\\@]+$#i', $u) === 1 && parse_url($u, PHP_URL_HOST) !== null;
+        return strlen($u) <= 1000 && preg_match('#^https?://[^\s<>"\'|\\\\@]+\z#iD', $u) === 1 && parse_url($u, PHP_URL_HOST) !== null;
     }
 
-    /** Remove control characters (keeping nothing but printable text), scrub invalid UTF-8 and trim. */
+    /**
+     * Remove control characters (keeping nothing but printable text), scrub invalid UTF-8 and trim.
+     *
+     * @internal formatter helper; not part of the supported API
+     */
     public static function clean(string $s): string
     {
         $s = mb_scrub($s, 'UTF-8');
@@ -150,6 +158,7 @@ final class EventSummary
         return trim($s);
     }
 
+    /** @internal formatter helper; not part of the supported API */
     public static function clip(string $s, int $max): string
     {
         return mb_strlen($s) > $max ? mb_substr($s, 0, max(0, $max - 1)) . "\u{2026}" : $s;

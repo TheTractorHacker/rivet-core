@@ -13,8 +13,7 @@ use RivetCore\Database\DatabaseInterface;
  * RivetCore, RivetIT and RivetMSP each extend this against their own adapter
  * and a scratch MySQL/MariaDB database (never production data).
  *
- * @internal A test helper for edition test suites: it needs PHPUnit, which is a dev dependency, so it is not part of the
- *           semver/backward-compatibility promise (decision on a separate testing package: issue #49).
+ * @api The adapter conformance kit for DatabaseInterface (ADR-009): part of the public API; PHPUnit is a dev/suggested dependency.
  */
 abstract class DatabaseContractTestCase extends TestCase
 {

@@ -64,6 +64,7 @@ final class ReportRenderer
         return $out;
     }
 
+    /** @internal rendering helper; not part of the supported API */
     public static function csvCell(string $v): string
     {
         $v = str_replace(["\r\n", "\r", "\n"], ' ', $v);

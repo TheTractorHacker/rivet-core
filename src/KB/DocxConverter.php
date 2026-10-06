@@ -110,6 +110,7 @@ class DocxConverter
     private const MAX_MEDIA_BYTES_EACH     = 8388608;   //  8 MiB
     private const MAX_MEDIA_BYTES_TOTAL    = 25165824;  // 24 MiB
     private const MAX_IMAGES               = 100;
+    private const MAX_IMAGE_PIXELS         = 64000000;  // ~8000 x 8000; checked from the header, before anything decodes the image
 
     // Secondary, early-out bomb signal. Measured on the same fixtures, real
     // WordprocessingML deflates about 19:1 and ordinary prose about 3:1, while
@@ -176,7 +177,7 @@ class DocxConverter
      * Convert a .docx on disk.
      *
      * @param  string $path Absolute path to the uploaded file (e.g. a $_FILES tmp_name).
-     * @return array{html:string,media:array,warnings:array}
+     * @return array{html:string,media:list<array{token:string,extension:string,mime:string,bytes:string}>,warnings:list<string>}
      * @throws DocxConversionException on anything malformed, oversized or hostile.
      */
     public static function convert(string $path): array
@@ -185,7 +186,7 @@ class DocxConverter
     }
 
     /**
-     * @return array{html:string,media:array,warnings:array}
+     * @return array{html:string,media:list<array{token:string,extension:string,mime:string,bytes:string}>,warnings:list<string>}
      * @throws DocxConversionException
      */
     public function run(string $path): array
@@ -428,7 +429,11 @@ class DocxConverter
         }
     }
 
-    /** Namespace-agnostic attribute read, optionally restricted to a namespace set. */
+    /**
+     * Namespace-agnostic attribute read, optionally restricted to a namespace set.
+     *
+     * @param list<string>|null $ns
+     */
     private static function attr(\DOMElement $el, string $local, ?array $ns = null): ?string
     {
         foreach ($el->attributes as $a) {
@@ -995,7 +1000,7 @@ class DocxConverter
         return $out;
     }
 
-    /** @param array $inheritedFormat */
+    /** @param array{b?:bool,i?:bool,u?:bool,s?:bool} $inheritedFormat */
     private function renderRun(\ZipArchive $zip, \DOMElement $r, int $depth, array $inheritedFormat): string
     {
         $fmt = $inheritedFormat;
@@ -1088,6 +1093,7 @@ class DocxConverter
         return $this->budget($inner);
     }
 
+    /** @param array{b?:bool,i?:bool,u?:bool,s?:bool} $inheritedFormat */
     private function renderHyperlink(\ZipArchive $zip, \DOMElement $link, int $depth, array $inheritedFormat): string
     {
         // $inner charges itself as its runs are built; only the <a> wrapper is
@@ -1249,6 +1255,11 @@ class DocxConverter
         $info = @getimagesizefromstring($bytes);
         if ($info === false || !isset($info[2]) || !in_array($info[2], self::IMAGE_TYPES, true)) {
             $this->warn('An embedded file that claimed to be an image but does not decode was skipped.');
+            return null;
+        }
+        // A few KB of PNG/GIF can declare billions of pixels; whoever decodes it later (GD, a thumbnailer, a browser) would pay for it.
+        if ((int) $info[0] * (int) $info[1] > self::MAX_IMAGE_PIXELS || (int) $info[0] > 30000 || (int) $info[1] > 30000) {
+            $this->warn('An embedded image with extreme dimensions was skipped.');
             return null;
         }
 

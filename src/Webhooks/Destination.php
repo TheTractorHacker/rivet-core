@@ -49,6 +49,10 @@ final readonly class Destination
     /** Does a saved URL look right for this platform? Platforms without a fixed host accept any http(s) URL. */
     public function urlMatches(string $url): bool
     {
+        if ($url === '' || preg_match('/[\x00-\x20\x7f]/', $url) === 1) {
+            return false; // whitespace or control characters (a trailing newline would otherwise satisfy "$")
+        }
+
         return $this->urlPattern === null ? preg_match('#^https?://\S+$#i', $url) === 1 : preg_match($this->urlPattern, $url) === 1;
     }
 

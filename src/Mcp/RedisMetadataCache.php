@@ -56,6 +56,7 @@ class RedisMetadataCache implements CacheInterface
         return $values;
     }
 
+    /** @param iterable<string,mixed> $values */
     public function setMultiple(iterable $values, null|int|\DateInterval $ttl = null): bool
     {
         $ok = true;

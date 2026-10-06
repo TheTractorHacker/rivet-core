@@ -25,7 +25,7 @@ final class AttestationStore implements AttestationProviderInterface
     public function record(string $itemId, ?int $reviewedByUserId, string $reviewerName, string $reviewedOn, ?string $nextDueOn, ?string $note, ?\DateTimeImmutable $today = null): int
     {
         $today ??= new \DateTimeImmutable('today');
-        if (!preg_match('/^[a-z0-9_]{1,64}$/', $itemId)) {
+        if (!preg_match('/^[a-z0-9_]{1,64}\z/D', $itemId)) {
             throw new \InvalidArgumentException('Unknown checklist item.');
         }
         $reviewer = trim($reviewerName);
