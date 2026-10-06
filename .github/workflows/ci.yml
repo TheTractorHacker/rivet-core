@@ -9,10 +9,11 @@ jobs:
       matrix:
         php: ['8.2', '8.3', '8.4', '8.5']
         db: ['mariadb:11']
+        health: ['healthcheck.sh --connect --innodb_initialized']
         include:
-          - { php: '8.4', db: 'mariadb:10.11' }
-          - { php: '8.4', db: 'mysql:8.0' }
-          - { php: '8.4', db: 'mysql:8.4' }
+          - { php: '8.4', db: 'mariadb:10.11', health: 'healthcheck.sh --connect --innodb_initialized' }
+          - { php: '8.4', db: 'mysql:8.0', health: 'mysqladmin ping -h 127.0.0.1 -proot --silent' }
+          - { php: '8.4', db: 'mysql:8.4', health: 'mysqladmin ping -h 127.0.0.1 -proot --silent' }
     services:
       database:
         image: ${{ matrix.db }}
@@ -23,7 +24,7 @@ jobs:
           MYSQL_DATABASE: rivetcore_test
         ports: ['3306:3306']
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot --silent"
+          --health-cmd="${{ matrix.health }}"
           --health-interval=5s --health-timeout=5s --health-retries=30
       redis:
         image: redis:7
