@@ -33,7 +33,22 @@ The releases after 0.7.1 went to compliance work, not to the milestones below, s
 | 0.13.0 | Retention preset `nist171` |
 | 0.14.0 | `ResponsibilityStore`: who is responsible for a section or item (the organization or a managed service provider) |
 
-Still open from the plan: the quality gates and hygiene milestone (CI matrix, static analysis, coverage), freezing the public contracts, and edition adoption. The fact table below was measured at 0.7.1 and has not been re-measured since.
+Status update on the branch `quality-gates-1.0` (2026-10-06, not yet merged or released): the CI matrix, PHPStan level 6, coverage gate, `SECURITY.md`,
+`CONTRIBUTING.md` and the compatibility job already existed. This branch adds, as docs, tests and tooling only (one small `src/` fix, `RedisAdmin::setMemory`):
+
+| Issue | Delivered | Still open |
+|---|---|---|
+| #42 performance baselines | `bench/` harness, measured numbers in `docs/PERFORMANCE.md`, optional weekly CI job with generous thresholds | numbers come from a shared, loaded dev box; re-measure on quiet hardware before quoting them |
+| #43 upgrade guide | `docs/UPGRADING.md`, verified from 12 old tags by `scripts/verify-upgrade.php` | none |
+| #19 docs first pass | quickstart, adapters guide, one page per module, runnable example, ADR-004 (ADR-003 was already taken by the authorization contract); every sample executed in CI | owner sign-off on ADR-004 |
+| #38 conformance kit | `tests/Conformance/` with reference in-memory and MySQL runs and negative tests | where it ships to editions (decision #49); no edition runs it yet |
+| #30 API freeze | `docs/PUBLIC-API.md`, `tests/api-surface.json`, `api-surface` CI job that fails on any difference | the 10 open design questions in PUBLIC-API.md |
+| #28 Redis auth/TLS | real-server tests for helpers, `docs/REDIS.md`; one bug found and fixed | editions' installers generating the secret (outside Core) |
+| #41 second security review | `docs/SECURITY-REVIEW-2.md`: threat model, 27 findings (no HIGH/MEDIUM), 36 pinned tests | triage of the LOW findings; external review |
+| #37 browser smoke tests | `tests/smoke/` scaffold and RivetIT spec, syntax-checked only | a run against a live scratch instance, and an MSP spec |
+| #36 installers on clean Ubuntu 24.04 | `docker/ubuntu24/smoke.sh` and `docs/testing/installers.md` | systemd, nginx, cron and the editions' own installers need real VMs |
+
+Still open from the plan: freezing the public contracts (review decisions above), edition adoption, the 30-day soak and the release gate. The fact table below was measured at 0.7.1 and has not been re-measured since.
 
 ### Measured at v0.7.1
 

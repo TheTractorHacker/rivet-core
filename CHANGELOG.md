@@ -2,6 +2,14 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## Unreleased
+Quality gates toward 1.0 (docs, tests and tooling; no public API change, no new migration).
+- **Fix:** `Redis\RedisAdmin::setMemory()` reported "Applied now" when the server refused `CONFIG SET` (for example an ACL user without `config|set`): `executeRaw()` returns the error text instead of throwing. It now returns `ok: false`. Test: `RedisAuthFailOpenTest::testSetMemoryReportsAnAclRefusalInsteadOfClaimingSuccess`.
+- **Docs:** `docs/UPGRADING.md` (0.x upgrade guide, verified by `scripts/verify-upgrade.php`), `docs/PUBLIC-API.md`, `docs/REDIS.md`, `docs/PERFORMANCE.md`, `docs/SECURITY-REVIEW-2.md`, ADR-004 (versioning policy), one page per module under `docs/modules/`, a runnable minimal edition in `docs/examples/`, the conformance-kit guide in `docs/adapters.md`, `docs/testing/installers.md`.
+- **Tooling:** `bench/` (benchmark harness with optional CI thresholds); `scripts/api-surface-check.php` with the committed snapshot `tests/api-surface.json` and an `api-surface` CI job that fails on any unreviewed surface change; `scripts/check-doc-samples.php` (runs every PHP sample in the docs, also in CI); `scripts/verify-upgrade.php`, `migrate-with.php`, `schema-fingerprint.php`; `docker/ubuntu24/` clean-container install harness; `tests/smoke/` Playwright scaffold and a RivetIT spec (syntax-checked only, never run against a live instance).
+- **Tests:** adapter conformance kit (`tests/Conformance/`, new `conformance` suite), Redis authentication/TLS/fail-open tests for the lock, cron, rate-limit and readiness helpers, `tests/Security/` (36 tests pinning the findings of the second security review), workflow failure-mode tests, API-surface guard tests. `RedisAuthTlsTest` ports can be moved with `RIVETCORE_TEST_REDIS_AUTH_PORT_BASE`.
+- **Static analysis:** two baseline entries for PHPStan 2.3 findings in `PdfConverter` (converters only).
+
 ## 0.21.0
 Webhook destinations, formats and events.
 - **Destinations:** `Webhooks\Destinations` / `Destination` / `DestinationField`: 24 presets with setup steps, URL hints and patterns, allowed auth modes, extra fields and HMAC verification snippets (node, python, php, bash, n8n Code node): n8n, Node-RED, Activepieces, Windmill, Huginn, Zapier, Make, Pipedream, IFTTT, Home Assistant, Apprise, ntfy, Gotify, Discord, Mattermost, Rocket.Chat, Slack, Microsoft Teams, Matrix (hookshot and client API), Telegram, generic JSON, generic form and custom template. `docs/webhook-platforms.md` is generated from them (`scripts/webhook-guides.php`, a test fails when it is stale); `docs/webhooks.md` explains signing, verification, replay protection, retries and the URL policy.
