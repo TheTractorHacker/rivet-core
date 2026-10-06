@@ -1,0 +1,33 @@
+{
+  "comment": "Minimum ops/s per case for `php bench/run.php --check=bench/thresholds.json`. Deliberately generous (database cases about a quarter of what a loaded shared box measured; CPU-only cases about a fifth) so shared CI runners pass and only a real regression (an order of magnitude, an accidental full scan, a lost index) trips it. Re-derive them from docs/PERFORMANCE.md on quieter hardware before tightening.",
+  "cases": {
+    "audit.write": {"min_ops_per_sec": 20},
+    "audit.reader.page1": {"min_ops_per_sec": 10},
+    "audit.reader.pageDeep": {"min_ops_per_sec": 3},
+    "audit.reader.filterType": {"min_ops_per_sec": 20},
+    "audit.reader.search": {"min_ops_per_sec": 2},
+    "audit.reader.exportChunked": {"min_ops_per_sec": 50000},
+    "jobs.enqueue": {"min_ops_per_sec": 20},
+    "jobs.claim": {"min_ops_per_sec": 30},
+    "jobs.lifecycle": {"min_ops_per_sec": 20},
+    "redis.lock.acquireRelease": {"min_ops_per_sec": 500},
+    "redis.cronguard.contended": {"min_ops_per_sec": 1000},
+    "redis.cronguard.acquire": {"min_ops_per_sec": 1000},
+    "redis.ratelimit.hit": {"min_ops_per_sec": 1000},
+    "redis.failopen.lockWhenDown": {"min_ops_per_sec": 100000},
+    "webhook.signatureV2": {"min_ops_per_sec": 20000},
+    "webhook.deliverTo.fakeTransport": {"min_ops_per_sec": 20},
+    "webhook.deliverTo.slackFormat": {"min_ops_per_sec": 20},
+    "retention.plan": {"min_ops_per_sec": 3},
+    "retention.prune.audit": {"min_ops_per_sec": 5000},
+    "retention.prune.nothingToDo": {"min_ops_per_sec": 2},
+    "compliance.assess": {"min_ops_per_sec": 800},
+    "compliance.report.html": {"min_ops_per_sec": 1000},
+    "compliance.report.csv": {"min_ops_per_sec": 800},
+    "urlpolicy.vet.publicHost": {"min_ops_per_sec": 10000},
+    "urlpolicy.vet.rejected": {"min_ops_per_sec": 100000},
+    "urlpolicy.vet.allowedNetwork": {"min_ops_per_sec": 20000},
+    "daterange.resolve": {"min_ops_per_sec": 15000},
+    "daterange.resolveCustom": {"min_ops_per_sec": 7000}
+  }
+}
