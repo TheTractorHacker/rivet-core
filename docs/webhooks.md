@@ -151,7 +151,7 @@ function verifyRivetSignature(string $rawBody, string $header, string $secret, i
     return hash_equals(hash_hmac('sha256', $m[1] . '.' . $rawBody, $secret), $m[2]);
 }
 
-// $ok = verifyRivetSignature(file_get_contents('php://input'), $_SERVER['HTTP_X_RIVET_SIGNATURE_V2'] ?? '', $secret);
+// $ok = verifyRivetSignature(file_get_contents('php://input'), getallheaders()['X-Rivet-Signature-V2'] ?? '', $secret);
 ```
 
 **Bash / openssl** (for testing; the string compare is not constant time)

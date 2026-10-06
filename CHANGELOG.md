@@ -2,6 +2,9 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.3
+CI-only fix on top of rc.2 (no behaviour change): the receiver-side verification sample in the webhook docs no longer contains a request superglobal, so the "no superglobals in src" check is green on every job. rc.3 is the first candidate with a fully green CI matrix; use it instead of rc.1/rc.2.
+
 ## 1.0.0-rc.2
 CI-only fixes on top of rc.1 (no library change): PHPStan 2.3 findings in the PDF converter baseline, the "no superglobals in src" check now exempts `src/Testing` (the conformance kit sets request superglobals on purpose), and `docs/api-surface.md` prints the same text on every PHP version (`self` return types are resolved), so the stale-surface test passes on PHP 8.2 to 8.5. Use rc.2 instead of rc.1.
 
