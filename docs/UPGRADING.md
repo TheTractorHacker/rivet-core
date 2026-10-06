@@ -141,4 +141,30 @@ and checks that it applied exactly the missing migrations, that the schema equal
 defaults, indexes, engine, collation; column order is reported separately because an upgraded table gets new columns last), that the row
 survived, that a second run applies nothing, and that the old tag's runner on the upgraded schema applies nothing.
 
-<!-- upgrade-results -->
+### Result (2026-10-06, PHP 8.5.11, MariaDB 11.8.6; repeated for v0.1.0, v0.9.0 and v0.17.0 inside a clean Ubuntu 24.04 container on MariaDB 10.11.14)
+
+Fresh install of this tree: 12 migrations, 17 tables (16 Core tables plus `rivet_core_migrations`).
+
+| From tag | Migrations applied on upgrade | Schema vs fresh install | Row written on the old tag | Second run | Old tag's runner on the upgraded schema |
+|---|---|---|---|---|---|
+| v0.1.0 | 11 (0002..0012) | equal | kept | no-op | applies nothing, no error |
+| v0.3.0 | 10 (0003..0012) | equal | kept | no-op | applies nothing, no error |
+| v0.4.1 | 9 (0004..0012) | equal | kept | no-op | applies nothing, no error |
+| v0.5.0 | 8 (0005..0012) | equal | kept | no-op | applies nothing, no error |
+| v0.6.0 | 5 (0008..0012) | equal | kept | no-op | applies nothing, no error |
+| v0.9.0 | 4 (0009..0012) | equal | kept | no-op | applies nothing, no error |
+| v0.10.0 | 3 (0010..0012) | equal | kept | no-op | applies nothing, no error |
+| v0.11.0 | 2 (0011..0012) | equal | kept | no-op | applies nothing, no error |
+| v0.14.0 | 1 (0012..0012) | equal | kept | no-op | applies nothing, no error |
+| v0.16.0 | 1 (0012..0012) | equal | kept | no-op | applies nothing, no error |
+| v0.17.0 | 0 (none) | equal | kept | no-op | applies nothing, no error |
+| v0.21.0 | 0 (none) | equal | kept | no-op | applies nothing, no error |
+
+Findings from the run:
+
+- Every old tag, including 0.1.0 (only `audit_events`), reaches a schema identical to a fresh install: same tables, columns, types, nullability, defaults, indexes, engine and collation.
+- Column order differs for none of the tables (migration 0010 and 0012 add their columns last in both paths).
+- The runner is idempotent: a second run applies nothing, and the old runner pointed at the upgraded schema applies nothing and does not fail, which is the schema side of a code-only rollback.
+- Skipping minors is safe: 0.1.0 straight to the current tree applied `0002` to `0012` in one call.
+- Not verified here: upgrading a database that holds edition tables, a large production-size dataset (the DDL timings are not representative), MySQL 8.x (CI runs the test matrix there, not this script), and old tags' *services* against the upgraded schema.
+
