@@ -8,7 +8,7 @@ jobs:
   github-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Cut the changelog excerpt for this tag
         run: |
           v="${GITHUB_REF_NAME#v}"

@@ -30,7 +30,7 @@ jobs:
         image: redis:7
         ports: ['6391:6379']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -63,7 +63,7 @@ jobs:
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
           --health-interval=5s --health-timeout=5s --health-retries=20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with: { php-version: '8.2', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
       - run: composer update --prefer-lowest --prefer-stable --no-interaction --prefer-dist
@@ -78,7 +78,7 @@ jobs:
     name: static analysis and dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
       - run: composer install --no-interaction --prefer-dist
@@ -99,7 +99,7 @@ jobs:
         image: redis:7
         ports: ['6391:6379']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', coverage: pcov, tools: composer }
       - run: sudo apt-get update && sudo apt-get install -y poppler-utils
@@ -120,7 +120,7 @@ jobs:
     # Advisory while the API is 0.x (a minor may break it, and the changelog says so); becomes required at 1.0.0.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - uses: shivammathur/setup-php@v2
         with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
