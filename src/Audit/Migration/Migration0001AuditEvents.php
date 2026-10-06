@@ -11,6 +11,8 @@ use RivetCore\Migration\MigrationInterface;
  * audit_events is Core-owned. RivetIT already created this exact table in its
  * own 2.6.51 migration; IF NOT EXISTS makes this a no-op there and creates it
  * on RivetMSP. The definition must stay identical to RivetIT's db.sql.
+ *
+ * @internal
  */
 final class Migration0001AuditEvents implements MigrationInterface
 {

@@ -9,7 +9,10 @@ use RivetCore\Compliance\CheckResult;
 use RivetCore\Compliance\Framework;
 use RivetCore\Database\DatabaseInterface;
 
-/** Is the structured audit trail on, and has it recorded anything recently? */
+/** Is the structured audit trail on, and has it recorded anything recently?
+ *
+ * @api
+ */
 final class AuditTrailRecordingCheck implements CheckInterface
 {
     public function __construct(private DatabaseInterface $database, private bool $recordingEnabled, private string $settingsPath)

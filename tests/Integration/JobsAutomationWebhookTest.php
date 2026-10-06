@@ -76,7 +76,7 @@ final class JobsAutomationWebhookTest extends TestCase
         $id = $q->enqueue('x');
         $q->claim(1);
         self::assertSame(0, $q->requeueStale(15), 'a job that just started is not stale');
-        $this->db->execute("UPDATE integration_jobs SET started_at = NOW() - INTERVAL 30 MINUTE WHERE job_id = ?", [$id]);
+        $this->db->execute("UPDATE integration_jobs SET started_at = NOW() - INTERVAL 30 MINUTE, heartbeat_at = NOW() - INTERVAL 30 MINUTE WHERE job_id = ?", [$id]);
         self::assertSame(1, $q->requeueStale(15));
         self::assertSame('pending', $this->db->fetchOne('SELECT status FROM integration_jobs WHERE job_id = ?', [$id])['status']);
     }

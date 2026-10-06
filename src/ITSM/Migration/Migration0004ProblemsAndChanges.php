@@ -10,6 +10,8 @@ use RivetCore\Migration\MigrationInterface;
 /**
  * problems and changes are Core-owned. RivetIT created these exact tables in its 2.6.62 migration; IF NOT EXISTS
  * makes this a no-op there. The edition-owned tickets.ticket_problem_id column is NOT part of this migration.
+ *
+ * @internal
  */
 final class Migration0004ProblemsAndChanges implements MigrationInterface
 {

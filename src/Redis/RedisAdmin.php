@@ -10,6 +10,8 @@ use Predis\Client;
  * Admin tooling around a Redis server: validate and test connection values, read stats, count and clear an
  * allowlisted set of key groups, and set the memory limit. Where the connection comes from (environment,
  * settings table) and which key groups may be cleared are the edition's business: pass the groups in.
+ *
+ * @api
  */
 final class RedisAdmin
 {
@@ -20,37 +22,77 @@ final class RedisAdmin
     {
     }
 
-    /** @return ?string an error message, or null when the values are acceptable */
+    /** @return ?string an error message, or null when the values are acceptable (plain host/port/db/password check; see RedisConnectionConfig::validate() for TLS and username) */
     public static function validate(string $host, int $port, int $db, string $password): ?string
     {
-        if ($host === '' || strlen($host) > 253 || !preg_match('/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$|^\[?[0-9A-Fa-f:]+\]?$/', $host)) return 'Enter a host name or IP address.';
-        if ($port < 1 || $port > 65535) return 'The port must be between 1 and 65535.';
-        if ($db < 0 || $db > 15) return 'The database number must be between 0 and 15.';
-        if (strlen($password) > 500) return 'The password is too long.';
-        return null;
+        return (new RedisConnectionConfig($host, $port, $db, $password === '' ? null : $password))->validate();
     }
 
-    public function client(array $p, float $timeout = 1.0): Client
+    /**
+     * Build a Predis client from the edition's settings array (host, port, db, password, optional username, tls, ...)
+     * or from a RedisConnectionConfig.
+     *
+     * @param array<string,mixed>|RedisConnectionConfig $p
+     */
+    public function client(array|RedisConnectionConfig $p, float $timeout = 1.0): Client
     {
-        $parameters = ['scheme' => 'tcp', 'host' => $p['host'], 'port' => $p['port'], 'database' => $p['db'], 'timeout' => $timeout];
-        if (!empty($p['password'])) $parameters['password'] = $p['password'];
-        return new Client($parameters);
+        $config = $p instanceof RedisConnectionConfig ? $p : RedisConnectionConfig::fromArray($p);
+
+        return new Client($config->toPredisParameters($timeout));
     }
 
-    /** @return array{ok:bool, message:string} */
-    public function test(array $p): array
+    /**
+     * Try a connection and say why it failed. 'reason' is one of ok, invalid, auth, tls, unreachable, unexpected.
+     * No message ever contains the password (or any text taken from the server's error).
+     *
+     * @param array<string,mixed>|RedisConnectionConfig $p
+     * @return array{ok:bool, message:string, reason:string}
+     */
+    public function test(array|RedisConnectionConfig $p): array
     {
+        $config = $p instanceof RedisConnectionConfig ? $p : RedisConnectionConfig::fromArray($p);
+        $invalid = $config->validate(true);
+        if ($invalid !== null) {
+            return ['ok' => false, 'message' => $invalid, 'reason' => 'invalid'];
+        }
+        // Predis surfaces a failed TLS handshake as a PHP warning as well as an exception; keep it out of the caller's logs.
+        set_error_handler(static fn (): bool => true, E_WARNING | E_NOTICE);
         try {
-            $c = $this->client($p);
+            $c = $this->client($config);
             $c->connect();
             $pong = (string) $c->ping();
-            return $pong === 'PONG' ? ['ok' => true, 'message' => 'Connected.'] : ['ok' => false, 'message' => 'Unexpected reply from the server.'];
+
+            return $pong === 'PONG'
+                ? ['ok' => true, 'message' => 'Connected.', 'reason' => 'ok']
+                : ['ok' => false, 'message' => 'Unexpected reply from the server.', 'reason' => 'unexpected'];
         } catch (\Throwable $e) {
-            $m = $e->getMessage();
-            $hint = stripos($m, 'NOAUTH') !== false || stripos($m, 'WRONGPASS') !== false || stripos($m, 'invalid password') !== false
-                ? 'The server wants a password, or the password is wrong.' : 'Could not connect. Check the host and port, and that Redis is running.';
-            return ['ok' => false, 'message' => $hint];
+            $reason = self::classify($e->getMessage(), $config);
+            $message = match ($reason) {
+                'auth' => $config->username !== null && $config->username !== ''
+                    ? 'Authentication failed: the server rejected this username and password, or the user may not use this database.'
+                    : 'Authentication failed: the server wants a password, or the password is wrong.',
+                'tls' => 'Could not complete the TLS handshake. Check that the server has TLS enabled on this port, and that the CA file matches the server certificate' . ($config->verifyPeer ? ' (or turn certificate verification off for a test).' : '.'),
+                default => 'Could not connect. Check the host and port, and that Redis is running.',
+            };
+
+            return ['ok' => false, 'message' => $config->redact($message), 'reason' => $reason];
+        } finally {
+            restore_error_handler();
         }
+    }
+
+    /** @return 'auth'|'tls'|'unreachable' */
+    private static function classify(string $error, RedisConnectionConfig $config): string
+    {
+        $m = $config->redact($error);
+        if (preg_match('/NOAUTH|WRONGPASS|invalid (username-)?password|ERR AUTH|NOPERM|AUTH failed|authentication/i', $m)) {
+            return 'auth';
+        }
+        if ($config->tls && preg_match('/\bssl\b|\btls\b|crypto|certificate|handshake|peer|wrong version number|unexpected eof/i', $m)) {
+            return 'tls';
+        }
+
+        return 'unreachable';
     }
 
     /** Flatten INFO sections, tolerating Predis returning either capitalised or lower-case section names. */

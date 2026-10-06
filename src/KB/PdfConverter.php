@@ -81,9 +81,13 @@ namespace RivetCore\KB;
  * All budgets below were measured on this host and are documented at their
  * declarations. The caller must still purify the returned HTML - this class
  * emits a deliberately small tag set, but it is not a sanitiser.
+ *
+ * @api
  */
 final class PdfConverter
 {
+    private \Psr\Log\LoggerInterface $logger;
+
     // ---- Binaries --------------------------------------------------------
     private const BIN_PDFINFO  = '/usr/bin/pdfinfo';
     private const BIN_PDFTOTEXT = '/usr/bin/pdftotext';
@@ -149,9 +153,12 @@ final class PdfConverter
      * @return array{html:string,text:string,media:array,warnings:array}
      * @throws PdfConversionException
      */
-    public static function convert(string $path): array
+    public static function convert(string $path, ?\Psr\Log\LoggerInterface $logger = null): array
     {
-        return (new self())->run($path);
+        $converter = new self();
+        $converter->logger = \RivetCore\Support\ErrorLogLogger::resolve($logger);
+
+        return $converter->run($path);
     }
 
     /**
@@ -249,7 +256,7 @@ final class PdfConverter
             if (stripos($r['stderr'], 'password') !== false || stripos($r['stderr'], 'encrypt') !== false) {
                 throw new PdfConversionException('That PDF is password-protected. Open it in a PDF reader, save an unprotected copy, and import that.');
             }
-            error_log('PdfConverter: pdfinfo exited ' . $r['code'] . ': ' . substr($r['stderr'], 0, 300));
+            $this->logger->warning('PdfConverter: pdfinfo exited ' . $r['code'] . ': ' . substr($r['stderr'], 0, 300));
             throw new PdfConversionException('That file is not a readable PDF.');
         }
 
@@ -297,7 +304,7 @@ final class PdfConverter
             throw new PdfConversionException('That PDF took too long to read and was stopped.');
         }
         if ($r['code'] !== 0) {
-            error_log('PdfConverter: pdftotext exited ' . $r['code'] . ': ' . substr($r['stderr'], 0, 300));
+            $this->logger->warning('PdfConverter: pdftotext exited ' . $r['code'] . ': ' . substr($r['stderr'], 0, 300));
             throw new PdfConversionException('The text in that PDF could not be read.');
         }
 
@@ -332,7 +339,7 @@ final class PdfConverter
             throw new PdfConversionException('That PDF took too long to convert and was stopped.');
         }
         if ($r['code'] !== 0) {
-            error_log('PdfConverter: pdftohtml exited ' . $r['code'] . ': ' . substr($r['stderr'], 0, 300));
+            $this->logger->warning('PdfConverter: pdftohtml exited ' . $r['code'] . ': ' . substr($r['stderr'], 0, 300));
             throw new PdfConversionException('That PDF could not be converted.');
         }
 

@@ -10,6 +10,8 @@ namespace RivetCore\KB;
  * The message is written to be shown to the person who uploaded the file - it
  * never contains a filesystem path, a stack detail, or anything else that would
  * leak server internals - so a caller can put it straight into flash_alert().
+ *
+ * @api
  */
 class DocxConversionException extends \RuntimeException
 {

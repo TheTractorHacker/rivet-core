@@ -7,6 +7,8 @@ namespace RivetCore\Compliance;
 /**
  * The manual checklist an MSP works through for a customer: things a person must do and sign off, each tagged to the frameworks it
  * helps evidence. Control references are indicative starting points, not a mapping reviewed by an assessor.
+ *
+ * @api
  */
 final class ClientChecklist
 {

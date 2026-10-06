@@ -13,6 +13,8 @@ use RivetCore\Contracts\SettingsInterface;
  *
  * Settings keys read through SettingsInterface: mcp.issuer, mcp.audience, mcp.enabled (the module switch).
  * A null `mcp.issuer` means the schema does not have the setting yet (treated as not configured).
+ *
+ * @api
  */
 final class McpConfig
 {

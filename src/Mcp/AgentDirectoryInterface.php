@@ -8,6 +8,8 @@ namespace RivetCore\Mcp;
  * The edition's view of its agents (staff users). Core links OAuth identities to agents through this
  * interface and never queries the edition's user table itself. Implementations run on the same connection as
  * the DatabaseInterface handed to IdentityLinker, so lookups inside link() join its transaction.
+ *
+ * @api
  */
 interface AgentDirectoryInterface
 {

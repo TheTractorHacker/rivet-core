@@ -7,6 +7,8 @@ namespace RivetCore\Compliance;
 /**
  * One automatic, read-only check. A check never changes anything and never throws to its caller: the assessor turns an
  * exception into an "error" result for that check only.
+ *
+ * @api
  */
 interface CheckInterface
 {

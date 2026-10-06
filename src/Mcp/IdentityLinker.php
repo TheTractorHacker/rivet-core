@@ -6,14 +6,17 @@ namespace RivetCore\Mcp;
 
 use RivetCore\Database\DatabaseInterface;
 
-/** Links a pending OAuth identity to one agent. Linking is always an explicit administrator action. */
+/** Links a pending OAuth identity to one agent. Linking is always an explicit administrator action.
+ *
+ * @api
+ */
 final class IdentityLinker
 {
     public function __construct(
         private DatabaseInterface $database,
         private UnlinkedIdentityStore $store,
         private AgentDirectoryInterface $agents,
-        private ?\Closure $logError = null,
+        private \Closure|\Psr\Log\LoggerInterface|null $logError = null,
     ) {
     }
 
@@ -42,9 +45,7 @@ final class IdentityLinker
                 return [true, 'Linked.'];
             });
         } catch (\Throwable $e) {
-            ($this->logError ?? static function (string $m): void {
-                error_log($m);
-            })('MCP link failed: ' . $e->getMessage());
+            \RivetCore\Support\ErrorLogLogger::resolve($this->logError)->error('MCP link failed: ' . $e->getMessage());
 
             return [false, 'Could not link. Nothing was changed.'];
         }

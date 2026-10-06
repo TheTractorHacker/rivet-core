@@ -10,6 +10,8 @@ use RivetCore\Database\DatabaseInterface;
  * Change management, kept deliberately lightweight: no separate approver/CAB model - a change just carries
  * its own status, risk and plans, and a problem can point at the change meant to fix it
  * (problems.change_problem_id) to complete the tickets -> problem -> change chain.
+ *
+ * @api
  */
 class ChangeService
 {

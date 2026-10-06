@@ -7,7 +7,10 @@ namespace RivetCore\Automation\Migration;
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Migration\MigrationInterface;
 
-/** automation_rules is Core-owned. RivetIT created this exact table in 2.6.63; IF NOT EXISTS makes this a no-op there. */
+/** automation_rules is Core-owned. RivetIT created this exact table in 2.6.63; IF NOT EXISTS makes this a no-op there.
+ *
+ * @internal
+ */
 final class Migration0006AutomationRules implements MigrationInterface
 {
     public function id(): string

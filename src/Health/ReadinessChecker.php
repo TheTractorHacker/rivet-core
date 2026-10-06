@@ -11,6 +11,8 @@ use RivetCore\Redis\RedisClientProviderInterface;
  * Readiness report: the database answers and its schema matches the code. Redis is reported but never fails
  * readiness - every Redis feature fails open. Integrations are deliberately not checked. The report carries
  * only ok/fail per check: no hostnames, versions or error text.
+ *
+ * @api
  */
 final class ReadinessChecker
 {

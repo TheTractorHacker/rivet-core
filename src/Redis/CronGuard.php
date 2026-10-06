@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace RivetCore\Redis;
 
-/** "Only one copy of this cron job at a time". The CLI echo/exit stays with the caller. */
+/** "Only one copy of this cron job at a time". The CLI echo/exit stays with the caller.
+ *
+ * @api
+ */
 final class CronGuard
 {
     public function __construct(private LockManager $locks)

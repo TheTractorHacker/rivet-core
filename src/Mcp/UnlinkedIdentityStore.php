@@ -11,13 +11,15 @@ use RivetCore\Database\DatabaseInterface;
  * Remembers valid OAuth identities (issuer + immutable subject) that are not linked to an agent yet, so an
  * administrator can pick the agent from a list instead of copying subject ids by hand. Only tokens that
  * already passed signature, issuer, audience, scope and expiry checks are ever recorded.
+ *
+ * @api
  */
 final class UnlinkedIdentityStore
 {
     public const MAX_PENDING = 200;
     public const KEEP_DAYS = 30;
 
-    public function __construct(private DatabaseInterface $database, private ?\Closure $logError = null)
+    public function __construct(private DatabaseInterface $database, private \Closure|\Psr\Log\LoggerInterface|null $logError = null)
     {
     }
 
@@ -57,9 +59,7 @@ final class UnlinkedIdentityStore
                 $this->database->execute($touch, [$email, $name, $issuer, $subject]);
             }
         } catch (\Throwable $e) {
-            ($this->logError ?? static function (string $m): void {
-                error_log($m);
-            })('MCP unlinked identity not recorded: ' . $e->getMessage());
+            \RivetCore\Support\ErrorLogLogger::resolve($this->logError)->error('MCP unlinked identity not recorded: ' . $e->getMessage());
         }
     }
 

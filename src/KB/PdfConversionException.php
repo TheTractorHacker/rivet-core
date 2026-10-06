@@ -13,6 +13,8 @@ namespace RivetCore\KB;
  * poppler stderr dump, or anything else that would leak server internals, so a
  * caller can put it straight into flash_alert(). Detail for an administrator
  * goes to error_log() at the throw site instead.
+ *
+ * @api
  */
 class PdfConversionException extends \RuntimeException
 {

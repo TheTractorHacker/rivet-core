@@ -11,6 +11,8 @@ namespace RivetCore\Database;
  *
  * Parameters are string|int|float|bool|null. The adapter decides how to bind
  * them. Failures surface as DatabaseException, never as `false`.
+ *
+ * @api
  */
 interface DatabaseInterface
 {

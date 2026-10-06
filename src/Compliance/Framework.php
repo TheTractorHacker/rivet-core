@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace RivetCore\Compliance;
 
-/** The frameworks controls can be tagged to. Keys match RetentionPolicy::PROFILES. */
+/** The frameworks controls can be tagged to. Keys match RetentionPolicy::PROFILES.
+ *
+ * @api
+ */
 final class Framework
 {
     public const ISO27001 = 'iso27001';

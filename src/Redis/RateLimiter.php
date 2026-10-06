@@ -8,6 +8,8 @@ namespace RivetCore\Redis;
  * Fixed-window rate limiter on Redis. The counter and its TTL are set in one Lua call so a crash
  * cannot leave a counter that never expires. Fails open (allowed) if Redis is unavailable: this is
  * an abuse guard, not an access control.
+ *
+ * @api
  */
 final class RateLimiter
 {

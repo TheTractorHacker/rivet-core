@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Compliance;
 
+/** @api */
 enum Status: string
 {
     case Pass = 'pass';

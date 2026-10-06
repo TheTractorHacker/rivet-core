@@ -6,7 +6,10 @@ namespace RivetCore\Support;
 
 use RivetCore\Contracts\SettingsInterface;
 
-/** Settings backed by a plain array; handy for adapters that preload settings, and for tests. */
+/** Settings backed by a plain array; handy for adapters that preload settings, and for tests.
+ *
+ * @api
+ */
 final class ArraySettings implements SettingsInterface
 {
     /** @param array<string,mixed> $values */

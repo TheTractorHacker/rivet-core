@@ -7,6 +7,8 @@ namespace RivetCore\Compliance;
 /**
  * A point-in-time result: every automatic check, every manual item's state, and a score per framework. Plain arrays all the
  * way down so it serializes to JSON for snapshots and reads back unchanged.
+ *
+ * @api
  */
 final readonly class Assessment
 {

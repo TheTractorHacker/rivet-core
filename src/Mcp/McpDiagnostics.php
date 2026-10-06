@@ -10,6 +10,8 @@ use GuzzleHttp\ClientInterface;
  * "Is this actually going to work?" checks for Administration > Remote MCP. Each check returns
  * status ok|warn|fail|skip, a short label, and a plain-language detail with the fix. Network access goes
  * through an injected Guzzle client so the checks can be tested without a real identity provider.
+ *
+ * @api
  */
 final class McpDiagnostics
 {

@@ -13,6 +13,8 @@ use RivetCore\Database\DatabaseInterface;
  *
  * Request facts (IP, user agent, request id) come from the injected
  * RequestContextInterface, never from superglobals.
+ *
+ * @api
  */
 final class AuditService
 {

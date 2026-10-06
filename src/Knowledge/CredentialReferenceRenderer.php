@@ -11,6 +11,8 @@ namespace RivetCore\Knowledge;
  * never looks the credential up, never decrypts anything, and the token is never rewritten in storage (the
  * stored article and every version snapshot keep the raw text forever, only the display copy changes). The
  * edition's reveal screen must re-check permissions itself; this class has no opinion on who may see a secret.
+ *
+ * @api
  */
 class CredentialReferenceRenderer
 {

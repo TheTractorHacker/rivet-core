@@ -11,6 +11,8 @@ namespace RivetCore\Redis;
  * FAILS OPEN: when Redis is unreachable acquire() reports the lock as held (degraded() is true) so
  * jobs keep running exactly as they did before locks existed. Callers that must not run without
  * mutual exclusion should check degraded() themselves.
+ *
+ * @api
  */
 final class LockManager
 {

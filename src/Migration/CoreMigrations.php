@@ -6,6 +6,7 @@ namespace RivetCore\Migration;
 
 use RivetCore\Audit\Migration\Migration0001AuditEvents;
 use RivetCore\Jobs\Migration\Migration0002IntegrationJobs;
+use RivetCore\Jobs\Migration\Migration0012JobHeartbeat;
 use RivetCore\Automation\Migration\Migration0006AutomationRules;
 use RivetCore\Compliance\Migration\Migration0008Compliance;
 use RivetCore\Compliance\Migration\Migration0009SharedReport;
@@ -16,7 +17,10 @@ use RivetCore\Mcp\Migration\Migration0003McpUnlinkedIdentities;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
 
-/** The ordered list of every Core-owned migration. Append only. */
+/** The ordered list of every Core-owned migration. Append only.
+ *
+ * @api
+ */
 final class CoreMigrations
 {
     /** @return list<MigrationInterface> */
@@ -34,6 +38,7 @@ final class CoreMigrations
             new Migration0009SharedReport(),
             new Migration0010Subjects(),
             new Migration0011Responsibilities(),
+            new Migration0012JobHeartbeat(),
         ];
     }
 }

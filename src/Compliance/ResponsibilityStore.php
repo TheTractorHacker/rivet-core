@@ -11,6 +11,8 @@ use RivetCore\Database\DatabaseInterface;
  * An assignment is keyed "section:<category>" (every item in that section) or "item:<id>" (one item, which overrides its section).
  * No assignment means the organization's own staff. The party's name is stored with the assignment so reports and snapshots stay
  * readable if the party is later renamed or removed.
+ *
+ * @api
  */
 final class ResponsibilityStore
 {

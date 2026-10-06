@@ -7,7 +7,10 @@ namespace RivetCore\Compliance\Migration;
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Migration\MigrationInterface;
 
-/** compliance_attestations (manual reviews, append-only) and compliance_snapshots (saved assessments) are Core-owned. */
+/** compliance_attestations (manual reviews, append-only) and compliance_snapshots (saved assessments) are Core-owned.
+ *
+ * @internal
+ */
 final class Migration0008Compliance implements MigrationInterface
 {
     public function id(): string

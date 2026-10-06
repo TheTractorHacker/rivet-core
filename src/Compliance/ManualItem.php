@@ -7,6 +7,8 @@ namespace RivetCore\Compliance;
 /**
  * A control no software can verify (a policy, a review, a test). A person records that they did it, with a note, and it
  * stays "current" until the review interval runs out.
+ *
+ * @api
  */
 final readonly class ManualItem
 {

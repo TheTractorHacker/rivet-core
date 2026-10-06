@@ -7,7 +7,10 @@ namespace RivetCore\Workflow\Migration;
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Migration\MigrationInterface;
 
-/** The four workflow tables are Core-owned. RivetIT created these exact tables in 2.6.65; IF NOT EXISTS makes this a no-op there. */
+/** The four workflow tables are Core-owned. RivetIT created these exact tables in 2.6.65; IF NOT EXISTS makes this a no-op there.
+ *
+ * @internal
+ */
 final class Migration0007WorkflowTables implements MigrationInterface
 {
     public function id(): string

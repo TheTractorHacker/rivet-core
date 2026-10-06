@@ -18,6 +18,8 @@ namespace RivetCore\Compliance;
  *  - HIPAA (45 CFR 164.316(b)(2)): required documentation is kept 6 years, which organizations apply to audit records.
  *  - NIST SP 800-171 / CMMC (3.3.1): requires audit logs to be retained but sets no number; 12 months is the common
  *    organization-defined value (and FedRAMP's baseline), and DFARS 7012 separately requires preserving incident data for 90 days.
+ *
+ * @api
  */
 final class RetentionPolicy
 {
@@ -32,6 +34,17 @@ final class RetentionPolicy
         'hipaa' => ['label' => 'HIPAA', 'min_days' => 2190, 'note' => 'Keeps records at least 6 years, the HIPAA documentation period.'],
         'nist171' => ['label' => 'NIST 800-171 / CMMC', 'min_days' => 365, 'note' => 'Keeps records at least 12 months. NIST 800-171 (3.3.1) requires retaining audit logs but sets no number; 12 months is the common choice to define in your policy.'],
     ];
+
+    /** The log families that have their own horizon. Audit uses the preset's full floor; the other two may be shorter. */
+    public const KIND_AUDIT = 'audit';
+    public const KIND_DELIVERIES = 'deliveries';
+    public const KIND_JOBS = 'jobs';
+
+    /** Shortest horizon allowed for webhook deliveries and finished jobs when pruning is on (0 = keep forever is always allowed). */
+    public const OPERATIONAL_MIN_DAYS = 7;
+
+    /** Floor for webhook deliveries / finished jobs under a regulated preset: delivery logs are operational evidence, so 30 days. */
+    public const OPERATIONAL_REGULATED_DAYS = 30;
 
     public static function isValidProfile(string $profile): bool
     {
@@ -67,5 +80,32 @@ final class RetentionPolicy
     public static function describeDays(int $days): string
     {
         return $days <= 0 ? 'kept forever' : $days . ($days === 1 ? ' day' : ' days');
+    }
+
+    /**
+     * Minimum days for one kind of log under a preset. Audit events use the preset floor itself. Webhook deliveries and
+     * finished jobs use a shorter floor: 7 days with no preset, 30 days under any framework preset (never above the
+     * preset's own floor).
+     */
+    public static function floorDaysFor(string $profile, string $kind): int
+    {
+        if ($kind === self::KIND_AUDIT) {
+            return self::floorDays($profile);
+        }
+        if (self::floorDays($profile) === 0) {
+            return self::OPERATIONAL_MIN_DAYS;
+        }
+
+        return min(self::OPERATIONAL_REGULATED_DAYS, self::floorDays($profile));
+    }
+
+    /** Like effectiveDays() but for a specific kind: 0 or below stays 0 (keep forever), anything else is raised to that kind's floor. */
+    public static function effectiveDaysFor(string $profile, string $kind, int $configuredDays): int
+    {
+        if ($configuredDays <= 0) {
+            return 0;
+        }
+
+        return max($configuredDays, self::floorDaysFor($profile, $kind));
     }
 }

@@ -8,6 +8,8 @@ namespace RivetCore\Compliance;
  * NIST SP 800-171 Rev 2 requirement numbers (the basis of CMMC Level 2) for the checks and checklist items that already exist, so one
  * mapping serves every edition. References are indicative starting points, not a mapping reviewed by an assessor; CMMC Level 2
  * practices correspond one to one to the 110 requirements. Rev 3 renumbers them.
+ *
+ * @api
  */
 final class Nist171Map
 {

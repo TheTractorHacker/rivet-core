@@ -5,7 +5,7 @@ Install from the Git tag (rivet-core is not on Packagist):
 ```json
 {
   "repositories": [{ "type": "vcs", "url": "https://github.com/TheTractorHacker/rivet-core.git", "no-api": true }],
-  "require": { "rivet/rivet-core": "^0.16" }
+  "require": { "rivet/rivet-core": "^0.17" }
 }
 ```
 

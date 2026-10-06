@@ -10,6 +10,8 @@ use RivetCore\Database\DatabaseInterface;
  * One additive, idempotent schema step owned by RivetCore. Use
  * CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS; never drop, rename
  * or truncate. Core migrations may only touch Core-owned tables.
+ *
+ * @api
  */
 interface MigrationInterface
 {

@@ -7,6 +7,8 @@ namespace RivetCore\Automation;
 /**
  * Runs one matched rule's action through handlers the edition supplies (Core cannot create tickets or notify users itself).
  * {placeholders} in the action's text fields are replaced from the event context, e.g. "Backup failed: {backup.name}".
+ *
+ * @api
  */
 final class AutomationExecutor
 {

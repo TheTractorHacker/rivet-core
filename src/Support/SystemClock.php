@@ -6,6 +6,7 @@ namespace RivetCore\Support;
 
 use RivetCore\Contracts\ClockInterface;
 
+/** @api */
 final class SystemClock implements ClockInterface
 {
     public function now(): \DateTimeImmutable

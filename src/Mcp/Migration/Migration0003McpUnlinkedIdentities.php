@@ -7,7 +7,10 @@ namespace RivetCore\Mcp\Migration;
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Migration\MigrationInterface;
 
-/** mcp_unlinked_identities is Core-owned. RivetIT created this exact table in migration 2.6.123; IF NOT EXISTS makes this a no-op there. */
+/** mcp_unlinked_identities is Core-owned. RivetIT created this exact table in migration 2.6.123; IF NOT EXISTS makes this a no-op there.
+ *
+ * @internal
+ */
 final class Migration0003McpUnlinkedIdentities implements MigrationInterface
 {
     public function id(): string

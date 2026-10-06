@@ -11,6 +11,8 @@ use RivetCore\Database\DatabaseInterface;
  * strings. Deliberately evaluation-only: findMatchingRules() tells a caller which enabled rules fire for an
  * event; it does not execute create_ticket / send_webhook / notify_user. Execution belongs to the edition,
  * which knows what a ticket or a notification is.
+ *
+ * @api
  */
 class AutomationRuleEvaluator
 {

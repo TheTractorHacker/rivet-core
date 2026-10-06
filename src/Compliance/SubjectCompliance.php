@@ -11,6 +11,8 @@ use RivetCore\Database\DatabaseInterface;
  * Compliance for a subject other than the installation itself, such as an MSP's customer: the frameworks chosen for it, its manual
  * checklist with sign-off, saved snapshots, and the one snapshot (if any) shared with the subject. There are no automatic checks:
  * Core cannot see a customer's systems, so everything here is evidenced by a person's recorded review.
+ *
+ * @api
  */
 final class SubjectCompliance
 {

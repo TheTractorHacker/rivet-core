@@ -6,6 +6,7 @@ namespace RivetCore\Support;
 
 use RivetCore\Contracts\RequestContextInterface;
 
+/** @api */
 final class NullRequestContext implements RequestContextInterface
 {
     public function ipAddress(): ?string

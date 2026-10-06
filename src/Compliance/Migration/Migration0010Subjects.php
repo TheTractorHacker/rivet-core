@@ -10,6 +10,8 @@ use RivetCore\Migration\MigrationInterface;
 /**
  * Compliance for subjects other than the installation itself (an MSP's customers). subject_id 0 is the installation, so every existing
  * row keeps its meaning. compliance_subjects holds the chosen frameworks and what is shared with that subject.
+ *
+ * @internal
  */
 final class Migration0010Subjects implements MigrationInterface
 {

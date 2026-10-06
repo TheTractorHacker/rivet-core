@@ -7,6 +7,8 @@ namespace RivetCore\ITSM;
 /**
  * How an edition attaches its tickets (incidents) to a problem. Tickets are edition-owned, so Core never
  * touches the tickets table: the edition keeps the link wherever it stores tickets.
+ *
+ * @api
  */
 interface TicketProblemLinkInterface
 {

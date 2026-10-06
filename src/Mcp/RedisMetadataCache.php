@@ -7,7 +7,10 @@ namespace RivetCore\Mcp;
 use Psr\SimpleCache\CacheInterface;
 use RivetCore\Redis\RedisClientProviderInterface;
 
-/** Public OAuth discovery/JWKS cache (PSR-16). Redis outages are treated as cache misses. Not final so an edition can pin its default provider. */
+/** Public OAuth discovery/JWKS cache (PSR-16). Redis outages are treated as cache misses. Not final so an edition can pin its default provider.
+ *
+ * @api
+ */
 class RedisMetadataCache implements CacheInterface
 {
     public function __construct(private RedisClientProviderInterface $redis, private string $keyPrefix = 'mcp_metadata:') {}

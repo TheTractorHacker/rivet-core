@@ -9,7 +9,10 @@ use RivetCore\Compliance\CheckResult;
 use RivetCore\Compliance\Framework;
 use RivetCore\Compliance\RetentionPolicy;
 
-/** Is a compliance preset chosen, and do both retention horizons meet its floor? */
+/** Is a compliance preset chosen, and do both retention horizons meet its floor?
+ *
+ * @api
+ */
 final class RetentionMeetsPresetCheck implements CheckInterface
 {
     public function __construct(private string $profile, private int $logDays, private int $auditDays, private string $settingsPath)

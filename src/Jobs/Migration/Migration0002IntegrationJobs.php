@@ -10,6 +10,8 @@ use RivetCore\Migration\MigrationInterface;
 /**
  * integration_jobs is Core-owned. RivetIT created this exact table in its own 2.6.52 migration; IF NOT EXISTS
  * makes this a no-op there and creates it on RivetMSP. Keep identical to RivetIT's db.sql.
+ *
+ * @internal
  */
 final class Migration0002IntegrationJobs implements MigrationInterface
 {

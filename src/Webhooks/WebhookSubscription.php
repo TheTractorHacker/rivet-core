@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace RivetCore\Webhooks;
 
-/** One endpoint subscribed to an event. The secret is already decrypted by the edition. */
+/** One endpoint subscribed to an event. The secret is already decrypted by the edition.
+ *
+ * @api
+ */
 final readonly class WebhookSubscription
 {
     public function __construct(

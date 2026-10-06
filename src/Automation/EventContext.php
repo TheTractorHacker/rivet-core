@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace RivetCore\Automation;
 
-/** Turns an event payload into the flat key => value map rule conditions compare against. */
+/** Turns an event payload into the flat key => value map rule conditions compare against.
+ *
+ * @api
+ */
 final class EventContext
 {
     /**

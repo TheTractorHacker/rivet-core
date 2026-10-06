@@ -15,14 +15,74 @@ use RivetCore\Database\DatabaseInterface;
  *
  * claim() is safe for concurrent workers: each candidate is claimed with a conditional UPDATE
  * (status must still be 'pending'), and only rows this call actually won are returned.
+ *
+ * @api
  */
 final class JobQueue
 {
     /** Minutes to wait before retry n (1-based); anything past the list waits the last value. */
     private const BACKOFF_MINUTES = [1, 5, 30, 120];
 
+    private ?bool $hasHeartbeat = null;
+
     public function __construct(private DatabaseInterface $database)
     {
+    }
+
+    /** True when integration_jobs has the heartbeat_at column (migration 0012). Without it everything falls back to started_at. */
+    public function supportsHeartbeat(): bool
+    {
+        if ($this->hasHeartbeat === null) {
+            $row = $this->database->fetchOne(
+                "SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'integration_jobs' AND COLUMN_NAME = 'heartbeat_at'"
+            );
+            $this->hasHeartbeat = (int) ($row['c'] ?? 0) > 0;
+        }
+
+        return $this->hasHeartbeat;
+    }
+
+    /**
+     * Tell the queue the worker is still alive for these running jobs, so requeueStale() leaves them alone.
+     *
+     * @param int|list<int> $jobIds
+     * @return int how many running jobs were refreshed. Fewer than asked means another worker reclaimed the rest.
+     *             Without the heartbeat column nothing is recorded and every id is reported as alive.
+     */
+    public function heartbeat(int|array $jobIds): int
+    {
+        $ids = array_map('intval', is_array($jobIds) ? $jobIds : [$jobIds]);
+        if ($ids === []) {
+            return 0;
+        }
+        if (!$this->supportsHeartbeat()) {
+            return count($ids);
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+
+        $this->database->execute(
+            "UPDATE integration_jobs SET heartbeat_at = NOW() WHERE status = 'running' AND job_id IN ($in)",
+            $ids
+        );
+        // Count with a SELECT: affected-rows is 0 for a row already stamped within the same second.
+        $row = $this->database->fetchOne(
+            "SELECT COUNT(*) AS c FROM integration_jobs WHERE status = 'running' AND job_id IN ($in)",
+            $ids
+        );
+
+        return (int) ($row['c'] ?? 0);
+    }
+
+    /** Hand a claimed-but-not-started job back without spending an attempt. */
+    public function release(int $jobId): bool
+    {
+        $hb = $this->supportsHeartbeat() ? ', heartbeat_at = NULL' : '';
+
+        return $this->database->execute(
+            "UPDATE integration_jobs SET status = 'pending', attempts = GREATEST(attempts - 1, 0), started_at = NULL{$hb} WHERE job_id = ? AND status = 'running'",
+            [$jobId]
+        )->affectedRows === 1;
     }
 
     public function enqueue(string $jobType, array $payload = [], ?int $integrationId = null, ?string $resourceType = null, int $priority = 0, int $maxAttempts = 5): int
@@ -53,10 +113,11 @@ final class JobQueue
             [max(0, $limit)]
         );
 
+        $hb = $this->supportsHeartbeat() ? ', heartbeat_at = NOW()' : '';
         $claimed = [];
         foreach ($candidates as $job) {
             $won = $this->database->execute(
-                "UPDATE integration_jobs SET status = 'running', started_at = NOW(), attempts = attempts + 1
+                "UPDATE integration_jobs SET status = 'running', started_at = NOW(), attempts = attempts + 1{$hb}
                  WHERE job_id = ? AND status = 'pending'",
                 [$job['job_id']]
             );
@@ -94,12 +155,20 @@ final class JobQueue
         );
     }
 
-    /** Jobs stuck in 'running' (the worker died) go back to pending so another worker picks them up. @return int how many were released */
+    /**
+     * Jobs stuck in 'running' (the worker died) go back to pending so another worker picks them up. A job counts as
+     * abandoned when its last heartbeat (or, with no heartbeat, its start) is older than $minutes, so a long job whose
+     * worker keeps calling heartbeat() is never reclaimed.
+     *
+     * @return int how many were released
+     */
     public function requeueStale(int $minutes = 15): int
     {
+        $last = $this->supportsHeartbeat() ? 'COALESCE(heartbeat_at, started_at)' : 'started_at';
+
         return $this->database->execute(
             "UPDATE integration_jobs SET status = 'pending', error = 'worker stopped before finishing; retrying'
-             WHERE status = 'running' AND started_at < (NOW() - INTERVAL ? MINUTE)",
+             WHERE status = 'running' AND {$last} < (NOW() - INTERVAL ? MINUTE)",
             [max(1, $minutes)]
         )->affectedRows;
     }

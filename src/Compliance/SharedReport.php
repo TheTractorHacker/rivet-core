@@ -10,6 +10,8 @@ use RivetCore\Database\DatabaseInterface;
  * The one report an administrator chooses to show to portal users. Only a reduced view of a saved snapshot is ever exposed:
  * framework scores, the manual checklist's titles and state, and each automatic check's title and result. Never details,
  * counts, account names, settings values, reviewer names, notes or links into the admin area.
+ *
+ * @api
  */
 final class SharedReport
 {

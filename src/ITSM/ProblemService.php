@@ -10,6 +10,8 @@ use RivetCore\Database\DatabaseInterface;
  * Problem management, kept deliberately lightweight: a problem is a root-cause record that tickets
  * (incidents) link to through the edition, and that can itself link forward to the change meant to fix it
  * via problems.change_problem_id. No separate "incident" table - an incident is just a ticket.
+ *
+ * @api
  */
 class ProblemService
 {

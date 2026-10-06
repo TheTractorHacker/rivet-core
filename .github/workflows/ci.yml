@@ -113,3 +113,16 @@ jobs:
           RIVETCORE_TEST_REDIS_PORT: '6391'
       - name: Coverage gate (everything except the DOCX/PDF converters)
         run: php scripts/coverage-gate.php coverage.xml 85
+
+  compatibility:
+    name: backward compatibility with the last tag
+    runs-on: ubuntu-latest
+    # Advisory while the API is 0.x (a minor may break it, and the changelog says so); becomes required at 1.0.0.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/roave-backward-compatibility-check --from="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)" --to=HEAD

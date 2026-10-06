@@ -8,6 +8,8 @@ namespace RivetCore\Cron;
  * Plain-language facts about an edition's cron scripts, and whether the admin UI may start each one. A script
  * that sends real email, writes to outside systems, or needs arguments is not startable from the UI: it keeps
  * running on its schedule, and the reason is shown instead of a button. The entries are the edition's data.
+ *
+ * @api
  */
 final class JobCatalog
 {

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace RivetCore\Compliance;
 
-/** The outcome of one automatic check. */
+/** The outcome of one automatic check.
+ *
+ * @api
+ */
 final readonly class CheckResult
 {
     /**

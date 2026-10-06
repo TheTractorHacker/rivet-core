@@ -113,5 +113,45 @@ final class RetentionTest extends TestCase
         $this->assertSame([], (new RetentionService($this->db))->prune(0, 0));
         $this->assertSame(2, $this->rows('audit_events'));
     }
-}
 
+    public function testPlanReportsWithoutDeleting(): void
+    {
+        $this->seed();
+        $svc = new RetentionService($this->db);
+        $this->assertSame(['audit_events' => 1, 'webhook_deliveries' => 1, 'integration_jobs' => 2], $svc->plan(90));
+        $this->assertSame(2, $this->rows('audit_events'));
+        $this->assertSame(2, $this->rows('webhook_deliveries'));
+        $this->assertSame(5, $this->rows('integration_jobs'));
+        $this->assertSame([], $svc->plan(0));
+        $this->assertSame(['audit_events' => 0, 'webhook_deliveries' => 1, 'integration_jobs' => 2], $svc->plan(90, 365), 'plan mirrors prune');
+    }
+
+    public function testSeparateHorizonsPerTable(): void
+    {
+        $this->seed();
+        $svc = new RetentionService($this->db);
+        // audit 365 (kept), deliveries 7 (pruned), jobs 365 (kept)
+        $this->assertSame(['audit_events' => 0, 'webhook_deliveries' => 1, 'integration_jobs' => 0], $svc->plan(90, 365, 7, 365));
+        $this->assertSame(['audit_events' => 0, 'webhook_deliveries' => 1, 'integration_jobs' => 0], $svc->prune(90, 365, 7, 365));
+        $this->assertSame(1, $this->rows('webhook_deliveries'));
+        $this->assertSame(5, $this->rows('integration_jobs'));
+        // deliveries forever, jobs pruned
+        $this->assertSame(['audit_events' => 1, 'integration_jobs' => 2], $svc->prune(90, null, 0, null));
+    }
+
+    public function testBatchedDeleteRemovesEverythingInChunks(): void
+    {
+        for ($i = 0; $i < 23; $i++) {
+            $this->db->execute("INSERT INTO webhook_deliveries (webhook_id, event_type, created_at) VALUES (1, 'old', NOW() - INTERVAL 200 DAY)");
+        }
+        $this->db->execute("INSERT INTO webhook_deliveries (webhook_id, event_type, created_at) VALUES (1, 'recent', NOW())");
+        $deleted = (new RetentionService($this->db))->prune(90, 0, null, 0, 5);
+        $this->assertSame(['webhook_deliveries' => 23], $deleted);
+        $this->assertSame(1, $this->rows('webhook_deliveries'));
+        // exact multiple of the batch size needs one more (empty) statement and still terminates
+        for ($i = 0; $i < 10; $i++) {
+            $this->db->execute("INSERT INTO webhook_deliveries (webhook_id, event_type, created_at) VALUES (1, 'old', NOW() - INTERVAL 200 DAY)");
+        }
+        $this->assertSame(['webhook_deliveries' => 10], (new RetentionService($this->db))->prune(90, 0, null, 0, 5));
+    }
+}

@@ -58,4 +58,27 @@ final class RetentionPolicyTest extends TestCase
             $this->assertNotSame('', $def['note'], $key);
         }
     }
+
+    public function testOperationalFloorsAreShorterThanAuditFloors(): void
+    {
+        $this->assertSame(365, RetentionPolicy::floorDaysFor('iso27001', RetentionPolicy::KIND_AUDIT));
+        $this->assertSame(2190, RetentionPolicy::floorDaysFor('hipaa', RetentionPolicy::KIND_AUDIT));
+        foreach (['iso27001', 'soc2', 'pci', 'hipaa', 'nist171'] as $preset) {
+            $this->assertSame(30, RetentionPolicy::floorDaysFor($preset, RetentionPolicy::KIND_DELIVERIES));
+            $this->assertSame(30, RetentionPolicy::floorDaysFor($preset, RetentionPolicy::KIND_JOBS));
+        }
+        $this->assertSame(7, RetentionPolicy::floorDaysFor('none', RetentionPolicy::KIND_JOBS));
+        $this->assertSame(7, RetentionPolicy::floorDaysFor('made-up', RetentionPolicy::KIND_DELIVERIES));
+        $this->assertSame(0, RetentionPolicy::floorDaysFor('none', RetentionPolicy::KIND_AUDIT));
+    }
+
+    public function testEffectiveDaysForRaisesToTheKindFloorButKeepsZero(): void
+    {
+        $this->assertSame(7, RetentionPolicy::effectiveDaysFor('none', RetentionPolicy::KIND_JOBS, 1));
+        $this->assertSame(30, RetentionPolicy::effectiveDaysFor('soc2', RetentionPolicy::KIND_DELIVERIES, 10));
+        $this->assertSame(90, RetentionPolicy::effectiveDaysFor('soc2', RetentionPolicy::KIND_DELIVERIES, 90));
+        $this->assertSame(365, RetentionPolicy::effectiveDaysFor('soc2', RetentionPolicy::KIND_AUDIT, 90));
+        $this->assertSame(0, RetentionPolicy::effectiveDaysFor('hipaa', RetentionPolicy::KIND_JOBS, 0));
+        $this->assertSame(0, RetentionPolicy::effectiveDaysFor('hipaa', RetentionPolicy::KIND_JOBS, -4));
+    }
 }

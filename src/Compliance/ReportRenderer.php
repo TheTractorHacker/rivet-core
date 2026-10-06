@@ -7,6 +7,8 @@ namespace RivetCore\Compliance;
 /**
  * Turns an Assessment into an auditor-friendly CSV or a self-contained printable HTML page (no scripts, no external assets).
  * Every value is escaped; CSV cells that could be read as spreadsheet formulas are neutralised.
+ *
+ * @api
  */
 final class ReportRenderer
 {

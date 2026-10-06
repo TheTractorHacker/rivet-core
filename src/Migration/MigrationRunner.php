@@ -11,6 +11,8 @@ use RivetCore\Database\DatabaseInterface;
  * Applies pending Core migrations. Its state lives in `rivet_core_migrations`,
  * independent of RivetIT / RivetMSP database versions. Editions call run()
  * from their own updater after their own migrations. Safe to run repeatedly.
+ *
+ * @api
  */
 final class MigrationRunner
 {

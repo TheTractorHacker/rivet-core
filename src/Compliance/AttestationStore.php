@@ -6,7 +6,10 @@ namespace RivetCore\Compliance;
 
 use RivetCore\Database\DatabaseInterface;
 
-/** Append-only record of manual reviews. The newest row per item decides its state; older rows are the history. */
+/** Append-only record of manual reviews. The newest row per item decides its state; older rows are the history.
+ *
+ * @api
+ */
 final class AttestationStore implements AttestationProviderInterface
 {
     public const NOTE_MAX = 2000;

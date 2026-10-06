@@ -7,7 +7,10 @@ namespace RivetCore\Webhooks\Migration;
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Migration\MigrationInterface;
 
-/** webhook_deliveries is Core-owned (the delivery log). The edition-owned `webhooks` table is NOT touched. */
+/** webhook_deliveries is Core-owned (the delivery log). The edition-owned `webhooks` table is NOT touched.
+ *
+ * @internal
+ */
 final class Migration0005WebhookDeliveries implements MigrationInterface
 {
     public function id(): string

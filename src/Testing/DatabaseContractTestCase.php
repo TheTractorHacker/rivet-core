@@ -12,6 +12,9 @@ use RivetCore\Database\DatabaseInterface;
  * Behavioural contract every DatabaseInterface implementation must satisfy.
  * RivetCore, RivetIT and RivetMSP each extend this against their own adapter
  * and a scratch MySQL/MariaDB database (never production data).
+ *
+ * @internal A test helper for edition test suites: it needs PHPUnit, which is a dev dependency, so it is not part of the
+ *           semver/backward-compatibility promise (decision on a separate testing package: issue #49).
  */
 abstract class DatabaseContractTestCase extends TestCase
 {

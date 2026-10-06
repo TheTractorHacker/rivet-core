@@ -6,7 +6,10 @@ namespace RivetCore\Automation;
 
 use RivetCore\Database\DatabaseInterface;
 
-/** Validated create/read/update/delete for event automation rules (the Core-owned `automation_rules` table). */
+/** Validated create/read/update/delete for event automation rules (the Core-owned `automation_rules` table).
+ *
+ * @api
+ */
 final class AutomationRuleStore
 {
     public const ACTIONS = [

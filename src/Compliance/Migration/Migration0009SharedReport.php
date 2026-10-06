@@ -7,7 +7,10 @@ namespace RivetCore\Compliance\Migration;
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Migration\MigrationInterface;
 
-/** compliance_shared_report: at most one row (id 1), the snapshot an administrator chose to show on the portal. */
+/** compliance_shared_report: at most one row (id 1), the snapshot an administrator chose to show on the portal.
+ *
+ * @internal
+ */
 final class Migration0009SharedReport implements MigrationInterface
 {
     public function id(): string

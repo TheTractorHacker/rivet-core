@@ -7,7 +7,10 @@ namespace RivetCore\Compliance\Migration;
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Migration\MigrationInterface;
 
-/** compliance_responsibilities: who is responsible for a section of compliance (or one item), when that is not the organization's own staff. */
+/** compliance_responsibilities: who is responsible for a section of compliance (or one item), when that is not the organization's own staff.
+ *
+ * @internal
+ */
 final class Migration0011Responsibilities implements MigrationInterface
 {
     public function id(): string

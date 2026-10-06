@@ -12,6 +12,8 @@ use RivetCore\Database\DatabaseInterface;
  * snapshotted onto the run when it starts (title/instructions copied, not referenced) so editing a template
  * later never rewrites the history of a run already in progress or completed. No task dependencies, approvals
  * or automation actions - those need real usage first.
+ *
+ * @api
  */
 class WorkflowService
 {

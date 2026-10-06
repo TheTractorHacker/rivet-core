@@ -10,6 +10,8 @@ namespace RivetCore\Cron;
  * root-owned cron.d line (or a catalog entry), and arguments are only accepted in a strict --name[=value] form.
  * Scripts must live under <appRoot>/cron/ or <appRoot>/scripts/. Not final so an edition can pin its own default
  * state directory (keeping PID/log files where an earlier release left them).
+ *
+ * @api
  */
 class JobRunner
 {

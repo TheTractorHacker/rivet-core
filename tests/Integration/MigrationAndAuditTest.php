@@ -42,8 +42,8 @@ final class MigrationAndAuditTest extends TestCase
 
     public function testAppliesThenIsIdempotent(): void
     {
-        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities'], $this->runner()->pending());
-        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities'], $this->runner()->run());
+        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities', '0012_job_heartbeat'], $this->runner()->pending());
+        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities', '0012_job_heartbeat'], $this->runner()->run());
         $this->assertSame([], $this->runner()->run());
         $this->assertSame([], $this->runner()->pending());
         $row = $this->db->fetchOne('SELECT * FROM rivet_core_migrations');
@@ -55,7 +55,7 @@ final class MigrationAndAuditTest extends TestCase
         $this->runner()->run();
         $this->db->execute('INSERT INTO audit_events (event_type, action) VALUES (?, ?)', ['keep', 'me']);
         $this->db->execute('DROP TABLE rivet_core_migrations');
-        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities'], $this->runner()->run());
+        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities', '0012_job_heartbeat'], $this->runner()->run());
         $this->assertSame(1, (int) $this->db->fetchOne('SELECT COUNT(*) c FROM audit_events')['c']);
     }
 
@@ -74,7 +74,7 @@ final class MigrationAndAuditTest extends TestCase
     public function testStatusListsEveryMigrationWithItsAppliedTime(): void
     {
         $before = $this->runner()->status();
-        $this->assertCount(11, $before);
+        $this->assertCount(12, $before);
         $this->assertSame(['0001_audit_events', null], [$before[0]['id'], $before[0]['applied_at']]);
         $this->runner()->run();
         $after = $this->runner()->status();
@@ -93,16 +93,16 @@ final class MigrationAndAuditTest extends TestCase
             $impatient->run();
         } finally {
             $other->query("SELECT RELEASE_LOCK('" . MigrationRunner::LOCK_NAME . "')");
-            $this->assertCount(11, $this->runner()->pending(), 'nothing was applied while the lock was held elsewhere');
-            $this->assertCount(11, $this->runner()->run());
+            $this->assertCount(12, $this->runner()->pending(), 'nothing was applied while the lock was held elsewhere');
+            $this->assertCount(12, $this->runner()->run());
         }
     }
 
     public function testRunTwiceInARowAppliesNothingTheSecondTime(): void
     {
         $first = $this->runner()->run();
-        $this->assertCount(11, $first);
+        $this->assertCount(12, $first);
         $this->assertSame([], $this->runner()->run());
-        $this->assertSame(11, (int) $this->db->fetchOne('SELECT COUNT(*) c FROM rivet_core_migrations')['c']);
+        $this->assertSame(12, (int) $this->db->fetchOne('SELECT COUNT(*) c FROM rivet_core_migrations')['c']);
     }
 }

@@ -15,6 +15,8 @@ use RivetCore\Redis\RateLimiter;
  * Authentication (turning the token into a user id) and the permission model stay with the edition: the
  * edition passes the resolved user id and an $allow callable. Audit failures never turn a permitted read into
  * an error. Tool bodies signal "not found or out of scope" by throwing NotFoundException.
+ *
+ * @api
  */
 final class ToolPipeline
 {
@@ -25,7 +27,7 @@ final class ToolPipeline
         private int $rateLimit = 60,
         private int $rateWindow = 60,
         private string $source = 'mcp',
-        private ?\Closure $logError = null,
+        private \Closure|\Psr\Log\LoggerInterface|null $logError = null,
     ) {
     }
 
@@ -90,8 +92,6 @@ final class ToolPipeline
 
     private function log(string $message): void
     {
-        ($this->logError ?? static function (string $m): void {
-            error_log($m);
-        })($message);
+        \RivetCore\Support\ErrorLogLogger::resolve($this->logError)->error($message);
     }
 }

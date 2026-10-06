@@ -6,7 +6,10 @@ namespace RivetCore\Compliance;
 
 use RivetCore\Database\DatabaseInterface;
 
-/** Saved assessments, so an organization can show how its posture changed over time. Snapshots are evidence and are never pruned by retention. */
+/** Saved assessments, so an organization can show how its posture changed over time. Snapshots are evidence and are never pruned by retention.
+ *
+ * @api
+ */
 final class SnapshotStore
 {
     /** @param int $subjectId 0 = the installation itself, otherwise the subject (for example a customer) */
