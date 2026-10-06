@@ -2,6 +2,9 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.20.0
+- **Date ranges.** `Ui\DateRange`: one timezone-aware resolver for the editions' date filters. Keeps the legacy preset ids (`today`, `yesterday`, `thisweek`, `lastweek`, `thismonth`, `lastmonth`, `thisyear`, `lastyear`, `alltime`, `custom`) and adds `last7`, `last14`, `last30`, `last90`, `last12months`, `thisquarter`, `lastquarter`, `next7`, `next30`. Calendar-date math (DST-safe), configurable week start, safe fallbacks for invalid input, `previous()` for compare-to-previous-period, `sqlBounds()` (half-open bounds so queries can use an index instead of `DATE(column) BETWEEN`), and `toQuery()` (presets stay rolling in saved views; only custom ranges carry dates).
+
 ## 0.19.0
 - **Icon catalog.** `Ui\IconCatalog`: 621 curated Font Awesome free-solid icons in 14 categories with labels and search keywords, `search()`, `byCategory()`, `has()`, `toJson()` (for a client-side picker) and `normalize()` (accepts `fa-fire`, `fas fa-fire`, `fire`; any syntactically valid `fa-*` class is kept so icons admins already saved still work; anything else falls back to a default). The editions use it to replace the free-text "Icon" box (saved ticket views, tags, custom links, service catalog items) with a visual picker.
 

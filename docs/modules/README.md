@@ -16,5 +16,6 @@
 | KB converters | `RivetCore\KB` | none | uploaded file | Throws `DocxConversionException` / `PdfConversionException` on bad input |
 | Knowledge | `RivetCore\Knowledge` | none | credential lookup | Renders a placeholder when the credential is not visible |
 | UI / IconCatalog | `RivetCore\Ui\IconCatalog` | none | the picker UI (render `toJson()`, store `normalize()` output) | `normalize()` returns the default for empty/invalid input; any valid `fa-xxx` class is accepted even when not curated (`has()` is catalog membership only) |
+| UI / DateRange | `RivetCore\Ui\DateRange` | none | the list/report filter (`canned_date`, `dtf`, `dtt`, tz, week start) | Unknown preset or invalid custom dates resolve to all time; reversed dates are swapped; years clamped to 1970..2099; `sqlBounds()` is half-open for sargable queries |
 
 Per-module deep dives are added as each module's API is frozen for 1.0 (see ROADMAP.md).
