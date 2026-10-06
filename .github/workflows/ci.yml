@@ -125,4 +125,6 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
       - run: composer install --no-interaction --prefer-dist
+      # Needs PHP 8.4+, so it is installed here instead of being a dev dependency (which would break installs on 8.2 and 8.3).
+      - run: composer require --dev --no-interaction roave/backward-compatibility-check
       - run: vendor/bin/roave-backward-compatibility-check --from="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)" --to=HEAD

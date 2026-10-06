@@ -2,6 +2,9 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.17.1
+CI only: the backward-compatibility checker needs PHP 8.4+ and was a dev dependency, so `composer install` failed on PHP 8.2 and 8.3 (and the lowest-dependencies job). It is now installed inside the compatibility job only. No library change.
+
 ## 0.17.0
 API freeze preparation (milestone v0.9.0) plus the pieces editions were missing.
 - **Public API marked:** every type is tagged `@api` or `@internal` (migration classes and the PHPUnit-based contract test case are internal). `docs/api-surface.md` is generated from the tags (`scripts/api-surface.php`); `docs/api-freeze-review.md` lists what is settled and what is left before 1.0. CI gains an advisory backward-compatibility check against the last tag (`roave/backward-compatibility-check`).
