@@ -2,6 +2,9 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.19.0
+- **Icon catalog.** `Ui\IconCatalog`: 621 curated Font Awesome free-solid icons in 14 categories with labels and search keywords, `search()`, `byCategory()`, `has()`, `toJson()` (for a client-side picker) and `normalize()` (accepts `fa-fire`, `fas fa-fire`, `fire`; any syntactically valid `fa-*` class is kept so icons admins already saved still work; anything else falls back to a default). The editions use it to replace the free-text "Icon" box (saved ticket views, tags, custom links, service catalog items) with a visual picker.
+
 ## 0.18.1
 Security hardening from the 2026-10 review (all low severity, backward compatible). Builds on 0.18.0.
 - **UrlPolicy:** also rejects 6to4 (2002::/16), Teredo (2001::/32), local-use NAT64 (64:ff9b:1::/48), 100::/64, documentation, benchmarking (198.18/15), IETF-protocol (192.0.0/24), 192.88.99/24 and multicast ranges.

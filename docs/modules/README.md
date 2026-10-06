@@ -15,5 +15,6 @@
 | MCP | `RivetCore\Mcp` | `mcp_unlinked_identities` | agent directory | Unlinked identities are recorded and denied |
 | KB converters | `RivetCore\KB` | none | uploaded file | Throws `DocxConversionException` / `PdfConversionException` on bad input |
 | Knowledge | `RivetCore\Knowledge` | none | credential lookup | Renders a placeholder when the credential is not visible |
+| UI / IconCatalog | `RivetCore\Ui\IconCatalog` | none | the picker UI (render `toJson()`, store `normalize()` output) | `normalize()` returns the default for empty/invalid input; any valid `fa-xxx` class is accepted even when not curated (`has()` is catalog membership only) |
 
 Per-module deep dives are added as each module's API is frozen for 1.0 (see ROADMAP.md).
