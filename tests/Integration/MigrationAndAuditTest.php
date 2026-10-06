@@ -70,4 +70,39 @@ final class MigrationAndAuditTest extends TestCase
         $this->assertSame('{"k":"v"}', $row['metadata_json']);
         $this->assertNotEmpty($row['created_at']);
     }
+
+    public function testStatusListsEveryMigrationWithItsAppliedTime(): void
+    {
+        $before = $this->runner()->status();
+        $this->assertCount(11, $before);
+        $this->assertSame(['0001_audit_events', null], [$before[0]['id'], $before[0]['applied_at']]);
+        $this->runner()->run();
+        $after = $this->runner()->status();
+        $this->assertSame('2026-01-02 03:04:05', $after[0]['applied_at']);
+        $this->assertNotContains(null, array_column($after, 'applied_at'));
+    }
+
+    public function testSecondRunnerGivesUpCleanlyWhileAnotherHoldsTheLock(): void
+    {
+        // A different connection holds the migration lock, as a concurrent web request or CLI run would.
+        $other = ScratchDb::connect();
+        $other->query("SELECT GET_LOCK('" . MigrationRunner::LOCK_NAME . "', 1)");
+        try {
+            $impatient = new MigrationRunner($this->db, CoreMigrations::all(), new FixedClock(), 1);
+            $this->expectException(\RuntimeException::class);
+            $impatient->run();
+        } finally {
+            $other->query("SELECT RELEASE_LOCK('" . MigrationRunner::LOCK_NAME . "')");
+            $this->assertCount(11, $this->runner()->pending(), 'nothing was applied while the lock was held elsewhere');
+            $this->assertCount(11, $this->runner()->run());
+        }
+    }
+
+    public function testRunTwiceInARowAppliesNothingTheSecondTime(): void
+    {
+        $first = $this->runner()->run();
+        $this->assertCount(11, $first);
+        $this->assertSame([], $this->runner()->run());
+        $this->assertSame(11, (int) $this->db->fetchOne('SELECT COUNT(*) c FROM rivet_core_migrations')['c']);
+    }
 }

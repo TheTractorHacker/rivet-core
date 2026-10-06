@@ -38,7 +38,7 @@ final class Lock
             return $this->held;
         }
         try {
-            return (int) $this->redis->client()?->eval(self::EXTEND, 1, $this->key, $this->token, max(1, $ttlSeconds) * 1000) === 1;
+            return (int) $this->redis->client()?->eval(self::EXTEND, 1, $this->key, $this->token, (string) (max(1, $ttlSeconds) * 1000)) === 1;
         } catch (\Throwable) {
             return false;
         }

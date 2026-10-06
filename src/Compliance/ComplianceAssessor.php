@@ -99,7 +99,7 @@ final class ComplianceAssessor
     }
 
     /**
-     * @param array<string, list<string>> $controls
+     * @param array<string, array<array-key, string>> $controls
      * @return array<string, list<string>>
      */
     private static function cleanControls(array $controls): array

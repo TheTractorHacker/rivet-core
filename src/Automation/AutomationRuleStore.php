@@ -32,7 +32,7 @@ final class AutomationRuleStore
     }
 
     /**
-     * @param array<string,scalar> $conditions field => expected value (all must match)
+     * @param array<string,mixed> $conditions field => expected value (all must match)
      * @param array<string,mixed> $config per action: create_ticket {subject, details?, priority?, client_id?};
      *                                    send_webhook {url, secret?}; notify_user {user_id?, message}
      * @throws \InvalidArgumentException with a message safe to show the administrator

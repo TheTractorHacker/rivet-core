@@ -2,6 +2,15 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 0.16.0
+Quality gates and hygiene (milestone v0.8.0); no new features.
+- `MigrationRunner`: concurrent runs now take turns through a server-side lock (`GET_LOCK`) instead of racing; a second runner that waits longer than `$lockWaitSeconds` (default 60) throws a `RuntimeException`. New read-only `status()` lists every migration with its applied time. Run-twice and lock tests added.
+- CI: PHP 8.2 to 8.5 on MariaDB 11, plus MariaDB 10.11 and MySQL 8.0 / 8.4 on PHP 8.4; a `--prefer-lowest` job; PHPStan and `composer audit`; a coverage job with an 85% gate outside the DOCX/PDF converters (`scripts/coverage-gate.php`); GitHub Releases are cut from tags with the changelog excerpt.
+- Static analysis: PHPStan level 6 is required and clean (`phpstan.neon`; the two converters keep a documented baseline). Fixes with no behavior change: Redis `eval()` arguments, `CONFIG SET` via `executeRaw`, docblock types in Automation/Compliance, an unreachable statement in `DatabaseContractTestCase`. `declare(strict_types=1)` in the four converter files.
+- Converter corpus: 34 new DOCX/PDF tests (zip bombs, traversal, XXE, billion laughs, script/HTML escaping, JS/Launch actions in PDFs, oversize files); no vulnerabilities found.
+- Dependabot for Composer and GitHub Actions; `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, issue and pull request templates, `.gitattributes`.
+- Docs: quickstart, "writing an edition adapter", module reference.
+
 ## 0.15.1
 
 ### Added

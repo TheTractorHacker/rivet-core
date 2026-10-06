@@ -5,7 +5,7 @@ Free and open source under GPL-3.0. The code is free; hosting and setup are the 
 
 ## Status
 
-Audit, Redis, Cron, Jobs, MCP, ITSM, Webhooks, Automation, Workflow, KB converters, Knowledge. See [CHANGELOG.md](CHANGELOG.md), [ADR-001](docs/architecture/ADR-001-database-strategy.md) and the open issues.
+Audit, Redis, Cron, Jobs, MCP, ITSM, Webhooks, Automation, Workflow, KB converters, Knowledge. See [CHANGELOG.md](CHANGELOG.md), [ADR-001](docs/architecture/ADR-001-database-strategy.md), the [quickstart](docs/quickstart.md), [writing an edition adapter](docs/adapters.md), the [module reference](docs/modules/README.md) and the open issues.
 
 ## Rules
 

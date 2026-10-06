@@ -2,20 +2,29 @@ name: ci
 on: [push, pull_request]
 jobs:
   test:
+    name: php ${{ matrix.php }} / ${{ matrix.db }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        php: ['8.3', '8.4']
+        php: ['8.2', '8.3', '8.4', '8.5']
+        db: ['mariadb:11']
+        include:
+          - { php: '8.4', db: 'mariadb:10.11' }
+          - { php: '8.4', db: 'mysql:8.0' }
+          - { php: '8.4', db: 'mysql:8.4' }
     services:
-      mariadb:
-        image: mariadb:11
+      database:
+        image: ${{ matrix.db }}
         env:
           MARIADB_ROOT_PASSWORD: root
           MARIADB_DATABASE: rivetcore_test
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: rivetcore_test
         ports: ['3306:3306']
         options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
-          --health-interval=5s --health-timeout=5s --health-retries=20
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
       redis:
         image: redis:7
         ports: ['6391:6379']
@@ -24,7 +33,9 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: mysqli
+          extensions: mysqli, zip, dom, mbstring
+          tools: composer
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - run: composer install --no-interaction --prefer-dist
       - run: composer validate
       - run: composer lint
@@ -38,3 +49,66 @@ jobs:
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
           RIVETCORE_TEST_REDIS_PORT: '6391'
+
+  lowest:
+    name: lowest supported dependencies
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_test }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: '8.2', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
+      - run: composer update --prefer-lowest --prefer-stable --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit
+        env:
+          RIVETCORE_TEST_DB_HOST: 127.0.0.1
+          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_USER: root
+          RIVETCORE_TEST_DB_PASS: root
+
+  static:
+    name: static analysis and dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+      - run: composer audit
+
+  coverage:
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_test }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7
+        ports: ['6391:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', coverage: pcov, tools: composer }
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit --coverage-clover coverage.xml --coverage-text
+        env:
+          RIVETCORE_TEST_DB_HOST: 127.0.0.1
+          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_USER: root
+          RIVETCORE_TEST_DB_PASS: root
+          RIVETCORE_TEST_REDIS_PORT: '6391'
+      - name: Coverage gate (everything except the DOCX/PDF converters)
+        run: php scripts/coverage-gate.php coverage.xml 85

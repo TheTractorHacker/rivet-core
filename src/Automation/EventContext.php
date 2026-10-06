@@ -11,16 +11,13 @@ final class EventContext
      * Nested arrays become dotted keys (['ticket' => ['priority' => 'High']] -> 'ticket.priority'); scalars become strings, booleans 1/0,
      * null is dropped (a missing key never matches, see AutomationRuleEvaluator). Lists of scalars are skipped, they have no single value.
      *
-     * @param array<string,mixed> $data
+     * @param array<array-key,mixed> $data
      * @return array<string,string>
      */
     public static function flatten(array $data, string $prefix = '', int $depth = 0): array
     {
         $out = [];
         foreach ($data as $key => $value) {
-            if (!is_string($key) && !is_int($key)) {
-                continue;
-            }
             $name = $prefix === '' ? (string) $key : $prefix . '.' . $key;
             if (is_array($value)) {
                 if ($depth < 4 && !array_is_list($value)) {

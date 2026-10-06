@@ -1,0 +1,9 @@
+/.github        export-ignore
+/tests          export-ignore
+/docs           export-ignore
+/scripts        export-ignore
+/phpunit.xml.dist export-ignore
+/phpstan.neon   export-ignore
+/phpstan-baseline-converters.neon export-ignore
+/ROADMAP.md     export-ignore
+* text=auto eol=lf

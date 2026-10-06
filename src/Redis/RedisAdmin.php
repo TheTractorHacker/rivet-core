@@ -121,8 +121,8 @@ final class RedisAdmin
         if ($megabytes < 64 || $megabytes > 65536) return ['ok' => false, 'persisted' => false, 'message' => 'Choose a limit between 64 MB and 65536 MB.'];
         if (!in_array($policy, self::POLICIES, true)) return ['ok' => false, 'persisted' => false, 'message' => 'Unknown eviction policy.'];
         try {
-            $c->config('SET', 'maxmemory', (string) ($megabytes * 1048576));
-            $c->config('SET', 'maxmemory-policy', $policy);
+            $c->executeRaw(['CONFIG', 'SET', 'maxmemory', (string) ($megabytes * 1048576)]);
+            $c->executeRaw(['CONFIG', 'SET', 'maxmemory-policy', $policy]);
         } catch (\Throwable) {
             return ['ok' => false, 'persisted' => false, 'message' => 'Redis refused the change (CONFIG may be disabled).'];
         }

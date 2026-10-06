@@ -21,6 +21,8 @@ final class MigrationRunner
         private DatabaseInterface $database,
         private array $migrations,
         private ClockInterface $clock,
+        /** Seconds a second runner waits for the first to finish before giving up. */
+        private int $lockWaitSeconds = 60,
     ) {
         $ids = array_map(static fn (MigrationInterface $m): string => $m->id(), $migrations);
         if (count($ids) !== count(array_unique($ids))) {
@@ -28,8 +30,77 @@ final class MigrationRunner
         }
     }
 
-    /** @return list<string> ids applied by this call (empty when already current) */
+    /** Name of the server-side lock that makes two simultaneous runs (two web requests, or web plus CLI) take turns. */
+    public const LOCK_NAME = 'rivet_core_migrations';
+
+
+    /**
+     * @return list<string> ids applied by this call (empty when already current)
+     * @throws \RuntimeException when another runner holds the lock for longer than the wait
+     */
     public function run(): array
+    {
+        $locked = $this->acquireLock();
+        try {
+            return $this->apply();
+        } finally {
+            if ($locked) {
+                $this->releaseLock();
+            }
+        }
+    }
+
+    /**
+     * Every known migration with the time it was applied (null when pending), in id order. Read-only.
+     *
+     * @return list<array{id:string, applied_at:?string}>
+     */
+    public function status(): array
+    {
+        try {
+            $rows = $this->database->fetchAll('SELECT migration_id, applied_at FROM ' . self::TABLE);
+        } catch (\RivetCore\Database\DatabaseException) {
+            $rows = [];
+        }
+        $applied = [];
+        foreach ($rows as $row) {
+            $applied[(string) $row['migration_id']] = (string) $row['applied_at'];
+        }
+        $ids = array_map(static fn (MigrationInterface $m): string => $m->id(), $this->migrations);
+        sort($ids);
+
+        return array_map(static fn (string $id): array => ['id' => $id, 'applied_at' => $applied[$id] ?? null], $ids);
+    }
+
+    /** True when the lock is held; false when the database cannot provide one (the migrations are idempotent, so we go on). */
+    private function acquireLock(): bool
+    {
+        try {
+            $row = $this->database->fetchOne('SELECT GET_LOCK(?, ?) AS got', [self::LOCK_NAME, $this->lockWaitSeconds]);
+        } catch (\RivetCore\Database\DatabaseException) {
+            return false;
+        }
+        if ($row === null) {
+            return false;
+        }
+        if ((int) ($row['got'] ?? 0) !== 1) {
+            throw new \RuntimeException('Another Core migration run is in progress; try again in a moment.');
+        }
+
+        return true;
+    }
+
+    private function releaseLock(): void
+    {
+        try {
+            $this->database->fetchOne('SELECT RELEASE_LOCK(?) AS released', [self::LOCK_NAME]);
+        } catch (\RivetCore\Database\DatabaseException) {
+            // The lock dies with the connection anyway.
+        }
+    }
+
+    /** @return list<string> */
+    private function apply(): array
     {
         $this->database->execute(
             'CREATE TABLE IF NOT EXISTS ' . self::TABLE . ' (

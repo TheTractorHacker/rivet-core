@@ -28,7 +28,7 @@ final class RateLimiter
             return $open;
         }
         try {
-            [$count, $ttl] = $client->eval(self::HIT, 1, $this->keyPrefix . 'rl:' . $bucket, max(1, $windowSeconds));
+            [$count, $ttl] = $client->eval(self::HIT, 1, $this->keyPrefix . 'rl:' . $bucket, (string) max(1, $windowSeconds));
             $count = (int) $count;
 
             return [

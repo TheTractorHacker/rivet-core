@@ -94,15 +94,16 @@ abstract class DatabaseContractTestCase extends TestCase
     public function testTransactionRollsBackAndRethrows(): void
     {
         $db = $this->database();
+        $message = null;
         try {
             $db->transaction(function () use ($db) {
                 $db->execute('INSERT INTO rc_contract (name) VALUES (?)', ['t']);
                 throw new \LogicException('boom');
             });
-            $this->fail('exception not rethrown');
         } catch (\LogicException $e) {
-            $this->assertSame('boom', $e->getMessage());
+            $message = $e->getMessage();
         }
+        $this->assertSame('boom', $message, 'exception not rethrown');
         $this->assertSame([], $db->fetchAll('SELECT * FROM rc_contract'));
     }
 
