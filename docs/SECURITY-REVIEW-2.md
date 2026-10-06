@@ -128,7 +128,7 @@ finding. Note for editions: the `responsible` label is shown to portal users, so
 
 ## 3. Findings
 
-Severity key: HIGH, MEDIUM, LOW, INFO. No HIGH or MEDIUM issues were found. "Test" paths are under `tests/Security/`.
+Severity key: HIGH, MEDIUM, LOW, INFO. No HIGH or MEDIUM issues were found. RC-SR2-24 is a real defect and is fixed in this branch (see it); the rest are reported, not fixed. "Test" paths are under `tests/Security/`.
 
 ### RC-SR2-01 LOW: migration lock name is server-wide
 
@@ -306,6 +306,30 @@ Severity key: HIGH, MEDIUM, LOW, INFO. No HIGH or MEDIUM issues were found. "Tes
 - Reproduction: `RedisSurfaceTest::testRc23LockExpiresUnderALongRunningJob`, `testRc23RateLimitCounterWithoutTtlNeverExpires`.
 - Suggested: in the Lua, set the expiry when `redis.call('ttl', key) == -1`.
 
+### RC-SR2-24 LOW: `RedisAdmin::setMemory()` reported success when the server refused CONFIG SET (FIXED in this branch)
+
+- File: `src/Redis/RedisAdmin.php` (`setMemory`). `Predis\Client::executeRaw()` returns a server error (`NOPERM`, unknown command) as text instead of throwing, so the `try/catch` never saw it and the method answered `ok: true, "Applied now"` while nothing changed.
+- Severity: LOW. An administrator is told a memory limit or eviction policy is active when it is not (Redis then evicts nothing or fills memory).
+- Evidence: a throwaway Redis with an ACL user lacking `config|set`: `CONFIG SET` returned `NOPERM User ... has no permissions`, `setMemory()` returned `ok: true`.
+- Reproduction (failed before the fix, passes now): `tests/Integration/RedisAuthFailOpenTest::testSetMemoryReportsAnAclRefusalInsteadOfClaimingSuccess`.
+- Fix applied (the only `src/` change in this branch): pass the `$error` out-parameter to `executeRaw()` and treat it as a refusal.
+
+### RC-SR2-25 LOW: a failed TLS handshake raises a PHP warning from the lock, cron and rate-limit helpers
+
+- File: Predis `StreamFactory` (dependency); `RedisAdmin::test()` silences it, `LockManager`/`RateLimiter`/`CronGuard` do not.
+- Severity: LOW. With `display_errors=On` or a warning-to-exception handler the page shows or reacts to "certificate verify failed". No secret is in the text; the helpers still fail open because they catch `Throwable`.
+- Reproduction: `RedisAuthFailOpenTest::testTlsWithTheWrongCaFailsOpenWithoutALeak` and `testTlsToAPlainServerFailsOpen` (they capture the warnings and assert no password in them).
+- Suggested: wrap helper client calls like `RedisAdmin::test()` does, or document `display_errors=0` (done in docs/REDIS.md).
+
+### RC-SR2-26 INFO: `WorkflowService` task methods do not validate; `PdfConverter` binary paths are fixed
+
+- `completeTask`/`skipTask`/`reopenTask` treat an unknown id as a silent no-op and accept an empty skip reason; the module reference previously claimed illegal moves were refused. Docs corrected; behaviour pinned by `tests/Integration/WorkflowFailureModesTest.php`.
+- `PdfConverter` calls `/usr/bin/pdfinfo`, `pdftotext`, `pdftohtml`, `pdfimages` by absolute path (safe against PATH tricks, but a poppler in `/usr/local/bin` is not found and the import fails with a conversion error).
+
+### RC-SR2-27 INFO: PHPStan 2.3 reports two new findings in `PdfConverter` on `main`
+
+- `closure.unusedUse` and `identical.alwaysFalse`; the converter baseline predated PHPStan 2.3. Two baseline entries were added (the converters only, as the file's header requires); no code change.
+
 ## 4. Verified controls (no finding)
 
 Each has a guard test in `tests/Security/`:
@@ -336,4 +360,6 @@ Redis 8.0.5 on a throwaway 127.0.0.1 port).
 - `vendor/bin/phpstan analyse --no-progress --memory-limit=1G`: `[OK] No errors` at the configured level 6 (exit code 0).
 - `vendor/bin/phpunit tests/Security`: see the result recorded below.
 
-PHPUNIT_RESULT_PLACEHOLDER
+`vendor/bin/phpunit tests/Security`: `OK (36 tests, 155 assertions)` (PHP 8.5.11, MariaDB 11.8.6, Redis 8.0.5).
+
+The phpstan result above was `No errors` only after the two baseline entries of RC-SR2-27 (without them PHPStan 2.3.0 reports 2 errors on unmodified `main`).
