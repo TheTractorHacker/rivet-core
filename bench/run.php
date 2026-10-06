@@ -119,7 +119,7 @@ $h = new Harness();
 $h->case('audit.write', 'events/s (1 INSERT each, autocommit)', function (Ctx $c) use ($db, $truncate, $n): void {
     $truncate('audit_events');
     $audit = new AuditService($db, new NullRequestContext());
-    $c->loop($n(3000), static fn (int $i) => $audit->log('ticket.update', 7, 'ticket', $i, 'edit', 'Changed priority', ['from' => 'Low', 'to' => 'High', 'password' => 'x']));
+    $c->loop($n(1000), static fn (int $i) => $audit->log('ticket.update', 7, 'ticket', $i, 'edit', 'Changed priority', ['from' => 'Low', 'to' => 'High', 'password' => 'x']));
 });
 
 $auditRows = $n(100000);
@@ -169,14 +169,15 @@ $h->case('audit.reader.exportChunked', 'rows/s (iterate, keyset chunks of 1000)'
 $h->case('jobs.enqueue', 'jobs/s', function (Ctx $c) use ($db, $truncate, $n): void {
     $truncate('integration_jobs');
     $q = new JobQueue($db);
-    $c->loop($n(3000), static fn (int $i) => $q->enqueue('bench.job', ['i' => $i, 'to' => 'someone@example.test'], 1, 'ticket', $i % 3));
+    $c->loop($n(600), static fn (int $i) => $q->enqueue('bench.job', ['i' => $i, 'to' => 'someone@example.test'], 1, 'ticket', $i % 3));
 });
 $h->case('jobs.claim', 'jobs/s claimed (batches of 10)', function (Ctx $c) use ($db, $truncate, $n): void {
     $truncate('integration_jobs');
     $q = new JobQueue($db);
     $total = $n(2000);
-    for ($i = 0; $i < $total; $i++) {
-        $q->enqueue('bench.job', ['i' => $i]);
+    for ($done = 0; $done < $total; $done += 500) {   // untimed setup: multi-row INSERT instead of one commit per job
+        $take = min(500, $total - $done);
+        $db->execute('INSERT INTO integration_jobs (job_type, payload) VALUES ' . implode(',', array_fill(0, $take, "('bench.job', '{}')")));
     }
     $c->bulk($total, static function () use ($q, $total): void {
         $got = 0;
@@ -189,7 +190,7 @@ $h->case('jobs.claim', 'jobs/s claimed (batches of 10)', function (Ctx $c) use (
 $h->case('jobs.lifecycle', 'jobs/s enqueue+claim+complete (1 at a time)', function (Ctx $c) use ($db, $truncate, $n): void {
     $truncate('integration_jobs');
     $q = new JobQueue($db);
-    $c->loop($n(1500), static function (int $i) use ($q): void {
+    $c->loop($n(300), static function (int $i) use ($q): void {
         $q->enqueue('bench.job', ['i' => $i]);
         foreach ($q->claim(1) as $job) {
             $q->markCompleted((int) $job['job_id'], ['ok' => true], (int) $job['attempts']);
@@ -251,12 +252,12 @@ $fakeTransport = static fn (): array => ['status' => 200, 'body' => 'ok', 'error
 $h->case('webhook.deliverTo.fakeTransport', 'deliveries/s (build + sign + log row; no network)', function (Ctx $c) use ($db, $truncate, $subs, $fakeTransport, $clock, $n): void {
     $truncate('webhook_deliveries');
     $d = new WebhookDispatcher($db, $subs, $clock, ['X-RivetCore'], $fakeTransport);
-    $c->loop($n(2000), static fn (int $i) => $d->deliverTo(1, 'ticket.created', ['ticket_id' => $i, 'subject' => 'Printer on fire', 'priority' => 'High']));
+    $c->loop($n(500), static fn (int $i) => $d->deliverTo(1, 'ticket.created', ['ticket_id' => $i, 'subject' => 'Printer on fire', 'priority' => 'High']));
 });
 $h->case('webhook.deliverTo.slackFormat', 'deliveries/s (Slack format + sign + log row)', function (Ctx $c) use ($db, $truncate, $subs, $fakeTransport, $clock, $n): void {
     $truncate('webhook_deliveries');
     $d = new WebhookDispatcher($db, $subs, $clock, ['X-RivetCore'], $fakeTransport);
-    $c->loop($n(2000), static fn (int $i) => $d->deliverTo(1, 'ticket.created', ['ticket_id' => $i, 'subject' => 'Printer on fire'], 1, null, null, ['format' => 'slack']));
+    $c->loop($n(500), static fn (int $i) => $d->deliverTo(1, 'ticket.created', ['ticket_id' => $i, 'subject' => 'Printer on fire'], 1, null, null, ['format' => 'slack']));
 });
 
 // ---- retention ------------------------------------------------------------------------------------------------------

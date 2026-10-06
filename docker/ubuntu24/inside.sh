@@ -54,7 +54,7 @@ if [ "${RUN_TESTS:-1}" = "1" ]; then
   step "PHPUnit (unit, integration, conformance) with poppler, MariaDB and Redis present"
   RIVETCORE_TEST_REDIS_AUTH_PORT_BASE=6397 vendor/bin/phpunit --no-progress > /tmp/phpunit.txt 2>&1
   rc=$?
-  grep -E '^[0-9]+\) ' /tmp/phpunit.txt | head -30; tail -4 /tmp/phpunit.txt
+  grep -E -A6 '^[0-9]+\) ' /tmp/phpunit.txt | cut -c1-220 | head -60; tail -4 /tmp/phpunit.txt
   [ "$rc" = "0" ] && ok "PHPUnit passed" || bad "PHPUnit failed"
 fi
 
