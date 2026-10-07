@@ -111,6 +111,8 @@ chk "seq numbers strictly increasing, no duplicates accepted twice" 'echo "$SEQS
 echo "   seqs: $SEQS"
 
 echo "== module_disabled: one request, then silence; the body is kept and replayed"
+# N0 is read inside the eval'd chk string below (single-quoted, so shellcheck cannot see the use).
+# shellcheck disable=SC2034
 N0="$(grep -c "^.*CHECKIN #" $OUT/events.log)"
 ctl "mode=disabled&retry_after=20"
 wait_for 30 'grep -q "GATE disabled checkin" $OUT/events.log' || bad "agent never hit the disabled server"

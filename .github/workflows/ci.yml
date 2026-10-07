@@ -21,9 +21,9 @@ jobs:
         image: ${{ matrix.db }}
         env:
           MARIADB_ROOT_PASSWORD: root
-          MARIADB_DATABASE: rivetcore_test
+          MARIADB_DATABASE: rivetcore_scratch_test
           MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: rivetcore_test
+          MYSQL_DATABASE: rivetcore_scratch_test
         ports: ['3306:3306']
         options: >-
           --health-cmd="${{ matrix.health }}"
@@ -31,6 +31,7 @@ jobs:
       redis:
         image: redis:7
         ports: ['6391:6379']
+    # The database name must contain "scratch": the RMM integration tests refuse (and skip) any other name, so a plain "rivetcore_test" silently skipped ~300 of them.
     steps:
       - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
@@ -49,7 +50,7 @@ jobs:
       - run: vendor/bin/phpunit
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1
-          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
           RIVETCORE_TEST_REDIS_PORT: '6391'
@@ -60,7 +61,7 @@ jobs:
     services:
       database:
         image: mariadb:11
-        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_test }
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_scratch_test }
         ports: ['3306:3306']
         options: >-
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
@@ -73,7 +74,7 @@ jobs:
       - run: vendor/bin/phpunit
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1
-          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
 
@@ -93,7 +94,7 @@ jobs:
     services:
       database:
         image: mariadb:11
-        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_test }
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_scratch_test }
         ports: ['3306:3306']
         options: >-
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
@@ -110,7 +111,7 @@ jobs:
       - run: vendor/bin/phpunit --coverage-clover coverage.xml --coverage-text
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1
-          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
           RIVETCORE_TEST_REDIS_PORT: '6391'
@@ -130,4 +131,23 @@ jobs:
       - run: composer install --no-interaction --prefer-dist
       # Needs PHP 8.4+, so it is installed here instead of being a dev dependency (which would break installs on 8.2 and 8.3).
       - run: composer require --dev --no-interaction roave/backward-compatibility-check
-      - run: vendor/bin/roave-backward-compatibility-check --from="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)" --to=HEAD
+      # The tool installs each side with --no-dev, so PHPUnit is absent and every src/Testing conformance class (which extends
+      # PHPUnit's TestCase) is reported as "[BC] SKIPPED: ... PHPUnit\Framework\TestCase could not be found" and counted as a
+      # failure, although nothing broke (the same 70 lines appear between v1.0.0-rc.1, rc.2 and rc.3). Those lines are ignored;
+      # every other line (a real change, or any other skipped class) still fails the job.
+      - name: Compare the public API with the last tag
+        run: |
+          from="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
+          set +e
+          vendor/bin/roave-backward-compatibility-check --from="$from" --to=HEAD 2>&1 | tee bc.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          # A non-zero exit that is not the "changes detected" verdict is a tool failure, not a pass.
+          if [ "$rc" -ne 0 ] && ! grep -q 'backwards-incompatible changes detected' bc.log; then
+            echo "roave-backward-compatibility-check failed (exit $rc)" >&2
+            exit 1
+          fi
+          if grep -E '^\[BC\]' bc.log | grep -vF 'PHPUnit\Framework\TestCase" could not be found'; then
+            echo "Backward-incompatible changes since $from (listed above)." >&2
+            exit 1
+          fi

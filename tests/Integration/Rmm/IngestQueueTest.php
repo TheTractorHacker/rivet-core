@@ -85,7 +85,12 @@ final class IngestQueueTest extends RmmTestCase
         $checks = $h->rows('SELECT check_key, status, detail, consecutive_failures, consecutive_ok, episode, (alert_id IS NOT NULL) AS has_alert FROM endpoint_agent_checks ORDER BY check_key');
         $samples = array_map(static fn (array $s): string => sprintf('%s|%s|%s|%s', $s['key'], $s['instance'] ?? '', $s['value'], $s['at']->format('c')), $h->metrics->stored());
         sort($samples);
-        $health = array_values($h->bridge->health);
+        // last_boot is "now minus uptime" on the wall clock, so it differs by a second when the two runs straddle a second boundary.
+        $health = array_values(array_map(static function (array $row): array {
+            unset($row['last_boot']);
+
+            return $row;
+        }, $h->bridge->health));
 
         return ['device' => $dev, 'checks' => $checks, 'samples' => $samples, 'health' => $health, 'seqs' => $h->rows('SELECT seq FROM endpoint_agent_checkins ORDER BY seq')];
     }
