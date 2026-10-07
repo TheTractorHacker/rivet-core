@@ -150,6 +150,28 @@ Goal: every module the editions claim to use is used for real, in both, and both
 
 Exit: every module has at least one production consumer in each edition that uses it; both installers pass the clean-VM run; the browser smoke suite is green.
 
+### RMM module (added 2026-10-07): the endpoint agent becomes a full RMM in Core
+
+RivetIT's built-in endpoint agent (Windows today) moves into RivetCore so RivetIT and RivetMSP share one RMM, and it grows into a complete
+remote monitoring and management product. Owner decisions: **Windows and Linux** agents (macOS later, no test Mac), the module is **built into Core's
+public API** (so the 1.0 soak restarts after it lands), it is a **module that can be switched on and off** (off by default for new installs, zero cost
+when off, with capacity limits and load shedding because it is compute heavy), and Phase 0 is a faithful port of the existing code plus fix-ups, byte
+compatible with already enrolled agents. Design: [docs/design/endpoint-module-extraction.md](docs/design/endpoint-module-extraction.md), ADR-010.
+
+| Phase | Content | Size | Issues | Status |
+|---|---|---|---|---|
+| **0** | Move the PHP server side, the Go agent and its CI into Core; Linux agent; module switch; capacity controls; both editions adopt it | L | [#60 T1 baseline](https://github.com/TheTractorHacker/rivet-core/issues/60) · [#61 T2 skeleton](https://github.com/TheTractorHacker/rivet-core/issues/61) · [#62 T3 pure classes](https://github.com/TheTractorHacker/rivet-core/issues/62) · [#63 T4 device API](https://github.com/TheTractorHacker/rivet-core/issues/63) · [#64 T5 technician/admin](https://github.com/TheTractorHacker/rivet-core/issues/64) · [#65 T6 Go move + Linux](https://github.com/TheTractorHacker/rivet-core/issues/65) · [#66 T9 switch + capacity](https://github.com/TheTractorHacker/rivet-core/issues/66) · [#67 T7 RivetIT adopts](https://github.com/TheTractorHacker/rivet-core/issues/67) · [#68 T8 RivetMSP adopts](https://github.com/TheTractorHacker/rivet-core/issues/68) | **in progress** (T1 and T2 running) |
+| 1 | Software inventory with history, sites/groups/tags, `rmm.*` events, MSP metric sink | L-XL | [#69](https://github.com/TheTractorHacker/rivet-core/issues/69) | planned |
+| 2 | Policies and check templates, script library, scheduled scripts, approvals, custom fields | XL | [#70](https://github.com/TheTractorHacker/rivet-core/issues/70) | planned |
+| 3 | Alerting maturity: thresholds, maintenance windows, suppression, escalation, more check types | L | [#71](https://github.com/TheTractorHacker/rivet-core/issues/71) | planned |
+| 4 | Patch management (Windows Update, Linux apt/dnf, rings, reboot policy, compliance) | XL | [#72](https://github.com/TheTractorHacker/rivet-core/issues/72) | planned (needs Windows test machines) |
+| 5 | Software deployment and reporting | XL | [#73](https://github.com/TheTractorHacker/rivet-core/issues/73) | planned |
+| 6 | Remote tools: service/process manager, file transfer, embedded Mesh terminal/files | M-L | [#74](https://github.com/TheTractorHacker/rivet-core/issues/74) | planned |
+| 7 | macOS agent, Authenticode-signed binaries, MSI | XL | [#75](https://github.com/TheTractorHacker/rivet-core/issues/75) | blocked: no Mac, no signing certificates |
+| 8 | Event-log / syslog collection (optional, off by default) | L | [#76](https://github.com/TheTractorHacker/rivet-core/issues/76) | planned |
+
+Effect on 1.0: the RMM module adds public API, so `1.0.0-rc.N` is re-cut after Phase 0 and the 30-day soak starts from that candidate; Phases 1 to 8 are 1.x minor releases.
+
 ### 1.0.0-rc.1 and onward (feature freeze and soak)
 
 - Tag `v1.0.0-rc.1` when 0.10.0 is done. Only bug fixes after that; any API change restarts the clock.
