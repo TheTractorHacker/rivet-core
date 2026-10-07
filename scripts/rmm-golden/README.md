@@ -99,3 +99,24 @@ Snapshots (`snapshots{}` in each file) are masked row dumps of `endpoint_agent_*
 `php scripts/rmm-golden/dump-schema.php <scratch-db> <out.json> [<ddl-dir>]` with `RMM_DB_USER`/`RMM_DB_PASS` (`RMM_DB_HOST` optional). Output is sorted, contains no row data and no
 `AUTO_INCREMENT=` counters. `tests/Fixtures/rmm/schema/endpoint_tables_final.json` + `ddl/*.sql` = DB 2.6.146 (fresh `db.sql` install and 2.6.145 -> 2.6.146 upgrade produce
 byte-identical dumps); `endpoint_tables_2_6_145.json` + `ddl-2_6_145/*.sql` = after only the `2.6.145` step (9 tables: `endpoint_agent_binaries` does not exist yet).
+
+## Replay against RivetCore (task T4)
+
+`replay-core.php` replays the same transcripts through `RivetCore\Rmm\Http\DeviceApi` over a scratch database, with Core's in-memory reference adapters as the
+edition. Nothing is edited in `golden.php`: the Core side only supplies the three things it expects.
+
+| File | Role |
+|---|---|
+| `replay-core.php` | Starts two `php -S` servers on free **four-digit** loopback ports (the stamped installer carries the server URL, so the recorded installer length depends on the port having four digits), runs `golden.php` against them with `--adapter=adapter-core.php`, stops them. Needs `RIVETCORE_TEST_DB_*` (name must contain `scratch`) and `RIVETCORE_TEST_REDIS_PORT` (throwaway Redis, rate limits go through Core's `Redis\RateLimiter`). |
+| `core-router.php` | The router: plays the edition's front controller and bridge files (trusted-proxy TLS decision, `RmmRequest` from the superglobals, `SapiEmitter`, the edition's CORS headers, which the transcripts show on downloads too). The technician endpoints are a test-only stand-in (`tests/Support/GoldenTechnicianShim.php`) until the real `TechnicianApi` exists. |
+| `adapter-core.php` | `reset` / `hook` / `snapshot` for Core: seeds clients, assets, tokens, the fixed signing key and the hosted binaries; snapshots leave out the five migration 0016 module-switch columns of `endpoint_agent_settings`, which RivetIT 2.6.146 does not have. |
+
+```
+export RIVETCORE_TEST_DB_NAME=rivetcore_scratch_x RIVETCORE_TEST_DB_USER=... RIVETCORE_TEST_DB_PASS=... RIVETCORE_TEST_REDIS_PORT=6362
+php scripts/rmm-golden/replay-core.php replay        # "replay identical (10 files)"
+vendor/bin/phpunit tests/Integration/Rmm/GoldenReplayTest.php
+```
+
+The replay runs the module in its compatibility mode: no `RmmModuleStateInterface` is handed to `DeviceApi`, so a switched-off service answers 403 exactly as
+transcript `01-disabled.json` records. The new 503 `module_disabled` answer is covered by `tests/Integration/Rmm/DeviceApiTest.php`.
+
