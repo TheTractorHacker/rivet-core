@@ -32,6 +32,15 @@
       "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/mockups/asset-page.html"
     },
     {
+      "id": "asset-page-mockup-app-style",
+      "title": "Asset page mockup in the app style (interactive HTML)",
+      "summary": "Same mockup built from the real RivetIT CSS and shell markup (Tabler, red accent, light and dark); self-contained, about 1.7 MB",
+      "path": "docs/rmm/mockups/asset-page-app-style.html",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/mockups/asset-page-app-style.html",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/mockups/asset-page-app-style.html"
+    },
+    {
       "id": "design",
       "title": "RMM module engineering design",
       "summary": "Move into Core, contracts, database, wire protocol, module switch, capacity, phases",

@@ -9,6 +9,7 @@ RivetIT and RivetMSP, and the roadmap to a complete RMM. Status: **Phase 0 in pr
 | [ASSET_PAGE_REDESIGN.md](ASSET_PAGE_REDESIGN.md) | How the asset (device) page and the fleet dashboard are redesigned: gauges, graphs, checks, alerts, inventory, jobs |
 | [SCALING.md](SCALING.md) | How the RMM goes from 5,000 supported devices to 10,000 proven before it leaves beta: targets, load model, work items, validation gate |
 | [mockups/asset-page.html](mockups/asset-page.html) | Interactive mockup of the redesigned asset page (self-contained HTML; download and open it) |
+| [mockups/asset-page-app-style.html](mockups/asset-page-app-style.html) | The same mockup rendered with the real RivetIT CSS and shell markup (light and dark, red accent); self-contained, about 1.7 MB |
 | [../design/endpoint-module-extraction.md](../design/endpoint-module-extraction.md) | Engineering design: what moves into Core, contracts, database, wire protocol, module switch, capacity, phases |
 | [../architecture/ADR-010-endpoint-agent-module.md](../architecture/ADR-010-endpoint-agent-module.md) | Architecture decision record for the RMM module |
 | [../../ROADMAP.md](../../ROADMAP.md) | Project roadmap with the RMM phases and issue links |
