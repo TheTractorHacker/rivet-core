@@ -1,0 +1,170 @@
+name: Endpoint agent
+
+# Builds, tests and (on agent-v* tags) releases the Go endpoint agent (Windows and Linux) in endpoint-agent/.
+# Tags `agent-vX.Y.Z[-suffix]` in THIS repository publish the release; editions download the binaries from there.
+# The unsigned path needs NO secrets. Authenticode signing is a disabled, secret-gated step below.
+
+on:
+  push:
+    branches: ['**']
+    tags: ['agent-v*']
+    paths:
+      - 'endpoint-agent/**'
+      - '.github/workflows/endpoint-agent.yml'
+  pull_request:
+    paths:
+      - 'endpoint-agent/**'
+      - '.github/workflows/endpoint-agent.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: endpoint-agent-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: endpoint-agent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: endpoint-agent/go.mod
+          cache-dependency-path: endpoint-agent/go.sum
+
+      - name: Compute version
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/agent-v* ]]; then
+            v="${GITHUB_REF#refs/tags/agent-v}"
+          else
+            v="0.0.0-dev.${GITHUB_SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "commit=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: go vet (linux/amd64, linux/arm64, windows/amd64, windows/arm64, test tags)
+        run: |
+          go vet ./...
+          GOOS=linux GOARCH=arm64 go vet ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
+          GOOS=windows GOARCH=arm64 go vet ./...
+          go vet -tags 'devtools agenttest' ./...
+
+      - name: shellcheck (install script, e2e scripts, package scripts)
+        run: shellcheck -S warning scripts/install-linux.sh e2e/*.sh packaging/*.sh
+
+      - name: go test -race
+        run: go test -race -count=1 ./...
+
+      - name: Short fuzz of the installer payload parser
+        run: go test -run xxx -fuzz=FuzzEmbedded -fuzztime=20s ./internal/embed
+
+      - name: End-to-end against the fake server (including the stamped installer)
+        run: ./e2e/run_e2e.sh
+
+      - name: Linux end-to-end in a root container (install script, unit, update swap, offline buffering, module_disabled)
+        run: ./e2e/run_linux_container_e2e.sh
+
+      - name: Build (-trimpath, version ldflags) and checksum
+        run: make dist VERSION='${{ steps.ver.outputs.version }}' COMMIT='${{ steps.ver.outputs.commit }}'
+
+      - name: Reproducibility (a second build must be byte-identical)
+        run: |
+          cp -r dist dist-first
+          make dist VERSION='${{ steps.ver.outputs.version }}' COMMIT='${{ steps.ver.outputs.commit }}'
+          diff -r dist-first dist
+          rm -rf dist-first
+
+      - name: .deb and .rpm packages (nfpm, in Docker)
+        run: make packages VERSION='${{ steps.ver.outputs.version }}'
+
+      # ---- Authenticode signing: DISABLED by default -------------------------------------------
+      # Not performed unless you (1) flip `if: false` to the condition below, (2) add these repository
+      # secrets and (3) run on a Windows runner or use a signing service (osslsigncode on Linux works
+      # with a PFX too):
+      #   AUTHENTICODE_PFX_BASE64    base64 of the code-signing .pfx
+      #   AUTHENTICODE_PFX_PASSWORD  its password
+      #   AUTHENTICODE_TIMESTAMP_URL (optional) RFC 3161 server, default http://timestamp.digicert.com
+      # Sign BEFORE the checksums are computed, and before the server stamps per-department payloads
+      # onto the exe (the stamp is appended after the signed bytes; see README "Self-installing installer").
+      - name: Authenticode sign (disabled)
+        if: false   # replace with: ${{ secrets.AUTHENTICODE_PFX_BASE64 != '' }}
+        env:
+          PFX_B64: ${{ secrets.AUTHENTICODE_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.AUTHENTICODE_PFX_PASSWORD }}
+          TS_URL: ${{ secrets.AUTHENTICODE_TIMESTAMP_URL }}
+        run: |
+          echo "$PFX_B64" | base64 -d > "$RUNNER_TEMP/sign.pfx"
+          sudo apt-get install -y osslsigncode
+          for f in dist/rivetit-agent-windows-*.exe; do   # (Linux binaries are not Authenticode-signed)
+            osslsigncode sign -pkcs12 "$RUNNER_TEMP/sign.pfx" -pass "$PFX_PASSWORD" \
+              -h sha256 -t "${TS_URL:-http://timestamp.digicert.com}" -in "$f" -out "$f.signed"
+            mv "$f.signed" "$f"
+          done
+          rm -f "$RUNNER_TEMP/sign.pfx"
+          make checksums
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rivetit-agent-${{ steps.ver.outputs.version }}
+          path: |
+            endpoint-agent/dist/rivetit-agent-windows-amd64.exe
+            endpoint-agent/dist/rivetit-agent-windows-arm64.exe
+            endpoint-agent/dist/rivetit-agent-linux-amd64
+            endpoint-agent/dist/rivetit-agent-linux-arm64
+            endpoint-agent/dist/rivetit-agent-linux-amd64.tar.gz
+            endpoint-agent/dist/rivetit-agent-linux-arm64.tar.gz
+            endpoint-agent/dist/packages/*
+            endpoint-agent/dist/install-linux.sh
+            endpoint-agent/dist/SHA256SUMS
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    # Only for agent-v* tags; the only job with write permission.
+    if: startsWith(github.ref, 'refs/tags/agent-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/rivetit-agent-windows-amd64.exe
+            release/rivetit-agent-windows-arm64.exe
+            release/rivetit-agent-linux-amd64
+            release/rivetit-agent-linux-arm64
+            release/rivetit-agent-linux-amd64.tar.gz
+            release/rivetit-agent-linux-arm64.tar.gz
+            release/packages/*
+            release/install-linux.sh
+            release/SHA256SUMS
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          # A tag with a suffix (agent-v0.1.0-beta.1) is published as a pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            RMM endpoint agent for Windows (amd64, arm64) and Linux/systemd (amd64, arm64; tarballs, .deb, .rpm).
+            Upload the binaries in your edition's administration area (Endpoint agent / RMM > Agent binaries), then
+            download per-department installers from there. Linux: `install-linux.sh` verifies and installs a binary
+            (see docs/rmm/AGENT_BUILD.md in the repository).
+            Binaries are UNSIGNED unless this release says otherwise. Verify with `sha256sum --ignore-missing -c SHA256SUMS`.
+            BETA: the Windows agent has not yet been run on a real Windows machine (pilot one PC first). The Linux agent
+            passes its tests and an end-to-end run as root in a container; it has not yet been run under a real systemd
+            on a physical host.

@@ -1,0 +1,9 @@
+/dist/
+/bin/
+*.exe
+*.test
+*.out
+/e2e/work/
+/.gocache/
+/e2e/work-linux/
+/e2e/work-baseline/

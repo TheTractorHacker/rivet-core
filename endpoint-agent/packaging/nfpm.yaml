@@ -1,0 +1,34 @@
+# nfpm package definition for the Linux agent (.deb and .rpm). Driven by `make packages`, which sets
+# VERSION, ARCH (amd64|arm64) and BIN (the binary to package). nfpm: https://nfpm.goreleaser.com
+name: rivetit-agent
+arch: "${ARCH}"
+platform: linux
+version: "${VERSION}"
+version_schema: none
+section: admin
+priority: optional
+maintainer: "RivetCore maintainers <noreply@users.noreply.github.com>"
+description: |
+  RMM endpoint agent for Linux (systemd). Installs the binary only; enroll the machine with
+  `sudo rivetit-agent install --server URL --token-file FILE` (or run a per-department
+  installer from the server). The package never enrolls or starts anything by itself.
+homepage: "https://github.com/TheTractorHacker/rivet-core"
+license: "GPL-3.0-only"
+contents:
+  - src: "${BIN}"
+    dst: /opt/rivetit-agent/rivetit-agent
+    expand: true
+    file_info:
+      mode: 0755
+      owner: root
+      group: root
+  - dst: /var/lib/rivetit-agent
+    type: dir
+    file_info:
+      mode: 0700
+      owner: root
+      group: root
+scripts:
+  postinstall: packaging/postinstall.sh
+  preremove: packaging/preremove.sh
+  postremove: packaging/postremove.sh

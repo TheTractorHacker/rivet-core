@@ -1,0 +1,27 @@
+{
+  "FixedFileInfo": {
+    "FileVersion": {"Major": 1, "Minor": 0, "Patch": 0, "Build": 0},
+    "ProductVersion": {"Major": 1, "Minor": 0, "Patch": 0, "Build": 0},
+    "FileFlagsMask": "3f",
+    "FileFlags ": "00",
+    "FileOS": "040004",
+    "FileType": "01",
+    "FileSubType": "00"
+  },
+  "StringFileInfo": {
+    "Comments": "RivetIT endpoint agent: inventory, health monitoring and controlled maintenance jobs. The exact build version is printed by 'rivetit-agent version'.",
+    "CompanyName": "RivetIT",
+    "FileDescription": "RivetIT Endpoint Agent",
+    "FileVersion": "1.0.0.0",
+    "InternalName": "rivetit-agent",
+    "LegalCopyright": "RivetIT",
+    "LegalTrademarks": "",
+    "OriginalFilename": "rivetit-agent.exe",
+    "PrivateBuild": "",
+    "ProductName": "RivetIT Endpoint Agent",
+    "ProductVersion": "1.0.0.0",
+    "SpecialBuild": ""
+  },
+  "VarFileInfo": {"Translation": {"LangID": "0409", "CharsetID": "04B0"}},
+  "ManifestPath": "winres/rivetit-agent.manifest"
+}
