@@ -1,0 +1,62 @@
+{
+  "module": "rmm",
+  "repository": "https://github.com/TheTractorHacker/rivet-core",
+  "updated": "2026-10-07",
+  "issues": "https://github.com/TheTractorHacker/rivet-core/issues?q=label%3Armm",
+  "documents": [
+    {
+      "id": "features",
+      "title": "RMM feature list",
+      "summary": "What the RMM does and contains, by area, with the phase that delivers each feature",
+      "path": "docs/rmm/FEATURES.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/FEATURES.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/FEATURES.md"
+    },
+    {
+      "id": "asset-page",
+      "title": "Asset page and fleet dashboard redesign",
+      "summary": "Gauges, graphs, checks, alerts, inventory, jobs; data sources, states, performance budget, task T10",
+      "path": "docs/rmm/ASSET_PAGE_REDESIGN.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/ASSET_PAGE_REDESIGN.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/ASSET_PAGE_REDESIGN.md"
+    },
+    {
+      "id": "asset-page-mockup",
+      "title": "Asset page mockup (interactive HTML)",
+      "summary": "Self-contained interactive mockup with fictional sample data",
+      "path": "docs/rmm/mockups/asset-page.html",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/mockups/asset-page.html",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/mockups/asset-page.html"
+    },
+    {
+      "id": "design",
+      "title": "RMM module engineering design",
+      "summary": "Move into Core, contracts, database, wire protocol, module switch, capacity, phases",
+      "path": "docs/design/endpoint-module-extraction.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/design/endpoint-module-extraction.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/design/endpoint-module-extraction.md"
+    },
+    {
+      "id": "adr-010",
+      "title": "ADR-010: RMM module",
+      "summary": "Architecture decision record",
+      "path": "docs/architecture/ADR-010-endpoint-agent-module.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/architecture/ADR-010-endpoint-agent-module.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/architecture/ADR-010-endpoint-agent-module.md"
+    },
+    {
+      "id": "roadmap",
+      "title": "Roadmap",
+      "summary": "Project roadmap including the RMM phases",
+      "path": "ROADMAP.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/ROADMAP.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/ROADMAP.md"
+    }
+  ]
+}
