@@ -1,0 +1,29 @@
+{
+    "format": 1,
+    "baseline": "RivetIT origin/beta c26957c0b (see docs/design/endpoint-baseline.md)",
+    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+    "signing_key_id": "b2569fb66d0a09e4",
+    "files": [
+        "01-disabled.json",
+        "02-tls.json",
+        "03-enroll-errors.json",
+        "04-enroll-flows.json",
+        "05-checkin.json",
+        "06-jobs.json",
+        "07-update.json",
+        "08-installer.json",
+        "09-rate-limits.json"
+    ],
+    "transport_headers_ignored_by_core_comparison": [
+        "date",
+        "host",
+        "connection",
+        "x-powered-by",
+        "content-length"
+    ],
+    "edition_headers_not_produced_by_core": [
+        "access-control-allow-origin",
+        "access-control-allow-methods",
+        "access-control-allow-headers"
+    ]
+}

@@ -1,0 +1,839 @@
+{
+    "scenario": "token-gated installer download: stamped executable, generic 404s, token never in the URL, size cap",
+    "format": 1,
+    "steps": [
+        {
+            "id": "download-json-body",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 200,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-disposition: attachment; filename=\"RivetIT-Agent-Setup-golden-dept-a-x64.exe\"",
+                    "content-length: 8544",
+                    "content-type: application/octet-stream",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "pragma: no-cache",
+                    "x-accel-buffering: no",
+                    "x-content-type-options: nosniff",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body_binary": {
+                    "length": 8544,
+                    "magic": "RIVETIT-EMBED-v1",
+                    "footer_sha256_matches_payload": true,
+                    "payload_length": 300,
+                    "exe_prefix_equals_published": "amd64@1.0.0",
+                    "payload_keys": [
+                        "version",
+                        "installer_id",
+                        "server_url",
+                        "enrollment_token",
+                        "department",
+                        "ca_pem",
+                        "created_at",
+                        "expires_at"
+                    ],
+                    "payload": {
+                        "version": 1,
+                        "installer_id": "<UUID#1>",
+                        "server_url": "<BASE>",
+                        "enrollment_token": "rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                        "department": "Golden Dept A",
+                        "ca_pem": null,
+                        "created_at": "<TS>",
+                        "expires_at": "<TS>"
+                    },
+                    "payload_enrollment_token_is_the_requested_one": true,
+                    "payload_department_is_the_expected_one": true
+                }
+            }
+        },
+        {
+            "id": "download-form-body",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/x-www-form-urlencoded"
+                },
+                "body": {
+                    "form": {
+                        "token": "rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 200,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-disposition: attachment; filename=\"RivetIT-Agent-Setup-golden-dept-a-x64.exe\"",
+                    "content-length: 8544",
+                    "content-type: application/octet-stream",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "pragma: no-cache",
+                    "x-accel-buffering: no",
+                    "x-content-type-options: nosniff",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body_binary": {
+                    "length": 8544,
+                    "magic": "RIVETIT-EMBED-v1",
+                    "footer_sha256_matches_payload": true,
+                    "payload_length": 300,
+                    "exe_prefix_equals_published": "amd64@1.0.0",
+                    "payload_keys": [
+                        "version",
+                        "installer_id",
+                        "server_url",
+                        "enrollment_token",
+                        "department",
+                        "ca_pem",
+                        "created_at",
+                        "expires_at"
+                    ],
+                    "payload": {
+                        "version": 1,
+                        "installer_id": "<UUID#2>",
+                        "server_url": "<BASE>",
+                        "enrollment_token": "rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                        "department": "Golden Dept A",
+                        "ca_pem": null,
+                        "created_at": "<TS>",
+                        "expires_at": "<TS>"
+                    },
+                    "payload_enrollment_token_is_the_requested_one": true,
+                    "payload_department_is_the_expected_one": true
+                }
+            }
+        },
+        {
+            "id": "download-bearer-header",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 200,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-disposition: attachment; filename=\"RivetIT-Agent-Setup-golden-dept-a-x64.exe\"",
+                    "content-length: 8544",
+                    "content-type: application/octet-stream",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "pragma: no-cache",
+                    "x-accel-buffering: no",
+                    "x-content-type-options: nosniff",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body_binary": {
+                    "length": 8544,
+                    "magic": "RIVETIT-EMBED-v1",
+                    "footer_sha256_matches_payload": true,
+                    "payload_length": 300,
+                    "exe_prefix_equals_published": "amd64@1.0.0",
+                    "payload_keys": [
+                        "version",
+                        "installer_id",
+                        "server_url",
+                        "enrollment_token",
+                        "department",
+                        "ca_pem",
+                        "created_at",
+                        "expires_at"
+                    ],
+                    "payload": {
+                        "version": 1,
+                        "installer_id": "<UUID#3>",
+                        "server_url": "<BASE>",
+                        "enrollment_token": "rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                        "department": "Golden Dept A",
+                        "ca_pem": null,
+                        "created_at": "<TS>",
+                        "expires_at": "<TS>"
+                    },
+                    "payload_enrollment_token_is_the_requested_one": true,
+                    "payload_department_is_the_expected_one": true
+                }
+            }
+        },
+        {
+            "id": "download-other-department-token",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "rvte1.a7a7a7a7a707.7777777777777777777777777777777777777777",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 200,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-disposition: attachment; filename=\"RivetIT-Agent-Setup-golden-dept-b-x64.exe\"",
+                    "content-length: 8544",
+                    "content-type: application/octet-stream",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "pragma: no-cache",
+                    "x-accel-buffering: no",
+                    "x-content-type-options: nosniff",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body_binary": {
+                    "length": 8544,
+                    "magic": "RIVETIT-EMBED-v1",
+                    "footer_sha256_matches_payload": true,
+                    "payload_length": 300,
+                    "exe_prefix_equals_published": "amd64@1.0.0",
+                    "payload_keys": [
+                        "version",
+                        "installer_id",
+                        "server_url",
+                        "enrollment_token",
+                        "department",
+                        "ca_pem",
+                        "created_at",
+                        "expires_at"
+                    ],
+                    "payload": {
+                        "version": 1,
+                        "installer_id": "<UUID#4>",
+                        "server_url": "<BASE>",
+                        "enrollment_token": "rvte1.a7a7a7a7a707.7777777777777777777777777777777777777777",
+                        "department": "Golden Dept B",
+                        "ca_pem": null,
+                        "created_at": "<TS>",
+                        "expires_at": "<TS>"
+                    },
+                    "payload_enrollment_token_is_the_requested_one": true,
+                    "payload_department_is_the_expected_one": true
+                }
+            }
+        },
+        {
+            "id": "arch-without-published-binary",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                        "arch": "arm64"
+                    }
+                }
+            },
+            "response": {
+                "status": 409,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "No agent binary is published for arm64. Upload one under Agent binaries and make it current.",
+                    "code": "unavailable"
+                }
+            }
+        },
+        {
+            "id": "get-not-allowed",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": []
+            },
+            "response": {
+                "status": 405,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "allow: POST",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Use POST.",
+                    "code": "method_not_allowed"
+                }
+            }
+        },
+        {
+            "id": "token-in-url",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer?token=rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 400,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Send the token in the request body or an Authorization header, never in the URL.",
+                    "code": "token_in_url"
+                }
+            }
+        },
+        {
+            "id": "empty-body",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": []
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "token and arch (amd64 or arm64) are required.",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "arch-invalid",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                        "arch": "sparc"
+                    }
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "token and arch (amd64 or arm64) are required.",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "body-over-4-kib",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "generated": {
+                        "bytes": 5000,
+                        "fill": "x"
+                    }
+                }
+            },
+            "response": {
+                "status": 413,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Request body too large.",
+                    "code": "too_large"
+                }
+            }
+        },
+        {
+            "id": "token-garbage",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "garbage",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 404,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Not found.",
+                    "code": "not_found"
+                }
+            }
+        },
+        {
+            "id": "token-unknown-selector",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "rvte1.cccccccccccc.dddddddddddddddddddddddddddddddddddddddd",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 404,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Not found.",
+                    "code": "not_found"
+                }
+            }
+        },
+        {
+            "id": "token-revoked",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "rvte1.a4a4a4a4a404.4444444444444444444444444444444444444444",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 404,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Not found.",
+                    "code": "not_found"
+                }
+            }
+        },
+        {
+            "id": "token-expired",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "rvte1.a3a3a3a3a303.3333333333333333333333333333333333333333",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 404,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Not found.",
+                    "code": "not_found"
+                }
+            }
+        },
+        {
+            "id": "token-used-up",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "rvte1.a5a5a5a5a505.5555555555555555555555555555555555555555",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 404,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Not found.",
+                    "code": "not_found"
+                }
+            }
+        },
+        {
+            "id": "hook:clear_attempts",
+            "hook": "clear_attempts",
+            "args": []
+        }
+    ],
+    "snapshots": {
+        "after-installer": {
+            "endpoint_agent_enrollment_tokens": [
+                {
+                    "token_id": "<TOKENROW#1>",
+                    "token_selector": "a1a1a1a1a101",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-c1",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 9,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": "<DT>",
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#2>",
+                    "token_selector": "a2a2a2a2a202",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-c2",
+                    "client_id": 2,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 1,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": "<DT>",
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#3>",
+                    "token_selector": "a3a3a3a3a303",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-expired",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 5,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#4>",
+                    "token_selector": "a4a4a4a4a404",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-revoked",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 5,
+                    "use_count": 0,
+                    "revoked_at": "<DT>",
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#5>",
+                    "token_selector": "a5a5a5a5a505",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-exhausted",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 1,
+                    "use_count": 1,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#6>",
+                    "token_selector": "a6a6a6a6a606",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-inst",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#7>",
+                    "token_selector": "a7a7a7a7a707",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-inst2",
+                    "client_id": 2,
+                    "location_id": 0,
+                    "ring": "pilot",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#8>",
+                    "token_selector": "a8a8a8a8a808",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-ratelimit",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                }
+            ],
+            "endpoint_agent_enroll_attempts_by_reason": [
+                {
+                    "reason": "conflict",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "enrolled",
+                    "success": 1,
+                    "n": 6
+                },
+                {
+                    "reason": "forbidden",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "installer_download",
+                    "success": 1,
+                    "n": 4
+                },
+                {
+                    "reason": "installer_exhausted",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "installer_expired",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "installer_invalid_token",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "installer_malformed",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "installer_revoked",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "re-enrolled",
+                    "success": 1,
+                    "n": 1
+                },
+                {
+                    "reason": "reinstalled",
+                    "success": 1,
+                    "n": 3
+                }
+            ]
+        }
+    }
+}

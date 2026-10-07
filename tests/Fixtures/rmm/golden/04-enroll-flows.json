@@ -1,0 +1,1801 @@
+{
+    "scenario": "enrollment: new device, linked match, re-enroll, reinstall, identity conflict, scope mismatch, junk serial, auto-create, revoked",
+    "format": 1,
+    "steps": [
+        {
+            "id": "new-unmatched-device",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000001",
+                            "machine_guid": "4d022e47da9517bc",
+                            "hostname": "GOLD-C9E3",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-NEW1",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-2F-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:dev1>",
+                    "device_token": "<TOKEN#1>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "pending_approval",
+                    "matched_asset_id": null,
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "new-device-linked-by-serial",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000002",
+                            "machine_guid": "a985e21143e883c4",
+                            "hostname": "GOLD-7A01",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-LINK",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-4E-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:dev2>",
+                    "device_token": "<TOKEN#2>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "linked",
+                    "matched_asset_id": "<ASSET:linkable>",
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "re-enroll-same-install-id",
+            "note": "same install_id: same device_id, new credential, the old one stops working",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000002",
+                            "machine_guid": "a985e21143e883c4",
+                            "hostname": "GOLD-7A01",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-LINK",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-4E-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:dev2>",
+                    "device_token": "<TOKEN#3>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "linked",
+                    "matched_asset_id": "<ASSET:linkable>",
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "old-credential-after-re-enroll",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_checkin",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#2>",
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "seq": 1
+                    }
+                }
+            },
+            "response": {
+                "status": 401,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Invalid device credential.",
+                    "code": "invalid_token"
+                }
+            }
+        },
+        {
+            "id": "reinstall-new-install-id-same-machine-guid",
+            "note": "new install_id, same machine_guid and serial: the existing device is reused",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000011",
+                            "machine_guid": "4d022e47da9517bc",
+                            "hostname": "GOLD-C9E3",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-NEW1",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-2F-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:dev1>",
+                    "device_token": "<TOKEN#4>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "pending_approval",
+                    "matched_asset_id": null,
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "reinstall-new-install-id-new-guid-same-serial",
+            "note": "Windows reinstall: new MachineGuid, same BIOS serial",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000012",
+                            "machine_guid": "ffffffffffff0001",
+                            "hostname": "GOLD-7A01",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-LINK",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-4E-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:dev2>",
+                    "device_token": "<TOKEN#5>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "linked",
+                    "matched_asset_id": "<ASSET:linkable>",
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "identity-conflict-same-install-id-other-machine",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000011",
+                            "machine_guid": "eeeeeeeeeeee0002",
+                            "hostname": "GOLD-C9E3",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-NEW1",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-2F-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 409,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "This install id is already bound to a different machine.",
+                    "code": "conflict"
+                }
+            }
+        },
+        {
+            "id": "scope-mismatch-asset-in-other-department",
+            "note": "serial matches an asset of Dept B but the token belongs to Dept A: pending approval, never linked across departments",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000003",
+                            "machine_guid": "91e359bf2f6b12d0",
+                            "hostname": "GOLD-EC6A",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-OTHER",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-F3-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:dev3>",
+                    "device_token": "<TOKEN#6>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "pending_approval",
+                    "matched_asset_id": null,
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "technician-detail-scope-mismatch",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/endpoint_devices/{{dev:dev3}}",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer 0123456789abcdef0123456789abcdef01234567"
+                }
+            },
+            "response": {
+                "status": 200,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:dev3>",
+                    "hostname": "GOLD-EC6A",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "link_state": "pending_approval",
+                    "status": "never",
+                    "last_checkin_at": null,
+                    "offline_since": null,
+                    "agent_version": "1.0.0",
+                    "ring": "stable",
+                    "os_version": "Windows 11 23H2",
+                    "revoked": false,
+                    "retired": false,
+                    "serial": "GOLD-SER-OTHER",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "arch": "amd64",
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "last_collected_at": null,
+                    "inventory": null,
+                    "metrics": null,
+                    "match_reason": "scope_mismatch",
+                    "mesh_mapped": false,
+                    "checks": [],
+                    "jobs": []
+                }
+            }
+        },
+        {
+            "id": "serial-of-known-device-with-other-department-token",
+            "note": "reinstall lookup is by machine_guid or serial and ignores the token department: the Dept A device is reused",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a2a2a2a2a202.2222222222222222222222222222222222222222",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000013",
+                            "machine_guid": "91e359bf2f6b12d0",
+                            "hostname": "GOLD-EC6A",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-OTHER",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-F3-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:dev3>",
+                    "device_token": "<TOKEN#7>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "pending_approval",
+                    "matched_asset_id": null,
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "junk-serial-is-ignored",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000004",
+                            "machine_guid": "aaaaaaaaaaaa0004",
+                            "hostname": "GOLD-4DA0",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "To be filled by O.E.M.",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-E9-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE#1>",
+                    "device_token": "<TOKEN#8>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "pending_approval",
+                    "matched_asset_id": null,
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "hook:set_setting",
+            "hook": "set_setting",
+            "args": {
+                "values": {
+                    "unmatched_policy": "auto_create"
+                }
+            }
+        },
+        {
+            "id": "auto-create-policy-new-asset",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000005",
+                            "machine_guid": "d7590ec1c4a130eb",
+                            "hostname": "GOLD-FE7C",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-AUTO1",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-78-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:dev5>",
+                    "device_token": "<TOKEN#9>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "linked",
+                    "matched_asset_id": "<ASSET#1>",
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "hook:set_setting",
+            "hook": "set_setting",
+            "args": {
+                "values": {
+                    "unmatched_policy": "approval"
+                }
+            }
+        },
+        {
+            "id": "enroll-for-revocation",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000006",
+                            "machine_guid": "f7f4abf3aa183775",
+                            "hostname": "GOLD-0D7C",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-REVOKE",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-3E-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:dev6>",
+                    "device_token": "<TOKEN#10>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "pending_approval",
+                    "matched_asset_id": null,
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "hook:revoke_device",
+            "hook": "revoke_device",
+            "args": {
+                "device_id": "<DEVICE:dev6>"
+            }
+        },
+        {
+            "id": "enroll-revoked-device",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000006",
+                            "machine_guid": "f7f4abf3aa183775",
+                            "hostname": "GOLD-0D7C",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-SER-REVOKE",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-3E-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 403,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "This device was revoked. An administrator must allow re-enrollment first.",
+                    "code": "forbidden"
+                }
+            }
+        },
+        {
+            "id": "technician-list",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/endpoint_devices",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer 0123456789abcdef0123456789abcdef01234567"
+                }
+            },
+            "response": {
+                "status": 200,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "data": [
+                        {
+                            "device_id": "<DEVICE:dev6>",
+                            "hostname": "GOLD-0D7C",
+                            "asset_id": null,
+                            "client_id": 1,
+                            "link_state": "pending_approval",
+                            "status": "never",
+                            "last_checkin_at": null,
+                            "offline_since": null,
+                            "agent_version": "1.0.0",
+                            "ring": "stable",
+                            "os_version": "Windows 11 23H2",
+                            "revoked": true,
+                            "retired": false
+                        },
+                        {
+                            "device_id": "<DEVICE#1>",
+                            "hostname": "GOLD-4DA0",
+                            "asset_id": null,
+                            "client_id": 1,
+                            "link_state": "pending_approval",
+                            "status": "never",
+                            "last_checkin_at": null,
+                            "offline_since": null,
+                            "agent_version": "1.0.0",
+                            "ring": "stable",
+                            "os_version": "Windows 11 23H2",
+                            "revoked": false,
+                            "retired": false
+                        },
+                        {
+                            "device_id": "<DEVICE:dev2>",
+                            "hostname": "GOLD-7A01",
+                            "asset_id": "<ASSET:linkable>",
+                            "client_id": 1,
+                            "link_state": "linked",
+                            "status": "never",
+                            "last_checkin_at": null,
+                            "offline_since": null,
+                            "agent_version": "1.0.0",
+                            "ring": "stable",
+                            "os_version": "Windows 11 23H2",
+                            "revoked": false,
+                            "retired": false
+                        },
+                        {
+                            "device_id": "<DEVICE:dev1>",
+                            "hostname": "GOLD-C9E3",
+                            "asset_id": null,
+                            "client_id": 1,
+                            "link_state": "pending_approval",
+                            "status": "never",
+                            "last_checkin_at": null,
+                            "offline_since": null,
+                            "agent_version": "1.0.0",
+                            "ring": "stable",
+                            "os_version": "Windows 11 23H2",
+                            "revoked": false,
+                            "retired": false
+                        },
+                        {
+                            "device_id": "<DEVICE:dev3>",
+                            "hostname": "GOLD-EC6A",
+                            "asset_id": null,
+                            "client_id": 1,
+                            "link_state": "pending_approval",
+                            "status": "never",
+                            "last_checkin_at": null,
+                            "offline_since": null,
+                            "agent_version": "1.0.0",
+                            "ring": "stable",
+                            "os_version": "Windows 11 23H2",
+                            "revoked": false,
+                            "retired": false
+                        },
+                        {
+                            "device_id": "<DEVICE:dev5>",
+                            "hostname": "GOLD-FE7C",
+                            "asset_id": "<ASSET#1>",
+                            "client_id": 1,
+                            "link_state": "linked",
+                            "status": "never",
+                            "last_checkin_at": null,
+                            "offline_since": null,
+                            "agent_version": "1.0.0",
+                            "ring": "stable",
+                            "os_version": "Windows 11 23H2",
+                            "revoked": false,
+                            "retired": false
+                        }
+                    ],
+                    "total": 6
+                }
+            }
+        },
+        {
+            "id": "technician-detail-unknown-device",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/endpoint_devices/999999999",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer 0123456789abcdef0123456789abcdef01234567"
+                }
+            },
+            "response": {
+                "status": 404,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Device not found.",
+                    "code": "not_found"
+                }
+            }
+        },
+        {
+            "id": "technician-no-credential",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/endpoint_devices",
+                "base": "main",
+                "headers": []
+            },
+            "response": {
+                "status": 401,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Unauthorized"
+                }
+            }
+        }
+    ],
+    "snapshots": {
+        "after-enrollment": {
+            "endpoint_agent_devices": [
+                {
+                    "device_id": "<DEVICE:dev1>",
+                    "install_id": "00000000-0000-4000-8000-000000000011",
+                    "machine_guid": "4d022e47da9517bc",
+                    "hostname": "GOLD-C9E3",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-NEW1",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:2f:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "no_match",
+                    "match_candidates_json": null,
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 2,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "install_id": "00000000-0000-4000-8000-000000000012",
+                    "machine_guid": "ffffffffffff0001",
+                    "hostname": "GOLD-7A01",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-LINK",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:4e:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": "<ASSET:linkable>",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "linked",
+                    "match_reason": "matched_serial",
+                    "match_candidates_json": [
+                        {
+                            "asset_id": "<ASSET:linkable>",
+                            "asset_name": "GOLD-FRONTDESK",
+                            "client_id": 1,
+                            "serial": "GOLD-SER-LINK",
+                            "matched_by": [
+                                "serial"
+                            ],
+                            "in_scope": true,
+                            "owned_by_device_id": null
+                        }
+                    ],
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 3,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev3>",
+                    "install_id": "00000000-0000-4000-8000-000000000013",
+                    "machine_guid": "91e359bf2f6b12d0",
+                    "hostname": "GOLD-EC6A",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-OTHER",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:f3:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "scope_mismatch",
+                    "match_candidates_json": [
+                        {
+                            "asset_id": "<ASSET:otherdept>",
+                            "asset_name": "GOLD-OTHERDEPT",
+                            "client_id": 2,
+                            "serial": "GOLD-SER-OTHER",
+                            "matched_by": [
+                                "serial"
+                            ],
+                            "in_scope": false,
+                            "owned_by_device_id": null
+                        }
+                    ],
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#2>",
+                    "enroll_count": 2,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE#1>",
+                    "install_id": "00000000-0000-4000-8000-000000000004",
+                    "machine_guid": "aaaaaaaaaaaa0004",
+                    "hostname": "GOLD-4DA0",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": null,
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:e9:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "no_match",
+                    "match_candidates_json": null,
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev5>",
+                    "install_id": "00000000-0000-4000-8000-000000000005",
+                    "machine_guid": "d7590ec1c4a130eb",
+                    "hostname": "GOLD-FE7C",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-AUTO1",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:78:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": "<ASSET#1>",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "linked",
+                    "match_reason": "auto_created",
+                    "match_candidates_json": null,
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev6>",
+                    "install_id": "00000000-0000-4000-8000-000000000006",
+                    "machine_guid": "f7f4abf3aa183775",
+                    "hostname": "GOLD-0D7C",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-REVOKE",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:3e:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "no_match",
+                    "match_candidates_json": null,
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": "<DT>",
+                    "revoked_reason": "golden",
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                }
+            ],
+            "endpoint_agent_enrollment_tokens": [
+                {
+                    "token_id": "<TOKENROW#1>",
+                    "token_selector": "a1a1a1a1a101",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-c1",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 9,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": "<DT>",
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#2>",
+                    "token_selector": "a2a2a2a2a202",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-c2",
+                    "client_id": 2,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 1,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": "<DT>",
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#3>",
+                    "token_selector": "a3a3a3a3a303",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-expired",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 5,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#4>",
+                    "token_selector": "a4a4a4a4a404",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-revoked",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 5,
+                    "use_count": 0,
+                    "revoked_at": "<DT>",
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#5>",
+                    "token_selector": "a5a5a5a5a505",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-exhausted",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 1,
+                    "use_count": 1,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#6>",
+                    "token_selector": "a6a6a6a6a606",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-inst",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#7>",
+                    "token_selector": "a7a7a7a7a707",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-inst2",
+                    "client_id": 2,
+                    "location_id": 0,
+                    "ring": "pilot",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#8>",
+                    "token_selector": "a8a8a8a8a808",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-ratelimit",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                }
+            ],
+            "endpoint_agent_releases": [
+                {
+                    "release_id": "<ID#1>",
+                    "version": "1.1.0",
+                    "url": "<BASE>/api/v1/agent_update?arch=amd64&version=1.1.0",
+                    "sha256": "7a758b8a61ffabf5ffe29becd570b2754bcedab6f39b79e235ee4fc3c00f3356",
+                    "min_version": "0.0.0",
+                    "ring": "stable",
+                    "rollout_pct": 100,
+                    "active": 1,
+                    "notes": "golden",
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>",
+                    "arch": "amd64",
+                    "binary_id": "<BINARY#1>"
+                }
+            ],
+            "endpoint_agent_binaries": [
+                {
+                    "binary_id": "<BINARY#2>",
+                    "version": "1.0.0",
+                    "arch": "amd64",
+                    "sha256": "97d84f247a283e1d333c235564c4613e3f0799e718c7c9b8381be4d6d8f2c631",
+                    "size_bytes": 8192,
+                    "storage_name": "<STORAGE_NAME>",
+                    "uploaded_by": 1,
+                    "active": 1,
+                    "is_current": 1,
+                    "created_at": "<DT>"
+                },
+                {
+                    "binary_id": "<BINARY#1>",
+                    "version": "1.1.0",
+                    "arch": "amd64",
+                    "sha256": "7a758b8a61ffabf5ffe29becd570b2754bcedab6f39b79e235ee4fc3c00f3356",
+                    "size_bytes": 12288,
+                    "storage_name": "<STORAGE_NAME>",
+                    "uploaded_by": 1,
+                    "active": 1,
+                    "is_current": 0,
+                    "created_at": "<DT>"
+                }
+            ],
+            "endpoint_agent_enroll_attempts_by_reason": [
+                {
+                    "reason": "conflict",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "enrolled",
+                    "success": 1,
+                    "n": 6
+                },
+                {
+                    "reason": "forbidden",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "re-enrolled",
+                    "success": 1,
+                    "n": 1
+                },
+                {
+                    "reason": "reinstalled",
+                    "success": 1,
+                    "n": 3
+                }
+            ],
+            "endpoint_agent_settings": {
+                "id": 1,
+                "enabled": 1,
+                "service_url": "<BASE>",
+                "integration_id": "<INTEGRATION_ID>",
+                "check_in_interval_s": 300,
+                "collect_interval_s": 60,
+                "offline_after_s": 900,
+                "stale_after_s": 604800,
+                "failure_debounce": 3,
+                "recovery_debounce": 2,
+                "retention_days": 30,
+                "job_retention_days": 180,
+                "job_output_max_bytes": 65536,
+                "job_default_timeout_s": 300,
+                "job_max_timeout_s": 3600,
+                "job_expiry_s": 3600,
+                "job_ack_timeout_s": 120,
+                "job_max_attempts": 3,
+                "enroll_max_ttl_h": 72,
+                "unmatched_policy": "approval",
+                "checks_json": null,
+                "signing_key_id": "b2569fb66d0a09e4",
+                "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                "signing_private_key_enc": "<SIGNING_PRIVATE_KEY_ENC>",
+                "signing_key_created_at": "<DT>",
+                "mesh_enabled": 0,
+                "mesh_url": "",
+                "mesh_domain": "",
+                "mesh_login_key_enc": null,
+                "mesh_account_template": "rivetit-support",
+                "mesh_policy": "unattended",
+                "mesh_token_ttl_s": 300,
+                "coexistence_policy": null,
+                "updated_at": "<DT>",
+                "ca_pem": null
+            }
+        }
+    }
+}

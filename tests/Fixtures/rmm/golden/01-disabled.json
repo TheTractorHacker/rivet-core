@@ -1,0 +1,158 @@
+{
+    "scenario": "service disabled: what each endpoint answers before the module is switched on",
+    "format": 1,
+    "steps": [
+        {
+            "id": "enroll-disabled",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000900",
+                            "machine_guid": "c43b5efe59babf0a",
+                            "hostname": "GOLD-512E",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-D0",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-D0-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 403,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "The endpoint agent service is disabled.",
+                    "code": "forbidden"
+                }
+            }
+        },
+        {
+            "id": "enroll-get-disabled",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": []
+            },
+            "response": {
+                "status": 405,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "allow: POST",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Use POST.",
+                    "code": "method_not_allowed"
+                }
+            }
+        },
+        {
+            "id": "installer-disabled",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 403,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "The endpoint agent service is disabled.",
+                    "code": "forbidden"
+                }
+            }
+        },
+        {
+            "id": "checkin-garbage-bearer-disabled",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_checkin",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <64-hex literal>",
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "seq": 1
+                    }
+                }
+            },
+            "response": {
+                "status": 401,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Invalid device credential.",
+                    "code": "invalid_token"
+                }
+            }
+        },
+        {
+            "id": "hook:enable",
+            "hook": "enable",
+            "args": []
+        }
+    ]
+}

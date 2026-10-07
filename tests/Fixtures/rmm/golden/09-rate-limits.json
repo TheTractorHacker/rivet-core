@@ -1,0 +1,1233 @@
+{
+    "scenario": "429 behaviour: enrollment and installer failure budgets (database), per-device buckets for check-in, jobs and update (Redis)",
+    "format": 1,
+    "steps": [
+        {
+            "id": "enroll-10-failures",
+            "burst": {
+                "requests": 10,
+                "status_histogram": {
+                    "401": 10
+                },
+                "note": "ten invalid tokens from one address (401 each)"
+            }
+        },
+        {
+            "id": "enroll-eleventh-is-rate-limited",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.cccccccccccc.dddddddddddddddddddddddddddddddddddddddd",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000950",
+                            "machine_guid": "14ebb302cd9887db",
+                            "hostname": "GOLD-2C5E",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-RL",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-D3-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 429,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "retry-after: 600",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Too many enrollment attempts. Try again later.",
+                    "code": "rate_limited"
+                }
+            }
+        },
+        {
+            "id": "enroll-valid-token-while-limited",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a8a8a8a8a808.8888888888888888888888888888888888888888",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000950",
+                            "machine_guid": "14ebb302cd9887db",
+                            "hostname": "GOLD-2C5E",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-RL",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-D3-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 429,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "retry-after: 600",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Too many enrollment attempts. Try again later.",
+                    "code": "rate_limited"
+                }
+            }
+        },
+        {
+            "id": "hook:clear_attempts",
+            "hook": "clear_attempts",
+            "args": []
+        },
+        {
+            "id": "enroll-after-window-reset",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a8a8a8a8a808.8888888888888888888888888888888888888888",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000950",
+                            "machine_guid": "14ebb302cd9887db",
+                            "hostname": "GOLD-2C5E",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-RL",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-D3-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 201,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "device_id": "<DEVICE:devrl>",
+                    "device_token": "<TOKEN#11>",
+                    "check_in_interval_s": 300,
+                    "server_time": "<TS>",
+                    "status": "pending_approval",
+                    "matched_asset_id": null,
+                    "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+                    "signing_key_id": "b2569fb66d0a09e4",
+                    "config": {
+                        "checks": [
+                            {
+                                "key": "disk_c",
+                                "type": "disk",
+                                "params": {
+                                    "mount": "C:",
+                                    "warn_pct": 85,
+                                    "fail_pct": 95
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "pending_reboot",
+                                "type": "pending_reboot",
+                                "params": {},
+                                "interval_s": 3600,
+                                "signature": "<SIG:ok:check>"
+                            },
+                            {
+                                "key": "svc_eventlog",
+                                "type": "service",
+                                "params": {
+                                    "name": "EventLog",
+                                    "expect": "running"
+                                },
+                                "interval_s": 300,
+                                "signature": "<SIG:ok:check>"
+                            }
+                        ],
+                        "collect_interval_s": 60
+                    }
+                }
+            }
+        },
+        {
+            "id": "installer-10-failures",
+            "burst": {
+                "requests": 10,
+                "status_histogram": {
+                    "404": 10
+                },
+                "note": "ten unknown tokens from one address (404 each)"
+            }
+        },
+        {
+            "id": "installer-eleventh-is-rate-limited",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "garbage",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 429,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "retry-after: 600",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Too many requests. Try again later.",
+                    "code": "rate_limited"
+                }
+            }
+        },
+        {
+            "id": "installer-valid-token-while-limited",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_installer",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "token": "rvte1.a6a6a6a6a606.6666666666666666666666666666666666666666",
+                        "arch": "amd64"
+                    }
+                }
+            },
+            "response": {
+                "status": 429,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "retry-after: 600",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Too many requests. Try again later.",
+                    "code": "rate_limited"
+                }
+            }
+        },
+        {
+            "id": "hook:clear_attempts",
+            "hook": "clear_attempts",
+            "args": []
+        },
+        {
+            "id": "checkin-40-allowed",
+            "burst": {
+                "requests": 40,
+                "status_histogram": {
+                    "200": 40
+                },
+                "note": "40 check-ins in one minute are the budget"
+            }
+        },
+        {
+            "id": "checkin-41st-is-rate-limited",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_checkin",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#11>",
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "seq": 41,
+                        "collected_at": "{{ts:-5}}",
+                        "agent_version": "1.0.0"
+                    }
+                }
+            },
+            "response": {
+                "status": 429,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "retry-after: 60",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Too many requests.",
+                    "code": "rate_limited"
+                }
+            }
+        },
+        {
+            "id": "jobs-120-allowed",
+            "burst": {
+                "requests": 120,
+                "status_histogram": {
+                    "200": 120
+                },
+                "note": "120 job polls per minute"
+            }
+        },
+        {
+            "id": "jobs-121st-is-rate-limited",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_jobs",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#11>"
+                }
+            },
+            "response": {
+                "status": 429,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "retry-after: 60",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Too many requests.",
+                    "code": "rate_limited"
+                }
+            }
+        },
+        {
+            "id": "update-60-allowed",
+            "burst": {
+                "requests": 60,
+                "status_histogram": {
+                    "422": 60
+                },
+                "note": "60 update requests per minute (422 each: no arch/version)"
+            }
+        },
+        {
+            "id": "update-61st-is-rate-limited",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_update",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#11>"
+                }
+            },
+            "response": {
+                "status": 429,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "retry-after: 60",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Too many requests.",
+                    "code": "rate_limited"
+                }
+            }
+        }
+    ],
+    "snapshots": {
+        "final": {
+            "endpoint_agent_devices": [
+                {
+                    "device_id": "<DEVICE:dev1>",
+                    "install_id": "00000000-0000-4000-8000-000000000011",
+                    "machine_guid": "4d022e47da9517bc",
+                    "hostname": "GOLD-C9E3",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-NEW1",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:2f:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "no_match",
+                    "match_candidates_json": null,
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 2,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": "<DT>",
+                    "last_collected_at": "<DT>",
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 1,
+                    "inventory_json": null,
+                    "last_metrics_json": {
+                        "cpu_pct": 3,
+                        "mem_pct": 20,
+                        "disk": [],
+                        "net_rx_bps": null,
+                        "net_tx_bps": null
+                    },
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "install_id": "00000000-0000-4000-8000-000000000012",
+                    "machine_guid": "ffffffffffff0001",
+                    "hostname": "GOLD-INV",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-LINK",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:dd:ee:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": "<ASSET:linkable>",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "linked",
+                    "match_reason": "matched_serial",
+                    "match_candidates_json": [
+                        {
+                            "asset_id": "<ASSET:linkable>",
+                            "asset_name": "GOLD-FRONTDESK",
+                            "client_id": 1,
+                            "serial": "GOLD-SER-LINK",
+                            "matched_by": [
+                                "serial"
+                            ],
+                            "in_scope": true,
+                            "owned_by_device_id": null
+                        }
+                    ],
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 3,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": "<DT>",
+                    "last_collected_at": "<DT>",
+                    "last_inventory_at": "<DT>",
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 10,
+                    "inventory_json": {
+                        "hostname": "GOLD-INV",
+                        "os": "windows",
+                        "os_version": "Windows 11 23H2",
+                        "manufacturer": "Dell",
+                        "model": "Latitude 7440",
+                        "serial": "GOLD-SER-LINK",
+                        "cpu": {
+                            "model": "Intel i7-1355U",
+                            "cores": 10
+                        },
+                        "memory_total_bytes": 17179869184,
+                        "uptime_s": 7200,
+                        "logged_in_user": "<script>alert(1)</script>",
+                        "pending_reboot": false,
+                        "disks": [
+                            {
+                                "mount": "C:",
+                                "total_bytes": 512000000000,
+                                "free_bytes": 200000000000,
+                                "fs": "NTFS"
+                            }
+                        ],
+                        "network": [
+                            {
+                                "name": "Ethernet",
+                                "mac": "aa:bb:cc:dd:ee:01",
+                                "ips": [
+                                    "10.0.0.5"
+                                ]
+                            }
+                        ]
+                    },
+                    "last_metrics_json": null,
+                    "logged_in_user": "<script>alert(1)</script>",
+                    "pending_reboot": 0,
+                    "uptime_s": 7200,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev3>",
+                    "install_id": "00000000-0000-4000-8000-000000000013",
+                    "machine_guid": "91e359bf2f6b12d0",
+                    "hostname": "GOLD-EC6A",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-OTHER",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:f3:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "scope_mismatch",
+                    "match_candidates_json": [
+                        {
+                            "asset_id": "<ASSET:otherdept>",
+                            "asset_name": "GOLD-OTHERDEPT",
+                            "client_id": 2,
+                            "serial": "GOLD-SER-OTHER",
+                            "matched_by": [
+                                "serial"
+                            ],
+                            "in_scope": false,
+                            "owned_by_device_id": null
+                        }
+                    ],
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#2>",
+                    "enroll_count": 2,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE#1>",
+                    "install_id": "00000000-0000-4000-8000-000000000004",
+                    "machine_guid": "aaaaaaaaaaaa0004",
+                    "hostname": "GOLD-4DA0",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": null,
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:e9:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "no_match",
+                    "match_candidates_json": null,
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev5>",
+                    "install_id": "00000000-0000-4000-8000-000000000005",
+                    "machine_guid": "d7590ec1c4a130eb",
+                    "hostname": "GOLD-FE7C",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-AUTO1",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:78:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": "<ASSET#1>",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "linked",
+                    "match_reason": "auto_created",
+                    "match_candidates_json": null,
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev6>",
+                    "install_id": "00000000-0000-4000-8000-000000000006",
+                    "machine_guid": "f7f4abf3aa183775",
+                    "hostname": "GOLD-0D7C",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-REVOKE",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:3e:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "no_match",
+                    "match_candidates_json": null,
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": "<DT>",
+                    "revoked_reason": "golden",
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "install_id": "00000000-0000-4000-8000-000000000950",
+                    "machine_guid": "14ebb302cd9887db",
+                    "hostname": "GOLD-2C5E",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-RL",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:d3:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "no_match",
+                    "match_candidates_json": null,
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#8>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": "<DT>",
+                    "last_collected_at": "<DT>",
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 40,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                }
+            ],
+            "endpoint_agent_checkins": [
+                {
+                    "device_id": "<DEVICE:dev1>",
+                    "seq": 1,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "seq": 1,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "seq": 2,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "seq": 3,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "seq": 4,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "seq": 5,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "seq": 6,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "seq": 7,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "seq": 8,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "seq": 9,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2>",
+                    "seq": 10,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 1,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 2,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 3,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 4,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 5,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 6,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 7,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 8,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 9,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 10,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 11,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 12,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 13,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 14,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 15,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 16,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 17,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 18,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 19,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 20,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 21,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 22,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 23,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 24,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 25,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 26,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 27,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 28,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 29,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 30,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 31,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 32,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 33,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 34,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 35,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 36,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 37,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 38,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 39,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:devrl>",
+                    "seq": 40,
+                    "received_at": "<DT>",
+                    "collected_at": "<DT>"
+                }
+            ],
+            "endpoint_agent_enrollment_tokens": [
+                {
+                    "token_id": "<TOKENROW#1>",
+                    "token_selector": "a1a1a1a1a101",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-c1",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 9,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": "<DT>",
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#2>",
+                    "token_selector": "a2a2a2a2a202",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-c2",
+                    "client_id": 2,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 1,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": "<DT>",
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#3>",
+                    "token_selector": "a3a3a3a3a303",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-expired",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 5,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#4>",
+                    "token_selector": "a4a4a4a4a404",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-revoked",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 5,
+                    "use_count": 0,
+                    "revoked_at": "<DT>",
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#5>",
+                    "token_selector": "a5a5a5a5a505",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-exhausted",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 1,
+                    "use_count": 1,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#6>",
+                    "token_selector": "a6a6a6a6a606",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-inst",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#7>",
+                    "token_selector": "a7a7a7a7a707",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-inst2",
+                    "client_id": 2,
+                    "location_id": 0,
+                    "ring": "pilot",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#8>",
+                    "token_selector": "a8a8a8a8a808",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-ratelimit",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 1,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": "<DT>",
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                }
+            ],
+            "endpoint_agent_enroll_attempts_by_reason": []
+        }
+    }
+}
