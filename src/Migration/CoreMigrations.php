@@ -15,6 +15,9 @@ use RivetCore\Compliance\Migration\Migration0011Responsibilities;
 use RivetCore\ITSM\Migration\Migration0004ProblemsAndChanges;
 use RivetCore\Mcp\Migration\Migration0003McpUnlinkedIdentities;
 use RivetCore\Retention\Migration\Migration0013RetentionIndexes;
+use RivetCore\Rmm\Migration\Migration0014EndpointAgent;
+use RivetCore\Rmm\Migration\Migration0015EndpointAgentConverge;
+use RivetCore\Rmm\Migration\Migration0016ModuleSwitches;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
 
@@ -41,6 +44,9 @@ final class CoreMigrations
             new Migration0011Responsibilities(),
             new Migration0012JobHeartbeat(),
             new Migration0013RetentionIndexes(),
+            new Migration0014EndpointAgent(),
+            new Migration0015EndpointAgentConverge(),
+            new Migration0016ModuleSwitches(),
         ];
     }
 }

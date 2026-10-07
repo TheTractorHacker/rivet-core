@@ -21,6 +21,7 @@ configuration, how it fails, security notes, which edition features use it, and 
 | KB converters | [kb.md](kb.md) | `RivetCore\KB` | none | uploaded file | Throws `DocxConversionException` / `PdfConversionException` on bad or oversized input |
 | Knowledge | [knowledge.md](knowledge.md) | `RivetCore\Knowledge` | none | credential lookup / reveal control | Renders a placeholder when the credential is not visible |
 | Ui | [ui.md](ui.md) | `RivetCore\Ui` | none | the picker and filter UI | `IconCatalog::normalize()` falls back to the default; `DateRange` falls back to all time for bad input |
+| RMM (endpoint agent) | [rmm.md](rmm.md) | `RivetCore\Rmm` | `endpoint_agent_*` (10) | tenancy, assets, bridge, secret box (+ optional sink, audit, module state) | Off by default; skeleton only until the services land |
 | Migration | [migration.md](migration.md) | `RivetCore\Migration` | `rivet_core_migrations` | an updater that calls the runner | Concurrent runs take turns; a runner that waits too long throws; there is no `down()` |
 
 ## Page template

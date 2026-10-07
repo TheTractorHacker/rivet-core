@@ -21,6 +21,10 @@
 | `0010_compliance_subjects` | `Compliance\Migration\Migration0010Subjects` | `compliance_subjects`, `subject_id` columns |
 | `0011_compliance_responsibilities` | `Compliance\Migration\Migration0011Responsibilities` | responsibilities |
 | `0012_job_heartbeat` | `Jobs\Migration\Migration0012JobHeartbeat` | `integration_jobs.heartbeat_at` |
+| `0013_retention_indexes` | `Retention\Migration\Migration0013RetentionIndexes` | retention indexes |
+| `0014_endpoint_agent_core` | `Rmm\Migration\Migration0014EndpointAgent` | the ten `endpoint_agent_*` tables, settings row |
+| `0015_endpoint_agent_converge` | `Rmm\Migration\Migration0015EndpointAgentConverge` | `ca_pem`, release `arch`/`binary_id` and key (installs stopped at RivetIT 2.6.145) |
+| `0016_rmm_module_switches` | `Rmm\Migration\Migration0016ModuleSwitches` | `features_json`, `limits_json`, `shed_level`, `ingest_mode`, `max_devices` |
 
 ## Contracts an edition must implement
 

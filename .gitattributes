@@ -2,6 +2,7 @@
 /tests          export-ignore
 /docs           export-ignore
 /scripts        export-ignore
+/endpoint-agent export-ignore
 /phpunit.xml.dist export-ignore
 /phpstan.neon   export-ignore
 /phpstan-baseline-converters.neon export-ignore
