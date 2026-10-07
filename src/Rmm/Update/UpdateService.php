@@ -263,6 +263,7 @@ final class UpdateService
             return [null, 'The stored agent binary is missing or damaged.'];   // never build a path from anything else (no traversal)
         }
         $path = rtrim($this->binaryDir, '/') . '/' . $name;
+        clearstatcache(true, $path);   // a long-running worker must not trust a cached size after the file was replaced
         if (!is_file($path) || (int) filesize($path) !== (int) $row['size_bytes']) {
             return [null, 'The stored agent binary is missing or damaged.'];
         }
