@@ -403,7 +403,7 @@ final class CheckinTest extends RmmTestCase
         $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_checks WHERE check_key='k3'"));
     }
 
-    public function testShedLevelOneStretchesTheIntervalAndSkipsStaleBacklogSamples(): void
+    public function testShedLevelOneDropsStaleOptionalSamplesButKeepsTheInterval(): void
     {
         $this->linkedDevice();
         $this->h->module->settings()->set(['shed_level' => 1]);
@@ -411,25 +411,37 @@ final class CheckinTest extends RmmTestCase
             ['collected_at' => $this->h::ts(-3000), 'metrics' => ['cpu_pct' => 5]],
             ['collected_at' => $this->h::ts(-60), 'metrics' => ['cpu_pct' => 6]],
         ]]);
-        $this->assertSame([200, 600], [$c, $r['next_check_in_s']]);
+        $this->assertSame([200, 300], [$c, $r['next_check_in_s']], 'level 1 does not touch the interval');
         $cpu = array_map(static fn (array $s): float|int => $s['value'], $this->samples('cpu.utilization'));
         sort($cpu);
         $this->assertSame([6.0, 10.5], $cpu, 'the 50-minute-old backlog sample was acknowledged but not ingested');
     }
 
-    public function testShedLevelTwoAsksARecentlySeenDeviceToComeBackLater(): void
+    public function testShedLevelTwoLengthensTheIntervalAndStillIngests(): void
+    {
+        $this->linkedDevice();
+        $this->h->module->settings()->set(['shed_level' => 2]);
+        [$c, , $r] = $this->h->checkin($this->T);
+        $this->assertSame([200, 600], [$c, $r['next_check_in_s']]);
+        $this->assertNotEmpty($this->samples('cpu.utilization'));
+    }
+
+    public function testShedLevelThreeRefusesNewWorkWithAJitteredRetryAfter(): void
     {
         $this->linkedDevice();
         $this->h->checkin($this->T);
-        $this->h->module->settings()->set(['shed_level' => 2]);
+        $this->h->module->settings()->set(['shed_level' => 3]);
+        $before = (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_checkins');
         [$c, $hd, $r] = $this->h->checkin($this->T);
         $this->assertSame([503, 'unavailable'], [$c, $r['code']]);
         $this->assertGreaterThanOrEqual(60, (int) $hd['Retry-After']);
         $this->assertLessThanOrEqual(300, (int) $hd['Retry-After']);
-        // a device not seen inside its window is still served (it is not part of the herd)
+        $this->assertSame($before, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_checkins'), 'refused before any work');
+        // the same refusal at the service layer (a caller that bypasses DeviceApi)
         $this->h->q("UPDATE endpoint_agent_devices SET last_checkin_at = '" . gmdate('Y-m-d H:i:s', time() - 7200) . "'");
+        $this->h->module->settings()->set(['shed_level' => 0]);
         [$c] = $this->h->checkin($this->T);
-        $this->assertSame(200, $c);
+        $this->assertSame(200, $c, 'recovered');
     }
 
     public function testResponseSignaturesVerifyWithTheEnrollmentKey(): void

@@ -108,7 +108,7 @@ edition. Nothing is edited in `golden.php`: the Core side only supplies the thre
 | File | Role |
 |---|---|
 | `replay-core.php` | Starts two `php -S` servers on free **four-digit** loopback ports (the stamped installer carries the server URL, so the recorded installer length depends on the port having four digits), runs `golden.php` against them with `--adapter=adapter-core.php`, stops them. Needs `RIVETCORE_TEST_DB_*` (name must contain `scratch`) and `RIVETCORE_TEST_REDIS_PORT` (throwaway Redis, rate limits go through Core's `Redis\RateLimiter`). |
-| `core-router.php` | The router: plays the edition's front controller and bridge files (trusted-proxy TLS decision, `RmmRequest` from the superglobals, `SapiEmitter`, the edition's CORS headers, which the transcripts show on downloads too). The technician endpoints are a test-only stand-in (`tests/Support/GoldenTechnicianShim.php`) until the real `TechnicianApi` exists. |
+| `core-router.php` | The router: plays the edition's front controller and bridge files (trusted-proxy TLS decision, `RmmRequest` from the superglobals, `SapiEmitter`, the edition's CORS headers, which the transcripts show on downloads too). The technician endpoints go through the real `RmmModule::technicianApi()` behind a stub access policy (`tests/Support/AllowUsersPolicy.php`; the shared test token is administrator #2). |
 | `adapter-core.php` | `reset` / `hook` / `snapshot` for Core: seeds clients, assets, tokens, the fixed signing key and the hosted binaries; snapshots leave out the five migration 0016 module-switch columns of `endpoint_agent_settings`, which RivetIT 2.6.146 does not have. |
 
 ```

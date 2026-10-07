@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Http;
 
+use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Checkin\CheckinService;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Contracts\RmmModuleStateInterface;
@@ -65,6 +66,7 @@ final class DeviceApi
         private readonly ?RmmModuleStateInterface $moduleState = null,
         ?\Closure $sleep = null,
         ?\Closure $now = null,
+        private readonly ?LoadShedder $shedder = null,
     ) {
         $this->rateLimit = $rateLimit;
         $this->now = $now ?? static fn (): float => microtime(true);
@@ -120,6 +122,10 @@ final class DeviceApi
             $this->requireTls($req);
             if (strtoupper($req->method) !== 'POST') {
                 throw new ApiError(405, 'method_not_allowed', 'Use POST.', ['Allow' => 'POST']);
+            }
+            $this->shedder?->tick();   // at most one evaluation per 10 s, from cheap signals
+            if ((int) ($this->settings->get()['shed_level'] ?? 0) >= 3) {
+                throw LoadShedder::refusal($this->settings->limits());   // level 3: refused before any other work
             }
             $dev = $this->devices->authenticate($req->header('authorization'));
             $this->deviceRateLimit((int) $dev['device_id'], 'checkin', ...RmmProtocol::RATE_CHECKIN);
@@ -291,18 +297,8 @@ final class DeviceApi
         if ($file === null) {
             throw new ApiError(503, 'unavailable', (string) $error);
         }
-        if (preg_match('/^[A-Za-z0-9._-]{1,120}$/', $filename) !== 1) {
-            $filename = 'RivetIT-Agent.exe';   // header injection is impossible: only this alphabet reaches a header
-        }
 
-        return new RmmResponse(200, [
-            'Content-Type' => 'application/octet-stream',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-            'X-Content-Type-Options' => 'nosniff',
-            'Cache-Control' => 'no-store',
-            'Pragma' => 'no-cache',
-            'X-Accel-Buffering' => 'no',
-        ], null, $file);
+        return FileDownload::response($file, $filename);
     }
 
     /** @param \Closure():RmmResponse $fn */

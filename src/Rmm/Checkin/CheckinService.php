@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Checkin;
 
+use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Checks\CheckEvaluator;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
@@ -35,6 +36,8 @@ final class CheckinService
     private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
     /** At load-shedding level 1 buffered samples older than this are acknowledged but not ingested. */
     private const SHED_STALE_SAMPLE_S = 900;
+    /** Above this many bytes of work a check-in is processed inline even in queued mode (the job payload column is text). */
+    public const MAX_QUEUED_PAYLOAD_BYTES = 60000;
 
     public function __construct(
         private readonly Sql $sql,
@@ -46,6 +49,8 @@ final class CheckinService
         private readonly RmmLinker $linker,
         private readonly RmmAssetsInterface $assets,
         private readonly RmmMetricSinkInterface $metrics,
+        /** @var (\Closure(array<string,mixed>): void)|null enqueues the heavy part of a check-in (ingest_mode queued); null = always inline */
+        private readonly ?\Closure $enqueue = null,
     ) {
     }
 
@@ -108,8 +113,8 @@ final class CheckinService
 
         $dev = $this->devices->find((int) $dev['device_id']) ?? $dev;
         $interval = (int) $cfg['check_in_interval_s'];
-        if ((int) ($cfg['shed_level'] ?? 0) >= 1) {
-            $interval = min(RmmSettings::CHECK_IN_INTERVAL_MAX_S * 2, $interval * 2);
+        if ((int) ($cfg['shed_level'] ?? 0) >= 2) {
+            $interval = min(RmmSettings::CHECK_IN_INTERVAL_MAX_S * 2, $interval * 2);   // level 2: lengthen the intervals
         }
         $out = [
             'ok' => true,
@@ -129,25 +134,26 @@ final class CheckinService
     }
 
     /**
-     * Load shedding level 2: a device already seen inside its check-in window is told to come back later (503 + Retry-After with
-     * jitter) before any work is done. Enrollment, job reports and revocation never pass through here.
+     * Load shedding level 3 refuses new work: the device is told to come back later (503 + Retry-After with jitter) before any
+     * work is done. Enrollment, job reports and revocation never pass through here. Levels 1 (optional samples dropped) and 2
+     * (longer intervals) answer normally.
      *
      * @param array<string,mixed> $dev
      * @param array<string,mixed> $cfg
      */
     private function shedIfOverloaded(array $dev, array $cfg): void
     {
-        if ((int) ($cfg['shed_level'] ?? 0) < 2 || $dev['last_checkin_at'] === null) {
+        if ((int) ($cfg['shed_level'] ?? 0) < 3) {
             return;
         }
-        if ($this->sql->time() - Sql::ts((string) $dev['last_checkin_at']) > 2 * (int) $cfg['check_in_interval_s']) {
-            return;
-        }
-        $l = $this->settings->limits();
-        throw new ApiError(503, 'unavailable', 'The service is busy. Try again later.', ['Retry-After' => (string) random_int($l['shed_retry_min_s'], $l['shed_retry_max_s'])]);
+        throw LoadShedder::refusal($this->settings->limits());
     }
 
     /**
+     * The request's share of a fresh check-in: the device-state writes every mode does inside the request, then either the
+     * heavy part inline (ingest_mode sync, the default) or one `rmm.ingest` job (ingest_mode queued, payloads up to
+     * {@see MAX_QUEUED_PAYLOAD_BYTES}; a larger one is processed inline).
+     *
      * @param array<string,mixed> $dev
      * @param array<string,mixed>|null $inventory
      * @param array<string,mixed>|null $metrics
@@ -162,17 +168,56 @@ final class CheckinService
         $collectedSql = $collected->format('Y-m-d H:i:s');
         $newer = $dev['last_collected_at'] === null || $collectedSql >= $dev['last_collected_at'];
         $this->updates->recordResult($dev, $updateResult);
-
-        // ---- inventory ----
-        $cleanInv = null;
-        if ($inventory !== null && $newer) {
-            $cleanInv = $this->applyInventory($dev, $inventory);
-        }
         if ($newer) {
             $this->sql->run('UPDATE endpoint_agent_devices SET agent_version = ?, last_collected_at = ?, last_seq = GREATEST(last_seq, ?),
                 last_metrics_json = ? WHERE device_id = ?', [$ver, $collectedSql, $seq, $metrics === null ? null : json_encode(self::cleanMetrics($metrics)), $deviceId]);
         } else {
             $this->sql->run('UPDATE endpoint_agent_devices SET last_seq = GREATEST(last_seq, ?) WHERE device_id = ?', [$seq, $deviceId]);
+        }
+        $work = ['device_id' => $deviceId, 'seq' => $seq, 'collected' => $collectedSql, 'received' => $this->sql->time(), 'newer' => $newer, 'inventory' => $inventory,
+            'metrics' => $metrics, 'checks' => $primaryChecks, 'buffered' => $buffered, 'shed' => (int) ($cfg['shed_level'] ?? 0) >= 1];
+        if ($this->enqueue !== null && ($cfg['ingest_mode'] ?? 'sync') === 'queued') {
+            $encoded = json_encode($work);
+            if (is_string($encoded) && strlen($encoded) <= self::MAX_QUEUED_PAYLOAD_BYTES) {
+                ($this->enqueue)($work);
+
+                return;
+            }
+        }
+        $this->applyWork($work, false, $dev);
+    }
+
+    /**
+     * The heavy part of a check-in, shared by the inline path and the `rmm.ingest` job (Capacity\IngestQueue): apply the inventory,
+     * update the edition's asset blanks, build the metric samples (current batch plus buffered backlog), push the health to the
+     * edition's RMM link and evaluate the checks. Every step is idempotent, so a retried job repeats them safely. The samples go to the
+     * edition's sink here unless $deferSamples is set, in which case they are RETURNED (the caller delivers them last, and may merge
+     * the samples of many check-ins into one sink call).
+     *
+     * @param array<string,mixed> $w work as built by {@see process()} (it is the job payload)
+     * @param array<string,mixed>|null $dev the device row when the caller just read it (saves one SELECT)
+     * @return list<array{asset_id:int,key:string,instance:?string,value:int|float,at:\DateTimeImmutable,label:?string}>|null samples not yet delivered; null when the device no longer exists or was revoked (nothing to do)
+     */
+    public function applyWork(array $w, bool $deferSamples = false, ?array $dev = null): ?array
+    {
+        $deviceId = (int) $w['device_id'];
+        $cfg = $this->settings->get();
+        $features = $this->settings->features();
+        $dev ??= $this->devices->find($deviceId);
+        if ($dev === null || $dev['revoked_at'] !== null || $dev['retired_at'] !== null) {
+            return null;
+        }
+        $collected = new \DateTimeImmutable((string) $w['collected'] . ' UTC');
+        $inventory = is_array($w['inventory'] ?? null) ? $w['inventory'] : null;
+        $metrics = is_array($w['metrics'] ?? null) ? $w['metrics'] : null;
+        $buffered = is_array($w['buffered'] ?? null) ? $w['buffered'] : [];
+        /** @var list<array{key:string,status:string,detail:string,at:string}> $primaryChecks */
+        $primaryChecks = is_array($w['checks'] ?? null) ? $w['checks'] : [];
+
+        // ---- inventory ----
+        $cleanInv = null;
+        if ($inventory !== null && !empty($w['newer'])) {
+            $cleanInv = $this->applyInventory($dev, $inventory);
         }
         $dev = $this->devices->find($deviceId) ?? $dev;
         $linked = $dev['link_state'] === 'linked' && !empty($dev['asset_id']);
@@ -207,10 +252,10 @@ final class CheckinService
                 }
             }
         }
+        $samples = [];
         if ($assetId > 0 && $features['metrics']) {
-            $samples = [];
-            $staleBefore = $this->sql->time() - self::SHED_STALE_SAMPLE_S;
-            $shed = (int) ($cfg['shed_level'] ?? 0) >= 1;
+            $staleBefore = (int) ($w['received'] ?? $this->sql->time()) - self::SHED_STALE_SAMPLE_S;
+            $shed = !empty($w['shed']);
             foreach ($batches as $i => [$at, $m, $inv]) {
                 if ($shed && $i > 0 && $at->getTimestamp() < $staleBefore) {
                     continue;   // acknowledged, not ingested
@@ -219,8 +264,9 @@ final class CheckinService
                     $samples[] = $s;
                 }
             }
-            if ($samples !== []) {
+            if ($samples !== [] && !$deferSamples) {
                 $this->metrics->ingest($samples, $this->settings->integrationId());
+                $samples = [];
             }
         }
 
@@ -240,6 +286,8 @@ final class CheckinService
             usort($bufChecks, static fn (array $a, array $b): int => strcmp($a['at'], $b['at']));
             $this->checks->apply($dev, array_merge($bufChecks, $primaryChecks));
         }
+
+        return $samples;
     }
 
     /**

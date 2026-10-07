@@ -1,0 +1,647 @@
+openapi: 3.1.0
+info:
+  title: RivetCore RMM endpoint agent API
+  version: 1.0.0
+  summary: The device-facing endpoints of the endpoint agent and the technician REST API that goes with them.
+  description: |
+    The server side of the RMM endpoint agent (`RivetCore\Rmm`), as served by an edition (RivetIT, RivetMSP) under `/api/v1`.
+    The prose protocol document is [PROTOCOL.md](PROTOCOL.md); this file is its machine-readable form. Both are frozen: additions are
+    allowed, removals and retyping are not (see "Compatibility rules" in PROTOCOL.md).
+
+    **Device endpoints** (`agent_*`) authenticate with the per-device credential (or, for enrollment and the installer, an enrollment
+    token in the body). They are rate limited, TLS-only, and answer `{"error", "code"}` on failure; the `code` is the contract.
+
+    **Technician endpoints** (`endpoint_devices`) need a user API token (the legacy shared key is refused by the edition) and are authorized
+    on every call through the edition's access policy: abilities `rmm.device.view`, `rmm.job.run_saved`, `rmm.job.run_script`,
+    `rmm.job.reboot` and `rmm.remote.launch`, scoped to the device's client. A device outside the caller's clients is a 404, the same as a
+    missing one. Their responses carry no cache or CORS headers (the edition front controller adds the latter).
+
+    A switched-off module answers every device endpoint `503 module_disabled` with `Retry-After: 3600`; the technician API answers
+    `404 disabled`.
+servers:
+  - url: /api/v1
+    description: Relative to the edition's host
+tags:
+  - name: Device
+    description: Called by the agent on an endpoint
+  - name: Technician
+    description: Called by a technician's client (web, mobile) with a user token
+security: []
+paths:
+  /agent_enroll:
+    post:
+      tags: [Device]
+      operationId: agentEnroll
+      summary: Enroll a device with an enrollment token (no bearer)
+      description: |
+        Exchanges a short-lived enrollment token (in the body) for a unique per-device credential, shown once; only its SHA-256 is stored.
+        The same `install_id` again, or a reinstall of the same machine (`machine_guid`, then `serial`), keeps the device id and rotates the
+        credential. Two different machines are never merged: ambiguous, out-of-client, hostname-only or already-owned matches return
+        `pending_approval` (or `ambiguous`) and wait for an administrator. Limited per address from the database (10 failures or 60 attempts
+        per 600 s, 429 with `Retry-After: 600`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EnrollRequest'}
+      responses:
+        '201':
+          description: Enrolled
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnrollResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {description: 'Service disabled (baseline editions without the module gate), token used up, the device was revoked or retired (`forbidden`), or the installation is full (`device_limit`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '409': {description: 'The install_id belongs to a different machine (`conflict`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+  /agent_checkin:
+    post:
+      tags: [Device]
+      operationId: agentCheckin
+      summary: 'Check in: inventory, metrics, checks (device credential)'
+      description: |
+        Idempotent by `(device_id, seq)`: a retried check-in is acknowledged but never counted twice. A missing metric (null or absent) is
+        never stored as zero. `collected_at` must not be more than 5 minutes in the future. Invalid buffered samples are dropped, not fatal.
+        Feeds the edition's asset RMM link, its metrics (when it has them) and its RMM alerts (debounced, deduplicated). The agent may send
+        more fields than listed (`platform`, `arch`, `capabilities`); the server ignores what it does not know. At most 40 per 60 s per device.
+      security: [{deviceAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CheckinRequest'}
+      responses:
+        '200':
+          description: Accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CheckinResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {description: 'Service disabled (baseline editions without the module gate)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {description: 'The module is switched off (`module_disabled`) or the server is shedding load (`unavailable`, jittered `Retry-After`); the agent keeps its credential and its buffer', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}, headers: {Retry-After: {schema: {type: integer}}}}
+  /agent_jobs:
+    get:
+      tags: [Device]
+      operationId: agentJobsOffer
+      summary: Fetch this device's signed jobs (device credential, optional long poll)
+      description: |
+        Returns only the calling device's queued jobs (at most 5), each signed (Ed25519 over the canonical JSON of the job fields).
+        `wait=1..5` holds the request open up to that many seconds. A destructive job (reboot, or flagged) is offered at most once; a harmless
+        job whose acknowledgement was lost is offered again with `attempt + 1`. A revoked device gets `401 revoked` immediately. At most
+        120 per 60 s per device.
+      security: [{deviceAuth: []}]
+      parameters:
+        - {name: wait, in: query, required: false, schema: {type: integer, minimum: 0, maximum: 5}}
+      responses:
+        '200':
+          description: Jobs (possibly none)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs: {type: array, items: {$ref: '#/components/schemas/Job'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+    post:
+      tags: [Device]
+      operationId: agentJobsReport
+      summary: Report a job's state or result (device credential)
+      description: |
+        Idempotent for a repeated identical final state; a different final state, or one for a cancelled or expired job, is 409. Output is
+        credential-redacted and capped before it is stored. A late real result replaces a server-side `result_lost`.
+      security: [{deviceAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobReport'}
+      responses:
+        '200': {description: Recorded, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {description: 'Unknown job (or one of another device)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {description: 'That attempt was never issued, or the job is already in another final state (`conflict`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+  /agent_update:
+    get:
+      tags: [Device]
+      operationId: agentUpdate
+      summary: Download the hosted agent release this device is currently offered (device credential)
+      description: |
+        Streams the UNSTAMPED agent executable of the server-hosted release named by the update manifest (its `url` points here). Only the
+        release the manifest offers THIS device right now is served, only for its own architecture, and only while the stored file still
+        matches the manifest's SHA-256; anything else is a generic 404. Exact `Content-Length`, `nosniff`, `no-store`. At most 60 per 60 s.
+      security: [{deviceAuth: []}]
+      parameters:
+        - {name: arch, in: query, required: true, schema: {type: string, enum: [amd64, arm64]}}
+        - {name: version, in: query, required: true, schema: {type: string, examples: ['1.2.0']}}
+      responses:
+        '200':
+          description: The agent executable
+          content:
+            application/octet-stream:
+              schema: {type: string, contentMediaType: application/octet-stream}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {description: 'Not offered to this device', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {description: 'The stored binary is missing or failed its integrity check (`unavailable`), the module is switched off (`module_disabled`) or updates are switched off (`feature_disabled`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /agent_installer:
+    post:
+      tags: [Device]
+      operationId: agentInstaller
+      summary: Download the stamped per-client installer with an enrollment token (for RMM, Intune and GPO scripts)
+      description: |
+        Token-gated. The enrollment token goes in the JSON or form body (or an `Authorization: Bearer` header), NEVER in the query string (a
+        token in the URL is refused with 400 so it stays out of access logs). Returns the current agent executable for the architecture with
+        the client's installer payload and a 52-byte footer appended (PROTOCOL.md, "Installer trailer"), streamed with an exact
+        `Content-Length`. Any token that is not usable now (unknown, wrong, revoked, expired, used up) gets the same generic 404. Limited per
+        address and per token from the database (429 with `Retry-After: 600`). Successes and rejections are audited. The download does not
+        consume an enrollment use; enrolling does.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InstallerRequest'}
+          application/x-www-form-urlencoded:
+            schema: {$ref: '#/components/schemas/InstallerRequest'}
+      responses:
+        '200':
+          description: The stamped installer (`RivetIT-Agent-Setup-<client>-<x64|arm64>.exe`)
+          content:
+            application/octet-stream:
+              schema: {type: string, contentMediaType: application/octet-stream}
+        '400': {description: 'The token was sent in the query string (`token_in_url`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '403': {description: 'Service disabled (baseline editions without the module gate)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '404': {description: 'Generic: the token is not usable', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '409': {description: 'No published binary for that architecture, or no https service URL (`unavailable`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+  /endpoint_devices:
+    get:
+      tags: [Technician]
+      operationId: listDevices
+      summary: List devices in the caller's clients
+      description: |
+        Needs ability `rmm.device.view`. Retired devices are not listed; revoked ones are. Ordered by hostname. `total` is the number of
+        devices that match the filter (the page is cut after filtering).
+      security: [{userToken: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - name: status
+          in: query
+          description: 'By check-in age (`online`, `offline`, `stale`, `never`) or by link state (`linked`, `pending_approval`, `rejected`); any other value matches nothing'
+          schema: {type: string}
+      responses:
+        '200':
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, total]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/DeviceSummary'}}
+                  total: {type: integer}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}:
+    get:
+      tags: [Technician]
+      operationId: getDevice
+      summary: Device detail with inventory, checks and recent jobs
+      description: A device outside the caller's clients is a 404, indistinguishable from a missing one. Job output needs `rmm.job.run_saved`.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '200': {description: Device, content: {application/json: {schema: {$ref: '#/components/schemas/DeviceDetail'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+  /endpoint_devices/{id}/jobs:
+    get:
+      tags: [Technician]
+      operationId: listDeviceJobs
+      summary: Job history for a device
+      description: Newest first. `output` and `output_truncated` are present only with `rmm.job.run_saved` for the device's client.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      responses:
+        '200':
+          description: Jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/DeviceJob'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    post:
+      tags: [Technician]
+      operationId: submitDeviceJob
+      summary: Queue a maintenance job (PowerShell, saved script, collect, reboot)
+      description: |
+        Authorization is decided per call: free-form PowerShell needs `rmm.job.run_script`, a saved library script or a collect job
+        `rmm.job.run_saved`, a reboot `rmm.job.reboot`, always with `rmm.device.view` and the device's client. Only a device linked to an
+        asset receives jobs (409 otherwise). A reboot or any destructive job needs `"confirm": true` and is never retried automatically.
+        The body is limited to 1 MiB (413).
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobRequest'}
+      responses:
+        '201':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job_id, state]
+                properties:
+                  job_id: {type: string, format: uuid}
+                  state: {type: string, const: queued}
+        '400': {description: 'The body is not a JSON object', content: {application/json: {schema: {type: object, properties: {error: {type: string}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {description: 'The device is not linked to an asset (`conflict`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {description: 'Unknown job type, unusable script or parameters, or `confirmation_required`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/{id}/jobs/{job_id}/cancel:
+    post:
+      tags: [Technician]
+      operationId: cancelDeviceJob
+      summary: Cancel a queued job
+      description: Needs `rmm.job.run_saved`. Only a queued job of this device can be cancelled.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: job_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Cancelled, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {description: 'Only a queued job can be cancelled (`conflict`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/{id}/remote:
+    post:
+      tags: [Technician]
+      operationId: launchRemote
+      summary: Launch a MeshCentral remote session for a device
+      description: |
+        Needs `rmm.remote.launch`, `rmm.device.view` and the device's client, and a device mapped to a MeshCentral node. Returns a login URL
+        minted for this request (never stored or logged) and a safe session id; only the session id is written to the edition's remote-session
+        log. An unmapped device is 404 (`unmapped`); an offline-looking device, a missing configuration or a retired device is 409 (set
+        `force` to launch an offline-looking device anyway); MeshCentral unreachable, or refused by the network policy, is 503
+        (`mesh_unavailable`).
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: {type: boolean}
+      responses:
+        '200':
+          description: Launch URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, session_id]
+                properties:
+                  url: {type: string}
+                  session_id: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: 'Device not found, or `unmapped`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {description: '`device_offline`, `not_configured` or `device_retired`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '503': {description: '`mesh_unavailable`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+components:
+  securitySchemes:
+    deviceAuth:
+      type: http
+      scheme: bearer
+      description: The per-device credential issued by POST /agent_enroll (256 random bits as 64 hex characters, only its SHA-256 stored, rotatable and revocable). Not a user token.
+    userToken:
+      type: http
+      scheme: bearer
+      description: A user API token of the edition. The edition authenticates it and passes the user to Core; the legacy shared key is refused.
+  parameters:
+    DeviceId:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer}
+  responses:
+    Ok:
+      description: Done
+      content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}
+    Unauthenticated:
+      description: 'Credential or token not accepted: `code` is `invalid_token`, `revoked` or `expired`'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    Unauthorized:
+      description: No valid user token
+      content: {application/json: {schema: {type: object, properties: {error: {type: string, const: Unauthorized}}}}}
+    Forbidden:
+      description: 'The role cannot do this (`forbidden`; the message names the missing grant) or the module is not enabled for the caller'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    NotFoundOrDisabled:
+      description: 'Device not found or outside the caller''s clients (`not_found`), or the module is switched off (`disabled`)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    MethodNotAllowed:
+      description: Wrong method (`method_not_allowed`; `Allow` lists the right ones)
+      headers: {Allow: {schema: {type: string}}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    TooLarge:
+      description: 'Body over the cap (`too_large`)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    Invalid:
+      description: 'Invalid body or parameters (`invalid`)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    TlsRequired:
+      description: 'Plain http (`tls_required`)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    RateLimited:
+      description: 'Too many requests (`rate_limited`)'
+      headers: {Retry-After: {schema: {type: integer}}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    ModuleDisabled:
+      description: 'The module (`module_disabled`) or this feature (`feature_disabled`) is switched off; the agent keeps its credential and buffer and retries after `Retry-After` (3600)'
+      headers: {Retry-After: {schema: {type: integer}}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+  schemas:
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: {type: boolean}
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error: {type: string, description: 'For humans; may change'}
+        code:
+          type: string
+          description: The contract. One of the codes listed in PROTOCOL.md.
+          enum: [invalid_token, revoked, expired, forbidden, not_found, method_not_allowed, conflict, too_large, invalid, tls_required, rate_limited, internal, unavailable, token_in_url, device_limit, module_disabled, feature_disabled, confirmation_required, device_offline, unmapped, not_configured, device_retired, mesh_unavailable, disabled]
+    EnrollRequest:
+      type: object
+      required: [enrollment_token, device]
+      properties:
+        enrollment_token: {type: string, description: 'rvte1.<12 hex>.<40 hex>'}
+        device:
+          type: object
+          required: [install_id, hostname, os, os_version, arch, agent_version]
+          properties:
+            install_id: {type: string, format: uuid}
+            machine_guid: {type: [string, 'null']}
+            hostname: {type: string}
+            os: {type: string, enum: [windows, linux]}
+            os_version: {type: string}
+            arch: {type: string, enum: [amd64, arm64]}
+            serial: {type: [string, 'null']}
+            manufacturer: {type: [string, 'null']}
+            model: {type: [string, 'null']}
+            mac_addresses: {type: array, items: {type: string}}
+            agent_version: {type: string}
+    EnrollResponse:
+      type: object
+      required: [device_id, device_token, check_in_interval_s, server_time, status, signing_public_key, signing_key_id, config]
+      properties:
+        device_id: {type: integer}
+        device_token: {type: string, description: Shown once}
+        check_in_interval_s: {type: integer}
+        server_time: {type: string, format: date-time}
+        status: {type: string, enum: [linked, pending_approval, ambiguous]}
+        matched_asset_id: {type: [integer, 'null']}
+        signing_public_key: {type: string, description: Base64 Ed25519 public key; the agent pins it}
+        signing_key_id: {type: string, description: 'First 16 hex characters of SHA-256 over the base64 text of the public key'}
+        config: {$ref: '#/components/schemas/AgentConfig'}
+    AgentConfig:
+      type: object
+      properties:
+        checks:
+          type: array
+          items:
+            type: object
+            required: [key, type, params, interval_s, signature]
+            properties:
+              key: {type: string}
+              type: {type: string, enum: [service, disk, pending_reboot, script]}
+              params: {type: object}
+              interval_s: {type: integer}
+              signature: {type: string, description: Ed25519 over the canonical JSON of the other fields}
+        collect_interval_s: {type: integer}
+    CheckinRequest:
+      type: object
+      required: [seq, collected_at, agent_version]
+      properties:
+        seq: {type: integer, minimum: 0}
+        collected_at: {type: string, format: date-time}
+        agent_version: {type: string}
+        inventory: {type: [object, 'null'], description: 'At most 65536 bytes'}
+        metrics:
+          type: [object, 'null']
+          properties:
+            cpu_pct: {type: [number, 'null']}
+            mem_pct: {type: [number, 'null']}
+            disk:
+              type: array
+              items:
+                type: object
+                properties:
+                  mount: {type: string}
+                  used_pct: {type: [number, 'null']}
+            net_rx_bps: {type: [number, 'null']}
+            net_tx_bps: {type: [number, 'null']}
+        checks:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [key, status]
+            properties:
+              key: {type: string}
+              status: {type: string, enum: [ok, warn, fail, unknown]}
+              detail: {type: string}
+        buffered:
+          type: array
+          maxItems: 100
+          items: {type: object, description: 'A sample taken while offline: collected_at, metrics, checks'}
+        update_result:
+          type: [object, 'null']
+          properties:
+            version: {type: string}
+            state: {type: string, enum: [ok, failed, rolled_back]}
+            detail: {type: string}
+    CheckinResponse:
+      type: object
+      required: [ok, status, next_check_in_s, jobs_pending, config, server_time, signing_key_id]
+      properties:
+        ok: {type: boolean}
+        status: {type: string, enum: [linked, pending_approval]}
+        matched_asset_id: {type: [integer, 'null']}
+        next_check_in_s: {type: integer}
+        jobs_pending: {type: integer}
+        config: {$ref: '#/components/schemas/AgentConfig'}
+        update:
+          type: [object, 'null']
+          description: Absent while the updates sub-switch is off
+          properties:
+            version: {type: string}
+            url: {type: string}
+            sha256: {type: string}
+            signature: {type: string, description: Base64 Ed25519 over the lowercase hex SHA-256 text}
+            min_version: {type: string}
+        server_time: {type: string, format: date-time}
+        signing_key_id: {type: string}
+    Job:
+      type: object
+      required: [job_id, device_id, attempt, type, script, params, timeout_s, max_output_bytes, issued_at, expires_at, signature]
+      properties:
+        job_id: {type: string, format: uuid}
+        device_id: {type: integer}
+        attempt: {type: integer}
+        type: {type: string, description: 'powershell, reboot, collect (a registry can add types)'}
+        script: {type: [string, 'null']}
+        params: {type: object}
+        timeout_s: {type: integer}
+        max_output_bytes: {type: integer}
+        issued_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        signature: {type: string, description: Base64 Ed25519 over the canonical JSON of all other fields (the signature covers the attempt)}
+    JobReport:
+      type: object
+      required: [job_id, attempt, state]
+      properties:
+        job_id: {type: string, format: uuid}
+        attempt: {type: integer, minimum: 1}
+        state: {type: string, enum: [running, succeeded, failed, timed_out, cancelled]}
+        exit_code: {type: [integer, 'null']}
+        output: {type: string}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+    InstallerRequest:
+      type: object
+      required: [arch]
+      properties:
+        token: {type: string, description: 'rvte1.<selector>.<secret>; may instead be sent as an Authorization bearer header'}
+        arch: {type: string, enum: [amd64, arm64]}
+    DeviceSummary:
+      type: object
+      required: [device_id, hostname, asset_id, client_id, link_state, status, last_checkin_at, offline_since, agent_version, ring, os_version, revoked, retired]
+      properties:
+        device_id: {type: integer}
+        hostname: {type: string}
+        asset_id: {type: [integer, 'null']}
+        client_id: {type: integer}
+        link_state: {type: string, enum: [linked, pending_approval, rejected]}
+        status: {type: string, enum: [online, offline, stale, never]}
+        last_checkin_at: {type: [string, 'null'], format: date-time}
+        offline_since: {type: [string, 'null'], format: date-time}
+        agent_version: {type: string}
+        ring: {type: string, enum: [pilot, stable]}
+        os_version: {type: string}
+        revoked: {type: boolean}
+        retired: {type: boolean}
+    DeviceDetail:
+      allOf:
+        - {$ref: '#/components/schemas/DeviceSummary'}
+        - type: object
+          properties:
+            serial: {type: [string, 'null']}
+            manufacturer: {type: [string, 'null']}
+            model: {type: [string, 'null']}
+            arch: {type: string}
+            logged_in_user: {type: [string, 'null']}
+            pending_reboot: {type: [boolean, 'null']}
+            uptime_s: {type: [integer, 'null']}
+            last_collected_at: {type: [string, 'null'], format: date-time}
+            inventory: {type: [object, 'null']}
+            metrics: {type: [object, 'null']}
+            match_reason: {type: string, description: 'no_match, hostname_only, ambiguous, scope_mismatch, asset_already_linked, asset_retired, matched_serial, matched_mac, ...'}
+            mesh_mapped: {type: boolean}
+            checks:
+              type: array
+              items:
+                type: object
+                properties:
+                  key: {type: string}
+                  status: {type: string}
+                  detail: {type: string}
+                  consecutive_failures: {type: integer}
+                  last_reported_at: {type: [string, 'null'], format: date-time}
+            jobs:
+              type: array
+              items: {$ref: '#/components/schemas/DeviceJob'}
+    DeviceJob:
+      type: object
+      properties:
+        job_id: {type: string, format: uuid}
+        type: {type: string}
+        state: {type: string, enum: [queued, running, succeeded, failed, timed_out, cancelled, expired]}
+        reason: {type: [string, 'null']}
+        attempt: {type: integer}
+        destructive: {type: boolean}
+        run_as: {type: string}
+        timeout_s: {type: integer}
+        exit_code: {type: [integer, 'null']}
+        created_by: {type: integer}
+        created_at: {type: string, format: date-time}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        expires_at: {type: string, format: date-time}
+        output: {type: [string, 'null'], description: 'Present only with rmm.job.run_saved; credential-shaped text is redacted'}
+        output_truncated: {type: boolean}
+    JobRequest:
+      type: object
+      required: [type]
+      properties:
+        type: {type: string, description: 'powershell, reboot or collect'}
+        script: {type: string, description: 'Free-form script text (powershell), at most 102400 bytes'}
+        script_id: {type: integer, description: 'A saved PowerShell script of the edition''s script library; wins over `script`'}
+        params: {type: object, description: 'At most 20 scalar values (short strings, whole numbers, booleans)'}
+        timeout_s: {type: integer}
+        destructive: {type: boolean}
+        confirm: {type: boolean, description: 'Required for reboot and every destructive job'}

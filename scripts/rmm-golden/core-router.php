@@ -10,13 +10,12 @@ declare(strict_types=1);
  *
  * It plays the part of an edition's api/v1 front controller and bridge files: builds the RmmRequest (including the trusted-proxy TLS
  * decision), hands it to Core, emits the RmmResponse and adds the edition's CORS headers to JSON responses (see _meta.json
- * edition_headers_not_produced_by_core). The technician endpoints are served by a test-only stand-in (GoldenTechnicianShim).
+ * edition_headers_not_produced_by_core). The technician endpoints are served by Core's TechnicianApi behind a stub AccessPolicy (the shared test token is administrator #2).
  */
 
-use RivetCore\Rmm\Http\RmmResponse;
+use RivetCore\Rmm\Authz\RmmPrincipal;
 use RivetCore\Rmm\Http\SapiEmitter;
 use RivetCore\Tests\Support\GoldenEdition;
-use RivetCore\Tests\Support\GoldenTechnicianShim;
 
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
 $K = require __DIR__ . '/constants.php';
@@ -53,15 +52,14 @@ foreach ((function_exists('getallheaders') ? getallheaders() : []) as $k => $v) 
 $bearer = $headers['authorization'] ?? null;
 
 if ($resource === 'endpoint_devices') {
-    $shim = new GoldenTechnicianShim($edition->module, $K['admin_api_token'], 2);
+    // The edition authenticates the user (here: the shared test token is administrator #2) and hands Core the principal.
     $token = $bearer !== null && preg_match('/^Bearer\s+(\S+)$/i', $bearer, $b) === 1 ? $b[1] : null;
-    $segments = $rest === '' ? [] : explode('/', $rest);
-    $query = array_filter($_GET, 'is_string');
-    [$status, $body] = $shim->handle((string) $_SERVER['REQUEST_METHOD'], $segments, $query, $token, (string) file_get_contents('php://input'));
-    http_response_code($status);
+    $who = $token !== null && hash_equals($K['admin_api_token'], $token) ? new RmmPrincipal(GoldenEdition::ADMIN_USER_ID, 'golden-admin') : null;
+    $req = $edition->request((string) $_SERVER['REQUEST_METHOD'], 'endpoint_devices', array_filter($_GET, 'is_string'), $headers, (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+        true, isset($_SERVER['CONTENT_LENGTH']) ? (int) $_SERVER['CONTENT_LENGTH'] : null, $rest === '' ? [] : explode('/', $rest));
+    $resp = $edition->module->technicianApi()->handle($req, $who);
     $cors();
-    header('Content-Type: application/json');
-    echo json_encode($body, RmmResponse::JSON_FLAGS);
+    (new SapiEmitter())->emit($resp);
 
     return true;
 }

@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace RivetCore\Tests\Support;
 
+use RivetCore\Contracts\AccessPolicyInterface;
 use RivetCore\Contracts\ClockInterface;
+use RivetCore\Jobs\Migration\Migration0002IntegrationJobs;
+use RivetCore\Jobs\Migration\Migration0012JobHeartbeat;
+use RivetCore\Rmm\Authz\RmmPrincipal;
 use RivetCore\Rmm\Contracts\RmmModuleStateInterface;
 use RivetCore\Rmm\Http\DeviceApi;
 use RivetCore\Rmm\Http\RmmRequest;
@@ -41,6 +45,7 @@ final class RmmHarness
     public InMemoryRmmAudit $audit;
     public InMemoryRmmMetricSink $metrics;
     public RmmModule $module;
+    public AccessPolicyInterface $policy;
     public DeviceApi $api;
     public int $clientA = 0;
     public int $clientB = 0;
@@ -62,7 +67,7 @@ final class RmmHarness
     /**
      * @param array<string,mixed> $options RmmModule options
      */
-    public function __construct(?ClockInterface $clock = null, ?RmmModuleStateInterface $state = null, array $options = [], bool $withModuleState = false)
+    public function __construct(?ClockInterface $clock = null, ?RmmModuleStateInterface $state = null, array $options = [], bool $withModuleState = false, ?InMemoryRmmMetricSink $sink = null, ?AccessPolicyInterface $policy = null, ?\RivetCore\Webhooks\UrlPolicy $urlPolicy = null)
     {
         $name = (string) getenv('RIVETCORE_TEST_DB_NAME');
         if (!str_contains($name, 'scratch')) {
@@ -80,7 +85,7 @@ final class RmmHarness
         $this->binaryDir = sys_get_temp_dir() . '/rmm_bin_' . bin2hex(random_bytes(4));
         mkdir($this->binaryDir, 0700);
 
-        foreach ([new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches()] as $mig) {
+        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches()] as $mig) {
             $mig->up($this->db);
         }
         $this->wipe();
@@ -92,11 +97,14 @@ final class RmmHarness
         $this->bridge = new RecordingRmmBridge($this->clock);
         $this->box = new InMemorySecretBox(str_repeat('k', SODIUM_CRYPTO_SECRETBOX_KEYBYTES));
         $this->audit = new InMemoryRmmAudit();
-        $this->metrics = new InMemoryRmmMetricSink();
+        $this->metrics = $sink ?? new InMemoryRmmMetricSink();
         $this->module = new RmmModule(
             $this->counting, $this->clock, $this->tenancy, $this->assets, $this->bridge, $this->box, $this->audit, $this->metrics,
             $state ?? new InMemoryRmmModuleState(true),
             $options + ['binary_dir' => $this->binaryDir, 'allow_insecure_http' => true],
+            null,
+            $this->policy = $policy ?? new AllowUsersPolicy([1 => true]),
+            $urlPolicy ?? new \RivetCore\Webhooks\UrlPolicy(true),
         );
         $this->api = $this->module->deviceApi(
             fn (string $bucket, int $limit, int $window): bool => $this->rateLimit($bucket, $limit, $window),
@@ -144,6 +152,7 @@ final class RmmHarness
         foreach (self::TABLES as $t) {
             $this->mysqli->query("DELETE FROM `$t`");
         }
+        $this->mysqli->query('DELETE FROM integration_jobs');
         $this->mysqli->query('DELETE FROM endpoint_agent_settings');
         $this->mysqli->query('INSERT INTO endpoint_agent_settings (id) VALUES (1)');
     }
@@ -182,6 +191,35 @@ final class RmmHarness
         $r = $this->api->handle($this->request($method, $endpoint, $raw, $token, $query, $headers + ($raw !== null && !is_string($body) ? ['content-type' => 'application/json'] : []), $ip, $secure));
 
         return [$r->status, $r->headers, $r->body === null ? null : json_decode($r->body, true), $r];
+    }
+
+    // ------------------------------------------------------------------ technician side
+
+    /**
+     * Call the technician REST API as a principal (null = unauthenticated).
+     *
+     * @param list<string> $segments path segments after endpoint_devices
+     * @param array<string,string> $query
+     * @return array{0:int,1:mixed,2:RmmResponse}
+     */
+    public function tech(string $method, array $segments, ?RmmPrincipal $who, mixed $body = null, array $query = [], string $ip = '127.0.0.1'): array
+    {
+        $raw = $body === null ? null : (is_string($body) ? $body : (string) json_encode($body));
+        $stream = null;
+        if ($raw !== null) {
+            $stream = fopen('php://memory', 'w+b');
+            fwrite($stream, $raw);
+            rewind($stream);
+        }
+        $req = new RmmRequest($method, 'endpoint_devices', $segments, $query, [], $ip, 'test-agent', true, $raw === null ? null : strlen($raw), $stream);
+        $r = $this->module->technicianApi()->handle($req, $who);
+
+        return [$r->status, $r->body === null ? null : json_decode($r->body, true), $r];
+    }
+
+    public function principal(int $userId = 1, string $name = 'Admin'): RmmPrincipal
+    {
+        return new RmmPrincipal($userId, $name);
     }
 
     // ------------------------------------------------------------------ scenario helpers

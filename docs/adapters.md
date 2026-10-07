@@ -14,6 +14,7 @@ thin layer that implements Core's interfaces on top of the application. Keep ada
 | `Webhooks\WebhookSubscriptionsInterface` / `WebhookSubscriptionLookupInterface` | which endpoints want which events | `WebhooksTableSubscriptions` |
 | `ITSM\TicketProblemLinkInterface` | link a ticket to a problem | `TicketsProblemLink` |
 | `Mcp\AgentDirectoryInterface` | map an identity to an agent | `UsersAgentDirectory` (RivetIT) |
+| `Rmm\Contracts\RmmTenancyInterface`, `RmmAssetsInterface`, `RmmBridgeInterface`, `SecretBoxInterface` (+ optional `RmmMetricSinkInterface`, `RmmAuditInterface`, `RmmModuleStateInterface`) and your `AccessPolicyInterface` | clients and scope, asset matching, the RMM tables (links, alerts, saved scripts, session log), key encryption; the abilities `rmm.*` | `Testing\InMemoryRmm*` and the `Testing\Rmm*ConformanceTestCase` kit; see [modules/rmm.md](modules/rmm.md) |
 | `Compliance\AttestationProviderInterface`, `CheckInterface` | what the edition can prove automatically | edition `ComplianceCatalog` |
 
 ## Rules

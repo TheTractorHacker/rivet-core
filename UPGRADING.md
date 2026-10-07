@@ -76,6 +76,16 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Adopting the RMM module (unreleased)
+
+For an edition that wants the endpoint agent (RivetIT, then RivetMSP). Nothing here is needed by an edition that does not enable the module: it is off by default, adds no required constructor argument to any existing type, and creates nothing until the migrations run.
+
+1. **Migrations.** `CoreMigrations::all()` now ends with `0014_endpoint_agent_core`, `0015_endpoint_agent_converge`, `0016_rmm_module_switches`. On an install that already has the ten `endpoint_agent_*` tables (RivetIT at DB 2.6.146) 0014 and 0015 are no-ops that only record themselves and 0016 adds five columns with defaults that reproduce today's behaviour; a fresh `db.sql` must contain the tables and the three ledger rows together (or none of them).
+2. **Adapters.** Implement `RmmTenancyInterface`, `RmmAssetsInterface`, `RmmBridgeInterface` and `SecretBoxInterface` (the ciphertext format of your existing `encryptSetting()` stays, so stored keys keep decrypting), optionally `RmmMetricSinkInterface`, `RmmAuditInterface` and `RmmModuleStateInterface`, and map the nine `rmm.*` abilities in your `AccessPolicyInterface`. Run `Testing\Rmm*ConformanceTestCase` over them. See [docs/modules/rmm.md](docs/modules/rmm.md).
+3. **Bridges.** Replace each device REST file with the five-line bridge (build an `RmmRequest`, call `RmmModule::deviceApi()`, emit the `RmmResponse`); keep TLS and proxy trust, CORS headers, user-token authentication and rate limiting in the edition. `api/v1/endpoint_devices.php` becomes `RmmModule::technicianApi()->handle($request, new RmmPrincipal($userId, $name))`.
+4. **Pages.** Render from `RmmReadModel` and call `RmmAdmin` / `TechnicianActions` (they return an `ActionResult`: show `message`, answer `http`). Delete your raw SQL against `endpoint_agent_*`.
+5. **Verify.** Replay the golden transcripts against your bridges (`scripts/rmm-golden/`, adapter and router are the pattern), run your old endpoint suites unchanged, and diff `information_schema` before and after your updater step.
+
 ## Migration order
 
 Core owns its migrations and tracks them in `rivet_core_migrations`, independent of the edition's database version. Migrations are

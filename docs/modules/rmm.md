@@ -1,13 +1,14 @@
 # RMM (endpoint agent)
 
-Status: skeleton. Phase 0 of [the design](../design/endpoint-module-extraction.md) and [ADR-010](../architecture/ADR-010-endpoint-agent-module.md): contracts, HTTP objects, protocol constants, schema and conformance kit are in place; the domain services and handlers arrive with the next tasks.
+Status: Phase 0 complete in Core (the extraction of RivetIT's endpoint agent): contracts, HTTP objects, migrations, the device-facing services and `DeviceApi`, and the technician, administration, installer, binary and MeshCentral side. Editions adopt it next (RivetIT first). Design: [endpoint-module-extraction.md](../design/endpoint-module-extraction.md); decision: [ADR-010](../architecture/ADR-010-endpoint-agent-module.md); wire protocol: [PROTOCOL.md](../rmm/PROTOCOL.md); API description: [openapi-device.yaml](../rmm/openapi-device.yaml).
 
 ## Overview
 
-`RivetCore\Rmm` is the edition-neutral home of the endpoint agent server side (enrollment, devices, check-in, signed jobs, updates, installers, MeshCentral launch) and the base of a full RMM. It is **off by default** and costs nothing when off. Platforms in scope for Phase 0: Windows and Linux; macOS is deferred (the check-in keeps room for platform capability negotiation, see `RmmProtocol::PLATFORMS`).
+`RivetCore\Rmm` is the edition-neutral home of the endpoint agent's server side (enrollment, devices, check-in, signed jobs, hosted updates, per-client installers, MeshCentral launch, the technician REST API and the administration operations behind an edition's settings page) and the base of a full RMM. It is **off by default** and costs nothing when off. Platforms in scope for Phase 0: Windows and Linux; macOS is deferred.
 
-- **Owns:** the ten `endpoint_agent_*` tables, created by migrations `0014_endpoint_agent_core` (exact RivetIT DB 2.6.146 DDL, `CREATE TABLE IF NOT EXISTS`, `utf8mb4_general_ci`), `0015_endpoint_agent_converge` (installs that stopped at RivetIT 2.6.145: `ca_pem`, `arch`, `binary_id`, the `(version, ring, arch)` key) and `0016_rmm_module_switches` (`features_json`, `limits_json`, `shed_level`, `ingest_mode`, `max_devices`; defaults reproduce today's behaviour). All three are in `CoreMigrations::all()`; on an install that already has the tables they are no-ops (apart from 0016's columns). Never touched: `enabled`, keys, credentials, rows.
+- **Owns:** the ten `endpoint_agent_*` tables, created by migrations `0014_endpoint_agent_core` (exact RivetIT DB 2.6.146 DDL, `CREATE TABLE IF NOT EXISTS`, `utf8mb4_general_ci`), `0015_endpoint_agent_converge` (installs that stopped at RivetIT 2.6.145: `ca_pem`, `arch`, `binary_id`, the `(version, ring, arch)` key) and `0016_rmm_module_switches` (`features_json`, `limits_json`, `shed_level`, `ingest_mode`, `max_devices`). All three are in `CoreMigrations::all()`; on an install that already has the tables they are no-ops (apart from 0016's columns). Never touched: `enabled`, keys, credentials, rows.
 - **Does not own:** `assets`, `asset_interfaces`, `asset_rmm_links`, `rmm_alerts`, `rmm_integrations`, `rmm_scripts`, `rmm_remote_sessions`, `clients`, `locations`, `users` (ADR-002): they are reached only through the contracts below.
+- **Ships data, not markup.** Core returns read models and validated operations; each edition renders its own pages, keeps its CSRF, session, permission wiring and navigation, and writes no SQL against `endpoint_agent_*`.
 - The wire protocol, credential formats and signing vectors are frozen; `RmmProtocol` holds every frozen constant and `tests/Unit/Rmm/FrozenConstantsTest.php` pins them.
 
 ## Contracts an edition must implement
@@ -20,36 +21,127 @@ Required (all in `RivetCore\Rmm\Contracts`):
 | `RmmAssetsInterface` | asset match (serial, MAC, hostname), create, fill blanks, move | `Testing\InMemoryRmmAssets` | `Testing\RmmAssetsConformanceTestCase` |
 | `RmmBridgeInterface` | integration row, link rows, alerts with ticket auto-close, saved scripts, remote-session log | `Testing\InMemoryRmmBridge` | `Testing\RmmBridgeConformanceTestCase` |
 | `SecretBoxInterface` | encrypt the signing and Mesh keys with the edition's key | `Testing\InMemorySecretBox` | `Testing\SecretBoxConformanceTestCase` |
+| `Contracts\AccessPolicyInterface` (existing, ADR-003) | who may view, run, reboot, open a remote session, administer | none: yours | `Testing\AccessPolicyConformanceTestCase` |
 
-Optional or defaulted: `RmmMetricSinkInterface` (`Support\NullRmmMetricSink` for editions without Metrics; `Testing\RmmMetricSinkConformanceTestCase`), `RmmAuditInterface` (`Testing\RmmAuditConformanceTestCase`), `RmmModuleStateInterface` (edition kill switch and state-file directory; `Testing\RmmModuleStateConformanceTestCase`).
+`AccessPolicyInterface` is asked `can($userId, $ability, 'client', $clientId)` (`$clientId = 0` is the role-level question) with the abilities of `Authz\RmmAbility`:
 
-Reused: `DatabaseInterface`, `AccessPolicyInterface` (abilities `rmm.device.view`, `rmm.job.run_saved`, `rmm.job.reboot`, `rmm.job.run_script`, `rmm.remote.launch`, `rmm.admin`), `ClockInterface`, `Webhooks\UrlPolicy`.
+| Ability | Meaning | RivetIT's rule today |
+|---|---|---|
+| `rmm.device.view` | see devices, checks, job history (every other device ability needs it too) | `module_rmm >= 1` |
+| `rmm.job.run_saved` | queue a saved-library script or a collect job, cancel a queued job, read job output | `module_rmm_scripts >= 2`, not a module-only login |
+| `rmm.job.reboot` | queue a reboot | the same as run_saved |
+| `rmm.job.run_script` | queue free-form script text | `module_rmm_scripts >= 3`, not a module-only login |
+| `rmm.remote.launch` | open a MeshCentral session | `module_rmm_remote_connect >= 1`, not a module-only login |
+| `rmm.device.manage` | approve, reject, revoke, retire, transfer, re-enroll, rotate, set ring, map a MeshCentral node | `role_is_admin` |
+| `rmm.token.manage` | create and revoke enrollment tokens, issue installers | `role_is_admin` |
+| `rmm.binary.publish` | upload agent binaries, make one current, manage releases and rings | `role_is_admin` |
+| `rmm.admin` | module settings, switches, signing key, MeshCentral settings | `role_is_admin` |
+
+A policy that enforces anything must deny an ability it does not know. An inactive account, a module-only login and the client scope (RivetIT: `user_client_permissions`) are the edition's rules; the client scope reaches Core through `RmmTenancyInterface::visibleClientIds()`.
+
+Optional or defaulted: `RmmMetricSinkInterface` (`Support\NullRmmMetricSink` for editions without Metrics; `Testing\RmmMetricSinkConformanceTestCase`), `RmmAuditInterface` (`Support\AuditServiceRmmAudit`; `Testing\RmmAuditConformanceTestCase`), `RmmModuleStateInterface` (edition kill switch and state-file directory; `Testing\RmmModuleStateConformanceTestCase`).
+
+Reused: `DatabaseInterface`, `ClockInterface`, `Webhooks\UrlPolicy` (the MeshCentral probe: pass one with the networks an administrator allowed; the default refuses private addresses).
 
 Run `RmmBridgeInterface` on the same database connection Core uses so its writes take part in Core's transactions. The in-memory adapters are reference implementations for Core's tests (`@internal`), not API.
 
 ## Key classes
 
-- `Http\RmmRequest`, `Http\RmmResponse`, `Http\RmmFileBody`, `Http\ApiError`: framework-neutral HTTP objects. The edition decides TLS/proxy trust, builds the request and emits the response; `Http\SapiEmitter` emits through PHP's SAPI (it never exits, verifies a file body's size and SHA-256 before sending, streams in 64 KiB chunks).
-- `RmmProtocol`: the frozen constants.
-- `Migration\RmmSchema`: the ten DDL statements (internal).
+| Class | Role |
+|---|---|
+| `RmmModule` | the composition root: `deviceApi()`, `technicianApi()`, `technician()`, `admin()`, `readModel()`, `installerService()`, `binaryStore()`, `mesh()`, `authorizer()`, `housekeeping()`, `enabled()` |
+| `Http\RmmRequest`, `RmmResponse`, `RmmFileBody`, `ApiError`, `SapiEmitter`, `FileDownload` | framework-neutral HTTP objects; the edition builds the request (TLS and proxy trust, client IP stay its job), Core answers, `SapiEmitter` (or the edition) emits and never exits; a file body is verified (size, SHA-256) before a byte is sent and streamed in 64 KiB chunks |
+| `Http\DeviceApi` | the five device endpoints (enroll, check-in, jobs, update, installer) |
+| `Http\TechnicianApi` | `endpoint_devices`: list, detail, jobs, cancel, remote launch; the edition authenticates and passes an `Authz\RmmPrincipal` |
+| `Authz\RmmAuthorizer`, `RmmAbility`, `RmmPrincipal` | one decision for the REST API, the web handlers and the administration operations |
+| `Technician\TechnicianActions`, `ActionResult` | submit and cancel jobs, launch remote, approve or reject a pending device, link or create its asset, revoke, retire, transfer, re-enroll, rotate, ring, map a MeshCentral node, enrollment tokens |
+| `Read\RmmReadModel` | device list (filters, pagination, scope), device view, fleet counters, approval queue with candidates and reasons, tokens, releases, binaries, settings summary |
+| `Admin\RmmAdmin` | settings (switch, intervals, limits, checks, CA certificate, sub-switch presets), MeshCentral settings, signing key rotation, binaries, releases and rings, installers and deployment commands |
+| `Binaries\BinaryStore` | validate (PE and ELF headers), store, publish, make current, offer as an update, serve agent binaries |
+| `Installer\InstallerService`, `InstallerDownload`, `InstallerStamp` | per-client installers, token-gated download, deployment snippets (PowerShell for an RMM, Intune or GPO; a shell one-liner for Linux), the stamp format |
+| `Mesh\MeshService`, `MeshCookie` | MeshCentral URL and node-id validation, the network-policy probe, the launch |
+| `Settings\RmmSettings`, `Job\JobService`, `Device\DeviceService`, ... | the device-facing services (see the design) |
+
+### Compose the module and answer a device request
 
 ```php
-use RivetCore\Migration\{CoreMigrations, MigrationRunner};
+// docs-test: compose
+use RivetCore\Rmm\Http\{RmmRequest, SapiEmitter};
+use RivetCore\Rmm\RmmModule;
 
-(new MigrationRunner($db, CoreMigrations::all(), $clock))->run();   // creates or converges the endpoint_agent_* tables
+// $database, $clock, $tenancy, $assets, $bridge, $box, $audit, $policy are your adapters (see "Contracts").
+$module = new RmmModule($database, $clock, $tenancy, $assets, $bridge, $box, audit: $audit, policy: $policy,
+    options: ['binary_dir' => $binaryDir]);   // where hosted agent binaries live (denied over HTTP, outside your backups)
+
+$api = $module->deviceApi(fn (string $bucket, int $limit, int $window): bool => true);   // your rate limiter: true = within budget
+$request = new RmmRequest('GET', 'agent_jobs', [], [], ['authorization' => 'Bearer ' . str_repeat('a', 64)], '203.0.113.5', null, true, null, null);
+$response = $api->handle($request);              // 401 invalid_token: the credential is unknown
+// (new SapiEmitter())->emit($response);         // in an api/v1/agent_jobs.php bridge: status, headers, body, then exit
 ```
+
+### Administer: switch on, publish a binary, create a deployment command
+
+```php
+// docs-test: administer
+use RivetCore\Rmm\Authz\RmmPrincipal;
+
+$admin = $module->admin();
+$me = new RmmPrincipal(1, 'Alex');                       // the signed-in administrator
+$admin->saveSettings($me, ['enabled' => 1, 'service_url' => 'https://rmm.example.com'])->ok;   // true; the first switch-on mints the signing key
+$admin->uploadBinary($me, $uploadedTmpFile, '1.2.0', 'amd64', ['activate' => true, 'release_ring' => 'pilot', 'rollout_pct' => 10]);
+$r = $admin->deploymentCommands($me, $clientId, 0, 'stable', 72, 25, 'Front desk', 'amd64');
+echo $r->data['commands']['powershell'];                 // paste into an RMM, an Intune platform script or a GPO startup script
+echo $r->data['commands']['linux'];                      // run as root next to install-linux.sh
+```
+
+### The technician REST API (the edition's `api/v1/endpoint_devices.php`)
+
+```php
+// docs-test: technician
+use RivetCore\Rmm\Authz\RmmPrincipal;
+use RivetCore\Rmm\Http\RmmRequest;
+
+$who = new RmmPrincipal(7, 'Sam');                       // your API-token authentication already ran
+$request = new RmmRequest('GET', 'endpoint_devices', [], ['status' => 'online', 'limit' => '50'], [], '198.51.100.7', null, true, null, null);
+$response = $module->technicianApi()->handle($request, $who);   // {"data": [...], "total": N}; POST .../jobs, .../remote take a JSON body stream
+```
+
+### The same operations as plain calls (a web handler)
+
+```php
+// docs-test: actions
+$t = $module->technician();
+$r = $t->submitJob($who, $deviceId, ['type' => 'reboot', 'confirm' => true]);   // ActionResult: ok, http, code, message, data
+if (!$r->ok) { /* $r->http, $r->code ('forbidden', 'not_found', 'conflict', 'invalid', 'confirmation_required'), $r->message are safe to show */ }
+$list = $module->readModel()->listDevices(['status' => 'pending_approval'], $module->authorizer()->visibleClientIds(7), 50, 0);
+```
+
+## Behaviour that matters
+
+- **Authorization is decided on every call.** The role may not view devices at all: 403, which reveals nothing about any device. The device is missing **or** outside the caller's clients: the same 404. The role lacks the specific ability: 403 with a generic reason, audited for jobs and remote sessions. A destructive job (every reboot) needs `confirm`; only a device linked to an asset receives jobs.
+- **Administration works while the module is off** (turning it on is one of the operations); jobs, remote and the technician REST API do not (`404 disabled`).
+- **A hostname alone never links a device** to an asset; two machines are never merged; the matching rules are in [PROTOCOL.md](../rmm/PROTOCOL.md).
+- **Installers.** `InstallerService::issue()` creates an audited enrollment token and the stamp payload from the current base binary; a token whose installer could not be served is revoked again. Only Windows (PE) agents are hosted: the binaries table has no platform column, so a Linux agent is installed from the release tarball with `install-linux.sh` (the Linux snippet does that); `BinaryStore::detect()` still identifies an ELF file and refuses it with that hint.
+- **MeshCentral.** The login key is stored encrypted (`SecretBoxInterface`) and used to impersonate ONE limited MeshCentral account; the login URL is minted at the click and never stored or logged, only a random session id reaches the edition's remote-session log. The health probe goes through the injected `UrlPolicy` (private, loopback, link-local and metadata addresses refused unless the administrator allowed the network; loopback and metadata are never allowed) and is pinned to the vetted addresses.
+- **Binaries.** A released version never changes under devices: re-publishing the identical file is a no-op, a different file for an existing `(version, arch)` is refused. File names are random (`bin_<hex>.bin`); deleting only deactivates.
+- **Signing key rotation** makes every enrolled agent refuse jobs and updates until it re-enrolls (it pins the key it received); `RmmAdmin::rotateSigningKey()` says so and counts the devices affected.
 
 ## Configuration
 
-None yet. The module switch (`endpoint_agent_settings.enabled`, sub-switches in `features_json`, limits in `limits_json`) is specified in design sections 12 and 13.
+Constructor options of `RmmModule`: `binary_dir`, `max_upload_bytes` (default 64 MiB), `allow_insecure_http` (loopback test servers only), `allow_linux`, `host_fallback`, `integration_name`, `installer_prefix`. Everything else is stored in `endpoint_agent_settings` and edited through `Admin\RmmAdmin`. The module switch (master, sub-switches, limits, load shedding) and its zero-database state file are specified in the design (sections 12 and 13) and in [CAPACITY.md](../rmm/CAPACITY.md).
 
 ## How it fails
 
-Not yet applicable (no services). `SapiEmitter` answers a file body that fails verification with a generic 500 `internal` JSON error.
+- Device endpoints answer `{"error", "code"}` with the statuses listed in [PROTOCOL.md](../rmm/PROTOCOL.md); an unexpected exception is a generic `500 internal` (details go to the PHP log only). `SapiEmitter` answers a file body that fails verification with the same 500.
+- `TechnicianApi` answers `401 {"error":"Unauthorized"}` without a principal, `404 disabled` when the module is off, 403/404 as above, `413` for a body over 1 MiB, `400` for a body that is not a JSON object, `500 internal` for an unexpected exception.
+- `TechnicianActions` and `RmmAdmin` never throw for a refusal: they return an `ActionResult`. `InvalidArgumentException` comes only from programming errors (an unknown setting column). `BinaryStore::publish()` throws `RuntimeException` when the storage directory is not writable.
+- A policy that throws is treated as a denial.
 
 ## Security notes
 
-Device authentication, SYSTEM-level job execution and remote access make this a high-risk module: a focused review is required before it is enabled by default anywhere.
+Device authentication, SYSTEM-level job execution and remote access make this a high-risk module: a focused review is required before it is enabled by default anywhere. Credentials are stored as hashes (device and enrollment tokens), the signing key and the Mesh login key are sealed with the edition's key, no read model contains a secret, job output is redacted and capped when it is stored, script text is never written to the audit log (a hash is), and every denial is a generic message.
+
+What is **verified**: the golden transcripts of the original replay identically through `DeviceApi` and `TechnicianApi` (`php scripts/rmm-golden/replay-core.php replay`); the RivetIT role matrix (`RoleMatrixTest`), deployment (`DeployTest`), administration (`AdminTest`), read models (`ReadModelTest`) and technician actions (`TechnicianTest`) run against a scratch database. **Not verified**: a real MeshCentral server (only `tests/Support/MockMeshCentral.php`), the Windows installer on a Windows host, the Linux agent on a physical host.
 
 ## Used by
 
@@ -57,4 +149,4 @@ Not yet adopted: RivetIT adopts first (it already has the tables), then RivetMSP
 
 ## Links
 
-[Design](../design/endpoint-module-extraction.md) | [ADR-010](../architecture/ADR-010-endpoint-agent-module.md) | [Migration](migration.md) | [Conformance kit](../conformance.md)
+[Design](../design/endpoint-module-extraction.md) | [ADR-010](../architecture/ADR-010-endpoint-agent-module.md) | [Protocol](../rmm/PROTOCOL.md) | [OpenAPI](../rmm/openapi-device.yaml) | [Agent build](../rmm/AGENT_BUILD.md) | [Migration](migration.md) | [Conformance kit](../conformance.md)

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Maintenance;
 
+use RivetCore\Rmm\Capacity\IngestQueue;
+use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Contracts\RmmBridgeInterface;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Link\RmmLinker;
@@ -39,6 +41,8 @@ final class Housekeeping
         private readonly RmmBridgeInterface $bridge,
         private readonly JobService $jobs,
         ?\Closure $pause = null,
+        private readonly ?LoadShedder $shedder = null,
+        private readonly ?IngestQueue $ingest = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -52,6 +56,10 @@ final class Housekeeping
         $cfg = $this->settings->get(true);
         if ((int) $cfg['enabled'] !== 1) {
             return $out;
+        }
+        $out['shed_level'] = $this->shedder === null ? (int) ($cfg['shed_level'] ?? 0) : $this->shedder->evaluate()['level'];
+        if ($this->ingest !== null) {
+            $out['pruned_ingest_jobs'] = $this->ingest->pruneCompleted();
         }
         $integration = $this->settings->integrationId();
         $out['offline'] = $this->flipOffline($integration, $this->sql->utcAt(-(int) $cfg['offline_after_s']));

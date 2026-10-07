@@ -10,7 +10,7 @@ BUILDFLAGS:= -trimpath -buildvcs=false
 DIST      := dist
 export CGO_ENABLED := 0
 
-.PHONY: all build windows linux tarballs packages test vet lint fuzz e2e clean checksums dist clean-dist syso devtools
+.PHONY: all build windows linux tarballs packages test vet lint fuzz e2e clean checksums dist clean-dist syso devtools sim
 
 all: vet test build
 
@@ -66,6 +66,11 @@ test:
 devtools:
 	mkdir -p $(DIST)
 	$(GO) build $(BUILDFLAGS) -tags devtools -o $(DIST)/rivetit-agent-devtools .
+
+# The RMM load simulator (docs/rmm/CAPACITY.md): a Linux test tool, NOT a release artifact (never in dist checksums). Output: $(DIST)/rmm-sim.
+sim:
+	mkdir -p $(DIST)
+	GOOS=linux GOARCH=amd64 $(GO) build $(BUILDFLAGS) -ldflags '-s -w' -o $(DIST)/rmm-sim ./cmd/rmm-sim
 
 # Regenerate the committed Windows resources (manifest + version info); see winres/gen.sh.
 syso:

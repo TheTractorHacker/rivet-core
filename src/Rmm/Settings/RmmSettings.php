@@ -50,6 +50,15 @@ final class RmmSettings
         'retry_after_max_s' => [1, 3600],
         'shed_retry_min_s' => [1, 3600],
         'shed_retry_max_s' => [1, 3600],
+        // Load shedding thresholds (Capacity\LoadShedder): queue backlog (pending rmm.ingest jobs), database probe latency in
+        // milliseconds, check-ins in the last minute. 0 means that level never triggers on that signal; the others must not decrease from level 1 to 3.
+        'shed_backlog_l1' => [0, 10000000],
+        'shed_backlog_l2' => [0, 10000000],
+        'shed_backlog_l3' => [0, 10000000],
+        'shed_db_ms_l1' => [0, 60000],
+        'shed_db_ms_l2' => [0, 60000],
+        'shed_db_ms_l3' => [0, 60000],
+        'shed_rate_per_min' => [0, 10000000],
     ];
     public const LIMIT_DEFAULTS = [
         'max_checkins_per_min' => 0,
@@ -57,10 +66,20 @@ final class RmmSettings
         'retry_after_max_s' => 120,
         'shed_retry_min_s' => 60,
         'shed_retry_max_s' => 300,
+        'shed_backlog_l1' => 500,
+        'shed_backlog_l2' => 2000,
+        'shed_backlog_l3' => 8000,
+        'shed_db_ms_l1' => 100,
+        'shed_db_ms_l2' => 300,
+        'shed_db_ms_l3' => 1000,
+        'shed_rate_per_min' => 0,
     ];
 
     /** @var array<string,mixed>|null */
     private ?array $cache = null;
+
+    /** @var (\Closure(): void)|null called after a write that touches a column the state file mirrors */
+    private ?\Closure $stateListener = null;
 
     public function __construct(
         private readonly Sql $sql,
@@ -69,6 +88,18 @@ final class RmmSettings
         private readonly string $integrationName = RmmProtocol::DEFAULT_INTEGRATION_NAME,
         private readonly bool $allowInsecureHttp = false,
     ) {
+    }
+
+    /**
+     * Register the callback that keeps the zero-database state file in step ({@see \RivetCore\Rmm\RmmState::sync()}). It runs after
+     * every {@see set()} (and so after update/enable/disable) that writes enabled, features_json, limits_json, shed_level,
+     * ingest_mode, mesh_enabled or max_devices. A failing listener never fails the write.
+     *
+     * @param \Closure(): void|null $listener
+     */
+    public function onStateChange(?\Closure $listener): void
+    {
+        $this->stateListener = $listener;
     }
 
     /** @return array<string,mixed> the settings row */
@@ -115,6 +146,13 @@ final class RmmSettings
             $this->sql->run('UPDATE endpoint_agent_settings SET ' . implode(', ', $sets) . ' WHERE id = 1', $params);
         }
         $this->cache = null;
+        if ($this->stateListener !== null && array_intersect(array_keys($values), \RivetCore\Rmm\RmmState::MIRRORED_COLUMNS) !== []) {
+            try {
+                ($this->stateListener)();
+            } catch (\Throwable $e) {
+                error_log('rmm state file: ' . $e->getMessage());
+            }
+        }
     }
 
     /**
@@ -359,6 +397,16 @@ final class RmmSettings
         $shi = $out['shed_retry_max_s'] ?? self::LIMIT_DEFAULTS['shed_retry_max_s'];
         if ($lo > $hi || $slo > $shi) {
             return [null, 'A retry-after minimum must not exceed its maximum.'];
+        }
+        foreach (['shed_backlog', 'shed_db_ms'] as $family) {
+            $t = [];
+            foreach (['l1', 'l2', 'l3'] as $l) {
+                $t[] = $out["{$family}_$l"] ?? self::LIMIT_DEFAULTS["{$family}_$l"];
+            }
+            $t = array_values(array_filter($t, static fn (int $v): bool => $v > 0));   // 0 = that level never triggers on this signal
+            if ($t !== [] && $t !== (function (array $x): array { sort($x); return $x; })($t)) {
+                return [null, 'The load-shedding thresholds must not decrease from level 1 to level 3.'];
+            }
         }
 
         return [(string) json_encode($out === [] ? new \stdClass() : $out), null];

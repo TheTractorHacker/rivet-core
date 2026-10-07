@@ -75,6 +75,33 @@
       "status": "draft",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/SCALING.md",
       "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/SCALING.md"
+    },
+    {
+      "id": "protocol",
+      "title": "RMM endpoint agent wire protocol",
+      "summary": "The frozen protocol: endpoints, credentials, signing, errors, installer trailer, generated constants, observed responses and examples",
+      "path": "docs/rmm/PROTOCOL.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/PROTOCOL.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/PROTOCOL.md"
+    },
+    {
+      "id": "openapi-device",
+      "title": "RMM device and technician API (OpenAPI 3.1)",
+      "summary": "Machine-readable description of the five device endpoints and the technician REST API",
+      "path": "docs/rmm/openapi-device.yaml",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/openapi-device.yaml",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/openapi-device.yaml"
+    },
+    {
+      "id": "module",
+      "title": "RMM module page",
+      "summary": "What the module owns, the contracts and abilities an edition implements, key classes, examples that run, failure modes",
+      "path": "docs/modules/rmm.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/modules/rmm.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/modules/rmm.md"
     }
   ]
 }

@@ -29,6 +29,8 @@ use RivetCore\Testing\InMemorySecretBox;
 final class GoldenEdition
 {
     public const SECRET_BOX_KEY_SEED = 'rmm-golden-core-secretbox-key';
+    /** The one technician of the transcripts (the edition authenticates the shared test token as this user). */
+    public const ADMIN_USER_ID = 2;
 
     public InMemoryRmmTenancy $tenancy;
     public InMemoryRmmAssets $assets;
@@ -70,7 +72,7 @@ final class GoldenEdition
         $db = new MysqliDatabase($m);
         $this->module = new RmmModule($db, $this->clock, $this->tenancy, $this->assets, $this->bridge, $this->box, $this->audit, $this->metrics,
             $withModuleState ? new \RivetCore\Testing\InMemoryRmmModuleState(true) : null,
-            ['binary_dir' => $stateDir . '/bin', 'allow_insecure_http' => $insecureHttp]);
+            ['binary_dir' => $stateDir . '/bin', 'allow_insecure_http' => $insecureHttp], null, new AllowUsersPolicy([self::ADMIN_USER_ID => true]));
         $limiter = TestRedis::available() ? new RateLimiter(new TestRedis(), 'rmm-golden:') : null;
         $this->api = $this->module->deviceApi(
             static fn (string $bucket, int $limit, int $window): bool => $limiter === null || $limiter->hit($bucket, $limit, $window)['allowed'],
@@ -99,9 +101,13 @@ final class GoldenEdition
         rename($tmp, $this->file());
     }
 
-    /** @param array<string,string> $query @param array<string,string> $headers */
-    public function request(string $method, string $endpoint, array $query, array $headers, string $ip, bool $secure, ?int $declared): RmmRequest
+    /**
+     * @param array<string,string> $query
+     * @param array<string,string> $headers
+     * @param list<string> $segments path segments after the resource (technician API)
+     */
+    public function request(string $method, string $endpoint, array $query, array $headers, string $ip, bool $secure, ?int $declared, array $segments = []): RmmRequest
     {
-        return new RmmRequest($method, $endpoint, [], $query, $headers, $ip, $headers['user-agent'] ?? null, $secure, $declared, fopen('php://input', 'rb') ?: null);
+        return new RmmRequest($method, $endpoint, $segments, $query, $headers, $ip, $headers['user-agent'] ?? null, $secure, $declared, fopen('php://input', 'rb') ?: null);
     }
 }

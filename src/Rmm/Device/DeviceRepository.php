@@ -93,7 +93,7 @@ final class DeviceRepository
 
     public static function validMeshNodeId(string $id): bool
     {
-        return preg_match('#^node//[A-Za-z0-9@$_-]{16,100}$#', $id) === 1;
+        return preg_match('#^node//[A-Za-z0-9@$_-]{16,100}\z#', $id) === 1;   // \z, not $: a trailing newline is not part of an id
     }
 
     /** Set (manual or agent) or clear the MeshCentral node association. Separate from the asset name by design. */
