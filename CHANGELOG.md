@@ -4,6 +4,14 @@ All notable changes to RivetCore. Semantic versioning.
 
 ## Unreleased
 
+### Security: nightly review 2026-10-08 (CORE-1, CORE-2, F8, F10)
+
+- **CORE-1, RMM enrollment is bound to the token's client.** A reinstall lookup by `machine_guid` or serial now only matches devices of the enrollment token's client, and an `install_id` held by another client is a 409 `conflict`. A machine identity that exists under another client creates a NEW device in the token's client, `pending_approval`, `match_reason = cross_client_identity`, never auto-linked or auto-created. The other client's device keeps its credential and asset link. Behaviour change only for cross-client enrollments (cloned images, or an attempted takeover); same-client reinstalls are unchanged. Documented in `docs/rmm/PROTOCOL.md`.
+- **CORE-2, `TechnicianActions::revokeToken`** no longer tells a missing token from another client's: both are 404 (a caller without `rmm.token.manage` still gets 403).
+- **F8, migration `0017_mcp_identity_binary_collation`** (idempotent, additive in effect): `mcp_unlinked_identities.issuer` and `.subject` become `utf8mb4_bin`, so OIDC subjects that differ in case or trailing spaces are different identities. Editions that store their own linked-identity column should use a binary collation too.
+- **F10, `AutomationExecutor::interpolate()`** is now an allowlist (`AutomationExecutor::FREE_TEXT_KEYS`: subject, details, message, title, body, description, text, name, note, notes, comment, summary, label). Other action-config keys are used verbatim. Rules that placed a `{placeholder}` in another key (for example `email` or `to`) no longer get it filled.
+- Not changed: F11 (`DatabaseContractTestCase` stays in `src/Testing`, it is part of the documented conformance kit, ADR-009) and CORE-3 (`mesh_token_ttl_s` is still not applied to the MeshCentral login cookie; the server-side cookie window needs a live MeshCentral to verify).
+
 ### RMM module: the endpoint agent moves into Core (`RivetCore\Rmm`)
 
 Phase 0 of [the design](docs/design/endpoint-module-extraction.md) and [ADR-010](docs/architecture/ADR-010-endpoint-agent-module.md). Off by default; no edition has adopted it yet, so nothing changes for an install until it does.
