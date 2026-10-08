@@ -317,10 +317,15 @@ final class TechnicianActions
 
     public function revokeToken(RmmPrincipal $who, int $tokenId): ActionResult
     {
-        $row = $this->sql->one('SELECT client_id FROM endpoint_agent_enrollment_tokens WHERE token_id = ?', [$tokenId]);
-        $denied = $this->authz->check($who->userId, RmmAbility::TOKEN_MANAGE, $row === null ? 0 : (int) $row['client_id'], false);
+        // No existence oracle: a caller who may not manage tokens at all gets 403 (it reveals nothing about any token); beyond that,
+        // a missing token and a token of a client outside the caller's scope or abilities answer the same 404.
+        $denied = $this->authz->check($who->userId, RmmAbility::TOKEN_MANAGE, 0, false);
         if ($denied !== null) {
             return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        $row = $this->sql->one('SELECT client_id FROM endpoint_agent_enrollment_tokens WHERE token_id = ?', [$tokenId]);
+        if ($row !== null && $this->authz->check($who->userId, RmmAbility::TOKEN_MANAGE, (int) $row['client_id'], false) !== null) {
+            $row = null;
         }
         if ($row === null || !$this->enrollment->revokeToken($tokenId, $who->userId)) {
             return ActionResult::fail(404, 'not_found', 'No such active enrollment token.');

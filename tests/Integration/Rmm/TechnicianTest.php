@@ -285,6 +285,12 @@ final class TechnicianTest extends RmmTestCase
         $this->assertTrue($t->revokeToken($this->admin, (int) $r->data['token_id'])->ok);
         $this->assertSame(404, $t->revokeToken($this->admin, (int) $r->data['token_id'])->http, 'already revoked');
         $this->assertSame(404, $t->revokeToken($this->admin, 99999)->http);
+        // no existence oracle: for a scoped caller a client-A token answers exactly like a missing one
+        $a = $t->createToken($this->admin, $this->h->clientA, 0, 'stable', 1, 1, 'A only');
+        $this->assertSame(
+            [$t->revokeToken($this->scoped, 99999)->http, $t->revokeToken($this->scoped, 99999)->code],
+            [$t->revokeToken($this->scoped, (int) $a->data['token_id'])->http, $t->revokeToken($this->scoped, (int) $a->data['token_id'])->code]
+        );
         $actions = array_column($this->h->audit->records(), 'action');
         $this->assertContains('Enrollment Token Created', $actions);
         $this->assertContains('Enrollment Token Revoked', $actions);
