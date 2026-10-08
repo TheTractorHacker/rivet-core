@@ -28,7 +28,7 @@ Effective state: `enabled = editionAllows() AND master`; a feature is active whe
 | Surface | While the master is off |
 |---|---|
 | Device REST (`agent_enroll`, `agent_checkin`, `agent_jobs`, `agent_update`, `agent_installer`) | `503`, `Retry-After: 3600`, `Cache-Control: no-store`, `Content-Type: application/json`, body `{"error":"The RMM service is disabled on this server.","code":"module_disabled"}`, answered by the **pre-bootstrap gate**: no database connection, no query, no Core class loaded |
-| Technician REST (`endpoint_devices`) | `404 {"error":"The endpoint agent is not enabled.","code":"disabled"}` from the gate, as RivetIT always did |
+| Technician REST (`endpoint_devices`) | not answered by the gate (that would tell an anonymous caller whether the module is on). The edition authenticates first (401), then `TechnicianApi` answers `404 {"error":"The endpoint agent is not enabled.","code":"disabled"}`, as RivetIT always did; the cost is the edition's normal token lookup |
 | One sub-switch off | `agent_jobs` (jobs off) and `agent_update` (updates off) answer `503 feature_disabled` with `Retry-After: 3600`; the check-in response omits `update` and reports `jobs_pending: 0`; metrics off drops sample ingest; monitoring off skips check evaluation and the link health. Check-in itself keeps working so devices stay online for whatever remains |
 | Cron | the edition's cron block reads the state file first and skips the autoload and every query when it says off |
 | Job queue | `rmm.*` job handlers are registered but **release** the job (back to pending, no attempt spent, claimable again after 60 s) instead of failing it, so queued work survives a disable and is processed after the re-enable. Core's worker would otherwise dead-letter a job with no handler |
@@ -74,8 +74,8 @@ require __DIR__ . '/rmm_gate.php';
 // ... then config.php, db.php, routing as before
 ```
 
-The gate matches the path against the five device endpoints and `endpoint_devices` (with or without `.php`, trailing slash or query string), reads the state file and
-either answers and exits (module off: the exact 503/404 of section 1.1; shed level 3 on `agent_checkin` only: `503 {"code":"unavailable"}` with a jittered
+The gate matches the path against the five device endpoints (with or without `.php`, trailing slash or query string), reads the state file and
+either answers and exits (module off: the exact 503 of section 1.1; shed level 3 on `agent_checkin` only: `503 {"code":"unavailable"}` with a jittered
 `Retry-After` from the file's shed window) or returns and lets the request run. It never emits CORS headers (device agents are not browsers). Its reader mirrors
 `RmmStateFile::read()`; `ModuleSwitchTest` keeps the two in step with a corpus of damaged files.
 

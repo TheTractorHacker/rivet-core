@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Testing;
 
+use RivetCore\Rmm\Contracts\RmmAssetNamesInterface;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 
 /**
@@ -11,7 +12,7 @@ use RivetCore\Rmm\Contracts\RmmAssetsInterface;
  *
  * @internal
  */
-class InMemoryRmmAssets implements RmmAssetsInterface
+class InMemoryRmmAssets implements RmmAssetsInterface, RmmAssetNamesInterface
 {
     /** @var array<int,array{name:string,client_id:int,location_id:int,serial:?string,model:string,make:string,os:string,type:string,status:string,macs:list<string>,archived:bool}> */
     protected array $assets = [];
@@ -111,6 +112,18 @@ class InMemoryRmmAssets implements RmmAssetsInterface
             $this->assets[$assetId]['client_id'] = $clientId;
             $this->assets[$assetId]['location_id'] = $locationId;
         }
+    }
+
+    public function assetNames(array $assetIds): array
+    {
+        $out = [];
+        foreach ($assetIds as $id) {
+            if (isset($this->assets[$id])) {
+                $out[$id] = $this->assets[$id]['name'];
+            }
+        }
+
+        return $out;
     }
 
     protected static function mac(string $mac): string

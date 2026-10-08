@@ -37,6 +37,7 @@ final class InstallerService
         private readonly RmmTenancyInterface $tenancy,
         private readonly RmmAuditInterface $audit,
         private readonly BinaryStore $binaries,
+        private readonly string $clientLabel = 'client',
     ) {
     }
 
@@ -54,7 +55,7 @@ final class InstallerService
             return ['ok' => false, 'error' => $refusal];
         }
         if ($clientId <= 0 || $this->tenancy->clientName($clientId) === null) {
-            return ['ok' => false, 'error' => 'Choose the client the devices belong to.'];
+            return ['ok' => false, 'error' => 'Choose the ' . $this->clientLabel . ' the devices belong to.'];
         }
         if ($locationId > 0 && !$this->tenancy->locationInClient($locationId, $clientId)) {
             $locationId = 0;
@@ -72,7 +73,7 @@ final class InstallerService
             return ['ok' => false, 'error' => (string) $err];
         }
         $dept = $this->installer->departmentName($clientId);
-        $this->audit->record('Installer Created', "$actorName created installer $installerId ($arch) for client \"$dept\" with enrollment token #{$t['token_id']} ({$row['token_selector']}), "
+        $this->audit->record('Installer Created', "$actorName created installer $installerId ($arch) for {$this->clientLabel} \"$dept\" with enrollment token #{$t['token_id']} ({$row['token_selector']}), "
             . "{$row['max_uses']} uses, expires {$row['expires_at']} UTC", $clientId, 0);
 
         return ['ok' => true, 'token' => $row, 'token_plain' => $t['token'], 'payload' => $payload, 'installer_id' => $installerId, 'department' => $dept];

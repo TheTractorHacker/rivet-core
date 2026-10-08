@@ -337,9 +337,6 @@ final class ModuleSwitchTest extends RmmTestCase
             }
         }
         $this->assertGreaterThanOrEqual(80, $n);
-        $r = $this->http($port, 'GET', '/api/v1/endpoint_devices/12');
-        $this->assertSame([404, '{"error":"The endpoint agent is not enabled.","code":"disabled"}'], [$r['status'], $r['body']], 'the technician API answers 404 as it always did');
-        $this->assertArrayNotHasKey('retry-after', $r['headers']);
         $r = $this->http($port, 'HEAD', '/api/v1/agent_checkin');
         $this->assertSame([503, ''], [$r['status'], $r['body']]);
 
@@ -367,8 +364,8 @@ final class ModuleSwitchTest extends RmmTestCase
         $this->h->module->settings()->enable();
         $this->h->module->settings()->disable();
         [$port] = $this->startGate($this->dir);
-        foreach (['/api/v1/tickets', '/api/v1/agent_checkins_report', '/index.php', '/api/v1/x/agent_checkin_extra'] as $path) {
-            $this->assertSame(200, $this->http($port, 'GET', $path)['status'], $path . ' is not an RMM endpoint');
+        foreach (['/api/v1/tickets', '/api/v1/agent_checkins_report', '/index.php', '/api/v1/x/agent_checkin_extra', '/api/v1/endpoint_devices', '/api/v1/endpoint_devices/12'] as $path) {
+            $this->assertSame(200, $this->http($port, 'GET', $path)['status'], $path . ' is not gated (the technician endpoint authenticates first, see rmm_gate.php)');
         }
         [$port2] = $this->startGate(null);
         $this->assertSame(200, $this->http($port2, 'GET', '/api/v1/agent_checkin')['status'], 'no state directory configured: the gate does nothing');

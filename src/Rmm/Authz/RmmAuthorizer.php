@@ -25,16 +25,37 @@ final class RmmAuthorizer
 {
     public const NOT_ENABLED = 'The endpoint agent is not enabled.';
     public const NOT_ACTIVE = 'Your account is not active.';
+    /** The out-of-scope reason with the default terminology; see {@see noClientAccess()} for the configured one. */
     public const NO_CLIENT_ACCESS = 'You do not have access to this device\'s client.';
 
     /**
      * @param \Closure():bool $moduleEnabled the effective module switch (edition kill switch AND master switch): RmmModule::enabled()
+     * @param string $clientLabel what the edition calls a client in user-facing text ("client", RivetIT: "department")
+     * @param array<string,string> $reasons optional per-ability denial text (ability constant => sentence) that replaces the generic
+     *        {@see RmmAbility::denial()} wording, e.g. to name the role or setting that grants it; unknown keys are ignored. Keep it free of
+     *        anything that reveals more than the generic text does (the reason is shown to the caller)
      */
     public function __construct(
         private readonly AccessPolicyInterface $policy,
         private readonly RmmTenancyInterface $tenancy,
         private readonly \Closure $moduleEnabled,
+        private readonly string $clientLabel = 'client',
+        private readonly array $reasons = [],
     ) {
+    }
+
+    /** The reason shown when a device's client is outside the caller's scope, in the configured terminology. */
+    public function noClientAccess(): string
+    {
+        return 'You do not have access to this device\'s ' . $this->clientLabel . '.';
+    }
+
+    /** The denial text of one ability: the edition's override when it gave one, the generic {@see RmmAbility::denial()} otherwise. */
+    public function denial(string $ability): string
+    {
+        $custom = $this->reasons[$ability] ?? null;
+
+        return is_string($custom) && trim($custom) !== '' ? $custom : RmmAbility::denial($ability);
     }
 
     /** The edition kill switch AND the master switch. */
@@ -56,20 +77,20 @@ final class RmmAuthorizer
             return self::NOT_ACTIVE;
         }
         if (!in_array($ability, RmmAbility::all(), true)) {
-            return RmmAbility::denial($ability);
+            return $this->denial($ability);
         }
         $administrative = RmmAbility::isAdministrative($ability);
         if (!$administrative && !$this->can($userId, RmmAbility::DEVICE_VIEW, 0)) {
-            return RmmAbility::denial(RmmAbility::DEVICE_VIEW);
+            return $this->denial(RmmAbility::DEVICE_VIEW);
         }
         if ($ability !== RmmAbility::ADMIN && !$this->clientOk($userId, $clientId)) {
-            return self::NO_CLIENT_ACCESS;
+            return $this->noClientAccess();
         }
         if ($ability !== RmmAbility::DEVICE_VIEW && !$this->can($userId, $ability, $clientId)) {
-            return RmmAbility::denial($ability);
+            return $this->denial($ability);
         }
         if ($ability === RmmAbility::DEVICE_VIEW && $clientId !== 0 && !$this->can($userId, $ability, $clientId)) {
-            return self::NO_CLIENT_ACCESS;
+            return $this->noClientAccess();
         }
 
         return null;

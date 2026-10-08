@@ -79,7 +79,7 @@ final class TechnicianApi
             $limit = max(1, min(200, (int) ($req->query['limit'] ?? 50)));
             $offset = max(0, (int) ($req->query['offset'] ?? 0));
             $filters = isset($req->query['status']) && $req->query['status'] !== '' ? ['status' => $req->query['status']] : [];
-            $list = $this->read->listDevices($filters, $this->authz->visibleClientIds($uid), $limit, $offset);
+            $list = $this->read->listDevices($filters, $this->authz->visibleClientIds($uid), $limit, $offset, false);
 
             return self::json(200, ['data' => $list['items'], 'total' => $list['total']]);
         }

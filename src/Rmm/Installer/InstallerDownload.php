@@ -31,6 +31,7 @@ final class InstallerDownload
         private readonly RmmAuditInterface $audit,
         private readonly AttemptLog $attempts,
         private readonly string $filenamePrefix = RmmProtocol::INSTALLER_NAME_PREFIX,
+        private readonly string $clientLabel = 'client',
     ) {
     }
 
@@ -38,7 +39,9 @@ final class InstallerDownload
     {
         $n = $this->tenancy->clientName($clientId);
 
-        return $n === null ? ('Department ' . $clientId) : (DeviceValidator::cleanText($n, 200) ?? ('Department ' . $clientId));
+        $fallback = ucfirst($this->clientLabel) . ' ' . $clientId;
+
+        return $n === null ? $fallback : (DeviceValidator::cleanText($n, 200) ?? $fallback);
     }
 
     /** File-name-safe slug of a client name: [a-z0-9-], at most 40 characters, never empty. */
@@ -85,7 +88,7 @@ final class InstallerDownload
                 'expires_at' => (string) Sql::iso((string) $token['expires_at']),
             ]), null];
         } catch (\LengthException) {
-            return [null, 'The installer payload is too large (client name or CA certificate).'];
+            return [null, 'The installer payload is too large (' . $this->clientLabel . ' name or CA certificate).'];
         }
     }
 

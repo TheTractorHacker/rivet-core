@@ -148,4 +148,29 @@ final class AuthorizerTest extends TestCase
         $p->deactivate(2);
         $this->assertNotNull($z->check(2, RmmAbility::DEVICE_VIEW, 0), 'an inactive account is denied');
     }
+
+    public function testTerminologyAndPerAbilityDenialTexts(): void
+    {
+        $policy = new AllowUsersPolicy([5 => true]);
+        $dept = new RmmAuthorizer($policy, $this->tenancy, fn (): bool => true, 'department');
+        $this->assertSame('You do not have access to this device\'s department.', $dept->noClientAccess());
+        $this->assertSame(RmmAuthorizer::NO_CLIENT_ACCESS, $this->authz($policy)->noClientAccess(), 'the default terminology is the constant');
+
+        // out-of-scope client: the configured wording, not the constant
+        $this->tenancy->restrictUser(5, [$this->a]);
+        $scoped = new RmmAuthorizer($policy, $this->tenancy, fn (): bool => true, 'department');
+        $this->assertSame('You do not have access to this device\'s department.', $scoped->check(5, RmmAbility::DEVICE_VIEW, $this->b));
+
+        // a role that may view but not run scripts: generic text by default, the edition's text when it gave one
+        $viewOnly = new AllowUsersPolicy([5 => [RmmAbility::DEVICE_VIEW]]);
+        $generic = $this->authz($viewOnly);
+        $this->assertSame('Your role cannot run free-form PowerShell.', $generic->check(5, RmmAbility::JOB_RUN_SCRIPT, $this->a));
+        $custom = new RmmAuthorizer($viewOnly, $this->tenancy, fn (): bool => true, 'client', [
+            RmmAbility::JOB_RUN_SCRIPT => 'Ask a Level 3 technician to run this.', RmmAbility::REMOTE_LAUNCH => '   ', 'rmm.nope' => 'ignored',
+        ]);
+        $this->assertSame('Ask a Level 3 technician to run this.', $custom->check(5, RmmAbility::JOB_RUN_SCRIPT, $this->a));
+        $this->assertSame('Ask a Level 3 technician to run this.', $custom->denial(RmmAbility::JOB_RUN_SCRIPT));
+        $this->assertSame('Your role cannot open remote sessions.', $custom->check(5, RmmAbility::REMOTE_LAUNCH, $this->a), 'a blank override falls back to the generic text');
+        $this->assertSame('Your role cannot run jobs on devices.', $custom->check(5, RmmAbility::JOB_REBOOT, $this->a), 'an ability without an override keeps its generic text');
+    }
 }

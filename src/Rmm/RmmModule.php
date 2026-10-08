@@ -17,6 +17,7 @@ use RivetCore\Rmm\Authz\RmmAuthorizer;
 use RivetCore\Rmm\Binaries\BinaryStore;
 use RivetCore\Rmm\Checkin\CheckinService;
 use RivetCore\Rmm\Checks\CheckEvaluator;
+use RivetCore\Rmm\Contracts\RmmAssetNamesInterface;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Contracts\RmmBridgeInterface;
@@ -52,7 +53,8 @@ use RivetCore\Webhooks\UrlPolicy;
  *
  * Options: `binary_dir` (where hosted agent binaries live, default none), `allow_insecure_http` (loopback test servers only),
  * `allow_linux` (admit the Linux test agent), `host_fallback`, `integration_name`, `installer_prefix`, `max_upload_bytes` (size cap of one
- * hosted agent binary, default 64 MiB).
+ * hosted agent binary, default 64 MiB), `client_label` (what the edition calls a client in user-facing text, default "client"; RivetIT: "department"),
+ * `denial_reasons` (ability => sentence, replaces the generic denial text of that ability, see {@see RmmAuthorizer}).
  *
  * The technician side ({@see technicianApi()}, {@see technician()}, {@see admin()}, {@see readModel()}) needs the edition's
  * AccessPolicyInterface (and may be given a UrlPolicy for the MeshCentral probe; the default refuses private addresses).
@@ -86,7 +88,7 @@ final class RmmModule
     private readonly RmmMetricSinkInterface $metrics;
 
     /**
-     * @param array{binary_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int} $options
+     * @param array{binary_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -105,6 +107,17 @@ final class RmmModule
     ) {
         $this->audit = $audit ?? new NullRmmAudit();
         $this->metrics = $metrics ?? new NullRmmMetricSink();
+    }
+
+    /**
+     * What this edition calls a client in text a user reads ("client", RivetIT: "department"): option `client_label`, lower case,
+     * letters and spaces only (anything else falls back to "client").
+     */
+    public function clientLabel(): string
+    {
+        $l = $this->options['client_label'] ?? 'client';
+
+        return preg_match('/^[a-z][a-z ]{0,29}$/', $l) === 1 ? $l : 'client';
     }
 
     public function sql(): Sql
@@ -172,7 +185,7 @@ final class RmmModule
 
     public function enrollment(): EnrollmentService
     {
-        return $this->enrollment ??= new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false);
+        return $this->enrollment ??= new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel());
     }
 
     public function deviceService(): DeviceService
@@ -218,7 +231,7 @@ final class RmmModule
 
     public function installerDownload(): InstallerDownload
     {
-        return new InstallerDownload($this->sql(), $this->settings(), $this->updates(), $this->tenancy, $this->audit, $this->attempts(), $this->options['installer_prefix'] ?? RmmProtocol::INSTALLER_NAME_PREFIX);
+        return new InstallerDownload($this->sql(), $this->settings(), $this->updates(), $this->tenancy, $this->audit, $this->attempts(), $this->options['installer_prefix'] ?? RmmProtocol::INSTALLER_NAME_PREFIX, $this->clientLabel());
     }
 
     public function housekeeping(): Housekeeping
@@ -235,13 +248,14 @@ final class RmmModule
             throw new \LogicException('The RMM technician side needs an AccessPolicyInterface: pass it as the policy argument of RmmModule.');
         }
 
-        return $this->authorizer ??= new RmmAuthorizer($this->policy, $this->tenancy, fn (): bool => $this->enabled());
+        return $this->authorizer ??= new RmmAuthorizer($this->policy, $this->tenancy, fn (): bool => $this->enabled(), $this->clientLabel(), $this->options['denial_reasons'] ?? []);
     }
 
     /** Everything the technician REST API and the administration pages read, as arrays. */
     public function readModel(): RmmReadModel
     {
-        return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore());
+        return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore(),
+            $this->assets instanceof RmmAssetNamesInterface ? $this->assets : null, $this->clientLabel());
     }
 
     /** Hosted agent binaries: validate, store, publish, serve. */
@@ -259,14 +273,14 @@ final class RmmModule
     /** Per-client installers and deployment snippets (the administrator side). */
     public function installerService(): InstallerService
     {
-        return $this->installerService ??= new InstallerService($this->sql(), $this->updates(), $this->installerDownload(), $this->enrollment(), $this->tenancy, $this->audit, $this->binaryStore());
+        return $this->installerService ??= new InstallerService($this->sql(), $this->updates(), $this->installerDownload(), $this->enrollment(), $this->tenancy, $this->audit, $this->binaryStore(), $this->clientLabel());
     }
 
     /** Technician and administrator actions on devices, shared by the web handlers and the REST API. */
     public function technician(): TechnicianActions
     {
         return $this->technician ??= new TechnicianActions($this->sql(), $this->devices(), $this->deviceService(), $this->enrollment(), $this->jobs(), $this->updates(),
-            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit);
+            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel());
     }
 
     /** The validated administration operations (settings, MeshCentral, signing key, binaries, releases, installers). */
@@ -284,16 +298,20 @@ final class RmmModule
 
     /**
      * @param \Closure(string,int,int):bool $rateLimit (bucket, limit, windowSeconds): true when the call is within budget
-     * @param bool $withModuleState answer 503 module_disabled when switched off (needs the module state given to the constructor)
+     * @param bool $withModuleState legacy switch, kept for editions that call it positionally: false is the same as $disabledAnswer
+     *        'compat'. Ignored when $disabledAnswer is given
      * @param (\Closure(int):void)|null $sleep long-poll pause
      * @param (\Closure():float)|null $now monotonic seconds for the long-poll deadline
+     * @param string|null $disabledAnswer what a switched-off module answers: {@see DeviceApi::DISABLED_UNIFORM} (503 module_disabled, the
+     *        default) or {@see DeviceApi::DISABLED_COMPAT} (403 forbidden, RivetIT's goldens). In both modes a missing state file is re-created
      */
-    public function deviceApi(\Closure $rateLimit, bool $withModuleState = true, ?\Closure $sleep = null, ?\Closure $now = null): DeviceApi
+    public function deviceApi(\Closure $rateLimit, bool $withModuleState = true, ?\Closure $sleep = null, ?\Closure $now = null, ?string $disabledAnswer = null): DeviceApi
     {
         return new DeviceApi(
             $this->settings(), $this->devices(), $this->enrollment(), $this->checkin(), $this->jobs(), $this->updates(),
             $this->installerDownload(), $this->audit, $rateLimit, $this->options['allow_insecure_http'] ?? false,
-            $withModuleState ? $this->state : null, $sleep, $now, $this->shedder(),
+            $this->state, $sleep, $now, $this->shedder(),
+            $disabledAnswer ?? ($withModuleState ? DeviceApi::DISABLED_UNIFORM : DeviceApi::DISABLED_COMPAT), $this->state(),
         );
     }
 

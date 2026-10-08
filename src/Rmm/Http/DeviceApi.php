@@ -14,6 +14,7 @@ use RivetCore\Rmm\Installer\InstallerDownload;
 use RivetCore\Rmm\Installer\InstallerStamp;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\RmmProtocol;
+use RivetCore\Rmm\RmmState;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Update\UpdateService;
 
@@ -26,10 +27,19 @@ use RivetCore\Rmm\Update\UpdateService;
  * {"error": "...", "code": "..."}; 401 codes are invalid_token, revoked and expired. An ApiError becomes its JSON error and anything
  * else a generic 500 (details go to the PHP log only).
  *
- * MODULE SWITCH. Without a {@see RmmModuleStateInterface} a disabled service answers like RivetIT always did: enroll and installer
- * 403 forbidden, a valid device credential 403 forbidden (after the 401 checks). With one, a master-off (or edition-off) module answers
- * 503 module_disabled with Retry-After 3600 before anything else, so agents back off instead of dropping their data. A sub-switch that is
- * off answers 503 feature_disabled on the endpoint it controls (jobs, updates).
+ * MODULE SWITCH. The edition chooses what a switched-off module answers ($disabledAnswer, a constructor option):
+ *
+ * - {@see self::DISABLED_UNIFORM} (the default): a master-off (or edition-off) module answers 503 module_disabled with Retry-After 3600
+ *   before anything else, on every endpoint, so agents back off instead of dropping their data.
+ * - {@see self::DISABLED_COMPAT}: the answer RivetIT's endpoints always gave, which its pinned goldens record: enroll and installer 403
+ *   forbidden, a valid device credential 403 forbidden (after the 401 checks). Use it when an install-level gate in front of the
+ *   application (docs/rmm/templates/rmm_gate.php) already gives the uniform 503 once the state file says "off", and the application
+ *   itself must keep the legacy answer for the window where the file is missing or stale. The edition kill switch
+ *   ({@see RmmModuleStateInterface::editionAllows()}) also answers 403 forbidden in this mode.
+ *
+ * In both modes a sub-switch that is off answers 503 feature_disabled on the endpoint it controls (jobs, updates). When a
+ * {@see RmmState} is passed, every request first re-creates a missing or damaged state file from the settings row (one stat and read when
+ * the file is fine), so a compat edition keeps the gate's fast path alive without any other code path writing it.
  *
  * @api
  */
@@ -37,6 +47,10 @@ final class DeviceApi
 {
     /** Retry-After of a disabled module or feature (agents cap at one hour). */
     public const DISABLED_RETRY_AFTER_S = 3600;
+    /** A switched-off module answers 503 module_disabled (Retry-After 3600) on every endpoint. The default. */
+    public const DISABLED_UNIFORM = 'uniform';
+    /** A switched-off module answers the legacy 403 forbidden (RivetIT's pinned goldens). */
+    public const DISABLED_COMPAT = 'compat';
 
     /** @var \Closure(string,int,int):bool */
     private \Closure $rateLimit;
@@ -51,6 +65,9 @@ final class DeviceApi
      * @param bool $allowInsecureHttp skip the TLS requirement (loopback test servers only)
      * @param (\Closure(int):void)|null $sleep microseconds to wait between long-poll rounds (default usleep)
      * @param (\Closure():float)|null $now monotonic seconds for the long-poll deadline (default microtime(true)); a seam for tests
+     * @param string $disabledAnswer {@see self::DISABLED_UNIFORM} (default) or {@see self::DISABLED_COMPAT}
+     * @param RmmState|null $state when given, a missing or damaged state file is re-created lazily on each request (see class docs)
+     * @throws \InvalidArgumentException for an unknown $disabledAnswer
      */
     public function __construct(
         private readonly RmmSettings $settings,
@@ -67,7 +84,12 @@ final class DeviceApi
         ?\Closure $sleep = null,
         ?\Closure $now = null,
         private readonly ?LoadShedder $shedder = null,
+        private readonly string $disabledAnswer = self::DISABLED_UNIFORM,
+        private readonly ?RmmState $state = null,
     ) {
+        if ($disabledAnswer !== self::DISABLED_UNIFORM && $disabledAnswer !== self::DISABLED_COMPAT) {
+            throw new \InvalidArgumentException('disabledAnswer must be "uniform" or "compat".');
+        }
         $this->rateLimit = $rateLimit;
         $this->now = $now ?? static fn (): float => microtime(true);
         $this->sleep = $sleep ?? static function (int $us): void {
@@ -324,13 +346,24 @@ final class DeviceApi
         throw new ApiError(426, 'tls_required', 'TLS is required.');
     }
 
-    /** Module-state mode only: the 503 a switched-off module answers (null while the module is on or no state was given). */
+    /**
+     * The 503 a switched-off module answers in uniform mode; in compat mode only the edition kill switch answers here (403 forbidden) and
+     * the legacy per-endpoint checks do the rest. Null while the module is on. Also repairs a missing state file (cheap when it is fine).
+     */
     private function moduleOff(): ?RmmResponse
     {
-        if ($this->moduleState === null) {
-            return null;
+        if ($this->state !== null) {
+            try {
+                $this->state->ensureFile();
+            } catch (\Throwable) {
+                // the file is only a cache; the answer below comes from the database
+            }
         }
-        if ($this->moduleState->editionAllows() && $this->settings->enabled()) {
+        $editionAllows = $this->moduleState === null || $this->moduleState->editionAllows();
+        if ($this->disabledAnswer === self::DISABLED_COMPAT) {
+            return $editionAllows ? null : RmmResponse::error(new ApiError(403, 'forbidden', 'The endpoint agent service is disabled.'));
+        }
+        if ($editionAllows && $this->settings->enabled()) {
             return null;
         }
 

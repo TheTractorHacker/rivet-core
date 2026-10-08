@@ -156,14 +156,14 @@ final class RmmAdmin
             return ActionResult::fail(422, 'invalid', 'The MeshCentral domain and account name may only contain letters, digits and . _ -');
         }
         $policy = $in['mesh_policy'] ?? 'unattended';
-        $ttl = $in['mesh_token_ttl_s'] ?? 300;
+        $ttl = $in['mesh_token_ttl_s'] ?? RmmSettings::MESH_TOKEN_TTL_DEFAULT_S;
         $vals = [
             'mesh_enabled' => !empty($in['mesh_enabled']) ? 1 : 0,
             'mesh_url' => $norm,
             'mesh_domain' => $domain,
             'mesh_account_template' => $account,
             'mesh_policy' => in_array($policy, ['unattended', 'attended', 'both'], true) ? $policy : 'unattended',
-            'mesh_token_ttl_s' => is_numeric($ttl) ? max(60, min(3600, (int) $ttl)) : 300,
+            'mesh_token_ttl_s' => is_numeric($ttl) ? max(RmmSettings::MESH_TOKEN_TTL_MIN_S, min(RmmSettings::MESH_TOKEN_TTL_MAX_S, (int) $ttl)) : RmmSettings::MESH_TOKEN_TTL_DEFAULT_S,
         ];
         $key = trim(is_scalar($in['mesh_login_key'] ?? null) ? (string) $in['mesh_login_key'] : '');
         if ($key !== '') {

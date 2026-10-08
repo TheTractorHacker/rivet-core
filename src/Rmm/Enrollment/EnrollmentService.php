@@ -40,6 +40,7 @@ final class EnrollmentService
         private readonly RmmAuditInterface $audit,
         private readonly AttemptLog $attempts,
         private readonly bool $allowLinux = false,
+        private readonly string $clientLabel = 'client',
     ) {
     }
 
@@ -52,7 +53,7 @@ final class EnrollmentService
     public function createToken(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, int $userId): array
     {
         if ($this->tenancy->clientName($clientId) === null) {
-            throw new \InvalidArgumentException('Choose the client the devices belong to.');
+            throw new \InvalidArgumentException('Choose the ' . $this->clientLabel . ' the devices belong to.');
         }
         if ($locationId > 0 && !$this->tenancy->locationInClient($locationId, $clientId)) {
             $locationId = 0;

@@ -9,13 +9,25 @@ Owner request: "RivetIT has a RMM Agent / Endpoint Agent, so need to take it out
 
 ---
 
+## As built (corrections to this draft, 2026-10)
+
+The code in `src/Rmm` is the truth; where this draft disagrees, this list wins.
+
+* **Migrations are not opt-in.** `0014`, `0015` and `0016` are appended to `CoreMigrations::all()`; there is no `RmmMigrations` class (ADR-010 decision 9, owner decision). The tables are additive and the migrations are idempotent, so every install that runs `MigrationRunner::run()` with `CoreMigrations::all()` gets the ten `endpoint_agent_*` tables **whether or not it enables the module**; RivetMSP gets them on the update that moves it to the release carrying the module, and the module stays off (the master switch defaults to 0) until an administrator turns it on. An edition that does not want the tables must not run the migrations (there is no supported subset, see UPGRADING "Migration order").
+* **The state file is `rmm_state.json`** (JSON data, never included), not `rmm_state.php`.
+* **Server-side interval floors** are the design's own capacity controls (13.3): check-in 60 to 3600 s, collect 30 to 3600 s, MeshCentral token lifetime 60 to 3600 s. RivetIT's original save handler accepted 30 to 3600 and 10 to 3600; the difference is deliberate and listed in UPGRADING.
+* **Disabled-module answers are an edition choice** (`DeviceApi` option `disabledAnswer`): `uniform` (default, 503 `module_disabled`) or `compat` (RivetIT's 403 `forbidden`, its pinned goldens). The technician endpoint is never answered by the gate (it would tell an anonymous caller whether the module is on); the edition authenticates first and `TechnicianApi` answers 404 `disabled` after the 401.
+* **Terminology** is a module option (`client_label`, default `client`; RivetIT passes `department`), and a per-ability denial text can be supplied (`denial_reasons`).
+
+---
+
 ## 0. Summary
 
 * **What it is today** (RivetIT): 20 static PHP classes in `src/EndpointAgent/` (165 KB), five device-facing REST files (`agent_enroll`, `agent_checkin`, `agent_jobs`, `agent_update`, `agent_installer`) and one technician REST file (`endpoint_devices`), two admin/agent UI pages with their POST handlers, a Go Windows agent (`endpoint-agent/`, 94 files, own CI and `agent-v*` tags), 10 tables (`endpoint_agent_*`), 7 test files, 2 fixtures with a generator, 3 docs.
 * **Why it extracts cleanly:** the module owns its 10 tables. It touches edition data in exactly 11 tables (`assets`, `asset_interfaces`, `asset_rmm_links`, `rmm_alerts`, `rmm_integrations`, `rmm_scripts`, `rmm_remote_sessions`, `clients`, `locations`, `users`, `user_client_permissions`) plus four edition functions (`encryptSetting`, `decryptSetting`, `logAction`, the `\RmmAssetMapper` ticket auto-close) and the Metrics ingest service. The MSP has the same shapes for all RMM tables (verified column by column for `asset_rmm_links`, `rmm_alerts`, `rmm_integrations`, `rmm_scripts`, `rmm_remote_sessions`, `assets`, `asset_interfaces`, `user_client_permissions`), and the same `module_rmm*` permission names.
 * **Design in one paragraph:** Core gets a new, off-by-default module `RivetCore\Rmm\*` (marked `@internal` in 1.0.x) that owns the 10 tables and all domain logic as instance services built on `DatabaseInterface`, plus framework-neutral HTTP handlers (`RmmRequest` in, `RmmResponse` out). Editions implement **4 required contracts** (`RmmTenancyInterface`, `RmmAssetsInterface`, `RmmBridgeInterface`, `SecretBoxInterface`) and **3 optional/defaulted** ones (`RmmMetricSinkInterface`, `RmmAuditInterface`, `RmmModuleStateInterface`; a fourth, `RmmEventsInterface`, arrives in Phase 1), reuse the existing `AccessPolicyInterface`, `ClockInterface`, `UrlPolicy`, and shrink their `api/v1/agent_*.php` files to bridges. The Go agent moves to `endpoint-agent/` at the Core repo root with its CI and `agent-v*` tags; test vectors have one home (`endpoint-agent/testdata/vectors/`) read by both Go and PHP. Tables, wire protocol, credential formats and signing vectors do not change by one byte.
 * **Module switch and compute (owner requirement):** master switch OFF by default for new installs and unchanged for existing ones (the existing `endpoint_agent_settings.enabled`), sub-switches per capability, a pre-bootstrap gate that answers `503 module_disabled` with `Retry-After` and **zero database work** when off, and a capacity budget (limits, load shedding, queued ingest, capacity panel, load tests). See sections 12 and 13.
-* **Recommended release path:** Core `1.0.0-rc.4` with the module `@internal` and its migrations in a separate opt-in list (the 1.0 API surface and the soak are untouched), promoted to `@api` and merged into `CoreMigrations::all()` in `1.1.0`.
+* **Recommended release path (superseded, see 'As built' below):** Core `1.0.0-rc.4` with the module `@internal` and its migrations in a separate opt-in list, promoted to `@api` and merged into `CoreMigrations::all()` in `1.1.0`. **As built, the owner chose `@api` from the start and the three migrations are in `CoreMigrations::all()` (ADR-010 decision 9); there is no `RmmMigrations` class.**
 * **Hard prerequisite already satisfied:** RivetIT's `composer.json` requires `rivet/rivet-core ^1.0.0-rc.3` (lock: `v1.0.0-rc.3`), so both editions are already on the 1.0 line.
 * **Environment finding:** there is **no Go toolchain on this machine** (`go` not on PATH; `/home/sysadmin/go` holds only `pkg/mod`, `pkg/sumdb`). Go tasks must install Go (module says `go 1.27`; CI uses `go-version-file`) or rely on GitHub Actions; the rest of the work is PHP.
 
@@ -47,7 +59,7 @@ src/Rmm/
   Read/                      RmmReadModel (+ per-area read models later)
   Admin/                     RmmAdmin (settings, tokens, binaries, releases, approvals, mesh, key rotation, capacity panel data)
   Capacity/                  Phase 0: LoadShedder, CapacityReport (section 13)
-  Migration/                 Migration0014.., RmmMigrations (opt-in list until 1.1)
+  Migration/                 Migration0014.. (as built: appended to CoreMigrations::all(); there is no RmmMigrations opt-in list)
   Events/                    RmmEvents: EventCatalog entries + audit mapping (section 9.4)
   Agent/                     Phase 0 = everything that exists today
     Crypto/ (Signer, CanonicalJson, Redactor)  Settings/ (RmmConfig)  Enrollment/  Device/  Checkin/ (CheckinService, MetricMapper)
@@ -458,7 +470,7 @@ The implementation task copies the complete statements from RivetIT `db.sql` (do
 RivetIT (current DB version `2.6.146`, `includes/database_version.php`):
 
 * Steps `2.6.145` and `2.6.146` in `admin/database_updates.php` **stay unchanged**. They are already idempotent (`CREATE TABLE IF NOT EXISTS`, `information_schema`-guarded ALTERs); on an install they have run they are history, on an install that has not yet reached them they still create the same tables in the same shape. After Core owns the tables they are redundant but harmless, and rewriting migration history is riskier than keeping it.
-* New step `2.6.147` (name: "Core owns the endpoint agent tables"): the existing pattern from step `2.6.123`->`2.6.124` (`admin/database_updates.php:9653`): `if (class_exists(\RivetCore\Migration\MigrationRunner::class)) { (new MigrationRunner(new MysqliDatabaseAdapter($mysqli), array_merge(CoreMigrations::all(), RmmMigrations::all()), new SystemClock()))->run(); bump to 2.6.147; }`. On an install that already has all 10 tables in final shape, 0014 and 0015 are no-ops that only record themselves in `rivet_core_migrations`. `includes/database_version.php` -> `2.6.147`.
+* New step `2.6.147` (name: "Core owns the endpoint agent tables"): the existing pattern from step `2.6.123`->`2.6.124` (`admin/database_updates.php:9653`): `if (class_exists(\RivetCore\Migration\MigrationRunner::class)) { (new MigrationRunner(new MysqliDatabaseAdapter($mysqli), CoreMigrations::all(), new SystemClock()))->run(); bump to 2.6.147; }`. On an install that already has all 10 tables in final shape, 0014 and 0015 are no-ops that only record themselves in `rivet_core_migrations`. `includes/database_version.php` -> `2.6.147`.
 * `db.sql`: unchanged tables block (a fresh install must equal an upgraded one, `EDITION_CHECKLIST.md` section 3); append `0014_endpoint_agent_core`, `0015_endpoint_agent_converge` to the `INSERT INTO rivet_core_migrations` rows, regenerate `db.sql` from an updated database, not by hand (RivetIT release procedure traps: collation and row size, see 3.3).
 
 RivetMSP (DB `2.6.76`, Core pinned): new step `2.6.77` runs the same runner list (MSP's updater already calls the runner after rc.3, commit `a32b5b551`); its `db.sql` gets the 10 tables and the two ledger rows. A fresh MSP install therefore receives the tables from `db.sql`, an existing MSP from the runner. Nothing agent-related exists in MSP today.
@@ -548,7 +560,7 @@ Error body `{"error":"<message>","code":"<code>"}`; codes in use: `invalid_token
 Nothing below touches the live RivetIT beta/prod behaviour until step 5, and step 5 is reversible by one `git revert` + the unchanged tables.
 
 1. **Freeze and baseline (RivetIT, no code change).** Record baseline `c26957c0b`; make the copy of the 7 test files and fixtures part of the baseline artifact; capture golden HTTP transcripts by replaying `tests/endpoint_agent_deploy_http.php` and the enroll/checkin/jobs scripts against a scratch DB with request/response recording (request bodies, status, header set, normalised JSON bodies with ids/timestamps masked). See risk R1 for how the parallel session is held.
-2. **Core PR 1 (rc.4 candidate branch `endpoint-module`):** contracts, value objects, migrations 0014/0015, `RmmMigrations`, in-memory reference adapters, conformance kit, SchemaDiffTest, `.gitattributes`, CI wiring (phpstan level 6, coverage gate 85% applies, `api-surface.md` unchanged assertion). No domain behaviour yet.
+2. **Core PR 1 (rc.4 candidate branch `endpoint-module`):** contracts, value objects, migrations 0014/0015 (as built: in `CoreMigrations::all()`, no `RmmMigrations`), in-memory reference adapters, conformance kit, SchemaDiffTest, `.gitattributes`, CI wiring (phpstan level 6, coverage gate 85% applies, `api-surface.md` unchanged assertion). No domain behaviour yet.
 3. **Core PR 2:** pure classes (`Signer`, `CanonicalJson`, `Redactor`, `InstallerStamp`, `DeviceValidator`, `MeshCookie`, `RmmConfig` validators) + vectors single source + their unit tests.
 4. **Core PR 3, 4:** services and HTTP handlers (device-facing, then technician/admin) with the ported integration tests; no edition uses them yet.
 5. **Core PR 5:** Go agent move + CI + docs. Independent of 3 and 4 after the vectors land; may run in parallel.
@@ -556,7 +568,7 @@ Nothing below touches the live RivetIT beta/prod behaviour until step 5, and ste
 7. **RivetIT adoption (one branch, `endpoint-core`):** composer pin, adapters, bridges, `2.6.147` step, UI onto read models, shim `Db`; run old suite + golden transcripts (identical) + schema diff; deploy to **beta** first (authorized pattern for mw-itflow), 7-day observation with the existing enrolled agents (see section 7 acceptance), then production per the release procedure.
 8. **RivetIT cleanup PR:** delete `src/EndpointAgent/*`, `endpoint-agent/`, `.github/workflows/endpoint-agent.yml`, copied fixtures; point docs to Core. Only after the Core agent release exists and one RivetIT-hosted update from a Core-built binary has succeeded on a pilot device.
 9. **RivetMSP adoption** (section 6), after RivetIT is stable on Core for the soak period the owner picks.
-10. **Core `1.1.0`:** promote to `@api`, merge migrations into `CoreMigrations::all()`, doc and changelog; editions move to `^1.1`.
+10. **Core `1.1.0`:** (as built: already done in the first release that carries the module; the types are `@api` and the migrations are in `CoreMigrations::all()`) doc and changelog; editions move to the release that carries the module.
 
 ### 5.3 Where agent binaries come from after the move
 
@@ -583,7 +595,7 @@ After: **identical flow**, only the release source changes to `github.com/TheTra
 | "Departments" wording | UI strings only; the schema is `client_id` in both | MSP UI says "client"; Core API field names are `client_id` already. |
 | Cron sync loops over **all** enabled `rmm_integrations` (`cron/cron.php:1551`), `agent/rmm_assets.php:63`, `agent/rmm_dashboard.php:182`, `agent/rmm_checks.php:13`, `agent/post/rmm_check.php`, `admin/settings_integrations.php:9`, `includes/rmm_client_factory.php` | A `type='rivetit_agent'` row would be fed to vendor clients and error on every run | Add `AND type <> 'rivetit_agent'` where the code means "vendor integration", and the same early exit in `rmm_client_factory.php` that RivetIT has at line 31. |
 | `RmmAssetMapper::autoCloseAlertTicket` private | Core's `resolveAlert` path needs the conservative ticket close | Make it public (as in RivetIT) or expose a small `rmm_auto_close_alert_ticket()` function; MSP adapter calls it. |
-| Updater is at DB 2.6.76 | Needs a version step | `2.6.77`: run the runner with `RmmMigrations`, add `db.sql` tables and ledger rows. |
+| Updater is at DB 2.6.76 | Needs a version step | `2.6.77`: run the runner with `CoreMigrations::all()` (as built; there is no `RmmMigrations`), add `db.sql` tables and ledger rows. |
 
 ### 6.3 MSP files to add / change
 
@@ -646,7 +658,7 @@ Cross-cutting checks the owner or a reviewer runs after T7: fresh install of Riv
 
 | # | Question | Recommendation |
 |---|---|---|
-| D1 | Release vehicle: `1.0.0-rc.4` with the module `@internal` and opt-in migration list, or hold for `1.1.0` after `1.0.0` final? | rc.4 `@internal` opt-in (section 5.1); promote at 1.1.0. Choose 1.1.0-only if you want zero change to the candidate while the soak runs. |
+| D1 | Release vehicle: `1.0.0-rc.4` with the module `@internal` and opt-in migration list, or hold for `1.1.0` after `1.0.0` final? | **Decided by the owner: `@api` from the start, migrations in `CoreMigrations::all()` (ADR-010 decision 9).** The original recommendation was rc.4 `@internal` opt-in (section 5.1). |
 | D2 | Agent branding for MSP customers: ship "RivetIT Agent" as is, or accept a later neutral rebrand project? | Ship as is now; rebrand later (R3). |
 | D3 | Adapter sourcing: per-edition adapters (recommended, ADR-002) vs a Core-shipped reference SQL adapter for the shared fork schema. | Per-edition, with the conformance kit. |
 | D4 | Keep the exact RivetIT denial texts ("Module-only logins cannot run jobs...") via an optional `ExplainingAccessPolicyInterface`, or accept generic texts? | Accept generic texts unless the UI relies on them. |
@@ -788,7 +800,7 @@ interface RmmModuleStateInterface
 ```
 
 * **Source of truth is the database** (`endpoint_agent_settings`): `enabled`, `features_json`, `limits_json`, and `shed_level` (written by the load shedder, 13.4).
-* **Fast path:** whenever `RmmAdmin` saves a switch, a limit or the shed level changes, Core writes `<stateDir>/rmm_state.php` atomically (temp file + `rename`) containing `return ['v'=>1,'enabled'=>bool,'features'=>[...],'shed'=>int,'retry_after'=>int,'written_at'=>int];`. It is read with an `include` that PHP opcache caches, so a request that only needs "is the module on" costs a `stat()` and no database access.
+* **Fast path:** whenever `RmmAdmin` saves a switch, a limit or the shed level changes, Core writes `<stateDir>/rmm_state.json` atomically (temp file + `rename`, mode 0640) containing a version-1 JSON document (`v`, `enabled`, `edition`, `master`, `features`, `shed`, `shed_at`, `shed_retry`, `retry_after`, `ingest_mode`, `limits`, `written_at`; see `RmmStateFile`). **As built the file is data, not code:** it is read with `file_get_contents` and `json_decode` and is never `include`d, so a damaged or tampered file cannot execute anything (the original sketch used a PHP file read through opcache; it was dropped for that reason). A request that only needs "is the module on" costs a `stat()` and a read of a few hundred bytes, and no database access.
 * **Fail-safe:** a missing, unreadable or version-mismatched file means **"unknown", never "off"**: the request proceeds on the normal path (one primary-key SELECT on the settings row) and the first such request rewrites the file. A stale file can only delay a switch by the interval until `RmmAdmin` rewrites it, which happens in the same request as the save. For multi-node deployments the directory must be shared; otherwise leave `stateDirectory()` null and accept the single-SELECT cost.
 * `RmmModule::enabled()`, `RmmModule::featureOn($name)` read the file first, the DB second, and cache per request.
 

@@ -43,6 +43,7 @@ final class TechnicianActions
         private readonly RmmAuthorizer $authz,
         private readonly RmmBridgeInterface $bridge,
         private readonly RmmAuditInterface $audit,
+        private readonly string $clientLabel = 'client',
     ) {
     }
 
@@ -270,11 +271,11 @@ final class TechnicianActions
     {
         return $this->manage($who, $deviceId, function () use ($who, $deviceId, $clientId, $locationId): ActionResult {
             if (!$this->authz->clientOk($who->userId, $clientId)) {
-                return ActionResult::fail(403, 'forbidden', 'You do not have access to that client.');
+                return ActionResult::fail(403, 'forbidden', 'You do not have access to that ' . $this->clientLabel . '.');
             }
 
             return $this->deviceService->transfer($deviceId, $clientId, $locationId, $who->userId)
-                ? ActionResult::ok('Device and asset moved to the new client.') : ActionResult::fail(422, 'invalid', 'Choose an existing client.');
+                ? ActionResult::ok('Device and asset moved to the new ' . $this->clientLabel . '.') : ActionResult::fail(422, 'invalid', 'Choose an existing ' . $this->clientLabel . '.');
         });
     }
 

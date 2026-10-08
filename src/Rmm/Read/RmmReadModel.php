@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Read;
 
 use RivetCore\Rmm\Binaries\BinaryStore;
+use RivetCore\Rmm\Contracts\RmmAssetNamesInterface;
 use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmProtocol;
@@ -47,7 +48,17 @@ final class RmmReadModel
         private readonly DeviceRepository $devices,
         private readonly UpdateService $updates,
         private readonly BinaryStore $binaries,
+        private readonly ?RmmAssetNamesInterface $assetNames = null,
+        private readonly string $clientLabel = 'client',
     ) {
+    }
+
+    /** {@see MATCH_REASONS} in the edition's terminology ("client" is replaced by the configured label); an unknown code is returned as is. */
+    public function matchReasonText(string $code): string
+    {
+        $t = self::MATCH_REASONS[$code] ?? $code;
+
+        return $this->clientLabel === 'client' ? $t : str_replace(' client ', ' ' . $this->clientLabel . ' ', $t);
     }
 
     // ------------------------------------------------------------------ devices
@@ -138,9 +149,12 @@ final class RmmReadModel
      *        status: online|offline|stale|never (by check-in age) or linked|pending_approval|rejected (link state);
      *        retired: 'hide' (default), 'only' or 'all'; q: part of the hostname or serial number
      * @param list<int>|null $visibleClientIds
+     * @param bool $withExtras add `asset_name` (string|null; null when the device has no asset or the assets adapter does not implement
+     *        {@see RmmAssetNamesInterface}) and `update_state` (the decoded self-update state, `failed_versions` included, or null) to each
+     *        summary, with one batched name lookup per page. The technician REST API passes false: its JSON is frozen.
      * @return array{items:list<array<string,mixed>>,total:int}
      */
-    public function listDevices(array $filters = [], ?array $visibleClientIds = null, int $limit = 50, int $offset = 0): array
+    public function listDevices(array $filters = [], ?array $visibleClientIds = null, int $limit = 50, int $offset = 0, bool $withExtras = true): array
     {
         $cfg = $this->settings->get();
         [$where, $params] = $this->deviceWhere($filters, $visibleClientIds, $cfg);
@@ -149,7 +163,25 @@ final class RmmReadModel
         $total = (int) $this->sql->val("SELECT COUNT(*) FROM endpoint_agent_devices WHERE $where", $params);
         $rows = $this->sql->all("SELECT * FROM endpoint_agent_devices WHERE $where ORDER BY hostname, device_id LIMIT $limit OFFSET $offset", $params);
 
-        return ['items' => array_map(fn (array $d): array => $this->summary($d, $cfg), $rows), 'total' => $total];
+        if (!$withExtras) {
+            return ['items' => array_map(fn (array $d): array => $this->summary($d, $cfg), $rows), 'total' => $total];
+        }
+        $ids = [];
+        foreach ($rows as $d) {
+            if ($d['asset_id'] !== null && (int) $d['asset_id'] > 0) {
+                $ids[(int) $d['asset_id']] = (int) $d['asset_id'];
+            }
+        }
+        $names = $ids !== [] && $this->assetNames !== null ? $this->assetNames->assetNames(array_values($ids)) : [];
+
+        return ['items' => array_map(function (array $d) use ($cfg, $names): array {
+            $aid = $d['asset_id'] === null ? 0 : (int) $d['asset_id'];
+
+            return $this->summary($d, $cfg) + [
+                'asset_name' => $aid > 0 && isset($names[$aid]) ? $names[$aid] : null,
+                'update_state' => self::decode($d['update_state_json'] ?? null),
+            ];
+        }, $rows), 'total' => $total];
     }
 
     /**
@@ -284,7 +316,7 @@ final class RmmReadModel
             'jobs' => $this->jobs($deviceId, $jobLimit, $showJobOutput),
             'update_state' => $update,
             'offered_release' => $offered === null ? null : ['version' => $offered['version'], 'ring' => $offered['ring'], 'rollout_pct' => (int) $offered['rollout_pct'], 'arch' => $offered['arch']],
-            'match_reason_text' => self::MATCH_REASONS[(string) $d['match_reason']] ?? (string) $d['match_reason'],
+            'match_reason_text' => $this->matchReasonText((string) $d['match_reason']),
             'candidates' => self::candidates($d),
         ];
     }
@@ -313,7 +345,7 @@ final class RmmReadModel
             'os_version' => $d['os_version'],
             'first_seen_at' => Sql::iso((string) $d['first_seen_at']),
             'match_reason' => $d['match_reason'],
-            'match_reason_text' => self::MATCH_REASONS[(string) $d['match_reason']] ?? (string) $d['match_reason'],
+            'match_reason_text' => $this->matchReasonText((string) $d['match_reason']),
             'candidates' => self::candidates($d),
         ], $rows);
     }

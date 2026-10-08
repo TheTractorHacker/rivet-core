@@ -56,7 +56,10 @@ interface RmmBridgeInterface
     /** Mark the alert resolved and run the edition's existing conservative auto-close of its linked ticket (a no-op when already resolved). */
     public function resolveAlert(int $integrationId, int $alertId): void;
 
-    /** Device transferred: open alerts of this asset and integration follow the new client. */
+    /**
+     * Device transferred: OPEN alerts of this asset and integration follow the new client. Resolved alerts keep the client they were raised
+     * under (RivetIT's pre-extraction code moved those too; the conformance kit pins the open-only behaviour, see UPGRADING.md).
+     */
     public function reassignAlerts(int $integrationId, int $assetId, int $clientId): void;
 
     /** Body of an enabled PowerShell script in the saved library, or null. */

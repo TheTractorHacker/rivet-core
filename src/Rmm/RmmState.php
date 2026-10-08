@@ -89,6 +89,23 @@ final class RmmState
         return RmmStateFile::write($dir, $snap, $this->sql->time());
     }
 
+    /**
+     * Re-create the state file when it is missing or unusable (a valid one is left alone, so this costs one read). Returns true when a
+     * valid file exists afterwards. False without a state directory or when it is not writable; never throws for I/O problems.
+     */
+    public function ensureFile(): bool
+    {
+        $dir = $this->directory();
+        if ($dir === null || $dir === '') {
+            return false;
+        }
+        if (RmmStateFile::read($dir) !== null) {
+            return true;
+        }
+
+        return $this->sync();
+    }
+
     private function editionAllows(): bool
     {
         if ($this->edition === null) {

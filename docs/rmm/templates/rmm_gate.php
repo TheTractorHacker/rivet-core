@@ -15,9 +15,11 @@
  * WHAT IT DOES. It reads the module's state file (rmm_state.json, written by RivetCore\Rmm\RmmStateFile) and
  *  - when the module is OFF answers a request for a device endpoint (agent_enroll, agent_checkin, agent_jobs, agent_update,
  *    agent_installer) with exactly:  503, "Retry-After: 3600", "Cache-Control: no-store", "Content-Type: application/json",
- *    {"error":"The RMM service is disabled on this server.","code":"module_disabled"}  and a request for the technician endpoint
- *    (endpoint_devices) with 404 {"error":"The endpoint agent is not enabled.","code":"disabled"}, then exits. No database
+ *    {"error":"The RMM service is disabled on this server.","code":"module_disabled"}, then exits. No database
  *    connection, no query, no class loaded: a stat and a read of a few hundred bytes.
+ *  - never answers for the technician endpoint (endpoint_devices), on or off. That endpoint is for authenticated users: the edition
+ *    authenticates first (401 for a missing or bad token) and TechnicianApi then answers 404 "disabled" when the module is off, so an
+ *    anonymous caller cannot learn from the answer whether the module is on. The gate lets it through untouched.
  *  - when load shedding is at level 3 (and the level is younger than 180 s) answers agent_checkin with 503 and a jittered
  *    Retry-After from the shed window of the state file (503 {"code":"unavailable"}); enrollment, job reports and the other
  *    endpoints are never shed.
@@ -37,7 +39,7 @@
     }
     $uri = $_SERVER['REQUEST_URI'] ?? '';
     $path = is_string($uri) ? parse_url($uri, PHP_URL_PATH) : null;
-    if (!is_string($path) || preg_match('#(?:^|/)(agent_enroll|agent_checkin|agent_jobs|agent_update|agent_installer|endpoint_devices)(?:\.php)?(?:/|$)#', $path, $m) !== 1) {
+    if (!is_string($path) || preg_match('#(?:^|/)(agent_enroll|agent_checkin|agent_jobs|agent_update|agent_installer)(?:\.php)?(?:/|$)#', $path, $m) !== 1) {
         return;
     }
     $raw = @file_get_contents(rtrim($dir, '/\\') . '/rmm_state.json', false, null, 0, 65536);
@@ -58,16 +60,10 @@
         return;   // unknown: proceed, never "off"
     }
     $endpoint = $m[1];
-    $device = $endpoint !== 'endpoint_devices';
     if (!$s['enabled']) {
-        if ($device) {
-            $status = 503;
-            $body = '{"error":"The RMM service is disabled on this server.","code":"module_disabled"}';
-            header('Retry-After: ' . max(1, $s['retry_after']));
-        } else {
-            $status = 404;
-            $body = '{"error":"The endpoint agent is not enabled.","code":"disabled"}';
-        }
+        $status = 503;
+        $body = '{"error":"The RMM service is disabled on this server.","code":"module_disabled"}';
+        header('Retry-After: ' . max(1, $s['retry_after']));
     } elseif ($endpoint === 'agent_checkin' && $s['shed'] >= 3 && time() - $s['shed_at'] <= 180) {
         $status = 503;
         $body = '{"error":"The service is busy. Try again later.","code":"unavailable"}';

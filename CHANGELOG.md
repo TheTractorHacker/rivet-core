@@ -20,6 +20,18 @@ Phase 0 of [the design](docs/design/endpoint-module-extraction.md) and [ADR-010]
 - **Deliberate differences:** module-only logins are the policy's business (RivetIT's API layer refused their tokens before the endpoint was reached; Core only asks the policy); alerts are not read through the bridge (the device view carries each check's `alert_id`); only Windows (PE) agent binaries are hosted, a Linux agent is installed from its release tarball with `install-linux.sh` (the binaries table has no platform column yet).
 - **Hooks into `DeviceApi`/T4 files:** `DeviceRepository::validMeshNodeId()` uses `\z`; `DeviceApi::download()` delegates to `Http\FileDownload`. `RmmModule` gained the optional trailing arguments `policy` and `urlPolicy` and the accessors listed above (existing callers are unaffected).
 
+### RMM module: adoption gaps found by RivetIT (T7)
+
+Additive; the golden replay is unchanged (`replay identical (10 files)`).
+
+- **`DeviceApi` disabled answer is an explicit option.** Constructor argument `$disabledAnswer` and `RmmModule::deviceApi(..., $disabledAnswer)`: `DeviceApi::DISABLED_UNIFORM` (default, 503 `module_disabled`) or `DISABLED_COMPAT` (RivetIT's legacy 403 `forbidden`; the edition kill switch is 403 too). The old `$withModuleState = false` argument still selects compat. A `RmmState` is now passed to `DeviceApi`, which re-creates a missing or damaged state file on the next request in either mode (`RmmState::ensureFile()`, one read when the file is fine).
+- **The gate no longer answers `endpoint_devices`.** Both the template and the docs: the technician endpoint authenticates first (401) and `TechnicianApi` answers 404 `disabled` after that, so an anonymous caller cannot learn whether the module is on. Device endpoints are unchanged (503 before authentication in uniform mode, on purpose).
+- **`RmmReadModel::listDevices()` summaries carry `asset_name` and `update_state`** (decoded `update_state_json`, `failed_versions` included). New optional `Contracts\RmmAssetNamesInterface` (one batched lookup per page; `InMemoryRmmAssets` implements it). `summary()`, `detail()` and the technician REST list are unchanged (frozen JSON); `listDevices()` has a trailing `$withExtras = true`.
+- **`Binaries\BinaryInspector`** (`detect()`, `inspect()`, static, no database) holds the PE/ELF validation; `BinaryStore::detect()/inspect()` delegate to it.
+- **Terminology and denial texts.** Module options `client_label` (default `client`; RivetIT: `department`) and `denial_reasons`; `RmmAuthorizer` takes trailing `$clientLabel` and `$reasons` and gains `noClientAccess()` and `denial()`. `RmmReadModel::matchReasonText()`.
+- **Settings.** `RmmSettings::MESH_TOKEN_TTL_{MIN,MAX,DEFAULT}_S`: `update()` and `RmmAdmin::saveMesh()` now both clamp to 60 to 3600 s (`update()` used to accept 30).
+- **Docs corrected, no code change:** the migrations 0014 to 0016 are in `CoreMigrations::all()` (there is no opt-in `RmmMigrations` list; every edition running `CoreMigrations::all()` gets the tables whether or not it enables the module), and the state file is `rmm_state.json` (JSON, never `include`d), not `rmm_state.php`. Design, ADR-010, `docs/modules/rmm.md` and UPGRADING say so. UPGRADING also lists the deliberate differences from RivetIT: the 60/30 second interval floors (RivetIT: 30/10) and `reassignAlerts()` moving only open alerts.
+
 ## 1.0.0-rc.3
 CI-only fix on top of rc.2 (no behaviour change): the receiver-side verification sample in the webhook docs no longer contains a request superglobal, so the "no superglobals in src" check is green on every job. rc.3 is the first candidate with a fully green CI matrix; use it instead of rc.1/rc.2.
 

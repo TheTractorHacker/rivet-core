@@ -47,7 +47,7 @@ final class SettingsTest extends RmmTestCase
         $this->assertSame([60, 3600, 60, 3600, 20, 1, 400], [(int) $c['check_in_interval_s'], (int) $c['collect_interval_s'], (int) $c['offline_after_s'], (int) $c['stale_after_s'],
             (int) $c['failure_debounce'], (int) $c['recovery_debounce'], (int) $c['retention_days']]);
         $this->assertSame(180, (int) $c['job_retention_days'], 'a non-number keeps the stored value');
-        $this->assertSame([1024, 5, 30, 60, 30, 10, 720, 'approval', 0, 30, 4000], [(int) $c['job_output_max_bytes'], (int) $c['job_default_timeout_s'], (int) $c['job_max_timeout_s'], (int) $c['job_expiry_s'],
+        $this->assertSame([1024, 5, 30, 60, 30, 10, 720, 'approval', 0, 60, 4000], [(int) $c['job_output_max_bytes'], (int) $c['job_default_timeout_s'], (int) $c['job_max_timeout_s'], (int) $c['job_expiry_s'],
             (int) $c['job_ack_timeout_s'], (int) $c['job_max_attempts'], (int) $c['enroll_max_ttl_h'], $c['unmatched_policy'], (int) $c['max_devices'], (int) $c['mesh_token_ttl_s'], strlen((string) $c['coexistence_policy'])]);
         $this->assertSame('https://rmm.example.test', $c['service_url']);
     }

@@ -30,11 +30,20 @@ final class RmmSettings
         'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices',
     ];
 
-    /** Server-side bounds for the intervals agents are told to use (design 13.3). */
+    /**
+     * Server-side bounds for the intervals agents are told to use (design 13.3). The two floors are a DELIBERATE change from RivetIT's
+     * original save handler (check-in 30 to 3600, collect 10 to 3600): they are capacity controls, because the check-in rate and the
+     * sample rows per check-in are what a server pays for. Only a save clamps; a stored value below the new floor keeps working until
+     * the settings are saved again (UPGRADING.md lists the difference).
+     */
     public const CHECK_IN_INTERVAL_MIN_S = 60;
     public const CHECK_IN_INTERVAL_MAX_S = 3600;
     public const COLLECT_INTERVAL_MIN_S = 30;
     public const COLLECT_INTERVAL_MAX_S = 3600;
+    /** MeshCentral login-token lifetime bounds, the same in {@see update()} and RmmAdmin::saveMesh() (RivetIT's original: 60 to 3600). */
+    public const MESH_TOKEN_TTL_MIN_S = 60;
+    public const MESH_TOKEN_TTL_MAX_S = 3600;
+    public const MESH_TOKEN_TTL_DEFAULT_S = 300;
 
     /** Every feature a sub-switch may name (the first five are live in Phase 0; the rest are reserved for later phases). */
     public const FEATURES = ['monitoring', 'metrics', 'jobs', 'remote', 'updates', 'inventory_software', 'policies', 'patching', 'software', 'logs', 'reports'];
@@ -194,7 +203,7 @@ final class RmmSettings
         $int('job_max_attempts', 1, 10);
         $int('enroll_max_ttl_h', 1, 720);
         $int('max_devices', 0, 1000000);
-        $int('mesh_token_ttl_s', 30, 3600);
+        $int('mesh_token_ttl_s', self::MESH_TOKEN_TTL_MIN_S, self::MESH_TOKEN_TTL_MAX_S);
         if (array_key_exists('unmatched_policy', $in)) {
             $out['unmatched_policy'] = in_array($in['unmatched_policy'], ['approval', 'auto_create'], true) ? $in['unmatched_policy'] : 'approval';
         }
