@@ -19,6 +19,14 @@ use RivetCore\Rmm\Contracts\RmmTenancyInterface;
  * user's scope, the specific ability for that client. Administrative abilities skip the view step. A client id of 0 ("no client")
  * is always inside every scope; `$clientId = 0` asks the role-level question.
  *
+ * Memo: the answers of the policy (`can`) and of the tenancy (`visibleClientIds`) are remembered per user, ability and client for the life
+ * of this RmmAuthorizer object, which is one request in a PHP-FPM edition, so a page that asks the same question fifteen times asks the
+ * edition once. The module switch is never memoized. What this means for the edition: a role or scope change made after the first
+ * answer is not seen by this object until {@see forget()} (or a new object); an edition that keeps the module alive across requests
+ * (a worker, a test) calls `forget()` per request or builds the authorizer with `$memoize = false`. The policy and tenancy adapters
+ * themselves still take effect immediately (their conformance contract): only this object's remembered copy can lag. A policy that
+ * throws is never remembered.
+ *
  * @api
  */
 final class RmmAuthorizer
@@ -34,6 +42,7 @@ final class RmmAuthorizer
      * @param array<string,string> $reasons optional per-ability denial text (ability constant => sentence) that replaces the generic
      *        {@see RmmAbility::denial()} wording, e.g. to name the role or setting that grants it; unknown keys are ignored. Keep it free of
      *        anything that reveals more than the generic text does (the reason is shown to the caller)
+     * @param bool $memoize remember policy and tenancy answers on this object, see the class comment; false asks the edition every time
      */
     public function __construct(
         private readonly AccessPolicyInterface $policy,
@@ -41,7 +50,34 @@ final class RmmAuthorizer
         private readonly \Closure $moduleEnabled,
         private readonly string $clientLabel = 'client',
         private readonly array $reasons = [],
+        private readonly bool $memoize = true,
     ) {
+    }
+
+    /** @var array<string,bool> "user|ability|client" => the policy's answer */
+    private array $canMemo = [];
+    /** @var array<int,list<int>|null> user => the tenancy's visible clients */
+    private array $visibleMemo = [];
+
+    /**
+     * Drop the remembered answers (all, or one user's). Call it after changing a role, a permission or a client scope inside the same
+     * request when something later in that request must see it.
+     */
+    public function forget(?int $userId = null): void
+    {
+        if ($userId === null) {
+            $this->canMemo = [];
+            $this->visibleMemo = [];
+
+            return;
+        }
+        unset($this->visibleMemo[$userId]);
+        $prefix = $userId . '|';
+        foreach (array_keys($this->canMemo) as $k) {
+            if (str_starts_with((string) $k, $prefix)) {
+                unset($this->canMemo[$k]);
+            }
+        }
     }
 
     /** The reason shown when a device's client is outside the caller's scope, in the configured terminology. */
@@ -107,7 +143,7 @@ final class RmmAuthorizer
         if ($clientId === 0) {
             return true;
         }
-        $visible = $this->tenancy->visibleClientIds($userId);
+        $visible = $this->visibleClientIds($userId);
 
         return $visible === null || in_array($clientId, $visible, true);
     }
@@ -119,13 +155,29 @@ final class RmmAuthorizer
      */
     public function visibleClientIds(int $userId): ?array
     {
-        return $this->tenancy->visibleClientIds($userId);
+        if (!$this->memoize) {
+            return $this->tenancy->visibleClientIds($userId);
+        }
+        if (!array_key_exists($userId, $this->visibleMemo)) {
+            $this->visibleMemo[$userId] = $this->tenancy->visibleClientIds($userId);
+        }
+
+        return $this->visibleMemo[$userId];
     }
 
     private function can(int $userId, string $ability, int $clientId): bool
     {
+        $key = $userId . '|' . $ability . '|' . $clientId;
+        if ($this->memoize && isset($this->canMemo[$key])) {
+            return $this->canMemo[$key];
+        }
         try {
-            return $this->policy->can($userId, $ability, 'client', $clientId);
+            $answer = $this->policy->can($userId, $ability, 'client', $clientId);
+            if ($this->memoize) {
+                $this->canMemo[$key] = $answer;
+            }
+
+            return $answer;
         } catch (\Throwable) {
             return false;   // a policy that throws denies (it must not, but a technician action must never pass on an error)
         }

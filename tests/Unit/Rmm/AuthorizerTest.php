@@ -103,6 +103,8 @@ final class AuthorizerTest extends TestCase
         $this->assertNull($z->check(5, RmmAbility::ADMIN, $this->a), 'module-wide settings are not client scoped');
         $this->assertSame([$this->b], $z->visibleClientIds(5));
         $this->tenancy->restrictUser(5, []);
+        $this->assertSame([$this->b], $z->visibleClientIds(5), 'the authorizer remembers the scope it was told (the tenancy adapter itself answers immediately)');
+        $z->forget(5);
         $this->assertFalse($z->clientOk(5, $this->b));
         $this->assertTrue($z->clientOk(5, 0));
         $this->assertNull($z->visibleClientIds(6));
@@ -146,6 +148,8 @@ final class AuthorizerTest extends TestCase
         $this->assertNotNull($z->check(4, RmmAbility::JOB_RUN_SAVED, $this->a), 'but never run');
         $this->assertNotNull($z->check(4, RmmAbility::REMOTE_LAUNCH, $this->a), 'or open a remote session');
         $p->deactivate(2);
+        $this->assertTrue($p->can(2, RmmAbility::DEVICE_VIEW, 'client', 0) === false, 'the policy adapter itself answers immediately');
+        $z->forget();
         $this->assertNotNull($z->check(2, RmmAbility::DEVICE_VIEW, 0), 'an inactive account is denied');
     }
 
@@ -172,5 +176,89 @@ final class AuthorizerTest extends TestCase
         $this->assertSame('Ask a Level 3 technician to run this.', $custom->denial(RmmAbility::JOB_RUN_SCRIPT));
         $this->assertSame('Your role cannot open remote sessions.', $custom->check(5, RmmAbility::REMOTE_LAUNCH, $this->a), 'a blank override falls back to the generic text');
         $this->assertSame('Your role cannot run jobs on devices.', $custom->check(5, RmmAbility::JOB_REBOOT, $this->a), 'an ability without an override keeps its generic text');
+    }
+
+    public function testRepeatedQuestionsAreAnsweredOncePerAuthorizerAndForgetDropsThem(): void
+    {
+        $policy = new AllowUsersPolicy([5 => true]);
+        $tenancy = new class($this->tenancy) implements \RivetCore\Rmm\Contracts\RmmTenancyInterface {
+            public int $asked = 0;
+
+            public function __construct(private readonly InMemoryRmmTenancy $inner)
+            {
+            }
+
+            public function visibleClientIds(int $userId): ?array
+            {
+                ++$this->asked;
+
+                return $this->inner->visibleClientIds($userId);
+            }
+
+            public function locationInClient(int $locationId, int $clientId): bool
+            {
+                return $this->inner->locationInClient($locationId, $clientId);
+            }
+
+            public function clientName(int $clientId): ?string
+            {
+                return $this->inner->clientName($clientId);
+            }
+        };
+        $z = new RmmAuthorizer($policy, $tenancy, fn (): bool => true);
+        for ($i = 0; $i < 15; ++$i) {
+            $this->assertNull($z->check(5, RmmAbility::JOB_RUN_SCRIPT, $this->a));
+            $this->assertTrue($z->allowed(5, RmmAbility::DEVICE_VIEW, $this->a));
+            $this->assertNull($z->visibleClientIds(5));
+        }
+        // view@0, view@a, run_script@a: three distinct questions; one tenancy lookup
+        $this->assertCount(3, $policy->asked, '30 checks, 3 distinct policy questions');
+        $this->assertSame(1, $tenancy->asked);
+        $z->forget(6);
+        $this->assertNull($z->check(5, RmmAbility::JOB_RUN_SCRIPT, $this->a));
+        $this->assertCount(3, $policy->asked, 'forgetting another user keeps this one');
+        $z->forget(5);
+        $z->check(5, RmmAbility::JOB_RUN_SCRIPT, $this->a);
+        $this->assertCount(5, $policy->asked);
+        $this->assertSame(2, $tenancy->asked);
+        // a denial is remembered too, and the module switch never is
+        $policy->grant(7, []);
+        $this->assertNotNull($z->check(7, RmmAbility::DEVICE_VIEW, 0));
+        $n = count($policy->asked);
+        $this->assertNotNull($z->check(7, RmmAbility::DEVICE_VIEW, 0));
+        $this->assertCount($n, $policy->asked);
+        $enabled = true;
+        $z2 = new RmmAuthorizer($policy, $tenancy, function () use (&$enabled): bool {
+            return $enabled;
+        });
+        $this->assertNull($z2->check(5, RmmAbility::DEVICE_VIEW, 0));
+        $enabled = false;
+        $this->assertSame(RmmAuthorizer::NOT_ENABLED, $z2->check(5, RmmAbility::DEVICE_VIEW, 0));
+        // memoize: false asks every time
+        $policy->asked = [];
+        $raw = new RmmAuthorizer($policy, $tenancy, fn (): bool => true, 'client', [], false);
+        $raw->check(5, RmmAbility::DEVICE_VIEW, $this->a);
+        $raw->check(5, RmmAbility::DEVICE_VIEW, $this->a);
+        $this->assertCount(4, $policy->asked);
+    }
+
+    public function testAThrowingPolicyDeniesAndIsNotRemembered(): void
+    {
+        $flaky = new class() implements AccessPolicyInterface {
+            public bool $fail = true;
+
+            public function can(?int $userId, string $ability, ?string $subjectType = null, string|int|null $subjectId = null, array $context = []): bool
+            {
+                if ($this->fail) {
+                    throw new \RuntimeException('down');
+                }
+
+                return true;
+            }
+        };
+        $z = $this->authz($flaky);
+        $this->assertNotNull($z->check(5, RmmAbility::DEVICE_VIEW, 0));
+        $flaky->fail = false;
+        $this->assertNull($z->check(5, RmmAbility::DEVICE_VIEW, 0), 'the failure was not cached');
     }
 }

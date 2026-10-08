@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Read;
 
+use RivetCore\Rmm\Authz\RmmAbility;
+use RivetCore\Rmm\Authz\RmmAuthorizer;
+use RivetCore\Rmm\Authz\RmmPrincipal;
 use RivetCore\Rmm\Binaries\BinaryStore;
 use RivetCore\Rmm\Contracts\RmmAssetNamesInterface;
+use RivetCore\Rmm\Crypto\Redactor;
 use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Support\Sql;
+use RivetCore\Rmm\Technician\ActionResult;
 use RivetCore\Rmm\Update\UpdateService;
 
 /**
@@ -50,6 +55,7 @@ final class RmmReadModel
         private readonly BinaryStore $binaries,
         private readonly ?RmmAssetNamesInterface $assetNames = null,
         private readonly string $clientLabel = 'client',
+        private readonly ?RmmAuthorizer $authz = null,
     ) {
     }
 
@@ -98,6 +104,16 @@ final class RmmReadModel
      */
     public function detail(array $d, bool $showJobOutput, ?array $cfg = null): array
     {
+        return $this->detailBase($d, $showJobOutput, $cfg, false, 20);
+    }
+
+    /**
+     * @param array<string,mixed> $d
+     * @param array<string,mixed>|null $cfg
+     * @return array<string,mixed>
+     */
+    private function detailBase(array $d, bool $showJobOutput, ?array $cfg, bool $richChecks, int $jobLimit): array
+    {
         $out = $this->summary($d, $cfg);
         $out['serial'] = $d['serial'];
         $out['manufacturer'] = $d['manufacturer'];
@@ -111,12 +127,35 @@ final class RmmReadModel
         $out['metrics'] = self::decode($d['last_metrics_json'] ?? null);
         $out['match_reason'] = $d['match_reason'];
         $out['mesh_mapped'] = $this->sql->val('SELECT 1 FROM endpoint_agent_mesh_nodes WHERE device_id = ?', [$d['device_id']]) !== null;
-        $out['checks'] = array_map(static fn (array $c): array => ['key' => $c['check_key'], 'status' => $c['status'], 'detail' => $c['detail'],
-            'consecutive_failures' => (int) $c['consecutive_failures'], 'last_reported_at' => Sql::iso($c['last_reported_at'] === null ? null : (string) $c['last_reported_at'])],
+        $out['checks'] = array_map($richChecks ? self::richCheck(...) : self::shortCheck(...),
             $this->sql->all('SELECT * FROM endpoint_agent_checks WHERE device_id = ? ORDER BY check_key', [$d['device_id']]));
-        $out['jobs'] = $this->jobs((int) $d['device_id'], 20, $showJobOutput);
+        $out['jobs'] = $this->jobs((int) $d['device_id'], $jobLimit, $showJobOutput);
 
         return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $c a check row
+     * @return array<string,mixed>
+     */
+    private static function shortCheck(array $c): array
+    {
+        return ['key' => $c['check_key'], 'status' => $c['status'], 'detail' => $c['detail'],
+            'consecutive_failures' => (int) $c['consecutive_failures'], 'last_reported_at' => Sql::iso($c['last_reported_at'] === null ? null : (string) $c['last_reported_at'])];
+    }
+
+    /**
+     * @param array<string,mixed> $c a check row
+     * @return array<string,mixed>
+     */
+    private static function richCheck(array $c): array
+    {
+        return [
+            'key' => $c['check_key'], 'status' => $c['status'], 'detail' => $c['detail'], 'consecutive_failures' => (int) $c['consecutive_failures'],
+            'consecutive_ok' => (int) $c['consecutive_ok'], 'episode' => (int) $c['episode'], 'alert_id' => $c['alert_id'] === null ? null : (int) $c['alert_id'],
+            'last_reported_at' => Sql::iso($c['last_reported_at'] === null ? null : (string) $c['last_reported_at']),
+            'last_changed_at' => Sql::iso($c['last_changed_at'] === null ? null : (string) $c['last_changed_at']),
+        ];
     }
 
     /**
@@ -128,18 +167,106 @@ final class RmmReadModel
     {
         $rows = $this->sql->all('SELECT * FROM endpoint_agent_jobs WHERE device_id = ? ORDER BY created_at DESC, job_id LIMIT ' . max(1, min(200, $limit)), [$deviceId]);
 
-        return array_map(static function (array $j) use ($withOutput): array {
-            $o = ['job_id' => $j['job_id'], 'type' => $j['type'], 'state' => $j['state'], 'reason' => $j['reason'], 'attempt' => (int) $j['attempt'],
-                'destructive' => (bool) $j['destructive'], 'run_as' => $j['run_as'], 'timeout_s' => (int) $j['timeout_s'], 'exit_code' => $j['exit_code'] === null ? null : (int) $j['exit_code'],
-                'created_by' => (int) $j['created_by'], 'created_at' => Sql::iso((string) $j['created_at']), 'started_at' => Sql::iso($j['started_at'] === null ? null : (string) $j['started_at']),
-                'finished_at' => Sql::iso($j['finished_at'] === null ? null : (string) $j['finished_at']), 'expires_at' => Sql::iso((string) $j['expires_at'])];
-            if ($withOutput) {
-                $o['output'] = $j['output'];
-                $o['output_truncated'] = (bool) $j['output_truncated'];
-            }
+        return array_map(static fn (array $j): array => self::jobRow($j, $withOutput), $rows);
+    }
 
-            return $o;
-        }, $rows);
+    /**
+     * @param array<string,mixed> $j a job row
+     * @return array<string,mixed>
+     */
+    private static function jobRow(array $j, bool $withOutput): array
+    {
+        $o = ['job_id' => $j['job_id'], 'type' => $j['type'], 'state' => $j['state'], 'reason' => $j['reason'], 'attempt' => (int) $j['attempt'],
+            'destructive' => (bool) $j['destructive'], 'run_as' => $j['run_as'], 'timeout_s' => (int) $j['timeout_s'], 'exit_code' => $j['exit_code'] === null ? null : (int) $j['exit_code'],
+            'created_by' => (int) $j['created_by'], 'created_at' => Sql::iso((string) $j['created_at']), 'started_at' => Sql::iso($j['started_at'] === null ? null : (string) $j['started_at']),
+            'finished_at' => Sql::iso($j['finished_at'] === null ? null : (string) $j['finished_at']), 'expires_at' => Sql::iso((string) $j['expires_at'])];
+        if ($withOutput) {
+            $o['output'] = $j['output'];
+            $o['output_truncated'] = (bool) $j['output_truncated'];
+        }
+
+        return $o;
+    }
+
+    /**
+     * One job of one device, for the person who asked: the same fields as {@see jobs()} plus its output. Output is redacted when it is stored
+     * and passed through the redactor again here, so it can never come back with a secret in it.
+     *
+     * Order of the answers (the same as the technician API): module off or no `device.view` -> 403; a missing device, a device outside the
+     * principal's client scope and a job id that is not that device's all answer the same 404; a principal without `rmm.job.run_saved`
+     * for the device's client (the grant that shows output) -> 403 with the edition's denial text.
+     *
+     * @param string $jobId the job's UUID (matched case-insensitively)
+     * @return ActionResult ok: `data` is the job (`job_id`, ..., `output`, `output_truncated`, `device_id`, `hostname`); failure: 403 `forbidden` or 404 `not_found`
+     * @throws \LogicException when the read model was built without an authorizer (RmmModule::readModel() always passes one when the module has a policy)
+     */
+    public function job(int $deviceId, string $jobId, RmmPrincipal $who): ActionResult
+    {
+        $authz = $this->requireAuthz();
+        $denied = $authz->check($who->userId, RmmAbility::DEVICE_VIEW, 0);
+        if ($denied !== null) {
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        $d = $deviceId > 0 && preg_match('/^[0-9a-fA-F-]{36}$/', $jobId) === 1 ? $this->devices->find($deviceId) : null;
+        $client = $d === null ? 0 : (int) $d['client_id'];
+        if ($d === null || $authz->check($who->userId, RmmAbility::DEVICE_VIEW, $client) !== null) {
+            return ActionResult::fail(404, 'not_found', 'Not found.');
+        }
+        $row = $this->sql->one('SELECT * FROM endpoint_agent_jobs WHERE device_id = ? AND job_id = ?', [$deviceId, $jobId]);
+        if ($row === null || strcasecmp((string) $row['job_id'], $jobId) !== 0) {
+            return ActionResult::fail(404, 'not_found', 'Not found.');
+        }
+        if (!$authz->allowed($who->userId, RmmAbility::JOB_RUN_SAVED, $client)) {
+            return ActionResult::fail(403, 'forbidden', $authz->denial(RmmAbility::JOB_RUN_SAVED));
+        }
+        $job = self::jobRow($row, true);
+        $job['output'] = Redactor::redact((string) ($row['output'] ?? ''));
+        $job['device_id'] = $deviceId;
+        $job['hostname'] = (string) $d['hostname'];
+
+        return ActionResult::ok('ok', 200, 'ok', $job);
+    }
+
+    /**
+     * The latest failed or timed-out jobs across the fleet, newest first, metadata only (never the script text or the output), limited to
+     * the clients the principal may see (the job's own client, plus client 0). Returns an empty list when the module is off or the
+     * principal lacks `device.view` (the caller shows its own denial; this never reveals why).
+     *
+     * @param int $limit 1 to 50
+     * @return list<array{job_id:string,device_id:int,type:string,state:string,reason:mixed,exit_code:?int,at:?string,hostname:string,asset_id:?int,client_id:int}>
+     * @throws \LogicException when the read model was built without an authorizer
+     */
+    public function recentFailedJobs(int $limit, RmmPrincipal $who): array
+    {
+        $authz = $this->requireAuthz();
+        if (!$authz->allowed($who->userId, RmmAbility::DEVICE_VIEW, 0)) {
+            return [];
+        }
+        $where = ["j.state IN ('failed','timed_out')"];
+        $params = [];
+        $visible = $authz->visibleClientIds($who->userId);
+        if ($visible !== null) {
+            if ($visible === []) {
+                $where[] = 'j.client_id = 0';
+            } else {
+                $where[] = '(j.client_id = 0 OR j.client_id IN (' . implode(',', array_fill(0, count($visible), '?')) . '))';
+                array_push($params, ...array_map('intval', $visible));
+            }
+        }
+        $rows = $this->sql->all('SELECT j.job_id, j.device_id, j.client_id, j.type, j.state, j.reason, j.exit_code, j.finished_at, j.created_at, d.hostname, d.asset_id
+            FROM endpoint_agent_jobs j JOIN endpoint_agent_devices d ON d.device_id = j.device_id WHERE ' . implode(' AND ', $where)
+            . ' ORDER BY COALESCE(j.finished_at, j.created_at) DESC, j.job_id LIMIT ' . max(1, min(50, $limit)), $params);
+
+        return array_map(static fn (array $r): array => [
+            'job_id' => (string) $r['job_id'], 'device_id' => (int) $r['device_id'], 'type' => (string) $r['type'], 'state' => (string) $r['state'], 'reason' => $r['reason'],
+            'exit_code' => $r['exit_code'] === null ? null : (int) $r['exit_code'], 'at' => Sql::iso((string) ($r['finished_at'] ?? $r['created_at'])),
+            'hostname' => (string) $r['hostname'], 'asset_id' => $r['asset_id'] === null ? null : (int) $r['asset_id'], 'client_id' => (int) $r['client_id'],
+        ], $rows);
+    }
+
+    private function requireAuthz(): RmmAuthorizer
+    {
+        return $this->authz ?? throw new \LogicException('This read method needs an authorizer: build RmmReadModel through RmmModule::readModel() with an AccessPolicyInterface.');
     }
 
     /**
@@ -149,7 +276,7 @@ final class RmmReadModel
      *        status: online|offline|stale|never (by check-in age) or linked|pending_approval|rejected (link state);
      *        retired: 'hide' (default), 'only' or 'all'; q: part of the hostname or serial number
      * @param list<int>|null $visibleClientIds
-     * @param bool $withExtras add `asset_name` (string|null; null when the device has no asset or the assets adapter does not implement
+     * @param bool $withExtras add `arch` (the device's reported architecture, string|null), `asset_name` (string|null; null when the device has no asset or the assets adapter does not implement
      *        {@see RmmAssetNamesInterface}) and `update_state` (the decoded self-update state, `failed_versions` included, or null) to each
      *        summary, with one batched name lookup per page. The technician REST API passes false: its JSON is frozen.
      * @return array{items:list<array<string,mixed>>,total:int}
@@ -179,6 +306,7 @@ final class RmmReadModel
 
             return $this->summary($d, $cfg) + [
                 'asset_name' => $aid > 0 && isset($names[$aid]) ? $names[$aid] : null,
+                'arch' => $d['arch'],
                 'update_state' => self::decode($d['update_state_json'] ?? null),
             ];
         }, $rows), 'total' => $total];
@@ -288,14 +416,10 @@ final class RmmReadModel
         $mesh = $this->sql->one('SELECT mesh_node_id, source, updated_at FROM endpoint_agent_mesh_nodes WHERE device_id = ?', [$deviceId]);
         $update = self::decode($d['update_state_json'] ?? null);
         $offered = $d['retired_at'] === null && $d['revoked_at'] === null ? $this->updates->offeredRelease($d) : null;
-        $checks = array_map(static fn (array $c): array => [
-            'key' => $c['check_key'], 'status' => $c['status'], 'detail' => $c['detail'], 'consecutive_failures' => (int) $c['consecutive_failures'],
-            'consecutive_ok' => (int) $c['consecutive_ok'], 'episode' => (int) $c['episode'], 'alert_id' => $c['alert_id'] === null ? null : (int) $c['alert_id'],
-            'last_reported_at' => Sql::iso($c['last_reported_at'] === null ? null : (string) $c['last_reported_at']),
-            'last_changed_at' => Sql::iso($c['last_changed_at'] === null ? null : (string) $c['last_changed_at']),
-        ], $this->sql->all('SELECT * FROM endpoint_agent_checks WHERE device_id = ? ORDER BY check_key', [$deviceId]));
 
-        return $this->detail($d, $showJobOutput, $cfg) + [
+        // detailBase() builds the rich checks and the requested job window itself: merging over detail()'s output with `+` kept its shorter
+        // `checks` and its 20 jobs, because the left side of an array union wins.
+        return $this->detailBase($d, $showJobOutput, $cfg, true, $jobLimit) + [
             'status_info' => $st,
             'location_id' => (int) $d['location_id'],
             'os' => $d['os'],
@@ -312,8 +436,6 @@ final class RmmReadModel
             'agent_key' => RmmLinker::agentKey($deviceId),
             'integration_id' => (int) $this->settings->get()['integration_id'],
             'mesh' => ['mapped' => $mesh !== null, 'node_id' => $mesh['mesh_node_id'] ?? null, 'source' => $mesh['source'] ?? null],
-            'checks' => $checks,
-            'jobs' => $this->jobs($deviceId, $jobLimit, $showJobOutput),
             'update_state' => $update,
             'offered_release' => $offered === null ? null : ['version' => $offered['version'], 'ring' => $offered['ring'], 'rollout_pct' => (int) $offered['rollout_pct'], 'arch' => $offered['arch']],
             'match_reason_text' => $this->matchReasonText((string) $d['match_reason']),

@@ -176,11 +176,13 @@ final class RoleMatrixTest extends RmmTestCase
         $this->assertSame(401, $c);
         $this->assertSame(['error' => 'Unauthorized'], $b);
         $this->h->policy instanceof RoleMatrixPolicy && $this->h->policy->deactivate(10);
+        $this->h->module->authorizer()->forget();   // the authorizer remembers answers for the request
         [$c] = $this->api('tech', 'POST', [(string) $this->D1, 'jobs'], ['type' => 'collect']);
         $this->assertSame(403, $c, 'a deactivated user is refused by the policy');
         [$c] = $this->api('tech', 'GET', [(string) $this->D1]);
         $this->assertSame(403, $c);
         $this->h->policy instanceof RoleMatrixPolicy && $this->h->policy->activate(10);
+        $this->h->module->authorizer()->forget();
         [$c] = $this->api('tech', 'GET', [(string) $this->D1]);
         $this->assertSame(200, $c);
     }
