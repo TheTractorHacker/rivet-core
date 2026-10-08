@@ -359,11 +359,19 @@ final class DeviceApi
                 // the file is only a cache; the answer below comes from the database
             }
         }
-        $editionAllows = $this->moduleState === null || $this->moduleState->editionAllows();
+        if ($this->state !== null) {
+            // the state file answers both switches without database work; the edition is asked only while the file is unknown
+            $sw = $this->state->switches();
+            $editionAllows = $sw['edition'];
+            $master = $sw['master'];
+        } else {
+            $editionAllows = $this->moduleState === null || $this->moduleState->editionAllows();
+            $master = null;
+        }
         if ($this->disabledAnswer === self::DISABLED_COMPAT) {
             return $editionAllows ? null : RmmResponse::error(new ApiError(403, 'forbidden', 'The endpoint agent service is disabled.'));
         }
-        if ($editionAllows && $this->settings->enabled()) {
+        if ($editionAllows && ($master ?? $this->settings->enabled())) {
             return null;
         }
 

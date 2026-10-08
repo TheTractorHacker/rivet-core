@@ -20,6 +20,11 @@ Phase 0 of [the design](docs/design/endpoint-module-extraction.md) and [ADR-010]
 - **Deliberate differences:** module-only logins are the policy's business (RivetIT's API layer refused their tokens before the endpoint was reached; Core only asks the policy); alerts are not read through the bridge (the device view carries each check's `alert_id`); only Windows (PE) agent binaries are hosted, a Linux agent is installed from its release tarball with `install-linux.sh` (the binaries table has no platform column yet).
 - **Hooks into `DeviceApi`/T4 files:** `DeviceRepository::validMeshNodeId()` uses `\z`; `DeviceApi::download()` delegates to `Http\FileDownload`. `RmmModule` gained the optional trailing arguments `policy` and `urlPolicy` and the accessors listed above (existing callers are unaffected).
 
+### RMM module: adoption gaps found by RivetMSP (T8)
+
+- **`DeviceApi` no longer asks the edition per request:** the module switch is answered from the state file (`RmmState::switches()`, new `@api` method): the edition kill switch comes from the file (the edition re-syncs it when it changes, as before for the gate) and the master switch from the file, so an edition whose `editionAllows()` reads a setting saves that query on every device request. While the file is unknown, the edition and the settings row answer (unchanged fail-safe rules, the file is repaired). Compat mode and the golden replay are unchanged.
+- **`SecretBoxInterface::encrypt()` may throw `\RuntimeException`** (documented; no new exception type). `RmmAdmin::enable()`, `saveSettings()` (when it switches on), `rotateSigningKey()` and `saveMesh()` (login key) now catch it and return a failed `ActionResult` (500, `secret_box_unavailable`, a message naming the encryption key); the module stays off and no key or setting is written.
+
 ### RMM module: adoption gaps found by RivetIT (T7)
 
 Additive; the golden replay is unchanged (`replay identical (10 files)`).

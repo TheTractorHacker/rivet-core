@@ -77,7 +77,11 @@ final class RmmAdmin
             }
             $in['ca_pem'] = $pem;
         }
-        $errors = $this->settings->update($in);
+        try {
+            $errors = $this->settings->update($in);
+        } catch (\RuntimeException $e) {
+            return self::sealFailed();
+        }
         if ($errors !== []) {
             return ActionResult::fail(422, 'invalid', implode(' ', $errors), ['errors' => $errors]);
         }
@@ -93,7 +97,11 @@ final class RmmAdmin
         if (($d = $this->deny($by, RmmAbility::ADMIN)) !== null) {
             return $d;
         }
-        $this->settings->enable();
+        try {
+            $this->settings->enable();
+        } catch (\RuntimeException $e) {
+            return self::sealFailed();
+        }
         $this->audit->record('Settings', "{$by->userName} switched the endpoint agent on", 0, 0);
 
         return ActionResult::ok('Endpoint agent switched on.', 200, 'enabled');
@@ -170,7 +178,11 @@ final class RmmAdmin
             if (preg_match('/^[0-9a-fA-F]{64,}$/', $key) !== 1) {
                 return ActionResult::fail(422, 'invalid', 'The login token key is the long hex string printed by "meshcentral --loginTokenKey".');
             }
-            $vals['mesh_login_key_enc'] = $this->box->encrypt(strtolower($key));
+            try {
+                $vals['mesh_login_key_enc'] = $this->box->encrypt(strtolower($key));
+            } catch (\RuntimeException $e) {
+                return self::sealFailed();
+            }
         }
         $this->settings->set($vals);
         $this->audit->record('Settings', "{$by->userName} edited the MeshCentral settings for the endpoint agent" . ($key !== '' ? ' (login key replaced)' : ''), 0, 0);
@@ -194,7 +206,11 @@ final class RmmAdmin
         if (($d = $this->deny($by, RmmAbility::ADMIN)) !== null) {
             return $d;
         }
-        $kid = $this->settings->generateSigningKey();
+        try {
+            $kid = $this->settings->generateSigningKey();
+        } catch (\RuntimeException $e) {
+            return self::sealFailed();
+        }
         $affected = $this->devices->liveCount();
         $this->audit->record('Settings', "{$by->userName} rotated the endpoint agent signing key (new key id $kid)", 0, 0);
 
@@ -350,6 +366,12 @@ final class RmmAdmin
     }
 
     // ------------------------------------------------------------------
+
+    /** The answer when the edition's SecretBox cannot encrypt (typically no encryption key configured); nothing was written. */
+    private static function sealFailed(): ActionResult
+    {
+        return ActionResult::fail(500, 'secret_box_unavailable', 'The signing key could not be created because secrets cannot be encrypted on this server (is the encryption key configured?). Nothing was changed.');
+    }
 
     private function deny(RmmPrincipal $by, string $ability, int $clientId = 0, bool $requireEnabled = false): ?ActionResult
     {

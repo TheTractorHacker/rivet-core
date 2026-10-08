@@ -12,7 +12,8 @@ use RivetCore\Rmm\Contracts\SecretBoxInterface;
  *
  * Checks: decrypt(encrypt(x)) === x for short, unicode, binary and long values; ciphertext is a non-empty string that does not
  * contain the plaintext; encrypting twice both decrypt; decrypt() returns '' for '', for text that is not a ciphertext and for a
- * truncated ciphertext, and never throws.
+ * truncated ciphertext, and never throws. encrypt() MAY throw \RuntimeException when it cannot seal (for example no key is configured); the
+ * kit does not test that path, RmmAdmin turns it into a failed ActionResult.
  *
  * @api
  */

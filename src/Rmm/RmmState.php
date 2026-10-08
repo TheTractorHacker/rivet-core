@@ -47,6 +47,24 @@ final class RmmState
         return $this->editionAllows() && (bool) $this->load()['master'];
     }
 
+    /**
+     * The two module switches as the device API needs them, answered from the state file when it is valid (no database work, and the
+     * edition is not asked: the file carries its kill switch, which the edition re-syncs when it changes) and from the live edition
+     * answer plus the settings row otherwise (fail-safe rules as for {@see enabled()}).
+     *
+     * @return array{edition:bool,master:bool}
+     */
+    public function switches(): array
+    {
+        $m = $this->load();
+        $file = $m['file'];
+        if ($m['from_file'] === true && $file !== null) {
+            return ['edition' => $file['edition'], 'master' => $m['master']];
+        }
+
+        return ['edition' => $this->editionAllows(), 'master' => $m['master']];
+    }
+
     /** True when the module is on and the sub-switch is. */
     public function featureOn(string $feature): bool
     {

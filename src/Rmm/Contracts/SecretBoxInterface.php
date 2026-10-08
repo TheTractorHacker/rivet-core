@@ -12,6 +12,11 @@ namespace RivetCore\Rmm\Contracts;
  */
 interface SecretBoxInterface
 {
+    /**
+     * @throws \RuntimeException when the secret cannot be sealed (for example no encryption key is configured). Callers that create
+     *         keys (RmmAdmin) catch it and report a failed action without writing anything; a successful call always returns a
+     *         non-empty ciphertext.
+     */
     public function encrypt(string $plaintext): string;
 
     /** Returns '' when the ciphertext is empty, damaged or from another key (never throws). */
