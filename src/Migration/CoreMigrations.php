@@ -14,6 +14,7 @@ use RivetCore\Compliance\Migration\Migration0010Subjects;
 use RivetCore\Compliance\Migration\Migration0011Responsibilities;
 use RivetCore\ITSM\Migration\Migration0004ProblemsAndChanges;
 use RivetCore\Mcp\Migration\Migration0003McpUnlinkedIdentities;
+use RivetCore\Mcp\Migration\Migration0017McpIdentityBinaryCollation;
 use RivetCore\Retention\Migration\Migration0013RetentionIndexes;
 use RivetCore\Rmm\Migration\Migration0014EndpointAgent;
 use RivetCore\Rmm\Migration\Migration0015EndpointAgentConverge;
@@ -47,6 +48,7 @@ final class CoreMigrations
             new Migration0014EndpointAgent(),
             new Migration0015EndpointAgentConverge(),
             new Migration0016ModuleSwitches(),
+            new Migration0017McpIdentityBinaryCollation(),
         ];
     }
 }
