@@ -2,6 +2,9 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.7
+Security fixes from the 2026-10-08 nightly review: CORE-1 and CORE-2 (RMM enrollment and token revocation are scoped to the token's client), F8 (migration 0017, case-sensitive MCP identity keys) and F10 (automation placeholders fill only allowlisted free-text keys). Details are in the "Security: nightly review 2026-10-08" entry under Unreleased. Editions on rc.6 must run migration 0017 (CoreMigrations) after updating.
+
 ## Unreleased
 
 ### Security: nightly review 2026-10-08 (CORE-1, CORE-2, F8, F10)
