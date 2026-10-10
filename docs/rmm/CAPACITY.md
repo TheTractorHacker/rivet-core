@@ -442,4 +442,4 @@ devices do not all fetch their job in the same minute.
 
 What this does not show: the scheduler running next to a full check-in load, PHP-FPM, or the cost of group-membership sub-selects on a fleet with many groups (the
 assignment query is by scope and index; a device in many groups checks each assigned group only). The S9 validation on the reference hardware is where those belong.
-Run the cron every minute: at the default batch that queues up to 12,000 jobs a minute per due run, which an install that big should reduce with `schedule_batch`.
+The default batch is deliberately small: with the cron every minute one due run queues 200 jobs a pass, so a 5,000-device schedule takes about 25 minutes to reach every device (use `jitter_s` and an `expires_s` window that covers it, or raise `schedule_batch`; a pass of 1,000 jobs takes about two seconds on the measured host). Up to 50 due schedules and 50 open runs are worked per pass.
