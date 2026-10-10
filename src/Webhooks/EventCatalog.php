@@ -75,6 +75,12 @@ final class EventCatalog
         'rmm.job.completed' => [['job_id', 'string', 'Job id'], ['job_type', 'string', 'Job type'], ['exit_code', 'integer', 'Exit code (null when none)']],
         'rmm.job.failed' => [['job_id', 'string', 'Job id'], ['job_type', 'string', 'Job type'], ['state', 'string', 'failed or timed_out'], ['exit_code', 'integer', 'Exit code (null when none)']],
         'rmm.software.installed' => [['name', 'string', 'Software name'], ['version', 'string', 'Installed version'], ['publisher', 'string', 'Publisher (null when unknown)'], ['source', 'string', 'registry, registry32, appx, dpkg, rpm, snap or flatpak']],
+        'rmm.alert.opened' => [['alert_id', 'integer', 'Alert id in the edition'], ['check_key', 'string', 'Check key'], ['severity', 'string', 'warning or error'], ['episode', 'integer', 'Failure episode number'], ['message', 'string', 'Alert message'], ['group_key', 'string', 'Grouping key (client and check)']],
+        'rmm.alert.escalated' => [['alert_id', 'integer', 'Alert id'], ['check_key', 'string', 'Check key'], ['severity', 'string', 'warning or error'], ['reason', 'string', 'step, repeat or severity'], ['step', 'integer', 'Escalation step number (0 when the severity rose)'], ['policy_id', 'integer', 'Escalation policy (null when none)']],
+        'rmm.alert.acknowledged' => [['alert_id', 'integer', 'Alert id'], ['check_key', 'string', 'Check key'], ['user_id', 'integer', 'User who acknowledged it']],
+        'rmm.alert.resolved' => [['alert_id', 'integer', 'Alert id'], ['check_key', 'string', 'Check key'], ['reason', 'string', 'recovered, manual or device_retired'], ['user_id', 'integer', 'User who resolved it (null unless manual)']],
+        'rmm.maintenance.started' => [['window_id', 'integer', 'Maintenance window id'], ['name', 'string', 'Window name'], ['mode', 'string', 'mute or suppress'], ['scope_type', 'string', 'all, client, site, group, tag or device'], ['scope_id', 'integer', 'Id of the scope object (0 for all)'], ['ends_at', 'string', 'When this opening ends, RFC 3339 UTC']],
+        'rmm.maintenance.ended' => [['window_id', 'integer', 'Maintenance window id'], ['name', 'string', 'Window name'], ['mode', 'string', 'mute or suppress'], ['scope_type', 'string', 'all, client, site, group, tag or device'], ['scope_id', 'integer', 'Id of the scope object (0 for all)']],
         'rmm.software.removed' => [['name', 'string', 'Software name'], ['version', 'string', 'Version that was installed'], ['publisher', 'string', 'Publisher (null when unknown)'], ['source', 'string', 'registry, registry32, appx, dpkg, rpm, snap or flatpak']],
     ];
 
@@ -345,6 +351,12 @@ final class EventCatalog
             ['rmm', 'rmm.job.completed', 'Device job completed', 'A job ran to completion on a device.', 'info', 'rmm', 'agent,endpoint,rmm,script,reboot,collect', null],
             ['rmm', 'rmm.job.failed', 'Device job failed', 'A job failed or timed out on a device.', 'warning', 'rmm', 'agent,endpoint,rmm,script,error,timeout', null],
             ['rmm', 'rmm.software.installed', 'Software installed', 'New software appeared on a device (the first report of a device is a baseline and raises no event).', 'info', 'rmm', 'agent,endpoint,rmm,inventory,application,package', null],
+            ['rmm', 'rmm.alert.opened', 'Device alert opened', 'An alert episode opened for a device check (after debounce, maintenance and storm-control rules).', 'warning', 'rmm', 'agent,endpoint,rmm,alert,monitoring,threshold', null],
+            ['rmm', 'rmm.alert.escalated', 'Device alert escalated', 'An open alert reached an escalation step, was repeated, or became more severe.', 'warning', 'rmm', 'agent,endpoint,rmm,alert,escalation,oncall,notify', null],
+            ['rmm', 'rmm.alert.acknowledged', 'Device alert acknowledged', 'A technician acknowledged an open device alert, which pauses its escalation.', 'info', 'rmm', 'agent,endpoint,rmm,alert,acknowledge,ack', null],
+            ['rmm', 'rmm.alert.resolved', 'Device alert resolved', 'A device alert was resolved: the check recovered, a technician closed it, or the device was retired.', 'info', 'rmm', 'agent,endpoint,rmm,alert,resolved,recovered', null],
+            ['rmm', 'rmm.maintenance.started', 'Maintenance window started', 'A maintenance window opened; matching alerts are muted or checks suppressed until it ends.', 'info', 'rmm', 'agent,endpoint,rmm,maintenance,window,mute,suppress', null],
+            ['rmm', 'rmm.maintenance.ended', 'Maintenance window ended', 'A maintenance window closed and alerting for its scope is back to normal.', 'info', 'rmm', 'agent,endpoint,rmm,maintenance,window', null],
             ['rmm', 'rmm.software.removed', 'Software removed', 'Software disappeared from a device.', 'info', 'rmm', 'agent,endpoint,rmm,inventory,application,uninstall,package', null],
 
             ['clients', 'client.created', 'Client created', 'A new client was added.', 'info', 'audit', 'customer,organization,company', $p],

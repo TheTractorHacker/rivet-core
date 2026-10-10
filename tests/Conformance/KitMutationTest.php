@@ -137,6 +137,11 @@ final class KitMutationTest extends TestCase
             [RmmEventsKitTest::class, 'throws_unknown', ['testEveryEventIdIsAccepted']],
             [RmmEventsKitTest::class, 'drops_nulls', ['testNullAndFalseValuesAreNotDropped']],
             [RmmEventsKitTest::class, 'reverses', ['testPayloadsArriveUnchangedAndInOrder']],
+            // Escalation (Phase 3)
+            [RmmEscalationKitTest::class, 'throws_unknown_ack', ['testAcknowledgeAndSeverityForAnUnknownAlertAreQuiet']],
+            [RmmEscalationKitTest::class, 'drops_targets', ['testNotificationsArriveCompleteAndInOrder', 'testTargetsKeepTheirOrderAndNullsSurvive']],
+            [RmmEscalationKitTest::class, 'reverses', ['testNotificationsArriveCompleteAndInOrder']],
+            [RmmEscalationKitTest::class, 'drops_nulls', ['testNotificationsArriveCompleteAndInOrder', 'testTargetsKeepTheirOrderAndNullsSurvive']],
             [RmmMetricReaderKitTest::class, 'last_arrival_wins', ['testTheNewestReadingWinsWhateverTheOrderOfArrival']],
             [RmmMetricReaderKitTest::class, 'no_window', ['testPeakExcludesHoursBeforeTheWindow', 'testPeakIsTheMinMaxAndMeanOfTheWindow']],
             [RmmMetricReaderKitTest::class, 'instance_blur', ['testPeakIsTheMinMaxAndMeanOfTheWindow']],

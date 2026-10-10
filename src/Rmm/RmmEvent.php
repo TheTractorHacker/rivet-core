@@ -31,10 +31,24 @@ final class RmmEvent
     /** Software disappeared from a device. Fields: name, version, publisher, source. */
     public const SOFTWARE_REMOVED = 'rmm.software.removed';
 
+    /** An alert episode opened (Phase 3, `alerting` switch). Fields: alert_id, check_key, severity ("warning" or "error"), episode, message, group_key. */
+    public const ALERT_OPENED = 'rmm.alert.opened';
+    /** An open alert was escalated: a policy step fired, a repeat fired, or the severity rose. Fields: alert_id, check_key, severity, reason ("step", "repeat" or "severity"), step, policy_id. */
+    public const ALERT_ESCALATED = 'rmm.alert.escalated';
+    /** A technician acknowledged an open alert. Fields: alert_id, check_key, user_id. */
+    public const ALERT_ACKNOWLEDGED = 'rmm.alert.acknowledged';
+    /** An alert was resolved. Fields: alert_id, check_key, reason ("recovered", "manual" or "device_retired"), user_id (null unless manual). */
+    public const ALERT_RESOLVED = 'rmm.alert.resolved';
+    /** A maintenance window opened. Fields: window_id, name, mode ("mute" or "suppress"), scope_type, scope_id, ends_at. Not about one device: device_id is null unless the window's scope is one device, client_id is the scope client or 0, hostname is "". */
+    public const MAINTENANCE_STARTED = 'rmm.maintenance.started';
+    /** A maintenance window closed. Fields: window_id, name, mode, scope_type, scope_id. Same device_id / client_id / hostname rule as MAINTENANCE_STARTED. */
+    public const MAINTENANCE_ENDED = 'rmm.maintenance.ended';
+
     /** @return list<string> */
     public static function all(): array
     {
         return [self::DEVICE_ENROLLED, self::DEVICE_OFFLINE, self::DEVICE_ONLINE, self::CHECK_FAILED, self::CHECK_RECOVERED,
-            self::JOB_COMPLETED, self::JOB_FAILED, self::SOFTWARE_INSTALLED, self::SOFTWARE_REMOVED];
+            self::JOB_COMPLETED, self::JOB_FAILED, self::SOFTWARE_INSTALLED, self::SOFTWARE_REMOVED,
+            self::ALERT_OPENED, self::ALERT_ESCALATED, self::ALERT_ACKNOWLEDGED, self::ALERT_RESOLVED, self::MAINTENANCE_STARTED, self::MAINTENANCE_ENDED];
     }
 }
