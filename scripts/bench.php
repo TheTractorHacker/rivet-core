@@ -7,6 +7,7 @@ declare(strict_types=1);
  *
  *   RIVETCORE_TEST_DB_NAME=rivetcore_scratch_docs RIVETCORE_TEST_DB_USER=... RIVETCORE_TEST_DB_PASS=... \
  *   [RIVETCORE_TEST_DB_HOST=127.0.0.1] [RIVETCORE_TEST_DB_PORT=3306] [RIVETCORE_TEST_REDIS_PORT=6390] php scripts/bench.php [--json]
+ *   php scripts/bench.php --crypto [--json]     (the Crypto namespace only; needs no database)
  *
  * Needs the dev install (it uses tests/Support/MysqliDatabase). Prints a markdown table; iteration counts are fixed so runs
  * are comparable. Skips cleanly (exit 0) when the scratch database variables are unset. Redis benchmarks are skipped when
@@ -35,16 +36,6 @@ use RivetCore\Ui\DateRange;
 use RivetCore\Webhooks\EventCatalog;
 use RivetCore\Webhooks\PayloadFormatter;
 use RivetCore\Webhooks\PayloadTemplate;
-
-$name = (string) getenv('RIVETCORE_TEST_DB_NAME');
-if ($name === '') {
-    fwrite(STDOUT, "bench: RIVETCORE_TEST_DB_NAME is not set; skipping (see the header of scripts/bench.php).\n");
-    exit(0);
-}
-if (!str_contains($name, 'scratch')) {
-    fwrite(STDERR, "bench: refusing to run: the database name must contain 'scratch' because every table in it is dropped.\n");
-    exit(2);
-}
 
 /** @var list<array{name:string,n:int,median:float,p95:float,ops:float,note:string}> $results */
 $results = [];
@@ -87,6 +78,86 @@ function once(string $name, callable $fn, string $note = ''): void
     $fn();
     $us = (hrtime(true) - $s) / 1000.0;
     $results[] = ['name' => $name, 'n' => 1, 'median' => $us, 'p95' => $us, 'ops' => $us > 0 ? 1e6 / $us : 0.0, 'note' => $note];
+}
+
+
+// ---- Crypto (no database needed; `php scripts/bench.php --crypto` runs only this section) -----------------------------------
+$kek = RivetCore\Crypto\KeyRing::single(random_bytes(32));
+$vault = new RivetCore\Crypto\SettingsVault($kek);
+$envelope = new RivetCore\Crypto\Envelope($kek);
+$small = $envelope->seal('smtp-password-0123456789', 'bench:1');
+$kb = random_bytes(1024);
+$kbSealed = $envelope->seal($kb, 'bench:2');
+bench('Envelope::seal (24 bytes)', 20000, static function () use ($envelope): void {
+    $envelope->seal('smtp-password-0123456789', 'bench:1');
+});
+bench('Envelope::open (24 bytes)', 20000, static function () use ($envelope, $small): void {
+    $envelope->open($small, 'bench:1');
+});
+bench('Envelope::seal (1 KiB)', 10000, static function () use ($envelope, $kb): void {
+    $envelope->seal($kb, 'bench:2');
+});
+bench('Envelope::open (1 KiB)', 10000, static function () use ($envelope, $kbSealed): void {
+    $envelope->open($kbSealed, 'bench:2');
+});
+$legacyKey = bin2hex(random_bytes(32));
+$legacyNonce = random_bytes(12);
+$legacyTag = '';
+$legacyCt = (string) openssl_encrypt('smtp-password-0123456789', 'aes-256-gcm', hash('sha256', $legacyKey, true), OPENSSL_RAW_DATA, $legacyNonce, $legacyTag);
+$legacyStored = 'ENC2:' . base64_encode($legacyNonce . $legacyTag . $legacyCt);
+$legacyVault = new RivetCore\Crypto\SettingsVault(RivetCore\Crypto\KeyGenerator::ringFromLegacySettingsKey($legacyKey), RivetCore\Crypto\LegacyReaders::settings($legacyKey));
+bench('SettingsVault::read of an ENC2 value (open + lazy re-wrap seal)', 10000, static function () use ($legacyVault, $legacyStored): void {
+    $legacyVault->read('smtp', $legacyStored);
+});
+bench('SettingsVault::subkey (HKDF)', 20000, static function () use ($vault): void {
+    $vault->subkey('media-token');
+});
+$rewrapKek = RivetCore\Crypto\KeyRing::single(random_bytes(32), 'k1');
+$rewrapOld = new RivetCore\Crypto\Envelope($rewrapKek);
+$rewrapNew = new RivetCore\Crypto\Envelope($rewrapKek->withKey(random_bytes(32), 'k2', null, true));
+$rewrapRows = [];
+for ($i = 1; $i <= 5000; $i++) {
+    $rewrapRows[$i] = ['ciphertext' => $rewrapOld->seal('secret-' . $i, 'row:' . $i), 'context' => 'row:' . $i];
+}
+once('Rewrapper::run, 5000 values in memory (batch 200)', static function () use ($rewrapRows, $rewrapNew): void {
+    $src = new RivetCore\Testing\InMemoryRewrapSource('bench', $rewrapRows);
+    (new RivetCore\Crypto\Rewrapper(new RivetCore\Testing\InMemoryRewrapStateStore()))->run($src, new RivetCore\Crypto\EnvelopeReencryptor($rewrapNew));
+}, 'seal + open + verify + CAS per row; no database');
+$dek = RivetCore\Crypto\VaultKeyWrap::generateDek();
+$wrapArgon = new RivetCore\Crypto\VaultKeyWrap(RivetCore\Crypto\KdfParams::argon2id());
+$wrapPbkdf2 = new RivetCore\Crypto\VaultKeyWrap(RivetCore\Crypto\KdfParams::pbkdf2());
+bench('VaultKeyWrap::wrap, Argon2id 64 MiB x3 (login cost)', 5, static function () use ($wrapArgon, $dek): void {
+    $wrapArgon->wrap($dek, 'a password', 'user:1');
+}, '', 1);
+bench('VaultKeyWrap::wrap, PBKDF2-SHA256 600000', 5, static function () use ($wrapPbkdf2, $dek): void {
+    $wrapPbkdf2->wrap($dek, 'a password', 'user:1');
+}, '', 1);
+$vc = new RivetCore\Crypto\VaultCipher($dek);
+$vcSealed = $vc->seal('hunter2', 42, 'password');
+bench('VaultCipher::open (credential field)', 20000, static function () use ($vc, $vcSealed): void {
+    $vc->open($vcSealed, 42, 'password');
+});
+
+if (in_array('--crypto', $argv, true)) {
+    if (in_array('--json', $argv, true)) {
+        echo json_encode(['php' => PHP_VERSION, 'results' => $results], JSON_PRETTY_PRINT), "\n";
+        exit(0);
+    }
+    echo 'RivetCore crypto benchmark, ' . gmdate('Y-m-d H:i') . ' UTC, PHP ' . PHP_VERSION . "\n\n| Benchmark | Iterations | Median (us) | p95 (us) | Ops/s |\n|---|---:|---:|---:|---:|\n";
+    foreach ($results as $r) {
+        printf("| %s | %d | %s | %s | %s |\n", $r['name'], $r['n'], number_format($r['median'], 1, '.', ''), number_format($r['p95'], 1, '.', ''), number_format($r['ops'], 0, '.', ''));
+    }
+    exit(0);
+}
+
+$name = (string) getenv('RIVETCORE_TEST_DB_NAME');
+if ($name === '') {
+    fwrite(STDOUT, "bench: RIVETCORE_TEST_DB_NAME is not set; skipping (see the header of scripts/bench.php).\n");
+    exit(0);
+}
+if (!str_contains($name, 'scratch')) {
+    fwrite(STDERR, "bench: refusing to run: the database name must contain 'scratch' because every table in it is dropped.\n");
+    exit(2);
 }
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);

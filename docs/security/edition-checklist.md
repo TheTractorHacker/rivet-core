@@ -83,6 +83,20 @@ Convention: `RI` = RivetIT, `MSP` = RivetMSP; paths are relative to each repo.
 | G4 | Clock sync (NTP): webhook replay windows (300 s) and JWT lifetimes rely on it | `timedatectl` | deploy-time | deploy-time |
 | G5 | `MigrationRunner` is run by one process per deployment, at upgrade time, with the DB user that owns the schema; after the 1.0 migration list changes the edition regenerates `db.sql` | `grep -rn "MigrationRunner" .` | `admin/database_updates.php` | same |
 
+## H. Encryption and keys (Crypto, ADR-011)
+
+| # | Check | How to verify | RI | MSP |
+|---|---|---|---|---|
+| H1 | The key ring comes from a file outside the web root, `root:www-data` 0640, loaded through `KeyRingLoader`; no key in `config.php`, the database, the repository or the backup archive | `ls -l`, `grep -rn "settings_enc_key" .` | adopt | adopt |
+| H2 | Every `seal()`/`encrypt()` call passes a context that identifies the record (type and id); no context is shared by two rows; the table of context strings is in the repository and tested | review `grep -rn "->seal(\|->encrypt(" .` | adopt | adopt |
+| H3 | No call site turns a `CryptoException` into `''` or into "not configured, carry on" for a write; reads show a configuration error instead | review the `catch` blocks | adopt | adopt |
+| H4 | The legacy readers are registered only for the columns that need them; `PlaintextPassthroughReader` only for columns known to hold cleartext, and it is removed once `RotationPlan` is complete | `grep -rn "PlaintextPassthroughReader\|LegacyReaders::plaintext" .` | adopt | adopt |
+| H5 | The rewrap tool exists (dry run, resume, audit) and has been run on a restored copy; `RotationPlan` is complete for every encrypted column before a key is retired | run it | adopt | adopt |
+| H6 | The key file, the database dump and the backup passphrase are stored apart (offline copy of the key file with a second named person); the manifest holds `KeyRing::fingerprint()` only; a restore drill opens a sample of each secret kind with just the offline key file | restore drill | adopt | adopt |
+| H7 | A retired key is kept for one backup cycle before it is removed; removing a key that `RotationPlan` still reports as used is impossible in the UI | review | adopt | adopt |
+| H8 | Vault: user wraps use `VaultKeyWrap` with the context `user:<id>`; password change uses `rewrap()`; KDF parameters are the defaults or stronger; DEK and KEK wrap exist for recovery | review | adopt | adopt |
+| H9 | `EnvelopeConformanceTestCase` (for any wrapper) and `RewrapSourceConformanceTestCase` (for each source) run in the edition's CI | CI config | adopt | adopt |
+
 ## How to use this list
 
 1. Copy the table into the edition's release checklist; keep the "How to verify" commands in CI where they are greps.

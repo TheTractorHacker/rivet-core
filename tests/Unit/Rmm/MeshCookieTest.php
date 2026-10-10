@@ -53,7 +53,9 @@ final class MeshCookieTest extends TestCase
         $this->assertNull(M::decode('short', self::KEY));
         $this->assertNull(M::decode('!!!!', self::KEY));
         $this->assertNull(M::decode($c, 'zz'));
-        $tampered = strtr(base64_encode(substr((string) base64_decode(strtr($c, '@$', '+/')), 0, -1) . 'X'), '+/', '@$');
+        $raw = (string) base64_decode(strtr($c, '@$', '+/'));
+        // Flip the last byte (never replace it with a constant: the old 'X' replacement was a no-op one time in 256).
+        $tampered = strtr(base64_encode(substr($raw, 0, -1) . chr(ord(substr($raw, -1)) ^ 0x01)), '+/', '@$');
         $this->assertNull(M::decode($tampered, self::KEY), 'GCM tag catches tampering');
     }
 

@@ -81,6 +81,8 @@ Sizes: S under a day, M a few days, L about a week or more. Order within a wave 
 | 24 | Dependency map view for services; typed per-client layouts (revive custom fields) | L |
 | 25 | Connectors: AD/LDAP computers, NinjaOne, network discovery | L each, demand-driven |
 
+Status 2026-10-10: the Core side of items 19 and 20 is built in `RivetCore\Crypto` ([ADR-011](../architecture/ADR-011-envelope-and-key-standard.md), [module guide](../modules/crypto.md)). Still open: edition adoption (settings, TOTP seeds, vault; step list in [UPGRADING.md](../../UPGRADING.md) "Adopting Crypto"), the rotation panel and `vault-rewrap` CLI in the editions, and the backup-side items 1 and 12.
+
 ## Out of scope for this plan
 
 Production RivetIT (mwa) rollout, the 30-day Core soak, macOS agent, Authenticode signing certificate, RivetDocs integration beyond the existing read-only driver.

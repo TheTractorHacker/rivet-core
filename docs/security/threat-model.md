@@ -22,6 +22,7 @@ therefore about two questions: what can a hostile *input* do to Core code that p
 | Compliance snapshots, attestations, the shared report | Core tables | What a portal user can read |
 | Uploaded DOCX/PDF files | request upload, temp dir | Parsed by Core; become KB articles |
 | The server's network position | the PHP process | SSRF target: cloud metadata, loopback services, the LAN |
+| Encryption keys (KEK file, vault DEK wraps) | root-owned key file outside the web root; wraps in the edition's tables | Open every settings secret, TOTP seed and vault credential; see 4.10 and ADR-011 |
 
 ## 2. Actors and trust
 
@@ -184,6 +185,20 @@ the **edition** purifies, names and stores the files.
 | ErrorLogLogger | Log forging | control characters escaped (`oneLine`, SR-09) | |
 | Automation | Event data steers URLs/recipients | `interpolate` only fills the allowlisted free-text keys (`AutomationExecutor::FREE_TEXT_KEYS`: subject, details, message, title, body, description, text, name, note, notes, comment, summary, label), so `url`, `secret`, `email`, `to`, `assigned_to`, `asset_id`, `headers`, `user_id`, `client_id`, `priority` are never touched; conditions are equality only; rule fields validated (`\z/D`); webhook URL shape checked (SR-12) | The send handler must re-vet the URL with `UrlPolicy` |
 | MigrationRunner | Two runners, or a runner starved by an unrelated database | per-schema server-side lock (SR-11), idempotent steps | If `GET_LOCK` is unsupported the runner proceeds unlocked (fail-open, steps are idempotent) |
+
+### 4.10 Crypto (`Envelope`, `SettingsVault`, `KeyRingLoader`, `Rewrapper`, `VaultKeyWrap`)
+
+| Threat | Mitigation | Residual |
+|---|---|---|
+| A database writer edits or truncates a stored secret and the application decrypts attacker-chosen bytes | AES-256-GCM with the tag checked by OpenSSL; canonical base64 only; any change, truncation or extension is `DecryptionFailed` (fuzzed in `EnvelopeTest`); the unauthenticated CBC formats are read-only legacy and are rewrapped away | Legacy `ENC:`, `enc:`, `V2:` and old vault fields remain malleable until rewrapped; `RotationPlan` shows how many are left |
+| A database writer copies a valid ciphertext to another row, setting or user | The record type and id are the AAD (`settings|<name>`, `credential:<id>:<field>`, `vault-dek-wrap|...|user:<id>`); a moved value fails to authenticate | Only as strong as the edition's choice of context: a context shared by two records lets a value move between them. Do not reuse one context for several rows |
+| Key and data leak together (key in `config.php`, in the DB, in the backup next to the dump) | The ring is loaded from a root-owned file outside the web root; world-writable files are refused, world-readable and inside-the-web-root files are reported; the backup manifest carries a fingerprint, not the key | An operator who copies the key file next to the dump defeats it (ADR-011 states the rule); environment keys are visible to the process user |
+| Silent downgrade to cleartext when a key is missing | `seal()` and `SettingsVault::encrypt()` throw `KeyUnavailable`; reading an encrypted value without a key throws; cleartext legacy values need an explicit `PlaintextPassthroughReader` | A caller that catches `CryptoException` and continues with an empty string re-creates the old behaviour; the edition checklist (section H) says not to |
+| Nonce reuse under one GCM key | 96-bit `random_bytes` nonce per call; HKDF purpose subkeys and rotation keep each key far under 2^32 messages; the injectable nonce is documented test-only | A custom `nonceSource` in production would be catastrophic |
+| Offline guessing of a user's vault password from a stolen wrap | Argon2id (64 MiB x 3) or PBKDF2-SHA256 600000+, parameters stored and authenticated, minimums enforced when writing and reading, caps against DoS through a doctored wrap | A weak password is still weak; the old V2 wraps (100000 iterations, 128-bit key) stay until the user next logs in |
+| Oracle: error text tells wrong key from tampered data | One `DecryptionFailed` for every authentication failure; messages carry no plaintext, key bytes or ciphertext | `UnknownKeyId` names the kid, which is public in the value anyway |
+| A rewrap destroys data (crash mid-batch, concurrent edit, wrong key) | Compare-and-set per row, result re-opened and compared before it is offered, cursor saved after each batch, dry run, unreadable rows counted and left untouched | The legacy CBC reader cannot always tell a wrong key from the right one (about 1 in 256 garbage); verify one known value before a bulk run |
+| Key file replaced by an attacker | World-writable file refused; owner and group-writable reported | An attacker who can write as root or as the PHP user owns the application anyway |
 
 ## 5. Deliberate fail-open decisions
 
