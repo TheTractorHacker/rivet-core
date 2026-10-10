@@ -9,6 +9,7 @@ use RivetCore\Contracts\ClockInterface;
 use RivetCore\Jobs\Migration\Migration0002IntegrationJobs;
 use RivetCore\Jobs\Migration\Migration0012JobHeartbeat;
 use RivetCore\Rmm\Authz\RmmPrincipal;
+use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
 use RivetCore\Rmm\Contracts\RmmModuleStateInterface;
 use RivetCore\Rmm\Http\DeviceApi;
 use RivetCore\Rmm\Http\RmmRequest;
@@ -16,9 +17,11 @@ use RivetCore\Rmm\Http\RmmResponse;
 use RivetCore\Rmm\Migration\Migration0014EndpointAgent;
 use RivetCore\Rmm\Migration\Migration0015EndpointAgentConverge;
 use RivetCore\Rmm\Migration\Migration0016ModuleSwitches;
+use RivetCore\Rmm\Migration\Migration0018InventoryFoundation;
 use RivetCore\Rmm\RmmModule;
 use RivetCore\Testing\InMemoryRmmAssets;
 use RivetCore\Testing\InMemoryRmmAudit;
+use RivetCore\Testing\InMemoryRmmEvents;
 use RivetCore\Testing\InMemoryRmmMetricSink;
 use RivetCore\Testing\InMemoryRmmModuleState;
 use RivetCore\Testing\InMemoryRmmTenancy;
@@ -32,7 +35,9 @@ use RivetCore\Testing\InMemorySecretBox;
 final class RmmHarness
 {
     public const TABLES = ['endpoint_agent_checkins', 'endpoint_agent_checks', 'endpoint_agent_jobs', 'endpoint_agent_mesh_nodes', 'endpoint_agent_releases',
-        'endpoint_agent_enroll_attempts', 'endpoint_agent_enrollment_tokens', 'endpoint_agent_devices', 'endpoint_agent_binaries'];
+        'endpoint_agent_enroll_attempts', 'endpoint_agent_enrollment_tokens', 'endpoint_agent_devices', 'endpoint_agent_binaries',
+        'endpoint_agent_check_history', 'rmm_device_state', 'rmm_device_software', 'rmm_software_history', 'rmm_tags', 'rmm_device_tags', 'rmm_groups', 'rmm_group_devices',
+        'rmm_group_tags', 'rmm_metric_latest', 'rmm_metric_hourly'];
 
     public \mysqli $mysqli;
     public MysqliDatabase $db;
@@ -43,7 +48,9 @@ final class RmmHarness
     public RecordingRmmBridge $bridge;
     public InMemorySecretBox $box;
     public InMemoryRmmAudit $audit;
-    public InMemoryRmmMetricSink $metrics;
+    public RmmMetricSinkInterface $metrics;
+    /** The event bus the module was given (null = none: the module's default null bus). */
+    public ?InMemoryRmmEvents $events = null;
     public RmmModule $module;
     public AccessPolicyInterface $policy;
     public DeviceApi $api;
@@ -67,7 +74,7 @@ final class RmmHarness
     /**
      * @param array<string,mixed> $options RmmModule options
      */
-    public function __construct(?ClockInterface $clock = null, ?RmmModuleStateInterface $state = null, array $options = [], bool $withModuleState = false, ?InMemoryRmmMetricSink $sink = null, ?AccessPolicyInterface $policy = null, ?\RivetCore\Webhooks\UrlPolicy $urlPolicy = null)
+    public function __construct(?ClockInterface $clock = null, ?RmmModuleStateInterface $state = null, array $options = [], bool $withModuleState = false, ?RmmMetricSinkInterface $sink = null, ?AccessPolicyInterface $policy = null, ?\RivetCore\Webhooks\UrlPolicy $urlPolicy = null, ?InMemoryRmmEvents $events = null)
     {
         $name = (string) getenv('RIVETCORE_TEST_DB_NAME');
         if (!str_contains($name, 'scratch')) {
@@ -85,7 +92,7 @@ final class RmmHarness
         $this->binaryDir = sys_get_temp_dir() . '/rmm_bin_' . bin2hex(random_bytes(4));
         mkdir($this->binaryDir, 0700);
 
-        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches()] as $mig) {
+        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation()] as $mig) {
             $mig->up($this->db);
         }
         $this->wipe();
@@ -105,6 +112,7 @@ final class RmmHarness
             null,
             $this->policy = $policy ?? new AllowUsersPolicy([1 => true]),
             $urlPolicy ?? new \RivetCore\Webhooks\UrlPolicy(true),
+            $this->events = $events,
         );
         $this->api = $this->module->deviceApi(
             fn (string $bucket, int $limit, int $window): bool => $this->rateLimit($bucket, $limit, $window),

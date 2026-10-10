@@ -37,6 +37,7 @@ final class JobService
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
         private readonly JobTypeRegistry $registry,
+        private readonly ?\RivetCore\Rmm\Support\RmmEventPublisher $events = null,
     ) {
     }
 
@@ -224,7 +225,8 @@ final class JobService
 
         // Failures throw ApiError out of the transaction (rolled back, nothing to keep); the one outcome that must be KEPT and still
         // answer 409 (a queued job found past its expiry) is committed first and thrown afterwards.
-        $expired = $this->sql->transaction(function () use ($dev, $jobId, $attempt, $state, $exit, $output, $started, $finished, $cfg): bool {
+        $emit = null;
+        $expired = $this->sql->transaction(function () use ($dev, $jobId, $attempt, $state, $exit, $output, $started, $finished, $cfg, &$emit): bool {
             $j = $this->sql->one('SELECT * FROM endpoint_agent_jobs WHERE job_id = ? AND device_id = ? FOR UPDATE', [$jobId, $dev['device_id']]);
             if ($j === null) {
                 throw new ApiError(404, 'not_found', 'Unknown job.');
@@ -263,12 +265,22 @@ final class JobService
                 }
                 $this->sql->run('UPDATE endpoint_agent_jobs SET state = ?, reason = ?, exit_code = ?, output = ?, output_truncated = ?, started_at = COALESCE(started_at, ?), finished_at = ? WHERE job_id = ?',
                     [$state, $late ? 'late_result' : null, $exit, $text, $truncated ? 1 : 0, $started ?? $now, $finished ?? $now, $jobId]);
+                if ($state === 'succeeded' || $state === 'failed' || $state === 'timed_out') {
+                    $emit = [$state === 'succeeded' ? \RivetCore\Rmm\RmmEvent::JOB_COMPLETED : \RivetCore\Rmm\RmmEvent::JOB_FAILED, ['job_id' => $jobId, 'job_type' => (string) $j['type'], 'state' => $state, 'exit_code' => $exit]];
+                }
             }
 
             return false;
         });
         if ($expired) {
             throw new ApiError(409, 'conflict', 'Job has expired.');
+        }
+        if ($emit !== null && $this->events !== null) {
+            $fields = $emit[1];
+            if ($emit[0] === \RivetCore\Rmm\RmmEvent::JOB_COMPLETED) {
+                unset($fields['state']);
+            }
+            $this->events->emit($emit[0], $dev, $fields);
         }
     }
 

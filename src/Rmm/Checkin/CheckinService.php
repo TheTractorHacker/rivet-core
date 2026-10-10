@@ -9,12 +9,16 @@ use RivetCore\Rmm\Checks\CheckEvaluator;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
 use RivetCore\Rmm\Device\DeviceRepository;
+use RivetCore\Rmm\Device\DeviceState;
 use RivetCore\Rmm\Enrollment\DeviceValidator;
 use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Link\RmmLinker;
+use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\RmmProtocol;
+use RivetCore\Rmm\Software\SoftwareService;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Update\UpdateService;
 
@@ -51,6 +55,9 @@ final class CheckinService
         private readonly RmmMetricSinkInterface $metrics,
         /** @var (\Closure(array<string,mixed>): void)|null enqueues the heavy part of a check-in (ingest_mode queued); null = always inline */
         private readonly ?\Closure $enqueue = null,
+        private readonly ?DeviceState $deviceState = null,
+        private readonly ?SoftwareService $software = null,
+        private readonly ?RmmEventPublisher $events = null,
     ) {
     }
 
@@ -94,22 +101,35 @@ final class CheckinService
         }
         $primaryChecks = $this->cleanChecks($checks, true);
         $this->shedIfOverloaded($dev, $cfg);
+        // Phase 1, all optional and never an error: what the agent announced and the software report it may carry.
+        $announce = ['caps' => DeviceState::cleanCapabilities($body['capabilities'] ?? null), 'platform' => is_string($body['platform'] ?? null) ? $body['platform'] : null, 'software' => null];
+        $wantsSoftware = $features['inventory_software'] && $this->software !== null && $announce['caps'] !== null && in_array(DeviceState::CAP_SOFTWARE_INVENTORY, $announce['caps'], true);
+        if ($wantsSoftware) {
+            $announce['software'] = SoftwareService::cleanReport($body['software'] ?? null);
+        }
 
-        $this->sql->transaction(function () use ($dev, $seq, $collected, $ver, $inventory, $metrics, $primaryChecks, $buffered, $cfg, $features, $ip, $body): void {
-            // Serialise check-ins of ONE device; different devices never contend.
-            $cur = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ? FOR UPDATE', [$dev['device_id']]);
-            if ($cur === null || $cur['revoked_at'] !== null || $cur['retired_at'] !== null || $cur['token_hash'] !== $dev['token_hash']) {
-                throw new ApiError(401, 'revoked', 'This device credential was revoked.');
-            }
-            $now = $this->sql->utcNow();
-            $fresh = $this->sql->run('INSERT IGNORE INTO endpoint_agent_checkins (device_id, seq, received_at, collected_at) VALUES (?, ?, ?, ?)',
-                [$cur['device_id'], $seq, $now, $collected->format('Y-m-d H:i:s')]);
-            // Liveness is real even for a duplicate delivery.
-            $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ? WHERE device_id = ?', [$now, substr($ip, 0, 64), $cur['device_id']]);
-            if ($fresh === 1) {
-                $this->process($cur, $seq, $collected, $ver, $inventory, $metrics, $primaryChecks, $buffered, $cfg, $features, $body['update_result'] ?? null);
-            }
-        });
+        $this->events?->hold();
+        try {
+            $this->sql->transaction(function () use ($dev, $seq, $collected, $ver, $inventory, $metrics, $primaryChecks, $buffered, $cfg, $features, $ip, $body, $announce): void {
+                // Serialise check-ins of ONE device; different devices never contend.
+                $cur = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ? FOR UPDATE', [$dev['device_id']]);
+                if ($cur === null || $cur['revoked_at'] !== null || $cur['retired_at'] !== null || $cur['token_hash'] !== $dev['token_hash']) {
+                    throw new ApiError(401, 'revoked', 'This device credential was revoked.');
+                }
+                $now = $this->sql->utcNow();
+                $fresh = $this->sql->run('INSERT IGNORE INTO endpoint_agent_checkins (device_id, seq, received_at, collected_at) VALUES (?, ?, ?, ?)',
+                    [$cur['device_id'], $seq, $now, $collected->format('Y-m-d H:i:s')]);
+                // Liveness is real even for a duplicate delivery.
+                $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ? WHERE device_id = ?', [$now, substr($ip, 0, 64), $cur['device_id']]);
+                if ($fresh === 1) {
+                    $this->process($cur, $seq, $collected, $ver, $inventory, $metrics, $primaryChecks, $buffered, $cfg, $features, $body['update_result'] ?? null, $announce);
+                }
+            });
+        } catch (\Throwable $e) {
+            $this->events?->discard();
+            throw $e;
+        }
+        $this->events?->release();
 
         $dev = $this->devices->find((int) $dev['device_id']) ?? $dev;
         $interval = (int) $cfg['check_in_interval_s'];
@@ -129,6 +149,13 @@ final class CheckinService
         }
         $out['server_time'] = $this->sql->isoNow();
         $out['signing_key_id'] = $this->settings->get()['signing_key_id'];
+        if ($wantsSoftware && $this->deviceState !== null) {
+            // Offered only to an agent that announced it AND while the sub-switch is on; every other response is byte-identical to before.
+            $out['features'] = [DeviceState::CAP_SOFTWARE_INVENTORY];
+            if ((int) ($this->deviceState->get((int) $dev['device_id'])['software_resync'] ?? 0) === 1) {
+                $out['resync'] = ['software'];
+            }
+        }
 
         return $out;
     }
@@ -161,8 +188,9 @@ final class CheckinService
      * @param array<mixed> $buffered
      * @param array<string,mixed> $cfg
      * @param array<string,bool> $features
+     * @param array{caps?:?list<string>,platform?:?string,software?:?array<string,mixed>} $announce what the agent announced (capabilities, platform) and its validated software report
      */
-    private function process(array $dev, int $seq, \DateTimeImmutable $collected, string $ver, ?array $inventory, ?array $metrics, array $primaryChecks, array $buffered, array $cfg, array $features, mixed $updateResult): void
+    private function process(array $dev, int $seq, \DateTimeImmutable $collected, string $ver, ?array $inventory, ?array $metrics, array $primaryChecks, array $buffered, array $cfg, array $features, mixed $updateResult, array $announce = []): void
     {
         $deviceId = (int) $dev['device_id'];
         $collectedSql = $collected->format('Y-m-d H:i:s');
@@ -174,8 +202,21 @@ final class CheckinService
         } else {
             $this->sql->run('UPDATE endpoint_agent_devices SET last_seq = GREATEST(last_seq, ?) WHERE device_id = ?', [$seq, $deviceId]);
         }
+        if ($this->deviceState !== null) {
+            $state = ($announce['caps'] ?? null) !== null ? $this->deviceState->note($deviceId, $announce['platform'] ?? null, $announce['caps']) : null;
+            if ($this->events !== null && $this->events->enabled()) {
+                $state ??= $this->deviceState->get($deviceId);
+                if ($state !== null && $state['presence'] === 'offline') {
+                    $since = $this->deviceState->markOnline($deviceId, $state);
+                    $this->events->emit(RmmEvent::DEVICE_ONLINE, $dev, ['offline_since' => $since]);
+                }
+            }
+        }
         $work = ['device_id' => $deviceId, 'seq' => $seq, 'collected' => $collectedSql, 'received' => $this->sql->time(), 'newer' => $newer, 'inventory' => $inventory,
             'metrics' => $metrics, 'checks' => $primaryChecks, 'buffered' => $buffered, 'shed' => (int) ($cfg['shed_level'] ?? 0) >= 1];
+        if (($announce['software'] ?? null) !== null) {
+            $work['software'] = $announce['software'];
+        }
         if ($this->enqueue !== null && ($cfg['ingest_mode'] ?? 'sync') === 'queued') {
             $encoded = json_encode($work);
             if (is_string($encoded) && strlen($encoded) <= self::MAX_QUEUED_PAYLOAD_BYTES) {
@@ -220,6 +261,13 @@ final class CheckinService
             $cleanInv = $this->applyInventory($dev, $inventory);
         }
         $dev = $this->devices->find($deviceId) ?? $dev;
+        if (is_array($w['software'] ?? null) && $features['inventory_software'] && $this->software !== null && $this->deviceState !== null) {
+            if (!empty($w['shed'])) {
+                $this->deviceState->requestSoftwareResync($deviceId);   // load shedding: acknowledged, not ingested, so ask again later
+            } else {
+                $this->software->apply($dev, $w['software']);
+            }
+        }
         $linked = $dev['link_state'] === 'linked' && !empty($dev['asset_id']);
         if ($cleanInv !== null && $linked) {
             $this->assets->fillBlanks((int) $dev['asset_id'], [

@@ -11,6 +11,8 @@ use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\RmmEvent;
+use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -41,6 +43,7 @@ final class EnrollmentService
         private readonly AttemptLog $attempts,
         private readonly bool $allowLinux = false,
         private readonly string $clientLabel = 'client',
+        private readonly ?RmmEventPublisher $events = null,
     ) {
     }
 
@@ -140,6 +143,8 @@ final class EnrollmentService
         $this->recordAttempt($ip, true, $result['event'], (string) $token['token_selector']);
         $this->audit->record('Enrolled', 'Device ' . $result['device_id'] . ' (' . $d['hostname'] . ') ' . $result['event'] . ' with token ' . $token['token_selector'] . ', state ' . $result['status'],
             (int) $token['client_id'], (int) ($result['matched_asset_id'] ?? 0));
+        $this->events?->emit(RmmEvent::DEVICE_ENROLLED, ['device_id' => $result['device_id'], 'asset_id' => $result['matched_asset_id'], 'client_id' => (int) $token['client_id'], 'hostname' => $d['hostname']],
+            ['link_state' => $result['status'], 'os' => $os, 'outcome' => $result['event']]);
 
         [, $pub, $kid] = $this->settings->signingKey();
         $cfg = $this->settings->get();

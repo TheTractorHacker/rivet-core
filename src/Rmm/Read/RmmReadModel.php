@@ -9,12 +9,17 @@ use RivetCore\Rmm\Authz\RmmAuthorizer;
 use RivetCore\Rmm\Authz\RmmPrincipal;
 use RivetCore\Rmm\Binaries\BinaryStore;
 use RivetCore\Rmm\Contracts\RmmAssetNamesInterface;
+use RivetCore\Rmm\Contracts\RmmMetricReaderInterface;
 use RivetCore\Rmm\Crypto\Redactor;
 use RivetCore\Rmm\Device\DeviceRepository;
+use RivetCore\Rmm\Device\DeviceState;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Software\SoftwareVersion;
 use RivetCore\Rmm\Support\Sql;
+use RivetCore\Rmm\Tags\GroupService;
+use RivetCore\Rmm\Tags\TagService;
 use RivetCore\Rmm\Technician\ActionResult;
 use RivetCore\Rmm\Update\UpdateService;
 
@@ -56,6 +61,9 @@ final class RmmReadModel
         private readonly ?RmmAssetNamesInterface $assetNames = null,
         private readonly string $clientLabel = 'client',
         private readonly ?RmmAuthorizer $authz = null,
+        private readonly ?TagService $tagService = null,
+        private readonly ?GroupService $groupService = null,
+        private readonly ?RmmMetricReaderInterface $metricReader = null,
     ) {
     }
 
@@ -272,9 +280,11 @@ final class RmmReadModel
     /**
      * The device list: filters, pagination and client scope, with the total of what matches (before the page is cut).
      *
-     * @param array{status?:string,client_id?:int,ring?:string,q?:string,retired?:string} $filters
+     * @param array{status?:string,client_id?:int,ring?:string,q?:string,retired?:string,tag?:string|int,group?:int,software?:string,location_id?:int} $filters
      *        status: online|offline|stale|never (by check-in age) or linked|pending_approval|rejected (link state);
-     *        retired: 'hide' (default), 'only' or 'all'; q: part of the hostname or serial number
+     *        retired: 'hide' (default), 'only' or 'all'; q: part of the hostname or serial number;
+     *        tag: a tag name or id the device carries; group: a group id (static member or carrying one of its tags);
+     *        software: part of the name of a software item currently installed on the device; location_id: the edition's location (site)
      * @param list<int>|null $visibleClientIds
      * @param bool $withExtras add `arch` (the device's reported architecture, string|null), `asset_name` (string|null; null when the device has no asset or the assets adapter does not implement
      *        {@see RmmAssetNamesInterface}) and `update_state` (the decoded self-update state, `failed_versions` included, or null) to each
@@ -300,14 +310,16 @@ final class RmmReadModel
             }
         }
         $names = $ids !== [] && $this->assetNames !== null ? $this->assetNames->assetNames(array_values($ids)) : [];
+        $tags = $this->tagService === null ? [] : $this->tagService->forDevices(array_map(static fn (array $d): int => (int) $d['device_id'], $rows));
 
-        return ['items' => array_map(function (array $d) use ($cfg, $names): array {
+        return ['items' => array_map(function (array $d) use ($cfg, $names, $tags): array {
             $aid = $d['asset_id'] === null ? 0 : (int) $d['asset_id'];
 
             return $this->summary($d, $cfg) + [
                 'asset_name' => $aid > 0 && isset($names[$aid]) ? $names[$aid] : null,
                 'arch' => $d['arch'],
                 'update_state' => self::decode($d['update_state_json'] ?? null),
+                'tags' => $tags[(int) $d['device_id']] ?? [],
             ];
         }, $rows), 'total' => $total];
     }
@@ -339,6 +351,22 @@ final class RmmReadModel
         if (isset($filters['client_id']) && (int) $filters['client_id'] > 0) {
             $where[] = 'client_id = ?';
             $params[] = (int) $filters['client_id'];
+        }
+        if (isset($filters['location_id']) && (int) $filters['location_id'] > 0) {
+            $where[] = 'location_id = ?';
+            $params[] = (int) $filters['location_id'];
+        }
+        if (isset($filters['tag']) && $filters['tag'] !== '') {
+            $where[] = 'EXISTS (SELECT 1 FROM rmm_device_tags ft JOIN rmm_tags t ON t.tag_id = ft.tag_id WHERE ft.device_id = endpoint_agent_devices.device_id AND (t.name = ? OR t.tag_id = ?))';
+            array_push($params, (string) $filters['tag'], is_int($filters['tag']) || ctype_digit((string) $filters['tag']) ? (int) $filters['tag'] : 0);
+        }
+        if (isset($filters['group']) && (int) $filters['group'] > 0) {
+            $where[] = GroupService::membershipPredicate('endpoint_agent_devices');
+            array_push($params, (int) $filters['group'], (int) $filters['group']);
+        }
+        if (isset($filters['software']) && is_string($filters['software']) && trim($filters['software']) !== '') {
+            $where[] = 'EXISTS (SELECT 1 FROM rmm_device_software fs WHERE fs.device_id = endpoint_agent_devices.device_id AND fs.removed_at IS NULL AND fs.name LIKE ?)';
+            $params[] = '%' . addcslashes(trim($filters['software']), '\\%_') . '%';
         }
         if (isset($filters['ring']) && in_array($filters['ring'], RmmProtocol::RINGS, true)) {
             $where[] = 'ring = ?';
@@ -441,6 +469,345 @@ final class RmmReadModel
             'match_reason_text' => $this->matchReasonText((string) $d['match_reason']),
             'candidates' => self::candidates($d),
         ];
+    }
+
+    // ------------------------------------------------------------------ tags and groups (Phase 1)
+
+    /**
+     * The tags a device carries.
+     *
+     * @return list<array<string,mixed>> {tag_id, name, color, description, source}
+     */
+    public function deviceTags(int $deviceId): array
+    {
+        return $this->tagService?->forDevice($deviceId) ?? [];
+    }
+
+    /**
+     * Every tag with its device count (live devices; with $visibleClientIds only those in the caller's clients).
+     *
+     * @param list<int>|null $visibleClientIds
+     * @return list<array<string,mixed>>
+     */
+    public function tags(?array $visibleClientIds = null): array
+    {
+        return $this->tagService?->all($visibleClientIds) ?? [];
+    }
+
+    /**
+     * Every group with its tags and member count (with $visibleClientIds only the devices in the caller's clients).
+     *
+     * @param list<int>|null $visibleClientIds
+     * @return list<array<string,mixed>>
+     */
+    public function groups(?array $visibleClientIds = null): array
+    {
+        return $this->groupService?->all($visibleClientIds) ?? [];
+    }
+
+    /**
+     * The groups a device belongs to.
+     *
+     * @return list<array{group_id:int,name:string}>
+     */
+    public function deviceGroups(int $deviceId): array
+    {
+        return $this->groupService?->forDevice($deviceId) ?? [];
+    }
+
+    // ------------------------------------------------------------------ software inventory (Phase 1)
+
+    /**
+     * What the module knows about a device's software report: whether one ever arrived, when, and how many items are installed.
+     *
+     * @return array{reported:bool,count:int,reported_at:?string,full_at:?string,resync_requested:bool,capable:bool}
+     */
+    public function softwareState(int $deviceId): array
+    {
+        $r = $this->sql->one('SELECT * FROM rmm_device_state WHERE device_id = ?', [$deviceId]);
+
+        return ['reported' => $r !== null && $r['software_hash'] !== null, 'count' => (int) ($r['software_count'] ?? 0),
+            'reported_at' => Sql::iso($r === null || $r['software_at'] === null ? null : (string) $r['software_at']),
+            'full_at' => Sql::iso($r === null || $r['software_full_at'] === null ? null : (string) $r['software_full_at']),
+            'resync_requested' => (int) ($r['software_resync'] ?? 0) === 1, 'capable' => DeviceState::announces($r, DeviceState::CAP_SOFTWARE_INVENTORY)];
+    }
+
+    /**
+     * The software installed on one device (or, with include_removed, also what was removed and when), by name.
+     *
+     * @param array{q?:string,limit?:int,offset?:int,include_removed?:bool} $opts
+     * @return array{items:list<array<string,mixed>>,total:int}
+     */
+    public function softwareFor(int $deviceId, array $opts = []): array
+    {
+        $where = ['device_id = ?'];
+        $params = [$deviceId];
+        if (empty($opts['include_removed'])) {
+            $where[] = 'removed_at IS NULL';
+        }
+        if (isset($opts['q']) && trim((string) $opts['q']) !== '') {
+            $where[] = 'name LIKE ?';
+            $params[] = '%' . addcslashes(trim((string) $opts['q']), '\\%_') . '%';
+        }
+        $limit = max(1, min(500, (int) ($opts['limit'] ?? 100)));
+        $offset = max(0, (int) ($opts['offset'] ?? 0));
+        $w = implode(' AND ', $where);
+        $total = (int) $this->sql->val("SELECT COUNT(*) FROM rmm_device_software WHERE $w", $params);
+        $items = [];
+        foreach ($this->sql->all("SELECT * FROM rmm_device_software WHERE $w ORDER BY name, source LIMIT $limit OFFSET $offset", $params) as $r) {
+            $items[] = ['name' => (string) $r['name'], 'version' => (string) $r['version'], 'publisher' => (string) $r['publisher'] === '' ? null : (string) $r['publisher'], 'source' => (string) $r['source'],
+                'installed_on' => $r['installed_on'] === null ? null : (string) $r['installed_on'], 'first_seen_at' => Sql::iso((string) $r['first_seen_at']),
+                'last_seen_at' => Sql::iso((string) $r['last_seen_at']), 'removed_at' => Sql::iso($r['removed_at'] === null ? null : (string) $r['removed_at'])];
+        }
+
+        return ['items' => $items, 'total' => $total];
+    }
+
+    /**
+     * The change log of a device's software, newest first: installed, upgraded, downgraded, removed.
+     *
+     * @return array{items:list<array<string,mixed>>,total:int}
+     */
+    public function softwareHistory(int $deviceId, ?string $name = null, int $limit = 100, int $offset = 0): array
+    {
+        $where = 'device_id = ?';
+        $params = [$deviceId];
+        if ($name !== null && trim($name) !== '') {
+            $where .= ' AND name LIKE ?';
+            $params[] = '%' . addcslashes(trim($name), '\\%_') . '%';
+        }
+        $limit = max(1, min(500, $limit));
+        $offset = max(0, $offset);
+        $total = (int) $this->sql->val("SELECT COUNT(*) FROM rmm_software_history WHERE $where", $params);
+        $items = [];
+        foreach ($this->sql->all("SELECT * FROM rmm_software_history WHERE $where ORDER BY occurred_at DESC, history_id DESC LIMIT $limit OFFSET $offset", $params) as $r) {
+            $items[] = ['name' => (string) $r['name'], 'source' => (string) $r['source'], 'change' => (string) $r['change_type'], 'old_version' => $r['old_version'], 'new_version' => $r['new_version'],
+                'publisher' => (string) $r['publisher'] === '' ? null : (string) $r['publisher'], 'at' => Sql::iso((string) $r['occurred_at'])];
+        }
+
+        return ['items' => $items, 'total' => $total];
+    }
+
+    /**
+     * The software installed across the fleet, grouped by name and source, with how many devices run it and how many versions are out there.
+     *
+     * @param list<int>|null $visibleClientIds
+     * @return array{items:list<array{name:string,source:string,devices:int,versions:int}>,total:int}
+     */
+    public function softwareCatalog(?string $q = null, ?array $visibleClientIds = null, int $limit = 100, int $offset = 0): array
+    {
+        [$scope, $params] = $this->deviceWhere(['retired' => 'hide'], $visibleClientIds, $this->settings->get());
+        $where = 's.removed_at IS NULL AND s.device_id IN (SELECT device_id FROM endpoint_agent_devices WHERE ' . $scope . ')';
+        if ($q !== null && trim($q) !== '') {
+            $where .= ' AND s.name LIKE ?';
+            $params[] = '%' . addcslashes(trim($q), '\\%_') . '%';
+        }
+        $limit = max(1, min(500, $limit));
+        $offset = max(0, $offset);
+        $total = (int) $this->sql->val("SELECT COUNT(*) FROM (SELECT 1 FROM rmm_device_software s WHERE $where GROUP BY s.name, s.source) g", $params);
+        $items = [];
+        foreach ($this->sql->all("SELECT s.name, s.source, COUNT(*) AS devices, COUNT(DISTINCT s.version) AS versions FROM rmm_device_software s WHERE $where
+            GROUP BY s.name, s.source ORDER BY devices DESC, s.name LIMIT $limit OFFSET $offset", $params) as $r) {
+            $items[] = ['name' => (string) $r['name'], 'source' => (string) $r['source'], 'devices' => (int) $r['devices'], 'versions' => (int) $r['versions']];
+        }
+
+        return ['items' => $items, 'total' => $total];
+    }
+
+    /**
+     * Devices running a version of a product older than $minVersion. $name matches part of the software name (case-insensitive); versions
+     * are compared with {@see SoftwareVersion::compare()} (a forgiving comparison, not a package manager's). One row per device and item.
+     *
+     * @param list<int>|null $visibleClientIds
+     * @return list<array{device_id:int,hostname:string,client_id:int,asset_id:?int,name:string,source:string,version:string}>
+     */
+    public function outdatedSoftware(string $name, string $minVersion, ?array $visibleClientIds = null, int $limit = 200): array
+    {
+        $name = trim($name);
+        if ($name === '' || trim($minVersion) === '') {
+            return [];
+        }
+        [$scope, $params] = $this->deviceWhere(['retired' => 'hide'], $visibleClientIds, $this->settings->get());
+        $params[] = '%' . addcslashes($name, '\\%_') . '%';
+        $limit = max(1, min(1000, $limit));
+        $out = [];
+        $afterDevice = 0;
+        $afterKey = '';
+        // Read in key order and compare in PHP; stop at $limit hits or after a bounded number of scanned rows.
+        for ($scanned = 0; $scanned < 20000 && count($out) < $limit;) {
+            $rows = $this->sql->all('SELECT d.device_id, d.hostname, d.client_id, d.asset_id, s.name, s.source, s.version, s.software_key
+                FROM rmm_device_software s JOIN endpoint_agent_devices d ON d.device_id = s.device_id
+                WHERE s.removed_at IS NULL AND s.device_id IN (SELECT device_id FROM endpoint_agent_devices WHERE ' . $scope . ') AND s.name LIKE ?
+                AND (s.device_id > ? OR (s.device_id = ? AND s.software_key > ?)) ORDER BY s.device_id, s.software_key LIMIT 1000', array_merge($params, [$afterDevice, $afterDevice, $afterKey]));
+            foreach ($rows as $r) {
+                if (SoftwareVersion::compare((string) $r['version'], $minVersion) < 0) {
+                    $out[] = ['device_id' => (int) $r['device_id'], 'hostname' => (string) $r['hostname'], 'client_id' => (int) $r['client_id'],
+                        'asset_id' => $r['asset_id'] === null ? null : (int) $r['asset_id'], 'name' => (string) $r['name'], 'source' => (string) $r['source'], 'version' => (string) $r['version']];
+                    if (count($out) >= $limit) {
+                        break;
+                    }
+                }
+            }
+            $scanned += count($rows);
+            if (count($rows) < 1000) {
+                break;
+            }
+            $last = $rows[count($rows) - 1];
+            $afterDevice = (int) $last['device_id'];
+            $afterKey = (string) $last['software_key'];
+        }
+
+        return $out;
+    }
+
+    // ------------------------------------------------------------------ check history and network peak (Phase 1)
+
+    /**
+     * The recorded results of one check of one device over the last $hours, oldest first, with the time spent in each state. The ring keeps a
+     * result when the status changed and otherwise at most one per check_history_gap_s, so the points are a trend, not every sample.
+     *
+     * @return array{key:string,since:string,hours:int,points:list<array{at:string,status:string,detail:string}>,seconds:array<string,int>,availability_pct:?float,changes:int,retention_days:int}
+     */
+    public function checkHistory(int $deviceId, string $key, int $hours = 24, int $limit = 500): array
+    {
+        $hours = max(1, min(24 * 365, $hours));
+        $limit = max(1, min(2000, $limit));
+        $now = $this->sql->time();
+        $since = $now - $hours * 3600;
+        $rows = $this->sql->all('SELECT status, detail, reported_at FROM endpoint_agent_check_history WHERE device_id = ? AND check_key = ? AND reported_at >= ? ORDER BY reported_at, hist_id LIMIT ' . $limit,
+            [$deviceId, $key, gmdate('Y-m-d H:i:s', $since)]);
+        $before = $this->sql->one('SELECT status, reported_at FROM endpoint_agent_check_history WHERE device_id = ? AND check_key = ? AND reported_at < ? ORDER BY reported_at DESC, hist_id DESC LIMIT 1',
+            [$deviceId, $key, gmdate('Y-m-d H:i:s', $since)]);
+        $seconds = ['ok' => 0, 'warn' => 0, 'fail' => 0, 'unknown' => 0];
+        $points = [];
+        $changes = 0;
+        $cursor = $since;
+        $state = $before === null ? null : (string) $before['status'];
+        foreach ($rows as $r) {
+            $at = Sql::ts((string) $r['reported_at']);
+            if ($state !== null && isset($seconds[$state])) {
+                $seconds[$state] += max(0, $at - $cursor);
+            }
+            if ($state !== null && $state !== (string) $r['status']) {
+                ++$changes;
+            }
+            $state = (string) $r['status'];
+            $cursor = max($cursor, $at);
+            $points[] = ['at' => gmdate('Y-m-d\TH:i:s\Z', $at), 'status' => $state, 'detail' => (string) $r['detail']];
+        }
+        if ($state !== null && isset($seconds[$state])) {
+            $seconds[$state] += max(0, $now - $cursor);
+        }
+        $measured = $seconds['ok'] + $seconds['warn'] + $seconds['fail'];
+
+        return ['key' => $key, 'since' => gmdate('Y-m-d\TH:i:s\Z', $since), 'hours' => $hours, 'points' => $points, 'seconds' => $seconds,
+            'availability_pct' => $measured > 0 ? round(100 * $seconds['ok'] / $measured, 2) : null, 'changes' => $changes, 'retention_days' => $this->settings->limits()['check_history_days']];
+    }
+
+    /**
+     * The network bar of the device page: the current receive and transmit rate against the peak of the last $hours (bytes per second).
+     * `history` is false when the module's metric sink keeps no history (the edition's sink does not implement
+     * {@see RmmMetricReaderInterface}) or the device has no asset; the peaks are then null and only the current rate is given.
+     *
+     * @return array{window_hours:int,history:bool,rx:array{current:?float,peak:?float,avg:?float,peak_at:?string},tx:array{current:?float,peak:?float,avg:?float,peak_at:?string}}
+     */
+    public function networkPeak(int $deviceId, int $hours = 24): array
+    {
+        $hours = max(1, min(24 * 30, $hours));
+        $d = $this->devices->find($deviceId);
+        $m = $d === null ? null : self::decode($d['last_metrics_json'] ?? null);
+        $asset = $d === null || $d['asset_id'] === null ? 0 : (int) $d['asset_id'];
+        $history = $this->metricReader !== null && $asset > 0;
+        $since = new \DateTimeImmutable('@' . ($this->sql->time() - $hours * 3600));
+        $side = function (string $field, string $key) use ($m, $history, $asset, $since): array {
+            $bps = is_array($m) && (is_int($m[$field] ?? null) || is_float($m[$field] ?? null)) ? (float) $m[$field] : null;   // the agent reports bits per second
+            $p = $history && $this->metricReader !== null ? $this->metricReader->peak($asset, $key, 'total', $since) : null;
+
+            return ['current' => $bps === null ? null : $bps / 8, 'peak' => $p === null ? null : $p['max'], 'avg' => $p === null ? null : $p['avg'],
+                'peak_at' => $p === null ? null : $p['peak_at']->format('Y-m-d\TH:i:s\Z')];
+        };
+
+        return ['window_hours' => $hours, 'history' => $history, 'rx' => $side('net_rx_bps', 'network.rx_bytes_per_s'), 'tx' => $side('net_tx_bps', 'network.tx_bytes_per_s')];
+    }
+
+    // ------------------------------------------------------------------ the live document (Phase 1)
+
+    /** Seconds between polls of {@see deviceLive()} when nothing is shedding load; the floor an edition may enforce is {@see LIVE_POLL_FLOOR_S}. */
+    public const LIVE_POLL_S = 30;
+    public const LIVE_POLL_FLOOR_S = 15;
+
+    /**
+     * The small JSON document the device page polls (ASSET_PAGE_REDESIGN.md 7.2): status, the latest gauges, the checks, open alert and job
+     * counts and the poll interval the server wants. Missing readings are null, never 0. A weak ETag is built from the device row and two
+     * cheap aggregates; when the caller's `If-None-Match` equals it, `status` is 304 and `body` is null without the checks list being read.
+     *
+     * `poll_s` doubles at load-shedding level 1 and is 0 (paused) from level 2, which the page shows as "Live updates paused by server load".
+     * Reads: the device row (given), one aggregate over its checks, one over its running and queued jobs, then the checks.
+     *
+     * @param array<string,mixed> $dev the device row
+     * @return array{status:int,etag:string,body:?array<string,mixed>}
+     */
+    public function deviceLive(array $dev, ?string $ifNoneMatch = null): array
+    {
+        $deviceId = (int) $dev['device_id'];
+        $cfg = $this->settings->get();
+        $c = $this->sql->one('SELECT COUNT(*) AS n, COALESCE(SUM(alert_id IS NOT NULL), 0) AS alerts, MAX(last_changed_at) AS changed FROM endpoint_agent_checks WHERE device_id = ?', [$deviceId]) ?? [];
+        $j = $this->sql->one("SELECT COALESCE(SUM(state = 'queued'), 0) AS queued, COALESCE(SUM(state = 'running'), 0) AS running, MAX(updated_at) AS touched
+            FROM endpoint_agent_jobs WHERE device_id = ? AND state IN ('queued', 'running')", [$deviceId]) ?? [];
+        $shed = (int) ($cfg['shed_level'] ?? 0);
+        $etag = 'W/"' . md5(implode('|', [(int) $dev['last_seq'], (string) ($dev['last_checkin_at'] ?? ''), (string) ($dev['link_state'] ?? ''), (string) ($dev['revoked_at'] ?? ''), (string) ($dev['retired_at'] ?? ''),
+            (int) ($c['n'] ?? 0), (int) ($c['alerts'] ?? 0), (string) ($c['changed'] ?? ''), (int) ($j['queued'] ?? 0), (int) ($j['running'] ?? 0), (string) ($j['touched'] ?? ''), $shed])) . '"';
+        if ($ifNoneMatch !== null && trim($ifNoneMatch) === $etag) {
+            return ['status' => 304, 'etag' => $etag, 'body' => null];
+        }
+        $st = $this->devices->status($dev, $cfg);
+        $m = self::decode($dev['last_metrics_json'] ?? null);
+        $inv = self::decode($dev['inventory_json'] ?? null);
+        $num = static fn (mixed $v): int|float|null => (is_int($v) || is_float($v)) ? $v : null;
+        $totals = [];
+        foreach (is_array($inv) && is_array($inv['disks'] ?? null) ? $inv['disks'] : [] as $d) {
+            if (is_array($d) && isset($d['mount'])) {
+                $totals[(string) $d['mount']] = $d;
+            }
+        }
+        $disks = [];
+        foreach (is_array($m) && is_array($m['disk'] ?? null) ? $m['disk'] : [] as $d) {
+            if (is_array($d) && isset($d['mount'])) {
+                $t = $totals[(string) $d['mount']] ?? [];
+                $disks[] = ['mount' => (string) $d['mount'], 'used_pct' => $num($d['used_pct'] ?? null), 'free_bytes' => $num($t['free_bytes'] ?? null), 'total_bytes' => $num($t['total_bytes'] ?? null)];
+            }
+        }
+        $checks = [];
+        $worst = null;
+        foreach ($this->sql->all('SELECT check_key, status, detail, last_changed_at, alert_id FROM endpoint_agent_checks WHERE device_id = ? ORDER BY check_key', [$deviceId]) as $r) {
+            $checks[] = ['key' => (string) $r['check_key'], 'status' => (string) $r['status'], 'detail' => (string) $r['detail'], 'since' => Sql::iso($r['last_changed_at'] === null ? null : (string) $r['last_changed_at']),
+                'alert_id' => $r['alert_id'] === null ? null : (int) $r['alert_id']];
+            if ($r['alert_id'] !== null) {
+                $worst = $r['status'] === 'fail' ? 'error' : ($worst ?? 'warning');
+            }
+        }
+        $poll = $shed >= 2 ? 0 : ($shed === 1 ? self::LIVE_POLL_S * 2 : self::LIVE_POLL_S);
+        $body = [
+            'v' => 1,
+            'state' => $st['state'],
+            'last_checkin_at' => $st['last_checkin_at'],
+            'age_s' => $st['age_s'],
+            'next_check_in_s' => (int) $cfg['check_in_interval_s'],
+            'agent_version' => $dev['agent_version'],
+            'uptime_s' => $dev['uptime_s'] === null ? null : (int) $dev['uptime_s'],
+            'pending_reboot' => $dev['pending_reboot'] === null ? null : (bool) $dev['pending_reboot'],
+            'gauges' => ['sampled_at' => Sql::iso($dev['last_collected_at'] === null ? null : (string) $dev['last_collected_at']), 'cpu_pct' => $num(is_array($m) ? ($m['cpu_pct'] ?? null) : null),
+                'mem_pct' => $num(is_array($m) ? ($m['mem_pct'] ?? null) : null), 'disks' => $disks, 'net_rx_bps' => $num(is_array($m) ? ($m['net_rx_bps'] ?? null) : null),
+                'net_tx_bps' => $num(is_array($m) ? ($m['net_tx_bps'] ?? null) : null)],
+            'checks' => $checks,
+            'alerts' => ['open' => (int) ($c['alerts'] ?? 0), 'worst' => $worst],
+            'jobs' => ['queued' => (int) ($j['queued'] ?? 0), 'running' => (int) ($j['running'] ?? 0)],
+            'poll_s' => $poll,
+            'shed' => $shed,
+            'seq' => (int) $dev['last_seq'],
+        ];
+
+        return ['status' => 200, 'etag' => $etag, 'body' => $body];
     }
 
     // ------------------------------------------------------------------ approvals

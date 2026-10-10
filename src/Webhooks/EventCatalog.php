@@ -24,6 +24,7 @@ final class EventCatalog
         'workflows' => 'Workflows & lifecycle',
         'itil' => 'Problems, changes & knowledge',
         'assets' => 'Assets & network',
+        'rmm' => 'Endpoint agent (RMM)',
         'clients' => 'Clients & contacts',
         'billing' => 'Billing & invoices',
         'security' => 'Security & sign-in',
@@ -53,6 +54,28 @@ final class EventCatalog
         ['action', 'string', 'Action verb, e.g. create, update, delete'],
         ['entity_type', 'string', 'Kind of object affected'],
         ['entity_id', 'string', 'Id of the object affected'],
+    ];
+
+    /** Payload fields every `rmm.*` event carries (see {@see \RivetCore\Rmm\RmmEvent}). */
+    private const RMM_FIELDS = [
+        ['device_id', 'integer', 'Endpoint device id'],
+        ['asset_id', 'integer', 'Linked asset id (null when the device is not linked)'],
+        ['client_id', 'integer', 'Client the device belongs to'],
+        ['hostname', 'string', 'Device hostname'],
+        ['occurred_at', 'string', 'When it happened, RFC 3339 UTC'],
+    ];
+
+    /** The fields each `rmm.*` event adds to {@see RMM_FIELDS}. */
+    private const RMM_EXTRA = [
+        'rmm.device.enrolled' => [['link_state', 'string', 'linked or pending_approval'], ['os', 'string', 'windows or linux'], ['outcome', 'string', 'enrolled, re-enrolled or reinstalled']],
+        'rmm.device.offline' => [['last_checkin_at', 'string', 'Last check-in, RFC 3339 UTC']],
+        'rmm.device.online' => [['offline_since', 'string', 'When the device was reported offline, RFC 3339 UTC (null when unknown)']],
+        'rmm.check.failed' => [['check_key', 'string', 'Check key'], ['status', 'string', 'warn or fail'], ['detail', 'string', 'Check detail'], ['alert_id', 'integer', 'Alert opened'], ['episode', 'integer', 'Failure episode number']],
+        'rmm.check.recovered' => [['check_key', 'string', 'Check key'], ['alert_id', 'integer', 'Alert resolved'], ['episode', 'integer', 'Failure episode number']],
+        'rmm.job.completed' => [['job_id', 'string', 'Job id'], ['job_type', 'string', 'Job type'], ['exit_code', 'integer', 'Exit code (null when none)']],
+        'rmm.job.failed' => [['job_id', 'string', 'Job id'], ['job_type', 'string', 'Job type'], ['state', 'string', 'failed or timed_out'], ['exit_code', 'integer', 'Exit code (null when none)']],
+        'rmm.software.installed' => [['name', 'string', 'Software name'], ['version', 'string', 'Installed version'], ['publisher', 'string', 'Publisher (null when unknown)'], ['source', 'string', 'registry, registry32, appx, dpkg, rpm, snap or flatpak']],
+        'rmm.software.removed' => [['name', 'string', 'Software name'], ['version', 'string', 'Version that was installed'], ['publisher', 'string', 'Publisher (null when unknown)'], ['source', 'string', 'registry, registry32, appx, dpkg, rpm, snap or flatpak']],
     ];
 
     /** @var list<EventDefinition>|null */
@@ -249,7 +272,8 @@ final class EventCatalog
         $out = [];
         foreach (self::rows() as [$group, $id, $label, $desc, $sev, $fields, $tags, $since]) {
             $pf = [];
-            foreach ($fields === 'ticket' ? self::TICKET_FIELDS : ($fields === 'audit' ? self::AUDIT_FIELDS : []) as [$p, $ty, $d]) {
+            $shape = $fields === 'ticket' ? self::TICKET_FIELDS : ($fields === 'audit' ? self::AUDIT_FIELDS : ($fields === 'rmm' ? array_merge(self::RMM_FIELDS, self::RMM_EXTRA[$id] ?? []) : []));
+            foreach ($shape as [$p, $ty, $d]) {
                 $pf[] = ['path' => $p, 'type' => $ty, 'description' => $d];
             }
             $out[] = new EventDefinition($id, $group, self::GROUPS[$group], $label, $desc, $sev, $pf, $since, $tags === '' ? [] : explode(',', $tags));
@@ -312,6 +336,16 @@ final class EventCatalog
             ['assets', 'asset.created', 'Asset created', 'A new asset was added to the inventory.', 'info', 'audit', 'device,inventory,cmdb', $p],
             ['assets', 'asset.retired', 'Asset retired', 'An asset was archived or retired.', 'info', 'audit', 'decommission,device,inventory', $p],
             ['assets', 'asset.warranty_expiring', 'Asset warranty expiring', 'An asset warranty is about to expire.', 'warning', 'audit', 'renewal,expiry,device', $p],
+
+            ['rmm', 'rmm.device.enrolled', 'Device enrolled', 'An endpoint agent enrolled (or re-enrolled) a device; it may still wait for approval.', 'info', 'rmm', 'agent,endpoint,rmm,onboarding,install', null],
+            ['rmm', 'rmm.device.offline', 'Device offline', 'A device stopped checking in for longer than the offline threshold.', 'warning', 'rmm', 'agent,endpoint,rmm,down,unreachable,heartbeat', null],
+            ['rmm', 'rmm.device.online', 'Device back online', 'A device that was reported offline checked in again.', 'info', 'rmm', 'agent,endpoint,rmm,recovered,up', null],
+            ['rmm', 'rmm.check.failed', 'Device check failed', 'A device check stayed failing or warning long enough to open an alert.', 'warning', 'rmm', 'agent,endpoint,rmm,monitoring,alert,disk,service', null],
+            ['rmm', 'rmm.check.recovered', 'Device check recovered', 'A device check that had an open alert is healthy again.', 'info', 'rmm', 'agent,endpoint,rmm,monitoring,alert,resolved', null],
+            ['rmm', 'rmm.job.completed', 'Device job completed', 'A job ran to completion on a device.', 'info', 'rmm', 'agent,endpoint,rmm,script,reboot,collect', null],
+            ['rmm', 'rmm.job.failed', 'Device job failed', 'A job failed or timed out on a device.', 'warning', 'rmm', 'agent,endpoint,rmm,script,error,timeout', null],
+            ['rmm', 'rmm.software.installed', 'Software installed', 'New software appeared on a device (the first report of a device is a baseline and raises no event).', 'info', 'rmm', 'agent,endpoint,rmm,inventory,application,package', null],
+            ['rmm', 'rmm.software.removed', 'Software removed', 'Software disappeared from a device.', 'info', 'rmm', 'agent,endpoint,rmm,inventory,application,uninstall,package', null],
 
             ['clients', 'client.created', 'Client created', 'A new client was added.', 'info', 'audit', 'customer,organization,company', $p],
             ['clients', 'client.archived', 'Client archived', 'A client was archived.', 'warning', 'audit', 'customer,offboard,delete', $p],

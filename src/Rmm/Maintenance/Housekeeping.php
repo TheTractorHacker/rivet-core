@@ -7,9 +7,13 @@ namespace RivetCore\Rmm\Maintenance;
 use RivetCore\Rmm\Capacity\IngestQueue;
 use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Contracts\RmmBridgeInterface;
+use RivetCore\Rmm\Device\DeviceState;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Link\RmmLinker;
+use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\DatabaseMetricSink;
+use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -43,6 +47,9 @@ final class Housekeeping
         ?\Closure $pause = null,
         private readonly ?LoadShedder $shedder = null,
         private readonly ?IngestQueue $ingest = null,
+        private readonly ?RmmEventPublisher $events = null,
+        private readonly ?DeviceState $deviceState = null,
+        private readonly ?DatabaseMetricSink $metricSink = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -68,6 +75,17 @@ final class Housekeeping
         $out['pruned_attempts'] = $this->prune('endpoint_agent_enroll_attempts', 'attempted_at < ?', [$this->sql->utcAt(-self::ATTEMPT_RETENTION_DAYS * 86400)]);
         $out['pruned_jobs'] = $this->prune('endpoint_agent_jobs', "state IN ('succeeded','failed','timed_out','cancelled','expired') AND finished_at < ?",
             [$this->sql->utcAt(-(int) $cfg['job_retention_days'] * 86400)]);
+        $limits = $this->settings->limits();
+        $out['pruned_check_history'] = $this->prune('endpoint_agent_check_history', 'reported_at < ?', [$this->sql->utcAt(-max(1, $limits['check_history_days']) * 86400)]);
+        $softwareBefore = $this->sql->utcAt(-$limits['software_history_days'] * 86400);
+        $out['pruned_software_history'] = $this->prune('rmm_software_history', 'occurred_at < ?', [$softwareBefore]);
+        $out['pruned_software_removed'] = $this->prune('rmm_device_software', 'removed_at IS NOT NULL AND removed_at < ?', [$softwareBefore]);
+        if ($this->metricSink !== null) {
+            $out['pruned_metrics'] = $this->metricSink->prune(self::PRUNE_RUN_CAP, $this->pause);
+        }
+        if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {
+            $out['offline_events'] = $this->announceOffline((int) $cfg['offline_after_s'], (int) $cfg['stale_after_s']);
+        }
 
         return $out;
     }
@@ -98,6 +116,39 @@ final class Housekeeping
         }
 
         return $changed;
+    }
+
+    /**
+     * Tell the event bus about devices that just went offline (once per offline period: the state table remembers it). A device that has been silent for
+     * longer than the stale window is recorded as offline without an event, so switching events on never announces a fleet of long-dead machines.
+     */
+    private function announceOffline(int $offlineAfter, int $staleAfter): int
+    {
+        if ($this->events === null || $this->deviceState === null) {
+            return 0;
+        }
+        $before = $this->sql->utcAt(-$offlineAfter);
+        $staleBefore = $this->sql->utcAt(-$staleAfter);
+        $after = 0;
+        $announced = 0;
+        while (true) {
+            $rows = $this->sql->all("SELECT d.* FROM endpoint_agent_devices d LEFT JOIN rmm_device_state s ON s.device_id = d.device_id
+                WHERE d.device_id > ? AND d.revoked_at IS NULL AND d.retired_at IS NULL AND d.last_checkin_at IS NOT NULL AND d.last_checkin_at < ?
+                AND (s.presence IS NULL OR s.presence <> 'offline') ORDER BY d.device_id LIMIT " . self::OFFLINE_CHUNK, [$after, $before]);
+            foreach ($rows as $d) {
+                $after = (int) $d['device_id'];
+                $this->deviceState->markOffline($after);
+                if ((string) $d['last_checkin_at'] >= $staleBefore) {
+                    $this->events->emit(RmmEvent::DEVICE_OFFLINE, $d, ['last_checkin_at' => Sql::iso((string) $d['last_checkin_at'])]);
+                    ++$announced;
+                }
+            }
+            if (count($rows) < self::OFFLINE_CHUNK) {
+                break;
+            }
+        }
+
+        return $announced;
     }
 
     /** @param list<mixed> $params */

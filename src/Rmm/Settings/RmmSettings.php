@@ -68,6 +68,11 @@ final class RmmSettings
         'shed_db_ms_l2' => [0, 60000],
         'shed_db_ms_l3' => [0, 60000],
         'shed_rate_per_min' => [0, 10000000],
+        // Phase 1 history: days the per-check history ring keeps (0 = record none), the minimum seconds between two stored
+        // results of one check that did not change status, and days the software change log is kept.
+        'check_history_days' => [0, 365],
+        'check_history_gap_s' => [60, 86400],
+        'software_history_days' => [1, 3650],
     ];
     public const LIMIT_DEFAULTS = [
         'max_checkins_per_min' => 0,
@@ -82,6 +87,9 @@ final class RmmSettings
         'shed_db_ms_l2' => 300,
         'shed_db_ms_l3' => 1000,
         'shed_rate_per_min' => 0,
+        'check_history_days' => 7,
+        'check_history_gap_s' => 3600,
+        'software_history_days' => 365,
     ];
 
     /** @var array<string,mixed>|null */

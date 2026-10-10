@@ -21,11 +21,14 @@ use RivetCore\Rmm\Contracts\RmmAssetNamesInterface;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Contracts\RmmBridgeInterface;
+use RivetCore\Rmm\Contracts\RmmEventsInterface;
+use RivetCore\Rmm\Contracts\RmmMetricReaderInterface;
 use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
 use RivetCore\Rmm\Contracts\RmmModuleStateInterface;
 use RivetCore\Rmm\Contracts\RmmTenancyInterface;
 use RivetCore\Rmm\Contracts\SecretBoxInterface;
 use RivetCore\Rmm\Device\DeviceRepository;
+use RivetCore\Rmm\Device\DeviceState;
 use RivetCore\Rmm\Device\DeviceService;
 use RivetCore\Rmm\Enrollment\AttemptLog;
 use RivetCore\Rmm\Enrollment\EnrollmentService;
@@ -40,9 +43,16 @@ use RivetCore\Rmm\Maintenance\Housekeeping;
 use RivetCore\Rmm\Mesh\MeshService;
 use RivetCore\Rmm\Read\RmmReadModel;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Software\SoftwareService;
+use RivetCore\Rmm\Support\DatabaseMetricSink;
 use RivetCore\Rmm\Support\NullRmmAudit;
+use RivetCore\Rmm\Support\NullRmmEvents;
 use RivetCore\Rmm\Support\NullRmmMetricSink;
+use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
+use RivetCore\Rmm\Tags\GroupService;
+use RivetCore\Rmm\Tags\TagService;
+use RivetCore\Rmm\Technician\InventoryActions;
 use RivetCore\Rmm\Technician\TechnicianActions;
 use RivetCore\Rmm\Update\UpdateService;
 use RivetCore\Webhooks\UrlPolicy;
@@ -83,9 +93,16 @@ final class RmmModule
     private ?InstallerService $installerService = null;
     private ?TechnicianActions $technician = null;
     private ?RmmAdmin $admin = null;
+    private ?DeviceState $deviceState = null;
+    private ?SoftwareService $software = null;
+    private ?RmmEventPublisher $eventPublisher = null;
+    private ?TagService $tagService = null;
+    private ?GroupService $groupService = null;
+    private ?InventoryActions $inventory = null;
 
     private readonly RmmAuditInterface $audit;
     private readonly RmmMetricSinkInterface $metrics;
+    private readonly RmmEventsInterface $events;
 
     /**
      * @param array{binary_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>} $options
@@ -104,9 +121,11 @@ final class RmmModule
         private readonly ?JobTypeRegistry $registry = null,
         private readonly ?AccessPolicyInterface $policy = null,
         private readonly ?UrlPolicy $urlPolicy = null,
+        ?RmmEventsInterface $events = null,
     ) {
         $this->audit = $audit ?? new NullRmmAudit();
         $this->metrics = $metrics ?? new NullRmmMetricSink();
+        $this->events = $events ?? new NullRmmEvents();
     }
 
     /**
@@ -160,12 +179,12 @@ final class RmmModule
 
     public function jobs(): JobService
     {
-        return $this->jobs ??= new JobService($this->sql(), $this->settings(), $this->registry ?? JobTypeRegistry::withDefaults());
+        return $this->jobs ??= new JobService($this->sql(), $this->settings(), $this->registry ?? JobTypeRegistry::withDefaults(), $this->eventPublisher());
     }
 
     public function checks(): CheckEvaluator
     {
-        return $this->checks ??= new CheckEvaluator($this->sql(), $this->settings(), $this->bridge, $this->devices());
+        return $this->checks ??= new CheckEvaluator($this->sql(), $this->settings(), $this->bridge, $this->devices(), $this->eventPublisher());
     }
 
     public function linker(): RmmLinker
@@ -185,7 +204,7 @@ final class RmmModule
 
     public function enrollment(): EnrollmentService
     {
-        return $this->enrollment ??= new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel());
+        return $this->enrollment ??= new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel(), $this->eventPublisher());
     }
 
     public function deviceService(): DeviceService
@@ -198,7 +217,43 @@ final class RmmModule
         return new CheckinService($this->sql(), $this->settings(), $this->devices(), $this->checks(), $this->jobs(), $this->updates(), $this->linker(), $this->assets, $this->metrics,
             function (array $work): void {
                 $this->ingestQueue()->enqueue($work);
-            });
+            }, $this->deviceState(), $this->software(), $this->eventPublisher());
+    }
+
+    /** Capabilities, presence and software bookkeeping of a device (table rmm_device_state). */
+    public function deviceState(): DeviceState
+    {
+        return $this->deviceState ??= new DeviceState($this->sql());
+    }
+
+    /** Delivers `rmm.*` events to the edition's {@see RmmEventsInterface} (after commit; a failing bus never fails the caller). */
+    public function eventPublisher(): RmmEventPublisher
+    {
+        return $this->eventPublisher ??= new RmmEventPublisher($this->sql(), $this->events);
+    }
+
+    /** The software inventory: apply a report, current state, change log. */
+    public function software(): SoftwareService
+    {
+        return $this->software ??= new SoftwareService($this->sql(), $this->deviceState(), $this->eventPublisher());
+    }
+
+    /** Tags on devices. */
+    public function tags(): TagService
+    {
+        return $this->tagService ??= new TagService($this->sql());
+    }
+
+    /** Static device groups with tag membership. */
+    public function groups(): GroupService
+    {
+        return $this->groupService ??= new GroupService($this->sql());
+    }
+
+    /** Tag, group and software actions of technicians (shared by the REST API and the edition's pages). */
+    public function inventory(): InventoryActions
+    {
+        return $this->inventory ??= new InventoryActions($this->devices(), $this->authorizer(), $this->tags(), $this->groups(), $this->deviceState(), $this->audit);
     }
 
     /** Queued ingest (`rmm.ingest` jobs on Core's JobQueue): enqueue, batch worker, backlog metric. */
@@ -236,7 +291,8 @@ final class RmmModule
 
     public function housekeeping(): Housekeeping
     {
-        return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue());
+        return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
+            $this->metrics instanceof DatabaseMetricSink ? $this->metrics : null);
     }
 
     // ------------------------------------------------------------------ technician and administration side
@@ -256,7 +312,7 @@ final class RmmModule
     {
         return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore(),
             $this->assets instanceof RmmAssetNamesInterface ? $this->assets : null, $this->clientLabel(),
-            $this->policy === null ? null : $this->authorizer());
+            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metrics instanceof RmmMetricReaderInterface ? $this->metrics : null);
     }
 
     /** Hosted agent binaries: validate, store, publish, serve. */
@@ -294,7 +350,7 @@ final class RmmModule
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */
     public function technicianApi(): TechnicianApi
     {
-        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel());
+        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory());
     }
 
     /**
