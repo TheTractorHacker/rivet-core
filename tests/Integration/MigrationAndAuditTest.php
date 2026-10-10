@@ -45,8 +45,8 @@ final class MigrationAndAuditTest extends TestCase
 
     public function testAppliesThenIsIdempotent(): void
     {
-        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities', '0012_job_heartbeat', '0013_retention_indexes', '0014_endpoint_agent_core', '0015_endpoint_agent_converge', '0016_rmm_module_switches', '0017_mcp_identity_binary_collation'], $this->runner()->pending());
-        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities', '0012_job_heartbeat', '0013_retention_indexes', '0014_endpoint_agent_core', '0015_endpoint_agent_converge', '0016_rmm_module_switches', '0017_mcp_identity_binary_collation'], $this->runner()->run());
+        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities', '0012_job_heartbeat', '0013_retention_indexes', '0014_endpoint_agent_core', '0015_endpoint_agent_converge', '0016_rmm_module_switches', '0017_mcp_identity_binary_collation', '0018_rmm_inventory_foundation'], $this->runner()->pending());
+        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities', '0012_job_heartbeat', '0013_retention_indexes', '0014_endpoint_agent_core', '0015_endpoint_agent_converge', '0016_rmm_module_switches', '0017_mcp_identity_binary_collation', '0018_rmm_inventory_foundation'], $this->runner()->run());
         $this->assertSame([], $this->runner()->run());
         $this->assertSame([], $this->runner()->pending());
         $row = $this->db->fetchOne('SELECT * FROM rivet_core_migrations');
@@ -58,7 +58,7 @@ final class MigrationAndAuditTest extends TestCase
         $this->runner()->run();
         $this->db->execute('INSERT INTO audit_events (event_type, action) VALUES (?, ?)', ['keep', 'me']);
         $this->db->execute('DROP TABLE rivet_core_migrations');
-        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities', '0012_job_heartbeat', '0013_retention_indexes', '0014_endpoint_agent_core', '0015_endpoint_agent_converge', '0016_rmm_module_switches', '0017_mcp_identity_binary_collation'], $this->runner()->run());
+        $this->assertSame(['0001_audit_events', '0002_integration_jobs', '0003_mcp_unlinked_identities', '0004_problems_and_changes', '0005_webhook_deliveries', '0006_automation_rules', '0007_workflow_tables', '0008_compliance', '0009_compliance_shared_report', '0010_compliance_subjects', '0011_compliance_responsibilities', '0012_job_heartbeat', '0013_retention_indexes', '0014_endpoint_agent_core', '0015_endpoint_agent_converge', '0016_rmm_module_switches', '0017_mcp_identity_binary_collation', '0018_rmm_inventory_foundation'], $this->runner()->run());
         $this->assertSame(1, (int) $this->db->fetchOne('SELECT COUNT(*) c FROM audit_events')['c']);
     }
 
@@ -77,7 +77,7 @@ final class MigrationAndAuditTest extends TestCase
     public function testStatusListsEveryMigrationWithItsAppliedTime(): void
     {
         $before = $this->runner()->status();
-        $this->assertCount(17, $before);
+        $this->assertCount(18, $before);
         $this->assertSame(['0001_audit_events', null], [$before[0]['id'], $before[0]['applied_at']]);
         $this->runner()->run();
         $after = $this->runner()->status();
@@ -96,8 +96,8 @@ final class MigrationAndAuditTest extends TestCase
             $impatient->run();
         } finally {
             $other->query("SELECT RELEASE_LOCK(CONCAT('" . MigrationRunner::LOCK_NAME . "', ':', MD5(IFNULL(DATABASE(), ''))))");
-            $this->assertCount(17, $this->runner()->pending(), 'nothing was applied while the lock was held elsewhere');
-            $this->assertCount(17, $this->runner()->run());
+            $this->assertCount(18, $this->runner()->pending(), 'nothing was applied while the lock was held elsewhere');
+            $this->assertCount(18, $this->runner()->run());
         }
     }
 
@@ -121,8 +121,8 @@ final class MigrationAndAuditTest extends TestCase
     public function testRunTwiceInARowAppliesNothingTheSecondTime(): void
     {
         $first = $this->runner()->run();
-        $this->assertCount(17, $first);
+        $this->assertCount(18, $first);
         $this->assertSame([], $this->runner()->run());
-        $this->assertSame(17, (int) $this->db->fetchOne('SELECT COUNT(*) c FROM rivet_core_migrations')['c']);
+        $this->assertSame(18, (int) $this->db->fetchOne('SELECT COUNT(*) c FROM rivet_core_migrations')['c']);
     }
 }

@@ -54,7 +54,7 @@ final class SchemaDiffTest extends TestCase
             $this->markTestSkipped('Refusing to create databases next to a schema whose name does not contain "scratch".');
         }
         mysqli_report(MYSQLI_REPORT_OFF);
-        $root = new \mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '');
+        $root = new \mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '', '', (int) (getenv('RIVETCORE_TEST_DB_PORT') ?: 0));
         if ($root->connect_errno) {
             $this->markTestSkipped('Cannot connect: ' . $root->connect_error);
         }
@@ -68,7 +68,7 @@ final class SchemaDiffTest extends TestCase
         $root->close();
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
         foreach (self::SUFFIXES as $s) {
-            $c = new \mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '', $this->base . '_' . $s);
+            $c = new \mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '', $this->base . '_' . $s, (int) (getenv('RIVETCORE_TEST_DB_PORT') ?: 0));
             $c->set_charset('utf8mb4');
             $this->conn[$s] = $c;
         }
@@ -79,7 +79,7 @@ final class SchemaDiffTest extends TestCase
         if ($this->conn === []) {
             return;
         }
-        $root = new \mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '');
+        $root = new \mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '', '', (int) (getenv('RIVETCORE_TEST_DB_PORT') ?: 0));
         foreach (self::SUFFIXES as $s) {
             $this->conn[$s]->close();
             $root->query('DROP DATABASE IF EXISTS `' . $this->base . '_' . $s . '`');
@@ -161,9 +161,11 @@ final class SchemaDiffTest extends TestCase
     private function describe(string $s): array
     {
         $db = $this->db($s);
-        $tables = $db->fetchAll("SELECT TABLE_NAME, ENGINE, TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'endpoint\\_agent\\_%' ORDER BY TABLE_NAME");
-        $columns = $db->fetchAll("SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'endpoint\\_agent\\_%' ORDER BY TABLE_NAME, ORDINAL_POSITION");
-        $indexes = $db->fetchAll("SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME, SUB_PART FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'endpoint\\_agent\\_%' ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX");
+        // Only the ten original tables: migration 0018 adds more (endpoint_agent_check_history among them), covered by the phase 1 tests below.
+        $in = "'" . implode("','", array_keys(RmmSchema::tables())) . "'";
+        $tables = $db->fetchAll("SELECT TABLE_NAME, ENGINE, TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) ORDER BY TABLE_NAME");
+        $columns = $db->fetchAll("SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) ORDER BY TABLE_NAME, ORDINAL_POSITION");
+        $indexes = $db->fetchAll("SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME, SUB_PART FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX");
 
         return ['tables' => $tables, 'columns' => $columns, 'indexes' => $indexes];
     }
@@ -270,9 +272,42 @@ final class SchemaDiffTest extends TestCase
         $this->assertSame(1, (int) $this->db('b')->fetchOne('SELECT enabled FROM endpoint_agent_settings')['enabled']);
     }
 
+    public function testMigration0018AddsOnlyNewTablesAndIsIdempotent(): void
+    {
+        $this->reference();
+        $this->build('c', 'rivetit-2.6.146-final.sql', true);
+        $this->seed('c');
+        $before = $this->describe('c');
+        $rows = $this->checksums('c');
+
+        $applied = $this->runner('c')->run();
+        $this->assertContains('0018_rmm_inventory_foundation', $applied);
+        $this->assertSame($before, $this->describe('c'), 'the ten original tables are not altered');
+        $this->assertSame($rows, $this->checksums('c'));
+        foreach (RmmSchema::phase1Tables() as $name => $_) {
+            $this->assertSame(1, (int) $this->db('c')->fetchOne('SELECT COUNT(*) c FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND TABLE_COLLATION = ? AND ENGINE = ?', [$name, 'utf8mb4_general_ci', 'InnoDB'])['c'], $name);
+            $this->assertSame(0, (int) $this->db('c')->fetchOne('SELECT COUNT(*) c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLLATION_NAME IS NOT NULL AND COLLATION_NAME <> ?', [$name, 'utf8mb4_general_ci'])['c'], "$name columns");
+        }
+        // idempotent, and a row survives a second run
+        $this->db('c')->execute("INSERT INTO rmm_tags (name) VALUES ('kiosk')");
+        (new \RivetCore\Rmm\Migration\Migration0018InventoryFoundation())->up($this->db('c'));
+        $this->assertSame([], $this->runner('c')->run());
+        $this->assertSame(1, (int) $this->db('c')->fetchOne('SELECT COUNT(*) c FROM rmm_tags')['c']);
+        $this->assertSame($before, $this->describe('c'));
+    }
+
+    public function testFreshCoreInstallHasEveryPhase1Table(): void
+    {
+        $this->runner('b')->run();
+        foreach (array_keys(RmmSchema::phase1Tables()) as $name) {
+            $this->assertSame(1, (int) $this->db('b')->fetchOne('SELECT COUNT(*) c FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?', [$name])['c'], $name);
+        }
+        $this->assertCount(11, RmmSchema::phase1Tables());
+    }
+
     public function testEveryTableIsUtf8mb4GeneralCiExplicitly(): void
     {
-        foreach (RmmSchema::tables() as $name => $ddl) {
+        foreach (RmmSchema::tables() + RmmSchema::phase1Tables() as $name => $ddl) {
             $this->assertStringContainsString('COLLATE=utf8mb4_general_ci', $ddl, $name);
             $this->assertStringContainsString('ENGINE=InnoDB', $ddl, $name);
         }

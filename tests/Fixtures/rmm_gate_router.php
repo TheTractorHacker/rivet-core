@@ -12,7 +12,7 @@ declare(strict_types=1);
 require dirname(__DIR__, 2) . '/docs/rmm/templates/rmm_gate.php';
 
 mysqli_report(MYSQLI_REPORT_OFF);
-$m = new mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', (string) getenv('RIVETCORE_TEST_DB_USER'), (string) getenv('RIVETCORE_TEST_DB_PASS'), (string) getenv('RIVETCORE_TEST_DB_NAME'));
+$m = new mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', (string) getenv('RIVETCORE_TEST_DB_USER'), (string) getenv('RIVETCORE_TEST_DB_PASS'), (string) getenv('RIVETCORE_TEST_DB_NAME'), (int) (getenv('RIVETCORE_TEST_DB_PORT') ?: 0));
 $ok = !$m->connect_errno && $m->query('SELECT COUNT(*) FROM endpoint_agent_settings') !== false;
 header('Content-Type: application/json');
 echo json_encode(['passed' => true, 'db' => $ok]);

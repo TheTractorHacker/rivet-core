@@ -39,11 +39,11 @@ final class NightlyFixes20261008Test extends TestCase
         $this->assertStringNotContainsString('WHERE serial = ? ORDER', $src);
     }
 
-    public function testMigration0017IsRegisteredLastAndIdempotent(): void
+    public function testMigration0017IsRegisteredAndIdempotent(): void
     {
         $all = CoreMigrations::all();
-        $this->assertInstanceOf(Migration0017McpIdentityBinaryCollation::class, $all[count($all) - 1]);
-        $this->assertSame('0017_mcp_identity_binary_collation', $all[count($all) - 1]->id());
+        $this->assertInstanceOf(Migration0017McpIdentityBinaryCollation::class, $all[16]);
+        $this->assertSame('0017_mcp_identity_binary_collation', $all[16]->id());
 
         $db = new FakeDatabase();
         $db->rows = [['COLUMN_NAME' => 'issuer', 'COLLATION_NAME' => 'utf8mb4_general_ci'], ['COLUMN_NAME' => 'subject', 'COLLATION_NAME' => 'utf8mb4_general_ci']];

@@ -249,4 +249,159 @@ CREATE TABLE IF NOT EXISTS `endpoint_agent_binaries` (
 SQL,
         ];
     }
+
+    /**
+     * The Phase 1 tables (migration 0018): per-device state, software inventory and history, tags, groups, the per-check history
+     * ring and the database metric sink. They are Core-owned and new, so they never alter the ten tables above (which an edition
+     * mirrors in its own db.sql). Same collation rule: explicit on every table.
+     *
+     * @return array<string,string> table name => CREATE TABLE IF NOT EXISTS statement (no trailing semicolon)
+     */
+    public static function phase1Tables(): array
+    {
+        return [
+            'rmm_device_state' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_device_state` (
+  `device_id` int(11) NOT NULL,
+  `platform` varchar(20) DEFAULT NULL,
+  `capabilities_json` text DEFAULT NULL,
+  `presence` varchar(8) DEFAULT NULL,
+  `presence_at` datetime DEFAULT NULL,
+  `software_hash` char(64) DEFAULT NULL,
+  `software_count` int(11) DEFAULT NULL,
+  `software_at` datetime DEFAULT NULL,
+  `software_full_at` datetime DEFAULT NULL,
+  `software_resync` tinyint(1) NOT NULL DEFAULT 0,
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`device_id`),
+  KEY `idx_presence` (`presence`,`presence_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_device_software' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_device_software` (
+  `device_id` int(11) NOT NULL,
+  `software_key` char(40) NOT NULL,
+  `name` varchar(200) NOT NULL,
+  `source` varchar(12) NOT NULL,
+  `version` varchar(100) NOT NULL DEFAULT '',
+  `publisher` varchar(200) NOT NULL DEFAULT '',
+  `installed_on` date DEFAULT NULL,
+  `first_seen_at` datetime NOT NULL,
+  `last_seen_at` datetime NOT NULL,
+  `removed_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`device_id`,`software_key`),
+  KEY `idx_name` (`name`,`device_id`),
+  KEY `idx_removed` (`removed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_software_history' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_software_history` (
+  `history_id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `device_id` int(11) NOT NULL,
+  `software_key` char(40) NOT NULL,
+  `name` varchar(200) NOT NULL,
+  `source` varchar(12) NOT NULL,
+  `change_type` varchar(12) NOT NULL,
+  `old_version` varchar(100) DEFAULT NULL,
+  `new_version` varchar(100) DEFAULT NULL,
+  `publisher` varchar(200) NOT NULL DEFAULT '',
+  `occurred_at` datetime NOT NULL,
+  PRIMARY KEY (`history_id`),
+  KEY `idx_device_time` (`device_id`,`occurred_at`),
+  KEY `idx_device_key` (`device_id`,`software_key`),
+  KEY `idx_time` (`occurred_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_tags' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_tags` (
+  `tag_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(60) NOT NULL,
+  `color` varchar(7) NOT NULL DEFAULT '',
+  `description` varchar(200) NOT NULL DEFAULT '',
+  `created_by` int(11) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`tag_id`),
+  UNIQUE KEY `uniq_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_device_tags' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_device_tags` (
+  `device_id` int(11) NOT NULL,
+  `tag_id` int(11) NOT NULL,
+  `source` varchar(10) NOT NULL DEFAULT 'manual',
+  `created_by` int(11) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`device_id`,`tag_id`),
+  KEY `idx_tag` (`tag_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_groups' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_groups` (
+  `group_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `description` varchar(200) NOT NULL DEFAULT '',
+  `created_by` int(11) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`group_id`),
+  UNIQUE KEY `uniq_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_group_devices' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_group_devices` (
+  `group_id` int(11) NOT NULL,
+  `device_id` int(11) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`group_id`,`device_id`),
+  KEY `idx_device` (`device_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_group_tags' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_group_tags` (
+  `group_id` int(11) NOT NULL,
+  `tag_id` int(11) NOT NULL,
+  PRIMARY KEY (`group_id`,`tag_id`),
+  KEY `idx_tag` (`tag_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'endpoint_agent_check_history' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `endpoint_agent_check_history` (
+  `hist_id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `device_id` int(11) NOT NULL,
+  `check_key` varchar(100) NOT NULL,
+  `status` varchar(10) NOT NULL,
+  `detail` varchar(200) NOT NULL DEFAULT '',
+  `reported_at` datetime NOT NULL,
+  PRIMARY KEY (`hist_id`),
+  KEY `idx_check_time` (`device_id`,`check_key`,`reported_at`),
+  KEY `idx_time` (`reported_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_metric_latest' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_metric_latest` (
+  `asset_id` int(11) NOT NULL,
+  `metric_key` varchar(64) NOT NULL,
+  `instance` varchar(64) NOT NULL DEFAULT '',
+  `value` double NOT NULL,
+  `label` varchar(64) DEFAULT NULL,
+  `sampled_at` datetime NOT NULL,
+  PRIMARY KEY (`asset_id`,`metric_key`,`instance`),
+  KEY `idx_sampled` (`sampled_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_metric_hourly' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_metric_hourly` (
+  `asset_id` int(11) NOT NULL,
+  `metric_key` varchar(64) NOT NULL,
+  `instance` varchar(64) NOT NULL DEFAULT '',
+  `hour_start` datetime NOT NULL,
+  `samples` int(10) unsigned NOT NULL DEFAULT 0,
+  `sum_value` double NOT NULL DEFAULT 0,
+  `min_value` double NOT NULL,
+  `max_value` double NOT NULL,
+  PRIMARY KEY (`asset_id`,`metric_key`,`instance`,`hour_start`),
+  KEY `idx_hour` (`hour_start`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+        ];
+    }
 }

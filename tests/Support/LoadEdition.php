@@ -15,6 +15,7 @@ use RivetCore\Rmm\Http\DeviceApi;
 use RivetCore\Rmm\Migration\Migration0014EndpointAgent;
 use RivetCore\Rmm\Migration\Migration0015EndpointAgentConverge;
 use RivetCore\Rmm\Migration\Migration0016ModuleSwitches;
+use RivetCore\Rmm\Migration\Migration0018InventoryFoundation;
 use RivetCore\Rmm\RmmModule;
 use RivetCore\Support\SystemClock;
 use RivetCore\Testing\InMemoryRmmAudit;
@@ -45,7 +46,7 @@ final class LoadEdition
         mysqli_report(MYSQLI_REPORT_OFF);
         $m = mysqli_init();
         $m->options(MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 1);
-        $m->real_connect(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', (string) getenv('RIVETCORE_TEST_DB_USER'), (string) getenv('RIVETCORE_TEST_DB_PASS'), $name);
+        $m->real_connect(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', (string) getenv('RIVETCORE_TEST_DB_USER'), (string) getenv('RIVETCORE_TEST_DB_PASS'), $name, (int) (getenv('RIVETCORE_TEST_DB_PORT') ?: 0));
         if ($m->connect_errno) {
             throw new \RuntimeException('database connection failed');
         }
@@ -67,7 +68,7 @@ final class LoadEdition
     public static function migrate(DatabaseInterface $db): void
     {
         foreach ([new \RivetCore\Jobs\Migration\Migration0002IntegrationJobs(), new \RivetCore\Jobs\Migration\Migration0012JobHeartbeat(), new Migration0014EndpointAgent(),
-            new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches()] as $mig) {
+            new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation()] as $mig) {
             $mig->up($db);
         }
         $db->execute('CREATE TABLE IF NOT EXISTS load_assets (asset_id int AUTO_INCREMENT PRIMARY KEY, client_id int NOT NULL, name varchar(200), serial varchar(100), model varchar(200), make varchar(200), os varchar(200), KEY idx_serial (serial)) ENGINE=InnoDB');
