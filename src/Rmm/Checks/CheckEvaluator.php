@@ -42,8 +42,9 @@ final class CheckEvaluator
     /**
      * @param array<string,mixed> $dev
      * @param list<array{key:string,status:string,detail:string,at:string,value?:?float}> $results oldest first
+     * @param array<string,array<string,mixed>>|null $defs the alerting parameters of the device's own check list ({@see AlertingEngine::definitionsOf()}), null = the instance's list
      */
-    public function apply(array $dev, array $results): void
+    public function apply(array $dev, array $results, ?array $defs = null): void
     {
         if ($results === []) {
             return;
@@ -52,7 +53,7 @@ final class CheckEvaluator
         $failN = max(1, (int) $cfg['failure_debounce']);
         $okN = max(1, (int) $cfg['recovery_debounce']);
         $now = $this->sql->utcNow();
-        $pipe = $this->alerting !== null && $this->alerting->enabled() ? $this->alerting->begin($dev, $results) : null;
+        $pipe = $this->alerting !== null && $this->alerting->enabled() ? $this->alerting->begin($dev, $results, $defs) : null;
         $limits = $this->settings->limits();
         $keepDays = $limits['check_history_days'];
         $gap = $limits['check_history_gap_s'];

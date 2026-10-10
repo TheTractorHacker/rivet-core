@@ -162,6 +162,10 @@ final class KitMutationTest extends TestCase
             [RmmEventsKitTest::class, 'throws_unknown', ['testEveryEventIdIsAccepted']],
             [RmmEventsKitTest::class, 'drops_nulls', ['testNullAndFalseValuesAreNotDropped']],
             [RmmEventsKitTest::class, 'reverses', ['testPayloadsArriveUnchangedAndInOrder']],
+            // Schedule gate
+            [ScheduleGateKitTest::class, 'bad_word', ['testTheAnswerIsOneOfTheThreeDecisions', 'testNothingIsChangedAndNothingThrowsForAnUnusualButValidSlot', 'testADeviceRowWithOnlyTheDocumentedMembersIsEnough']],
+            [ScheduleGateKitTest::class, 'flips', ['testTheSameQuestionGetsTheSameAnswer']],
+            [ScheduleGateKitTest::class, 'throws_minimal', ['testADeviceRowWithOnlyTheDocumentedMembersIsEnough']],
             // Escalation (Phase 3)
             [RmmEscalationKitTest::class, 'throws_unknown_ack', ['testAcknowledgeAndSeverityForAnUnknownAlertAreQuiet']],
             [RmmEscalationKitTest::class, 'drops_targets', ['testNotificationsArriveCompleteAndInOrder', 'testTargetsKeepTheirOrderAndNullsSurvive']],

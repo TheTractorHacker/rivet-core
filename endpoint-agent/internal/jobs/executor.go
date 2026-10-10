@@ -214,7 +214,7 @@ func (e *Executor) process(j api.Job) {
 		return
 	}
 	switch j.Type {
-	case TypePowerShell, TypeShell:
+	case TypePowerShell, TypeShell, TypePython:
 		state, reason, output, exit = e.runScript(ctx, j, timeout, maxOut)
 	case "collect":
 		state, reason, output = StateSucceeded, "", ""
@@ -253,7 +253,7 @@ func capText(s string, max int) string {
 }
 
 func (e *Executor) runScript(ctx context.Context, j api.Job, timeout time.Duration, maxOut int) (state, reason, output string, exit *int) {
-	sc, err := BuildScriptCommand(j.Script, j.Params)
+	sc, err := BuildJobCommand(j.Type, j.Script, j.Params)
 	if err != nil {
 		return StateFailed, "cannot_launch", err.Error(), nil
 	}

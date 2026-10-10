@@ -17,6 +17,7 @@ use RivetCore\Rmm\Alerting\CheckEvalStore;
 use RivetCore\Rmm\Alerting\DefaultThresholdResolver;
 use RivetCore\Rmm\Alerting\DependencyService;
 use RivetCore\Rmm\Alerting\EscalationService;
+use RivetCore\Rmm\Alerting\MaintenanceScheduleGate;
 use RivetCore\Rmm\Alerting\MaintenanceService;
 use RivetCore\Rmm\Alerting\ScopeMatcher;
 use RivetCore\Rmm\Alerting\StormControl;
@@ -25,6 +26,7 @@ use RivetCore\Rmm\Capacity\CapacityReport;
 use RivetCore\Rmm\Capacity\IngestQueue;
 use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Admin\RmmAdmin;
+use RivetCore\Rmm\Approvals\ApprovalService;
 use RivetCore\Rmm\Authz\RmmAuthorizer;
 use RivetCore\Rmm\Binaries\BinaryStore;
 use RivetCore\Rmm\Checkin\CheckinService;
@@ -39,22 +41,35 @@ use RivetCore\Rmm\Contracts\RmmMetricReaderInterface;
 use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
 use RivetCore\Rmm\Contracts\RmmModuleStateInterface;
 use RivetCore\Rmm\Contracts\RmmTenancyInterface;
+use RivetCore\Rmm\Contracts\ScheduleGateInterface;
 use RivetCore\Rmm\Contracts\SecretBoxInterface;
 use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Device\DeviceState;
 use RivetCore\Rmm\Device\DeviceService;
 use RivetCore\Rmm\Enrollment\AttemptLog;
 use RivetCore\Rmm\Enrollment\EnrollmentService;
+use RivetCore\Rmm\Fields\CustomFieldService;
 use RivetCore\Rmm\Http\DeviceApi;
 use RivetCore\Rmm\Http\TechnicianApi;
 use RivetCore\Rmm\Installer\InstallerDownload;
 use RivetCore\Rmm\Installer\InstallerService;
+use RivetCore\Rmm\Job\JobExtras;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Job\JobTypeRegistry;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\Maintenance\Housekeeping;
 use RivetCore\Rmm\Mesh\MeshService;
+use RivetCore\Rmm\Policy\EffectivePolicy;
+use RivetCore\Rmm\Policy\PolicyStore;
+use RivetCore\Rmm\Read\AutomationReader;
 use RivetCore\Rmm\Read\RmmReadModel;
+use RivetCore\Rmm\Scripts\ApprovedRunExecutor;
+use RivetCore\Rmm\Scripts\BulkRunner;
+use RivetCore\Rmm\Scripts\ScheduleRunner;
+use RivetCore\Rmm\Scripts\ScheduleService;
+use RivetCore\Rmm\Scripts\ScriptRunner;
+use RivetCore\Rmm\Scripts\ScriptService;
+use RivetCore\Rmm\Scripts\TargetResolver;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Software\SoftwareService;
 use RivetCore\Rmm\Support\DatabaseMetricSink;
@@ -66,7 +81,10 @@ use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Tags\GroupService;
 use RivetCore\Rmm\Tags\TagService;
+use RivetCore\Rmm\Technician\FieldActions;
 use RivetCore\Rmm\Technician\InventoryActions;
+use RivetCore\Rmm\Technician\PolicyActions;
+use RivetCore\Rmm\Technician\ScriptActions;
 use RivetCore\Rmm\Technician\TechnicianActions;
 use RivetCore\Rmm\Update\UpdateService;
 use RivetCore\Webhooks\UrlPolicy;
@@ -125,6 +143,23 @@ final class RmmModule
     private ?CheckEvalStore $checkEvalStore = null;
     private ?AlertingActions $alertingActions = null;
     private ?\RivetCore\Rmm\Http\AlertingApi $alertingApi = null;
+    private ?PolicyStore $policyStore = null;
+    private ?EffectivePolicy $effectivePolicy = null;
+    private ?JobExtras $jobExtras = null;
+    private ?ScriptService $scriptService = null;
+    private ?CustomFieldService $fieldService = null;
+    private ?ApprovalService $approvalService = null;
+    private ?TargetResolver $targetResolver = null;
+    private ?ScriptRunner $scriptRunner = null;
+    private ?BulkRunner $bulkRunner = null;
+    private ?ScheduleService $scheduleService = null;
+    private ?ScheduleRunner $scheduleRunner = null;
+    private ?ApprovedRunExecutor $approvedRunExecutor = null;
+    private ?AutomationReader $automationReader = null;
+    private ?PolicyActions $policyActions = null;
+    private ?ScriptActions $scriptActions = null;
+    private ?FieldActions $fieldActions = null;
+    private ?ScheduleGateInterface $scheduleGate = null;
 
     private readonly RmmAuditInterface $audit;
     private readonly RmmMetricSinkInterface $metrics;
@@ -205,7 +240,7 @@ final class RmmModule
 
     public function jobs(): JobService
     {
-        return $this->jobs ??= new JobService($this->sql(), $this->settings(), $this->registry ?? JobTypeRegistry::withDefaults(), $this->eventPublisher());
+        return $this->jobs ??= new JobService($this->sql(), $this->settings(), $this->registry ?? JobTypeRegistry::withDefaults(), $this->eventPublisher(), $this->jobExtras(), $this->deviceState());
     }
 
     public function checks(): CheckEvaluator
@@ -300,7 +335,7 @@ final class RmmModule
         return new CheckinService($this->sql(), $this->settings(), $this->devices(), $this->checks(), $this->jobs(), $this->updates(), $this->linker(), $this->assets, $this->metrics,
             function (array $work): void {
                 $this->ingestQueue()->enqueue($work);
-            }, $this->deviceState(), $this->software(), $this->eventPublisher());
+            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy());
     }
 
     /** Capabilities, presence and software bookkeeping of a device (table rmm_device_state). */
@@ -375,8 +410,115 @@ final class RmmModule
     public function housekeeping(): Housekeeping
     {
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
-            $this->metrics instanceof DatabaseMetricSink ? $this->metrics : null,
+            $this->metrics instanceof DatabaseMetricSink ? $this->metrics : null, $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()));
+    }
+
+    // ------------------------------------------------------------------ Phase 2: policies, script library, schedules, approvals, custom fields
+
+    /** Policies and their assignments (tables rmm_policies, rmm_policy_assignments). */
+    public function policyStore(): PolicyStore
+    {
+        return $this->policyStore ??= new PolicyStore($this->sql(), $this->tenancy);
+    }
+
+    /** What one device is told, given the policies that reach it (used by the check-in; the `policies` sub-switch must be on). */
+    public function effectivePolicy(): EffectivePolicy
+    {
+        return $this->effectivePolicy ??= new EffectivePolicy($this->settings(), $this->policyStore());
+    }
+
+    /** The sidecar of library jobs (script, schedule, approval, idempotency key, sealed secret parameters). */
+    public function jobExtras(): JobExtras
+    {
+        return $this->jobExtras ??= new JobExtras($this->sql(), $this->box);
+    }
+
+    /** The script library: versions signed with the instance key. */
+    public function scripts(): ScriptService
+    {
+        return $this->scriptService ??= new ScriptService($this->sql(), $this->settings());
+    }
+
+    /** Custom fields and their values. */
+    public function customFields(): CustomFieldService
+    {
+        return $this->fieldService ??= new CustomFieldService($this->sql(), $this->box, $this->tenancy);
+    }
+
+    /** Two-person approval requests. */
+    public function approvals(): ApprovalService
+    {
+        return $this->approvalService ??= new ApprovalService($this->sql(), $this->settings());
+    }
+
+    /** Which devices a run or schedule target reaches. */
+    public function targets(): TargetResolver
+    {
+        return $this->targetResolver ??= new TargetResolver($this->sql(), $this->tenancy);
+    }
+
+    /** Library script plus parameters to a queued job on one device. */
+    public function scriptRunner(): ScriptRunner
+    {
+        return $this->scriptRunner ??= new ScriptRunner($this->jobs(), $this->customFields(), $this->eventPublisher());
+    }
+
+    public function bulkRunner(): BulkRunner
+    {
+        return $this->bulkRunner ??= new BulkRunner($this->targets(), $this->scriptRunner(), $this->sql());
+    }
+
+    /** Scheduled scripts: definitions and history. */
+    public function schedules(): ScheduleService
+    {
+        return $this->scheduleService ??= new ScheduleService($this->sql(), $this->settings(), $this->scripts(), $this->scriptRunner(), $this->targets());
+    }
+
+    /**
+     * Give scheduled scripts a say before they start on a device (the alerting phase's maintenance windows). Call it once, before the first
+     * {@see housekeeping()} of the process; the default lets everything run.
+     */
+    public function setScheduleGate(ScheduleGateInterface $gate): void
+    {
+        $this->scheduleGate = $gate;
+        $this->scheduleRunner = null;
+    }
+
+    public function scheduleRunner(): ScheduleRunner
+    {
+        return $this->scheduleRunner ??= new ScheduleRunner($this->sql(), $this->settings(), $this->scripts(), $this->scriptRunner(), $this->targets(), $this->jobExtras(),
+            $this->scheduleGate ?? new MaintenanceScheduleGate($this->maintenance(), $this->settings()), $this->audit);
+    }
+
+    public function approvedRunExecutor(): ApprovedRunExecutor
+    {
+        return $this->approvedRunExecutor ??= new ApprovedRunExecutor($this->sql(), $this->settings(), $this->approvals(), $this->scripts(), $this->bulkRunner(), $this->tenancy, $this->audit);
+    }
+
+    /** The Phase 2 reads (also reachable as `readModel()->automation()`). */
+    public function automationReader(): AutomationReader
+    {
+        return $this->automationReader ??= new AutomationReader($this->sql(), $this->policyStore(), $this->effectivePolicy(), $this->scripts(), $this->approvals(), $this->schedules(), $this->customFields(), $this->deviceState());
+    }
+
+    /** Policy administration (needs the edition's AccessPolicy). */
+    public function policyActions(): PolicyActions
+    {
+        return $this->policyActions ??= new PolicyActions($this->authorizer(), $this->policyStore(), $this->audit, $this->eventPublisher());
+    }
+
+    /** The script library, library runs, approvals and schedules for technicians (needs the edition's AccessPolicy). */
+    public function scriptActions(): ScriptActions
+    {
+        return $this->scriptActions ??= new ScriptActions($this->devices(), $this->authorizer(), $this->settings(), $this->scripts(), $this->scriptRunner(), $this->bulkRunner(), $this->targets(),
+            $this->approvals(), $this->schedules(), $this->approvedRunExecutor(), $this->audit, $this->eventPublisher());
+    }
+
+    /** Custom field definitions and values (needs the edition's AccessPolicy). */
+    public function fieldActions(): FieldActions
+    {
+        return $this->fieldActions ??= new FieldActions($this->authorizer(), $this->customFields(), $this->devices(), $this->audit, $this->tenancy);
     }
 
     // ------------------------------------------------------------------ technician and administration side
@@ -396,7 +538,7 @@ final class RmmModule
     {
         return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore(),
             $this->assets instanceof RmmAssetNamesInterface ? $this->assets : null, $this->clientLabel(),
-            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metrics instanceof RmmMetricReaderInterface ? $this->metrics : null);
+            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metrics instanceof RmmMetricReaderInterface ? $this->metrics : null, $this->automationReader());
     }
 
     /** Hosted agent binaries: validate, store, publish, serve. */
@@ -421,7 +563,7 @@ final class RmmModule
     public function technician(): TechnicianActions
     {
         return $this->technician ??= new TechnicianActions($this->sql(), $this->devices(), $this->deviceService(), $this->enrollment(), $this->jobs(), $this->updates(),
-            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel());
+            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions());
     }
 
     /** The validated administration operations (settings, MeshCentral, signing key, binaries, releases, installers). */
@@ -434,7 +576,7 @@ final class RmmModule
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */
     public function technicianApi(): TechnicianApi
     {
-        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->alertingApi());
+        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi());
     }
 
     /** The alerts, maintenance windows, escalation policies and thresholds routes (mounted by {@see technicianApi()}). */

@@ -84,7 +84,14 @@ the root-owned binary and unit, the 0700 state directory and the signed-job mode
 **Jobs.** Job type `shell`: the script is written to a 0700 file in a fresh 0700 temp directory and run as `bash <file>` (`sh` when bash is missing) in its own process group with
 a minimal environment (`PATH`, `LANG`, `HOME`), `RIVETIT_JOB_PARAMS` holding the JSON params, a hard timeout (the whole group is killed), the same output cap and redaction as on Windows,
 and the file removed afterwards. The script never appears in argv (visible to all users in `/proc`) and is not fed through stdin (so `apt`/`ssh` cannot swallow it). A job type this OS cannot run
-(`powershell` on Linux, `shell` on Windows) is reported `failed` with output beginning `unsupported_platform:` and nothing is executed. `reboot` uses a transient systemd timer
+(`powershell` on Linux, `shell` on Windows) is reported `failed` with output beginning `unsupported_platform:` and nothing is executed.
+Job type `python` (Linux, Python 3): the same file-in-a-private-directory model with `python3 -I -B -u <file>`; the capability `job:python` is announced only when `python3` is installed.
+**Parameters** (the signed `params` object) reach a script as `RIVETIT_JOB_PARAMS` (the JSON), one environment variable `RIVETIT_PARAM_<name>` per scalar value (byte for byte), and,
+for a lower-case name that is not a reserved word (`path`, `home`, `if`, `error`, ...), a script variable of the same name defined by a few generated lines at the top of the script.
+A string is NEVER written into those lines (the generated code reads it from the environment: `name="${RIVETIT_PARAM_name-}"` in bash, `$name=$env:RIVETIT_PARAM_name` in PowerShell,
+`os.environ` in Python), so no quoting rule exists to get wrong; an integer or boolean is re-formatted from its parsed value (digits, `true`/`false`, `True`/`False`). A value with a NUL byte
+or more than 20 parameters is not exposed. On Windows `$Params` (the parsed JSON) stays as before; the PowerShell path is unit-tested for its generated code and cross-build-checked, not run on
+a real Windows host in CI. `reboot` uses a transient systemd timer
 (`systemd-run --on-active=Ns systemctl reboot`, which survives an agent restart) and falls back to `shutdown -r +N`.
 
 **Inventory and metrics** (all from `/proc`, `/sys`, `statfs`, no helper programs): `/etc/os-release`, CPU model (`/proc/cpuinfo`, device tree on ARM boards), memory, mounted block
@@ -100,7 +107,9 @@ automatic rollback to `.prev`.
 **Packages.** `make packages VERSION=X` builds `.deb` and `.rpm` for amd64 and arm64 with nfpm in Docker (`packaging/nfpm.yaml`). They install the binary only; enrolling is still
 `rivetit-agent install ...`. Removal stops and disables the unit and deletes the unit file; `purge` also deletes the state directory.
 
-**Check-in additions.** Every check-in carries `platform` (`windows|linux`), `arch` and `capabilities` (`job:shell`, `check:disk`, ...). They are additive: servers that do not know them ignore
+**Policies.** The agent announces the capability `policies`. When the server offers the feature (`features` contains `policies`) it also sends `config.policy {version, applied, features}`; the checks and intervals that policy produced are already in the ordinary config fields. The agent keeps the block in its state, shows it in `status` and, as a second line behind the server, does not run script checks or any check when the policy's `script_checks` / `checks` toggle is false. A response without the block clears it.
+
+**Check-in additions.** Every check-in carries `platform` (`windows|linux`), `arch` and `capabilities` (`job:shell`, `check:disk`, `policies`, ...). They are additive: servers that do not know them ignore
 them. Agents older than 0.1.0-beta.2 never send them.
 
 **Server switched off.** On `503` with code `module_disabled` (or `feature_disabled`) the agent keeps its credential, the in-flight check-in and the ring buffer, does not count it as a failure,

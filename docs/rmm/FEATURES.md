@@ -1,6 +1,6 @@
 # RivetIT / RivetMSP RMM: what it does and contains
 
-Status: DRAFT for owner review, 2026-10-07; statuses updated for RivetCore v1.0.0-rc.9 (2026-10-10). This is the product-level feature list for the RMM module that is moving into RivetCore (`RivetCore\Rmm\*`). It is derived from, and must stay consistent with, [the extraction design](../design/endpoint-module-extraction.md) (sections 9 to 13), [ADR-010](../architecture/ADR-010-endpoint-agent-module.md) and the RMM section of [ROADMAP.md](../../ROADMAP.md). It promises nothing beyond the phases those documents define. How the asset (device) page and the fleet pages show all this is in [ASSET_PAGE_REDESIGN.md](ASSET_PAGE_REDESIGN.md).
+Status: DRAFT for owner review, 2026-10-07; statuses updated for RivetCore v1.0.0-rc.10 (2026-10-10). This is the product-level feature list for the RMM module that is moving into RivetCore (`RivetCore\Rmm\*`). It is derived from, and must stay consistent with, [the extraction design](../design/endpoint-module-extraction.md) (sections 9 to 13), [ADR-010](../architecture/ADR-010-endpoint-agent-module.md) and the RMM section of [ROADMAP.md](../../ROADMAP.md). It promises nothing beyond the phases those documents define. How the asset (device) page and the fleet pages show all this is in [ASSET_PAGE_REDESIGN.md](ASSET_PAGE_REDESIGN.md).
 
 ## How to read this list
 
@@ -9,10 +9,10 @@ Status: DRAFT for owner review, 2026-10-07; statuses updated for RivetCore v1.0.
 | Status | Meaning |
 |---|---|
 | **Shipped** | Works today in RivetIT beta (release v26.10.26, agent `agent-v0.1.0-beta.1`, DB 2.6.146). Verified from the code. |
-| **Core** | Built and tested in RivetCore (v1.0.0-rc.9 Phase 1; Phase 3 after it) but not yet adopted by an edition: it works for an edition once it runs migrations 0018 and 0020 and wires the new contracts, and it is not in a tagged RivetIT or RivetMSP release. Moves to `Shipped` after an edition release and its smoke test. |
+| **Core** | Built and tested in RivetCore (v1.0.0-rc.9 Phase 1, v1.0.0-rc.10 Phase 2; Phase 3 after it) but not yet adopted by an edition: it works for an edition once it runs migrations 0018, 0019 and 0020 and wires the new contracts, and it is not in a tagged RivetIT or RivetMSP release. Moves to `Shipped` after an edition release and its smoke test. |
 | **P0** | Phase 0: this build. The code moves into Core, a Linux agent joins the Windows agent, the module gets its on/off switch and capacity controls, and both RivetIT and RivetMSP adopt it. [#60](https://github.com/TheTractorHacker/rivet-core/issues/60) to [#68](https://github.com/TheTractorHacker/rivet-core/issues/68) |
-| **P1** | [#69](https://github.com/TheTractorHacker/rivet-core/issues/69) Foundation: Linux packaging, capability negotiation, software inventory with history, sites/groups/tags, `rmm.*` events, MSP metric sink. Built in Core in v1.0.0-rc.9: software inventory with history, tags and groups, nine `rmm.*` events, the database metric sink, per-check history, the live polling document and the capability announcement. Still to do: normalised hardware tables (3.3), site/group/tag at enrollment (2.8), `RmmSitesInterface`, filtering offers by capability (1.6), the remaining events (6.5) |
-| **P2** | [#70](https://github.com/TheTractorHacker/rivet-core/issues/70) Policies, check templates, script library, scheduled scripts, approvals, custom fields |
+| **P1** | [#69](https://github.com/TheTractorHacker/rivet-core/issues/69) Foundation: Linux packaging, capability negotiation, software inventory with history, sites/groups/tags, `rmm.*` events, MSP metric sink. Built in Core in v1.0.0-rc.9: software inventory with history, tags and groups, nine `rmm.*` events, the database metric sink, per-check history, the live polling document and the capability announcement. Still to do: normalised hardware tables (3.3), site/group/tag at enrollment (2.8), `RmmSitesInterface`, the remaining events (6.5). Offers are now filtered by capability (1.6, built with Phase 2) |
+| **P2** | [#70](https://github.com/TheTractorHacker/rivet-core/issues/70) Policies, check templates, script library, scheduled scripts, approvals, custom fields. Built in Core in v1.0.0-rc.10: the policy engine and its delivery in the check-in, check templates, the signed script library with parameters and secrets, bulk runs, scheduled scripts, two-person approval, custom fields, the `shell` and `python` job types and the agent side. Still to do: every edition page, a Windows host to run it on, `zsh` and `cmd` interpreters, `run_as` options, per-client script visibility, the import of an edition's existing saved scripts, and notifying approvers |
 | **P3** | [#71](https://github.com/TheTractorHacker/rivet-core/issues/71) Alerting maturity: thresholds, maintenance windows, suppression, escalation, more check types |
 | **P4** | [#72](https://github.com/TheTractorHacker/rivet-core/issues/72) Patch management (needs real Windows test machines) |
 | **P5** | [#73](https://github.com/TheTractorHacker/rivet-core/issues/73) Software deployment and reporting |
@@ -34,7 +34,7 @@ Two editions consume the module: **RivetIT** (has a Metrics subsystem: `device_m
 | 1.3 | Offline buffering: up to 100 samples and check results kept and replayed on reconnect, idempotent by `(device, seq)`; exponential backoff with jitter and `Retry-After` | Shipped | Shipped | P0 | P7 | The Linux agent reuses the same loop. |
 | 1.4 | Linux agent: enrols, checks in, reports metrics and checks, runs `collect` and `reboot` jobs | P0 | - | P0 | - | A Linux collector exists today as a test build only. Roadmap Phase 0 includes the Linux agent ([#65](https://github.com/TheTractorHacker/rivet-core/issues/65)); see the note at the end of this section. |
 | 1.5 | Linux packaging: systemd service, install script, `.deb` and `.rpm` | P1 | - | P1 | - | |
-| 1.6 | Capability negotiation: the agent announces platform, job types, check types and features; the server only offers what the agent supports | P1 | P1 | P1 | P7 | Core (rc.9) stores the announcement (`rmm_device_state`) and uses it for the software offer; filtering job and check offers by capability is not done yet and lands with policies (P2). Old agents are treated as today's Windows agent. |
+| 1.6 | Capability negotiation: the agent announces platform, job types, check types and features; the server only offers what the agent supports | Core | Core | Core | P7 | Core stores the announcement (`rmm_device_state`) and uses it for the software offer, for the policy feature (`policies`) and, since Phase 2, to leave out a job whose `job:<type>` the device did not announce and a check whose `check:<type>` it did not. An agent that announced no `job:` or `check:` capability (an old one) is treated as today's Windows agent and is offered everything. |
 | 1.7 | Agent runs behind the edition's host only: binaries are downloaded from your server, never from GitHub | Shipped | Shipped | P0 | - | |
 | 1.8 | Authenticode-signed Windows binaries and an MSI installer | P7 | P7 | - | - | Needs a code-signing certificate. Unsigned binaries trigger SmartScreen today. |
 | 1.9 | macOS agent (launchd, pkg, notarisation) | P7 | - | - | P7 | Blocked: no test Mac, no Apple developer account. |
@@ -93,7 +93,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 5.1 | Four check types: `service`, `disk`, `pending_reboot`, `script` | Shipped | Shipped | P0 | P7 | `service` on Linux means a systemd unit; `script` checks need the signature to verify. |
 | 5.2 | One global, signed check list pushed to every agent; script checks bounded to 8 KiB and 60 s | Shipped | Shipped | P0 | P7 | |
 | 5.3 | Debounce: an alert opens after 3 bad results and resolves after 2 good ones; each failure episode is a separate alert | Shipped | all | all | all | |
-| 5.4 | Check templates assigned to client, site, group, tag or device, with inheritance and per-device override | P2 | P2 | P2 | P7 | Needs the policy engine (area 11). |
+| 5.4 | Check templates assigned to client, site, group, tag or device, with inheritance and per-device override | Core | Core | Core | P7 | Policies (area 11) assign check templates to a client, site, group, tag or device; the most specific wins per check key, `enforce` and `disable` are honoured, a device's effective list is delivered signed. The instance's own check list stays the base layer. |
 | 5.5 | CPU and memory checks (memory, swap and Linux PSI pressure), process running, certificate expiry (files, directories, Windows stores, a TLS endpoint) | Core | Core | Core | P7 | Check types `cpu`, `memory`, `process`, `cert`. The basic event-log check is part of P8 (log collection) and is not built. |
 | 5.6 | Per-check result history (trend of the last N results) | Core | all | all | all | `endpoint_agent_check_history`: every change of status, and an unchanged status at most once per hour, for 7 days. Decision U3 of ASSET_PAGE_REDESIGN.md, taken one step further than "state changes only". Read with availability over the window. |
 
@@ -108,7 +108,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 6.3 | Alert list with acknowledge, filter and bulk actions | Shipped | all | all | all | Edition UI. |
 | 6.4 | Offline and online transitions feed the edition's `asset_offline` / `asset_online` automation | Shipped | all | all | all | |
 | 6.5 | `rmm.*` events for every state change (enrolled, approved, revoked, online, offline, alert opened/resolved, job completed, module enabled/disabled) delivered to webhooks and automation rules | Core | all | all | all | Nine events through `RmmEventsInterface`: device enrolled, offline, online; check failed, recovered; job completed, failed; software installed, removed. Approved, revoked and module on/off events are not emitted yet. |
-| 6.6 | Threshold tiers (warning and critical) with hysteresis and duration, flap detection | Core | all | all | all | `params.thresholds` on any check that reports a `value`, `params.flap` on any check; per-device override through the REST API. Behind the `alerting` sub-switch. Core, not yet adopted by an edition. |
+| 6.6 | Threshold tiers (warning and critical) with hysteresis and duration, flap detection | Core | all | all | all | `params.thresholds` on any check that reports a `value`, `params.flap` on any check; per-device override through the REST API. Behind the `alerting` sub-switch; policy check templates (P2) can carry them. Core, not yet adopted by an edition. |
 | 6.7 | Maintenance windows and alert suppression | Core | all | all | all | One-time and recurring, time zone aware, scope all, client, site, group, tag or device; `mute` or `suppress`; plus parent-device (dependency) suppression and per-client and global storm control. Core ignores the edition's own `rmm_maintenance_mode` flag; windows replace it. |
 | 6.8 | Escalation chains and notifications | Core | all | all | all | Policies of timed steps with targets, repeat, acknowledge and resolve, run by housekeeping. Delivery (email, chat, webhook) is the edition's, through the optional `RmmEscalationInterface`; Core sends nothing itself and never marks an undelivered notice as sent. Core, not yet adopted by an edition. |
 | 6.9 | Auto-remediation: run a script when an alert opens | P3 | P3 | P3 | P7 | Not built: it needs the Phase 2 script runner. The `rmm.alert.opened` event is the hook it will use. |
@@ -125,12 +125,12 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 7.4 | Signed jobs (Ed25519 over canonical JSON), destructive confirmation, at-most-once delivery for destructive jobs, lost-acknowledgement handling | Shipped | all | all | all | |
 | 7.5 | Job history per device with state, exit code, output viewer, cancel while queued | Shipped | all | all | all | |
 | 7.6 | Job-type registry (adding a job type becomes a registration, not a protocol change) | P0 | all | all | all | Same three types, same behaviour. |
-| 7.7 | `shell` jobs: bash, zsh, PowerShell, cmd | P2 | P2 | P2 | P7 | This is what brings scripts to Linux. |
-| 7.8 | Script library with parameters, variables, secrets and versions | P2 | all | all | all | |
-| 7.9 | Scheduled and recurring scripts, run once per window, safe across restarts and offline periods | P2 | all | all | all | |
-| 7.10 | Bulk run on a client, site, group or tag | P2 | all | all | all | |
-| 7.11 | Approval step for destructive or bulk jobs (second user) | P2 | all | all | all | |
-| 7.12 | Custom fields (typed, scoped) usable as script variables | P2 | all | all | all | RivetIT's current `custom_fields` is a dead stub and is not built on. |
+| 7.7 | `shell` jobs: bash, zsh, PowerShell, cmd | Core | Core | Core | P7 | `shell` (bash, or POSIX sh when bash is missing) and `python` (Python 3) on Linux next to PowerShell on Windows. `zsh` and `cmd` are not built. Parameters reach the script as environment variables and generated variable definitions, never as code. The Windows path is compile-checked and its generated code unit-tested, not run on a real Windows host. |
+| 7.8 | Script library with parameters, variables, secrets and versions | Core | all | all | all | A library of named scripts with immutable signed versions, tags, `requires_approval`, `destructive` and a parameter definition (string, int, bool, choice, secret). Secrets are sealed with the edition's secret box and removed from output. No per-client visibility yet: the library is instance-wide. RivetIT's `rmm_scripts` is not imported. |
+| 7.9 | Scheduled and recurring scripts, run once per window, safe across restarts and offline periods | Core | all | all | all | Interval or UTC cron, a target, jitter, `skip` or `queue` overlap, an offline window, a pinned version, per-device result history; one job per device and slot (idempotency key); capacity-aware. Maintenance windows plug in through `ScheduleGateInterface` (Phase 3 implements it). |
+| 7.10 | Bulk run on a client, site, group or tag | Core | all | all | all | Device, tag, group, client, site, policy or all; limited by `bulk_run_max`; needs the run grant for every client reached. |
+| 7.11 | Approval step for destructive or bulk jobs (second user) | Core | all | all | all | A script flagged `requires_approval`, or a run on more devices than the `approval_bulk_threshold` limit (off by default), waits for a different user with `rmm.job.approve`. The request is frozen with its hash, expires, and an approved run is finished by housekeeping if the process died. |
+| 7.12 | Custom fields (typed, scoped) usable as script variables | Core | all | all | all | Text, number, bool, date, list and secret values per client, site or device; usable as `{{field.name}}` in script parameters; a secret can only fill a secret parameter. |
 
 ## 8. Remote access
 
@@ -174,8 +174,8 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 11.1 | Scope by client (department) and optional location; technicians restricted to their clients | Shipped | all | all | all | |
 | 11.2 | Role abilities: view device, run saved script, reboot, run script, remote launch, administer | Shipped | all | all | all | In Core these become `rmm.device.view`, `rmm.job.run_saved`, `rmm.job.reboot`, `rmm.job.run_script`, `rmm.remote.launch`, `rmm.admin` (P0). |
 | 11.3 | Sites (the edition's locations), groups and tags | Core | all | all | all | Tags (free labels), static groups (devices added by hand plus every device carrying one of the group's tags), fleet filters by tag, group, software and location. Sites are the edition's locations (`location_id`); the `RmmSitesInterface` to list and name them is not built. |
-| 11.4 | Policies assigned to client, site, group, tag or device with inheritance and enforce flag; versioned | P2 | all | all | all | |
-| 11.5 | Per-policy agent update channel pinning | P2 | all | all | all | |
+| 11.4 | Policies assigned to client, site, group, tag or device with inheritance and enforce flag; versioned | Core | all | all | all | |
+| 11.5 | Per-policy agent update channel pinning | Core | all | all | all | `agent.ring` in a policy decides which release the manifest offers; the ring stored on the device is not changed. |
 
 ## 12. Reporting
 
@@ -198,8 +198,8 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 13.5 | Every technician action is audited; scripts are logged as a hash, not text | Shipped | all | all | all | |
 | 13.6 | Signing-key rotation (every device must re-enrol afterwards) | Shipped | all | all | all | |
 | 13.7 | Module-only logins cannot run jobs or open remote sessions | Shipped | all | all | all | RivetIT. |
-| 13.8 | Secret variables stored through the edition's secret box and injected at run time | P2 | all | all | all | |
-| 13.9 | Two-person approval for destructive and bulk actions | P2 | all | all | all | Same item as 7.11. |
+| 13.8 | Secret variables stored through the edition's secret box and injected at run time | Core | all | all | all | Script secrets and secret custom fields: sealed through the edition's secret box, injected when the job is signed, wiped when it is final, removed from output. |
+| 13.9 | Two-person approval for destructive and bulk actions | Core | all | all | all | Same item as 7.11. |
 | 13.10 | Focused security review of the module before it becomes public API | P0 | all | all | all | Required before promotion in Core 1.1.0. |
 | 13.11 | Mutual TLS for devices; tamper protection for the agent | Not planned | - | - | - | |
 
@@ -236,10 +236,9 @@ Counted from the Status column of the tables above (one row, one status). `Shipp
 | Status | Rows |
 |---|---|
 | Shipped | 49 |
-| Core | 14 |
+| Core | 26 |
 | P0 | 19 |
-| P1 | 4 |
-| P2 | 11 |
+| P1 | 3 |
 | P3 | 1 |
 | P4 | 5 |
 | P5 | 5 |

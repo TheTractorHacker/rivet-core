@@ -35,7 +35,7 @@ func TestBuildScriptCommandHygiene(t *testing.T) {
 	if di.Mode().Perm() != 0o700 {
 		t.Fatalf("script dir mode %v", di.Mode().Perm())
 	}
-	if strings.Join(sc.Env, "|") != `RIVETIT_JOB_PARAMS={"a":1}` {
+	if strings.Join(sc.Env, "|") != `RIVETIT_JOB_PARAMS={"a":1}|RIVETIT_PARAM_a=1` {
 		t.Fatalf("env %v", sc.Env)
 	}
 	sc.Cleanup()
@@ -146,8 +146,70 @@ func TestVerifyAcceptsShellTypeAndStillRejectsUnknown(t *testing.T) {
 		t.Fatal("empty shell script accepted")
 	}
 	odd := baseJob("v3", "true")
-	odd["type"] = "python"
+	odd["type"] = "ruby"
 	if err := v.Verify(k.signJob(t, odd)); err == nil {
 		t.Fatal("unknown type accepted")
+	}
+}
+
+// The hostile value reaches the script intact and is not interpreted; an integer and a boolean arrive as such.
+func TestShellJobParametersAreVariablesAndNeverCode(t *testing.T) {
+	k := newKeys(t)
+	rep := &fakeReporter{}
+	e := newExec(t, k, OpenStore(""), rep)
+	start(t, e)
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	pwn := filepath.Join(tmp, "pwned")
+	hostile := "a b'; touch " + pwn + " #\n$(touch " + pwn + ") `touch " + pwn + "` *"
+	j := baseJob("sh-params", "printf '[%s]\n' \"$name\"; [ \"$count\" -eq 7 ] && echo count-ok; $on && echo on-true; $off || echo off-false; echo env=$RIVETIT_PARAM_name | head -c 8; echo; echo \"$RIVETIT_JOB_PARAMS\" | head -c 1")
+	j["params"] = map[string]any{"name": hostile, "count": 7, "on": true, "off": false}
+	e.Submit([]api.Job{k.signJob(t, j)})
+	waitIdle(t, e)
+	last := rep.reports[len(rep.reports)-1]
+	if last.State != "succeeded" {
+		t.Fatalf("%+v", last)
+	}
+	if !strings.Contains(last.Output, "["+hostile+"]") {
+		t.Fatalf("the value did not arrive intact: %q", last.Output)
+	}
+	for _, want := range []string{"count-ok", "on-true", "off-false", "env=a b'", "{"} {
+		if !strings.Contains(last.Output, want) {
+			t.Fatalf("missing %q in %q", want, last.Output)
+		}
+	}
+	if _, err := os.Stat(pwn); err == nil {
+		t.Fatal("a parameter was executed")
+	}
+}
+
+func TestPythonJobParametersAndAbsence(t *testing.T) {
+	if !pythonAvailable() {
+		t.Skip("python3 is not installed")
+	}
+	k := newKeys(t)
+	rep := &fakeReporter{}
+	e := newExec(t, k, OpenStore(""), rep)
+	start(t, e)
+	j := baseJob("py1", "print(repr(name), count + 1, on, off)\nimport os\nprint(os.environ['RIVETIT_PARAM_name'] == name)")
+	j["type"] = TypePython
+	j["params"] = map[string]any{"name": "it's \"q\"\n$x", "count": 4, "on": true, "off": false}
+	e.Submit([]api.Job{k.signJob(t, j)})
+	waitIdle(t, e)
+	last := rep.reports[len(rep.reports)-1]
+	if last.State != "succeeded" || !strings.Contains(last.Output, `'it\'s "q"\n$x' 5 True False`) || !strings.Contains(last.Output, "True\n") {
+		t.Fatalf("%+v", last)
+	}
+}
+
+func TestJobTypesIncludePythonOnlyWhenInstalled(t *testing.T) {
+	has := false
+	for _, ty := range JobTypes() {
+		if ty == TypePython {
+			has = true
+		}
+	}
+	if has != pythonAvailable() {
+		t.Fatalf("JobTypes %v, python available %v", JobTypes(), pythonAvailable())
 	}
 }

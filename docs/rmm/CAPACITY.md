@@ -421,3 +421,43 @@ statements per 200 rows, the same again as an upsert in about 80 ms.
 What this does not show: contention with a full check-in load on one table, PHP-FPM, or a network round trip; the S9 validation on the reference hardware is where
 those belong. A queued-ingest install applies the software block in the worker (a work item over 60,000 bytes is processed inline, so a big baseline report is).
 Load shedding level 1 and above acknowledges a software report without applying it and asks the device to send a full list again later (at most every 15 minutes).
+
+## 12. Phase 2 paths (policies, scheduled scripts, bulk runs, approvals)
+
+Nothing here runs unless it is switched on: the `policies` sub-switch adds one query to a check-in, the `scripts` sub-switch lets `Housekeeping` run the
+scheduler, the approval clean-up and the secret wipe. With both off a check-in costs the same statements as before and the cron run does no extra work.
+
+### 12.1 Limits
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `approval_bulk_threshold` | 0 (never) | 0 to 100,000 | a run or a schedule on MORE devices than this needs a second person; a script flagged `requires_approval` always does |
+| `approval_expiry_h` | 48 | 1 to 720 | hours a pending request waits before it lapses |
+| `schedule_batch` | 200 | 10 to 5,000 | most jobs one pass of the scheduler queues for one run; level 1 of load shedding halves it (not below 10), level 2 quarters it, level 3 pauses it |
+| `bulk_run_max` | 1,000 | 1 to 100,000 | most devices one technician run (or one approved run) reaches; more is 422 `too_many` |
+
+### 12.2 Model
+
+| What | Cost | Where |
+|---|---|---|
+| Effective policy at check-in | ONE extra statement per check-in (the assignments that reach the device joined to their policies, with the group and tag membership as sub-selects), however many policies or assignments exist; the device's stored capabilities are read only when the check-in did not announce them. No work at all while the `policies` switch is off | `Policy\PolicyStore::layersFor()` |
+| Resolution and signing | in PHP, per check-in: the checks are signed again with the instance key when a policy applies (about 0.1 ms per check with libsodium), exactly as the global list always was | `Policy\EffectiveConfig`, `RmmSettings::signCheckList()` |
+| Library jobs | one `rmm_job_extra` row per library job (a sidecar of the job: script, version, schedule, approval, idempotency key), pruned with the jobs; sealed secrets are wiped when the job is final | `Job\JobExtras` |
+| Scheduler | one `rmm_schedule_runs` row per due slot; per device one job plus its sidecar (or a marker row when the device was deliberately skipped) so a slot is never queued twice. About 4 statements per device, one transaction per page of devices (a commit per job would cost a log flush each) | `Scripts\ScheduleRunner` |
+| Offer filtering | `JobService::offer()` reads the device's stored capabilities once per offer that finds queued jobs | `Job\JobService` |
+
+Plan for the scheduler: a fleet of N devices on one schedule is N jobs per slot, so a daily schedule on 5,000 devices adds 5,000 rows to `endpoint_agent_jobs` and
+5,000 to `rmm_job_extra` a day (about 150 bytes a row with indexes each), kept for `job_retention_days` (180): about 1.5 million rows. Use `jitter_s` so the
+devices do not all fetch their job in the same minute.
+
+### 12.3 Measured (a scratch host, MariaDB 11 in Docker on the same machine, PHP CLI, not the reference hardware)
+
+| Measurement | Result |
+|---|---|
+| Statements of one check-in, policies off / on with no assignment / on with five assigned policies | 16 / 17 / 17 |
+| One scheduler pass, `schedule_batch` 200, a 5,000-device schedule | 200 jobs in about 0.4 s, about 810 statements (4 per device); 5,000 jobs in 25 passes, 11 s |
+| The same before the per-page transaction | 200 jobs in about 6 s (the commit of each job dominated) |
+
+What this does not show: the scheduler running next to a full check-in load, PHP-FPM, or the cost of group-membership sub-selects on a fleet with many groups (the
+assignment query is by scope and index; a device in many groups checks each assigned group only). The S9 validation on the reference hardware is where those belong.
+The default batch is deliberately small: with the cron every minute one due run queues 200 jobs a pass, so a 5,000-device schedule takes about 25 minutes to reach every device (use `jitter_s` and an `expires_s` window that covers it, or raise `schedule_batch`; a pass of 1,000 jobs takes about two seconds on the measured host). Up to 50 due schedules and 50 open runs are worked per pass.

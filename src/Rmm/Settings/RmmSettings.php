@@ -47,7 +47,7 @@ final class RmmSettings
     public const MESH_TOKEN_TTL_DEFAULT_S = 300;
 
     /** Every feature a sub-switch may name (the first five are live in Phase 0; the rest are reserved for later phases). */
-    public const FEATURES = ['monitoring', 'metrics', 'jobs', 'remote', 'updates', 'inventory_software', 'policies', 'patching', 'software', 'logs', 'reports', 'alerting'];
+    public const FEATURES = ['monitoring', 'metrics', 'jobs', 'remote', 'updates', 'inventory_software', 'policies', 'scripts', 'patching', 'software', 'logs', 'reports', 'alerting'];
     /** What a NULL features_json means: today's behaviour. `remote` follows mesh_enabled. */
     public const LEGACY_FEATURES = ['monitoring', 'metrics', 'jobs', 'updates'];
 
@@ -74,6 +74,13 @@ final class RmmSettings
         'check_history_days' => [0, 365],
         'check_history_gap_s' => [60, 86400],
         'software_history_days' => [1, 3650],
+        // Phase 2: a run on more devices than approval_bulk_threshold needs a second user (0 = never, the default), an approval request
+        // lapses after approval_expiry_h hours, one scheduled run creates at most schedule_batch jobs per housekeeping pass (shed levels
+        // divide it), and one bulk run may target at most bulk_run_max devices.
+        'approval_bulk_threshold' => [0, 100000],
+        'approval_expiry_h' => [1, 720],
+        'schedule_batch' => [10, 5000],
+        'bulk_run_max' => [1, 100000],
     ];
     public const LIMIT_DEFAULTS = [
         'max_checkins_per_min' => 0,
@@ -91,6 +98,10 @@ final class RmmSettings
         'check_history_days' => 7,
         'check_history_gap_s' => 3600,
         'software_history_days' => 365,
+        'approval_bulk_threshold' => 0,
+        'approval_expiry_h' => 48,
+        'schedule_batch' => 200,
+        'bulk_run_max' => 1000,
     ];
 
     /** @var array<string,mixed>|null */
@@ -519,9 +530,20 @@ final class RmmSettings
      */
     public function signedChecks(?array $caps = null): array
     {
+        return $this->signCheckList($this->checks(), $caps);
+    }
+
+    /**
+     * Sign any list of check definitions exactly as {@see signedChecks()} does (the policy engine hands in the per-device list).
+     *
+     * @param list<array<string,mixed>> $checks
+     * @return list<array<string,mixed>>
+     */
+    public function signCheckList(array $checks, ?array $caps = null): array
+    {
         [$sec] = $this->signingKey();
         $out = [];
-        foreach ($this->checks() as $c) {
+        foreach ($checks as $c) {
             if (!CheckCatalog::offeredTo((string) $c['type'], $caps)) {
                 continue;
             }

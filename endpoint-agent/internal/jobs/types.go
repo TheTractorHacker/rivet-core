@@ -10,9 +10,12 @@ import (
 // server signs whichever one fits the device (it learns the platform and the
 // capability list from the check-in); an agent that is handed the other one
 // answers with a failed result whose reason is ReasonUnsupportedPlatform.
+// "python" runs a Python 3 script (Linux); the capability "job:python" is only
+// announced when python3 is installed.
 const (
 	TypePowerShell = "powershell"
 	TypeShell      = "shell"
+	TypePython     = "python"
 	TypeCollect    = "collect"
 	TypeReboot     = "reboot"
 )
@@ -28,7 +31,7 @@ func supportedOn(goos, typ string) bool {
 		return true
 	case TypePowerShell:
 		return goos == "windows"
-	case TypeShell:
+	case TypeShell, TypePython:
 		return goos != "windows"
 	}
 	return false
@@ -48,7 +51,10 @@ func ScriptType() string {
 // JobTypes lists the job types this agent runs, sorted.
 func JobTypes() []string {
 	var out []string
-	for _, t := range []string{TypePowerShell, TypeShell, TypeCollect, TypeReboot} {
+	for _, t := range []string{TypePowerShell, TypeShell, TypePython, TypeCollect, TypeReboot} {
+		if t == TypePython && !pythonAvailable() {
+			continue
+		}
 		if SupportsType(t) {
 			out = append(out, t)
 		}

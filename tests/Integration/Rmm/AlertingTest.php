@@ -351,6 +351,50 @@ final class AlertingTest extends RmmTestCase
         $this->assertSame(409, $c);
     }
 
+    public function testThresholdsOfAPolicyCheckTemplateApplyToTheDevicesItReaches(): void
+    {
+        $this->on(true);
+        $this->assertSame([], $this->h->module->settings()->update(['features_json' => ['monitoring' => true, 'metrics' => true, 'jobs' => true, 'updates' => true, 'policies' => true, 'alerting' => true]]));
+        $this->h->module->alertingEngine()->forget();
+        [$a, $ta] = $this->enrollDevice('POL-A');
+        [$b, $tb] = $this->enrollDevice('POL-B', $this->h->clientB);
+        $p = $this->h->module->policyStore()->create(['name' => 'Hot boxes', 'settings' => ['check.cpu_p' => ['type' => 'cpu', 'params' => ['thresholds' => ['warn' => ['op' => 'gt', 'value' => 70]]], 'interval_s' => 60]]], 1);
+        $this->h->module->policyStore()->assign((int) $p['policy_id'], ['scope_type' => 'client', 'scope_id' => $this->h->clientA], 1);
+        $caps = ['capabilities' => ['check:cpu', 'policies'], 'platform' => 'windows', 'arch' => 'amd64'];
+        [, , $r] = $this->h->checkin($ta, $caps);
+        $this->assertContains('cpu_p', array_column($r['config']['checks'], 'key'), 'the template reaches the assigned client\'s device');
+        [, , $r] = $this->h->checkin($tb, $caps);
+        $this->assertNotContains('cpu_p', array_column($r['config']['checks'], 'key'));
+        // 75 is over the policy's 70 for device A only; the global list knows no cpu_p at all
+        $this->h->checkin($ta, $caps + ['checks' => [['key' => 'cpu_p', 'status' => 'ok', 'detail' => '', 'value' => 75.0]]]);
+        $this->h->checkin($tb, $caps + ['checks' => [['key' => 'cpu_p', 'status' => 'ok', 'detail' => '', 'value' => 75.0]]]);
+        $this->assertSame('warn', $this->h->one("SELECT status FROM endpoint_agent_checks WHERE device_id = $a AND check_key = 'cpu_p'"));
+        $this->assertSame('ok', $this->h->one("SELECT status FROM endpoint_agent_checks WHERE device_id = $b AND check_key = 'cpu_p'"));
+    }
+
+    public function testScheduledScriptsWaitOutASuppressWindowButNotAMuteWindow(): void
+    {
+        $this->linked();
+        $dev = $this->h->module->devices()->find($this->dev);
+        $this->assertNotNull($dev);
+        $gate = $this->h->module->maintenance();
+        $g = new \RivetCore\Rmm\Alerting\MaintenanceScheduleGate($gate, $this->h->module->settings());
+        $this->assertSame('run', $g->decide($dev, [], time()));
+        $mute = $this->window([]);
+        $this->assertSame('run', $g->decide($dev, [], time()), 'a mute window only holds alerts back');
+        $this->h->tech('DELETE', ['maintenance', (string) $mute], $this->pt());
+        $sup = $this->window(['mode' => 'suppress']);
+        $this->assertSame('defer', $g->decide($dev, [], time()), 'leave a suppressed device alone, ask again later');
+        $this->h->tech('DELETE', ['maintenance', (string) $sup], $this->pt());
+        $this->assertSame('run', $g->decide($dev, [], time()));
+        // with the alerting switch off nothing changes for scheduled scripts
+        $this->window(['mode' => 'suppress']);
+        $this->on(false);
+        $this->assertSame('run', $g->decide($dev, [], time()));
+        // and it is the gate the module hands to the scheduler unless the edition sets its own
+        $this->assertInstanceOf(\RivetCore\Rmm\Alerting\MaintenanceScheduleGate::class, (new \ReflectionProperty($this->h->module->scheduleRunner(), 'gate'))->getValue($this->h->module->scheduleRunner()));
+    }
+
     // ------------------------------------------------------------------ flap
 
     public function testAFlappingCheckHoldsItsAlertState(): void
@@ -487,7 +531,7 @@ final class AlertingTest extends RmmTestCase
         $this->h->module->housekeeping()->run();
         $s = $this->events->of(RmmEvent::MAINTENANCE_STARTED);
         $this->assertCount(1, $s);
-        $this->assertSame(['mute', 'all', null, ''], [$s[0]['mode'], $s[0]['scope_type'], $s[0]['device_id'], $s[0]['hostname']]);
+        $this->assertSame(['mute', 'all', 0, ''], [$s[0]['mode'], $s[0]['scope_type'], $s[0]['device_id'], $s[0]['hostname']]);
         $this->clock()->advance(600);
         $this->h->module->housekeeping()->run();
         $this->h->module->housekeeping()->run();

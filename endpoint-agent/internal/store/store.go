@@ -112,6 +112,12 @@ type State struct {
 	SoftwareHash   string    `json:"software_hash,omitempty"`
 	SoftwareFullAt time.Time `json:"software_full_at,omitempty"`
 	SoftwareSentAt time.Time `json:"software_sent_at,omitempty"`
+	// The effective policy of the LAST successful check-in (config.policy):
+	// its version, whether any policy applied, and the feature toggles the
+	// agent enforces locally. Empty when the server sent none.
+	PolicyVersion  string          `json:"policy_version,omitempty"`
+	PolicyApplied  bool            `json:"policy_applied,omitempty"`
+	PolicyFeatures map[string]bool `json:"policy_features,omitempty"`
 }
 
 // UpdateResultS is a pending update_result report.

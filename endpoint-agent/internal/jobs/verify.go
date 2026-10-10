@@ -113,7 +113,7 @@ func (v *Verifier) Verify(j api.Job) error {
 		return ErrWrongDevice
 	}
 	switch j.Type {
-	case TypePowerShell, TypeShell:
+	case TypePowerShell, TypeShell, TypePython:
 		if j.Script == "" || len(j.Script) > MaxScriptBytes {
 			return fmt.Errorf("%w: script size", ErrInvalidJob)
 		}

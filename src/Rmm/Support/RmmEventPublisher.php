@@ -54,22 +54,14 @@ final class RmmEventPublisher
     }
 
     /**
-     * An event that is not about one device (a maintenance window). device_id is the device for a device-scoped window and null otherwise.
+     * Publish an event that is not about one device (a policy assignment, an approval). The payload keeps the device shape so a subscriber
+     * does not need a second code path: device_id 0, asset_id null, an empty hostname.
      *
      * @param array<string,mixed> $fields the event's own fields
      */
-    public function emitGeneral(string $event, ?int $deviceId, int $clientId, array $fields = []): void
+    public function emitScoped(string $event, int $clientId, array $fields = []): void
     {
-        if (!$this->enabled()) {
-            return;
-        }
-        $payload = ['device_id' => $deviceId, 'asset_id' => null, 'client_id' => $clientId, 'hostname' => '', 'occurred_at' => $this->sql->isoNow()] + $fields;
-        if ($this->holds > 0) {
-            $this->held[] = [$event, $payload];
-
-            return;
-        }
-        $this->deliver($event, $payload);
+        $this->emit($event, ['device_id' => 0, 'asset_id' => null, 'client_id' => $clientId, 'hostname' => ''], $fields);
     }
 
     /** Start holding events (nestable). Pair with {@see release()} or {@see discard()}. */

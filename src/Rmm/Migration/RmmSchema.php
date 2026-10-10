@@ -508,7 +508,8 @@ CREATE TABLE IF NOT EXISTS `rmm_job_extra` (
   UNIQUE KEY `uniq_idem` (`idem_key`),
   KEY `idx_schedule_device` (`schedule_id`,`device_id`,`created_at`),
   KEY `idx_script` (`script_id`,`created_at`),
-  KEY `idx_created` (`created_at`)
+  KEY `idx_created` (`created_at`),
+  KEY `idx_secret` (`secret_params_enc`(8))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
 SQL,
             'rmm_schedules' => <<<'SQL'

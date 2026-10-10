@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Job;
 
 use RivetCore\Rmm\Crypto\Redactor;
+use RivetCore\Rmm\Device\DeviceState;
 use RivetCore\Rmm\Crypto\Signer;
 use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\RmmProtocol;
@@ -38,6 +39,8 @@ final class JobService
         private readonly RmmSettings $settings,
         private readonly JobTypeRegistry $registry,
         private readonly ?\RivetCore\Rmm\Support\RmmEventPublisher $events = null,
+        private readonly ?JobExtras $extras = null,
+        private readonly ?DeviceState $deviceState = null,
     ) {
     }
 
@@ -61,9 +64,13 @@ final class JobService
     /**
      * @param array<string,mixed> $dev the device row
      * @param array<array-key,mixed> $params
-     * @return array{ok:bool,error?:string,job_id?:string}
+     * @param array{job_id?:string,expires_in_s?:int,extra?:array{script_id?:?int,script_version?:?int,schedule_id?:?int,run_id?:?int,approval_id?:?int,idem_key?:?string,secret?:array<string,string>}} $opts
+     *        Phase 2: `job_id` (chosen by the caller), `expires_in_s` (how long the job may wait for the device, default job_expiry_s) and `extra`, the
+     *        sidecar rows ({@see JobExtras}); with an `idem_key` already present nothing is created and `duplicate` is true. Secret parameters are listed in
+     *        `extra.secret` and carry {@see JobExtras::SECRET_MARK} in `$params`
+     * @return array{ok:bool,error?:string,job_id?:string,duplicate?:bool}
      */
-    public function create(array $dev, string $type, ?string $script, array $params, ?int $timeout, bool $destructive, int $userId): array
+    public function create(array $dev, string $type, ?string $script, array $params, ?int $timeout, bool $destructive, int $userId, array $opts = []): array
     {
         $cfg = $this->settings->get();
         if ($dev['revoked_at'] !== null || $dev['retired_at'] !== null || $dev['link_state'] === 'rejected') {
@@ -72,6 +79,10 @@ final class JobService
         $def = $this->registry->get($type);
         if ($def === null) {
             return ['ok' => false, 'error' => 'Unknown job type.'];
+        }
+        $os = (string) ($dev['os'] ?? '');
+        if ($def->platforms !== [] && $os !== '' && !in_array($os, $def->platforms, true)) {
+            return ['ok' => false, 'error' => 'That job type cannot run on a ' . $os . ' device.'];
         }
         if ($def->requiresScript) {
             if ($script === null || trim($script) === '' || strlen($script) > self::MAX_SCRIPT_BYTES || str_contains($script, "\0") || !mb_check_encoding($script, 'UTF-8')) {
@@ -93,7 +104,7 @@ final class JobService
             return ['ok' => false, 'error' => 'At most 20 parameters.'];
         }
         foreach ($params as $k => $v) {
-            if (!is_string($k) || preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,63}$/', $k) !== 1 || !(is_null($v) || is_bool($v) || is_int($v) || (is_string($v) && strlen($v) <= 1024))) {
+            if (!is_string($k) || preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,63}$/', $k) !== 1 || !(is_null($v) || is_bool($v) || is_int($v) || (is_string($v) && strlen($v) <= 1024 && !str_contains($v, "\0")))) {
                 return ['ok' => false, 'error' => 'Parameter names must be identifiers and values short strings, whole numbers or booleans.'];
             }
         }
@@ -101,12 +112,28 @@ final class JobService
         if ($timeout < 1 || $timeout > (int) $cfg['job_max_timeout_s']) {
             return ['ok' => false, 'error' => 'Timeout must be 1 to ' . (int) $cfg['job_max_timeout_s'] . ' seconds.'];
         }
-        $id = self::uuid();
+        $id = isset($opts['job_id']) && preg_match(self::UUID_RE, $opts['job_id']) === 1 ? $opts['job_id'] : self::uuid();
         $now = $this->sql->time();
-        $this->sql->run("INSERT INTO endpoint_agent_jobs (job_id, device_id, asset_id, client_id, type, script, params_json, timeout_s, max_output_bytes, destructive, run_as, state,
-            attempt, issued_at, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYSTEM', 'queued', 1, ?, ?, ?, ?)",
-            [$id, $dev['device_id'], empty($dev['asset_id']) ? null : $dev['asset_id'], (int) $dev['client_id'], $type, $script, $params !== [] ? json_encode($params) : '{}', $timeout,
-                (int) $cfg['job_output_max_bytes'], $destructive ? 1 : 0, gmdate('Y-m-d H:i:s', $now), gmdate('Y-m-d H:i:s', $now + (int) $cfg['job_expiry_s']), $userId, gmdate('Y-m-d H:i:s', $now)]);
+        $expiresIn = max(60, min(7 * 86400, (int) ($opts['expires_in_s'] ?? $cfg['job_expiry_s'])));
+        $extra = $opts['extra'] ?? null;
+        if ($extra !== null && $this->extras === null) {
+            return ['ok' => false, 'error' => 'Library jobs are not available on this module.'];
+        }
+        $insert = function () use ($id, $dev, $type, $script, $params, $timeout, $cfg, $destructive, $now, $userId, $expiresIn, $extra): bool {
+            if ($extra !== null && $this->extras !== null && !$this->extras->record($id, (int) $dev['device_id'], $extra)) {
+                return false;
+            }
+            $this->sql->run("INSERT INTO endpoint_agent_jobs (job_id, device_id, asset_id, client_id, type, script, params_json, timeout_s, max_output_bytes, destructive, run_as, state,
+                attempt, issued_at, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYSTEM', 'queued', 1, ?, ?, ?, ?)",
+                [$id, $dev['device_id'], empty($dev['asset_id']) ? null : $dev['asset_id'], (int) $dev['client_id'], $type, $script, $params !== [] ? json_encode($params) : '{}', $timeout,
+                    (int) $cfg['job_output_max_bytes'], $destructive ? 1 : 0, gmdate('Y-m-d H:i:s', $now), gmdate('Y-m-d H:i:s', $now + $expiresIn), $userId, gmdate('Y-m-d H:i:s', $now)]);
+
+            return true;
+        };
+        $created = $extra === null ? $insert() : (bool) $this->sql->transaction($insert);
+        if (!$created) {
+            return ['ok' => true, 'duplicate' => true];
+        }
 
         return ['ok' => true, 'job_id' => $id];
     }
@@ -132,9 +159,24 @@ final class JobService
         $cfg = $this->settings->get();
         $ackBefore = gmdate('Y-m-d H:i:s', $this->sql->time() - (int) $cfg['job_ack_timeout_s']);
 
-        return (int) $this->sql->val("SELECT COUNT(*) FROM endpoint_agent_jobs WHERE device_id = ? AND state = 'queued' AND expires_at > ? AND
-            (offered_count = 0 OR (destructive = 0 AND offered_count < ? AND last_offered_at <= ?))",
-            [$deviceId, $this->sql->utcNow(), (int) $cfg['job_max_attempts'], $ackBefore]);
+        $where = "device_id = ? AND state = 'queued' AND expires_at > ? AND
+            (offered_count = 0 OR (destructive = 0 AND offered_count < ? AND last_offered_at <= ?))";
+        $params = [$deviceId, $this->sql->utcNow(), (int) $cfg['job_max_attempts'], $ackBefore];
+        $n = (int) $this->sql->val("SELECT COUNT(*) FROM endpoint_agent_jobs WHERE $where", $params);
+        if ($n === 0 || $this->deviceState === null) {
+            return $n;
+        }
+        // A job the device did not announce its type for is never offered ({@see offer()}), so it must not be counted either: an agent told that jobs are
+        // pending polls and drains at its shortest interval until the job expires.
+        $caps = DeviceState::capabilitiesOf($this->deviceState->get($deviceId));
+        $offerable = 0;
+        foreach ($this->sql->all("SELECT type, COUNT(*) AS c FROM endpoint_agent_jobs WHERE $where GROUP BY type", $params) as $r) {
+            if (self::deviceCanRun($caps, (string) $r['type'])) {
+                $offerable += (int) $r['c'];
+            }
+        }
+
+        return $offerable;
     }
 
     /**
@@ -152,7 +194,14 @@ final class JobService
             $ackBefore = gmdate('Y-m-d H:i:s', $this->sql->time() - (int) $cfg['job_ack_timeout_s']);
             $rows = $this->sql->all("SELECT * FROM endpoint_agent_jobs WHERE device_id = ? AND state = 'queued' AND expires_at > ? ORDER BY created_at, job_id LIMIT " . RmmProtocol::JOBS_OFFER_LIMIT . ' FOR UPDATE',
                 [$dev['device_id'], $this->sql->utcNow()]);
+            $caps = null;
             foreach ($rows as $j) {
+                if ($this->deviceState !== null) {
+                    $caps ??= DeviceState::capabilitiesOf($this->deviceState->get((int) $dev['device_id']));
+                    if (!self::deviceCanRun($caps, (string) $j['type'])) {
+                        continue;   // the device announced what it can run and this is not in it: leave the job queued (it expires), never send it
+                    }
+                }
                 $attempt = (int) $j['attempt'];
                 if ((int) $j['offered_count'] > 0) {
                     if ((int) $j['destructive'] === 1 || (string) $j['last_offered_at'] > $ackBefore || (int) $j['offered_count'] >= (int) $cfg['job_max_attempts']) {
@@ -160,12 +209,40 @@ final class JobService
                     }
                     ++$attempt;
                 }
+                if (JobExtras::hasSecrets($j)) {
+                    $withSecrets = $this->extras?->withSecrets($j);
+                    if ($withSecrets === null) {
+                        continue;   // the sealed values cannot be read: the job stays queued rather than running without them
+                    }
+                    $j = $withSecrets;
+                }
                 $this->sql->run('UPDATE endpoint_agent_jobs SET attempt = ?, offered_count = offered_count + 1, last_offered_at = ? WHERE job_id = ?', [$attempt, $this->sql->utcNow(), $j['job_id']]);
                 $out[] = self::jobObject($j, $attempt, $sec);
             }
 
             return $out;
         });
+    }
+
+    /**
+     * Whether a device that announced `$caps` can run a job type. A device that announced no `job:` capability (an agent from before capability
+     * negotiation) is assumed to run everything and refuses by itself what it cannot.
+     *
+     * @param list<string> $caps
+     */
+    public static function deviceCanRun(array $caps, string $type): bool
+    {
+        $any = false;
+        foreach ($caps as $c) {
+            if (str_starts_with($c, 'job:')) {
+                $any = true;
+                if (substr($c, 4) === $type) {
+                    return true;
+                }
+            }
+        }
+
+        return !$any;
     }
 
     /**
@@ -258,6 +335,10 @@ final class JobService
                 $this->sql->run("UPDATE endpoint_agent_jobs SET state = 'running', started_at = COALESCE(started_at, ?), attempt = GREATEST(attempt, ?) WHERE job_id = ?",
                     [$started ?? $now, $attempt, $jobId]);
             } else {
+                if ($this->extras !== null && JobExtras::hasSecrets($j)) {
+                    $output = $this->extras->scrub($j, $output);
+                    $this->extras->wipe($jobId);
+                }
                 [$text, $truncated] = self::sanitizeOutput($output, min((int) $j['max_output_bytes'], (int) $cfg['job_output_max_bytes']));
                 $def = $this->registry->get((string) $j['type']);
                 if ($def !== null && !$def->keepOutput) {

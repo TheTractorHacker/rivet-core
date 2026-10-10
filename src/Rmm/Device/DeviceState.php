@@ -18,6 +18,8 @@ use RivetCore\Rmm\Support\Sql;
 final class DeviceState
 {
     public const CAP_SOFTWARE_INVENTORY = 'software_inventory';
+    /** The agent applies the effective policy delivered in `config.policy` (Phase 2). */
+    public const CAP_POLICIES = 'policies';
     private const CAP_RE = '/^[A-Za-z0-9_.:-]{1,64}$/';
     private const MAX_CAPS = 64;
 

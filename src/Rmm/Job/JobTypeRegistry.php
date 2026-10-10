@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Job;
 
 /**
- * The job types the module knows. Phase 0 seeds the three that exist today with identical behaviour: `powershell` (script,
+ * The job types the module knows. Phase 0 seeds the three that exist today with identical behaviour (Phase 2 adds `shell` and `python`): `powershell` (script,
  * ability run_script, or run_saved for a library script), `reboot` (always destructive, params.delay_s 5 to 3600 default 30) and
  * `collect` (re-collect inventory now). Adding a type later is a registration plus an agent handler, never a protocol change.
  *
@@ -29,7 +29,11 @@ final class JobTypeRegistry
     {
         $r = new self();
         $r->register(new JobType('powershell', self::ABILITY_RUN_SCRIPT, false, ['windows'], true));
-        $r->register(new JobType('reboot', self::ABILITY_REBOOT, true, ['windows'], false, static function (array $params): array {
+        // Phase 2: the same free-form script runner for the other platform (`shell` = bash, or POSIX sh when bash is missing) and for Python 3. The agent
+        // runs a type only on the platforms it lists in its `job:<type>` capabilities.
+        $r->register(new JobType('shell', self::ABILITY_RUN_SCRIPT, false, ['linux'], true));
+        $r->register(new JobType('python', self::ABILITY_RUN_SCRIPT, false, ['linux'], true));
+        $r->register(new JobType('reboot', self::ABILITY_REBOOT, true, ['windows', 'linux'], false, static function (array $params): array {
             $delay = $params['delay_s'] ?? 30;
             if (!is_int($delay) || $delay < 5 || $delay > 3600) {
                 return [$params, 'A reboot delay (params.delay_s) must be 5 to 3600 seconds.'];
@@ -38,7 +42,7 @@ final class JobTypeRegistry
 
             return [$params, null];
         }));
-        $r->register(new JobType('collect', self::ABILITY_RUN_SAVED));
+        $r->register(new JobType('collect', self::ABILITY_RUN_SAVED, false, ['windows', 'linux']));
 
         return $r;
     }

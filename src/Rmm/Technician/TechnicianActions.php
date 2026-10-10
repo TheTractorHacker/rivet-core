@@ -44,6 +44,7 @@ final class TechnicianActions
         private readonly RmmBridgeInterface $bridge,
         private readonly RmmAuditInterface $audit,
         private readonly string $clientLabel = 'client',
+        private readonly ?ScriptActions $library = null,
     ) {
     }
 
@@ -87,13 +88,17 @@ final class TechnicianActions
     // ------------------------------------------------------------------ jobs
 
     /**
-     * Queue a job. `type`: a registered job type (powershell, reboot, collect); `script` (free-form text) or `script_id` (saved library
-     * script); `params`; `timeout_s`; `destructive`; `confirm` (required for reboot and any destructive job).
+     * Queue a job. `type`: a registered job type (powershell, shell, python, reboot, collect); `script` (free-form text) or `script_id` (the edition's saved
+     * script) or `library_script_id` (a script of Core's library, with `script_version` and `params`: see {@see ScriptActions::runOnDevice()}); `params`;
+     * `timeout_s`; `destructive`; `confirm` (required for reboot and any destructive job).
      *
      * @param array<string,mixed> $in
      */
     public function submitJob(RmmPrincipal $who, int $deviceId, array $in): ActionResult
     {
+        if (isset($in['library_script_id']) && $this->library !== null) {
+            return $this->library->runOnDevice($who, $deviceId, $in);   // a script from the Core library: see ScriptActions
+        }
         [$dev, $err] = $this->deviceFor($who->userId, $deviceId);
         if ($err !== null || $dev === null) {
             return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');

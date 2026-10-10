@@ -31,6 +31,17 @@ final class RmmEvent
     /** Software disappeared from a device. Fields: name, version, publisher, source. */
     public const SOFTWARE_REMOVED = 'rmm.software.removed';
 
+    /**
+     * A policy was assigned to a scope, or an assignment was removed. Not about one device: device_id is 0, asset_id null, hostname empty, client_id the
+     * client of a client-scoped assignment (else 0). Fields: policy_id, policy_name, scope_type, scope_id, action ("assigned" or "unassigned").
+     */
+    public const POLICY_ASSIGNED = 'rmm.policy.assigned';
+    /** A library script was queued on a device. Fields: script_id, script_name, script_version, job_id, origin ("manual", "schedule" or "approval"). Never the script text. */
+    public const SCRIPT_RUN = 'rmm.script.run';
+    /** A run, or a schedule, is waiting for a second person. Not about one device (device_id 0). Fields: approval_id, kind ("run" or "schedule"), summary, device_count, requested_by. */
+    public const APPROVAL_REQUESTED = 'rmm.approval.requested';
+    /** A pending approval was approved, rejected, cancelled or lapsed. Not about one device (device_id 0). Fields: approval_id, kind, state, decided_by (null when it lapsed). */
+    public const APPROVAL_DECIDED = 'rmm.approval.decided';
     /** An alert episode opened (Phase 3, `alerting` switch). Fields: alert_id, check_key, severity ("warning" or "error"), episode, message, group_key. */
     public const ALERT_OPENED = 'rmm.alert.opened';
     /** An open alert was escalated: a policy step fired, a repeat fired, or the severity rose. Fields: alert_id, check_key, severity, reason ("step", "repeat" or "severity"), step, policy_id. */
@@ -39,7 +50,7 @@ final class RmmEvent
     public const ALERT_ACKNOWLEDGED = 'rmm.alert.acknowledged';
     /** An alert was resolved. Fields: alert_id, check_key, reason ("recovered", "manual" or "device_retired"), user_id (null unless manual). */
     public const ALERT_RESOLVED = 'rmm.alert.resolved';
-    /** A maintenance window opened. Fields: window_id, name, mode ("mute" or "suppress"), scope_type, scope_id, ends_at. Not about one device: device_id is null unless the window's scope is one device, client_id is the scope client or 0, hostname is "". */
+    /** A maintenance window opened. Fields: window_id, name, mode ("mute" or "suppress"), scope_type, scope_id, ends_at. Not about one device: device_id is 0, asset_id null, hostname empty, client_id the scope client or 0 (the same convention as the policy and approval events); a device-scoped window carries the device in scope_id. */
     public const MAINTENANCE_STARTED = 'rmm.maintenance.started';
     /** A maintenance window closed. Fields: window_id, name, mode, scope_type, scope_id. Same device_id / client_id / hostname rule as MAINTENANCE_STARTED. */
     public const MAINTENANCE_ENDED = 'rmm.maintenance.ended';
@@ -49,6 +60,7 @@ final class RmmEvent
     {
         return [self::DEVICE_ENROLLED, self::DEVICE_OFFLINE, self::DEVICE_ONLINE, self::CHECK_FAILED, self::CHECK_RECOVERED,
             self::JOB_COMPLETED, self::JOB_FAILED, self::SOFTWARE_INSTALLED, self::SOFTWARE_REMOVED,
-            self::ALERT_OPENED, self::ALERT_ESCALATED, self::ALERT_ACKNOWLEDGED, self::ALERT_RESOLVED, self::MAINTENANCE_STARTED, self::MAINTENANCE_ENDED];
+            self::ALERT_OPENED, self::ALERT_ESCALATED, self::ALERT_ACKNOWLEDGED, self::ALERT_RESOLVED, self::MAINTENANCE_STARTED, self::MAINTENANCE_ENDED,
+            self::POLICY_ASSIGNED, self::SCRIPT_RUN, self::APPROVAL_REQUESTED, self::APPROVAL_DECIDED];
     }
 }

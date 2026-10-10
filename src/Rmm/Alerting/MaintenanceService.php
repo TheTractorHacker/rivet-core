@@ -308,7 +308,7 @@ final class MaintenanceService
         }
         $scope = (string) $w['scope_type'];
         $id = (int) $w['scope_id'];
-        $this->events->emitGeneral($event, $scope === 'device' ? $id : null, $scope === 'client' ? $id : 0,
+        $this->events->emitScoped($event, $scope === 'client' ? $id : 0,
             ['window_id' => (int) $w['window_id'], 'name' => (string) $w['name'], 'mode' => (string) $w['mode'], 'scope_type' => $scope, 'scope_id' => $id] + $extra);
     }
 }
