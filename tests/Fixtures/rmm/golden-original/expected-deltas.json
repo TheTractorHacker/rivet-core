@@ -1,0 +1,33 @@
+{
+  "about": "The golden transcripts in ../golden were recorded from the ORIGINAL RivetIT code (baseline c26957c0b). The five files below were re-recorded through RivetCore 1.0.0-rc.7 because of the CORE-1 security fix (enrollment is bound to the token's client). ../golden-original holds the pre-fix recordings of exactly those five files. tests/Unit/Rmm/GoldenDeltaTest.php proves that the ONLY exchanges and snapshot tables that differ between ../golden-original and ../golden are the units listed here; everything else in the five files, and the other five files, are byte-identical to the original wire protocol.",
+  "reasons": {
+    "CORE-1": "Step 'serial-of-known-device-with-other-department-token': the Department B enrollment token presents the machine_guid and serial of the Department A (client 1) device GOLD-EC6A. The original code reused that device (a reinstall: 201 with the Department A device_id, install_id and enrollment token row overwritten, enroll_count 2, reason 'reinstalled'). Core now never reuses a device of another client: it creates a NEW device of the token's client (2) in pending_approval with match_reason 'cross_client_identity' (201, a different device_id) and the Department A device keeps its install_id, credential and enroll_count 1. Status codes, headers and body keys are unchanged; only the device_id differs.",
+    "CORE-1-renumbering": "Knock-on of CORE-1 only: the new cross-client device is the first unnamed device, so later unnamed devices are masked <DEVICE#2> instead of <DEVICE#1>. No behaviour of that exchange changed.",
+    "CORE-1-device-rows": "Knock-on of CORE-1 only: the endpoint_agent_devices snapshot gains the cross-client device row and the Department A device row is no longer overwritten (install_id ...0003 instead of ...0013, enroll_count 1, enrolled_via_token_id TOKENROW#1). Later device rows are unchanged apart from the <DEVICE#n> renumbering.",
+    "CORE-1-attempts": "Knock-on of CORE-1 only: endpoint_agent_enroll_attempts_by_reason counts one more 'enrolled' attempt (7 instead of 6) and one fewer 'reinstalled' (2 instead of 3), the same exchange recorded under its new reason."
+  },
+  "files": {
+    "04-enroll-flows.json": {
+      "step:serial-of-known-device-with-other-department-token": "CORE-1",
+      "step:junk-serial-is-ignored": "CORE-1-renumbering",
+      "step:technician-list": "CORE-1-device-rows",
+      "snapshot:after-enrollment:endpoint_agent_devices": "CORE-1-device-rows",
+      "snapshot:after-enrollment:endpoint_agent_enroll_attempts_by_reason": "CORE-1-attempts"
+    },
+    "05-checkin.json": {
+      "snapshot:after-first-checkins:endpoint_agent_devices": "CORE-1-device-rows",
+      "snapshot:check-alert-open:endpoint_agent_devices": "CORE-1-device-rows",
+      "snapshot:check-alert-resolved:endpoint_agent_devices": "CORE-1-device-rows",
+      "snapshot:after-checkins:endpoint_agent_devices": "CORE-1-device-rows"
+    },
+    "06-jobs.json": {
+      "snapshot:after-jobs:endpoint_agent_devices": "CORE-1-device-rows"
+    },
+    "08-installer.json": {
+      "snapshot:after-installer:endpoint_agent_enroll_attempts_by_reason": "CORE-1-attempts"
+    },
+    "09-rate-limits.json": {
+      "snapshot:final:endpoint_agent_devices": "CORE-1-device-rows"
+    }
+  }
+}

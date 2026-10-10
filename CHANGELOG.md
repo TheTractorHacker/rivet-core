@@ -2,6 +2,9 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.8
+CI-only follow-up to rc.7; no change to `src/`. The golden RMM transcripts are re-recorded for the five files whose recorded answer the CORE-1 fix changed on purpose (`04-enroll-flows`, `05-checkin`, `06-jobs`, `08-installer`, `09-rate-limits`; one cross-client enrollment now creates a new device instead of reusing another client's). The pre-fix recordings of those five files are kept in `tests/Fixtures/rmm/golden-original/` with `expected-deltas.json`, and `tests/Unit/Rmm/GoldenDeltaTest.php` fails on any difference that is not declared and explained there, so everything else stays byte-compatible with the original wire protocol. Editions that replay Core's fixtures (RivetIT's `tests/endpoint_agent_golden.php`) must run rc.7 or later server code against them.
+
 ## 1.0.0-rc.7
 Security fixes from the 2026-10-08 nightly review: CORE-1 and CORE-2 (RMM enrollment and token revocation are scoped to the token's client), F8 (migration 0017, case-sensitive MCP identity keys) and F10 (automation placeholders fill only allowlisted free-text keys). Details are in the "Security: nightly review 2026-10-08" entry under Unreleased. Editions on rc.6 must run migration 0017 (CoreMigrations) after updating.
 

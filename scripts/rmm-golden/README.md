@@ -120,3 +120,20 @@ vendor/bin/phpunit tests/Integration/Rmm/GoldenReplayTest.php
 The replay runs the module in its compatibility mode: no `RmmModuleStateInterface` is handed to `DeviceApi`, so a switched-off service answers 403 exactly as
 transcript `01-disabled.json` records. The new 503 `module_disabled` answer is covered by `tests/Integration/Rmm/DeviceApiTest.php`.
 
+
+## Intentional deltas from the original recordings (rc.7, CORE-1)
+
+The transcripts were recorded from the original RivetIT code. The CORE-1 security fix (an enrollment token only ever matches, reuses or takes over devices of its own client) changes
+exactly one recorded exchange, so five files were re-recorded with `replay-core.php record` (the other five files are byte-identical to the original
+recordings, and `replay` over them still proves the original wire protocol). To keep that auditable:
+
+* `tests/Fixtures/rmm/golden-original/` holds the **pre-fix** recordings of those five files (`04`, `05`, `06`, `08`, `09`). It is a sibling directory on purpose: `golden.php replay --dir=...tests/Fixtures/rmm/golden` (RivetIT's replay does this) never sees it.
+* `golden-original/expected-deltas.json` lists every exchange (`step:<id>`) and snapshot table (`snapshot:<name>:<table>`) that differs, each mapped to a documented reason.
+* `tests/Unit/Rmm/GoldenDeltaTest.php` (no database) fails if the set of differing exchanges/tables is not exactly the declared one, so a new unintended behaviour change cannot hide in a re-recording.
+
+Changed exchange: `04-enroll-flows` step `serial-of-known-device-with-other-department-token`. A Department B token presents the machine_guid and serial of a Department A device. Original: 201 reusing the
+Department A device (reinstall, enroll_count 2). Now: 201 with a NEW device of client 2, `pending_approval`, `match_reason = cross_client_identity`; the Department A device is untouched. Status, headers and
+body keys are the same. Every other difference (the `<DEVICE#n>` renumbering in `junk-serial-is-ignored`, the extra device in `technician-list` (total 7), the device rows in the snapshots of `04`, `05`, `06`, `09`,
+and one more `enrolled` / one fewer `reinstalled` attempt in `04` and `08`) is a knock-on of that one exchange.
+
+To re-record after a future deliberate delta: `php scripts/rmm-golden/replay-core.php record --dir=<tmp>`, inspect every difference, copy over only the files you can explain, keep the old copy in `golden-original/`, and extend `expected-deltas.json`.

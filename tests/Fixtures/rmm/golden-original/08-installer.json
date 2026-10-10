@@ -786,7 +786,7 @@
                 {
                     "reason": "enrolled",
                     "success": 1,
-                    "n": 7
+                    "n": 6
                 },
                 {
                     "reason": "forbidden",
@@ -831,7 +831,7 @@
                 {
                     "reason": "reinstalled",
                     "success": 1,
-                    "n": 2
+                    "n": 3
                 }
             ]
         }

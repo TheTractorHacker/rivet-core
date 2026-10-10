@@ -716,7 +716,7 @@
                     "x-powered-by: PHP/<VERSION>"
                 ],
                 "body": {
-                    "device_id": "<DEVICE#1>",
+                    "device_id": "<DEVICE:dev3>",
                     "device_token": "<TOKEN#7>",
                     "check_in_interval_s": 300,
                     "server_time": "<TS>",
@@ -804,7 +804,7 @@
                     "x-powered-by: PHP/<VERSION>"
                 ],
                 "body": {
-                    "device_id": "<DEVICE#2>",
+                    "device_id": "<DEVICE#1>",
                     "device_token": "<TOKEN#8>",
                     "check_in_interval_s": 300,
                     "server_time": "<TS>",
@@ -1138,7 +1138,7 @@
                             "retired": false
                         },
                         {
-                            "device_id": "<DEVICE#2>",
+                            "device_id": "<DEVICE#1>",
                             "hostname": "GOLD-4DA0",
                             "asset_id": null,
                             "client_id": 1,
@@ -1198,21 +1198,6 @@
                             "retired": false
                         },
                         {
-                            "device_id": "<DEVICE#1>",
-                            "hostname": "GOLD-EC6A",
-                            "asset_id": null,
-                            "client_id": 2,
-                            "link_state": "pending_approval",
-                            "status": "never",
-                            "last_checkin_at": null,
-                            "offline_since": null,
-                            "agent_version": "1.0.0",
-                            "ring": "stable",
-                            "os_version": "Windows 11 23H2",
-                            "revoked": false,
-                            "retired": false
-                        },
-                        {
                             "device_id": "<DEVICE:dev5>",
                             "hostname": "GOLD-FE7C",
                             "asset_id": "<ASSET#1>",
@@ -1228,7 +1213,7 @@
                             "retired": false
                         }
                     ],
-                    "total": 7
+                    "total": 6
                 }
             }
         },
@@ -1387,7 +1372,7 @@
                 },
                 {
                     "device_id": "<DEVICE:dev3>",
-                    "install_id": "00000000-0000-4000-8000-000000000003",
+                    "install_id": "00000000-0000-4000-8000-000000000013",
                     "machine_guid": "91e359bf2f6b12d0",
                     "hostname": "GOLD-EC6A",
                     "os": "windows",
@@ -1423,8 +1408,8 @@
                     "revoked_at": null,
                     "revoked_reason": null,
                     "retired_at": null,
-                    "enrolled_via_token_id": "<TOKENROW#1>",
-                    "enroll_count": 1,
+                    "enrolled_via_token_id": "<TOKENROW#2>",
+                    "enroll_count": 2,
                     "first_seen_at": "<DT>",
                     "last_checkin_at": null,
                     "last_collected_at": null,
@@ -1441,48 +1426,6 @@
                 },
                 {
                     "device_id": "<DEVICE#1>",
-                    "install_id": "00000000-0000-4000-8000-000000000013",
-                    "machine_guid": "91e359bf2f6b12d0",
-                    "hostname": "GOLD-EC6A",
-                    "os": "windows",
-                    "os_version": "Windows 11 23H2",
-                    "arch": "amd64",
-                    "serial": "GOLD-SER-OTHER",
-                    "manufacturer": "Dell",
-                    "model": "Latitude 7440",
-                    "mac_addresses": "[\"aa:bb:cc:f3:00:01\"]",
-                    "agent_version": "1.0.0",
-                    "asset_id": null,
-                    "client_id": 2,
-                    "location_id": 0,
-                    "ring": "stable",
-                    "link_state": "pending_approval",
-                    "match_reason": "cross_client_identity",
-                    "match_candidates_json": null,
-                    "token_hash": "<TOKEN_HASH>",
-                    "token_issued_at": "<DT>",
-                    "token_expires_at": "<DT>",
-                    "revoked_at": null,
-                    "revoked_reason": null,
-                    "retired_at": null,
-                    "enrolled_via_token_id": "<TOKENROW#2>",
-                    "enroll_count": 1,
-                    "first_seen_at": "<DT>",
-                    "last_checkin_at": null,
-                    "last_collected_at": null,
-                    "last_inventory_at": null,
-                    "last_ip": "127.0.0.1",
-                    "last_seq": 0,
-                    "inventory_json": null,
-                    "last_metrics_json": null,
-                    "logged_in_user": null,
-                    "pending_reboot": null,
-                    "uptime_s": null,
-                    "update_state_json": null,
-                    "created_at": "<DT>"
-                },
-                {
-                    "device_id": "<DEVICE#2>",
                     "install_id": "00000000-0000-4000-8000-000000000004",
                     "machine_guid": "aaaaaaaaaaaa0004",
                     "hostname": "GOLD-4DA0",
@@ -1798,7 +1741,7 @@
                 {
                     "reason": "enrolled",
                     "success": 1,
-                    "n": 7
+                    "n": 6
                 },
                 {
                     "reason": "forbidden",
@@ -1813,7 +1756,7 @@
                 {
                     "reason": "reinstalled",
                     "success": 1,
-                    "n": 2
+                    "n": 3
                 }
             ],
             "endpoint_agent_settings": {
