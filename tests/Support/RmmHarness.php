@@ -18,6 +18,7 @@ use RivetCore\Rmm\Migration\Migration0014EndpointAgent;
 use RivetCore\Rmm\Migration\Migration0015EndpointAgentConverge;
 use RivetCore\Rmm\Migration\Migration0016ModuleSwitches;
 use RivetCore\Rmm\Migration\Migration0018InventoryFoundation;
+use RivetCore\Rmm\Migration\Migration0019PoliciesAndScripts;
 use RivetCore\Rmm\RmmModule;
 use RivetCore\Testing\InMemoryRmmAssets;
 use RivetCore\Testing\InMemoryRmmAudit;
@@ -37,7 +38,8 @@ final class RmmHarness
     public const TABLES = ['endpoint_agent_checkins', 'endpoint_agent_checks', 'endpoint_agent_jobs', 'endpoint_agent_mesh_nodes', 'endpoint_agent_releases',
         'endpoint_agent_enroll_attempts', 'endpoint_agent_enrollment_tokens', 'endpoint_agent_devices', 'endpoint_agent_binaries',
         'endpoint_agent_check_history', 'rmm_device_state', 'rmm_device_software', 'rmm_software_history', 'rmm_tags', 'rmm_device_tags', 'rmm_groups', 'rmm_group_devices',
-        'rmm_group_tags', 'rmm_metric_latest', 'rmm_metric_hourly'];
+        'rmm_group_tags', 'rmm_metric_latest', 'rmm_metric_hourly', 'rmm_policies', 'rmm_policy_versions', 'rmm_policy_assignments', 'rmm_scripts_v2',
+        'rmm_script_versions', 'rmm_job_extra', 'rmm_schedules', 'rmm_schedule_runs', 'rmm_approvals', 'rmm_custom_fields', 'rmm_custom_field_values'];
 
     public \mysqli $mysqli;
     public MysqliDatabase $db;
@@ -92,7 +94,7 @@ final class RmmHarness
         $this->binaryDir = sys_get_temp_dir() . '/rmm_bin_' . bin2hex(random_bytes(4));
         mkdir($this->binaryDir, 0700);
 
-        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation()] as $mig) {
+        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts()] as $mig) {
             $mig->up($this->db);
         }
         $this->wipe();

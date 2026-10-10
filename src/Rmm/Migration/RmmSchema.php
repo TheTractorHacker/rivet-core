@@ -404,4 +404,215 @@ CREATE TABLE IF NOT EXISTS `rmm_metric_hourly` (
 SQL,
         ];
     }
+    /**
+     * RMM Phase 2 (migration 0019): policies and their assignments, the script library with its versions, the sidecar that links a job to
+     * its script, schedule and approval, scheduled scripts and their runs, approvals, and custom fields with their values. Core-owned and new;
+     * none of the earlier tables is altered. The library table is `rmm_scripts_v2` on purpose: RivetIT's own saved-script table is `rmm_scripts`.
+     *
+     * @return array<string,string> table name => CREATE TABLE IF NOT EXISTS statement (no trailing semicolon)
+     */
+    public static function phase2Tables(): array
+    {
+        return [
+            'rmm_policies' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_policies` (
+  `policy_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `description` varchar(300) NOT NULL DEFAULT '',
+  `kind` varchar(20) NOT NULL DEFAULT 'agent',
+  `body_json` mediumtext NOT NULL,
+  `version` int(11) NOT NULL DEFAULT 1,
+  `enabled` tinyint(1) NOT NULL DEFAULT 1,
+  `created_by` int(11) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_by` int(11) NOT NULL DEFAULT 0,
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`policy_id`),
+  UNIQUE KEY `uniq_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_policy_versions' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_policy_versions` (
+  `policy_id` int(11) NOT NULL,
+  `version` int(11) NOT NULL,
+  `body_json` mediumtext NOT NULL,
+  `changed_by` int(11) NOT NULL DEFAULT 0,
+  `changed_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`policy_id`,`version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_policy_assignments' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_policy_assignments` (
+  `assignment_id` int(11) NOT NULL AUTO_INCREMENT,
+  `policy_id` int(11) NOT NULL,
+  `scope_type` varchar(10) NOT NULL,
+  `scope_id` int(11) NOT NULL DEFAULT 0,
+  `priority` int(11) NOT NULL DEFAULT 100,
+  `enforce` tinyint(1) NOT NULL DEFAULT 0,
+  `overrides_json` text DEFAULT NULL,
+  `created_by` int(11) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`assignment_id`),
+  UNIQUE KEY `uniq_assignment` (`policy_id`,`scope_type`,`scope_id`),
+  KEY `idx_scope` (`scope_type`,`scope_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_scripts_v2' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_scripts_v2` (
+  `script_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `description` varchar(500) NOT NULL DEFAULT '',
+  `language` varchar(12) NOT NULL,
+  `platform` varchar(10) NOT NULL,
+  `tags_json` text DEFAULT NULL,
+  `owner_id` int(11) NOT NULL DEFAULT 0,
+  `requires_approval` tinyint(1) NOT NULL DEFAULT 0,
+  `destructive` tinyint(1) NOT NULL DEFAULT 0,
+  `timeout_s` int(11) NOT NULL DEFAULT 300,
+  `current_version` int(11) NOT NULL DEFAULT 0,
+  `retired_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`script_id`),
+  UNIQUE KEY `uniq_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_script_versions' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_script_versions` (
+  `script_id` int(11) NOT NULL,
+  `version` int(11) NOT NULL,
+  `body` mediumtext NOT NULL,
+  `body_sha256` char(64) NOT NULL,
+  `params_schema_json` text DEFAULT NULL,
+  `signature` varchar(100) NOT NULL DEFAULT '',
+  `signing_key_id` varchar(32) NOT NULL DEFAULT '',
+  `note` varchar(200) NOT NULL DEFAULT '',
+  `created_by` int(11) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`script_id`,`version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_job_extra' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_job_extra` (
+  `job_id` char(36) NOT NULL,
+  `device_id` int(11) NOT NULL DEFAULT 0,
+  `script_id` int(11) DEFAULT NULL,
+  `script_version` int(11) DEFAULT NULL,
+  `schedule_id` int(11) DEFAULT NULL,
+  `run_id` bigint(20) DEFAULT NULL,
+  `approval_id` int(11) DEFAULT NULL,
+  `idem_key` char(64) DEFAULT NULL,
+  `secret_params_enc` mediumtext DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`job_id`),
+  UNIQUE KEY `uniq_idem` (`idem_key`),
+  KEY `idx_schedule_device` (`schedule_id`,`device_id`,`created_at`),
+  KEY `idx_script` (`script_id`,`created_at`),
+  KEY `idx_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_schedules' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_schedules` (
+  `schedule_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `script_id` int(11) NOT NULL,
+  `script_version` int(11) NOT NULL,
+  `body_sha256` char(64) NOT NULL,
+  `params_json` text DEFAULT NULL,
+  `target_type` varchar(10) NOT NULL,
+  `target_id` int(11) NOT NULL DEFAULT 0,
+  `kind` varchar(10) NOT NULL,
+  `interval_s` int(11) DEFAULT NULL,
+  `cron_expr` varchar(100) NOT NULL DEFAULT '',
+  `jitter_s` int(11) NOT NULL DEFAULT 0,
+  `overlap` varchar(6) NOT NULL DEFAULT 'skip',
+  `expires_s` int(11) NOT NULL DEFAULT 3600,
+  `timeout_s` int(11) NOT NULL DEFAULT 300,
+  `enabled` tinyint(1) NOT NULL DEFAULT 1,
+  `approval_id` int(11) DEFAULT NULL,
+  `approved_at` datetime DEFAULT NULL,
+  `next_run_at` datetime DEFAULT NULL,
+  `last_run_at` datetime DEFAULT NULL,
+  `created_by` int(11) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`schedule_id`),
+  UNIQUE KEY `uniq_name` (`name`),
+  KEY `idx_due` (`enabled`,`next_run_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_schedule_runs' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_schedule_runs` (
+  `run_id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `schedule_id` int(11) NOT NULL,
+  `slot_at` datetime NOT NULL,
+  `state` varchar(10) NOT NULL DEFAULT 'running',
+  `cursor_device_id` int(11) NOT NULL DEFAULT 0,
+  `targeted` int(11) NOT NULL DEFAULT 0,
+  `jobs_created` int(11) NOT NULL DEFAULT 0,
+  `skipped_overlap` int(11) NOT NULL DEFAULT 0,
+  `skipped_gate` int(11) NOT NULL DEFAULT 0,
+  `skipped_other` int(11) NOT NULL DEFAULT 0,
+  `started_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `finished_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`run_id`),
+  UNIQUE KEY `uniq_slot` (`schedule_id`,`slot_at`),
+  KEY `idx_state` (`state`),
+  KEY `idx_started` (`started_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_approvals' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_approvals` (
+  `approval_id` int(11) NOT NULL AUTO_INCREMENT,
+  `kind` varchar(12) NOT NULL,
+  `state` varchar(16) NOT NULL DEFAULT 'pending_approval',
+  `summary` varchar(300) NOT NULL DEFAULT '',
+  `request_json` mediumtext NOT NULL,
+  `request_sha256` char(64) NOT NULL,
+  `device_count` int(11) NOT NULL DEFAULT 0,
+  `script_id` int(11) DEFAULT NULL,
+  `script_version` int(11) DEFAULT NULL,
+  `requested_by` int(11) NOT NULL,
+  `requested_at` datetime NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `decided_by` int(11) DEFAULT NULL,
+  `decided_at` datetime DEFAULT NULL,
+  `decision_note` varchar(300) NOT NULL DEFAULT '',
+  `result_json` text DEFAULT NULL,
+  PRIMARY KEY (`approval_id`),
+  KEY `idx_state` (`state`,`expires_at`),
+  KEY `idx_requested` (`requested_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_custom_fields' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_custom_fields` (
+  `field_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(40) NOT NULL,
+  `label` varchar(100) NOT NULL DEFAULT '',
+  `scope` varchar(8) NOT NULL,
+  `type` varchar(8) NOT NULL,
+  `options_json` text DEFAULT NULL,
+  `default_value` varchar(500) DEFAULT NULL,
+  `description` varchar(300) NOT NULL DEFAULT '',
+  `created_by` int(11) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`field_id`),
+  UNIQUE KEY `uniq_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+            'rmm_custom_field_values' => <<<'SQL'
+CREATE TABLE IF NOT EXISTS `rmm_custom_field_values` (
+  `field_id` int(11) NOT NULL,
+  `scope_id` int(11) NOT NULL,
+  `value_text` varchar(2000) DEFAULT NULL,
+  `value_enc` text DEFAULT NULL,
+  `updated_by` int(11) NOT NULL DEFAULT 0,
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`field_id`,`scope_id`),
+  KEY `idx_scope` (`scope_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+SQL,
+        ];
+    }
 }
