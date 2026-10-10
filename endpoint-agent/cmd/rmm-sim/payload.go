@@ -25,10 +25,15 @@ type metrics struct {
 }
 
 type checkResult struct {
-	Key    string `json:"key"`
-	Status string `json:"status"`
-	Detail string `json:"detail"`
+	Key    string   `json:"key"`
+	Status string   `json:"status"`
+	Detail string   `json:"detail"`
+	Value  *float64 `json:"value,omitempty"`
 }
+
+// valueCheck (-value-check) adds a fourth check, "cpu_load", that reports a measured value in the way the Phase 3 agent does, so the
+// server's threshold, flap and escalation paths are part of a measurement. Off by default: the defaults profile stays the Phase 0 one.
+var valueCheck bool
 
 type buffered struct {
 	CollectedAt string        `json:"collected_at"`
@@ -64,11 +69,16 @@ func sampleChecks(r *rand.Rand) []checkResult {
 	if r.IntN(50) == 0 {
 		disk, detail = "warn", "C: 88% used"
 	}
-	return []checkResult{
+	out := []checkResult{
 		{Key: "disk_c", Status: disk, Detail: detail},
 		{Key: "pending_reboot", Status: "ok", Detail: ""},
 		{Key: "svc_eventlog", Status: "ok", Detail: "EventLog running"},
 	}
+	if valueCheck {
+		v := round2(5 + r.Float64()*90) // 5..95: crosses a warn limit of 80 now and then, never a crit limit of 98
+		out = append(out, checkResult{Key: "cpu_load", Status: "ok", Detail: "cpu " + fmt.Sprint(v) + "% busy", Value: &v})
+	}
+	return out
 }
 
 // inventory is the object of the first check-in (and daily): hardware, disks, network.

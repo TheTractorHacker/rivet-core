@@ -264,6 +264,15 @@ func TestCheckinReportsPlatformAndCapabilities(t *testing.T) {
 			t.Errorf("capability %s missing: %v", w, caps)
 		}
 	}
+	// the Phase 3 check types are announced per platform: the server offers a type only to an agent that announces it
+	for _, w := range []string{"check:cpu", "check:memory", "check:process", "check:port", "check:ping", "check:http", "check:cert", "check:ntp", "check:smart"} {
+		if !has[w] {
+			t.Errorf("capability %s missing: %v", w, caps)
+		}
+	}
+	if has["check:av"] != (runtime.GOOS == "windows") || has["check:systemd_failed"] != (runtime.GOOS == "linux") || has["check:inodes"] != (runtime.GOOS == "linux") {
+		t.Errorf("platform-only check capabilities: %v", caps)
+	}
 	if runtime.GOOS == "windows" {
 		if !has["job:powershell"] || has["job:shell"] {
 			t.Errorf("windows capabilities: %v", caps)

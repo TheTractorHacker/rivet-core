@@ -124,6 +124,9 @@ type CheckResult struct {
 	Key    string `json:"key"`
 	Status string `json:"status"` // ok|warn|fail|unknown
 	Detail string `json:"detail"`
+	// Value is the number a check measured (latency in ms, percent used, days left, a count), for the server's threshold tiers. Absent
+	// for the original check types and whenever nothing could be measured; a server that does not know it ignores it.
+	Value *float64 `json:"value,omitempty"`
 }
 
 type Buffered struct {

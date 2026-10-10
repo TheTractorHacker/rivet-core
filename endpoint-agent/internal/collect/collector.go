@@ -33,6 +33,9 @@ type Collector struct {
 
 	stateDirV string
 
+	// X is the operating-system access of the extended checks (nil = the real one; tests replace it).
+	X *Sys
+
 	// VerifyCheck verifies a check definition's detached signature against the
 	// pinned signing key. Script checks are refused without a valid signature.
 	VerifyCheck func(store.CheckSpec) error

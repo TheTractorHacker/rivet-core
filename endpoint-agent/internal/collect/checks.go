@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -23,8 +25,9 @@ const (
 	Unknown = "unknown"
 )
 
-// CheckTypes are the check types RunCheck evaluates (reported as capabilities).
-var CheckTypes = []string{"disk", "pending_reboot", "script", "service"}
+// CheckTypes are the check types RunCheck evaluates on this platform (reported as capabilities, "check:<type>"): the four original types
+// and the extended ones that exist here (see ExtendedTypes).
+var CheckTypes = append([]string{"disk", "pending_reboot", "script", "service"}, ExtendedTypes(runtime.GOOS)...)
 
 const (
 	defaultCheckInterval = 300 * time.Second
@@ -37,6 +40,14 @@ func res(key, status, detail string) api.CheckResult {
 		detail = detail[:maxDetail]
 	}
 	return api.CheckResult{Key: key, Status: status, Detail: detail}
+}
+
+// resv is res with the measured value (rounded to two decimals).
+func resv(key, status, detail string, value float64) api.CheckResult {
+	r := res(key, status, detail)
+	v := math.Round(value*100) / 100
+	r.Value = &v
+	return r
 }
 
 // RunCheck evaluates one check. Any collector error yields `unknown`.
@@ -62,6 +73,9 @@ func (c *Collector) RunCheck(ctx context.Context, spec store.CheckSpec) api.Chec
 		return c.checkPendingReboot(ctx, key)
 	case "script":
 		return c.checkScript(ctx, key, spec.Params)
+	}
+	if r, ok := c.runExtended(ctx, spec); ok {
+		return r
 	}
 	return res(key, Unknown, "unsupported check type "+spec.Type)
 }

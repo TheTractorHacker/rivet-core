@@ -41,6 +41,7 @@ type config struct {
 	DisabledFloor  time.Duration
 	TokenUses      int
 	FollowInterval bool
+	ValueCheck     bool
 }
 
 func parseFlags(args []string, out *flag.FlagSet) (config, error) {
@@ -64,6 +65,7 @@ func parseFlags(args []string, out *flag.FlagSet) (config, error) {
 	out.DurationVar(&c.DisabledFloor, "disabled-floor", 15*time.Minute, "minimum wait after module_disabled (scaled by -retry-scale)")
 	out.IntVar(&c.TokenUses, "token-uses", 5000, "devices enrolled per token when -token lists several comma-separated tokens (the server caps a token at 5,000 uses)")
 	out.BoolVar(&c.FollowInterval, "follow-server-interval", false, "obey next_check_in_s of the server instead of -interval (the real agent does)")
+	out.BoolVar(&c.ValueCheck, "value-check", false, "add a fourth check, cpu_load, that reports a measured value (exercises the server's Phase 3 threshold path)")
 	if err := out.Parse(args); err != nil {
 		return c, err
 	}
@@ -164,6 +166,7 @@ func isLoopback(host string) bool {
 func main() {
 	fs := flag.NewFlagSet("rmm-sim", flag.ExitOnError)
 	c, err := parseFlags(os.Args[1:], fs)
+	valueCheck = c.ValueCheck
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "rmm-sim:", err)
 		os.Exit(2)
