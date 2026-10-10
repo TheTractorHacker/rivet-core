@@ -22,6 +22,9 @@ type LinuxPlatform struct {
 	// Systemctl and NeedsRestarting name the helper programs ("" = default,
 	// looked up in PATH); tests point them at shims.
 	Systemctl, NeedsRestarting string
+	// Run executes the package tools of the software inventory (nil = the real
+	// thing); tests inject fixture output.
+	Run CmdRunner
 }
 
 func NewPlatform() Platform { return &LinuxPlatform{} }

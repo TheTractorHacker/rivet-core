@@ -1,0 +1,70 @@
+{
+    "description": "Hash of a software list: sha256 over the bytewise-sorted lines \"source\\tname\\tversion\\tpublisher\\n\". Asserted by the PHP server and the Go agent.",
+    "cases": [
+        {
+            "name": "empty",
+            "items": [],
+            "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+            "name": "one",
+            "items": [
+                {
+                    "source": "dpkg",
+                    "name": "curl",
+                    "version": "8.5.0-2ubuntu10.6",
+                    "publisher": "Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>"
+                }
+            ],
+            "hash": "d3aeaf99f8a14bab2ad44140fe85bd9fcde711f5073e98f16c861ce1641ccb9e"
+        },
+        {
+            "name": "order-independent",
+            "items": [
+                {
+                    "source": "registry",
+                    "name": "7-Zip 23.01 (x64)",
+                    "version": "23.01",
+                    "publisher": "Igor Pavlov"
+                },
+                {
+                    "source": "dpkg",
+                    "name": "bash",
+                    "version": "5.2.21-2ubuntu4",
+                    "publisher": ""
+                },
+                {
+                    "source": "registry32",
+                    "name": "Notepad++ (32-bit x86)",
+                    "version": "8.6.2",
+                    "publisher": "Notepad++ Team"
+                },
+                {
+                    "source": "snap",
+                    "name": "firefox",
+                    "version": "131.0-1",
+                    "publisher": "mozilla"
+                }
+            ],
+            "hash": "561c1740b963a580f8dbd948a55f833378ef4eca07c81567fec70c23894f60dd"
+        },
+        {
+            "name": "unicode-and-tabs-free",
+            "items": [
+                {
+                    "source": "rpm",
+                    "name": "glibc-langpack-fr",
+                    "version": "2.39-22.el10",
+                    "publisher": "Red Hat, Inc."
+                },
+                {
+                    "source": "registry",
+                    "name": "Übersetzer Pro",
+                    "version": "1.0",
+                    "publisher": "Grüße GmbH"
+                }
+            ],
+            "hash": "5334bb3a61a79628533829c36e30657720f2390509538b9dd79bacd365277068"
+        }
+    ]
+}

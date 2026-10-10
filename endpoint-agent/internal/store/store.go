@@ -29,6 +29,9 @@ type Config struct {
 	UpdateHosts       []string `json:"update_hosts,omitempty"`          // extra hosts allowed to serve update binaries (default: server host)
 	BufferMaxSamples  int      `json:"buffer_max_samples,omitempty"`
 	BufferMaxBytes    int      `json:"buffer_max_bytes,omitempty"`
+	// SoftwareStoreApps adds the Microsoft Store (appx) packages to the Windows
+	// software inventory. Off by default; ignored on Linux.
+	SoftwareStoreApps bool `json:"software_store_apps,omitempty"`
 }
 
 // Defaults applied on load.
@@ -100,6 +103,15 @@ type State struct {
 	DormantReason    string         `json:"dormant_reason,omitempty"`
 	UpdateFailure    *UpdateFailure `json:"update_failure,omitempty"`
 	EnrolledAt       time.Time      `json:"enrolled_at,omitempty"`
+	// ServerFeatures is the "features" list of the LAST successful check-in
+	// response (absence = none), kept across restarts.
+	ServerFeatures []string `json:"server_features,omitempty"`
+	// Software snapshot bookkeeping: the hash of the list the server acknowledged
+	// (the list itself is software.json), when the last full report was acked and
+	// when the last software report of any kind was sent.
+	SoftwareHash   string    `json:"software_hash,omitempty"`
+	SoftwareFullAt time.Time `json:"software_full_at,omitempty"`
+	SoftwareSentAt time.Time `json:"software_sent_at,omitempty"`
 }
 
 // UpdateResultS is a pending update_result report.
@@ -118,6 +130,11 @@ type Inflight struct {
 	InventoryHash string `json:"inventory_hash,omitempty"`
 	WithInventory bool   `json:"with_inventory,omitempty"`
 	WithUpdate    bool   `json:"with_update_result,omitempty"`
+	// WithSoftware marks a body that carries a software block; SoftwareHash is
+	// that block's hash and SoftwareFull whether it is a full report.
+	WithSoftware bool   `json:"with_software,omitempty"`
+	SoftwareHash string `json:"software_hash,omitempty"`
+	SoftwareFull bool   `json:"software_full,omitempty"`
 }
 
 // Store is a directory of agent files.
@@ -148,6 +165,7 @@ func (s *Store) JobsPath() string        { return s.path("jobs.json") }
 func (s *Store) BufferPath() string      { return s.path("buffer.json") }
 func (s *Store) InflightPath() string    { return s.path("inflight.json") }
 func (s *Store) UpdatePath() string      { return s.path("update.json") }
+func (s *Store) SoftwarePath() string    { return s.path("software.json") }
 func (s *Store) LogPath() string         { return s.path("agent.log") }
 
 func readJSON(path string, v any) (bool, error) {

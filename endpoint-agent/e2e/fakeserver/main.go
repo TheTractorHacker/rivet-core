@@ -56,6 +56,8 @@ type server struct {
 	bytesOut    int64
 	lastSeq     float64
 	revokeAfter int
+	noSoftware  bool // do not offer the software_inventory feature
+	swReports   int
 	outFile     *os.File
 }
 
@@ -203,6 +205,15 @@ func (s *server) checkin(w http.ResponseWriter, r *http.Request) {
 	arch, _ := req["arch"].(string)
 	caps := fmt.Sprint(req["capabilities"])
 	revoke := s.revokeAfter > 0 && n > s.revokeAfter
+	// the offer: only to a device that announced the capability (PROTOCOL.md 3.2.1)
+	features := []string{}
+	if !s.noSoftware {
+		for _, c := range asSlice(req["capabilities"]) {
+			if c == "software_inventory" {
+				features = append(features, "software_inventory")
+			}
+		}
+	}
 	pending := 0
 	if s.jobQueued && !s.jobDone {
 		pending++
@@ -216,14 +227,31 @@ func (s *server) checkin(w http.ResponseWriter, r *http.Request) {
 		s.logf("CHECKIN #%d REVOKED", n)
 		return
 	}
-	out := s.writeJSON(w, 200, map[string]any{"ok": true, "next_check_in_s": s.interval, "jobs_pending": pending, "status": "linked", "matched_asset_id": 1, "signing_key_id": "fake-key-1",
+	resp := map[string]any{"ok": true, "next_check_in_s": s.interval, "jobs_pending": pending, "status": "linked", "matched_asset_id": 1, "signing_key_id": "fake-key-1",
 		"server_time": time.Now().UTC().Format(time.RFC3339), "update": s.updateManifest(agentVersion),
 		"config": map[string]any{"collect_interval_s": s.collectIv, "checks": []any{
 			map[string]any{"key": "disk_root", "type": "disk", "params": map[string]any{"mount": "/"}, "interval_s": 60},
-			map[string]any{"key": "reboot", "type": "pending_reboot", "params": map[string]any{}, "interval_s": 60}}}})
+			map[string]any{"key": "reboot", "type": "pending_reboot", "params": map[string]any{}, "interval_s": 60}}}}
+	if len(features) > 0 {
+		resp["features"] = features
+	}
+	out := s.writeJSON(w, 200, resp)
 	s.logf("CHECKIN #%d seq=%v version=%s platform=%s/%s bytes_in=%d bytes_out=%d buffered=%d inventory=%v caps=%s", n, seq, agentVersion, platform, arch, len(body), out, len(buffered), hasInv, caps)
 	if inv, ok := req["inventory"].(map[string]any); ok {
 		s.logf("INVENTORY os=%v os_version=%v serial=%v model=%v cpu=%v mem=%v disks=%d net=%d uptime=%v pending_reboot=%v", inv["os"], inv["os_version"], inv["serial"], inv["model"], inv["cpu"], inv["memory_total_bytes"], len(asSlice(inv["disks"])), len(asSlice(inv["network"])), inv["uptime_s"], inv["pending_reboot"])
+	}
+	if sw, ok := req["software"].(map[string]any); ok {
+		s.mu.Lock()
+		s.swReports++
+		first := s.swReports == 1
+		s.mu.Unlock()
+		items := asSlice(sw["items"])
+		sample := ""
+		if len(items) > 0 {
+			b, _ := json.Marshal(items[0])
+			sample = string(b)
+		}
+		s.logf("SOFTWARE mode=%v count=%v items=%d removed=%d truncated=%v hash=%v base_hash=%v first=%v sample=%s", sw["mode"], sw["count"], len(items), len(asSlice(sw["removed"])), sw["truncated"], sw["hash"], sw["base_hash"], first, sample)
 	}
 	if m, ok := req["metrics"].(map[string]any); ok {
 		s.logf("METRICS cpu=%v mem=%v disk=%v rx=%v tx=%v", m["cpu_pct"], m["mem_pct"], m["disk"], m["net_rx_bps"], m["net_tx_bps"])
@@ -319,6 +347,7 @@ func main() {
 	revoke := flag.Int("revoke-after", 0, "if >0, answer 401 revoked after this many check-ins")
 	jobType := flag.String("job-type", "powershell", "type of the signed job: shell (Linux) or powershell (Windows)")
 	foreign := flag.Bool("foreign-job", false, "also queue e2e-job-2 of the other script type: the agent must report unsupported_platform")
+	noSoftware := flag.Bool("no-software", false, "do not offer the software_inventory feature (an old server)")
 	updBin := flag.String("update-binary", "", "file served as the self-update artifact (with -update-version)")
 	updVer := flag.String("update-version", "", "version offered to agents running a different version (once /_ctl?update=on)")
 	ctlListen := flag.String("ctl-listen", "", "plain-HTTP 127.0.0.1:PORT (0 = any) for /_ctl; address written to <dir>/ctl (lets a shell without curl drive faults)")
@@ -329,7 +358,7 @@ func main() {
 	os.MkdirAll(*dir, 0o755)
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	s := &server{pub: pub, priv: priv, token: *token, interval: *interval, collectIv: *collect, jobScript: *script, revokeAfter: *revoke,
-		jobType: *jobType, foreignJob: *foreign, retryAfter: "20"}
+		jobType: *jobType, foreignJob: *foreign, retryAfter: "20", noSoftware: *noSoftware}
 	if *updBin != "" {
 		b, err := os.ReadFile(*updBin)
 		if err != nil {
@@ -352,7 +381,7 @@ func main() {
 	mux.HandleFunc("/_stats", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		json.NewEncoder(w).Encode(map[string]any{"checkins": s.checkins, "bytes_in": s.bytesIn, "bytes_out": s.bytesOut, "last_seq": s.lastSeq, "job_done": s.jobDone, "wire_in": wireIn.Load(), "wire_out": wireOut.Load()})
+		json.NewEncoder(w).Encode(map[string]any{"checkins": s.checkins, "bytes_in": s.bytesIn, "bytes_out": s.bytesOut, "last_seq": s.lastSeq, "job_done": s.jobDone, "software_reports": s.swReports, "wire_in": wireIn.Load(), "wire_out": wireOut.Load()})
 	})
 	if *ctlListen != "" {
 		cl, err := net.Listen("tcp", *ctlListen)

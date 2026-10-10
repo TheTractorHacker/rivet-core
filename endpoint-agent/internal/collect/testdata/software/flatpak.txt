@@ -1,0 +1,7 @@
+org.mozilla.firefox	131.0.1	flathub
+org.gnome.Platform		flathub
+org.example.NoOrigin	1.0
+com.example.Üni	2.0	flathub-beta
+Application ID	Version	Origin
+
+just-a-name

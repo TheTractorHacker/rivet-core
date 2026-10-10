@@ -147,6 +147,37 @@ type CheckinRequest struct {
 	Platform     string   `json:"platform,omitempty"`     // runtime.GOOS: windows | linux
 	Arch         string   `json:"arch,omitempty"`         // runtime.GOARCH: amd64 | arm64
 	Capabilities []string `json:"capabilities,omitempty"` // sorted: "job:shell", "check:disk", ...
+	// Software is the installed-software report (docs/rmm/PROTOCOL.md 3.2.1). It is
+	// only ever present after a response offered the "software_inventory" feature.
+	Software *SoftwareReport `json:"software,omitempty"`
+}
+
+// SoftwareItem is one installed product. Its identity is (Source, Name).
+type SoftwareItem struct {
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	Publisher string `json:"publisher"`
+	Source    string `json:"source"` // registry|registry32|appx|dpkg|rpm|snap|flatpak
+	Installed string `json:"installed,omitempty"`
+}
+
+// SoftwareRef names a removed product.
+type SoftwareRef struct {
+	Source string `json:"source"`
+	Name   string `json:"name"`
+}
+
+// SoftwareReport is the "software" block of a check-in. Mode "full" carries the
+// whole list; "delta" the added/changed items plus the removed refs, applying to
+// the list whose hash is BaseHash. Hash and Count describe the list AFTER the report.
+type SoftwareReport struct {
+	Mode      string         `json:"mode"`
+	Hash      string         `json:"hash"`
+	BaseHash  string         `json:"base_hash,omitempty"`
+	Count     int            `json:"count"`
+	Truncated bool           `json:"truncated"`
+	Items     []SoftwareItem `json:"items"`
+	Removed   []SoftwareRef  `json:"removed,omitempty"`
 }
 
 // UpdateResult reports the last self-update attempt (state ok|failed|rolled_back).
@@ -174,6 +205,10 @@ type CheckinResponse struct {
 	SigningKeyID  string          `json:"signing_key_id"`
 	Status        string          `json:"status"`
 	MatchedAssetI *int64          `json:"matched_asset_id"` // optional extension
+	// Features the server offers this device (e.g. "software_inventory"); Resync
+	// asks for a full re-send of a data set (e.g. "software"). Both optional.
+	Features []string `json:"features,omitempty"`
+	Resync   []string `json:"resync,omitempty"`
 }
 
 // Job as delivered by GET agent_jobs. Raw keeps the exact object so the

@@ -320,7 +320,7 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 | File | Contents |
 |---|---|
-| `config.json` | operator config: `server_url`, `ca_file`, `pin_spki_sha256`, `department`, `mesh_node_id` (override), `max_concurrent_jobs` (default 1), `disable_jobs`, `disable_script_checks`, `update_hosts`, `buffer_max_samples` (100), `buffer_max_bytes` (1 MiB) |
+| `config.json` | operator config: `server_url`, `ca_file`, `pin_spki_sha256`, `department`, `mesh_node_id` (override), `max_concurrent_jobs` (default 1), `disable_jobs`, `disable_script_checks`, `update_hosts`, `buffer_max_samples` (100), `buffer_max_bytes` (1 MiB), `software_store_apps` (Windows: also list Microsoft Store apps in the software inventory; default off) |
 | `state.json` | `install_id`, `device_id`, status, `seq`, pinned `signing_public_key`, server config (checks/intervals), last check-in/error, update failure |
 | `device.token` | the device credential: `v1:dpapi:<base64>` on Windows (`CryptProtectData`, machine scope + entropy), `v1:plain:<token>` `0600` on Linux |
 | `enroll.token` | one-shot enrollment token, only between an offline install and the first successful enrollment |
@@ -328,6 +328,7 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 | `buffer.json` | bounded ring of unacknowledged samples |
 | `jobs.json` | durable job table (`job_id`, attempt, state, reason, unreported terminal output) |
 | `update.json` | update probation state |
+| `software.json` | the installed-software list the server last acknowledged (software inventory, PROTOCOL 3.2.1); re-hashed against `state.json` on load, a mismatch means "send a full list" |
 | `agent.log`, `agent.log.1` | service log (5 MiB x 2, rotated); no secrets or job output are logged |
 
 Local kill switches (set in `config.json` by an administrator of the endpoint): `disable_jobs` (never execute server jobs) and

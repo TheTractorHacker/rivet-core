@@ -89,16 +89,20 @@ func call[T any](c *Collector, ctx context.Context, key string, d time.Duration,
 	}
 	ch := make(chan res, 1)
 	go func() {
+		var out res
 		defer func() {
 			if r := recover(); r != nil {
-				ch <- res{err: fmt.Errorf("%s: panic: %v", key, r)}
+				out = res{err: fmt.Errorf("%s: panic: %v", key, r)}
 			}
+			// release the key BEFORE delivering the result: a caller that gets the
+			// result may call again immediately and must not see a stale "running".
 			c.mu.Lock()
 			delete(c.hung, key)
 			c.mu.Unlock()
+			ch <- out
 		}()
 		v, err := fn(cctx)
-		ch <- res{v, err}
+		out = res{v, err}
 	}()
 	select {
 	case r := <-ch:

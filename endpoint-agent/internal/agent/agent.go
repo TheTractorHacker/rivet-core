@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -99,6 +100,7 @@ type Agent struct {
 	disabledLogged time.Time // last time the disabled state was logged (once per hour)
 	invAt          time.Time
 	invPending     *api.Inventory
+	sw             swState
 	checkins       int
 	restart        bool
 	runCtx         context.Context
@@ -319,6 +321,7 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 		st.Checks = toStoreChecks(resp.Config.Checks)
 		st.Dormant, st.DormantReason, st.LastError = false, "", ""
 		st.EnrolledAt = a.o.Now().UTC()
+		st.ServerFeatures, st.SoftwareHash = nil, "" // unknown until the new server says so
 		return nil
 	})
 	if err != nil {
@@ -392,6 +395,9 @@ func Capabilities() []string {
 	}
 	for _, t := range collect.CheckTypes {
 		out = append(out, "check:"+t)
+	}
+	if collect.SoftwareSupported() {
+		out = append(out, featureSoftware)
 	}
 	sort.Strings(out)
 	return out
@@ -475,6 +481,15 @@ func (a *Agent) buildInflight(ctx context.Context) (*store.Inflight, error) {
 		req.Inventory = inv
 		in.WithInventory, in.InventoryHash = true, collect.InventoryHash(*inv)
 	}
+	a.sw.pending = nil
+	if rep, plan := a.softwareIfDue(ctx, st); rep != nil {
+		req.Software = rep
+		in.WithSoftware, in.SoftwareHash, in.SoftwareFull = true, plan.hash, plan.full
+		a.sw.pending = plan
+		if plan.full {
+			a.sw.resync = false
+		}
+	}
 	var seq uint64
 	if err := a.o.Store.Update(func(s *store.State) error { s.Seq++; seq = s.Seq; return nil }); err != nil {
 		return nil, err
@@ -552,6 +567,7 @@ func (a *Agent) checkinFailed(in *store.Inflight, err error, attempt int, bo api
 	case ae.Status == 409:
 		// Duplicate seq: the server already has it. Treat as acknowledged.
 		a.log.Info("server reports check-in already received", "seq", in.Seq)
+		a.sw.pending = nil
 		a.finishInflight(in)
 		return checkinOutcome{delay: a.o.MinInterval}
 	case ae.Transient():
@@ -561,6 +577,7 @@ func (a *Agent) checkinFailed(in *store.Inflight, err error, attempt int, bo api
 		// 4xx: this exact body will never be accepted; drop it so the agent
 		// is not wedged, and carry on with fresh data.
 		a.log.Error("server rejected check-in payload; dropping it", "seq", in.Seq, "err", err)
+		a.sw.pending = nil
 		a.finishInflight(in)
 		return checkinOutcome{delay: bo.DelayWithRetryAfter(attempt, ae.RetryAfter)}
 	}
@@ -606,6 +623,7 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 		if in.WithInventory {
 			st.InventoryHash, st.InventorySentAt = in.InventoryHash, now
 		}
+		st.ServerFeatures = slices.Clone(resp.Features) // the last word of the server; absence = none
 		if resp.Config != nil {
 			st.Checks = toStoreChecks(resp.Config.Checks)
 			if resp.Config.CollectIntervalS > 0 {
@@ -642,6 +660,10 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 	if in.WithInventory {
 		a.invPending = nil
 	}
+	if in.WithSoftware {
+		a.ackSoftware(in, now)
+	}
+	a.sw.resync = hasFeature(resp.Features, featureSoftware) && hasFeature(resp.Resync, resyncSoftware)
 	st, _ := a.o.Store.LoadState()
 
 	// jobs: immediately when pending, otherwise a periodic safety poll

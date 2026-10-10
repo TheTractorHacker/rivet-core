@@ -159,6 +159,20 @@ if [ "$MODE" = fake ]; then
   grep -q 'CHECKIN #1 .*platform=linux/' "$WORK/fakeserver.out" && grep -q 'caps=\[.*job:shell' "$WORK/fakeserver.out" \
     && echo "ok: check-in carries platform/arch/capabilities" || { echo "FAIL: platform block missing from the check-in"; fail=1; }
   grep -q '^.*INVENTORY os=linux' "$WORK/fakeserver.out" && echo "ok: Linux inventory uploaded" || { echo "FAIL: no inventory"; fail=1; }
+  # software inventory (PROTOCOL.md 3.2.1): the fake server offers the feature once the agent announced it; the
+  # agent then sends exactly one FULL report (nothing changes afterwards, so no further one within the run)
+  if command -v dpkg-query >/dev/null 2>&1 || command -v rpm >/dev/null 2>&1; then
+    grep -q 'CHECKIN #1 .*caps=\[.*software_inventory' "$WORK/fakeserver.out" \
+      && echo "ok: the agent announces the software_inventory capability" || { echo "FAIL: capability software_inventory not announced"; fail=1; }
+    grep -q 'SOFTWARE mode=full count=[1-9][0-9]* .*truncated=false hash=[0-9a-f]\{64\} base_hash=<nil> first=true' "$WORK/fakeserver.out" \
+      && echo "ok: the fake server received a full software report" || { echo "FAIL: no full software report"; fail=1; }
+    [ "$(grep -c 'SOFTWARE mode=' "$WORK/fakeserver.out")" = 1 ] && echo "ok: exactly one software report (unchanged list is not re-sent)" || { echo "FAIL: software report count"; fail=1; }
+    awk '/CHECKIN #2 /{seen=1} /SOFTWARE /{ if (!seen) bad=1 } END{exit bad}' "$WORK/fakeserver.out" \
+      && echo "ok: no software before the offer was seen (check-in 1 carries none)" || { echo "FAIL: software before the first offer"; fail=1; }
+    [ -s "$WORK/state/software.json" ] && [ "$(stat -c %a "$WORK/state/software.json")" = 600 ] && echo "ok: acknowledged snapshot persisted (software.json, 0600)" || { echo "FAIL: no software.json"; fail=1; }
+  else
+    echo "note: neither dpkg-query nor rpm on this host: the software inventory assertions are skipped"
+  fi
   grep CHECKIN "$WORK/fakeserver.out" | head -5
   STOK="rvte1.e2esel.E2Esecret123"
   "$WORK/fakeserver" -dir "$WORK/fake2" -interval 3 -collect 5 -token "$STOK" >"$WORK/fakeserver2.out" 2>&1 &

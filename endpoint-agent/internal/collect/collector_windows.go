@@ -26,6 +26,9 @@ import (
 )
 
 type WinPlatform struct {
+	// Run executes helper programs (the Store-app listing); nil = the real thing.
+	Run CmdRunner
+
 	mu     sync.Mutex
 	ident  *Identity
 	user   string

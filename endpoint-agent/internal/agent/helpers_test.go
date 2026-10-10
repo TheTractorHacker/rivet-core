@@ -28,7 +28,30 @@ type fakePlatform struct {
 	mu   sync.Mutex
 	fail map[string]bool
 	cpu  uint64
+
+	// software inventory (collect.SoftwareLister)
+	sw      []collect.SoftwareItem
+	swErr   error
+	swCalls int
 }
+
+func (f *fakePlatform) Software(context.Context) (collect.SoftwareList, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.swCalls++
+	if f.swErr != nil {
+		return collect.SoftwareList{}, f.swErr
+	}
+	return collect.SoftwareList{Items: append([]collect.SoftwareItem(nil), f.sw...)}, nil
+}
+
+func (f *fakePlatform) setSoftware(items ...collect.SoftwareItem) {
+	f.mu.Lock()
+	f.sw = items
+	f.mu.Unlock()
+}
+
+func (f *fakePlatform) softwareCalls() int { f.mu.Lock(); defer f.mu.Unlock(); return f.swCalls }
 
 func (f *fakePlatform) bad(k string) error {
 	f.mu.Lock()
@@ -223,6 +246,20 @@ type rig struct {
 	a   *Agent
 	fp  *fakePlatform
 	rb  *recReboot
+	clk *fakeClock
+}
+
+// fakeClock is the injected agent clock (Options.Now).
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	c.t = c.t.Add(d)
+	c.mu.Unlock()
 }
 
 func newRig(t *testing.T) *rig {
@@ -251,7 +288,11 @@ func (r *rig) newAgent() *Agent {
 		r.t.Fatal(err)
 	}
 	t := r.t
-	a, err := New(Options{Store: st, Version: "1.0.0", Platform: r.fp, Rebooter: r.rb,
+	var now func() time.Time
+	if r.clk != nil {
+		now = r.clk.Now
+	}
+	a, err := New(Options{Store: st, Version: "1.0.0", Platform: r.fp, Rebooter: r.rb, Now: now,
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), MinInterval: 20 * time.Millisecond, Rand: func() float64 { return 0.5 }})
 	if err != nil {
 		t.Fatal(err)
