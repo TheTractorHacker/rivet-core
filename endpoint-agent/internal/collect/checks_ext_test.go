@@ -826,3 +826,66 @@ func TestDefaultSysExecAndFileCaps(t *testing.T) {
 		t.Fatalf("output cap: %d", len(big))
 	}
 }
+
+// Hostile parameters must be refused before anything is executed or opened: no program is run and no file is read.
+func TestHostileParametersAreRefusedBeforeAnythingRuns(t *testing.T) {
+	hostile := []string{
+		`x'; Remove-Item C:\ -Recurse; '`, "x\"; calc; \"", "$(calc)", "`calc`", "a\nb", "a\rb", "a b;c", "--output=/etc/passwd", "-oProxyCommand=x", "-f",
+		"../../etc/shadow", `\\evil\share\x.pem`, "//evil/share", "a|b", "a&b", "a>b", "x\x00y",
+	}
+	for _, goos := range []string{"linux", "windows"} {
+		c, _, x := extCol(goos)
+		ran := false
+		x.Exec = func(context.Context, time.Duration, string, ...string) (string, int, error) {
+			ran = true
+			return "", 0, nil
+		}
+		x.ReadFile = func(string) ([]byte, error) { ran = true; return nil, os.ErrNotExist }
+		x.ReadDir = func(string) ([]os.DirEntry, error) { ran = true; return nil, os.ErrNotExist }
+		x.Dial = func(context.Context, string, string) (net.Conn, error) { ran = true; return nil, errors.New("no") }
+		for _, h := range hostile {
+			q, _ := json.Marshal(h)
+			for _, spec := range []struct{ typ, params string }{
+				{"ping", `{"host":` + string(q) + `}`},
+				{"port", `{"host":` + string(q) + `,"port":22}`},
+				{"ntp", `{"server":` + string(q) + `}`},
+				{"cert", `{"host":` + string(q) + `}`},
+				{"cert", `{"store":` + string(q) + `}`},
+				{"cert", `{"paths":[` + string(q) + `]}`},
+				{"smart", `{"devices":[` + string(q) + `]}`},
+				{"http", `{"url":` + string(q) + `}`},
+			} {
+				r := c.RunCheck(context.Background(), xspec(spec.typ, spec.params))
+				if r.Status != Unknown && !(spec.typ == "http") {
+					t.Fatalf("%s %s %s: %+v", goos, spec.typ, h, r)
+				}
+				if ran {
+					t.Fatalf("%s %s with %q touched the system", goos, spec.typ, h)
+				}
+			}
+		}
+	}
+}
+
+func TestStoreAndPathAllowLists(t *testing.T) {
+	for _, ok := range []string{`LocalMachine\My`, `CurrentUser\Trusted People`, `LocalMachine\Web-Hosting.1`} {
+		if _, _, good := parseCertStoreName(ok); !good {
+			t.Fatalf("%q should pass", ok)
+		}
+	}
+	for _, bad := range []string{`LocalMachine\My'; calc; '`, `LocalMachine`, `LocalMachine\`, `Other\My`, `LocalMachine\..\x`, `LocalMachine\My\Sub`, "LocalMachine\\My\n", `LocalMachine\My"`, `LocalMachine\$(x)`, ""} {
+		if _, _, good := parseCertStoreName(bad); good {
+			t.Fatalf("%q must be refused", bad)
+		}
+	}
+	for _, ok := range []string{"/etc/ssl/certs/a.pem", `C:\certs\a.pem`, "D:/x/a.crt"} {
+		if !safeCertPath(ok) {
+			t.Fatalf("%q should pass", ok)
+		}
+	}
+	for _, bad := range []string{"", "relative.pem", `\\srv\share\a.pem`, "//srv/share/a.pem", "/etc/../shadow", "/a\nb", strings.Repeat("/a", 200), "-x", `C:evil`} {
+		if safeCertPath(bad) {
+			t.Fatalf("%q must be refused", bad)
+		}
+	}
+}

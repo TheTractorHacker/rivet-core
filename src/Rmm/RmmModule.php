@@ -253,7 +253,7 @@ final class RmmModule
     /** Threshold tiers, flap dampening, maintenance, dependency and storm control behind the check evaluator (active only while the `alerting` sub-switch is on). */
     public function alertingEngine(): AlertingEngine
     {
-        return $this->alertingEngine ??= new AlertingEngine($this->sql(), $this->settings(), $this->checkEval(), $this->options['threshold_resolver'] ?? new DefaultThresholdResolver(),
+        return $this->alertingEngine ??= new AlertingEngine($this->settings(), $this->checkEval(), $this->options['threshold_resolver'] ?? new DefaultThresholdResolver(),
             $this->maintenance(), $this->dependencies(), $this->storm(), $this->alerts());
     }
 

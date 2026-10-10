@@ -56,6 +56,25 @@ final class AlertingActions
         return $why === null ? null : ActionResult::fail(403, 'forbidden', $why);
     }
 
+    /**
+     * May this caller know that a record scoped to ($type, $id) exists? A client or device scope outside the caller's clients (or a device that
+     * is gone) is invisible: the answer is the same 404 as for a record that does not exist. Other scopes span clients and are visible to
+     * everyone who may view devices.
+     */
+    private function scopeVisible(int $uid, string $type, int $id): bool
+    {
+        if ($type === 'client') {
+            return $this->authz->clientOk($uid, $id);
+        }
+        if ($type === 'device') {
+            $d = $this->devices->find($id);
+
+            return $d !== null && $this->authz->clientOk($uid, (int) $d['client_id']);
+        }
+
+        return true;
+    }
+
     // ------------------------------------------------------------------ alerts
 
     /**
@@ -152,6 +171,7 @@ final class AlertingActions
 
     // ------------------------------------------------------------------ maintenance windows
 
+    /** @param array<string,mixed> $filters */
     public function listWindows(RmmPrincipal $who, array $filters = []): ActionResult
     {
         if (($e = $this->view($who->userId)) !== null) {
@@ -167,16 +187,11 @@ final class AlertingActions
         if (!empty($filters['active'])) {
             $f['active'] = true;
         }
-        $visible = $this->authz->visibleClientIds($who->userId);
         $items = [];
         foreach ($this->maintenance->all($f) as $w) {
-            if ($visible !== null && $w['scope_type'] === 'client' && !in_array($w['scope_id'], $visible, true)) {
-                continue;
+            if ($this->scopeVisible($who->userId, $w['scope_type'], $w['scope_id'])) {
+                $items[] = $w;
             }
-            if ($visible !== null && $w['scope_type'] === 'device' && ($d = $this->devices->find($w['scope_id'])) !== null && !in_array((int) $d['client_id'], $visible, true)) {
-                continue;
-            }
-            $items[] = $w;
         }
 
         return ActionResult::ok('', 200, 'ok', ['data' => $items]);
@@ -188,6 +203,9 @@ final class AlertingActions
             return $e;
         }
         $w = $this->maintenance->find($windowId);
+        if ($w !== null && !$this->scopeVisible($who->userId, $w['scope_type'], $w['scope_id'])) {
+            $w = null;
+        }
 
         return $w === null ? ActionResult::fail(404, 'not_found', 'Window not found.') : ActionResult::ok('', 200, 'ok', ['window' => $w]);
     }
@@ -241,7 +259,7 @@ final class AlertingActions
             return $e;
         }
         $cur = $this->maintenance->find($windowId);
-        if ($cur === null) {
+        if ($cur === null || !$this->scopeVisible($who->userId, $cur['scope_type'], $cur['scope_id'])) {
             return ActionResult::fail(404, 'not_found', 'Window not found.');
         }
         if (($e = $this->windowScopeAllowed($who, $cur['scope_type'], $cur['scope_id'])) !== null) {
@@ -271,7 +289,7 @@ final class AlertingActions
             return $e;
         }
         $cur = $this->maintenance->find($windowId);
-        if ($cur === null) {
+        if ($cur === null || !$this->scopeVisible($who->userId, $cur['scope_type'], $cur['scope_id'])) {
             return ActionResult::fail(404, 'not_found', 'Window not found.');
         }
         if (($e = $this->windowScopeAllowed($who, $cur['scope_type'], $cur['scope_id'])) !== null) {
@@ -340,7 +358,9 @@ final class AlertingActions
             return $e;
         }
 
-        return ActionResult::ok('', 200, 'ok', ['data' => $this->escalation->allPolicies()]);
+        $items = array_values(array_filter($this->escalation->allPolicies(), fn (array $p): bool => $this->scopeVisible($who->userId, $p['scope_type'], $p['scope_id'])));
+
+        return ActionResult::ok('', 200, 'ok', ['data' => $items]);
     }
 
     public function getPolicy(RmmPrincipal $who, int $policyId): ActionResult
@@ -349,6 +369,9 @@ final class AlertingActions
             return $e;
         }
         $p = $this->escalation->findPolicy($policyId);
+        if ($p !== null && !$this->scopeVisible($who->userId, $p['scope_type'], $p['scope_id'])) {
+            $p = null;
+        }
 
         return $p === null ? ActionResult::fail(404, 'not_found', 'Policy not found.') : ActionResult::ok('', 200, 'ok', ['policy' => $p]);
     }
@@ -375,6 +398,10 @@ final class AlertingActions
         if (($e = $this->role($who->userId, RmmAbility::ADMIN)) !== null) {
             return $e;
         }
+        $cur = $this->escalation->findPolicy($policyId);
+        if ($cur === null || !$this->scopeVisible($who->userId, $cur['scope_type'], $cur['scope_id'])) {
+            return ActionResult::fail(404, 'not_found', 'Policy not found.');
+        }
         try {
             $p = $this->escalation->updatePolicy($policyId, $in);
         } catch (\InvalidArgumentException $ex) {
@@ -392,6 +419,10 @@ final class AlertingActions
     {
         if (($e = $this->role($who->userId, RmmAbility::ADMIN)) !== null) {
             return $e;
+        }
+        $cur = $this->escalation->findPolicy($policyId);
+        if ($cur === null || !$this->scopeVisible($who->userId, $cur['scope_type'], $cur['scope_id'])) {
+            return ActionResult::fail(404, 'not_found', 'Policy not found.');
         }
         if (!$this->escalation->deletePolicy($policyId)) {
             return ActionResult::fail(404, 'not_found', 'Policy not found.');

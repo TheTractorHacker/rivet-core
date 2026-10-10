@@ -51,6 +51,9 @@ func (c *Collector) checkCert(ctx context.Context, key string, raw json.RawMessa
 			return res(key, Unknown, "invalid cert check parameters")
 		}
 		for _, path := range p.Paths {
+			if !safeCertPath(path) {
+				return res(key, Unknown, "invalid cert check parameters")
+			}
 			files := []string{path}
 			if st, err := os.Stat(path); err == nil && st.IsDir() {
 				ents, err := x.ReadDir(path)
@@ -84,9 +87,12 @@ func (c *Collector) checkCert(ctx context.Context, key string, raw json.RawMessa
 		if x.GOOS != "windows" {
 			return res(key, Unknown, "certificate stores exist on Windows only")
 		}
-		store := p.Store[strings.Index(p.Store, "\\")+1:]
-		scope := p.Store[:strings.Index(p.Store, "\\")]
-		script := fmt.Sprintf(`Get-ChildItem 'Cert:\%s\%s' | ForEach-Object { $_.NotAfter.ToUniversalTime().ToString('o') + '|' + $_.Subject }`, scope, store)
+		scope, store, ok := parseCertStoreName(p.Store)
+		if !ok {
+			return res(key, Unknown, "invalid cert check parameters")
+		}
+		// scope and store passed the allow-list (letters, digits, space, . _ -), so neither can carry a quote or an operator into the script
+		script := "Get-ChildItem -LiteralPath 'Cert:\\" + scope + "\\" + store + "' | ForEach-Object { $_.NotAfter.ToUniversalTime().ToString('o') + '|' + $_.Subject }"
 		out, _, err := x.Exec(ctx, 20*time.Second, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
 		if err != nil {
 			return res(key, Unknown, "cannot read the certificate store: "+firstLine(err.Error()))
@@ -153,6 +159,11 @@ func (c *Collector) checkSmart(ctx context.Context, key string, raw json.RawMess
 	}{}
 	if err := unmarshalParams(raw, &p); err != nil || len(p.Devices) > 16 {
 		return res(key, Unknown, "invalid smart check parameters")
+	}
+	for _, d := range p.Devices {
+		if !smartDeviceRE.MatchString(d) {
+			return res(key, Unknown, "invalid smart check parameters")
+		}
 	}
 	x := c.sys()
 	if x.GOOS == "windows" {

@@ -92,6 +92,19 @@ final class CheckCatalogTest extends TestCase
         $this->bad('cert', ['paths' => ['relative.pem']], 'cert.paths');
         $this->bad('cert', ['paths' => array_fill(0, 11, '/a')], 'cert.paths');
         $this->bad('cert', ['store' => 'Bogus\\My'], 'cert.store');
+        foreach (["LocalMachine\\My'; calc; '", 'LocalMachine\\My"', 'LocalMachine\\$(x)', "LocalMachine\\My\n", 'LocalMachine\\a\\b', 'LocalMachine'] as $hostile) {
+            $this->bad('cert', ['store' => $hostile], 'cert.store');
+        }
+        foreach (['/etc/../shadow', '//srv/share/a.pem', "/a\nb"] as $hostile) {
+            $this->bad('cert', ['paths' => [$hostile]], 'cert.paths');
+        }
+        foreach (['-f', '$(x)', 'a;b', "a\nb", '`x`', '--output=/x', 'a b', "x'y", '-oProxyCommand=x'] as $hostile) {
+            $this->bad('ping', ['host' => $hostile], 'ping.host');
+            $this->bad('port', ['host' => $hostile, 'port' => 22], 'port.host');
+            $this->bad('ntp', ['server' => $hostile], 'ntp.server');
+            $this->bad('smart', ['devices' => [$hostile]], 'smart.devices');
+            $this->bad('process', ['name' => $hostile . '/'], 'process.name');
+        }
         $this->bad('cert', ['paths' => ['/a'], 'warn_days' => 3, 'fail_days' => 10], 'fail_days must not be above');
         $this->bad('ntp', ['server' => ''], 'ntp.server');
         $this->bad('ntp', ['warn_ms' => 500, 'fail_ms' => 100], 'fail_ms must not be below');

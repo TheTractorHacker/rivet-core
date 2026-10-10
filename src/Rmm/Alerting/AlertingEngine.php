@@ -6,7 +6,6 @@ namespace RivetCore\Rmm\Alerting;
 
 use RivetCore\Rmm\Checks\CheckCatalog;
 use RivetCore\Rmm\Settings\RmmSettings;
-use RivetCore\Rmm\Support\Sql;
 
 /**
  * Phase 3 alert evaluation behind the existing {@see \RivetCore\Rmm\Checks\CheckEvaluator}. It exists only while the `alerting` sub-switch
@@ -23,7 +22,6 @@ final class AlertingEngine
     private ?bool $on = null;
 
     public function __construct(
-        private readonly Sql $sql,
         private readonly RmmSettings $settings,
         public readonly CheckEvalStore $eval,
         public readonly ThresholdResolverInterface $resolver,

@@ -873,6 +873,65 @@ final class AlertingTest extends RmmTestCase
         $this->assertSame(404, $c);
     }
 
+    public function testARestrictedPrincipalCannotSeeOrChangeAnotherClientsRecords(): void
+    {
+        $this->linked('RS-A');
+        $a = $this->dev;
+        [$b, $bt] = $this->enrollDevice('RS-B', $this->h->clientB);
+        $this->define([['key' => 'cpu1', 'type' => 'cpu', 'params' => ['thresholds' => ['warn' => ['op' => 'gt', 'value' => 80]]], 'interval_s' => 60]]);
+        foreach ([1, 2, 3] as $_) {
+            $this->bad('svc', 'fail', null, $bt);
+        }
+        $alertB = (int) $this->meta("device_id = $b")[0]['alert_id'];
+        $winB = $this->window(['scope_type' => 'client', 'scope_id' => $this->h->clientB, 'name' => 'B only']);
+        $winDevB = $this->window(['scope_type' => 'device', 'scope_id' => $b, 'name' => 'B box']);
+        $winA = $this->window(['scope_type' => 'client', 'scope_id' => $this->h->clientA, 'name' => 'A only']);
+        $polB = $this->policy(['name' => 'B policy', 'scope_type' => 'client', 'scope_id' => $this->h->clientB]);
+        $polAll = $this->policy(['name' => 'Everyone policy']);
+        $this->h->tenancy->restrictUser(7, [$this->h->clientA]);
+        $this->h->policy->grant(7, ['rmm.device.view', 'rmm.alert.manage', 'rmm.admin', 'rmm.device.manage']);
+        $me = $this->pt(7);
+
+        $missing = [404, 'not_found'];
+        $code = fn (array $r): array => [$r[0], $r[1]['code'] ?? null];
+        $calls = [
+            ['GET', ['maintenance', (string) $winB]], ['PATCH', ['maintenance', (string) $winB], ['name' => 'x']], ['DELETE', ['maintenance', (string) $winB]],
+            ['GET', ['maintenance', (string) $winDevB]], ['PATCH', ['maintenance', (string) $winDevB], ['name' => 'x']], ['DELETE', ['maintenance', (string) $winDevB]],
+            ['GET', ['escalation_policies', (string) $polB]], ['PATCH', ['escalation_policies', (string) $polB], ['name' => 'x']], ['DELETE', ['escalation_policies', (string) $polB]],
+            ['GET', ['alerts', (string) $alertB]], ['POST', ['alerts', (string) $alertB, 'ack']], ['POST', ['alerts', (string) $alertB, 'resolve']],
+            ['GET', [(string) $b, 'alerts']], ['GET', [(string) $b, 'alerting']], ['GET', [(string) $b, 'maintenance']],
+            ['GET', [(string) $b, 'parent']], ['PUT', [(string) $b, 'parent'], ['parent_device_id' => $a]], ['DELETE', [(string) $b, 'parent']],
+            ['PUT', [(string) $a, 'parent'], ['parent_device_id' => $b]],
+            ['GET', [(string) $b, 'checks', 'cpu1', 'thresholds']], ['PUT', [(string) $b, 'checks', 'cpu1', 'thresholds'], ['warn' => ['op' => 'gt', 'value' => 90]]], ['DELETE', [(string) $b, 'checks', 'cpu1', 'thresholds']],
+        ];
+        foreach ($calls as $c) {
+            $r = $this->h->tech($c[0], $c[1], $me, $c[2] ?? null);
+            $this->assertSame($missing, $code($r), $c[0] . ' ' . implode('/', $c[1]) . ' must look like a missing record: ' . json_encode($r[1]));
+        }
+        // and a really missing id answers the same body
+        [, $miss] = $this->h->tech('GET', ['maintenance', '999999'], $me);
+        [, $out] = $this->h->tech('GET', ['maintenance', (string) $winB], $me);
+        $this->assertSame($miss, $out);
+        // nothing was changed
+        $this->assertSame('B only', $this->h->one("SELECT name FROM rmm_maintenance_windows WHERE window_id = $winB"));
+        $this->assertNotNull($this->h->one("SELECT window_id FROM rmm_maintenance_windows WHERE window_id = $winDevB"));
+        $this->assertNotNull($this->h->one("SELECT policy_id FROM rmm_escalation_policies WHERE policy_id = $polB"));
+        $this->assertSame('open', $this->meta("device_id = $b")[0]['state']);
+        $this->assertNull($this->h->one("SELECT parent_device_id FROM rmm_device_parents WHERE device_id = $b"));
+        // lists show only what is in scope
+        [, $j] = $this->h->tech('GET', ['maintenance'], $me);
+        $this->assertSame([$winA], array_column($j['data'], 'window_id'), 'the all-clients windows are none here; only the client A window is visible');
+        [, $j] = $this->h->tech('GET', ['escalation_policies'], $me);
+        $this->assertSame([$polAll], array_column($j['data'], 'policy_id'));
+        // what is in scope still works
+        [$c] = $this->h->tech('GET', ['maintenance', (string) $winA], $me);
+        $this->assertSame(200, $c);
+        [$c] = $this->h->tech('PATCH', ['maintenance', (string) $winA], $me, ['name' => 'A renamed']);
+        $this->assertSame(200, $c);
+        [$c] = $this->h->tech('GET', [(string) $a, 'alerting'], $me);
+        $this->assertSame(200, $c);
+    }
+
     public function testNewCheckTypesAreOfferedOnlyToAgentsThatAnnounceThem(): void
     {
         $this->linked();

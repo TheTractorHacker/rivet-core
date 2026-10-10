@@ -52,7 +52,7 @@ final class CheckCatalog
                 'timeout_ms' => ['int', 500, 60000, 10000], 'warn_ms' => ['int', 0, 60000, 0], 'contains' => ['str', 200, '/^[^\x00-\x1f]{0,200}$/'], 'verify_tls' => ['bool', true],
                 'cert_warn_days' => ['int', 0, 3650, 14], 'cert_fail_days' => ['int', 0, 3650, 3], 'follow_redirects' => ['bool', true]]],
             'cert' => ['platforms' => ['windows', 'linux'], 'unit' => 'days', 'fields' => [
-                'paths' => ['list', 10, 300, '#^(/|[A-Za-z]:[\\\\/])[^\x00-\x1f]*$#'], 'store' => ['str', 60, '/^(LocalMachine|CurrentUser)\\\\[A-Za-z0-9 ]{1,40}$/'],
+                'paths' => ['list', 10, 300, '#^(/|[A-Za-z]:[\\\\/])[^\x00-\x1f]*$#'], 'store' => ['str', 80, '/^(LocalMachine|CurrentUser)\\\\[A-Za-z0-9 _.-]{1,64}$/'],
                 'host' => ['str', 253, $host], 'port' => ['int', 1, 65535, 443], 'warn_days' => ['int', 0, 3650, 30], 'fail_days' => ['int', 0, 3650, 7]]],
             'ntp' => ['platforms' => ['windows', 'linux'], 'unit' => 'ms', 'fields' => [
                 'server' => ['str', 253, $host, 'default' => 'pool.ntp.org'], 'timeout_ms' => ['int', 500, 10000, 3000], 'warn_ms' => ['int', 1, 3600000, 1000], 'fail_ms' => ['int', 1, 3600000, 5000]]],
@@ -196,7 +196,7 @@ final class CheckCatalog
 
                 return $v;
             case 'str':
-                if (!is_string($v) || $v === '' || strlen($v) > $f[1] || (isset($f[2]) && preg_match($f[2], $v) !== 1)) {
+                if (!is_string($v) || $v === '' || strlen($v) > $f[1] || (isset($f[2]) && preg_match($f[2] . 'D', $v) !== 1)) {
                     $err = "$label is not valid (1 to {$f[1]} characters in the allowed form).";
                 }
 
@@ -208,7 +208,7 @@ final class CheckCatalog
                     return $v;
                 }
                 foreach ($v as $item) {
-                    if (!is_string($item) || $item === '' || strlen($item) > $f[2] || (isset($f[3]) && preg_match($f[3], $item) !== 1)) {
+                    if (!is_string($item) || $item === '' || strlen($item) > $f[2] || (isset($f[3]) && preg_match($f[3] . 'D', $item) !== 1)) {
                         $err = "$label has an item that is not valid (at most {$f[2]} characters in the allowed form).";
                     }
                 }
@@ -236,6 +236,13 @@ final class CheckCatalog
         }
         if ($type === 'http' && isset($p['cert_warn_days'], $p['cert_fail_days']) && $p['cert_fail_days'] > $p['cert_warn_days']) {
             return 'http.cert_fail_days must not be above cert_warn_days.';
+        }
+        if ($type === 'cert' && isset($p['paths'])) {
+            foreach ($p['paths'] as $path) {
+                if (str_contains($path, '..') || str_starts_with($path, '//')) {
+                    return 'cert.paths must be absolute paths without "..".';
+                }
+            }
         }
         if ($type === 'cert') {
             $targets = (isset($p['paths']) ? 1 : 0) + (isset($p['store']) ? 1 : 0) + (isset($p['host']) ? 1 : 0);

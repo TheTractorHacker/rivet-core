@@ -284,6 +284,7 @@ final class MaintenanceSchedule
      * odd cases: a local time that happens twice (clocks go back) opens at the FIRST one; a local time that does not exist (clocks go
      * forward) opens at the same wall-clock reading with the offset from before the jump, i.e. one hour "late" on the new clock.
      */
+    /** @param array<string,mixed> $w */
     private static function startOn(array $w, \DateTimeImmutable $day, \DateTimeZone $tz): int
     {
         $wall = (int) (new \DateTimeImmutable($day->format('Y-m-d') . ' ' . $w['local_start'] . ':00', new \DateTimeZone('UTC')))->getTimestamp();

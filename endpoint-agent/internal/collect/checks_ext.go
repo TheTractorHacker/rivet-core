@@ -703,3 +703,33 @@ func (c *Collector) checkNTP(ctx context.Context, key string, raw json.RawMessag
 	}
 	return resv(key, levelHigh(abs, float64(p.WarnMS), float64(p.FailMS)), fmt.Sprintf("clock is %s ms %s the time of %s", fnum(abs), map[bool]string{true: "ahead of", false: "behind"}[ms < 0], p.Server), abs)
 }
+
+// Allow-lists for every parameter that reaches a command line or the file system. Parameters come from technicians and policies and
+// the agent runs as SYSTEM or root, so nothing is ever spliced into a command string unchecked: programs get an argument list, and what
+// is interpolated into a fixed PowerShell script has passed one of these.
+var (
+	smartDeviceRE = regexp.MustCompile(`^/dev/[A-Za-z0-9]{1,24}$`)
+	certStoreRE   = regexp.MustCompile(`^(LocalMachine|CurrentUser)\\([A-Za-z0-9 _.-]{1,64})$`)
+)
+
+// parseCertStoreName splits "LocalMachine\\My" after checking it against the allow-list.
+func parseCertStoreName(s string) (scope, store string, ok bool) {
+	m := certStoreRE.FindStringSubmatch(s)
+	if m == nil || strings.Contains(m[2], "..") {
+		return "", "", false
+	}
+	return m[1], m[2], true
+}
+
+// safeCertPath accepts an absolute path of at most 300 characters without control characters, "..", UNC prefixes or a leading option.
+func safeCertPath(p string) bool {
+	if p == "" || len(p) > 300 || strings.HasPrefix(p, `\\`) || strings.HasPrefix(p, "//") || strings.Contains(p, "..") {
+		return false
+	}
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return strings.HasPrefix(p, "/") || (len(p) > 2 && p[1] == ':' && (p[2] == '\\' || p[2] == '/') && ((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')))
+}

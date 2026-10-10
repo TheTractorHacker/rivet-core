@@ -173,7 +173,11 @@ final class Thresholds
         return self::RANK[$tier] ?? 0;
     }
 
-    /** Human text for a detail line: "91 > 80 (warn)". */
+    /**
+     * Human text for a detail line: "91 > 80 (warn)".
+     *
+     * @param array<string,mixed> $t
+     */
     public static function describe(float $value, string $tier, array $t): string
     {
         $v = rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');

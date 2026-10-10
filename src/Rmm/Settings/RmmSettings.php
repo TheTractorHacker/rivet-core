@@ -537,6 +537,7 @@ final class RmmSettings
      * Sign any list of check definitions exactly as {@see signedChecks()} does (the policy engine hands in the per-device list).
      *
      * @param list<array<string,mixed>> $checks
+     * @param list<string>|null $caps
      * @return list<array<string,mixed>>
      */
     public function signCheckList(array $checks, ?array $caps = null): array
