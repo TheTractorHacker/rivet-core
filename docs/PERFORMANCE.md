@@ -115,6 +115,39 @@ When `bench.php` grows a `--check` mode, these are the numbers it enforces; unti
 
 A change that exceeds a budget needs an explanation in the pull request (and a new budget in this file if the cost is accepted).
 
+## Crypto (`RivetCore\Crypto`)
+
+Added with the envelope and key standard ([ADR-011](architecture/ADR-011-envelope-and-key-standard.md)). Run `php scripts/bench.php --crypto`
+(no database needed; without `--crypto` the same rows are part of the full run). Recorded 2026-10-10 on the same shared development
+server as above (PHP 8.5.11, OpenSSL with AES-NI, load average 3 to 4):
+
+| Benchmark | Iterations | Median (us) | p95 (us) | Ops/s |
+|---|---:|---:|---:|---:|
+| `Envelope::seal`, 24 bytes | 20000 | 3.9 | 4.8 | 245341 |
+| `Envelope::open`, 24 bytes | 20000 | 3.4 | 3.7 | 285767 |
+| `Envelope::seal`, 1 KiB | 10000 | 4.4 | 8.5 | 198511 |
+| `Envelope::open`, 1 KiB | 10000 | 4.2 | 4.7 | 235288 |
+| `SettingsVault::read` of an `ENC2:` value (open plus the lazy re-wrap seal) | 10000 | 8.5 | 9.5 | 109211 |
+| `SettingsVault::subkey` (HKDF) | 20000 | 3.8 | 4.1 | 254306 |
+| `VaultCipher::open`, one credential field | 20000 | 3.9 | 4.3 | 231769 |
+| `Rewrapper::run`, 5000 values in memory, batch 200 (seal, open, verify, compare-and-set per row; no database) | 1 | 75456 | 75456 | 13 |
+| `VaultKeyWrap::wrap` / `unwrap`, Argon2id 64 MiB x 3 (the login cost) | 5 | 151135 | 151523 | 7 |
+| `VaultKeyWrap::wrap` / `unwrap`, PBKDF2-SHA256 600000 | 5 | 836221 | 856682 | 1 |
+
+What the numbers say:
+
+- Envelope operations cost a few microseconds, so decrypting settings on a request is free. A page that shows 500 credentials spends
+  about 2 ms in crypto; the cost is the database, not the cipher.
+- A rewrap is bounded by the database round trips of the edition's `RewrapSource` (one SELECT per page, one compare-and-set UPDATE per
+  changed row), not by the cipher: 5000 values cost 75 ms of crypto and bookkeeping. At a few hundred microseconds per UPDATE, 100,000 values
+  take roughly 30 to 60 seconds.
+- The password KDF is deliberately slow: about 150 ms with Argon2id (64 MiB of memory per login, so size `pm.max_children` with it in mind;
+  lower the cost with `KdfParams::argon2id($memoryKib, $ops)`, not below 19 MiB x 2) and 0.8 s with the PBKDF2 fallback on this host
+  (the host was busy; it is typically 0.2 to 0.4 s). It is paid once per login and once per password change, never per credential.
+
+Proposed budgets (about 5 to 10 times the recorded median): `Envelope::seal`/`open` under 50 us; `SettingsVault::read` under 100 us;
+Argon2id wrap under 1 s; the `Rewrapper` in-memory run under 1 s for 5000 values.
+
 ## What is not measured
 
 - Concurrency: contention between several workers, lock waits under many writers, and many simultaneous readers.

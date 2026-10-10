@@ -1,0 +1,11 @@
+{
+ "key_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+ "nonce_hex": "a0a1a2a3a4a5a6a7a8a9aaab",
+ "kid": "k1",
+ "generator": "Python cryptography AESGCM (independent of PHP/OpenSSL bindings): body = nonce || tag || ct, aad = the context string",
+ "vectors": [
+  {"plaintext_hex": "68756e74657232", "aad": "settings|smtp_password", "envelope": "v3:k1:oKGio6Slpqeoqaqr+QlW/QhccWKRddW6fP+YiNGkUxKYx2g="},
+  {"plaintext_hex": "", "aad": "totp|user:7", "envelope": "v3:k1:oKGio6SlpqeoqaqrCntyoJ1QxuK87jBROONbRg=="},
+  {"plaintext_hex": "70c3a4737377c3b6726420f09f9491", "aad": "credential:42:password", "envelope": "v3:k1:oKGio6Slpqeoqaqroc4OtoySGvU8y+3OQlPK8MkSmRWOwpmyDWqCm24RsQ=="}
+ ]
+}
