@@ -41,6 +41,9 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   GET    endpoint_devices/software (q, limit, offset)       software across the fleet, with device and version counts
  *   GET    endpoint_devices/software/outdated                 name, min_version: devices running an older version
  *
+ * Phase 3 additions (alerts, maintenance windows, escalation policies, device parents, thresholds, the check type catalog) are routed to
+ * {@see AlertingApi}, which lists them.
+ *
  * Responses are `{"error": "...", "code": "..."}` for errors, with the status codes of {@see ActionResult}. A device outside the caller's
  * clients is the same 404 as a missing one; a role that cannot view devices at all is a 403. A response carries no CORS headers and no
  * cache headers: those are the edition front controller's (the transcripts pin this).
@@ -57,6 +60,7 @@ final class TechnicianApi
         private readonly TechnicianActions $actions,
         private readonly RmmReadModel $read,
         private readonly ?InventoryActions $inventory = null,
+        private readonly ?AlertingApi $alerting = null,
     ) {
     }
 
@@ -88,6 +92,9 @@ final class TechnicianApi
         $op = $seg[3] ?? null;
 
         if ($id === null) {
+            if ($seg !== [] && $this->alerting !== null && in_array($seg[0], AlertingApi::FLEET, true)) {
+                return $this->alerting->fleet($req, $who, $seg);
+            }
             if ($seg !== [] && $this->inventory !== null && in_array($seg[0], ['tags', 'groups', 'software'], true)) {
                 return $this->fleetRoute($req, $who, $method, $seg);
             }
@@ -159,6 +166,10 @@ final class TechnicianApi
             $r = $this->actions->launchRemote($who, $id, !empty($in['force']), $req->clientIp, $req->userAgent);
 
             return $r->ok ? self::json(200, ['url' => $r->data['url'] ?? null, 'session_id' => $r->data['session_id'] ?? null]) : self::failure($r);
+        }
+
+        if ($this->alerting !== null && in_array($what, ['alerts', 'alerting', 'maintenance', 'parent', 'checks'], true) && ($routed = $this->alerting->device($req, $who, $id, $seg)) !== null) {
+            return $routed;
         }
 
         if ($this->inventory !== null) {

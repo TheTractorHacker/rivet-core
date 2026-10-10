@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Settings;
 
+use RivetCore\Rmm\Alerting\FlapDetector;
+use RivetCore\Rmm\Checks\CheckCatalog;
 use RivetCore\Rmm\RmmProtocol;
 
 /**
@@ -15,7 +17,8 @@ use RivetCore\Rmm\RmmProtocol;
  */
 final class ChecksValidator
 {
-    public const TYPES = ['service', 'disk', 'pending_reboot', 'script'];
+    /** Every check type: the four original ones, then the Phase 3 types of {@see CheckCatalog}. */
+    public const TYPES = ['service', 'disk', 'pending_reboot', 'script', 'cpu', 'memory', 'process', 'port', 'ping', 'http', 'cert', 'ntp', 'smart', 'av', 'systemd_failed', 'inodes'];
     public const MAX_CHECKS = 50;
     public const MIN_INTERVAL_S = 30;
     public const MAX_INTERVAL_S = 86400;
@@ -46,7 +49,7 @@ final class ChecksValidator
             $seen[$key] = 1;
             $type = $c['type'] ?? '';
             if (!is_string($type) || !in_array($type, self::TYPES, true)) {
-                return [null, 'Check type must be service, disk, pending_reboot or script.'];
+                return [null, 'Check type must be one of ' . implode(', ', self::TYPES) . '.'];
             }
             $iv = self::int($c['interval_s'] ?? 0);
             if ($iv < self::MIN_INTERVAL_S || $iv > self::MAX_INTERVAL_S) {
@@ -65,6 +68,25 @@ final class ChecksValidator
                     return [null, 'Script checks need params.script (at most 8 KiB).'];
                 }
                 $params['timeout_s'] = max(1, min(self::SCRIPT_TIMEOUT_MAX_S, self::int($params['timeout_s'] ?? self::SCRIPT_TIMEOUT_DEFAULT_S)));
+            }
+            if (!CheckCatalog::isLegacy($type)) {
+                [$clean, $err] = CheckCatalog::validateParams($type, $params);
+                if ($clean === null) {
+                    return [null, 'Check ' . $key . ': ' . $err];
+                }
+                $params = $clean;
+            } else {
+                // The alert behaviour fields are checked on every type; the legacy types' own params never were.
+                if (array_key_exists('thresholds', $params)) {
+                    return [null, 'Check ' . $key . ': ' . $type . ' checks do not report a value, so they cannot have thresholds.'];
+                }
+                if (array_key_exists('flap', $params)) {
+                    [$flap, $flapErr] = FlapDetector::normalize($params['flap']);
+                    if ($flap === null) {
+                        return [null, 'Check ' . $key . ': ' . $flapErr];
+                    }
+                    $params['flap'] = $flap;
+                }
             }
             $out[] = ['key' => $c['key'], 'type' => $type, 'params' => $params ?: new \stdClass(), 'interval_s' => $iv];
         }

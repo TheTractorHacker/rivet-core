@@ -142,7 +142,7 @@ final class CheckinService
             'matched_asset_id' => ($dev['link_state'] === 'linked' && !empty($dev['asset_id'])) ? (int) $dev['asset_id'] : null,
             'next_check_in_s' => $interval,
             'jobs_pending' => $features['jobs'] ? $this->jobs->pendingCount((int) $dev['device_id']) : 0,
-            'config' => ['checks' => $this->settings->signedChecks(), 'collect_interval_s' => (int) $cfg['collect_interval_s']],
+            'config' => ['checks' => $this->settings->signedChecks($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null), 'collect_interval_s' => (int) $cfg['collect_interval_s']],
         ];
         if ($features['updates']) {
             $out['update'] = $this->updates->manifestFor($dev);
@@ -158,6 +158,22 @@ final class CheckinService
         }
 
         return $out;
+    }
+
+    /**
+     * The capabilities this device announced (this request's list, else the stored one). Read only when the check list has a Phase 3 type.
+     *
+     * @param array<string,mixed> $dev
+     * @param list<string>|null $fromRequest
+     * @return list<string>|null
+     */
+    private function capsOf(array $dev, ?array $fromRequest): ?array
+    {
+        if ($fromRequest !== null) {
+            return $fromRequest;
+        }
+
+        return $this->deviceState === null ? null : DeviceState::capabilitiesOf($this->deviceState->get((int) $dev['device_id']));
     }
 
     /**
@@ -491,7 +507,7 @@ final class CheckinService
 
     /**
      * @param array<mixed> $checks
-     * @return list<array{key:string,status:string,detail:string,at:string}>
+     * @return list<array{key:string,status:string,detail:string,at:string,value?:float}>
      */
     private function cleanChecks(array $checks, bool $strict): array
     {
@@ -512,7 +528,12 @@ final class CheckinService
             $seen[$key] = 1;
             /** @var array<string,mixed> $c */
             $detail = DeviceValidator::cleanText($c['detail'] ?? '', 500) ?? '';
-            $out[] = ['key' => $key, 'status' => $status, 'detail' => $detail, 'at' => $this->sql->utcNow()];
+            $row = ['key' => $key, 'status' => $status, 'detail' => $detail, 'at' => $this->sql->utcNow()];
+            $value = $c['value'] ?? null;
+            if ((is_int($value) || is_float($value)) && is_finite((float) $value) && abs((float) $value) < 1.0e12) {
+                $row['value'] = (float) $value;   // Phase 3: the number a threshold is compared with; ignored by a server that has no thresholds
+            }
+            $out[] = $row;
         }
 
         return $out;

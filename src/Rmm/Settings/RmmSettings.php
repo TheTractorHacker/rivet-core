@@ -7,6 +7,7 @@ namespace RivetCore\Rmm\Settings;
 use RivetCore\Rmm\Contracts\RmmBridgeInterface;
 use RivetCore\Rmm\Contracts\SecretBoxInterface;
 use RivetCore\Rmm\Crypto\Signer;
+use RivetCore\Rmm\Checks\CheckCatalog;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Support\Sql;
 
@@ -46,7 +47,7 @@ final class RmmSettings
     public const MESH_TOKEN_TTL_DEFAULT_S = 300;
 
     /** Every feature a sub-switch may name (the first five are live in Phase 0; the rest are reserved for later phases). */
-    public const FEATURES = ['monitoring', 'metrics', 'jobs', 'remote', 'updates', 'inventory_software', 'policies', 'patching', 'software', 'logs', 'reports'];
+    public const FEATURES = ['monitoring', 'metrics', 'jobs', 'remote', 'updates', 'inventory_software', 'policies', 'patching', 'software', 'logs', 'reports', 'alerting'];
     /** What a NULL features_json means: today's behaviour. `remote` follows mesh_enabled. */
     public const LEGACY_FEATURES = ['monitoring', 'metrics', 'jobs', 'updates'];
 
@@ -495,16 +496,35 @@ final class RmmSettings
         return $list;
     }
 
+    /** True when the configured check list contains a type the original agent does not know (Phase 3). */
+    public function hasExtendedChecks(): bool
+    {
+        foreach ($this->checks() as $c) {
+            if (!CheckCatalog::isLegacy((string) ($c['type'] ?? ''))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Check definitions as delivered to the agent, each signed (script checks execute code on the endpoint).
      *
+     * A Phase 3 check type is included only when $caps (the device's announced capabilities) lists `check:<type>`; the four original types
+     * are always included. With no capabilities (enrollment, an old agent) the list is therefore exactly what it always was.
+     *
+     * @param list<string>|null $caps
      * @return list<array<string,mixed>>
      */
-    public function signedChecks(): array
+    public function signedChecks(?array $caps = null): array
     {
         [$sec] = $this->signingKey();
         $out = [];
         foreach ($this->checks() as $c) {
+            if (!CheckCatalog::offeredTo((string) $c['type'], $caps)) {
+                continue;
+            }
             $item = [
                 'key' => (string) $c['key'],
                 'type' => (string) $c['type'],

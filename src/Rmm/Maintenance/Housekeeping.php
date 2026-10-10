@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Maintenance;
 
+use RivetCore\Rmm\Alerting\AlertingHousekeeping;
 use RivetCore\Rmm\Capacity\IngestQueue;
 use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Contracts\RmmBridgeInterface;
@@ -50,6 +51,7 @@ final class Housekeeping
         private readonly ?RmmEventPublisher $events = null,
         private readonly ?DeviceState $deviceState = null,
         private readonly ?DatabaseMetricSink $metricSink = null,
+        private readonly ?AlertingHousekeeping $alerting = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -82,6 +84,9 @@ final class Housekeeping
         $out['pruned_software_removed'] = $this->prune('rmm_device_software', 'removed_at IS NOT NULL AND removed_at < ?', [$softwareBefore]);
         if ($this->metricSink !== null) {
             $out['pruned_metrics'] = $this->metricSink->prune(self::PRUNE_RUN_CAP, $this->pause);
+        }
+        if ($this->alerting !== null && $this->settings->featureOn('alerting')) {
+            $out += $this->alerting->run();
         }
         if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {
             $out['offline_events'] = $this->announceOffline((int) $cfg['offline_after_s'], (int) $cfg['stale_after_s']);

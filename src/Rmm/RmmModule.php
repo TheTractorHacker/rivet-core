@@ -9,6 +9,18 @@ use RivetCore\Contracts\ClockInterface;
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Jobs\JobQueue;
 use RivetCore\Jobs\JobWorker;
+use RivetCore\Rmm\Alerting\AlertingActions;
+use RivetCore\Rmm\Alerting\AlertingEngine;
+use RivetCore\Rmm\Alerting\AlertingHousekeeping;
+use RivetCore\Rmm\Alerting\AlertService;
+use RivetCore\Rmm\Alerting\CheckEvalStore;
+use RivetCore\Rmm\Alerting\DefaultThresholdResolver;
+use RivetCore\Rmm\Alerting\DependencyService;
+use RivetCore\Rmm\Alerting\EscalationService;
+use RivetCore\Rmm\Alerting\MaintenanceService;
+use RivetCore\Rmm\Alerting\ScopeMatcher;
+use RivetCore\Rmm\Alerting\StormControl;
+use RivetCore\Rmm\Alerting\ThresholdResolverInterface;
 use RivetCore\Rmm\Capacity\CapacityReport;
 use RivetCore\Rmm\Capacity\IngestQueue;
 use RivetCore\Rmm\Capacity\LoadShedder;
@@ -21,6 +33,7 @@ use RivetCore\Rmm\Contracts\RmmAssetNamesInterface;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Contracts\RmmBridgeInterface;
+use RivetCore\Rmm\Contracts\RmmEscalationInterface;
 use RivetCore\Rmm\Contracts\RmmEventsInterface;
 use RivetCore\Rmm\Contracts\RmmMetricReaderInterface;
 use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
@@ -46,6 +59,7 @@ use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Software\SoftwareService;
 use RivetCore\Rmm\Support\DatabaseMetricSink;
 use RivetCore\Rmm\Support\NullRmmAudit;
+use RivetCore\Rmm\Support\NullRmmEscalation;
 use RivetCore\Rmm\Support\NullRmmEvents;
 use RivetCore\Rmm\Support\NullRmmMetricSink;
 use RivetCore\Rmm\Support\RmmEventPublisher;
@@ -64,7 +78,9 @@ use RivetCore\Webhooks\UrlPolicy;
  * Options: `binary_dir` (where hosted agent binaries live, default none), `allow_insecure_http` (loopback test servers only),
  * `allow_linux` (admit the Linux test agent), `host_fallback`, `integration_name`, `installer_prefix`, `max_upload_bytes` (size cap of one
  * hosted agent binary, default 64 MiB), `client_label` (what the edition calls a client in user-facing text, default "client"; RivetIT: "department"),
- * `denial_reasons` (ability => sentence, replaces the generic denial text of that ability, see {@see RmmAuthorizer}).
+ * `denial_reasons` (ability => sentence, replaces the generic denial text of that ability, see {@see RmmAuthorizer}), `escalation` (a
+ * {@see RmmEscalationInterface}: the edition's delivery of escalation notices, default none) and `threshold_resolver` (a
+ * {@see ThresholdResolverInterface}: which thresholds apply to a check on a device, default the check definition plus the per-device override).
  *
  * The technician side ({@see technicianApi()}, {@see technician()}, {@see admin()}, {@see readModel()}) needs the edition's
  * AccessPolicyInterface (and may be given a UrlPolicy for the MeshCentral probe; the default refuses private addresses).
@@ -99,13 +115,23 @@ final class RmmModule
     private ?TagService $tagService = null;
     private ?GroupService $groupService = null;
     private ?InventoryActions $inventory = null;
+    private ?AlertingEngine $alertingEngine = null;
+    private ?MaintenanceService $maintenanceService = null;
+    private ?ScopeMatcher $scopeMatcher = null;
+    private ?EscalationService $escalationService = null;
+    private ?AlertService $alertService = null;
+    private ?DependencyService $dependencyService = null;
+    private ?StormControl $stormControl = null;
+    private ?CheckEvalStore $checkEvalStore = null;
+    private ?AlertingActions $alertingActions = null;
+    private ?\RivetCore\Rmm\Http\AlertingApi $alertingApi = null;
 
     private readonly RmmAuditInterface $audit;
     private readonly RmmMetricSinkInterface $metrics;
     private readonly RmmEventsInterface $events;
 
     /**
-     * @param array{binary_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>} $options
+     * @param array{binary_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -184,7 +210,64 @@ final class RmmModule
 
     public function checks(): CheckEvaluator
     {
-        return $this->checks ??= new CheckEvaluator($this->sql(), $this->settings(), $this->bridge, $this->devices(), $this->eventPublisher());
+        return $this->checks ??= new CheckEvaluator($this->sql(), $this->settings(), $this->bridge, $this->devices(), $this->eventPublisher(), $this->alertingEngine());
+    }
+
+    // ------------------------------------------------------------------ Phase 3: alerting
+
+    /** Threshold tiers, flap dampening, maintenance, dependency and storm control behind the check evaluator (active only while the `alerting` sub-switch is on). */
+    public function alertingEngine(): AlertingEngine
+    {
+        return $this->alertingEngine ??= new AlertingEngine($this->sql(), $this->settings(), $this->checkEval(), $this->options['threshold_resolver'] ?? new DefaultThresholdResolver(),
+            $this->maintenance(), $this->dependencies(), $this->storm(), $this->alerts());
+    }
+
+    /** Per-check threshold and flap state, and the per-device threshold override. */
+    public function checkEval(): CheckEvalStore
+    {
+        return $this->checkEvalStore ??= new CheckEvalStore($this->sql());
+    }
+
+    public function scopes(): ScopeMatcher
+    {
+        return $this->scopeMatcher ??= new ScopeMatcher($this->sql());
+    }
+
+    /** Maintenance windows and the "which windows are open for this device" lookup (also for the Phase 2 scheduler). */
+    public function maintenance(): MaintenanceService
+    {
+        return $this->maintenanceService ??= new MaintenanceService($this->sql(), $this->eventPublisher(), $this->scopes());
+    }
+
+    /** Escalation policies and the escalation clock. */
+    public function escalation(): EscalationService
+    {
+        return $this->escalationService ??= new EscalationService($this->sql(), $this->settings(), $this->scopes(), $this->maintenance(), $this->options['escalation'] ?? new NullRmmEscalation(), $this->eventPublisher());
+    }
+
+    /** The alert lifecycle record: acknowledge, resolve, list, group. */
+    public function alerts(): AlertService
+    {
+        return $this->alertService ??= new AlertService($this->sql(), $this->settings(), $this->bridge, $this->escalation(), $this->options['escalation'] ?? new NullRmmEscalation(), $this->eventPublisher());
+    }
+
+    /** Device parent links for dependency suppression. */
+    public function dependencies(): DependencyService
+    {
+        return $this->dependencyService ??= new DependencyService($this->sql(), $this->settings());
+    }
+
+    /** Per-client and global alert rate caps. */
+    public function storm(): StormControl
+    {
+        return $this->stormControl ??= new StormControl($this->sql(), $this->settings(), $this->bridge);
+    }
+
+    /** Technician actions of the alerting area (shared by the REST API and the edition's pages). */
+    public function alertingActions(): AlertingActions
+    {
+        return $this->alertingActions ??= new AlertingActions($this->sql(), $this->devices(), $this->authorizer(), $this->alerts(), $this->maintenance(), $this->escalation(), $this->dependencies(),
+            $this->storm(), $this->checkEval(), $this->settings(), $this->audit);
     }
 
     public function linker(): RmmLinker
@@ -292,7 +375,8 @@ final class RmmModule
     public function housekeeping(): Housekeeping
     {
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
-            $this->metrics instanceof DatabaseMetricSink ? $this->metrics : null);
+            $this->metrics instanceof DatabaseMetricSink ? $this->metrics : null,
+            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()));
     }
 
     // ------------------------------------------------------------------ technician and administration side
@@ -350,7 +434,13 @@ final class RmmModule
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */
     public function technicianApi(): TechnicianApi
     {
-        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory());
+        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->alertingApi());
+    }
+
+    /** The alerts, maintenance windows, escalation policies and thresholds routes (mounted by {@see technicianApi()}). */
+    public function alertingApi(): \RivetCore\Rmm\Http\AlertingApi
+    {
+        return $this->alertingApi ??= new \RivetCore\Rmm\Http\AlertingApi($this->alertingActions());
     }
 
     /**
