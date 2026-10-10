@@ -414,6 +414,33 @@ final class ScriptActions
         return null;
     }
 
+    /**
+     * May this user see the approval request? Its summary names a target and a device count, so a caller restricted to some clients sees only their own
+     * requests and those whose target lies entirely inside their clients (the same answer, a 404, as for a missing one).
+     *
+     * @param array<string,mixed> $approval
+     */
+    public function approvalVisible(int $userId, array $approval): bool
+    {
+        $visible = $this->authz->visibleClientIds($userId);
+        if ($visible === null || (int) $approval['requested_by'] === $userId) {
+            return true;
+        }
+        $req = $this->approvals->requestOf((int) $approval['approval_id']);
+        $t = is_array($req['target'] ?? null) ? $req['target'] : null;
+        if ($t === null) {
+            return false;
+        }
+        $platforms = [];
+        if (isset($approval['script_id']) && ($s = $this->scripts->get((int) $approval['script_id'])) !== null) {
+            $platforms = \RivetCore\Rmm\Scripts\ScriptLanguage::platforms((string) $s['language']);
+        }
+        $type = (string) ($t['type'] ?? '');
+        $id = (int) ($t['id'] ?? 0);
+
+        return $this->targets->count($type, $id, null, $platforms) === $this->targets->count($type, $id, $visible, $platforms);
+    }
+
     // ------------------------------------------------------------------ schedules
 
     /**

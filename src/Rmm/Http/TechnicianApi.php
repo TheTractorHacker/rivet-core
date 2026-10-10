@@ -289,6 +289,7 @@ final class TechnicianApi
             if ($sub === null) {
                 if ($method === 'GET') {
                     $d = $read->policyDetail($rid);
+                    $d['assignments'] = $this->visibleAssignments($uid, $d['assignments']);
 
                     return $d['policy'] === null ? self::json(404, ['error' => 'Policy not found.', 'code' => 'not_found']) : self::json(200, $d);
                 }
@@ -390,7 +391,25 @@ final class TechnicianApi
                     return self::json(403, ['error' => $this->authz->denial(RmmAbility::JOB_RUN_SAVED), 'code' => 'forbidden']);
                 }
 
-                return self::json(200, ['data' => $read->scriptRuns($rid, $limit)]);
+                // Scoped in SQL to the caller's clients, then to the clients they may run jobs on (the grant is per client); the limit counts what is left.
+                $visible = $this->authz->visibleClientIds($uid);
+                $rows = [];
+                $off = 0;
+                for ($page = 0; $page < 10 && count($rows) < $limit; ++$page) {
+                    $chunk = $read->scriptRuns($rid, 200, $visible, $off);
+                    foreach ($chunk as $row) {
+                        if (count($rows) < $limit && $this->authz->allowed($uid, RmmAbility::JOB_RUN_SAVED, (int) $row['client_id'])) {
+                            unset($row['client_id']);
+                            $rows[] = $row;
+                        }
+                    }
+                    if (count($chunk) < 200) {
+                        break;
+                    }
+                    $off += 200;
+                }
+
+                return self::json(200, ['data' => $rows]);
             }
 
             return self::notFound();
@@ -402,17 +421,34 @@ final class TechnicianApi
                 if ($method !== 'GET') {
                     return $noMethod;
                 }
-                $r = $svc->all(['state' => (string) ($req->query['state'] ?? ''), 'kind' => (string) ($req->query['kind'] ?? ''), 'limit' => $limit, 'offset' => $offset]);
+                $f = ['state' => (string) ($req->query['state'] ?? ''), 'kind' => (string) ($req->query['kind'] ?? '')];
+                if ($this->authz->visibleClientIds($uid) === null) {
+                    $r = $svc->all($f + ['limit' => $limit, 'offset' => $offset]);
 
-                return self::json(200, ['data' => $r['items'], 'total' => $r['total']]);
+                    return self::json(200, ['data' => $r['items'], 'total' => $r['total']]);
+                }
+                // A restricted caller sees their own requests and those that lie inside their clients; filtering happens before the limit.
+                $items = [];
+                foreach ($svc->all($f + ['limit' => 200, 'offset' => 0])['items'] as $a) {
+                    if ($this->approvalSeen($uid, $a)) {
+                        $items[] = $a;
+                    }
+                }
+
+                return self::json(200, ['data' => array_slice($items, $offset, $limit), 'total' => count($items)]);
             }
             if ($rid === null) {
                 return self::notFound();
             }
+            $a = $svc->get($rid);
+            if ($a !== null && !$this->approvalSeen($uid, $a)) {
+                $a = null;   // out of scope looks exactly like missing
+            }
+            if ($a === null) {
+                return self::json(404, ['error' => 'Approval not found.', 'code' => 'not_found']);
+            }
             if ($sub === null && $method === 'GET') {
-                $a = $svc->get($rid);
-
-                return $a === null ? self::json(404, ['error' => 'Approval not found.', 'code' => 'not_found']) : self::json(200, ['approval' => $a]);
+                return self::json(200, ['approval' => $a]);
             }
             if ($method === 'POST' && $this->scripts !== null && !isset($seg[3])) {
                 [$in, $bad] = $this->jsonBody($req);
@@ -470,10 +506,11 @@ final class TechnicianApi
                     return self::json(404, ['error' => 'Schedule not found.', 'code' => 'not_found']);
                 }
                 $visible = $this->authz->visibleClientIds($uid);
-                $rows = $svc->history($rid, isset($req->query['device_id']) ? (int) $req->query['device_id'] : null, $limit, $offset);
-                if ($visible !== null) {
-                    $rows = array_values(array_filter($rows, fn (array $r): bool => $this->actions->visibleDevice($uid, (int) $r['device_id']) !== null));
+                $only = isset($req->query['device_id']) ? (int) $req->query['device_id'] : null;
+                if ($only !== null && $this->actions->visibleDevice($uid, $only) === null) {
+                    return self::json(404, ['error' => 'Device not found.', 'code' => 'not_found']);
                 }
+                $rows = $svc->history($rid, $only, $limit, $offset, $visible);
 
                 return self::json(200, ['data' => $rows]);
             }
@@ -522,6 +559,35 @@ final class TechnicianApi
         }
 
         return self::notFound();
+    }
+
+    /**
+     * Assignments a restricted caller may know about: a client or device scope only when it lies inside their clients (global, site, group and tag scopes name
+     * no device and stay visible).
+     *
+     * @param list<array<string,mixed>> $rows
+     * @return list<array<string,mixed>>
+     */
+    private function visibleAssignments(int $uid, array $rows): array
+    {
+        $visible = $this->authz->visibleClientIds($uid);
+        if ($visible === null) {
+            return $rows;
+        }
+
+        return array_values(array_filter($rows, function (array $a) use ($uid, $visible): bool {
+            return match ($a['scope_type']) {
+                'client' => in_array((int) $a['scope_id'], $visible, true),
+                'device' => $this->actions->visibleDevice($uid, (int) $a['scope_id']) !== null,
+                default => true,
+            };
+        }));
+    }
+
+    /** @param array<string,mixed> $approval */
+    private function approvalSeen(int $uid, array $approval): bool
+    {
+        return $this->scripts !== null ? $this->scripts->approvalVisible($uid, $approval) : $this->authz->visibleClientIds($uid) === null;
     }
 
     /** A saved schedule: 201/200 with the schedule, or 202 when it waits for an approval. */

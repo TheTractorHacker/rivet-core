@@ -259,16 +259,18 @@ final class ScheduleService
     /**
      * The per-device result history of a schedule: one row per job it created, newest first, with the job's state and exit code.
      *
+     * @param list<int>|null $visibleClientIds only devices of these clients (null = all), applied in SQL
      * @return list<array<string,mixed>>
      */
-    public function history(int $scheduleId, ?int $deviceId = null, int $limit = 100, int $offset = 0): array
+    public function history(int $scheduleId, ?int $deviceId = null, int $limit = 100, int $offset = 0, ?array $visibleClientIds = null): array
     {
+        [$scope, $sp] = \RivetCore\Rmm\Tags\TagService::scope($visibleClientIds, 'd');
         $limit = max(1, min(500, $limit));
         $offset = max(0, $offset);
         $out = [];
         $rows = $this->sql->all("SELECT e.device_id, e.run_id, e.created_at, j.job_id, j.state, j.reason, j.exit_code, j.started_at, j.finished_at, d.hostname
             FROM rmm_job_extra e JOIN endpoint_agent_jobs j ON j.job_id = e.job_id LEFT JOIN endpoint_agent_devices d ON d.device_id = e.device_id
-            WHERE e.schedule_id = ?" . ($deviceId === null ? '' : ' AND e.device_id = ?') . " ORDER BY e.created_at DESC, e.job_id LIMIT $limit OFFSET $offset", $deviceId === null ? [$scheduleId] : [$scheduleId, $deviceId]);
+            WHERE e.schedule_id = ?" . ($deviceId === null ? '' : ' AND e.device_id = ?') . "$scope ORDER BY e.created_at DESC, e.job_id LIMIT $limit OFFSET $offset", [$scheduleId, ...($deviceId === null ? [] : [$deviceId]), ...$sp]);
         foreach ($rows as $r) {
             $out[] = ['device_id' => (int) $r['device_id'], 'hostname' => (string) ($r['hostname'] ?? ''), 'run_id' => $r['run_id'] === null ? null : (int) $r['run_id'], 'job_id' => (string) $r['job_id'],
                 'state' => (string) $r['state'], 'reason' => $r['reason'], 'exit_code' => $r['exit_code'] === null ? null : (int) $r['exit_code'],

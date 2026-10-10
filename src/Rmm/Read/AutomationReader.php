@@ -103,16 +103,19 @@ final class AutomationReader
     /**
      * Recent library jobs of a script (any device), for the script page.
      *
+     * @param list<int>|null $visibleClientIds only devices of these clients (null = all); applied in SQL so the limit counts what the caller may see
      * @return list<array<string,mixed>>
      */
-    public function scriptRuns(int $scriptId, int $limit = 50): array
+    public function scriptRuns(int $scriptId, int $limit = 50, ?array $visibleClientIds = null, int $offset = 0): array
     {
         $out = [];
         $limit = max(1, min(200, $limit));
-        foreach ($this->sql->all("SELECT e.job_id, e.device_id, e.script_version, e.schedule_id, e.approval_id, e.created_at, j.state, j.exit_code, j.finished_at, d.hostname
+        $offset = max(0, $offset);
+        [$scope, $sp] = \RivetCore\Rmm\Tags\TagService::scope($visibleClientIds, 'd');
+        foreach ($this->sql->all("SELECT e.job_id, e.device_id, d.client_id, e.script_version, e.schedule_id, e.approval_id, e.created_at, j.state, j.exit_code, j.finished_at, d.hostname
             FROM rmm_job_extra e JOIN endpoint_agent_jobs j ON j.job_id = e.job_id LEFT JOIN endpoint_agent_devices d ON d.device_id = e.device_id
-            WHERE e.script_id = ? ORDER BY e.created_at DESC, e.job_id LIMIT $limit", [$scriptId]) as $r) {
-            $out[] = ['job_id' => (string) $r['job_id'], 'device_id' => (int) $r['device_id'], 'hostname' => (string) ($r['hostname'] ?? ''), 'script_version' => $r['script_version'] === null ? null : (int) $r['script_version'],
+            WHERE e.script_id = ?$scope ORDER BY e.created_at DESC, e.job_id LIMIT $limit OFFSET $offset", [$scriptId, ...$sp]) as $r) {
+            $out[] = ['job_id' => (string) $r['job_id'], 'device_id' => (int) $r['device_id'], 'hostname' => (string) ($r['hostname'] ?? ''), 'client_id' => (int) $r['client_id'], 'script_version' => $r['script_version'] === null ? null : (int) $r['script_version'],
                 'schedule_id' => $r['schedule_id'] === null ? null : (int) $r['schedule_id'], 'approval_id' => $r['approval_id'] === null ? null : (int) $r['approval_id'],
                 'state' => (string) $r['state'], 'exit_code' => $r['exit_code'] === null ? null : (int) $r['exit_code'], 'queued_at' => Sql::iso((string) $r['created_at']),
                 'finished_at' => Sql::iso($r['finished_at'] === null ? null : (string) $r['finished_at'])];
