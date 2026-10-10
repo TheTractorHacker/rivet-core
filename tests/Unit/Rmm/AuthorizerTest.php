@@ -36,14 +36,14 @@ final class AuthorizerTest extends TestCase
 
     public function testAbilityNamesAreTheDocumentedOnesAndMatchTheJobRegistry(): void
     {
-        $this->assertSame(['rmm.device.view', 'rmm.device.manage', 'rmm.job.run_saved', 'rmm.job.reboot', 'rmm.job.run_script', 'rmm.remote.launch', 'rmm.token.manage', 'rmm.binary.publish', 'rmm.admin'], RmmAbility::all());
+        $this->assertSame(['rmm.device.view', 'rmm.device.manage', 'rmm.job.run_saved', 'rmm.job.reboot', 'rmm.job.run_script', 'rmm.job.approve', 'rmm.remote.launch', 'rmm.token.manage', 'rmm.binary.publish', 'rmm.admin'], RmmAbility::all());
         $this->assertSame(JobTypeRegistry::ABILITY_RUN_SAVED, RmmAbility::JOB_RUN_SAVED);
         $this->assertSame(JobTypeRegistry::ABILITY_REBOOT, RmmAbility::JOB_REBOOT);
         $this->assertSame(JobTypeRegistry::ABILITY_RUN_SCRIPT, RmmAbility::JOB_RUN_SCRIPT);
         foreach (['rmm.admin', 'rmm.device.manage', 'rmm.token.manage', 'rmm.binary.publish'] as $a) {
             $this->assertTrue(RmmAbility::isAdministrative($a));
         }
-        foreach (['rmm.device.view', 'rmm.job.run_saved', 'rmm.job.reboot', 'rmm.job.run_script', 'rmm.remote.launch'] as $a) {
+        foreach (['rmm.device.view', 'rmm.job.run_saved', 'rmm.job.reboot', 'rmm.job.run_script', 'rmm.job.approve', 'rmm.remote.launch'] as $a) {
             $this->assertFalse(RmmAbility::isAdministrative($a));
         }
         foreach (RmmAbility::all() as $a) {

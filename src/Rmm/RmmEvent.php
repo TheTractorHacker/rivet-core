@@ -31,10 +31,23 @@ final class RmmEvent
     /** Software disappeared from a device. Fields: name, version, publisher, source. */
     public const SOFTWARE_REMOVED = 'rmm.software.removed';
 
+    /**
+     * A policy was assigned to a scope, or an assignment was removed. Not about one device: device_id is 0, asset_id null, hostname empty, client_id the
+     * client of a client-scoped assignment (else 0). Fields: policy_id, policy_name, scope_type, scope_id, action ("assigned" or "unassigned").
+     */
+    public const POLICY_ASSIGNED = 'rmm.policy.assigned';
+    /** A library script was queued on a device. Fields: script_id, script_name, script_version, job_id, origin ("manual", "schedule" or "approval"). Never the script text. */
+    public const SCRIPT_RUN = 'rmm.script.run';
+    /** A run, or a schedule, is waiting for a second person. Not about one device (device_id 0). Fields: approval_id, kind ("run" or "schedule"), summary, device_count, requested_by. */
+    public const APPROVAL_REQUESTED = 'rmm.approval.requested';
+    /** A pending approval was approved, rejected, cancelled or lapsed. Not about one device (device_id 0). Fields: approval_id, kind, state, decided_by (null when it lapsed). */
+    public const APPROVAL_DECIDED = 'rmm.approval.decided';
+
     /** @return list<string> */
     public static function all(): array
     {
         return [self::DEVICE_ENROLLED, self::DEVICE_OFFLINE, self::DEVICE_ONLINE, self::CHECK_FAILED, self::CHECK_RECOVERED,
-            self::JOB_COMPLETED, self::JOB_FAILED, self::SOFTWARE_INSTALLED, self::SOFTWARE_REMOVED];
+            self::JOB_COMPLETED, self::JOB_FAILED, self::SOFTWARE_INSTALLED, self::SOFTWARE_REMOVED,
+            self::POLICY_ASSIGNED, self::SCRIPT_RUN, self::APPROVAL_REQUESTED, self::APPROVAL_DECIDED];
     }
 }

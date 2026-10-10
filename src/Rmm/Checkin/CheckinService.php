@@ -14,6 +14,7 @@ use RivetCore\Rmm\Enrollment\DeviceValidator;
 use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Link\RmmLinker;
+use RivetCore\Rmm\Policy\EffectivePolicy;
 use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Software\SoftwareService;
@@ -58,6 +59,7 @@ final class CheckinService
         private readonly ?DeviceState $deviceState = null,
         private readonly ?SoftwareService $software = null,
         private readonly ?RmmEventPublisher $events = null,
+        private readonly ?EffectivePolicy $policies = null,
     ) {
     }
 
@@ -104,6 +106,15 @@ final class CheckinService
         // Phase 1, all optional and never an error: what the agent announced and the software report it may carry.
         $announce = ['caps' => DeviceState::cleanCapabilities($body['capabilities'] ?? null), 'platform' => is_string($body['platform'] ?? null) ? $body['platform'] : null, 'software' => null];
         $wantsSoftware = $features['inventory_software'] && $this->software !== null && $announce['caps'] !== null && in_array(DeviceState::CAP_SOFTWARE_INVENTORY, $announce['caps'], true);
+        // Phase 2: the policies that reach this device (one read, only while the `policies` sub-switch is on).
+        $policy = null;
+        $knowsPolicies = false;
+        if ($features['policies'] && $this->policies !== null) {
+            $caps = $announce['caps'] ?? ($this->deviceState === null ? [] : DeviceState::capabilitiesOf($this->deviceState->get((int) $dev['device_id'])));
+            $policy = $this->policies->forDevice($dev, $caps);
+            $knowsPolicies = in_array(DeviceState::CAP_POLICIES, $caps, true);
+            $wantsSoftware = $wantsSoftware && $policy['features']['software_inventory'];
+        }
         if ($wantsSoftware) {
             $announce['software'] = SoftwareService::cleanReport($body['software'] ?? null);
         }
@@ -132,7 +143,7 @@ final class CheckinService
         $this->events?->release();
 
         $dev = $this->devices->find((int) $dev['device_id']) ?? $dev;
-        $interval = (int) $cfg['check_in_interval_s'];
+        $interval = $policy === null ? (int) $cfg['check_in_interval_s'] : $policy['check_in_interval_s'];
         if ((int) ($cfg['shed_level'] ?? 0) >= 2) {
             $interval = min(RmmSettings::CHECK_IN_INTERVAL_MAX_S * 2, $interval * 2);   // level 2: lengthen the intervals
         }
@@ -142,16 +153,32 @@ final class CheckinService
             'matched_asset_id' => ($dev['link_state'] === 'linked' && !empty($dev['asset_id'])) ? (int) $dev['asset_id'] : null,
             'next_check_in_s' => $interval,
             'jobs_pending' => $features['jobs'] ? $this->jobs->pendingCount((int) $dev['device_id']) : 0,
-            'config' => ['checks' => $this->settings->signedChecks(), 'collect_interval_s' => (int) $cfg['collect_interval_s']],
+            'config' => $policy === null
+                ? ['checks' => $this->settings->signedChecks(), 'collect_interval_s' => (int) $cfg['collect_interval_s']]
+                : ['checks' => $this->settings->signCheckList($policy['checks']), 'collect_interval_s' => $policy['collect_interval_s']],
         ];
+        if ($knowsPolicies) {
+            // Additive, offered only to an agent that announced `policies`: every other response is byte-identical to before.
+            $out['config']['policy'] = ['version' => $policy['version'], 'applied' => $policy['applied'], 'features' => $policy['features']];
+        }
         if ($features['updates']) {
-            $out['update'] = $this->updates->manifestFor($dev);
+            $out['update'] = $this->updates->manifestFor($policy !== null && $policy['ring'] !== null ? ['ring' => $policy['ring']] + $dev : $dev);
         }
         $out['server_time'] = $this->sql->isoNow();
         $out['signing_key_id'] = $this->settings->get()['signing_key_id'];
+        $offered = [];
+        if ($knowsPolicies) {
+            $offered[] = DeviceState::CAP_POLICIES;
+        }
+        if ($wantsSoftware && $this->deviceState !== null) {
+            $offered[] = DeviceState::CAP_SOFTWARE_INVENTORY;
+        }
+        if ($offered !== []) {
+            sort($offered, SORT_STRING);
+            $out['features'] = $offered;
+        }
         if ($wantsSoftware && $this->deviceState !== null) {
             // Offered only to an agent that announced it AND while the sub-switch is on; every other response is byte-identical to before.
-            $out['features'] = [DeviceState::CAP_SOFTWARE_INVENTORY];
             if ((int) ($this->deviceState->get((int) $dev['device_id'])['software_resync'] ?? 0) === 1) {
                 $out['resync'] = ['software'];
             }

@@ -369,13 +369,14 @@ final class JobsTest extends RmmTestCase
     public function testTheJobTypeRegistryIsSeededAndExtensible(): void
     {
         $r = JobTypeRegistry::withDefaults();
-        $this->assertSame(['powershell', 'reboot', 'collect'], $r->types());
+        $this->assertSame(['powershell', 'shell', 'python', 'reboot', 'collect'], $r->types());
         $this->assertTrue($r->get('reboot')?->destructive);
         $this->assertTrue($r->get('powershell')?->requiresScript);
         $this->assertSame('rmm.job.run_script', $r->get('powershell')?->ability);
         $this->assertSame('rmm.job.reboot', $r->get('reboot')?->ability);
         $this->assertSame('rmm.job.run_saved', $r->get('collect')?->ability);
-        $this->assertFalse($r->has('shell'));
+        $this->assertTrue($r->has('shell'));
+        $this->assertFalse($r->has('ruby'));
         $r->register(new JobType('inventory', 'rmm.job.run_saved', false, ['windows', 'linux'], false, null, 45));
         $svc = new JobService($this->h->module->sql(), $this->h->module->settings(), $r);
         $row = $this->h->module->devices()->find($this->A);

@@ -76,6 +76,10 @@ final class EventCatalog
         'rmm.job.failed' => [['job_id', 'string', 'Job id'], ['job_type', 'string', 'Job type'], ['state', 'string', 'failed or timed_out'], ['exit_code', 'integer', 'Exit code (null when none)']],
         'rmm.software.installed' => [['name', 'string', 'Software name'], ['version', 'string', 'Installed version'], ['publisher', 'string', 'Publisher (null when unknown)'], ['source', 'string', 'registry, registry32, appx, dpkg, rpm, snap or flatpak']],
         'rmm.software.removed' => [['name', 'string', 'Software name'], ['version', 'string', 'Version that was installed'], ['publisher', 'string', 'Publisher (null when unknown)'], ['source', 'string', 'registry, registry32, appx, dpkg, rpm, snap or flatpak']],
+        'rmm.policy.assigned' => [['policy_id', 'integer', 'Policy id'], ['policy_name', 'string', 'Policy name'], ['scope_type', 'string', 'global, client, site, group, tag or device'], ['scope_id', 'integer', 'Id of the scope (0 for global)'], ['action', 'string', 'assigned or unassigned']],
+        'rmm.script.run' => [['script_id', 'integer', 'Library script id'], ['script_name', 'string', 'Library script name'], ['script_version', 'integer', 'Script version that was queued'], ['job_id', 'string', 'Job id'], ['origin', 'string', 'manual, schedule or approval']],
+        'rmm.approval.requested' => [['approval_id', 'integer', 'Approval id'], ['kind', 'string', 'run or schedule'], ['summary', 'string', 'What is to be run, on how many devices'], ['device_count', 'integer', 'Devices the request reaches'], ['requested_by', 'integer', 'User who asked']],
+        'rmm.approval.decided' => [['approval_id', 'integer', 'Approval id'], ['kind', 'string', 'run or schedule'], ['state', 'string', 'approved, rejected, cancelled or expired'], ['decided_by', 'integer', 'User who decided (null when it lapsed)']],
     ];
 
     /** @var list<EventDefinition>|null */
@@ -345,6 +349,10 @@ final class EventCatalog
             ['rmm', 'rmm.job.completed', 'Device job completed', 'A job ran to completion on a device.', 'info', 'rmm', 'agent,endpoint,rmm,script,reboot,collect', null],
             ['rmm', 'rmm.job.failed', 'Device job failed', 'A job failed or timed out on a device.', 'warning', 'rmm', 'agent,endpoint,rmm,script,error,timeout', null],
             ['rmm', 'rmm.software.installed', 'Software installed', 'New software appeared on a device (the first report of a device is a baseline and raises no event).', 'info', 'rmm', 'agent,endpoint,rmm,inventory,application,package', null],
+            ['rmm', 'rmm.policy.assigned', 'Policy assigned', 'A monitoring policy was assigned to, or removed from, a client, site, group, tag or device (not about one device: device_id is 0).', 'info', 'rmm', 'agent,endpoint,rmm,policy,configuration,assignment', null],
+            ['rmm', 'rmm.script.run', 'Library script queued', 'A script from the RMM script library was queued on a device (manually, by a schedule or after an approval).', 'info', 'rmm', 'agent,endpoint,rmm,script,automation,schedule', null],
+            ['rmm', 'rmm.approval.requested', 'Approval requested', 'A script run or schedule is waiting for a second person to approve it (not about one device: device_id is 0).', 'warning', 'rmm', 'agent,endpoint,rmm,approval,script,bulk', null],
+            ['rmm', 'rmm.approval.decided', 'Approval decided', 'A script run or schedule was approved, rejected, cancelled or lapsed (not about one device: device_id is 0).', 'info', 'rmm', 'agent,endpoint,rmm,approval,script,bulk', null],
             ['rmm', 'rmm.software.removed', 'Software removed', 'Software disappeared from a device.', 'info', 'rmm', 'agent,endpoint,rmm,inventory,application,uninstall,package', null],
 
             ['clients', 'client.created', 'Client created', 'A new client was added.', 'info', 'audit', 'customer,organization,company', $p],

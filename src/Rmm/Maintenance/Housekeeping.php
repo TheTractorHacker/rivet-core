@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Maintenance;
 
+use RivetCore\Rmm\Approvals\ApprovalService;
 use RivetCore\Rmm\Capacity\IngestQueue;
 use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Contracts\RmmBridgeInterface;
 use RivetCore\Rmm\Device\DeviceState;
+use RivetCore\Rmm\Job\JobExtras;
 use RivetCore\Rmm\Job\JobService;
+use RivetCore\Rmm\Policy\PolicyStore;
+use RivetCore\Rmm\Scripts\ApprovedRunExecutor;
+use RivetCore\Rmm\Scripts\ScheduleRunner;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\Settings\RmmSettings;
@@ -50,6 +55,11 @@ final class Housekeeping
         private readonly ?RmmEventPublisher $events = null,
         private readonly ?DeviceState $deviceState = null,
         private readonly ?DatabaseMetricSink $metricSink = null,
+        private readonly ?ScheduleRunner $schedules = null,
+        private readonly ?ApprovalService $approvals = null,
+        private readonly ?ApprovedRunExecutor $approvedRuns = null,
+        private readonly ?JobExtras $extras = null,
+        private readonly ?PolicyStore $policies = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -85,6 +95,46 @@ final class Housekeeping
         }
         if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {
             $out['offline_events'] = $this->announceOffline((int) $cfg['offline_after_s'], (int) $cfg['stale_after_s']);
+        }
+        // Phase 2: only while the `scripts` sub-switch is on (a module that never uses the library pays nothing here).
+        if ($this->settings->featureOn('scripts')) {
+            $out += $this->automation($cfg);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Scheduled scripts, approvals and the clean-up of what they leave behind.
+     *
+     * @param array<string,mixed> $cfg
+     * @return array<string,int>
+     */
+    private function automation(array $cfg): array
+    {
+        $out = [];
+        if ($this->approvals !== null) {
+            $lapsed = $this->approvals->expireDue();
+            $out['approvals_expired'] = count($lapsed);
+            foreach ($lapsed as $a) {
+                $this->events?->emitScoped(RmmEvent::APPROVAL_DECIDED, 0, ['approval_id' => $a['approval_id'], 'kind' => $a['kind'], 'state' => 'expired', 'decided_by' => null]);
+            }
+            $out['approvals_pruned'] = $this->approvals->prune(max(30, (int) $cfg['job_retention_days']));
+        }
+        if ($this->approvedRuns !== null) {
+            $out['approved_runs_resumed'] = $this->approvedRuns->resume();
+        }
+        if ($this->schedules !== null) {
+            foreach ($this->schedules->run() as $k => $v) {
+                $out['schedule_' . $k] = $v;
+            }
+            $out['schedule_rows_pruned'] = $this->schedules->prune(max(30, (int) $cfg['job_retention_days']));
+        }
+        if ($this->extras !== null) {
+            $out['job_secrets_wiped'] = $this->extras->wipeFinished();
+        }
+        if ($this->policies !== null) {
+            $out['policy_assignments_dropped'] = $this->policies->dropOrphanAssignments();
         }
 
         return $out;

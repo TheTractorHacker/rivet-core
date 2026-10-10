@@ -64,7 +64,14 @@ final class RmmReadModel
         private readonly ?TagService $tagService = null,
         private readonly ?GroupService $groupService = null,
         private readonly ?RmmMetricReaderInterface $metricReader = null,
+        private readonly ?AutomationReader $automation = null,
     ) {
+    }
+
+    /** The Phase 2 reads (policies, script library, approvals, schedules, custom fields), or null when the module was built without them. */
+    public function automation(): ?AutomationReader
+    {
+        return $this->automation;
     }
 
     /** {@see MATCH_REASONS} in the edition's terminology ("client" is replaced by the configured label); an unknown code is returned as is. */
@@ -174,8 +181,28 @@ final class RmmReadModel
     public function jobs(int $deviceId, int $limit, bool $withOutput): array
     {
         $rows = $this->sql->all('SELECT * FROM endpoint_agent_jobs WHERE device_id = ? ORDER BY created_at DESC, job_id LIMIT ' . max(1, min(200, $limit)), [$deviceId]);
+        $origin = [];
+        if ($this->automation !== null && $rows !== []) {
+            // Library jobs say which script they came from. An install that has not run migration 0019 yet has no such table: the list is then as before.
+            try {
+                foreach ($this->sql->all('SELECT x.job_id, x.script_id, x.script_version, x.schedule_id, x.approval_id, s.name FROM rmm_job_extra x LEFT JOIN rmm_scripts_v2 s ON s.script_id = x.script_id
+                    WHERE x.job_id IN (' . implode(',', array_fill(0, count($rows), '?')) . ') AND x.script_id IS NOT NULL', array_column($rows, 'job_id')) as $x) {
+                    $origin[(string) $x['job_id']] = ['script_id' => (int) $x['script_id'], 'script_name' => (string) ($x['name'] ?? ''), 'script_version' => (int) $x['script_version'],
+                        'schedule_id' => $x['schedule_id'] === null ? null : (int) $x['schedule_id'], 'approval_id' => $x['approval_id'] === null ? null : (int) $x['approval_id']];
+                }
+            } catch (\Throwable) {
+                $origin = [];
+            }
+        }
 
-        return array_map(static fn (array $j): array => self::jobRow($j, $withOutput), $rows);
+        return array_map(static function (array $j) use ($withOutput, $origin): array {
+            $o = self::jobRow($j, $withOutput);
+            if (isset($origin[(string) $j['job_id']])) {
+                $o['library'] = $origin[(string) $j['job_id']];
+            }
+
+            return $o;
+        }, $rows);
     }
 
     /**

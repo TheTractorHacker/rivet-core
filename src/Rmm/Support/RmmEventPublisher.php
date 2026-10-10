@@ -53,6 +53,17 @@ final class RmmEventPublisher
         $this->deliver($event, $payload);
     }
 
+    /**
+     * Publish an event that is not about one device (a policy assignment, an approval). The payload keeps the device shape so a subscriber
+     * does not need a second code path: device_id 0, asset_id null, an empty hostname.
+     *
+     * @param array<string,mixed> $fields the event's own fields
+     */
+    public function emitScoped(string $event, int $clientId, array $fields = []): void
+    {
+        $this->emit($event, ['device_id' => 0, 'asset_id' => null, 'client_id' => $clientId, 'hostname' => ''], $fields);
+    }
+
     /** Start holding events (nestable). Pair with {@see release()} or {@see discard()}. */
     public function hold(): void
     {
