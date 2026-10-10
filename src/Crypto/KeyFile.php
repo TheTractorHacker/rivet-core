@@ -133,6 +133,7 @@ final class KeyFile
      */
     public static function inspect(string $path, ?string $webRoot = null): array
     {
+        clearstatcache(true, $path); // the answer must reflect the file as it is now, not a cached stat
         $errors = [];
         $warnings = [];
         $perms = @fileperms($path);
