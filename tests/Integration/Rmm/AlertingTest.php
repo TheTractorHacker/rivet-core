@@ -129,6 +129,35 @@ final class AlertingTest extends RmmTestCase
         $this->assertSame($off, $this->h->counting->statements - $s1, 'switch on: a healthy check-in costs the same number of statements');
     }
 
+    public function testASteadyThresholdCheckCostsOneReadAndNoWrite(): void
+    {
+        $this->on(true);
+        [$this->dev, $this->T] = $this->enrollDevice('STD-1');
+        $plain = [['key' => 'cpu1', 'type' => 'cpu', 'params' => new \stdClass(), 'interval_s' => 60]];
+        $this->define($plain);
+        $this->bad('cpu1', 'ok', 40.0);
+        $s0 = $this->h->counting->statements;
+        $this->bad('cpu1', 'ok', 41.0);
+        $plainCost = $this->h->counting->statements - $s0;
+
+        $this->define([['key' => 'cpu1', 'type' => 'cpu', 'params' => ['thresholds' => ['warn' => ['op' => 'gt', 'value' => 80], 'for_samples' => 3], 'flap' => ['window' => 10]], 'interval_s' => 60]]);
+        for ($i = 0; $i < 12; ++$i) {
+            $this->bad('cpu1', 'ok', 40.0 + $i);   // warms the flap window up; every sample is good and under the limit
+        }
+        $writes = (int) $this->h->one("SELECT COUNT(*) FROM rmm_check_eval WHERE device_id = {$this->dev}");
+        $this->assertSame(1, $writes);
+        $s1 = $this->h->counting->statements;
+        $this->bad('cpu1', 'ok', 55.0);
+        $this->assertSame($plainCost + 1, $this->h->counting->statements - $s1, 'one batched read of the evaluation row; nothing is written while the state does not change');
+        $this->assertEqualsWithDelta(55.0, 55.0, 0.0);
+        // the reading itself is refreshed only when the row is older than a quarter of an hour
+        $this->clock()->advance(1000);
+        $s2 = $this->h->counting->statements;
+        $this->bad('cpu1', 'ok', 56.0);
+        $this->assertGreaterThan($plainCost + 1, $this->h->counting->statements - $s2);
+        $this->assertSame(56.0, (float) $this->h->one("SELECT last_reading FROM rmm_check_eval WHERE device_id = {$this->dev}"));
+    }
+
     // ------------------------------------------------------------------ lifecycle
 
     public function testAnAlertRecordIsWrittenAcknowledgedAndResolved(): void

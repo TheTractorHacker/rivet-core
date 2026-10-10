@@ -13,6 +13,9 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class CheckPipeline
 {
+    /** How stale the stored last reading of a check may get while nothing else about it changes. */
+    public const READING_REFRESH_S = 900;
+
     /** @var array<string,array<string,mixed>> */
     private array $evalRows;
     /** @var array<string,true> */
@@ -48,6 +51,7 @@ final class CheckPipeline
         if ($status === 'unknown' || (!isset($params['thresholds']) && !isset($params['flap']))) {
             return $out;
         }
+        $known = isset($this->evalRows[$key]);
         $row = $this->evalRows[$key] ?? CheckEvalStore::blank();
         $before = $row;
         $value = $r['value'] ?? null;
@@ -91,8 +95,10 @@ final class CheckPipeline
         }
         $out['status'] = $status;
         $out['detail'] = $detail;
-        $changed = false;
-        foreach (['tier', 'cand_tier', 'cand_since', 'cand_count', 'last_reading', 'flap_bits', 'flap_n', 'flapping'] as $c) {
+        // A write only when the STATE changed (a new row, a tier, the duration counters, the flap history). The last reading alone is not a
+        // reason: it changes every sample, so it is written along with a state change or when the stored one is older than READING_REFRESH_S.
+        $changed = !$known || Sql::ts((string) ($before['updated_at'] ?? '')) + self::READING_REFRESH_S <= Sql::ts($r['at']);
+        foreach (['tier', 'cand_tier', 'cand_since', 'cand_count', 'flap_bits', 'flap_n', 'flapping'] as $c) {
             if (($before[$c] ?? null) != ($row[$c] ?? null)) {
                 $changed = true;
                 break;

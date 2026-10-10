@@ -9,13 +9,13 @@ declare(strict_types=1);
  *
  *   php scripts/rmm-load/run.php --mode=sync|queued --devices=200 --interval=6s --duration=120s [--workers=8] [--concurrency=32]
  *       [--batches=4] [--settings='{"collect_interval_s":60}'] [--sim=endpoint-agent/dist/rmm-sim] [--herd] [--state-dir=<dir>] [--port=8700]
- *       [--drain-seconds=120] [--no-teardown] [--poll-shed]
+ *       [--drain-seconds=120] [--no-teardown] [--poll-shed] [--value-check]
  *
  * The statements per check-in are the server's Questions delta divided by the check-ins that were accepted (the device rows' last_seq
  * sums), minus the counter queries of the harness itself, which are negligible against thousands of requests.
  */
 
-$o = getopt('', ['mode:', 'devices:', 'interval:', 'duration:', 'workers:', 'concurrency:', 'batches:', 'settings:', 'sim:', 'herd', 'state-dir:', 'port:', 'drain-seconds:', 'no-teardown', 'retry-scale:', 'poll-shed']);
+$o = getopt('', ['mode:', 'devices:', 'interval:', 'duration:', 'workers:', 'concurrency:', 'batches:', 'settings:', 'sim:', 'herd', 'state-dir:', 'port:', 'drain-seconds:', 'no-teardown', 'retry-scale:', 'poll-shed', 'value-check']);
 $mode = $o['mode'] ?? 'sync';
 $devices = (int) ($o['devices'] ?? 200);
 $interval = $o['interval'] ?? '6s';
@@ -78,6 +78,9 @@ $simArgs = [$sim, '-url', "http://127.0.0.1:$port/api/v1/", '-token', $token, '-
     '-insecure', '-json', '-batches', (string) ($o['batches'] ?? 4), '-client-ip-header', 'X-Sim-Client-Ip', '-report', isset($o['poll-shed']) ? '5s' : '30s', '-retry-scale', (string) ($o['retry-scale'] ?? '0.02')];
 if (isset($o['herd'])) {
     $simArgs[] = '-herd';
+}
+if (isset($o['value-check'])) {
+    $simArgs[] = '-value-check';   // Phase 3: a fourth check that reports a measured value (thresholds, flap)
 }
 $proc = proc_open(array_merge($simArgs), [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes, $root);
 $c0 = $c1 = [];

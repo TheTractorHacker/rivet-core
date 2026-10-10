@@ -5,7 +5,7 @@ what they default to, how the server protects itself under load (shedding, queue
 the measurements taken so far. The plan and the targets (5,000 devices supported in beta, 10,000 proven before the RMM leaves beta) are in
 [SCALING.md](SCALING.md); the model and the design are section 12 and 13 of `docs/design/endpoint-module-extraction.md`.
 
-Status: Phase 0. The numbers in "Measured so far" come from a single scratch host and `php -S`, not from PHP-FPM on the reference hardware; they are a
+Status: Phase 0 (Phase 1 and Phase 3 additions in 11 and 8.4). The numbers in "Measured so far" come from a single scratch host and `php -S`, not from PHP-FPM on the reference hardware; they are a
 floor and a regression baseline, not a capacity promise. The validation on the reference hardware (S9) is planned at the end of this file.
 
 ## 1. The module switch
@@ -314,6 +314,23 @@ herd of 500 devices within 10 s, zero 503, p99 37.9 ms, back to normal immediate
    proves it for the gate; this proves it under load in FPM).
 5. Publish the results in this file with the host description.
 
+### 8.4 Phase 3: what the alerting switch costs (statements per check-in, before and after)
+
+Measured with the S1 harness (`scripts/rmm-load/run.php --mode=sync --devices=200 --interval=6s --duration=60s --workers=8 --concurrency=32`, 33.2 check-ins/s, steady state), a private MySQL 8.4 in a container, PHP 8.5 CLI `php -S` with 8 workers, the simulator and the database on the same shared host (1-minute load average 3 to 7 from other work). The statement counts are the database server's own `Questions` counters divided by the accepted check-ins, so they do not depend on host load; the latencies do, and are given only where the host was quiet. `-value-check` makes the simulator send a fourth check, `cpu_load`, with a measured `value` (5 to 95), checked on the server by a `cpu` definition.
+
+| Run | Statements per check-in | SELECT | INSERT | UPDATE | p50 / p95 ms | Notes |
+|---|---|---|---|---|---|---|
+| A. Before: origin/main (8a7c88e), 3 checks | 27.0 | 11.3 | 2.4 | 9.2 | 28.9 / 43.4 | the baseline of section 8 |
+| B. Phase 3 code, `alerting` off, 3 checks | 27.0 | 11.3 | 2.4 | 9.2 | 28.9 / 40.5 | identical: nothing of Phase 3 runs |
+| C. Phase 3 code, `alerting` on, 3 checks | 27.0 | 11.3 | 2.4 | 9.2 | (host busy) | identical: a healthy check-in adds no statement; Phase 3 tables are read only when a result is bad or an alert is open |
+| D. `alerting` off, 4 checks (`cpu_load` reports a value) | 30.1 | 13.3 | 2.7 | 10.1 | (host busy) | what one more plain check costs today: 3.1 statements |
+| E. `alerting` on, 4 checks, `cpu_load` with thresholds (warn above 80, 3 samples, hysteresis) and flap detection (window 10) | 32.3 | 14.5 | 3.5 | 10.2 | 33.1 / 46.4 | a run of 10 check-ins per device never leaves the flap warm-up (the window fills one sample at a time, one write each), so this is the worst case |
+| F. as E without flap detection | 31.6 | 14.5 | 2.9 | 10.2 | 33.1 / 43.4 | thresholds only |
+
+Reading it. A threshold or flap check adds ONE batched read of its evaluation rows to a check-in (`rmm_check_eval`, one statement however many such checks the device has) and a write only when its state changes (a tier, the duration counters, the flap history; the last reading is refreshed at most every 15 minutes). `AlertingTest::testASteadyThresholdCheckCostsOneReadAndNoWrite` pins that: after the flap window is full, a check-in with a threshold check costs exactly the plain check plus one statement. Alert opens and resolves add one INSERT or UPDATE of Core's alert record and, when a policy matches, no more (notices are sent by housekeeping, never in the request); maintenance windows, parents and storm control are consulted only when a bad result is about to open an alert (a window-list read once per request, a parent lookup, two bounded `COUNT` reads), and a `suppress` window is looked up only for a bad result or an open alert. Housekeeping adds an indexed read of the due escalations, the open windows and the storm summaries once per run, bounded to 200 notices. All of it sits inside the existing shed levels (level 3 refuses the check-in before any of it), and the queued path carries the checks unchanged inside the `rmm.ingest` job.
+
+What this does NOT show: PHP-FPM, the reference hardware, a fleet that is mostly bad (an alert storm is capped by storm control, defaults 100 per client and 500 in total per 10 minutes), or the Windows-only checks on a Windows host. Re-measure at S9 with the Phase 3 checks on.
+
 ## 9. The simulator and the harness
 
 `endpoint-agent/cmd/rmm-sim` (Go, standard library only; `make sim` in `endpoint-agent/`, built in the golang container if there is no Go on the host) enrolls N devices with one multi-use token
@@ -335,6 +352,7 @@ rmm-sim -url http://127.0.0.1:8700/api/v1/ -token rvte1.... -devices 500 -interv
 | `-follow-server-interval` | obey `next_check_in_s` like the real agent |
 | `-client-ip-header` | send a distinct fake client address per device in that header (only for a harness that honours it; the enrollment limiter counts per IP) |
 | `-json`, `-report`, `-enroll-only`, `-seed`, `-timeout`, `-disabled-floor` | JSON summary line, progress period (default 10 s), enrollment only, determinism, request timeout, minimum wait after `module_disabled` |
+| `-value-check` | add a fourth check, `cpu_load`, that reports a measured `value` (Phase 3: exercises the threshold and flap path; `run.php --value-check`) |
 
 It prints a progress line every 10 s (request rate, p50/p95/p99/max of the period, in flight, status counts) and at the end the totals, the latency distribution and the
 status histogram. Honouring the server: `503`/`429`/transport errors keep the in-flight body (same `seq`) and retry after `max(Retry-After, full-jitter backoff)`;
