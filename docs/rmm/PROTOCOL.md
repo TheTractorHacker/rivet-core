@@ -45,6 +45,26 @@ Request: `{seq (integer, idempotency key per device), collected_at (RFC 3339, at
 
 Response 200: `{ok, status, matched_asset_id, next_check_in_s, jobs_pending, config: {checks: [signed], collect_interval_s}, update (signed manifest, or null), server_time, signing_key_id}`. `jobs_pending` is 0 and `update` is omitted while the `jobs` or `updates` sub-switch is off. Under load shedding (levels 2 and 3) the interval grows and level 3 answers 503 `unavailable` with a jittered `Retry-After`.
 
+#### 3.2.1 Capabilities and the software inventory (additive, Phase 1)
+
+Every field below is optional on both sides. A server or an agent that does not know them ignores them, an old agent's check-in is processed exactly as before and the responses to it are byte-identical (the golden transcripts prove it).
+
+* **Announce.** The agent already sends `platform`, `arch` and `capabilities` (a sorted list of strings: `job:<type>`, `check:<type>`). Phase 1 adds the flag `software_inventory`. The server stores the list (`rmm_device_state.capabilities_json`, at most 64 strings of at most 64 characters).
+* **Offer.** Only when the device announced `software_inventory` AND the server's `inventory_software` sub-switch is on, the check-in response carries `"features": ["software_inventory"]`. The agent sends a `software` block only after it has seen that feature in a response (and stops when a later response no longer has it), so an old server never receives one.
+* **Report.** The request may carry `software`:
+
+```json
+{"software": {"mode": "full", "hash": "<64 hex>", "count": 2, "truncated": false,
+  "items": [{"name": "curl", "version": "8.5.0-2ubuntu10.6", "publisher": "Ubuntu", "source": "dpkg", "installed": "2026-09-02"}]}}
+{"software": {"mode": "delta", "base_hash": "<64 hex>", "hash": "<64 hex>", "count": 2, "truncated": false,
+  "items": [{"name": "git", "version": "2.43.0", "publisher": "", "source": "dpkg"}], "removed": [{"source": "dpkg", "name": "nano"}]}}
+```
+
+  `mode` is `full` (the whole list) or `delta` (`items` are the added or version-changed entries, `removed` the vanished ones; `base_hash` is the hash of the list the delta applies to). `hash` is the hash of the complete list AFTER the report; its definition is in `SoftwareHash` (sha256 of the bytewise-sorted lines `source TAB name TAB version TAB publisher LF`, vectors in `endpoint-agent/testdata/software/hash_vectors.json`). `source` is one of `registry`, `registry32`, `appx`, `dpkg`, `rpm`, `snap`, `flatpak`. An item identity is `(source, name)`. `truncated` is true when the agent cut the list at its caps; the server then never treats absent items as removed.
+* **Caps.** At most 5000 items (the agent sends at most 3000 and at most 600 KiB), a name up to 200 characters, a version up to 100, a publisher up to 200; control characters are replaced by a space and the text trimmed (the same rule as `cleanText`, so both sides hash the same strings). The check-in body cap (1 MiB) applies as before.
+* **When the agent sends.** A full list on the first report, on a server request (`resync`) and at least once a day; otherwise a delta when the list changed (a delta larger than 300 entries is sent as a full list), nothing when it did not. The agent collects at most once an hour.
+* **Self-healing.** The server applies a `delta` only when its `base_hash` equals the hash it holds for the device. Otherwise, when the check-in was shed (load shedding level 1 or more) or the applied list does not hash to `hash`, it records that the device must resync, and the next response carries `"resync": ["software"]`. The agent then sends a full list, but never sooner than 15 minutes after its previous software report. A `full` report is never refused for its hash.
+
 ### 3.3 `agent_jobs` (GET and POST, device token)
 
 * `GET [?wait=0..5]`: the signed jobs this device may run now (at most 5). With `wait` the request long-polls (poll step 0.5 s). `{"jobs": [{job_id, device_id, attempt, type, script, params, timeout_s, max_output_bytes, issued_at, expires_at, signature}]}`. Up to 120 requests per 60 s per device.

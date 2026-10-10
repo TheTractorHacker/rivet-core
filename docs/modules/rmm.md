@@ -1,6 +1,6 @@
 # RMM (endpoint agent)
 
-Status: Phase 0 complete in Core (the extraction of RivetIT's endpoint agent): contracts, HTTP objects, migrations, the device-facing services and `DeviceApi`, and the technician, administration, installer, binary and MeshCentral side. Editions adopt it next (RivetIT first). Design: [endpoint-module-extraction.md](../design/endpoint-module-extraction.md); decision: [ADR-010](../architecture/ADR-010-endpoint-agent-module.md); wire protocol: [PROTOCOL.md](../rmm/PROTOCOL.md); API description: [openapi-device.yaml](../rmm/openapi-device.yaml).
+Status: Phase 0 complete in Core (the extraction of RivetIT's endpoint agent): contracts, HTTP objects, migrations, the device-facing services and `DeviceApi`, and the technician, administration, installer, binary and MeshCentral side. Editions adopt it next (RivetIT first). Design: [endpoint-module-extraction.md](../design/endpoint-module-extraction.md); decision: [ADR-010](../architecture/ADR-010-endpoint-agent-module.md); wire protocol: [PROTOCOL.md](../rmm/PROTOCOL.md); API description: [openapi-device.yaml](../rmm/openapi-device.yaml). Phase 1 (software inventory, tags and groups, events, the database metric sink, check history, the live document) is built in Core as of v1.0.0-rc.9 and not yet adopted by an edition; see "Phase 1" below.
 
 ## Overview
 
@@ -39,7 +39,7 @@ Required (all in `RivetCore\Rmm\Contracts`):
 
 A policy that enforces anything must deny an ability it does not know. An inactive account, a module-only login and the client scope (RivetIT: `user_client_permissions`) are the edition's rules; the client scope reaches Core through `RmmTenancyInterface::visibleClientIds()`.
 
-Optional or defaulted: `RmmMetricSinkInterface` (`Support\NullRmmMetricSink` for editions without Metrics; `Testing\RmmMetricSinkConformanceTestCase`), `RmmAuditInterface` (`Support\AuditServiceRmmAudit`; `Testing\RmmAuditConformanceTestCase`), `RmmModuleStateInterface` (edition kill switch and state-file directory; `Testing\RmmModuleStateConformanceTestCase`).
+Optional or defaulted: `RmmMetricSinkInterface` (`Support\NullRmmMetricSink` for editions without Metrics, `Support\DatabaseMetricSink` for editions that want history without a metrics subsystem; `Testing\RmmMetricSinkConformanceTestCase`), `RmmMetricReaderInterface` (what a sink that keeps history can answer: latest, peak, series; implemented by `DatabaseMetricSink`; `Testing\RmmMetricReaderConformanceTestCase`), `RmmEventsInterface` (the edition's event bus for the `rmm.*` events; `Support\NullRmmEvents` by default; `Testing\RmmEventsConformanceTestCase`), `RmmAuditInterface` (`Support\AuditServiceRmmAudit`; `Testing\RmmAuditConformanceTestCase`), `RmmModuleStateInterface` (edition kill switch and state-file directory; `Testing\RmmModuleStateConformanceTestCase`).
 
 Reused: `DatabaseInterface`, `ClockInterface`, `Webhooks\UrlPolicy` (the MeshCentral probe: pass one with the networks an administrator allowed; the default refuses private addresses).
 
@@ -55,7 +55,7 @@ Run `RmmBridgeInterface` on the same database connection Core uses so its writes
 | `Http\TechnicianApi` | `endpoint_devices`: list, detail, jobs, cancel, remote launch; the edition authenticates and passes an `Authz\RmmPrincipal` |
 | `Authz\RmmAuthorizer`, `RmmAbility`, `RmmPrincipal` | one decision for the REST API, the web handlers and the administration operations |
 | `Technician\TechnicianActions`, `ActionResult` | submit and cancel jobs, launch remote, approve or reject a pending device, link or create its asset, revoke, retire, transfer, re-enroll, rotate, ring, map a MeshCentral node, enrollment tokens |
-| `Read\RmmReadModel` | device list (filters, pagination, scope), device view, fleet counters, approval queue with candidates and reasons, tokens, releases, binaries, settings summary |
+| `Read\RmmReadModel` | device list (filters, pagination, scope), device view, fleet counters, approval queue with candidates and reasons, tokens, releases, binaries, settings summary; Phase 1: software, tags, groups, check history, network peak, live document |
 | `Admin\RmmAdmin` | settings (switch, intervals, limits, checks, CA certificate, sub-switch presets), MeshCentral settings, signing key rotation, binaries, releases and rings, installers and deployment commands |
 | `Binaries\BinaryStore` | validate (PE and ELF headers), store, publish, make current, offer as an update, serve agent binaries |
 | `Installer\InstallerService`, `InstallerDownload`, `InstallerStamp` | per-client installers, token-gated download, deployment snippets (PowerShell for an RMM, Intune or GPO; a shell one-liner for Linux), the stamp format |
@@ -115,6 +115,35 @@ $r = $t->submitJob($who, $deviceId, ['type' => 'reboot', 'confirm' => true]);   
 if (!$r->ok) { /* $r->http, $r->code ('forbidden', 'not_found', 'conflict', 'invalid', 'confirmation_required'), $r->message are safe to show */ }
 $list = $module->readModel()->listDevices(['status' => 'pending_approval'], $module->authorizer()->visibleClientIds(7), 50, 0);
 ```
+
+## Phase 1: inventory, tags, groups, events, history
+
+Added in v1.0.0-rc.9 (migration `0018_rmm_inventory_foundation`, DB-additive: eleven new tables, none of the ten original ones is altered). Everything is off or empty until used: the software inventory needs the `inventory_software` sub-switch, the events need an `RmmEventsInterface` that is not the null one, the metric history needs the sink. An edition that does nothing sees no change (the golden transcripts replay identically).
+
+| Area | What it does | Core classes | Storage |
+|---|---|---|---|
+| Capabilities | the agent announces `capabilities` (`software_inventory`, `job:<type>`, `check:<type>`); the server stores them and, only for a device that announced `software_inventory` while `inventory_software` is on, answers `features: ["software_inventory"]` | `Device\DeviceState` | `rmm_device_state` |
+| Software inventory | validates and applies the `software` block of a check-in: baseline on the first report, then deltas by hash chain, a full list on request and daily; every install, upgrade, downgrade and removal is logged | `Software\SoftwareService`, `SoftwareHash`, `SoftwareVersion` | `rmm_device_software` (current, with `first_seen_at`, `last_seen_at`, `removed_at`), `rmm_software_history` |
+| Tags and groups | free tags on devices; static groups made of devices added by hand plus every device that carries one of the group's tags | `Tags\TagService`, `GroupService`, `Technician\InventoryActions` | `rmm_tags`, `rmm_device_tags`, `rmm_groups`, `rmm_group_devices`, `rmm_group_tags` |
+| Events | nine `rmm.*` events (see below), published after commit | `RmmEvent`, `Support\RmmEventPublisher`, `Webhooks\EventCatalog` group `rmm` | none |
+| Check history | every change of a check's status, and an unchanged status at most once per `check_history_gap_s` (3600), kept `check_history_days` (7); read as a trend with time-weighted availability | `Checks\CheckEvaluator`, `RmmReadModel::checkHistory()` | `endpoint_agent_check_history` |
+| Metric history | hourly rollups (count, sum, min, max) and the latest reading per metric instance; the 24 hour network peak | `Support\DatabaseMetricSink`, `RmmReadModel::networkPeak()` | `rmm_metric_latest`, `rmm_metric_hourly` |
+| Live document | the small JSON the device page polls, with an ETag and a poll interval that slows under load | `RmmReadModel::deviceLive()` | none |
+
+**Read model additions** (`RmmReadModel`): `softwareState()`, `softwareFor()`, `softwareHistory()`, `softwareCatalog()`, `outdatedSoftware()`, `deviceTags()`, `deviceGroups()`, `tags()`, `groups()`, `checkHistory()`, `networkPeak()`, `deviceLive()`; `listDevices()` takes the filters `tag`, `group`, `software` and `location_id`, and its extras mode adds each device's `tags`. The technician REST list keeps its frozen shape.
+
+**REST routes** (all additive, JSON shapes in [openapi-device.yaml](../rmm/openapi-device.yaml)): `endpoint_devices/{id}/software`, `.../software/history`, `.../software/refresh`, `.../tags`, `.../checks/{key}/history`, `.../network`, `.../live`, and the fleet routes `endpoint_devices/tags`, `groups`, `software`, `software/outdated`. Reads need `rmm.device.view`; changing a device's tags needs `rmm.device.manage` for its client; creating, renaming and deleting tags and groups needs `rmm.device.manage` as a role; a software refresh needs `rmm.job.run_saved`.
+
+**Events.** `RmmEventsInterface::publish($event, $payload)` receives, after the change is committed (a rolled-back check-in publishes nothing), `rmm.device.enrolled`, `rmm.device.offline`, `rmm.device.online`, `rmm.check.failed`, `rmm.check.recovered`, `rmm.job.completed`, `rmm.job.failed`, `rmm.software.installed` and `rmm.software.removed`. Every payload has `device_id`, `asset_id`, `client_id`, `hostname` and `occurred_at`; the event's own fields are in `Webhooks\EventCatalog` and `RmmEvent`. A bus that throws is logged and ignored. Offline is announced once per offline period by `Housekeeping::run()` (devices silent for longer than the stale window are recorded without an event); online is announced by the first check-in after it; at most 25 software events are published per report (the change log keeps all of them). While the null bus is in place the module does no extra work to detect events.
+
+**What an edition does to adopt Phase 1**
+1. Run the Core migrations (0018 creates the tables).
+2. Pass an `RmmEventsInterface` on its event bus as the last constructor argument of `RmmModule` (optional).
+3. RivetMSP: pass `new Support\DatabaseMetricSink($database, $clock)` as the metric sink; RivetIT keeps its own Metrics subsystem and can implement `RmmMetricReaderInterface` on its adapter to feed the network peak.
+4. Switch on `inventory_software` (`RmmAdmin`/`RmmSettings::update(['features_json' => ...])`) once agents of this release are rolled out.
+5. Render the new read models and routes on the device and fleet pages; pass the new limits (`check_history_days`, `check_history_gap_s`, `software_history_days`) through its settings page if it wants them editable.
+
+Capacity numbers for the new write paths are in [CAPACITY.md](../rmm/CAPACITY.md).
 
 ## Behaviour that matters
 

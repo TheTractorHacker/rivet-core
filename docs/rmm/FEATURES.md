@@ -1,6 +1,6 @@
 # RivetIT / RivetMSP RMM: what it does and contains
 
-Status: DRAFT for owner review, 2026-10-07. This is the product-level feature list for the RMM module that is moving into RivetCore (`RivetCore\Rmm\*`). It is derived from, and must stay consistent with, [the extraction design](../design/endpoint-module-extraction.md) (sections 9 to 13), [ADR-010](../architecture/ADR-010-endpoint-agent-module.md) and the RMM section of [ROADMAP.md](../../ROADMAP.md). It promises nothing beyond the phases those documents define. How the asset (device) page and the fleet pages show all this is in [ASSET_PAGE_REDESIGN.md](ASSET_PAGE_REDESIGN.md).
+Status: DRAFT for owner review, 2026-10-07; statuses updated for RivetCore v1.0.0-rc.9 (2026-10-10). This is the product-level feature list for the RMM module that is moving into RivetCore (`RivetCore\Rmm\*`). It is derived from, and must stay consistent with, [the extraction design](../design/endpoint-module-extraction.md) (sections 9 to 13), [ADR-010](../architecture/ADR-010-endpoint-agent-module.md) and the RMM section of [ROADMAP.md](../../ROADMAP.md). It promises nothing beyond the phases those documents define. How the asset (device) page and the fleet pages show all this is in [ASSET_PAGE_REDESIGN.md](ASSET_PAGE_REDESIGN.md).
 
 ## How to read this list
 
@@ -9,8 +9,9 @@ Status: DRAFT for owner review, 2026-10-07. This is the product-level feature li
 | Status | Meaning |
 |---|---|
 | **Shipped** | Works today in RivetIT beta (release v26.10.26, agent `agent-v0.1.0-beta.1`, DB 2.6.146). Verified from the code. |
+| **Core** | Built and tested in RivetCore (v1.0.0-rc.9, Phase 1) but not yet adopted by an edition: it works for an edition once it runs migration 0018 and wires the new contracts, and it is not in a tagged RivetIT or RivetMSP release. Moves to `Shipped` after an edition release and its smoke test. |
 | **P0** | Phase 0: this build. The code moves into Core, a Linux agent joins the Windows agent, the module gets its on/off switch and capacity controls, and both RivetIT and RivetMSP adopt it. [#60](https://github.com/TheTractorHacker/rivet-core/issues/60) to [#68](https://github.com/TheTractorHacker/rivet-core/issues/68) |
-| **P1** | [#69](https://github.com/TheTractorHacker/rivet-core/issues/69) Foundation: Linux packaging, capability negotiation, software inventory with history, sites/groups/tags, `rmm.*` events, MSP metric sink |
+| **P1** | [#69](https://github.com/TheTractorHacker/rivet-core/issues/69) Foundation: Linux packaging, capability negotiation, software inventory with history, sites/groups/tags, `rmm.*` events, MSP metric sink. Built in Core in v1.0.0-rc.9: software inventory with history, tags and groups, nine `rmm.*` events, the database metric sink, per-check history, the live polling document and the capability announcement. Still to do: normalised hardware tables (3.3), site/group/tag at enrollment (2.8), `RmmSitesInterface`, filtering offers by capability (1.6), the remaining events (6.5) |
 | **P2** | [#70](https://github.com/TheTractorHacker/rivet-core/issues/70) Policies, check templates, script library, scheduled scripts, approvals, custom fields |
 | **P3** | [#71](https://github.com/TheTractorHacker/rivet-core/issues/71) Alerting maturity: thresholds, maintenance windows, suppression, escalation, more check types |
 | **P4** | [#72](https://github.com/TheTractorHacker/rivet-core/issues/72) Patch management (needs real Windows test machines) |
@@ -33,7 +34,7 @@ Two editions consume the module: **RivetIT** (has a Metrics subsystem: `device_m
 | 1.3 | Offline buffering: up to 100 samples and check results kept and replayed on reconnect, idempotent by `(device, seq)`; exponential backoff with jitter and `Retry-After` | Shipped | Shipped | P0 | P7 | The Linux agent reuses the same loop. |
 | 1.4 | Linux agent: enrols, checks in, reports metrics and checks, runs `collect` and `reboot` jobs | P0 | - | P0 | - | A Linux collector exists today as a test build only. Roadmap Phase 0 includes the Linux agent ([#65](https://github.com/TheTractorHacker/rivet-core/issues/65)); see the note at the end of this section. |
 | 1.5 | Linux packaging: systemd service, install script, `.deb` and `.rpm` | P1 | - | P1 | - | |
-| 1.6 | Capability negotiation: the agent announces platform, job types, check types and features; the server only offers what the agent supports | P1 | P1 | P1 | P7 | The wire field is reserved in P0. Old agents are treated as today's Windows agent. |
+| 1.6 | Capability negotiation: the agent announces platform, job types, check types and features; the server only offers what the agent supports | P1 | P1 | P1 | P7 | Core (rc.9) stores the announcement (`rmm_device_state`) and uses it for the software offer; filtering job and check offers by capability is not done yet and lands with policies (P2). Old agents are treated as today's Windows agent. |
 | 1.7 | Agent runs behind the edition's host only: binaries are downloaded from your server, never from GitHub | Shipped | Shipped | P0 | - | |
 | 1.8 | Authenticode-signed Windows binaries and an MSI installer | P7 | P7 | - | - | Needs a code-signing certificate. Unsigned binaries trigger SmartScreen today. |
 | 1.9 | macOS agent (launchd, pkg, notarisation) | P7 | - | - | P7 | Blocked: no test Mac, no Apple developer account. |
@@ -52,7 +53,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 2.5 | Per-client stamped installer (the token and CA are embedded in the download) | Shipped | Shipped | P1 | P7 | Linux uses an install script in P1. |
 | 2.6 | Reinstall detection, rotate credential, revoke, retire, transfer to another client | Shipped | all | all | all | |
 | 2.7 | Maximum enrolled devices limit (new installs suggest 500) | P0 | all | all | all | `max_devices`; retired and revoked devices do not count. |
-| 2.8 | Site, group and tag chosen at enrollment, auto-tagging | P1 | P1 | P1 | P7 | |
+| 2.8 | Site, group and tag chosen at enrollment, auto-tagging | P1 | P1 | P1 | P7 | Tags and groups exist (11.3); choosing them in the enrollment token and automatic tags are still to do. |
 | 2.9 | Bulk-deployment helper scripts (Intune, GPO) | Not planned | - | - | - | |
 
 ## 3. Inventory
@@ -62,8 +63,8 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 3.1 | Hardware and OS summary: OS and version, architecture, CPU model and cores, memory total, disks (mount, filesystem, total, free), network adapters (name, MAC, IPs), serial, make, model, logged-in user, uptime, pending reboot | Shipped | Shipped | P0 | P7 | Stored as one JSON blob (up to 64 KiB), refreshed on change and at least daily. |
 | 3.2 | Inventory visible in the device page and applied to the asset | Shipped | all | all | all | |
 | 3.3 | Normalised hardware tables (CPU, RAM, disks, BIOS and similar) | P1 | P1 | P1 | P7 | |
-| 3.4 | Installed software list with versions | P1 | P1 | P1 | P7 | |
-| 3.5 | Software change history (installed, upgraded, removed, with dates) | P1 | P1 | P1 | P7 | |
+| 3.4 | Installed software list with versions | Core | Core | Core | P7 | Windows: registry Uninstall keys (64 and 32 bit; per-user installs are not listed), optional Store apps. Linux: dpkg, rpm, snap, flatpak. Full list on the first report, on request and daily; deltas in between. Switch: `inventory_software`. |
+| 3.5 | Software change history (installed, upgraded, removed, with dates) | Core | Core | Core | P7 | Plus downgraded. The first report of a device is a baseline and is not logged. Kept 365 days by default (`software_history_days`). |
 | 3.6 | Services list | P6 | P6 | P6 | P7 | Arrives with the service/process manager ([#74](https://github.com/TheTractorHacker/rivet-core/issues/74)). |
 | 3.7 | Disk health (SMART), TPM, GPU, local users and groups | Not planned | - | - | - | Named in the gap analysis; no phase. |
 | 3.8 | Warranty and purchase data | Shipped | all | all | all | Lives on the edition's asset record, not in the RMM. |
@@ -79,7 +80,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 4.5 | "No data" is never drawn as zero: a reading the agent could not take is missing, not 0 | Shipped | all | all | all | |
 | 4.6 | Metric history with hourly and daily rollups, ranges from 1 hour to 90 days, charts in the device page | Shipped | all | all | all | RivetIT only (Metrics subsystem). |
 | 4.7 | Device status: online, offline, stale (quiet for 7 days), never checked in | Shipped | all | all | all | |
-| 4.8 | Metric history in RivetMSP | P1 | all | all | P7 | Owner decision D5: a metric sink in P1, or porting the Metrics subsystem. Until then RivetMSP shows the latest reading only. |
+| 4.8 | Metric history in RivetMSP | Core | all | all | P7 | `DatabaseMetricSink`: hourly rollups (count, sum, min, max) and the latest reading, 14 days by default, through the same sink contract. RivetMSP shows the latest reading only until it passes the sink to the module. |
 | 4.9 | Ping, port and HTTP probes with latency | P3 | P3 | P3 | P7 | |
 | 4.10 | Per-process top N, temperatures, battery | Not planned | - | - | - | |
 | 4.11 | Event-log and syslog collection (bounded volume, short retention, alert on event) | P8 | P8 | P8 | P7 | Optional, off by default, storage heavy. |
@@ -93,7 +94,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 5.3 | Debounce: an alert opens after 3 bad results and resolves after 2 good ones; each failure episode is a separate alert | Shipped | all | all | all | |
 | 5.4 | Check templates assigned to client, site, group, tag or device, with inheritance and per-device override | P2 | P2 | P2 | P7 | Needs the policy engine (area 11). |
 | 5.5 | CPU and memory threshold checks, process-running, certificate expiry, basic event-log check | P3 | P3 | P3 | P7 | |
-| 5.6 | Per-check result history (trend of the last N results) | Not planned | - | - | - | Today only the latest result per check is stored. The asset-page design proposes a small addition; see ASSET_PAGE_REDESIGN.md section 4. |
+| 5.6 | Per-check result history (trend of the last N results) | Core | all | all | all | `endpoint_agent_check_history`: every change of status, and an unchanged status at most once per hour, for 7 days. Decision U3 of ASSET_PAGE_REDESIGN.md, taken one step further than "state changes only". Read with availability over the window. |
 
 ## 6. Alerts and tickets
 
@@ -103,7 +104,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 6.2 | Alert to ticket through the edition's existing path, with conservative ticket auto-close on resolve | Shipped | all | all | all | |
 | 6.3 | Alert list with acknowledge, filter and bulk actions | Shipped | all | all | all | Edition UI. |
 | 6.4 | Offline and online transitions feed the edition's `asset_offline` / `asset_online` automation | Shipped | all | all | all | |
-| 6.5 | `rmm.*` events for every state change (enrolled, approved, revoked, online, offline, alert opened/resolved, job completed, module enabled/disabled) delivered to webhooks and automation rules | P1 | all | all | all | |
+| 6.5 | `rmm.*` events for every state change (enrolled, approved, revoked, online, offline, alert opened/resolved, job completed, module enabled/disabled) delivered to webhooks and automation rules | Core | all | all | all | Nine events through `RmmEventsInterface`: device enrolled, offline, online; check failed, recovered; job completed, failed; software installed, removed. Approved, revoked and module on/off events are not emitted yet. |
 | 6.6 | Threshold tiers (warning and critical), flap detection | P3 | all | all | all | |
 | 6.7 | Maintenance windows and alert suppression | P3 | all | all | all | Today agent alerts ignore the edition's maintenance-mode flag. |
 | 6.8 | Escalation chains and notifications (email, chat) | P3 | all | all | all | Through `RmmNotifierInterface` if the edition does not already own it. |
@@ -168,7 +169,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 |---|---|---|---|---|---|---|
 | 11.1 | Scope by client (department) and optional location; technicians restricted to their clients | Shipped | all | all | all | |
 | 11.2 | Role abilities: view device, run saved script, reboot, run script, remote launch, administer | Shipped | all | all | all | In Core these become `rmm.device.view`, `rmm.job.run_saved`, `rmm.job.reboot`, `rmm.job.run_script`, `rmm.remote.launch`, `rmm.admin` (P0). |
-| 11.3 | Sites (the edition's locations), groups and tags | P1 | all | all | all | |
+| 11.3 | Sites (the edition's locations), groups and tags | Core | all | all | all | Tags (free labels), static groups (devices added by hand plus every device carrying one of the group's tags), fleet filters by tag, group, software and location. Sites are the edition's locations (`location_id`); the `RmmSitesInterface` to list and name them is not built. |
 | 11.4 | Policies assigned to client, site, group, tag or device with inheritance and enforce flag; versioned | P2 | all | all | all | |
 | 11.5 | Per-policy agent update channel pinning | P2 | all | all | all | |
 
@@ -231,8 +232,9 @@ Counted from the Status column of the tables above (one row, one status). `Shipp
 | Status | Rows |
 |---|---|
 | Shipped | 49 |
+| Core | 6 |
 | P0 | 19 |
-| P1 | 9 |
+| P1 | 4 |
 | P2 | 11 |
 | P3 | 6 |
 | P4 | 5 |
@@ -240,7 +242,7 @@ Counted from the Status column of the tables above (one row, one status). `Shipp
 | P6 | 4 |
 | P7 | 3 |
 | P8 | 1 |
-| Not planned | 11 |
+| Not planned | 10 |
 
 (Counts are regenerated by the command in the "Keeping this list honest" section; if the tables change, rerun it.)
 
@@ -255,7 +257,7 @@ Comparison for the headline capabilities only. Cells for other products reflect 
 | Windows agent | Yes | Yes | Yes | Yes | Yes |
 | Linux agent | Test build only | Yes (P0 to P1) | Yes | Yes | Yes (not verified in detail) |
 | macOS agent | No | Deferred (P7) | Yes | Yes | Yes (not verified in detail) |
-| Metrics graphs per device | Yes (RivetIT only) | Yes, both editions (P1) | Yes (not verified in detail) | Yes | Not verified |
+| Metrics graphs per device | Yes (RivetIT only) | Yes, both editions (built in Core in rc.9, edition adoption pending) | Yes (not verified in detail) | Yes | Not verified |
 | Checks and alerts | 4 check types, global schedule | Policy-assigned, more types (P2, P3) | Yes, policy-assigned | Yes, policy-assigned | Not verified |
 | Script library, scheduled scripts | Saved scripts, run now | Yes (P2) | Yes | Yes | Yes (not verified in detail) |
 | Remote desktop | MeshCentral launch (you host Mesh) | Plus Mesh terminal and files (P6) | MeshCentral based | Built-in remote | Built-in remote (not verified in detail) |

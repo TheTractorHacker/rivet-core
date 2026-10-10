@@ -1,7 +1,7 @@
 {
   "module": "rmm",
   "repository": "https://github.com/TheTractorHacker/rivet-core",
-  "updated": "2026-10-07",
+  "updated": "2026-10-10",
   "issues": "https://github.com/TheTractorHacker/rivet-core/issues?q=label%3Armm",
   "documents": [
     {
@@ -75,6 +75,15 @@
       "status": "draft",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/SCALING.md",
       "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/SCALING.md"
+    },
+    {
+      "id": "capacity",
+      "title": "Capacity, module switch and load control",
+      "summary": "The module switch, limits and defaults, load shedding, queued ingest, the capacity panel, sizing, measurements; Phase 1 write paths",
+      "path": "docs/rmm/CAPACITY.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/CAPACITY.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/CAPACITY.md"
     },
     {
       "id": "protocol",

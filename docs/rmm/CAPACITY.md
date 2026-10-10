@@ -356,3 +356,50 @@ server gives exact counters (a shared server's global counters are noisy).
 | Simulator | `endpoint-agent/cmd/rmm-sim/` |
 | Harness and measurement scripts | `scripts/rmm-load/`, `tests/Support/LoadEdition.php` |
 | Tests | `tests/Integration/Rmm/{ModuleSwitch,LoadShedder,Capacity,IngestQueue}Test.php`, `endpoint-agent/cmd/rmm-sim/sim_test.go` |
+
+## 11. Phase 1 write paths (software inventory, check history, the database metric sink)
+
+Nothing here runs unless it is switched on or used: the software inventory needs the `inventory_software` sub-switch (and an agent that announced
+`software_inventory`), the check history is recorded by the check evaluator that already runs, and the metric sink tables are only written when an
+edition passes `Support\DatabaseMetricSink` to the module. Retention is pruned by `Housekeeping::run()` in batches of 5,000 rows with the usual pause.
+
+### 11.1 Limits
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `check_history_days` | 7 | 0 to 365 | days of per-check history kept; 0 stops recording (rows younger than a day are still pruned only after a day) |
+| `check_history_gap_s` | 3600 | 60 to 86,400 | an unchanged status is stored at most this often per check; every change of status is always stored |
+| `software_history_days` | 365 | 1 to 3,650 | days the software change log, and software that was removed, are kept; software that is still installed is never pruned |
+| `DatabaseMetricSink` retention | 14 days | constructor argument | hourly rollups and latest readings older than this are deleted by `Housekeeping` |
+
+### 11.2 Model
+
+| What | Rows | Written when |
+|---|---|---|
+| Check history | per check: one row per status change plus one per gap while steady, so about 24 a day per check at the default; 3 default checks and 7 days is about 500 rows a device | by the check evaluator, one multi-row insert per check-in (200 rows per statement) |
+| Software, current | one row per installed item (a Windows machine 150 to 400, a Linux server 300 to 2,000) plus the removed ones until the retention passes | the first report inserts them; afterwards only changed items are written |
+| Software, history | one row per install, upgrade, downgrade and removal | on a change; the first report of a device is a baseline and writes none |
+| Metric sink | per device about 6 hourly rows an hour for one disk (cpu, memory, disk used, disk free, receive, transmit), so about 2,000 rows in 14 days, and about 12 latest rows | one multi-row upsert per table per 200 rows, however many check-ins the batch merges |
+| `rmm_device_state` | one row per device that announced capabilities, or whose presence or software hash is tracked | when the announcement changes; a presence write only while an event bus is wired |
+
+At 5,000 devices that is about 2.5 million check-history rows, 1 to 2 million current software rows for Windows fleets (up to about 7 million for Linux servers with
+2,000 packages each) and about 10 million metric rollup rows at the default retention. Plan roughly 100 to 150 bytes a row including indexes.
+
+### 11.3 Measured (a scratch host, MariaDB 11.8 on the same machine, PHP CLI, one device, not the reference hardware)
+
+Cost of one check-in that carries a software report, including the HTTP-layer work and the transaction:
+
+| Items | First (baseline) full list | Unchanged full list (the daily one) | Full list with 20 changed items |
+|---|---|---|---|
+| 200 | 23 ms, 26 statements | 18 ms, 23 statements | 14 ms, 25 statements |
+| 1,000 | 61 ms, 29 statements | 13 ms, 23 statements | 19 ms, 25 statements |
+| 3,000 | 157 ms, 37 statements | 57 ms, 23 statements | 35 ms, 25 statements |
+
+The statement count is nearly flat because rows go in 250 at a time. A delta of a handful of items costs the base check-in plus the state read, a hash check
+and a few statements. With one full list a day per device, 10,000 devices send about 10,000 reports a day; with the default 5-minute check-in the other
+~2.9 million check-ins carry no software block at all. `DatabaseMetricSink::ingest()` stored 1,750 samples (250 devices, 7 metrics each) in about 70 ms in two multi-row
+statements per 200 rows, the same again as an upsert in about 80 ms.
+
+What this does not show: contention with a full check-in load on one table, PHP-FPM, or a network round trip; the S9 validation on the reference hardware is where
+those belong. A queued-ingest install applies the software block in the worker (a work item over 60,000 bytes is processed inline, so a big baseline report is).
+Load shedding level 1 and above acknowledges a software report without applying it and asks the device to send a full list again later (at most every 15 minutes).

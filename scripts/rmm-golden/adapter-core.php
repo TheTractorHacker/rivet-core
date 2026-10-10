@@ -38,7 +38,7 @@ if (!is_dir($state) && !mkdir($state, 0700, true)) {
 mysqli_report(MYSQLI_REPORT_OFF);
 $db = mysqli_init();
 $db->options(MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 1);   // integer columns come back as integers (stable snapshots), like the RivetIT adapter
-$db->real_connect(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', (string) getenv('RIVETCORE_TEST_DB_USER'), (string) getenv('RIVETCORE_TEST_DB_PASS'), (string) getenv('RIVETCORE_TEST_DB_NAME'));
+$db->real_connect(getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost', (string) getenv('RIVETCORE_TEST_DB_USER'), (string) getenv('RIVETCORE_TEST_DB_PASS'), (string) getenv('RIVETCORE_TEST_DB_NAME'), (int) (getenv('RIVETCORE_TEST_DB_PORT') ?: 0));
 if ($db->connect_errno) {
     fwrite(STDERR, "connect failed\n");
     exit(2);

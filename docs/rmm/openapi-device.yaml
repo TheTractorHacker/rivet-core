@@ -216,6 +216,10 @@ paths:
           in: query
           description: 'By check-in age (`online`, `offline`, `stale`, `never`) or by link state (`linked`, `pending_approval`, `rejected`); any other value matches nothing'
           schema: {type: string}
+        - {name: tag, in: query, description: 'Phase 1. A tag name or id the device carries', schema: {type: string}}
+        - {name: group, in: query, description: 'Phase 1. A group id: a device added to it by hand or carrying one of its tags', schema: {type: integer}}
+        - {name: software, in: query, description: 'Phase 1. Part of the name of software currently installed on the device (case-insensitive)', schema: {type: string}}
+        - {name: location_id, in: query, description: 'Phase 1. The edition''s location (site) of the device', schema: {type: integer}}
       responses:
         '200':
           description: Devices
@@ -357,6 +361,557 @@ paths:
         '404': {description: 'Device not found, or `unmapped`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
         '409': {description: '`device_offline`, `not_configured` or `device_retired`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
         '503': {description: '`mesh_unavailable`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/{id}/software:
+    get:
+      tags: [Technician]
+      operationId: getDeviceSoftware
+      summary: Software installed on a device (Phase 1)
+      description: |
+        Needs `rmm.device.view` for the device's client. Ordered by name. `state` says whether the device ever reported, how many items are
+        installed, when it last reported and whether it announced `software_inventory`. Empty until the `inventory_software` sub-switch is on
+        and the agent has sent its first full list.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: q, in: query, description: Part of the software name, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: include_removed, in: query, description: 'Also list what was removed (`removed_at` is then set)', schema: {type: string, enum: ['1']}}
+      responses:
+        '200':
+          description: Software
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, total, state]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/SoftwareItem'}}
+                  total: {type: integer}
+                  state: {$ref: '#/components/schemas/SoftwareState'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/software/history:
+    get:
+      tags: [Technician]
+      operationId: getDeviceSoftwareHistory
+      summary: Software change log of a device (Phase 1)
+      description: 'Newest first: installed, upgraded, downgraded and removed, with the versions. The first report of a device is a baseline and is not logged.'
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: name, in: query, description: Part of the software name, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        '200':
+          description: Changes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, total]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/SoftwareChange'}}
+                  total: {type: integer}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/software/refresh:
+    post:
+      tags: [Technician]
+      operationId: refreshDeviceSoftware
+      summary: Ask a device for a full software list (Phase 1)
+      description: Needs `rmm.job.run_saved` for the device's client. The device sends the full list at its next check-in (never sooner than 15 minutes after its previous report).
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '202':
+          description: Queued
+          content: {application/json: {schema: {type: object, properties: {ok: {type: boolean}, state: {type: string, const: queued}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/tags:
+    get:
+      tags: [Technician]
+      operationId: getDeviceTags
+      summary: Tags and groups of a device (Phase 1)
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '200':
+          description: Tags and groups
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, groups]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/DeviceTag'}}
+                  groups: {type: array, items: {type: object, properties: {group_id: {type: integer}, name: {type: string}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    post:
+      tags: [Technician]
+      operationId: tagDevice
+      summary: Put a tag on a device (Phase 1)
+      description: Needs `rmm.device.manage` for the device's client. A name that does not exist creates the tag. Idempotent. A device carries at most 50 tags.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tag]
+              properties:
+                tag: {description: 'A tag name or a tag id', oneOf: [{type: string}, {type: integer}]}
+      responses:
+        '200':
+          description: The tag
+          content: {application/json: {schema: {type: object, properties: {tag: {$ref: '#/components/schemas/Tag'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/{id}/tags/{tag_id}:
+    delete:
+      tags: [Technician]
+      operationId: untagDevice
+      summary: Take a tag off a device (Phase 1)
+      description: Needs `rmm.device.manage` for the device's client. 404 when the device does not carry the tag.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: tag_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: Removed, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/checks/{key}/history:
+    get:
+      tags: [Technician]
+      operationId: getCheckHistory
+      summary: Trend of one check of a device (Phase 1)
+      description: |
+        The recorded results of the check over the last `hours`, oldest first, and the seconds spent in each state. The ring keeps a result when
+        the status changed and otherwise at most one per `check_history_gap_s` (default 3600 s), for `check_history_days` (default 7), so it is a
+        trend, not every sample. `availability_pct` is the share of measured time (ok, warn, fail) that was ok; null when nothing was measured.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: key, in: path, required: true, schema: {type: string}}
+        - {name: hours, in: query, schema: {type: integer, minimum: 1, maximum: 8760, default: 24}}
+      responses:
+        '200':
+          description: History
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, since, hours, points, seconds, availability_pct, changes, retention_days]
+                properties:
+                  key: {type: string}
+                  since: {type: string, format: date-time}
+                  hours: {type: integer}
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at: {type: string, format: date-time}
+                        status: {type: string, enum: [ok, warn, fail, unknown]}
+                        detail: {type: string}
+                  seconds:
+                    type: object
+                    properties: {ok: {type: integer}, warn: {type: integer}, fail: {type: integer}, unknown: {type: integer}}
+                  availability_pct: {type: [number, 'null']}
+                  changes: {type: integer}
+                  retention_days: {type: integer}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/live:
+    get:
+      tags: [Technician]
+      operationId: getDeviceLive
+      summary: The small polling document of the device page (Phase 1)
+      description: |
+        Status, the latest gauges, the checks, open alert and job counts and the poll interval the server wants (`poll_s` doubles at load-shedding
+        level 1 and is 0 from level 2). A missing reading is null, never 0. The weak `ETag` changes with a new check-in, a check change, an alert
+        or a job; send it back as `If-None-Match` and an unchanged device answers 304 with no body. Needs `rmm.device.view`.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: If-None-Match, in: header, schema: {type: string}}
+      responses:
+        '200':
+          description: The document
+          headers: {ETag: {schema: {type: string}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/DeviceLive'}}}
+        '304': {description: Unchanged, headers: {ETag: {schema: {type: string}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/network:
+    get:
+      tags: [Technician]
+      operationId: getDeviceNetwork
+      summary: Current network rate against the peak of the last hours (Phase 1)
+      description: |
+        Bytes per second. `current` is the last reading the device sent; `peak`, `avg` and `peak_at` come from the metric history of the edition's
+        sink and are null when `history` is false (the sink keeps no history, or the device has no asset).
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: hours, in: query, schema: {type: integer, minimum: 1, maximum: 720, default: 24}}
+      responses:
+        '200':
+          description: Network
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [window_hours, history, rx, tx]
+                properties:
+                  window_hours: {type: integer}
+                  history: {type: boolean}
+                  rx: {$ref: '#/components/schemas/NetworkSide'}
+                  tx: {$ref: '#/components/schemas/NetworkSide'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/tags:
+    get:
+      tags: [Technician]
+      operationId: listTags
+      summary: Every tag with its device count (Phase 1)
+      description: The count is of live devices in the caller's clients.
+      security: [{userToken: []}]
+      responses:
+        '200':
+          description: Tags
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/Tag'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    post:
+      tags: [Technician]
+      operationId: createTag
+      summary: Create a tag (Phase 1)
+      description: Needs `rmm.device.manage` as a role. Names are unique without regard to case; creating an existing name returns it. At most 1000 tags.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, maxLength: 60}
+                color: {type: string, description: 'Empty or #rrggbb'}
+                description: {type: string, maxLength: 200}
+      responses:
+        '201':
+          description: The tag
+          content: {application/json: {schema: {type: object, properties: {tag: {$ref: '#/components/schemas/Tag'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/tags/{tag_id}:
+    patch:
+      tags: [Technician]
+      operationId: updateTag
+      summary: Rename or recolor a tag (Phase 1)
+      description: Needs `rmm.device.manage` as a role. `PUT` is accepted as well.
+      security: [{userToken: []}]
+      parameters:
+        - {name: tag_id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, maxLength: 60}
+                color: {type: string}
+                description: {type: string, maxLength: 200}
+      responses:
+        '200':
+          description: The tag
+          content: {application/json: {schema: {type: object, properties: {tag: {$ref: '#/components/schemas/Tag'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Technician]
+      operationId: deleteTag
+      summary: Delete a tag (Phase 1)
+      description: Needs `rmm.device.manage` as a role. The tag is taken off every device and group.
+      security: [{userToken: []}]
+      parameters:
+        - {name: tag_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: Deleted, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/groups:
+    get:
+      tags: [Technician]
+      operationId: listGroups
+      summary: Every device group with its tags and member count (Phase 1)
+      description: The member count is of live devices in the caller's clients.
+      security: [{userToken: []}]
+      responses:
+        '200':
+          description: Groups
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/Group'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    post:
+      tags: [Technician]
+      operationId: createGroup
+      summary: Create a device group (Phase 1)
+      description: Needs `rmm.device.manage` as a role. A group is the devices added to it by hand (at most 5000) plus every device carrying one of its tags. At most 500 groups.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, maxLength: 100}
+                description: {type: string, maxLength: 200}
+      responses:
+        '201':
+          description: The group
+          content: {application/json: {schema: {type: object, properties: {group: {$ref: '#/components/schemas/Group'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/groups/{group_id}:
+    get:
+      tags: [Technician]
+      operationId: getGroup
+      summary: A group and its devices in the caller's clients (Phase 1)
+      security: [{userToken: []}]
+      parameters:
+        - {name: group_id, in: path, required: true, schema: {type: integer}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 100}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        '200':
+          description: The group
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [group, devices, total]
+                properties:
+                  group: {$ref: '#/components/schemas/Group'}
+                  devices: {type: array, items: {$ref: '#/components/schemas/DeviceSummary'}}
+                  total: {type: integer}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    patch:
+      tags: [Technician]
+      operationId: updateGroup
+      summary: Rename a group (Phase 1)
+      description: Needs `rmm.device.manage` as a role. `PUT` is accepted as well.
+      security: [{userToken: []}]
+      parameters:
+        - {name: group_id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, maxLength: 100}
+                description: {type: string, maxLength: 200}
+      responses:
+        '200':
+          description: The group
+          content: {application/json: {schema: {type: object, properties: {group: {$ref: '#/components/schemas/Group'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Technician]
+      operationId: deleteGroup
+      summary: Delete a group (Phase 1)
+      description: Needs `rmm.device.manage` as a role. The devices and tags are untouched.
+      security: [{userToken: []}]
+      parameters:
+        - {name: group_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: Deleted, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/groups/{group_id}/devices:
+    post:
+      tags: [Technician]
+      operationId: addGroupDevices
+      summary: Add devices to a group by hand (Phase 1)
+      description: Needs `rmm.device.manage` as a role and for every device's client. One device the caller cannot manage (or that does not exist) refuses the whole request with the same 404.
+      security: [{userToken: []}]
+      parameters:
+        - {name: group_id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_ids]
+              properties:
+                device_ids: {type: array, items: {type: integer}}
+      responses:
+        '200': {description: Added, content: {application/json: {schema: {type: object, properties: {added: {type: integer}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/groups/{group_id}/devices/{device_id}:
+    delete:
+      tags: [Technician]
+      operationId: removeGroupDevice
+      summary: Remove a device added by hand (Phase 1)
+      security: [{userToken: []}]
+      parameters:
+        - {name: group_id, in: path, required: true, schema: {type: integer}}
+        - {name: device_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: Removed, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/groups/{group_id}/tags:
+    put:
+      tags: [Technician]
+      operationId: setGroupTags
+      summary: Replace the tags a group follows (Phase 1)
+      description: Needs `rmm.device.manage` as a role. A device carrying any of the tags is a member. At most 50 tags. `POST` is accepted as well.
+      security: [{userToken: []}]
+      parameters:
+        - {name: group_id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tag_ids]
+              properties:
+                tag_ids: {type: array, items: {type: integer}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/software:
+    get:
+      tags: [Technician]
+      operationId: listFleetSoftware
+      summary: Software across the fleet in the caller's clients (Phase 1)
+      description: Grouped by name and source, most widespread first, with how many devices run it and how many different versions are out there.
+      security: [{userToken: []}]
+      parameters:
+        - {name: q, in: query, description: Part of the software name, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        '200':
+          description: Software
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, total]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        source: {type: string}
+                        devices: {type: integer}
+                        versions: {type: integer}
+                  total: {type: integer}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/software/outdated:
+    get:
+      tags: [Technician]
+      operationId: listOutdatedSoftware
+      summary: Devices running a version older than a minimum (Phase 1)
+      description: |
+        `name` matches part of the software name; versions are compared with a forgiving comparison (leading epoch ignored, digit runs as numbers,
+        letter runs as pre-release markers), which is not a package manager's ordering. One row per device and item, at most `limit` rows.
+      security: [{userToken: []}]
+      parameters:
+        - {name: name, in: query, required: true, schema: {type: string}}
+        - {name: min_version, in: query, required: true, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
+      responses:
+        '200':
+          description: Outdated installs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        device_id: {type: integer}
+                        hostname: {type: string}
+                        client_id: {type: integer}
+                        asset_id: {type: [integer, 'null']}
+                        name: {type: string}
+                        source: {type: string}
+                        version: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
 components:
   securitySchemes:
     deviceAuth:
@@ -515,6 +1070,15 @@ components:
             version: {type: string}
             state: {type: string, enum: [ok, failed, rolled_back]}
             detail: {type: string}
+        platform: {type: string, enum: [windows, linux], description: 'Optional, additive (agent 0.1.0-beta.2 and later)'}
+        arch: {type: string, enum: [amd64, arm64], description: Optional, additive}
+        capabilities:
+          type: array
+          maxItems: 64
+          items: {type: string, maxLength: 64}
+          description: 'Optional, additive. `job:<type>`, `check:<type>` and, since Phase 1, `software_inventory`. A list that is not usable is ignored, never an error.'
+        software:
+          $ref: '#/components/schemas/SoftwareReport'
     CheckinResponse:
       type: object
       required: [ok, status, next_check_in_s, jobs_pending, config, server_time, signing_key_id]
@@ -536,6 +1100,43 @@ components:
             min_version: {type: string}
         server_time: {type: string, format: date-time}
         signing_key_id: {type: string}
+        features:
+          type: array
+          items: {type: string, enum: [software_inventory]}
+          description: 'Phase 1, additive. Present only for a device that announced `software_inventory` while the `inventory_software` sub-switch is on; the agent sends `software` only after it has seen it'
+        resync:
+          type: array
+          items: {type: string, enum: [software]}
+          description: 'Phase 1, additive. Present only together with `features`, when the module wants a full list (a refused delta, a mismatch, load shedding, a technician refresh)'
+    SoftwareReport:
+      type: object
+      required: [mode, hash]
+      description: 'See PROTOCOL.md 3.2.1. At most 5000 items; the agent sends at most 3000.'
+      properties:
+        mode: {type: string, enum: [full, delta]}
+        hash: {type: string, pattern: '^[0-9a-f]{64}$', description: Hash of the complete list after this report}
+        base_hash: {type: string, pattern: '^[0-9a-f]{64}$', description: 'delta only: the hash the delta applies to'}
+        count: {type: integer}
+        truncated: {type: boolean, description: 'The agent cut the list at its caps; absent items are then not treated as removed'}
+        items:
+          type: array
+          maxItems: 5000
+          items:
+            type: object
+            required: [name, source]
+            properties:
+              name: {type: string, maxLength: 200}
+              version: {type: string, maxLength: 100}
+              publisher: {type: string, maxLength: 200}
+              source: {type: string, enum: [registry, registry32, appx, dpkg, rpm, snap, flatpak]}
+              installed: {type: string, format: date}
+        removed:
+          type: array
+          items:
+            type: object
+            properties:
+              source: {type: string}
+              name: {type: string}
     Job:
       type: object
       required: [job_id, device_id, attempt, type, script, params, timeout_s, max_output_bytes, issued_at, expires_at, signature]
@@ -645,3 +1246,111 @@ components:
         timeout_s: {type: integer}
         destructive: {type: boolean}
         confirm: {type: boolean, description: 'Required for reboot and every destructive job'}
+    SoftwareItem:
+      type: object
+      properties:
+        name: {type: string}
+        version: {type: string}
+        publisher: {type: [string, 'null']}
+        source: {type: string, enum: [registry, registry32, appx, dpkg, rpm, snap, flatpak]}
+        installed_on: {type: [string, 'null'], format: date}
+        first_seen_at: {type: string, format: date-time}
+        last_seen_at: {type: string, format: date-time}
+        removed_at: {type: [string, 'null'], format: date-time}
+    SoftwareState:
+      type: object
+      properties:
+        reported: {type: boolean}
+        count: {type: integer}
+        reported_at: {type: [string, 'null'], format: date-time}
+        full_at: {type: [string, 'null'], format: date-time}
+        resync_requested: {type: boolean}
+        capable: {type: boolean, description: The device announced `software_inventory`}
+    SoftwareChange:
+      type: object
+      properties:
+        name: {type: string}
+        source: {type: string}
+        change: {type: string, enum: [installed, upgraded, downgraded, removed]}
+        old_version: {type: [string, 'null']}
+        new_version: {type: [string, 'null']}
+        publisher: {type: [string, 'null']}
+        at: {type: string, format: date-time}
+    Tag:
+      type: object
+      properties:
+        tag_id: {type: integer}
+        name: {type: string}
+        color: {type: string}
+        description: {type: string}
+        device_count: {type: integer, description: Only in the tag list}
+    DeviceTag:
+      allOf:
+        - {$ref: '#/components/schemas/Tag'}
+        - type: object
+          properties:
+            source: {type: string, enum: [manual, auto]}
+    Group:
+      type: object
+      properties:
+        group_id: {type: integer}
+        name: {type: string}
+        description: {type: string}
+        tags: {type: array, items: {type: object, properties: {tag_id: {type: integer}, name: {type: string}}}}
+        device_count: {type: integer}
+    NetworkSide:
+      type: object
+      properties:
+        current: {type: [number, 'null'], description: Bytes per second, the last reading}
+        peak: {type: [number, 'null']}
+        avg: {type: [number, 'null']}
+        peak_at: {type: [string, 'null'], format: date-time}
+    DeviceLive:
+      type: object
+      properties:
+        v: {type: integer, const: 1}
+        state: {type: string, enum: [online, offline, stale, never]}
+        last_checkin_at: {type: [string, 'null'], format: date-time}
+        age_s: {type: [integer, 'null']}
+        next_check_in_s: {type: integer}
+        agent_version: {type: string}
+        uptime_s: {type: [integer, 'null']}
+        pending_reboot: {type: [boolean, 'null']}
+        gauges:
+          type: object
+          properties:
+            sampled_at: {type: [string, 'null'], format: date-time}
+            cpu_pct: {type: [number, 'null']}
+            mem_pct: {type: [number, 'null']}
+            disks:
+              type: array
+              items:
+                type: object
+                properties:
+                  mount: {type: string}
+                  used_pct: {type: [number, 'null']}
+                  free_bytes: {type: [integer, 'null']}
+                  total_bytes: {type: [integer, 'null']}
+            net_rx_bps: {type: [number, 'null']}
+            net_tx_bps: {type: [number, 'null']}
+        checks:
+          type: array
+          items:
+            type: object
+            properties:
+              key: {type: string}
+              status: {type: string}
+              detail: {type: string}
+              since: {type: [string, 'null'], format: date-time}
+              alert_id: {type: [integer, 'null']}
+        alerts:
+          type: object
+          properties:
+            open: {type: integer}
+            worst: {type: [string, 'null'], enum: [warning, error, null]}
+        jobs:
+          type: object
+          properties: {queued: {type: integer}, running: {type: integer}}
+        poll_s: {type: integer}
+        shed: {type: integer}
+        seq: {type: integer}
