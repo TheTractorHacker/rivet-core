@@ -359,11 +359,46 @@ func (a *Agent) applySkew(t api.ServerTime) {
 func (a *Agent) sample(ctx context.Context) {
 	st, _ := a.o.Store.LoadState()
 	m := a.col.Metrics(ctx)
-	checks := a.runner.Run(ctx, st.Checks, a.now())
+	checks := a.runner.Run(ctx, applyPolicyToChecks(st.Checks, st.PolicyFeatures), a.now())
 	checks = append(checks, updateCheck(st, a.o.Version))
 	if _, err := a.ring.Append(a.stamp(), &m, checks); err != nil {
 		a.log.Warn("could not persist sample", "err", err)
 	}
+}
+
+// cloneFeatures copies a feature map (nil stays nil).
+func cloneFeatures(in map[string]bool) map[string]bool {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+// applyPolicyToChecks enforces the policy's check toggles locally, as a second
+// line behind the server (which already leaves such checks out of the list):
+// "checks": false runs none, "script_checks": false skips the checks that run a
+// script. An absent toggle means allowed.
+func applyPolicyToChecks(specs []store.CheckSpec, features map[string]bool) []store.CheckSpec {
+	if len(features) == 0 {
+		return specs
+	}
+	if v, ok := features["checks"]; ok && !v {
+		return nil
+	}
+	if v, ok := features["script_checks"]; ok && !v {
+		out := make([]store.CheckSpec, 0, len(specs))
+		for _, c := range specs {
+			if c.Type != "script" {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	return specs
 }
 
 func updateCheck(st store.State, version string) api.CheckResult {
@@ -399,6 +434,7 @@ func Capabilities() []string {
 	if collect.SoftwareSupported() {
 		out = append(out, featureSoftware)
 	}
+	out = append(out, featurePolicies) // this agent applies the effective policy of config.policy
 	sort.Strings(out)
 	return out
 }
@@ -628,6 +664,12 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 			st.Checks = toStoreChecks(resp.Config.Checks)
 			if resp.Config.CollectIntervalS > 0 {
 				st.CollectIntervalS = resp.Config.CollectIntervalS
+			}
+			// The policy block only counts when the server also offered the feature: a server that never heard of policies sends neither.
+			if p := resp.Config.Policy; p != nil && hasFeature(resp.Features, featurePolicies) {
+				st.PolicyVersion, st.PolicyApplied, st.PolicyFeatures = p.Version, p.Applied, cloneFeatures(p.Features)
+			} else {
+				st.PolicyVersion, st.PolicyApplied, st.PolicyFeatures = "", false, nil
 			}
 		}
 		if resp.NextCheckInS > 0 {
@@ -950,6 +992,13 @@ func Describe(st store.State, cfg store.Config, tokenPresent bool) string {
 	}
 	if st.UpdateFailure != nil {
 		fmt.Fprintf(&b, "update:      FAILED %s: %s\n", st.UpdateFailure.Version, st.UpdateFailure.Reason)
+	}
+	if st.PolicyVersion != "" {
+		applied := "no policy applies (instance defaults)"
+		if st.PolicyApplied {
+			applied = "applied"
+		}
+		fmt.Fprintf(&b, "policy:      %s (%s)\n", trunc(st.PolicyVersion, 12), applied)
 	}
 	return b.String()
 }

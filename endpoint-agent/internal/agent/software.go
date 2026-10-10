@@ -24,6 +24,7 @@ import (
 
 const (
 	featureSoftware   = "software_inventory"
+	featurePolicies   = "policies"
 	resyncSoftware    = "software"
 	softwareEvery     = time.Hour        // collection interval
 	softwareFullMax   = 24 * time.Hour   // a full list at least this often

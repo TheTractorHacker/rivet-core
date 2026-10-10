@@ -52,9 +52,21 @@ func (c *CheckSpec) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// PolicyInfo is the effective policy the server resolved for this device
+// (config.policy, sent only to an agent that announced the "policies"
+// capability). The checks and intervals it produced are already in the rest of
+// the config; this block names the version and carries the feature toggles the
+// agent also enforces locally.
+type PolicyInfo struct {
+	Version  string          `json:"version"`
+	Applied  bool            `json:"applied"`
+	Features map[string]bool `json:"features,omitempty"`
+}
+
 type ServerConfig struct {
 	Checks           []CheckSpec `json:"checks"`
 	CollectIntervalS int         `json:"collect_interval_s,omitempty"`
+	Policy           *PolicyInfo `json:"policy,omitempty"`
 }
 
 type EnrollResponse struct {
