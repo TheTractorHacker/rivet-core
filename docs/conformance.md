@@ -28,6 +28,8 @@ installed (Core's own checkout, or the checkout the edition bootstraps, see "Wir
 | `RmmAssetsConformanceTestCase` | `Rmm\Contracts\RmmAssetsInterface` | `assets()`, `createAsset()`, `readAsset()` | serial exact, MAC ignoring case and `-`/`:` (one row per asset), hostname case-insensitive, archived assets excluded, limits and row shape, `find()`, `createForDevice()` (Server/Laptop, Active, "Windows <os>"), `fillBlanks()` never overwrites, `moveToClient()` moves only that asset |
 | `RmmBridgeConformanceTestCase` | `Rmm\Contracts\RmmBridgeInterface` | `bridge()`, `createAsset()`, `readLink()`, `backdateStatusChange()`, `readAlert()`, `countAlerts()`, `createScript()`, `readRemoteSessions()` | integration idempotent per type; link upsert/move/remove; `applyHealth()` false without a link and moves the status-change time only on a change; `markOffline()` flips only online links of the given keys; alerts idempotent per (integration, key), resolve once, reassign only open alerts of the asset; only enabled PowerShell scripts; session log fields as given |
 | `SecretBoxConformanceTestCase` | `Rmm\Contracts\SecretBoxInterface` | `box()` | round trip (short, unicode, binary, 10 KB), ciphertext hides the plaintext, `decrypt()` of garbage or a truncated value is `''` and never throws |
+| `EnvelopeConformanceTestCase` | `Crypto\EnvelopeInterface` | `make(KeyRing, array $legacyReaders)` | round trip (empty, `'0'`, unicode, binary, NUL, 1 MB); `v3:<kid>:` names the active kid and hides the plaintext; a fresh nonce for every seal, also across instances sharing a key; wrong key, wrong context (five near-misses) and an empty context are refused; every one-character change, every truncation and extension, a flipped tag bit on an empty plaintext and non-canonical base64 are refused with a `CryptoException`; unknown kid is `UnknownKeyId`; an empty ring is `KeyUnavailable` for sealing and for opening; a ring without an active key opens but does not seal; rotation keeps old values readable and `rewrap()` moves them (and fails for an unreadable value); `needsRewrap('')` is false; ENC2 legacy values are read, labelled `legacy:ENC2` and moved to v3; garbage is `DecryptionFailed` |
+| `RewrapSourceConformanceTestCase` | `Crypto\RewrapSource` | `source(array $rows)`, `stored($source, $id)` | stable `name()`; paging with limits 1, 2, 3 and 100 visits every row exactly once even when ids sort differently as numbers and as strings (2, 10, 100, 9, 1); stable order; the limit is respected; the cursor is exclusive; empty source and the end give `[]`; items carry the stored value and context; reading has no side effects; `replace()` is compare-and-set (true and visible on a match, false and unchanged on a stale expectation or an unknown id, the second of two writers loses), touches no other row and creates nothing; replacing while paging neither skips nor repeats rows |
 | `RmmMetricSinkConformanceTestCase` | `Rmm\Contracts\RmmMetricSinkInterface` | `sink()`, optionally `stored()` | never throws; when samples are observable: valid kept, out-of-range utilization dropped not clamped |
 | `RmmMetricReaderConformanceTestCase` | `Rmm\Contracts\RmmMetricReaderInterface` (on the same object as the sink) | `store()` | newest reading wins whatever the arrival order; keys and instances separate; `peak()` min/max/mean of an hour-granular window that excludes earlier hours; `series()` oldest first, one point per hour; out-of-range values never appear |
 | `RmmEventsConformanceTestCase` | `Rmm\Contracts\RmmEventsInterface` | `events()`, optionally `received()` | accepts every `RmmEvent` id with the documented payload; when observable: payloads arrive unchanged (null and false kept) and in order |
@@ -114,6 +116,32 @@ final class TicketProblemLinkConformanceTest extends TicketProblemLinkConformanc
         return $r === null || $r['ticket_problem_id'] === null ? null : (int) $r['ticket_problem_id'];
     }
     protected function deleteTicket(int $id): void { $this->db()->execute('DELETE FROM tickets WHERE ticket_id = ?', [$id]); }
+}
+
+// Envelope: normally `new Envelope($ring, $legacyReaders)`; run it against any wrapper or decorator you put around it.
+final class EnvelopeConformanceTest extends EnvelopeConformanceTestCase
+{
+    protected function make(KeyRing $ring, array $legacyReaders = []): EnvelopeInterface { return new Envelope($ring, $legacyReaders); }
+}
+
+// Rewrap source: seed a scratch table with exactly these rows (integer ids arrive as numeric strings) and read a value back with a plain SELECT.
+final class SettingsRewrapSourceConformanceTest extends RewrapSourceConformanceTestCase
+{
+    protected function source(array $rows): RewrapSource
+    {
+        $this->db()->execute('DELETE FROM rc_conf_secrets');
+        foreach ($rows as $id => $row) {
+            $this->db()->execute('INSERT INTO rc_conf_secrets (id, secret, context) VALUES (?, ?, ?)', [(int) $id, $row['ciphertext'], $row['context']]);
+        }
+
+        return new SecretsRewrapSource($this->db());
+    }
+    protected function stored(RewrapSource $source, string $id): ?string
+    {
+        $r = $this->db()->fetchOne('SELECT secret FROM rc_conf_secrets WHERE id = ?', [(int) $id]);
+
+        return $r === null ? null : (string) $r['secret'];
+    }
 }
 
 // Redis: the SAME provider class, once pointed at the throwaway Redis, once at a port nothing listens on.
