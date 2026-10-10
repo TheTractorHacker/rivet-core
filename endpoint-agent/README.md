@@ -350,6 +350,20 @@ every check is included in every check-in. A failing collector gives `unknown`, 
 | `disk` | optional `mount` (all fixed disks when omitted), `warn_free_pct`, `fail_free_pct`, `warn_free_gb`, `fail_free_gb` (defaults 20% / 10% free) | worst matching mount |
 | `pending_reboot` | none | warn when CBS `RebootPending`, WU `RebootRequired` or `PendingFileRenameOperations` is set |
 | `script` | `script`, `timeout_s` (<= 120, default 30), `max_output_bytes` (<= 4096) | exit 0 ok, 1 warn, other fail, timeout/launch error unknown |
+| `cpu` | `window_s` (1-30, default 3), `warn_pct` 90, `fail_pct` 98 | busy percent over the window; `value` = percent |
+| `memory` | `metric` (`mem_used_pct`, `swap_used_pct` and `psi_some_avg10` on Linux), `warn_pct` 85, `fail_pct` 95 | `value` = percent |
+| `process` | `name`, `min_count` (default 1), `max_count` (0 = no maximum) | fail outside the count range; `value` = count (Linux: `/proc/*/comm`, Windows: `tasklist`) |
+| `port` | `host`, `port`, `timeout_ms` (3000), `warn_ms` | TCP connect from the device; fail when it does not connect; `value` = connect ms |
+| `ping` | `host`, `count` (3), `timeout_ms`, `warn_ms`, `fail_ms`, `warn_loss_pct` (1), `fail_loss_pct` (100) | system `ping` output parsed (iputils, busybox, Windows); `value` = average ms |
+| `http` | `url`, `method`, `expect_min`/`expect_max` (200-399), `timeout_ms`, `warn_ms`, `contains`, `verify_tls` (true), `follow_redirects`, `cert_warn_days` (14), `cert_fail_days` (3) | status, latency, text and the server certificate's days left; the detail never shows the query string; `value` = ms |
+| `cert` | exactly one of `paths` (files or directories of PEM/DER certificates), `store` (Windows, `LocalMachine\\My`), `host`+`port`; `warn_days` 30, `fail_days` 7 | soonest expiry; `value` = days left (negative when expired) |
+| `ntp` | `server` (`pool.ntp.org`), `timeout_ms`, `warn_ms` 1000, `fail_ms` 5000 | SNTP offset of this clock; `value` = absolute offset ms |
+| `smart` | optional `devices` (`/dev/sda`) | Linux `smartctl -H -j` (unknown when not installed), Windows `Get-PhysicalDisk` health |
+| `av` | `max_signature_age_days` (7), `require_realtime` (true) | Windows only: Defender service, real-time protection, signature age (`value` = days) |
+| `systemd_failed` | `ignore` (unit names, `prefix*`), `max_failed` (0) | Linux only: failed units; `value` = count |
+| `inodes` | optional `mount`, `warn_pct` 85, `fail_pct` 95 | Linux only: worst inode use of the mounts that have an inode table; `value` = percent |
+
+The extended types (everything from `cpu` down) are the RMM Phase 3 additions: the agent announces `check:<type>` for the ones that exist on its platform, the server offers a type only to an agent that announced it, and the result may carry a numeric `value` for the server's threshold tiers (`params.thresholds`, `params.flap`, `params.ignore_parent` are read by the server and ignored here). Parsers have fixture tests (`internal/collect/testdata/checks`); the Windows commands (`powershell.exe`, `tasklist`, `ping`) are cross-compiled and vetted, not run in CI.
 
 `agent_update` is always reported: `ok` ("agent 1.0.0") or `fail` with the last update failure.
 

@@ -13,7 +13,7 @@ info:
 
     **Technician endpoints** (`endpoint_devices`) need a user API token (the legacy shared key is refused by the edition) and are authorized
     on every call through the edition's access policy: abilities `rmm.device.view`, `rmm.job.run_saved`, `rmm.job.run_script`,
-    `rmm.job.reboot` and `rmm.remote.launch`, scoped to the device's client. A device outside the caller's clients is a 404, the same as a
+    `rmm.job.reboot`, `rmm.remote.launch` and (Phase 3) `rmm.alert.manage`, scoped to the device's client. A device outside the caller's clients is a 404, the same as a
     missing one. Their responses carry no cache or CORS headers (the edition front controller adds the latter).
 
     A switched-off module answers every device endpoint `503 module_disabled` with `Retry-After: 3600`; the technician API answers
@@ -912,6 +912,534 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/alerts:
+    get:
+      tags: [Technician]
+      operationId: listAlerts
+      summary: Alerts (Phase 3, `alerting` switch)
+      description: |
+        Core's record of each alert episode: severity (`warn` or `crit`), state (`open`, `acknowledged`, `resolved`), who acknowledged it,
+        the grouping key and the escalation clock. Scoped to the caller's clients. Newest active first.
+      security: [{userToken: []}]
+      parameters:
+        - {name: state, in: query, schema: {type: string, enum: [open, acknowledged, resolved, active]}}
+        - {name: severity, in: query, schema: {type: string, enum: [warn, crit]}}
+        - {name: device_id, in: query, schema: {type: integer}}
+        - {name: client_id, in: query, schema: {type: integer}}
+        - {name: check_key, in: query, schema: {type: string}}
+        - {name: group_key, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        '200':
+          description: Alerts
+          content:
+            application/json:
+              schema: {type: object, required: [items, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/Alert'}}, total: {type: integer}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/alerts/groups:
+    get:
+      tags: [Technician]
+      operationId: listAlertGroups
+      summary: Active alerts grouped by client and check (Phase 3)
+      description: One row per client and check key with the number of alerts and devices, the worst severity and the first and last opening time. Worst first.
+      security: [{userToken: []}]
+      responses:
+        '200':
+          description: Groups
+          content:
+            application/json:
+              schema: {type: object, required: [groups], properties: {groups: {type: array, items: {type: object, properties: {group_key: {type: string}, client_id: {type: integer}, check_key: {type: string}, alerts: {type: integer}, devices: {type: integer}, severity: {type: string, enum: [warn, crit]}, first_opened_at: {type: string, format: date-time}, last_opened_at: {type: string, format: date-time}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/alerts/{alert_id}:
+    get:
+      tags: [Technician]
+      operationId: getAlert
+      summary: One alert (Phase 3)
+      security: [{userToken: []}]
+      parameters:
+        - {name: alert_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: The alert
+          content:
+            application/json:
+              schema: {type: object, properties: {alert: {$ref: '#/components/schemas/Alert'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/alerts/{alert_id}/ack:
+    post:
+      tags: [Technician]
+      operationId: acknowledgeAlert
+      summary: Acknowledge an alert (Phase 3)
+      description: Stops the escalation of an open alert and tells the edition (`RmmEscalationInterface::acknowledgeAlert`). Needs `rmm.alert.manage` for the alert's client. Acknowledging twice is harmless; a resolved alert answers 409 `conflict`.
+      security: [{userToken: []}]
+      parameters:
+        - {name: alert_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: The alert
+          content:
+            application/json:
+              schema: {type: object, properties: {alert: {$ref: '#/components/schemas/Alert'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /endpoint_devices/alerts/{alert_id}/resolve:
+    post:
+      tags: [Technician]
+      operationId: resolveAlert
+      summary: Resolve an alert by hand (Phase 3)
+      description: Resolves the edition's alert (with its conservative ticket auto-close) and gives the check a fresh failure count, so a condition that is still bad opens a NEW episode after the debounce. Needs `rmm.alert.manage`.
+      security: [{userToken: []}]
+      parameters:
+        - {name: alert_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: The alert
+          content:
+            application/json:
+              schema: {type: object, properties: {alert: {$ref: '#/components/schemas/Alert'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/maintenance:
+    get:
+      tags: [Technician]
+      operationId: listMaintenanceWindows
+      summary: Maintenance windows (Phase 3)
+      description: |
+        A window mutes alerts (`mute`) or freezes check evaluation (`suppress`) for a scope: all devices, one client, one site, a group, a
+        tag or one device. `active_now` and `next_starts_at` are computed for the request time.
+      security: [{userToken: []}]
+      parameters:
+        - {name: scope_type, in: query, schema: {type: string, enum: [all, client, site, group, tag, device]}}
+        - {name: scope_id, in: query, schema: {type: integer}}
+        - {name: active, in: query, description: '1 = only windows open now', schema: {type: string}}
+      responses:
+        '200':
+          description: Windows
+          content:
+            application/json:
+              schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/MaintenanceWindow'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    post:
+      tags: [Technician]
+      operationId: createMaintenanceWindow
+      summary: Create a maintenance window (Phase 3)
+      description: |
+        One-time (`kind: once`, `starts_at`, `ends_at`) or recurring (`kind: recurring`, `recur_freq` daily/weekly/monthly,
+        `recur_interval`, `recur_days`, `local_start`, `duration_min`, `recur_from`, `recur_until`, `timezone`). A day number a month does
+        not have is clamped to the month's last day. A client or device scope needs `rmm.alert.manage` for that client; every other scope
+        needs `rmm.admin`. At most 500 windows.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MaintenanceWindowInput'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {type: object, properties: {window: {$ref: '#/components/schemas/MaintenanceWindow'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/maintenance/{window_id}:
+    get:
+      tags: [Technician]
+      operationId: getMaintenanceWindow
+      summary: One maintenance window (Phase 3)
+      security: [{userToken: []}]
+      parameters:
+        - {name: window_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: The window
+          content:
+            application/json:
+              schema: {type: object, properties: {window: {$ref: '#/components/schemas/MaintenanceWindow'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    patch:
+      tags: [Technician]
+      operationId: updateMaintenanceWindow
+      summary: Change a maintenance window (Phase 3)
+      description: |
+        A partial update: the stored window is merged with the body and validated as a whole. PUT is the same.
+      security: [{userToken: []}]
+      parameters:
+        - {name: window_id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MaintenanceWindowInput'}
+      responses:
+        '200':
+          description: The window
+          content:
+            application/json:
+              schema: {type: object, properties: {window: {$ref: '#/components/schemas/MaintenanceWindow'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Technician]
+      operationId: deleteMaintenanceWindow
+      summary: Delete a maintenance window (Phase 3)
+      description: Deleting an open window ends it (`rmm.maintenance.ended`).
+      security: [{userToken: []}]
+      parameters:
+        - {name: window_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ok'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/escalation_policies:
+    get:
+      tags: [Technician]
+      operationId: listEscalationPolicies
+      summary: Escalation policies (Phase 3)
+      description: Steps notify targets N minutes after an alert opened while it is still unacknowledged; the last step may repeat. The most specific enabled policy containing the device (device, group, tag, site, client, all) governs an alert. Delivery is the edition's (`RmmEscalationInterface`).
+      security: [{userToken: []}]
+      responses:
+        '200':
+          description: Policies
+          content:
+            application/json:
+              schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/EscalationPolicy'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    post:
+      tags: [Technician]
+      operationId: createEscalationPolicy
+      summary: Create an escalation policy (Phase 3)
+      description: |
+        Needs `rmm.admin`. At most 200 policies, 10 steps of 10 targets. Target types: user, group, email, chat, webhook.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EscalationPolicyInput'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {type: object, properties: {policy: {$ref: '#/components/schemas/EscalationPolicy'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/escalation_policies/{policy_id}:
+    get:
+      tags: [Technician]
+      operationId: getEscalationPolicy
+      summary: One escalation policy (Phase 3)
+      security: [{userToken: []}]
+      parameters:
+        - {name: policy_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: The policy
+          content:
+            application/json:
+              schema: {type: object, properties: {policy: {$ref: '#/components/schemas/EscalationPolicy'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    patch:
+      tags: [Technician]
+      operationId: updateEscalationPolicy
+      summary: Change an escalation policy (Phase 3)
+      description: Needs `rmm.admin`. `steps`, when present, replaces all steps. PUT is the same.
+      security: [{userToken: []}]
+      parameters:
+        - {name: policy_id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EscalationPolicyInput'}
+      responses:
+        '200':
+          description: The policy
+          content:
+            application/json:
+              schema: {type: object, properties: {policy: {$ref: '#/components/schemas/EscalationPolicy'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Technician]
+      operationId: deleteEscalationPolicy
+      summary: Delete an escalation policy (Phase 3)
+      description: Needs `rmm.admin`. Open alerts governed by it stop escalating.
+      security: [{userToken: []}]
+      parameters:
+        - {name: policy_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ok'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/alerting/settings:
+    get:
+      tags: [Technician]
+      operationId: getAlertingSettings
+      summary: Alerting switch and storm-control limits (Phase 3)
+      description: |
+        `alerting_enabled` is the `alerting` sub-switch of the module. Limits: at most `storm_*_max` alerts may open per client and in
+        total inside `storm_*_window_s`; 0 turns a cap off.
+      security: [{userToken: []}]
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlertingSettings'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    put:
+      tags: [Technician]
+      operationId: updateAlertingSettings
+      summary: Change the storm-control limits (Phase 3)
+      description: Needs `rmm.admin`. PATCH is the same.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, properties: {storm_global_max: {type: integer, minimum: 0}, storm_global_window_s: {type: integer, minimum: 60}, storm_client_max: {type: integer, minimum: 0}, storm_client_window_s: {type: integer, minimum: 60}}}
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlertingSettings'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/check_types:
+    get:
+      tags: [Technician]
+      operationId: listCheckTypes
+      summary: The check type catalog (Phase 3)
+      description: |
+        Every check type: where it runs, whether it reports a numeric `value` (so thresholds apply), the unit, and the schema of its
+        params. The four original types are `legacy` and have no field schema. A Phase 3 type is offered only to a device that announced
+        `check:<type>`.
+      security: [{userToken: []}]
+      responses:
+        '200':
+          description: Types
+          content:
+            application/json:
+              schema: {type: object, properties: {data: {type: array, items: {type: object, properties: {type: {type: string}, legacy: {type: boolean}, platforms: {type: array, items: {type: string, enum: [windows, linux]}}, reports_value: {type: boolean}, unit: {type: [string, 'null']}, fields: {type: object}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/alerts:
+    get:
+      tags: [Technician]
+      operationId: listDeviceAlerts
+      summary: Alerts of one device (Phase 3)
+      description: Same filters and shape as the fleet list.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '200':
+          description: Alerts
+          content:
+            application/json:
+              schema: {type: object, required: [items, total], properties: {items: {type: array, items: {$ref: '#/components/schemas/Alert'}}, total: {type: integer}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/alerting:
+    get:
+      tags: [Technician]
+      operationId: getDeviceAlerting
+      summary: Why a bad check has no alert (Phase 3)
+      description: The maintenance windows open for the device, its parent and any down ancestor, and per check the threshold tier, the last reading, the flap state and why an alert is held back (`maintenance`, `maintenance_suppress`, `dependency`) or still waiting for the debounce.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '200':
+          description: The device view
+          content:
+            application/json:
+              schema: {type: object, properties: {alerting_enabled: {type: boolean}, maintenance: {type: array, items: {$ref: '#/components/schemas/MaintenanceWindow'}}, muted: {type: boolean}, suppressed: {type: boolean}, parent: {type: [object, 'null']}, down_ancestor: {type: [object, 'null']}, checks: {type: array, items: {type: object, properties: {check_key: {type: string}, status: {type: string}, alert_id: {type: [integer, 'null']}, tier: {type: [string, 'null']}, pending_tier: {type: [string, 'null']}, last_value: {type: [number, 'null']}, flapping: {type: boolean}, has_override: {type: boolean}, held_by: {type: [string, 'null']}, waiting_for_debounce: {type: boolean}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/maintenance:
+    get:
+      tags: [Technician]
+      operationId: getDeviceMaintenance
+      summary: Maintenance windows open for a device now (Phase 3)
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '200':
+          description: Windows
+          content:
+            application/json:
+              schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/MaintenanceWindow'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/parent:
+    get:
+      tags: [Technician]
+      operationId: getDeviceParent
+      summary: A device's parent and children (Phase 3)
+      description: While the parent is offline (no check-in for `offline_after_s`) alerts of its children do not open. Up to 5 levels count.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '200':
+          description: Parent and children
+          content:
+            application/json:
+              schema: {type: object, properties: {parent: {type: [object, 'null']}, children: {type: array, items: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    put:
+      tags: [Technician]
+      operationId: setDeviceParent
+      summary: Set a device's parent (Phase 3)
+      description: Needs `rmm.alert.manage`. The parent must belong to the same client; a loop is refused. POST is the same.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [parent_device_id], properties: {parent_device_id: {type: integer}}}
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: {type: object, properties: {parent: {type: object}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Technician]
+      operationId: clearDeviceParent
+      summary: Remove a device's parent (Phase 3)
+      description: Needs `rmm.alert.manage`.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ok'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/checks/{key}/thresholds:
+    get:
+      tags: [Technician]
+      operationId: getCheckThresholds
+      summary: Thresholds of one check on a device (Phase 3)
+      description: The definition's `params.thresholds`, the per-device override, the effective result and the live tier, last reading and flap state.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: key, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Thresholds
+          content:
+            application/json:
+              schema: {type: object, properties: {check_key: {type: string}, type: {type: string}, reports_value: {type: boolean}, defined: {type: [object, 'null']}, override: {type: [object, 'null']}, effective: {type: [object, 'null']}, state: {type: [object, 'null']}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    put:
+      tags: [Technician]
+      operationId: setCheckThresholds
+      summary: Override the thresholds of a check on one device (Phase 3)
+      description: Needs `rmm.device.manage`. The body replaces fields of the definition's thresholds (a field set to null is removed); the merged result must be valid. The definition must declare `thresholds`. An empty object (or DELETE) removes the override. PATCH is the same.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: key, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Thresholds'}
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: {type: object, properties: {override: {type: object}, effective: {type: object}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    delete:
+      tags: [Technician]
+      operationId: clearCheckThresholds
+      summary: Remove the threshold override of a check on a device (Phase 3)
+      description: Needs `rmm.device.manage`.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: key, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ok'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
 components:
   securitySchemes:
     deviceAuth:
@@ -953,6 +1481,9 @@ components:
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
     Invalid:
       description: 'Invalid body or parameters (`invalid`)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    Conflict:
+      description: 'The request does not fit the state of the record (`conflict`)'
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
     TlsRequired:
       description: 'Plain http (`tls_required`)'
@@ -1023,7 +1554,7 @@ components:
             required: [key, type, params, interval_s, signature]
             properties:
               key: {type: string}
-              type: {type: string, enum: [service, disk, pending_reboot, script]}
+              type: {type: string, enum: [service, disk, pending_reboot, script, cpu, memory, process, port, ping, http, cert, ntp, smart, av, systemd_failed, inodes], description: 'The four original types go to every agent; a Phase 3 type only to an agent that announced `check:<type>`'}
               params: {type: object}
               interval_s: {type: integer}
               signature: {type: string, description: Ed25519 over the canonical JSON of the other fields}
@@ -1060,6 +1591,7 @@ components:
               key: {type: string}
               status: {type: string, enum: [ok, warn, fail, unknown]}
               detail: {type: string}
+              value: {type: number, description: 'Optional, additive (Phase 3): the number the check measured (ms, percent, days, count). With server-side thresholds the server compares it; absent when nothing was measured. Ignored by a server without thresholds.'}
         buffered:
           type: array
           maxItems: 100
@@ -1354,3 +1886,151 @@ components:
         poll_s: {type: integer}
         shed: {type: integer}
         seq: {type: integer}
+    Thresholds:
+      type: object
+      description: 'Whole numbers only (the signed check refuses decimals). A tier whose limit is missing never triggers. `hysteresis` keeps a tier until the value is that far back; `for_samples` and `for_minutes` delay RAISING a tier (both must hold); lowering is immediate. With a duration set the alert opens when the tier is reached, replacing the failure debounce.'
+      properties:
+        warn: {$ref: '#/components/schemas/ThresholdLimit'}
+        crit: {$ref: '#/components/schemas/ThresholdLimit'}
+        hysteresis: {type: integer, minimum: 0, maximum: 1000, default: 0}
+        for_samples: {type: integer, minimum: 1, maximum: 100, default: 1}
+        for_minutes: {type: integer, minimum: 0, maximum: 1440, default: 0}
+    ThresholdLimit:
+      type: object
+      required: [op, value]
+      properties:
+        op: {type: string, enum: [gt, gte, lt, lte]}
+        value: {type: integer}
+    Alert:
+      type: object
+      properties:
+        alert_id: {type: integer}
+        device_id: {type: integer}
+        hostname: {type: string}
+        asset_id: {type: [integer, 'null']}
+        client_id: {type: integer}
+        check_key: {type: string}
+        episode: {type: integer}
+        group_key: {type: string}
+        severity: {type: string, enum: [warn, crit]}
+        state: {type: string, enum: [open, acknowledged, resolved]}
+        message: {type: string}
+        opened_at: {type: string, format: date-time}
+        acknowledged_by: {type: [integer, 'null']}
+        acknowledged_at: {type: [string, 'null'], format: date-time}
+        resolved_at: {type: [string, 'null'], format: date-time}
+        resolved_by: {type: [integer, 'null']}
+        resolve_reason: {type: [string, 'null'], enum: [recovered, manual, device_retired, null]}
+        policy_id: {type: [integer, 'null']}
+        escalation_step: {type: integer}
+        notices_sent: {type: integer}
+        next_escalation_at: {type: [string, 'null'], format: date-time}
+        last_notified_at: {type: [string, 'null'], format: date-time}
+    MaintenanceWindowInput:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string, maxLength: 100}
+        enabled: {type: boolean, default: true}
+        mode: {type: string, enum: [mute, suppress], default: mute}
+        scope_type: {type: string, enum: [all, client, site, group, tag, device], default: all}
+        scope_id: {type: integer}
+        timezone: {type: string, default: UTC, description: IANA name}
+        kind: {type: string, enum: [once, recurring], default: once}
+        starts_at: {type: string, description: 'RFC 3339, or YYYY-MM-DD HH:MM in `timezone` (once)'}
+        ends_at: {type: string}
+        recur_freq: {type: string, enum: [daily, weekly, monthly]}
+        recur_interval: {type: integer, minimum: 1, maximum: 52, default: 1}
+        recur_days: {type: string, description: 'weekly: ISO weekdays "1,3,5"; monthly: day numbers and/or "last", e.g. "1,15,last"'}
+        local_start: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'}
+        duration_min: {type: integer, minimum: 1, maximum: 10080}
+        recur_from: {type: string, format: date}
+        recur_until: {type: string, format: date}
+        note: {type: string, maxLength: 300}
+    MaintenanceWindow:
+      type: object
+      properties:
+        window_id: {type: integer}
+        name: {type: string}
+        enabled: {type: boolean}
+        mode: {type: string, enum: [mute, suppress]}
+        scope_type: {type: string}
+        scope_id: {type: integer}
+        kind: {type: string}
+        timezone: {type: string}
+        starts_at: {type: [string, 'null'], format: date-time}
+        ends_at: {type: [string, 'null'], format: date-time}
+        recur_freq: {type: [string, 'null']}
+        recur_interval: {type: integer}
+        recur_days: {type: string}
+        local_start: {type: string}
+        duration_min: {type: integer}
+        recur_from: {type: [string, 'null']}
+        recur_until: {type: [string, 'null']}
+        note: {type: string}
+        active_now: {type: boolean}
+        current_ends_at: {type: [string, 'null'], format: date-time}
+        next_starts_at: {type: [string, 'null'], format: date-time}
+        created_by: {type: integer}
+        created_at: {type: string, format: date-time}
+    EscalationPolicyInput:
+      type: object
+      required: [name, steps]
+      properties:
+        name: {type: string, maxLength: 100}
+        enabled: {type: boolean, default: true}
+        scope_type: {type: string, enum: [all, client, site, group, tag, device], default: all}
+        scope_id: {type: integer}
+        min_severity: {type: string, enum: [warn, crit], default: warn}
+        repeat_every_min: {type: integer, description: '0 = no repeat, else 5 to 10080'}
+        repeat_max: {type: integer, minimum: 0, maximum: 1000, description: '0 = until acknowledged or resolved'}
+        steps:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: object
+            required: [after_min, targets]
+            properties:
+              after_min: {type: integer, minimum: 0, maximum: 10080, description: Minutes after the alert opened; not earlier than the step before}
+              targets:
+                type: array
+                minItems: 1
+                maxItems: 10
+                items:
+                  type: object
+                  required: [type, ref]
+                  properties:
+                    type: {type: string, enum: [user, group, email, chat, webhook]}
+                    ref: {type: string, maxLength: 200}
+    EscalationPolicy:
+      type: object
+      properties:
+        policy_id: {type: integer}
+        name: {type: string}
+        enabled: {type: boolean}
+        scope_type: {type: string}
+        scope_id: {type: integer}
+        min_severity: {type: string, enum: [warn, crit]}
+        repeat_every_min: {type: integer}
+        repeat_max: {type: integer}
+        created_at: {type: string, format: date-time}
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              step: {type: integer}
+              after_min: {type: integer}
+              targets: {type: array, items: {type: object, properties: {type: {type: string}, ref: {type: string}}}}
+    AlertingSettings:
+      type: object
+      properties:
+        alerting_enabled: {type: boolean}
+        storm:
+          type: object
+          properties:
+            storm_global_max: {type: integer}
+            storm_global_window_s: {type: integer}
+            storm_client_max: {type: integer}
+            storm_client_window_s: {type: integer}

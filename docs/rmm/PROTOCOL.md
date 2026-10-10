@@ -41,7 +41,7 @@ Identity rules (unchanged): a known `install_id` re-enrolls (a different machine
 
 ### 3.2 `agent_checkin` (POST, device token)
 
-Request: `{seq (integer, idempotency key per device), collected_at (RFC 3339, at most 300 s in the future), agent_version, inventory (object, at most 65536 bytes, or null), metrics {cpu_pct, mem_pct, disk[{mount, used_pct}], net_rx_bps, net_tx_bps}, checks [{key, status ("ok","warn","fail","unknown"), detail}] (at most 100), buffered [{collected_at, metrics, checks}] (at most 100), update_result (optional {version, state ("ok","failed","rolled_back"), detail})}`. Body cap 1 MiB. A missing metric produces no sample; it is never stored as 0. Duplicate `seq` is a normal 200 (the liveness is real, the data is not processed twice). At most 40 per 60 s per device (429).
+Request: `{seq (integer, idempotency key per device), collected_at (RFC 3339, at most 300 s in the future), agent_version, inventory (object, at most 65536 bytes, or null), metrics {cpu_pct, mem_pct, disk[{mount, used_pct}], net_rx_bps, net_tx_bps}, checks [{key, status ("ok","warn","fail","unknown"), detail, value (optional number)}] (at most 100), buffered [{collected_at, metrics, checks}] (at most 100), update_result (optional {version, state ("ok","failed","rolled_back"), detail})}`. Body cap 1 MiB. A missing metric produces no sample; it is never stored as 0. Duplicate `seq` is a normal 200 (the liveness is real, the data is not processed twice). At most 40 per 60 s per device (429).
 
 Response 200: `{ok, status, matched_asset_id, next_check_in_s, jobs_pending, config: {checks: [signed], collect_interval_s}, update (signed manifest, or null), server_time, signing_key_id}`. `jobs_pending` is 0 and `update` is omitted while the `jobs` or `updates` sub-switch is off. Under load shedding (levels 2 and 3) the interval grows and level 3 answers 503 `unavailable` with a jittered `Retry-After`.
 
@@ -64,6 +64,16 @@ Every field below is optional on both sides. A server or an agent that does not 
 * **Caps.** At most 5000 items (the agent sends at most 3000 and at most 600 KiB), a name up to 200 characters, a version up to 100, a publisher up to 200; control characters are replaced by a space and the text trimmed (the same rule as `cleanText`, so both sides hash the same strings). The check-in body cap (1 MiB) applies as before.
 * **When the agent sends.** A full list on the first report, on a server request (`resync`) and at least once a day; otherwise a delta when the list changed (a delta larger than 300 entries is sent as a full list), nothing when it did not. The agent collects at most once an hour.
 * **Self-healing.** The server applies a `delta` only when its `base_hash` equals the hash it holds for the device. Otherwise, when the check-in was shed (load shedding level 1 or more) or the applied list does not hash to `hash`, it records that the device must resync, and the next response carries `"resync": ["software"]`. The agent then sends a full list, but never sooner than 15 minutes after its previous software report. A `full` report is never refused for its hash.
+
+#### 3.2.2 Check types, measured values and offers (additive, Phase 3)
+
+Everything below is optional on both sides, and an old agent's check-in is processed and answered exactly as before (the golden transcripts prove it).
+
+* **Value.** A check result may carry `value`, a finite number below 10^12: the number the check measured (latency in ms, percent used, days left, a count). It exists so the server can compare it with the check's `params.thresholds` (below). The four original check types never send it; a server that has no thresholds ignores it. A reading the agent could not take sends no `value` (it is missing, never 0).
+* **Check types.** Besides `service`, `disk`, `pending_reboot` and `script`, a check list may contain `cpu`, `memory`, `process`, `port`, `ping`, `http`, `cert`, `ntp`, `smart` (Windows and Linux), `av` (Windows) and `systemd_failed`, `inodes` (Linux). Their params are whole numbers, strings, booleans and short lists with size caps and safe defaults; the schema of every type is in `CheckCatalog` and is served by `GET endpoint_devices/check_types`. Unknown params of these types are refused when the list is saved. The agent derives its own `ok`/`warn`/`fail` from the params (for example `ping.warn_ms`) so a check works without any server-side threshold.
+* **Offer.** The four original types go to every agent. A Phase 3 type is included in `config.checks` of the check-in response only for a device that announced `check:<type>` in `capabilities` (the capabilities of the same request, else the stored ones), and never in the enrollment response, so an old agent never sees a type it does not know and a Linux agent never gets `av`. Each offered definition is signed on its own, as before.
+* **Thresholds, flap detection, parents (server side).** `params.thresholds` (`{"warn": {"op": "gt", "value": 80}, "crit": {...}, "hysteresis": 5, "for_samples": 3, "for_minutes": 10}`), `params.flap` (`{"window": 20, "high_pct": 50, "low_pct": 25}`) and `params.ignore_parent` travel inside the signed params but are read by the server only; the agent ignores them. Thresholds apply when the server's `alerting` sub-switch is on: the final status of a result is the worse of the agent's own verdict and the threshold tier of its `value`. The semantics, the maintenance windows, dependency suppression, storm control and escalation are described in [modules/rmm.md](../modules/rmm.md); none of it is visible to an agent.
+* **Details are safe to show.** A `detail` never contains the query string or credentials of a URL, and `http`/`cert` details name the host and path only.
 
 ### 3.3 `agent_jobs` (GET and POST, device token)
 
@@ -107,7 +117,7 @@ The agent reads the last 52 bytes of its own executable, checks the magic, the l
 
 ## 7. Identifiers and storage names
 
-Job id: UUID v4. Alert key `agent:<device_id>:<check_key>:<episode>`; agent link key `rivetit:<device_id>`; integration `type='rivetit_agent'`. Hosted binaries are stored as `bin_<32 hex>.bin` and only that name pattern is ever turned into a path. Platforms: `windows`, `linux` (macOS is deferred).
+Job id: UUID v4. Alert key `agent:<device_id>:<check_key>:<episode>` (and, for the Phase 3 storm-control summary alert, `agent:storm:<scope>:<window start>`); agent link key `rivetit:<device_id>`; integration `type='rivetit_agent'`. Hosted binaries are stored as `bin_<32 hex>.bin` and only that name pattern is ever turned into a path. Platforms: `windows`, `linux` (macOS is deferred).
 
 ## 8. Technician REST
 

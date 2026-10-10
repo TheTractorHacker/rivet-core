@@ -26,7 +26,7 @@ final class FlapDetector
         if (!is_array($f) || ($f !== [] && array_is_list($f))) {
             return [null, 'flap must be an object.'];
         }
-        foreach ($f as $k => $_) {
+        foreach (array_keys($f) as $k) {
             if (!in_array($k, ['window', 'high_pct', 'low_pct'], true)) {
                 return [null, "flap has an unknown field \"$k\"."];
             }

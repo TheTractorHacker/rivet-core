@@ -29,8 +29,12 @@ final class MaintenanceService
     /** Disabled and finished one-time windows older than this many days are removed by the tick. */
     public const PRUNE_AFTER_DAYS = 180;
 
+    /** How long a long-lived process (a queue worker) keeps the window list before it reads it again. */
+    public const CACHE_TTL_S = 30;
+
     /** @var list<array<string,mixed>>|null */
     private ?array $cache = null;
+    private int $cachedAt = 0;
     private readonly ScopeMatcher $scopes;
 
     public function __construct(private readonly Sql $sql, private readonly ?RmmEventPublisher $events = null, ?ScopeMatcher $scopes = null)
@@ -47,7 +51,12 @@ final class MaintenanceService
     /** @return list<array<string,mixed>> every enabled window row */
     private function enabledRows(): array
     {
-        return $this->cache ??= $this->sql->all('SELECT * FROM rmm_maintenance_windows WHERE enabled = 1 ORDER BY window_id');
+        if ($this->cache === null || $this->sql->time() - $this->cachedAt > self::CACHE_TTL_S) {
+            $this->cache = $this->sql->all('SELECT * FROM rmm_maintenance_windows WHERE enabled = 1 ORDER BY window_id');
+            $this->cachedAt = $this->sql->time();
+        }
+
+        return $this->cache;
     }
 
     /**

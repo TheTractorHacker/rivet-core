@@ -37,8 +37,12 @@ final class EscalationService
     public const MUTED_RECHECK_S = 300;
     public const TICK_LIMIT = 200;
 
+    /** How long a long-lived process (a queue worker) keeps the policy list before it reads it again. */
+    public const CACHE_TTL_S = 30;
+
     /** @var list<array<string,mixed>>|null enabled policies with their steps */
     private ?array $cache = null;
+    private int $cachedAt = 0;
 
     public function __construct(
         private readonly Sql $sql,
@@ -60,7 +64,8 @@ final class EscalationService
     /** @return list<array<string,mixed>> */
     private function enabled(): array
     {
-        if ($this->cache === null) {
+        if ($this->cache === null || $this->sql->time() - $this->cachedAt > self::CACHE_TTL_S) {
+            $this->cachedAt = $this->sql->time();
             $this->cache = [];
             $steps = [];
             foreach ($this->sql->all('SELECT * FROM rmm_escalation_steps ORDER BY policy_id, step_no') as $s) {

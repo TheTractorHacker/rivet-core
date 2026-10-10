@@ -9,7 +9,7 @@ Status: DRAFT for owner review, 2026-10-07; statuses updated for RivetCore v1.0.
 | Status | Meaning |
 |---|---|
 | **Shipped** | Works today in RivetIT beta (release v26.10.26, agent `agent-v0.1.0-beta.1`, DB 2.6.146). Verified from the code. |
-| **Core** | Built and tested in RivetCore (v1.0.0-rc.9, Phase 1) but not yet adopted by an edition: it works for an edition once it runs migration 0018 and wires the new contracts, and it is not in a tagged RivetIT or RivetMSP release. Moves to `Shipped` after an edition release and its smoke test. |
+| **Core** | Built and tested in RivetCore (v1.0.0-rc.9 Phase 1; Phase 3 after it) but not yet adopted by an edition: it works for an edition once it runs migrations 0018 and 0020 and wires the new contracts, and it is not in a tagged RivetIT or RivetMSP release. Moves to `Shipped` after an edition release and its smoke test. |
 | **P0** | Phase 0: this build. The code moves into Core, a Linux agent joins the Windows agent, the module gets its on/off switch and capacity controls, and both RivetIT and RivetMSP adopt it. [#60](https://github.com/TheTractorHacker/rivet-core/issues/60) to [#68](https://github.com/TheTractorHacker/rivet-core/issues/68) |
 | **P1** | [#69](https://github.com/TheTractorHacker/rivet-core/issues/69) Foundation: Linux packaging, capability negotiation, software inventory with history, sites/groups/tags, `rmm.*` events, MSP metric sink. Built in Core in v1.0.0-rc.9: software inventory with history, tags and groups, nine `rmm.*` events, the database metric sink, per-check history, the live polling document and the capability announcement. Still to do: normalised hardware tables (3.3), site/group/tag at enrollment (2.8), `RmmSitesInterface`, filtering offers by capability (1.6), the remaining events (6.5) |
 | **P2** | [#70](https://github.com/TheTractorHacker/rivet-core/issues/70) Policies, check templates, script library, scheduled scripts, approvals, custom fields |
@@ -66,7 +66,8 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 3.4 | Installed software list with versions | Core | Core | Core | P7 | Windows: registry Uninstall keys (64 and 32 bit; per-user installs are not listed), optional Store apps. Linux: dpkg, rpm, snap, flatpak. Full list on the first report, on request and daily; deltas in between. Switch: `inventory_software`. |
 | 3.5 | Software change history (installed, upgraded, removed, with dates) | Core | Core | Core | P7 | Plus downgraded. The first report of a device is a baseline and is not logged. Kept 365 days by default (`software_history_days`). |
 | 3.6 | Services list | P6 | P6 | P6 | P7 | Arrives with the service/process manager ([#74](https://github.com/TheTractorHacker/rivet-core/issues/74)). |
-| 3.7 | Disk health (SMART), TPM, GPU, local users and groups | Not planned | - | - | - | Named in the gap analysis; no phase. |
+| 3.7 | Disk health: SMART (Linux, `smartctl`) and physical disk health (Windows `Get-PhysicalDisk`) as a check | Core | Core | Core | P7 | Check type `smart`: fails when a disk reports a failed SMART status, warns for a Windows "Warning", unknown when `smartctl` is not installed. Windows is cross-compiled and vetted, not run on a Windows host. |
+| 3.9 | TPM, GPU, local users and groups | Not planned | - | - | - | Named in the gap analysis; no phase. |
 | 3.8 | Warranty and purchase data | Shipped | all | all | all | Lives on the edition's asset record, not in the RMM. |
 
 ## 4. Monitoring and metrics
@@ -81,7 +82,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 4.6 | Metric history with hourly and daily rollups, ranges from 1 hour to 90 days, charts in the device page | Shipped | all | all | all | RivetIT only (Metrics subsystem). |
 | 4.7 | Device status: online, offline, stale (quiet for 7 days), never checked in | Shipped | all | all | all | |
 | 4.8 | Metric history in RivetMSP | Core | all | all | P7 | `DatabaseMetricSink`: hourly rollups (count, sum, min, max) and the latest reading, 14 days by default, through the same sink contract. RivetMSP shows the latest reading only until it passes the sink to the module. |
-| 4.9 | Ping, port and HTTP probes with latency | P3 | P3 | P3 | P7 | |
+| 4.9 | Ping, port and HTTP(S) probes with latency | Core | Core | Core | P7 | Check types `ping` (system `ping`, loss and latency), `port` (TCP connect time) and `http` (status range, latency, text, redirects, certificate expiry); each reports its latency as a `value` the server can put thresholds on. Probes run from the device, not from the server. |
 | 4.10 | Per-process top N, temperatures, battery | Not planned | - | - | - | |
 | 4.11 | Event-log and syslog collection (bounded volume, short retention, alert on event) | P8 | P8 | P8 | P7 | Optional, off by default, storage heavy. |
 
@@ -93,8 +94,10 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 5.2 | One global, signed check list pushed to every agent; script checks bounded to 8 KiB and 60 s | Shipped | Shipped | P0 | P7 | |
 | 5.3 | Debounce: an alert opens after 3 bad results and resolves after 2 good ones; each failure episode is a separate alert | Shipped | all | all | all | |
 | 5.4 | Check templates assigned to client, site, group, tag or device, with inheritance and per-device override | P2 | P2 | P2 | P7 | Needs the policy engine (area 11). |
-| 5.5 | CPU and memory threshold checks, process-running, certificate expiry, basic event-log check | P3 | P3 | P3 | P7 | |
+| 5.5 | CPU and memory checks (memory, swap and Linux PSI pressure), process running, certificate expiry (files, directories, Windows stores, a TLS endpoint) | Core | Core | Core | P7 | Check types `cpu`, `memory`, `process`, `cert`. The basic event-log check is part of P8 (log collection) and is not built. |
 | 5.6 | Per-check result history (trend of the last N results) | Core | all | all | all | `endpoint_agent_check_history`: every change of status, and an unchanged status at most once per hour, for 7 days. Decision U3 of ASSET_PAGE_REDESIGN.md, taken one step further than "state changes only". Read with availability over the window. |
+
+| 5.7 | NTP clock skew, Windows Defender status, failed systemd units, inode usage | Core | Core (`ntp`, `av`) | Core (`ntp`, `systemd_failed`, `inodes`) | P7 | Check types `ntp` (SNTP offset in ms), `av` (Windows only: Defender on, real-time protection, signature age), `systemd_failed` (Linux only), `inodes` (Linux only). A type is offered only to an agent that announces `check:<type>`. |
 
 ## 6. Alerts and tickets
 
@@ -105,11 +108,12 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 6.3 | Alert list with acknowledge, filter and bulk actions | Shipped | all | all | all | Edition UI. |
 | 6.4 | Offline and online transitions feed the edition's `asset_offline` / `asset_online` automation | Shipped | all | all | all | |
 | 6.5 | `rmm.*` events for every state change (enrolled, approved, revoked, online, offline, alert opened/resolved, job completed, module enabled/disabled) delivered to webhooks and automation rules | Core | all | all | all | Nine events through `RmmEventsInterface`: device enrolled, offline, online; check failed, recovered; job completed, failed; software installed, removed. Approved, revoked and module on/off events are not emitted yet. |
-| 6.6 | Threshold tiers (warning and critical), flap detection | P3 | all | all | all | |
-| 6.7 | Maintenance windows and alert suppression | P3 | all | all | all | Today agent alerts ignore the edition's maintenance-mode flag. |
-| 6.8 | Escalation chains and notifications (email, chat) | P3 | all | all | all | Through `RmmNotifierInterface` if the edition does not already own it. |
-| 6.9 | Auto-remediation: run a script when an alert opens | P3 | P3 | P3 | P7 | |
+| 6.6 | Threshold tiers (warning and critical) with hysteresis and duration, flap detection | Core | all | all | all | `params.thresholds` on any check that reports a `value`, `params.flap` on any check; per-device override through the REST API. Behind the `alerting` sub-switch. Core, not yet adopted by an edition. |
+| 6.7 | Maintenance windows and alert suppression | Core | all | all | all | One-time and recurring, time zone aware, scope all, client, site, group, tag or device; `mute` or `suppress`; plus parent-device (dependency) suppression and per-client and global storm control. Core ignores the edition's own `rmm_maintenance_mode` flag; windows replace it. |
+| 6.8 | Escalation chains and notifications | Core | all | all | all | Policies of timed steps with targets, repeat, acknowledge and resolve, run by housekeeping. Delivery (email, chat, webhook) is the edition's, through the optional `RmmEscalationInterface`; Core sends nothing itself and never marks an undelivered notice as sent. Core, not yet adopted by an edition. |
+| 6.9 | Auto-remediation: run a script when an alert opens | P3 | P3 | P3 | P7 | Not built: it needs the Phase 2 script runner. The `rmm.alert.opened` event is the hook it will use. |
 | 6.10 | SMS notifications | Not planned | - | - | - | |
+| 6.11 | Dependency suppression (a parent device offline holds its children's alerts back) and alert storm control with a summary alert | Core | all | all | all | `rmm_device_parents`; per-client and global caps per window, defaults 100 and 500 per 10 minutes. |
 
 ## 7. Scripts and automation
 
@@ -232,11 +236,11 @@ Counted from the Status column of the tables above (one row, one status). `Shipp
 | Status | Rows |
 |---|---|
 | Shipped | 49 |
-| Core | 6 |
+| Core | 14 |
 | P0 | 19 |
 | P1 | 4 |
 | P2 | 11 |
-| P3 | 6 |
+| P3 | 1 |
 | P4 | 5 |
 | P5 | 5 |
 | P6 | 4 |
@@ -258,7 +262,7 @@ Comparison for the headline capabilities only. Cells for other products reflect 
 | Linux agent | Test build only | Yes (P0 to P1) | Yes | Yes | Yes (not verified in detail) |
 | macOS agent | No | Deferred (P7) | Yes | Yes | Yes (not verified in detail) |
 | Metrics graphs per device | Yes (RivetIT only) | Yes, both editions (built in Core in rc.9, edition adoption pending) | Yes (not verified in detail) | Yes | Not verified |
-| Checks and alerts | 4 check types, global schedule | Policy-assigned, more types (P2, P3) | Yes, policy-assigned | Yes, policy-assigned | Not verified |
+| Checks and alerts | 4 check types, global schedule | Policy-assigned (P2), 16 check types, thresholds, windows, escalation (P3, built in Core) | Yes, policy-assigned | Yes, policy-assigned | Not verified |
 | Script library, scheduled scripts | Saved scripts, run now | Yes (P2) | Yes | Yes | Yes (not verified in detail) |
 | Remote desktop | MeshCentral launch (you host Mesh) | Plus Mesh terminal and files (P6) | MeshCentral based | Built-in remote | Built-in remote (not verified in detail) |
 | Patch management | No (vendor-RMM status only) | Yes (P4) | Yes | Yes | Not verified |

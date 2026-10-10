@@ -41,7 +41,7 @@ final class Thresholds
             return [null, 'thresholds must be an object.'];
         }
         $out = [];
-        foreach ($t as $k => $_) {
+        foreach (array_keys($t) as $k) {
             if (!in_array($k, ['warn', 'crit', 'hysteresis', 'for_samples', 'for_minutes'], true)) {
                 return [null, "thresholds has an unknown field \"$k\"."];
             }
