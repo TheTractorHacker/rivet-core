@@ -74,7 +74,7 @@ final class KdfParams
     }
 
     /** True when $other is stronger in any dimension, or a different (preferred) KDF. */
-    public function weakerThan(self $other): bool
+    public function weakerThan(KdfParams $other): bool
     {
         if ($this->kdf !== $other->kdf) {
             return $other->kdf === self::ARGON2ID;
