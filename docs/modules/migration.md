@@ -25,6 +25,7 @@
 | `0014_endpoint_agent_core` | `Rmm\Migration\Migration0014EndpointAgent` | the ten `endpoint_agent_*` tables, settings row |
 | `0015_endpoint_agent_converge` | `Rmm\Migration\Migration0015EndpointAgentConverge` | `ca_pem`, release `arch`/`binary_id` and key (installs stopped at RivetIT 2.6.145) |
 | `0016_rmm_module_switches` | `Rmm\Migration\Migration0016ModuleSwitches` | `features_json`, `limits_json`, `shed_level`, `ingest_mode`, `max_devices` |
+| `0017_mcp_identity_binary_collation` | `Mcp\Migration\Migration0017McpIdentityBinaryCollation` | `mcp_unlinked_identities.issuer` and `.subject` become `utf8mb4_bin` (OIDC `iss`/`sub` are case-sensitive) |
 
 ## Contracts an edition must implement
 

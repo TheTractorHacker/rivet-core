@@ -207,17 +207,26 @@ final class EnrollmentService
         // 1. Same install_id: re-enrollment.
         $dev = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE install_id = ? FOR UPDATE', [$d['install_id']]);
         $event = 're-enrolled';
+        $crossClient = false;
         if ($dev !== null) {
+            if (!self::sameClient($dev, $token)) {
+                // install_id is unique, so another client's row cannot be duplicated; and it must not be taken over either.
+                throw new ApiError(409, 'conflict', 'This install id is already bound to a different machine.');
+            }
             $this->refuseIfBlocked($dev);
             if (self::identityConflict($dev, $d)) {
                 throw new ApiError(409, 'conflict', 'This install id is already bound to a different machine.');
             }
         } else {
             // 2. Reinstall of a known machine: same machine_guid, else same serial.
-            $dev = $this->findReinstall($d);
+            $dev = $this->findReinstall($d, (int) $token['client_id']);
             if ($dev !== null) {
                 $this->refuseIfBlocked($dev);
                 $event = 'reinstalled';
+            } else {
+                // The same machine identity under ANOTHER client (a cloned image, or an attempted takeover) never reuses that
+                // device row: it becomes a new device of the token's client and waits for an administrator.
+                $crossClient = $this->identityExistsElsewhere($d, (int) $token['client_id']);
             }
         }
 
@@ -251,7 +260,9 @@ final class EnrollmentService
         if ($limit > 0 && (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_devices WHERE revoked_at IS NULL AND retired_at IS NULL') >= $limit) {
             throw new ApiError(403, 'device_limit', 'The device limit of this installation has been reached.');
         }
-        $match = $this->matchAsset($d, (int) $token['client_id']);
+        $match = $crossClient
+            ? ['asset_id' => null, 'status' => 'pending_approval', 'reason' => 'cross_client_identity', 'candidates' => []]
+            : $this->matchAsset($d, (int) $token['client_id']);
         $assetId = null;
         $state = 'pending_approval';
         $status = $match['status'];
@@ -309,10 +320,10 @@ final class EnrollmentService
      * @param array<string,mixed> $d
      * @return array<string,mixed>|null
      */
-    private function findReinstall(array $d): ?array
+    private function findReinstall(array $d, int $clientId): ?array
     {
         if ($d['machine_guid'] !== null) {
-            $row = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE machine_guid = ? ORDER BY device_id LIMIT 1 FOR UPDATE', [$d['machine_guid']]);
+            $row = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE machine_guid = ? AND client_id = ? ORDER BY device_id LIMIT 1 FOR UPDATE', [$d['machine_guid'], $clientId]);
             if ($row !== null) {
                 return $row;
             }
@@ -320,13 +331,38 @@ final class EnrollmentService
         if ($d['serial'] !== null) {
             // Windows reinstalls generate a new MachineGuid but keep the BIOS serial; a different non-null guid on the stored row
             // is still the same box, since the serial matches.
-            $row = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE serial = ? ORDER BY device_id LIMIT 1 FOR UPDATE', [$d['serial']]);
+            $row = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE serial = ? AND client_id = ? ORDER BY device_id LIMIT 1 FOR UPDATE', [$d['serial'], $clientId]);
             if ($row !== null) {
                 return $row;
             }
         }
 
         return null;
+    }
+
+    /**
+     * True when a device of ANOTHER client already carries this machine_guid or serial.
+     *
+     * @param array<string,mixed> $d
+     */
+    private function identityExistsElsewhere(array $d, int $clientId): bool
+    {
+        if ($d['machine_guid'] !== null
+            && $this->sql->one('SELECT device_id FROM endpoint_agent_devices WHERE machine_guid = ? AND client_id <> ? LIMIT 1', [$d['machine_guid'], $clientId]) !== null) {
+            return true;
+        }
+
+        return $d['serial'] !== null
+            && $this->sql->one('SELECT device_id FROM endpoint_agent_devices WHERE serial = ? AND client_id <> ? LIMIT 1', [$d['serial'], $clientId]) !== null;
+    }
+
+    /**
+     * @param array<string,mixed> $dev stored device row
+     * @param array<string,mixed> $token enrollment token row
+     */
+    private static function sameClient(array $dev, array $token): bool
+    {
+        return (int) ($dev['client_id'] ?? 0) === (int) ($token['client_id'] ?? -1);
     }
 
     // ------------------------------------------------------------------ asset matching

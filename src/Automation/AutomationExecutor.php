@@ -35,6 +35,9 @@ final class AutomationExecutor
         }
     }
 
+    /** Top-level config keys whose string value may contain {placeholders}. Everything else is used verbatim. */
+    public const FREE_TEXT_KEYS = ['subject', 'details', 'message', 'title', 'body', 'description', 'text', 'name', 'note', 'notes', 'comment', 'summary', 'label'];
+
     /**
      * @param array<string,mixed> $config
      * @param array<string,string> $context
@@ -43,8 +46,9 @@ final class AutomationExecutor
     public static function interpolate(array $config, array $context): array
     {
         foreach ($config as $k => $v) {
-            // Never let event data steer where a request goes or who receives it: only free-text fields are interpolated.
-            if (in_array($k, ['url', 'secret', 'user_id', 'client_id', 'priority'], true)) {
+            // Never let event data steer where a request goes, who receives it or which record it touches: only the listed
+            // free-text fields are interpolated (an allowlist, so a routing field an edition adds later is safe by default).
+            if (!in_array($k, self::FREE_TEXT_KEYS, true)) {
                 continue;
             }
             if (is_string($v) && str_contains($v, '{')) {

@@ -169,6 +169,31 @@ final class EnrollmentTest extends RmmTestCase
         $this->assertSame(1, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_devices'));
     }
 
+    public function testReEnrollmentNeverCrossesClients(): void
+    {
+        $tokA = $this->h->token($this->h->clientA, 24, 60);
+        $tokB = $this->h->token($this->h->clientB, 24, 60);
+        $d = $this->h::device(['serial' => 'SER-CROSS-1']);
+        [, , $ja] = $this->h->enroll($tokA, $d);
+        $victim = (int) $ja['device_id'];
+        $before = $this->h->one("SELECT token_hash FROM endpoint_agent_devices WHERE device_id=$victim");
+
+        // same install_id under another client's token: refused, the victim row is untouched
+        [$c] = $this->h->enroll($tokB, $d);
+        $this->assertSame(409, $c);
+        // same machine_guid / serial under another client's token: a NEW device of client B, pending approval, never linked
+        [$c, , $jb] = $this->h->enroll($tokB, $this->h::device(['machine_guid' => $d['machine_guid'], 'serial' => $d['serial']]));
+        $this->assertSame(201, $c);
+        $this->assertNotSame($victim, (int) $jb['device_id']);
+        $this->assertSame('pending_approval', $jb['status']);
+        $this->assertSame('cross_client_identity', $this->h->one('SELECT match_reason FROM endpoint_agent_devices WHERE device_id=' . $jb['device_id']));
+        $this->assertSame($this->h->clientB, (int) $this->h->one('SELECT client_id FROM endpoint_agent_devices WHERE device_id=' . $jb['device_id']));
+        $this->assertSame($before, $this->h->one("SELECT token_hash FROM endpoint_agent_devices WHERE device_id=$victim"), 'the real agent keeps its credential');
+        // and the same client still reinstalls onto its own device
+        [, , $again] = $this->h->enroll($tokA, $this->h::device(['serial' => $d['serial']]));
+        $this->assertSame($victim, (int) $again['device_id']);
+    }
+
     public function testAssetMatchingRules(): void
     {
         $tok = $this->h->token(null, 24, 50);

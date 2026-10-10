@@ -63,8 +63,10 @@ to 200 characters, and per-action config:
 `(new AutomationExecutor())->execute($rule, $context, $handlers): array{rule_id, ok, message}`. A missing handler gives
 `ok = false` with `No handler for action '<type>'`; a handler exception gives `ok = false` with the first 500 characters
 of its message. Nothing is thrown. `AutomationExecutor::interpolate($config, $context)` replaces `{path}` in string
-values (unknown paths become empty) but never in `url`, `secret`, `user_id`, `client_id` or `priority`, so event data cannot
-steer where a request goes or who is addressed.
+values (unknown paths become empty) but only for the free-text keys in `AutomationExecutor::FREE_TEXT_KEYS` (`subject`,
+`details`, `message`, `title`, `body`, `description`, `text`, `name`, `note`, `notes`, `comment`, `summary`, `label`). Every other
+key (`url`, `secret`, `email`, `to`, `assigned_to`, `asset_id`, `headers`, `user_id`, `client_id`, `priority`, ...) is used
+verbatim, so event data cannot steer where a request goes or who is addressed.
 
 ```php
 use RivetCore\Automation\{AutomationExecutor, AutomationRuleEvaluator, AutomationRuleStore, EventContext};

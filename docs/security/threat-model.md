@@ -182,7 +182,7 @@ the **edition** purifies, names and stores the files.
 | DateRange | SQL via dates, overflow | Dates validated with `\z` + `checkdate`, clamped to 1970..2099, half-open bounds returned for binding | None |
 | AccessPolicy | Default allows everything | `AllowAllPolicy` exists for tests and migration; `DenyAllPolicy` for fail-closed hosts | Editions must inject a real policy (checklist) |
 | ErrorLogLogger | Log forging | control characters escaped (`oneLine`, SR-09) | |
-| Automation | Event data steers URLs/recipients | `interpolate` never touches `url`, `secret`, `user_id`, `client_id`, `priority`; conditions are equality only; rule fields validated (`\z/D`); webhook URL shape checked (SR-12) | The send handler must re-vet the URL with `UrlPolicy` |
+| Automation | Event data steers URLs/recipients | `interpolate` only fills the allowlisted free-text keys (`AutomationExecutor::FREE_TEXT_KEYS`: subject, details, message, title, body, description, text, name, note, notes, comment, summary, label), so `url`, `secret`, `email`, `to`, `assigned_to`, `asset_id`, `headers`, `user_id`, `client_id`, `priority` are never touched; conditions are equality only; rule fields validated (`\z/D`); webhook URL shape checked (SR-12) | The send handler must re-vet the URL with `UrlPolicy` |
 | MigrationRunner | Two runners, or a runner starved by an unrelated database | per-schema server-side lock (SR-11), idempotent steps | If `GET_LOCK` is unsupported the runner proceeds unlocked (fail-open, steps are idempotent) |
 
 ## 5. Deliberate fail-open decisions
