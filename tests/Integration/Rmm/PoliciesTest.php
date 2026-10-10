@@ -243,6 +243,31 @@ final class PoliciesTest extends AutomationTestCase
         $this->assertSame(1, $this->h->module->policyStore()->dropOrphanAssignments());
     }
 
+
+    public function testWhatPoliciesCostACheckin(): void
+    {
+        $count = function (): int {
+            $this->checkin($this->t1);   // warm: settings cached by the module, idempotent writes done
+            $before = $this->h->counting->statements;
+            $this->checkin($this->t1);
+
+            return $this->h->counting->statements - $before;
+        };
+        $this->features(['policies' => false]);
+        $off = $count();
+        $this->features([]);
+        $none = $count();
+        $store = $this->h->module->policyStore();
+        for ($i = 0; $i < 5; ++$i) {
+            $p = $this->policy("P$i", ['interval.collect_s' => 45 + $i, "check.c$i" => ['type' => 'pending_reboot', 'params' => [], 'interval_s' => 600]]);
+            $store->assign((int) $p['policy_id'], ['scope_type' => 'device', 'scope_id' => $this->d1], 1);
+        }
+        $five = $count();
+        $this->assertLessThanOrEqual(2, $none - $off, 'switched on with no assignment: the device capabilities are already read, one query for the layers');
+        $this->assertSame($none, $five, 'five assigned policies are still one query: their number does not change the statements');
+        $this->assertGreaterThan(0, $off);
+    }
+
     // ------------------------------------------------------------------ administration, API, audit and events
 
     public function testOnlyAnAdministratorMayManagePolicies(): void

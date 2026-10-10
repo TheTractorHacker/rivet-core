@@ -380,10 +380,12 @@ final class ScriptLibraryTest extends AutomationTestCase
     {
         $s = $this->script();
         $this->h->module->scriptActions()->runOnDevice($this->tech, $this->lin, ['library_script_id' => $s['script_id']]);
-        $this->checkin($this->linT, ['check:disk', 'job:collect', 'job:reboot']);
+        $r = $this->checkin($this->linT, ['check:disk', 'job:collect', 'job:reboot']);
+        $this->assertSame(0, $r['jobs_pending'], 'and not counted as pending either: an agent told jobs are pending would poll at its shortest interval until the job expires');
         [, , $j] = $this->h->call('GET', 'agent_jobs', null, $this->linT);
         $this->assertSame([], $j['jobs'], 'announced job types without shell: not offered');
-        $this->checkin($this->linT, ['job:collect', 'job:shell']);
+        $r = $this->checkin($this->linT, ['job:collect', 'job:shell']);
+        $this->assertSame(1, $r['jobs_pending']);
         [, , $j] = $this->h->call('GET', 'agent_jobs', null, $this->linT);
         $this->assertCount(1, $j['jobs']);
         $this->assertSame('shell', $j['jobs'][0]['type']);

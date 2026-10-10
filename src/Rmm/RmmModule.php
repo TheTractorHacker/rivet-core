@@ -382,7 +382,7 @@ final class RmmModule
 
     public function bulkRunner(): BulkRunner
     {
-        return $this->bulkRunner ??= new BulkRunner($this->targets(), $this->scriptRunner());
+        return $this->bulkRunner ??= new BulkRunner($this->targets(), $this->scriptRunner(), $this->sql());
     }
 
     /** Scheduled scripts: definitions and history. */

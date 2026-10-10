@@ -28,6 +28,29 @@ final class ScriptRunner
     }
 
     /**
+     * Run a batch of dispatches (a transaction over a page of devices): the `rmm.script.run` events of the jobs in it are delivered when it has
+     * committed, and dropped when it rolled back.
+     *
+     * @template T
+     * @param \Closure():T $work
+     * @return T
+     */
+    public function batch(\Closure $work): mixed
+    {
+        $this->events?->hold();
+        try {
+            $r = $work();
+        } catch (\Throwable $e) {
+            $this->events?->discard();
+
+            throw $e;
+        }
+        $this->events?->release();
+
+        return $r;
+    }
+
+    /**
      * Check supplied parameters without a device (an approval request, a schedule): names, types and required parameters, and that a secret
      * parameter holds a `{{field.x}}` placeholder instead of a literal value that would otherwise have to be stored in plain text.
      * Values with placeholders are only fully checked per device, at run time.
@@ -45,7 +68,9 @@ final class ScriptRunner
         foreach ($supplied as $k => $v) {
             $def = $by[(string) $k] ?? null;
             if ($def === null) {
-                continue;   // reported by validate() below
+                $probe[$k] = $v;   // an unknown name: validate() below reports it
+
+                continue;
             }
             if (is_string($v) && FieldPlaceholders::names($v) !== []) {
                 if ($def['type'] === 'secret' && FieldPlaceholders::whole($v) === null) {
@@ -91,13 +116,21 @@ final class ScriptRunner
         $values = null;
         $secret = [];
         $filled = [];
+        $wanted = [];
+        foreach ($supplied as $v) {
+            if (is_string($v)) {
+                foreach (FieldPlaceholders::names($v) as $n) {
+                    $wanted[$n] = $n;
+                }
+            }
+        }
         foreach ($supplied as $name => $v) {
             $def = $by[(string) $name] ?? null;
             if (!is_string($v) || ($names = FieldPlaceholders::names($v)) === []) {
                 $filled[$name] = $v;
                 continue;
             }
-            $values ??= $this->fields->resolveFor($dev, true);
+            $values ??= $this->fields->resolveFor($dev, true, array_values($wanted));
             $whole = FieldPlaceholders::whole($v);
             $map = [];
             foreach ($names as $fn) {

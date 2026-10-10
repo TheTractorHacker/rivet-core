@@ -30,12 +30,13 @@ Required (all in `RivetCore\Rmm\Contracts`):
 | `rmm.device.view` | see devices, checks, job history (every other device ability needs it too) | `module_rmm >= 1` |
 | `rmm.job.run_saved` | queue a saved-library script or a collect job, cancel a queued job, read job output | `module_rmm_scripts >= 2`, not a module-only login |
 | `rmm.job.reboot` | queue a reboot | the same as run_saved |
-| `rmm.job.run_script` | queue free-form script text | `module_rmm_scripts >= 3`, not a module-only login |
+| `rmm.job.run_script` | queue free-form script text; publish scripts to the library (Phase 2) | `module_rmm_scripts >= 3`, not a module-only login |
+| `rmm.job.approve` | Phase 2: approve or reject a run or schedule that needs a second person (a script flagged `requires_approval`, or a run on more devices than the `approval_bulk_threshold` limit); never one's own request | new: give it to fewer people than `run_saved`, e.g. `role_is_admin` or `module_rmm_scripts >= 4` |
 | `rmm.remote.launch` | open a MeshCentral session | `module_rmm_remote_connect >= 1`, not a module-only login |
 | `rmm.device.manage` | approve, reject, revoke, retire, transfer, re-enroll, rotate, set ring, map a MeshCentral node | `role_is_admin` |
 | `rmm.token.manage` | create and revoke enrollment tokens, issue installers | `role_is_admin` |
 | `rmm.binary.publish` | upload agent binaries, make one current, manage releases and rings | `role_is_admin` |
-| `rmm.admin` | module settings, switches, signing key, MeshCentral settings | `role_is_admin` |
+| `rmm.admin` | module settings, switches, signing key, MeshCentral settings; Phase 2: policies, schedules, custom field definitions, secret field values, re-signing scripts | `role_is_admin` |
 
 A policy that enforces anything must deny an ability it does not know. An inactive account, a module-only login and the client scope (RivetIT: `user_client_permissions`) are the edition's rules; the client scope reaches Core through `RmmTenancyInterface::visibleClientIds()`.
 
@@ -49,7 +50,7 @@ Run `RmmBridgeInterface` on the same database connection Core uses so its writes
 
 | Class | Role |
 |---|---|
-| `RmmModule` | the composition root: `deviceApi()`, `technicianApi()`, `technician()`, `admin()`, `readModel()`, `installerService()`, `binaryStore()`, `mesh()`, `authorizer()`, `housekeeping()`, `enabled()` |
+| `RmmModule` | the composition root: `deviceApi()`, `technicianApi()`, `technician()`, `admin()`, `readModel()`, `installerService()`, `binaryStore()`, `mesh()`, `authorizer()`, `housekeeping()`, `enabled()`; Phase 2: `policyStore()`, `policyActions()`, `scripts()`, `scriptActions()`, `customFields()`, `fieldActions()`, `approvals()`, `schedules()`, `setScheduleGate()` |
 | `Http\RmmRequest`, `RmmResponse`, `RmmFileBody`, `ApiError`, `SapiEmitter`, `FileDownload` | framework-neutral HTTP objects; the edition builds the request (TLS and proxy trust, client IP stay its job), Core answers, `SapiEmitter` (or the edition) emits and never exits; a file body is verified (size, SHA-256) before a byte is sent and streamed in 64 KiB chunks |
 | `Http\DeviceApi` | the five device endpoints (enroll, check-in, jobs, update, installer) |
 | `Http\TechnicianApi` | `endpoint_devices`: list, detail, jobs, cancel, remote launch; the edition authenticates and passes an `Authz\RmmPrincipal` |
@@ -144,6 +145,42 @@ Added in v1.0.0-rc.9 (migration `0018_rmm_inventory_foundation`, DB-additive: el
 5. Render the new read models and routes on the device and fleet pages; pass the new limits (`check_history_days`, `check_history_gap_s`, `software_history_days`) through its settings page if it wants them editable.
 
 Capacity numbers for the new write paths are in [CAPACITY.md](../rmm/CAPACITY.md).
+
+## Phase 2: policies, script library, schedules, approvals, custom fields
+
+Added in the release after v1.0.0-rc.9 (migration `0019_rmm_policies_and_scripts`, DB-additive: eleven new tables, nothing existing is altered). Two new sub-switches, both off until an administrator turns them on: `policies` (the check-in delivers the effective policy) and `scripts` (the scheduler, approvals housekeeping and library jobs run). Without them a check-in, a job and a cron run behave exactly as before and the golden transcripts replay identically. Nothing here is adopted by an edition yet.
+
+| Area | What it does | Core classes | Storage |
+|---|---|---|---|
+| Policies | settings assigned to a global, client, site (location), group, tag or device scope; the most specific scope wins each setting; priority, `enforce`, `disable` and per-assignment `overrides`; check templates, intervals inside the global clamps, three feature toggles, update-ring pinning; versioned | `Policy\PolicyResolver` (pure), `PolicyLayer`, `PolicySettings`, `EffectiveConfig` (pure), `PolicyStore`, `EffectivePolicy`, `Technician\PolicyActions` | `rmm_policies`, `rmm_policy_versions`, `rmm_policy_assignments` |
+| Delivery | `CheckinService` lays the resolved policy over the instance configuration and answers with the usual fields; an agent that announced `policies` also gets `config.policy` and the feature `policies` | `Checkin\CheckinService`, `Settings\RmmSettings::signCheckList()` | none |
+| Script library | named scripts (`powershell`, `bash`, `python`), immutable numbered versions signed with the instance Ed25519 key, a parameter definition (string, int, bool, choice, secret), tags, `requires_approval`, `destructive`; the integrity check (hash and signature) runs before every run | `Scripts\ScriptService`, `ScriptLanguage`, `ParamSchema` | `rmm_scripts_v2`, `rmm_script_versions` |
+| Running | one device (`POST endpoint_devices/{id}/jobs` with `library_script_id`, or `TechnicianActions::submitJob`), or a target: device, tag, group, client, site, policy or all (`POST endpoint_devices/runs`); parameters checked per device; `{{field.name}}` filled per device | `Scripts\ScriptRunner`, `BulkRunner`, `TargetResolver`, `Technician\ScriptActions` | `rmm_job_extra` (script, version, schedule, approval, idempotency key, sealed secrets) |
+| Schedules | an interval or a UTC cron expression, a target, jitter, overlap `skip` or `queue`, a window for offline devices, a pinned version and body hash; housekeeping turns each due slot into one run and one job per device, guarded by an idempotency key; per-device result history | `Scripts\ScheduleService`, `ScheduleRunner`, `CronSchedule`, `Contracts\ScheduleGateInterface` | `rmm_schedules`, `rmm_schedule_runs`, `rmm_job_extra` |
+| Approvals | pending_approval, approved, rejected, cancelled, expired; the request is frozen as canonical JSON with its SHA-256; a different user with `rmm.job.approve` for every client reached decides once; an approved run is queued as the requester, inside the requester's clients, and finished by housekeeping if the process died half way | `Approvals\ApprovalService`, `Scripts\ApprovedRunExecutor` | `rmm_approvals` |
+| Custom fields | typed values (text, number, bool, date, list, secret) per client, site or device; defaults; usable as script parameters | `Fields\CustomFieldService`, `FieldPlaceholders`, `Technician\FieldActions` | `rmm_custom_fields`, `rmm_custom_field_values` |
+
+**Settings and precedence.** See PROTOCOL.md 3.2.2 for the wire effect and `PolicyResolver` for the rules. A policy cannot switch on what the instance has off: `feature.*` toggles can only narrow. The instance's own check list stays the base layer, so a policy adds, replaces or removes checks by key.
+
+**Script safety, in order of what protects what.**
+- A script version is immutable and signed; `ScriptService::load()` refuses a version whose text no longer matches its hash or whose signature does not verify (an edit in the database, or a signing-key rotation until `resign` is called). A schedule or an approval pins a version and its hash, so a later edit never changes what was approved.
+- Script text is never written to the audit log or to an event: audit lines carry the name, the version and the first 16 characters of the SHA-256.
+- Parameters are validated against the definition and passed to the agent as environment variables and generated variable definitions, never spliced into code (PROTOCOL.md 3.3). Parameter names that would shadow an interpreter variable (`path`, `home`, `error`, `if`, ...) are refused when the script is saved.
+- A `secret` parameter (a literal or a `{{field.name}}` placeholder of a secret field) is sealed with the edition's `SecretBoxInterface` in `rmm_job_extra`, replaced by a marker in the job row, put back only when the job is signed for the device, removed from the reported output, and wiped when the job is final (housekeeping wipes the leftovers of jobs that never reported). A secret field can only fill a secret parameter, alone. In an approved run or a schedule a secret parameter must be a placeholder, so no secret is stored in a request.
+- Everything runs as the agent's service account (SYSTEM on Windows, root on Linux); there is no run-as choice.
+
+**Limits** (the `limits_json` setting): `approval_bulk_threshold` (0 = never; a run or schedule on more devices than this needs approval), `approval_expiry_h` (48), `schedule_batch` (200 jobs per run per housekeeping pass; divided by 2 at load-shedding level 1, by 4 at level 2, paused at level 3) and `bulk_run_max` (1000 devices in one run).
+
+**Events**: `rmm.policy.assigned`, `rmm.script.run`, `rmm.approval.requested`, `rmm.approval.decided`. The policy and approval events are not about one device: `device_id` is 0, `asset_id` null, `hostname` empty.
+
+**What an edition does to adopt Phase 2**
+1. Run the Core migrations (0019 creates the tables) before deploying the new code.
+2. Map the new ability `rmm.job.approve` in its `AccessPolicyInterface` (an unknown ability is denied, so until it does nobody can approve; nothing else is affected).
+3. Switch on `policies` and `scripts` (`RmmSettings::update(['features_json' => ...])`) once agents of this release are rolled out. Old agents keep working and receive the policy's values without the new keys.
+4. Optional: implement `Contracts\ScheduleGateInterface` (the alerting phase's maintenance windows) and call `RmmModule::setScheduleGate()`.
+5. Render the new pages from `readModel()->automation()` (`AutomationReader`) and the actions `policyActions()`, `scriptActions()`, `fieldActions()`; the REST routes are served by `technicianApi()` unchanged.
+
+Capacity numbers for the scheduler and the check-in policy read are in [CAPACITY.md](../rmm/CAPACITY.md).
 
 ## Behaviour that matters
 

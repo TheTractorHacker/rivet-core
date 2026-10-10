@@ -159,9 +159,24 @@ final class JobService
         $cfg = $this->settings->get();
         $ackBefore = gmdate('Y-m-d H:i:s', $this->sql->time() - (int) $cfg['job_ack_timeout_s']);
 
-        return (int) $this->sql->val("SELECT COUNT(*) FROM endpoint_agent_jobs WHERE device_id = ? AND state = 'queued' AND expires_at > ? AND
-            (offered_count = 0 OR (destructive = 0 AND offered_count < ? AND last_offered_at <= ?))",
-            [$deviceId, $this->sql->utcNow(), (int) $cfg['job_max_attempts'], $ackBefore]);
+        $where = "device_id = ? AND state = 'queued' AND expires_at > ? AND
+            (offered_count = 0 OR (destructive = 0 AND offered_count < ? AND last_offered_at <= ?))";
+        $params = [$deviceId, $this->sql->utcNow(), (int) $cfg['job_max_attempts'], $ackBefore];
+        $n = (int) $this->sql->val("SELECT COUNT(*) FROM endpoint_agent_jobs WHERE $where", $params);
+        if ($n === 0 || $this->deviceState === null) {
+            return $n;
+        }
+        // A job the device did not announce its type for is never offered ({@see offer()}), so it must not be counted either: an agent told that jobs are
+        // pending polls and drains at its shortest interval until the job expires.
+        $caps = DeviceState::capabilitiesOf($this->deviceState->get($deviceId));
+        $offerable = 0;
+        foreach ($this->sql->all("SELECT type, COUNT(*) AS c FROM endpoint_agent_jobs WHERE $where GROUP BY type", $params) as $r) {
+            if (self::deviceCanRun($caps, (string) $r['type'])) {
+                $offerable += (int) $r['c'];
+            }
+        }
+
+        return $offerable;
     }
 
     /**

@@ -137,6 +137,10 @@ final class KitMutationTest extends TestCase
             [RmmEventsKitTest::class, 'throws_unknown', ['testEveryEventIdIsAccepted']],
             [RmmEventsKitTest::class, 'drops_nulls', ['testNullAndFalseValuesAreNotDropped']],
             [RmmEventsKitTest::class, 'reverses', ['testPayloadsArriveUnchangedAndInOrder']],
+            // Schedule gate
+            [ScheduleGateKitTest::class, 'bad_word', ['testTheAnswerIsOneOfTheThreeDecisions', 'testNothingIsChangedAndNothingThrowsForAnUnusualButValidSlot', 'testADeviceRowWithOnlyTheDocumentedMembersIsEnough']],
+            [ScheduleGateKitTest::class, 'flips', ['testTheSameQuestionGetsTheSameAnswer']],
+            [ScheduleGateKitTest::class, 'throws_minimal', ['testADeviceRowWithOnlyTheDocumentedMembersIsEnough']],
             [RmmMetricReaderKitTest::class, 'last_arrival_wins', ['testTheNewestReadingWinsWhateverTheOrderOfArrival']],
             [RmmMetricReaderKitTest::class, 'no_window', ['testPeakExcludesHoursBeforeTheWindow', 'testPeakIsTheMinMaxAndMeanOfTheWindow']],
             [RmmMetricReaderKitTest::class, 'instance_blur', ['testPeakIsTheMinMaxAndMeanOfTheWindow']],

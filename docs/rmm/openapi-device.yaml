@@ -300,6 +300,11 @@ paths:
                 properties:
                   job_id: {type: string, format: uuid}
                   state: {type: string, const: queued}
+        '202':
+          description: 'Phase 2. A library script that requires approval (or a run above the bulk threshold) waits for a second person'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PendingApproval'}
         '400': {description: 'The body is not a JSON object', content: {application/json: {schema: {type: object, properties: {error: {type: string}}}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -912,6 +917,623 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/{id}/policy:
+    get:
+      tags: [Technician]
+      operationId: getDevicePolicy
+      summary: The effective policy of a device and where each setting came from (Phase 2)
+      description: Needs `rmm.device.view`. The same resolution the check-in uses, with the layers that produced it.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '200': {description: Effective policy, content: {application/json: {schema: {$ref: '#/components/schemas/EffectivePolicy'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/fields:
+    get:
+      tags: [Technician]
+      operationId: getDeviceFields
+      summary: Custom fields that apply to a device, with their values (Phase 2)
+      description: The device's own, its location's and its client's fields. A secret is always `********`.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '200':
+          description: Fields
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: {type: array, items: {$ref: '#/components/schemas/FieldValue'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/fields/{field_id}:
+    put:
+      tags: [Technician]
+      operationId: setDeviceFieldValue
+      summary: Set or clear a device-scoped custom field value (Phase 2)
+      description: Needs `rmm.device.manage` for the device's client (`rmm.admin` for a secret). A null or empty value clears it.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: field_id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, properties: {value: {}}}
+      responses:
+        '200': {description: Saved}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: 'Not a valid value for the field''s type (`invalid`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/policies:
+    get:
+      tags: [Technician]
+      operationId: listPolicies
+      summary: Policies (Phase 2)
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Policies with their number of assignments, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/Policy'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Technician]
+      operationId: createPolicy
+      summary: Create a policy (Phase 2)
+      description: 'Needs `rmm.admin`. `settings` keys are `interval.check_in_s`, `interval.collect_s`, `feature.software_inventory`, `feature.script_checks`, `feature.checks`, `agent.ring` and `check.<key>`; each is `{mode: override|disable|inherit, value}` or a bare value (an override). See PROTOCOL.md 3.2.2.'
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PolicyInput'}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {type: object, properties: {policy: {$ref: '#/components/schemas/Policy'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: 'Invalid settings or a duplicate name (`invalid`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/policies/{policy_id}:
+    parameters:
+      - {name: policy_id, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Technician]
+      operationId: getPolicy
+      summary: One policy with its assignments and versions (Phase 2)
+      security: [{userToken: []}]
+      responses:
+        '200': {description: The policy, content: {application/json: {schema: {type: object, properties: {policy: {$ref: '#/components/schemas/Policy'}, assignments: {type: array, items: {$ref: '#/components/schemas/PolicyAssignment'}}, versions: {type: array, items: {type: object}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    patch:
+      tags: [Technician]
+      operationId: updatePolicy
+      summary: Change a policy (Phase 2)
+      description: 'Needs `rmm.admin`. A change of `settings` makes a new version; `PUT` is the same. A switched-off policy (`enabled: false`) reaches no device.'
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PolicyInput'}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {type: object, properties: {policy: {$ref: '#/components/schemas/Policy'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: Invalid, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    delete:
+      tags: [Technician]
+      operationId: deletePolicy
+      summary: Delete a policy and its assignments (Phase 2)
+      description: Needs `rmm.admin`.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/policies/{policy_id}/versions:
+    get:
+      tags: [Technician]
+      operationId: listPolicyVersions
+      summary: Versions of a policy, newest first (Phase 2)
+      parameters:
+        - {name: policy_id, in: path, required: true, schema: {type: integer}}
+        - {name: body, in: query, schema: {type: string, enum: ['1']}, description: 'Include each version''s settings'}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Versions, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {type: object}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /endpoint_devices/policies/{policy_id}/assignments:
+    post:
+      tags: [Technician]
+      operationId: assignPolicy
+      summary: Assign a policy to a scope (Phase 2)
+      description: Needs `rmm.admin`. Precedence, least to most specific, is global, client, site, group, tag, device; the most specific layer wins each setting, a higher `priority` wins inside one scope, and an `enforce`d layer cannot be overridden. Assigning again updates in place. Publishes `rmm.policy.assigned`.
+      parameters:
+        - {name: policy_id, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope_type]
+              properties:
+                scope_type: {type: string, enum: [global, client, site, group, tag, device]}
+                scope_id: {type: integer}
+                priority: {type: integer, minimum: 0, maximum: 1000000, default: 100}
+                enforce: {type: boolean}
+                overrides: {type: object, description: 'Settings laid over the policy''s own for this assignment only; `inherit` cancels a key'}
+      responses:
+        '200': {description: Assigned, content: {application/json: {schema: {type: object, properties: {assignment: {$ref: '#/components/schemas/PolicyAssignment'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: Invalid, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/policies/{policy_id}/assignments/{assignment_id}:
+    delete:
+      tags: [Technician]
+      operationId: unassignPolicy
+      summary: Remove an assignment (Phase 2)
+      parameters:
+        - {name: policy_id, in: path, required: true, schema: {type: integer}}
+        - {name: assignment_id, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Removed}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/scripts:
+    get:
+      tags: [Technician]
+      operationId: listLibraryScripts
+      summary: The script library (Phase 2)
+      description: Without script text. Needs `rmm.device.view`.
+      parameters:
+        - {name: q, in: query, schema: {type: string}}
+        - {name: language, in: query, schema: {type: string, enum: [powershell, bash, python]}}
+        - {name: tag, in: query, schema: {type: string}}
+        - {name: include_retired, in: query, schema: {type: string, enum: ['1']}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Scripts, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/LibraryScript'}}, total: {type: integer}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Technician]
+      operationId: createLibraryScript
+      summary: Publish a script (Phase 2)
+      description: Needs `rmm.job.run_script`. The first version is signed with the instance's Ed25519 key. A PowerShell script is at most 10000 characters, any other at most 102400 bytes.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LibraryScriptInput'}
+      responses:
+        '201': {description: Created (with the current version's text), content: {application/json: {schema: {type: object, properties: {script: {$ref: '#/components/schemas/LibraryScript'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: Invalid, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/scripts/{script_id}:
+    parameters:
+      - {name: script_id, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Technician]
+      operationId: getLibraryScript
+      summary: One script (Phase 2)
+      description: '`?body=1` adds the current version''s text, for a caller with `rmm.job.run_saved`.'
+      parameters:
+        - {name: body, in: query, schema: {type: string, enum: ['1']}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: The script, content: {application/json: {schema: {type: object, properties: {script: {$ref: '#/components/schemas/LibraryScript'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    patch:
+      tags: [Technician]
+      operationId: updateLibraryScript
+      summary: Change a script (Phase 2)
+      description: Needs `rmm.job.run_script`. A new `body` or `params` publishes a new, signed version; `PUT` is the same. A retired script cannot be changed.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LibraryScriptInput'}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {type: object, properties: {script: {$ref: '#/components/schemas/LibraryScript'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: Invalid, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    delete:
+      tags: [Technician]
+      operationId: retireLibraryScript
+      summary: Retire a script (Phase 2)
+      description: Needs `rmm.job.run_script`. A retired script cannot be run or scheduled; its history stays. `POST .../restore` brings it back.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Retired}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {description: Already retired (`conflict`), content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/scripts/{script_id}/restore:
+    post:
+      tags: [Technician]
+      operationId: restoreLibraryScript
+      summary: Restore a retired script (Phase 2)
+      parameters:
+        - {name: script_id, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Restored}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/scripts/{script_id}/resign:
+    post:
+      tags: [Technician]
+      operationId: resignLibraryScript
+      summary: Sign every version again with the current key (Phase 2)
+      description: Needs `rmm.admin`. After a signing-key rotation the stored signatures no longer verify and the script is refused until this is called.
+      parameters:
+        - {name: script_id, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: 'Re-signed', content: {application/json: {schema: {type: object, properties: {versions: {type: integer}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/scripts/{script_id}/versions:
+    get:
+      tags: [Technician]
+      operationId: listLibraryScriptVersions
+      summary: Versions of a script, newest first, without text (Phase 2)
+      parameters:
+        - {name: script_id, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Versions, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/ScriptVersion'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/scripts/{script_id}/versions/{version}:
+    get:
+      tags: [Technician]
+      operationId: getLibraryScriptVersion
+      summary: One version with its text (Phase 2)
+      description: Needs `rmm.job.run_saved`.
+      parameters:
+        - {name: script_id, in: path, required: true, schema: {type: integer}}
+        - {name: version, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: The version, content: {application/json: {schema: {type: object, properties: {version: {$ref: '#/components/schemas/ScriptVersion'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/scripts/{script_id}/runs:
+    get:
+      tags: [Technician]
+      operationId: listLibraryScriptRuns
+      summary: Recent jobs of a script on any device (Phase 2)
+      description: Needs `rmm.job.run_saved`.
+      parameters:
+        - {name: script_id, in: path, required: true, schema: {type: integer}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Jobs, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {type: object}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/runs:
+    post:
+      tags: [Technician]
+      operationId: runLibraryScriptOnTarget
+      summary: Run a library script on a target (Phase 2)
+      description: |
+        Needs `rmm.job.run_saved` for each client reached. The target is a device, tag, group, client, site, policy (every device it is assigned to) or `all`;
+        only live devices linked to an asset, inside the caller's clients, on the script's platform are reached. More devices than the `bulk_run_max` limit
+        is 422 `too_many`. A script flagged `requires_approval`, or more devices than the `approval_bulk_threshold` limit, answers 202 and waits for a second
+        person with `rmm.job.approve`; a destructive script needs `confirm`.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RunRequest'}
+      responses:
+        '201':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_count: {type: integer}
+                  created: {type: integer}
+                  skipped_denied: {type: integer}
+                  skipped_error: {type: integer}
+                  errors: {type: array, items: {type: string}}
+        '202': {description: Waiting for approval, content: {application/json: {schema: {$ref: '#/components/schemas/PendingApproval'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: 'Invalid, no device, `too_many` or `confirmation_required`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/approvals:
+    get:
+      tags: [Technician]
+      operationId: listApprovals
+      summary: Approval requests (Phase 2)
+      parameters:
+        - {name: state, in: query, schema: {type: string, enum: [pending_approval, approved, rejected, cancelled, expired]}}
+        - {name: kind, in: query, schema: {type: string, enum: [run, schedule]}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Approvals, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/Approval'}}, total: {type: integer}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /endpoint_devices/approvals/{approval_id}:
+    get:
+      tags: [Technician]
+      operationId: getApproval
+      summary: One approval request (Phase 2)
+      parameters:
+        - {name: approval_id, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: The approval, content: {application/json: {schema: {type: object, properties: {approval: {$ref: '#/components/schemas/Approval'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/approvals/{approval_id}/approve:
+    post:
+      tags: [Technician]
+      operationId: approveApproval
+      summary: Approve a request (Phase 2)
+      description: |
+        Needs `rmm.job.approve` for every client the request reaches, and must be somebody other than the requester (403 `own_request`). Approving a run queues its
+        jobs at once (as the requester, inside the requester's clients); approving a schedule lets it start. A request is decided once (409) and lapses after the
+        `approval_expiry_h` limit (409 `expired`). A script changed since the request, or a request that no longer matches its recorded hash, is 409 `conflict`.
+      parameters:
+        - {name: approval_id, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, properties: {note: {type: string, maxLength: 300}}}
+      responses:
+        '200': {description: Approved, content: {application/json: {schema: {type: object, properties: {approval_id: {type: integer}, state: {type: string, const: approved}, result: {type: object}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {description: 'Already decided, expired or changed (`conflict`, `expired`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/approvals/{approval_id}/reject:
+    post:
+      tags: [Technician]
+      operationId: rejectApproval
+      summary: Reject a request (Phase 2)
+      description: Same rules as approving; nothing is queued.
+      parameters:
+        - {name: approval_id, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, properties: {note: {type: string, maxLength: 300}}}
+      responses:
+        '200': {description: Rejected}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {description: Already decided or expired, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/approvals/{approval_id}/cancel:
+    post:
+      tags: [Technician]
+      operationId: cancelApproval
+      summary: Withdraw a pending request (Phase 2)
+      description: The requester or an administrator.
+      parameters:
+        - {name: approval_id, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Cancelled}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {description: Not pending, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/schedules:
+    get:
+      tags: [Technician]
+      operationId: listSchedules
+      summary: Scheduled scripts (Phase 2)
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Schedules, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/Schedule'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Technician]
+      operationId: createSchedule
+      summary: Schedule a library script (Phase 2)
+      description: 'Needs `rmm.admin`. 201 with the schedule, or 202-style `state: pending_approval` in the body when a second person must approve it first (the schedule does not run until then).'
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ScheduleInput'}
+      responses:
+        '201': {description: Saved, content: {application/json: {schema: {type: object, properties: {schedule: {$ref: '#/components/schemas/Schedule'}, device_count: {type: integer}, state: {type: string, const: pending_approval}, approval_id: {type: integer}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: Invalid, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/schedules/{schedule_id}:
+    parameters:
+      - {name: schedule_id, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Technician]
+      operationId: getSchedule
+      summary: One schedule with its recent runs (Phase 2)
+      security: [{userToken: []}]
+      responses:
+        '200': {description: The schedule, content: {application/json: {schema: {type: object, properties: {schedule: {$ref: '#/components/schemas/Schedule'}, runs: {type: array, items: {type: object}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    patch:
+      tags: [Technician]
+      operationId: updateSchedule
+      summary: Change a schedule (Phase 2)
+      description: Needs `rmm.admin`; `PUT` is the same. Changing the script version, the parameters or the target withdraws an earlier approval.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ScheduleInput'}
+      responses:
+        '200': {description: Saved}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: Invalid, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    delete:
+      tags: [Technician]
+      operationId: deleteSchedule
+      summary: Delete a schedule (Phase 2)
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/schedules/{schedule_id}/history:
+    get:
+      tags: [Technician]
+      operationId: getScheduleHistory
+      summary: Per-device results of a schedule (Phase 2)
+      description: One row per job the schedule queued, newest first, with the job's state and exit code. Only devices inside the caller's clients.
+      parameters:
+        - {name: schedule_id, in: path, required: true, schema: {type: integer}}
+        - {name: device_id, in: query, schema: {type: integer}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: History, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {type: object}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/fields:
+    get:
+      tags: [Technician]
+      operationId: listCustomFields
+      summary: Custom field definitions (Phase 2)
+      parameters:
+        - {name: scope, in: query, schema: {type: string, enum: [client, site, device]}}
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Definitions, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/CustomField'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Technician]
+      operationId: defineCustomField
+      summary: Define a custom field (Phase 2)
+      description: Needs `rmm.admin`. The name is lower case (`^[a-z][a-z0-9_]{0,39}$`) and is used as `{{field.name}}` in a script parameter.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CustomFieldInput'}
+      responses:
+        '201': {description: Defined, content: {application/json: {schema: {type: object, properties: {field: {$ref: '#/components/schemas/CustomField'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: Invalid, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/fields/{field_id}:
+    parameters:
+      - {name: field_id, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Technician]
+      operationId: getCustomField
+      summary: One definition (Phase 2)
+      security: [{userToken: []}]
+      responses:
+        '200': {description: The definition, content: {application/json: {schema: {type: object, properties: {field: {$ref: '#/components/schemas/CustomField'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    patch:
+      tags: [Technician]
+      operationId: changeCustomField
+      summary: Change label, description, options or default (Phase 2)
+      description: Needs `rmm.admin`; `PUT` is the same. The name, scope and type cannot be changed.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CustomFieldInput'}
+      responses:
+        '200': {description: Saved}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: Invalid, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    delete:
+      tags: [Technician]
+      operationId: deleteCustomField
+      summary: Delete a field and all its values (Phase 2)
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Deleted}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/fields/{field_id}/values/{scope_id}:
+    put:
+      tags: [Technician]
+      operationId: setCustomFieldValue
+      summary: Set or clear the value of a field for a client, site or device (Phase 2)
+      description: |
+        `scope_id` is the client, location or device id the field's scope names. Needs `rmm.device.manage` for that client (`rmm.admin` for a secret). A site value also
+        needs `client_id` in the body, and the site must belong to it. A null or empty `value` clears it.
+      parameters:
+        - {name: field_id, in: path, required: true, schema: {type: integer}}
+        - {name: scope_id, in: path, required: true, schema: {type: integer}}
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, properties: {value: {}, client_id: {type: integer}}}
+      responses:
+        '200': {description: Saved}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: Invalid, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
 components:
   securitySchemes:
     deviceAuth:
@@ -1028,6 +1650,20 @@ components:
               interval_s: {type: integer}
               signature: {type: string, description: Ed25519 over the canonical JSON of the other fields}
         collect_interval_s: {type: integer}
+        policy:
+          type: object
+          description: 'Phase 2, additive. The effective policy the server resolved for this device. Present only for a device that announced `policies` while the `policies` sub-switch is on (its checks and intervals are already in the fields above). See PROTOCOL.md 3.2.2'
+          required: [version, applied]
+          properties:
+            version: {type: string, pattern: '^[0-9a-f]{64}$', description: 'SHA-256 of the effective configuration; changes when anything the device is told changes'}
+            applied: {type: boolean, description: 'false: no policy reaches this device, it is told the instance configuration'}
+            features:
+              type: object
+              description: 'The toggles the agent also enforces locally'
+              properties:
+                software_inventory: {type: boolean}
+                script_checks: {type: boolean}
+                checks: {type: boolean}
     CheckinRequest:
       type: object
       required: [seq, collected_at, agent_version]
@@ -1102,8 +1738,8 @@ components:
         signing_key_id: {type: string}
         features:
           type: array
-          items: {type: string, enum: [software_inventory]}
-          description: 'Phase 1, additive. Present only for a device that announced `software_inventory` while the `inventory_software` sub-switch is on; the agent sends `software` only after it has seen it'
+          items: {type: string, enum: [policies, software_inventory]}
+          description: 'Additive. `software_inventory` (Phase 1): only for a device that announced it while the `inventory_software` sub-switch is on; the agent sends `software` only after it has seen it. `policies` (Phase 2): only for a device that announced it while the `policies` sub-switch is on; `config.policy` accompanies it'
         resync:
           type: array
           items: {type: string, enum: [software]}
@@ -1144,7 +1780,7 @@ components:
         job_id: {type: string, format: uuid}
         device_id: {type: integer}
         attempt: {type: integer}
-        type: {type: string, description: 'powershell, reboot, collect (a registry can add types)'}
+        type: {type: string, description: 'powershell (Windows), shell (Linux, bash), python (Linux, python3), reboot, collect (a registry can add types). A parameter is also in the environment as RIVETIT_PARAM_<name> and, for a lower-case name, defined as a script variable; see PROTOCOL.md 3.3'}
         script: {type: [string, 'null']}
         params: {type: object}
         timeout_s: {type: integer}
@@ -1239,13 +1875,225 @@ components:
       type: object
       required: [type]
       properties:
-        type: {type: string, description: 'powershell, reboot or collect'}
-        script: {type: string, description: 'Free-form script text (powershell), at most 102400 bytes'}
-        script_id: {type: integer, description: 'A saved PowerShell script of the edition''s script library; wins over `script`'}
+        type: {type: string, description: 'powershell, shell, python, reboot or collect. Not needed with `library_script_id` (the script''s language decides)'}
+        script: {type: string, description: 'Free-form script text, at most 102400 bytes'}
+        script_id: {type: integer, description: 'A saved PowerShell script of the edition''s own script library; wins over `script`'}
+        library_script_id: {type: integer, description: 'Phase 2. A script of Core''s library (`/endpoint_devices/scripts`); `params` are checked against its definition and may hold `{{field.name}}` placeholders. Answers 202 `pending_approval` when the script requires approval'}
+        script_version: {type: integer, description: 'Phase 2. With `library_script_id`: a version other than the current one'}
         params: {type: object, description: 'At most 20 scalar values (short strings, whole numbers, booleans)'}
         timeout_s: {type: integer}
         destructive: {type: boolean}
         confirm: {type: boolean, description: 'Required for reboot and every destructive job'}
+    PendingApproval:
+      type: object
+      required: [state, approval_id]
+      properties:
+        state: {type: string, const: pending_approval}
+        approval_id: {type: integer}
+        device_count: {type: integer}
+    EffectivePolicy:
+      type: object
+      properties:
+        applied: {type: boolean}
+        version: {type: string, pattern: '^[0-9a-f]{64}$'}
+        check_in_interval_s: {type: integer}
+        collect_interval_s: {type: integer}
+        features: {type: object}
+        ring: {type: [string, 'null']}
+        checks: {type: array, items: {type: object, properties: {key: {type: string}, type: {type: string}, params: {type: object}, interval_s: {type: integer}, from: {type: [object, 'null']}}}}
+        sources: {type: object, description: 'Setting key to {mode, assignment_id, policy_id, scope_type, enforced}'}
+        layers: {type: array, items: {type: object, properties: {assignment_id: {type: integer}, policy_id: {type: integer}, policy: {type: string}, scope_type: {type: string}, priority: {type: integer}, enforce: {type: boolean}}}}
+    Policy:
+      type: object
+      properties:
+        policy_id: {type: integer}
+        name: {type: string}
+        description: {type: string}
+        version: {type: integer}
+        enabled: {type: boolean}
+        settings: {type: object}
+        assignments: {type: integer}
+        updated_at: {type: string, format: date-time}
+    PolicyInput:
+      type: object
+      properties:
+        name: {type: string, maxLength: 100}
+        description: {type: string, maxLength: 300}
+        enabled: {type: boolean}
+        settings: {type: object}
+    PolicyAssignment:
+      type: object
+      properties:
+        assignment_id: {type: integer}
+        policy_id: {type: integer}
+        scope_type: {type: string, enum: [global, client, site, group, tag, device]}
+        scope_id: {type: integer}
+        priority: {type: integer}
+        enforce: {type: boolean}
+        overrides: {type: object}
+    ParamDef:
+      type: object
+      required: [name, type]
+      properties:
+        name: {type: string, pattern: '^[a-z][a-z0-9_]{0,31}$', description: 'Not a reserved word or an automatic variable of bash, PowerShell or Python'}
+        type: {type: string, enum: [string, int, bool, choice, secret]}
+        required: {type: boolean}
+        default: {}
+        label: {type: string}
+        description: {type: string}
+        choices: {type: array, items: {type: string}}
+        max_length: {type: integer, minimum: 1, maximum: 1024}
+        min: {type: integer}
+        max: {type: integer}
+    LibraryScriptInput:
+      type: object
+      properties:
+        name: {type: string, maxLength: 100}
+        description: {type: string, maxLength: 500}
+        language: {type: string, enum: [powershell, bash, python], description: 'Fixed at creation'}
+        body: {type: string}
+        params: {type: array, items: {$ref: '#/components/schemas/ParamDef'}, maxItems: 20}
+        tags: {type: array, items: {type: string}, maxItems: 10}
+        requires_approval: {type: boolean}
+        destructive: {type: boolean}
+        timeout_s: {type: integer}
+        note: {type: string, maxLength: 200}
+    ScriptVersion:
+      type: object
+      properties:
+        version: {type: integer}
+        body_sha256: {type: string}
+        params: {type: array, items: {$ref: '#/components/schemas/ParamDef'}}
+        signing_key_id: {type: string}
+        note: {type: string}
+        created_by: {type: integer}
+        created_at: {type: string, format: date-time}
+        size_bytes: {type: integer}
+        body: {type: string, description: 'Only where the caller may read the text'}
+    LibraryScript:
+      type: object
+      properties:
+        script_id: {type: integer}
+        name: {type: string}
+        description: {type: string}
+        language: {type: string}
+        platform: {type: string, enum: [windows, linux]}
+        tags: {type: array, items: {type: string}}
+        owner_id: {type: integer}
+        requires_approval: {type: boolean}
+        destructive: {type: boolean}
+        timeout_s: {type: integer}
+        current_version: {type: integer}
+        retired: {type: boolean}
+        current: {$ref: '#/components/schemas/ScriptVersion'}
+    RunRequest:
+      type: object
+      required: [library_script_id, target]
+      properties:
+        library_script_id: {type: integer}
+        script_version: {type: integer}
+        target:
+          type: object
+          required: [type]
+          properties:
+            type: {type: string, enum: [device, tag, group, client, site, policy, all]}
+            id: {type: integer}
+        params: {type: object}
+        timeout_s: {type: integer}
+        confirm: {type: boolean}
+    Approval:
+      type: object
+      properties:
+        approval_id: {type: integer}
+        kind: {type: string, enum: [run, schedule]}
+        state: {type: string, enum: [pending_approval, approved, rejected, cancelled, expired]}
+        summary: {type: string}
+        device_count: {type: integer}
+        script_id: {type: [integer, 'null']}
+        script_version: {type: [integer, 'null']}
+        requested_by: {type: integer}
+        requested_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        decided_by: {type: [integer, 'null']}
+        decided_at: {type: [string, 'null'], format: date-time}
+        decision_note: {type: string}
+        result: {type: [object, 'null']}
+    ScheduleInput:
+      type: object
+      properties:
+        name: {type: string, maxLength: 100}
+        library_script_id: {type: integer}
+        script_version: {type: integer, description: 'Pinned; default the current version'}
+        params: {type: object}
+        target: {type: object, properties: {type: {type: string, enum: [device, tag, group, client, site, policy, all]}, id: {type: integer}}}
+        kind: {type: string, enum: [interval, cron]}
+        interval_s: {type: integer, minimum: 60, maximum: 2592000}
+        cron: {type: string, description: 'Five fields in UTC: minute hour day-of-month month day-of-week'}
+        start_in_s: {type: integer, description: 'Interval schedules: seconds until the first run (default one interval)'}
+        jitter_s: {type: integer, minimum: 0, maximum: 3600}
+        overlap: {type: string, enum: [skip, queue]}
+        expires_s: {type: integer, minimum: 60, maximum: 604800, description: 'How long a queued job may wait for an offline device'}
+        timeout_s: {type: integer}
+        enabled: {type: boolean}
+        confirm: {type: boolean, description: 'Required for a destructive script'}
+    Schedule:
+      type: object
+      properties:
+        schedule_id: {type: integer}
+        name: {type: string}
+        script_id: {type: integer}
+        script_name: {type: string}
+        script_version: {type: integer}
+        body_sha256: {type: string}
+        params: {type: object}
+        target: {type: object}
+        kind: {type: string}
+        interval_s: {type: [integer, 'null']}
+        cron: {type: string}
+        jitter_s: {type: integer}
+        overlap: {type: string}
+        expires_s: {type: integer}
+        timeout_s: {type: integer}
+        enabled: {type: boolean}
+        approval_id: {type: [integer, 'null']}
+        approved: {type: boolean}
+        next_run_at: {type: [string, 'null'], format: date-time}
+        last_run_at: {type: [string, 'null'], format: date-time}
+    CustomFieldInput:
+      type: object
+      properties:
+        name: {type: string, pattern: '^[a-z][a-z0-9_]{0,39}$'}
+        label: {type: string, maxLength: 100}
+        scope: {type: string, enum: [client, site, device]}
+        type: {type: string, enum: [text, number, bool, date, list, secret]}
+        options: {type: array, items: {type: string}, description: 'list only'}
+        default: {description: 'Not for a secret'}
+        description: {type: string, maxLength: 300}
+    CustomField:
+      type: object
+      properties:
+        field_id: {type: integer}
+        name: {type: string}
+        label: {type: string}
+        scope: {type: string}
+        type: {type: string}
+        options: {type: array, items: {type: string}}
+        default: {}
+        description: {type: string}
+        values: {type: integer, description: 'How many values are stored'}
+    FieldValue:
+      type: object
+      properties:
+        scope: {type: string, enum: [client, site, device]}
+        scope_id: {type: integer}
+        field_id: {type: integer}
+        name: {type: string}
+        label: {type: string}
+        type: {type: string}
+        set: {type: boolean}
+        value: {description: 'A secret is always ********'}
+        default: {}
+        updated_at: {type: [string, 'null'], format: date-time}
     SoftwareItem:
       type: object
       properties:

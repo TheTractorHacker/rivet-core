@@ -168,54 +168,30 @@ final class ScheduleRunner
         $useCursor = $jitter === 0 && $this->gate === null;
         $pageCursor = $useCursor ? (int) $run['cursor_device_id'] : 0;
 
-        $created = 0;
-        $skipped = ['overlap' => 0, 'gate' => 0, 'other' => 0];
-        $targeted = 0;
         $params = json_decode((string) ($s['params_json'] ?? '{}'), true);
-        $params = is_array($params) ? $params : [];
-        $remaining = $batch;
+        /** @var array{cursor:int,remaining:int,deferred:bool,targeted:int,created:int,overlap:int,gate:int,other:int} $st */
+        $st = ['cursor' => $pageCursor, 'remaining' => $batch, 'deferred' => false, 'targeted' => 0, 'created' => 0, 'overlap' => 0, 'gate' => 0, 'other' => 0];
         $exhausted = false;
-        $deferred = false;
-        while ($remaining > 0) {
-            $pageSize = min(500, max(50, $remaining));
-            $devices = $this->targets->devices((string) $s['target_type'], (int) $s['target_id'], null, $platforms, $pageCursor, $pageSize, $extra);
-            foreach ($devices as $d) {
-                $id = (int) $d['device_id'];
-                $pageCursor = $id;
-                $key = JobExtras::idemKey((int) $s['schedule_id'], $slot, $id);
-                $decision = $this->gate === null ? ScheduleGateInterface::RUN : $this->gate->decide($d, $schedule, $slotTs);
-                if ($decision === ScheduleGateInterface::DEFER) {
-                    $deferred = true;   // not marked: asked again next pass, until the window closes
-                    continue;
-                }
-                ++$targeted;
-                --$remaining;
-                if ($decision === ScheduleGateInterface::SKIP) {
-                    $this->extras->markHandled($key, $id, (int) $s['schedule_id'], $runId);
-                    ++$skipped['gate'];
-                } elseif ($s['overlap'] === 'skip' && $this->unfinished((int) $s['schedule_id'], $id)) {
-                    $this->extras->markHandled($key, $id, (int) $s['schedule_id'], $runId);
-                    ++$skipped['overlap'];
-                } else {
-                    $prep = $this->runner->prepare($loaded, $d, $params, (int) $s['timeout_s']);
-                    $r = $prep['ok'] ? $this->runner->dispatch($loaded, $d, $prep, (int) $s['created_by'], 'schedule',
-                        ['schedule_id' => (int) $s['schedule_id'], 'run_id' => $runId, 'idem_key' => $key, 'expires_in_s' => (int) $s['expires_s']]) : ['ok' => false];
-                    if (!$r['ok']) {
-                        $this->extras->markHandled($key, $id, (int) $s['schedule_id'], $runId);
-                        ++$skipped['other'];
-                    } elseif (empty($r['duplicate'])) {
-                        ++$created;
-                    }
-                }
-                if ($remaining <= 0) {
-                    break;
-                }
-            }
+        while ($st['remaining'] > 0) {
+            $pageSize = min(500, max(50, $st['remaining']));
+            $devices = $this->targets->devices((string) $s['target_type'], (int) $s['target_id'], null, $platforms, $st['cursor'], $pageSize, $extra);
+            // One transaction per page: a commit per job would cost a log flush each. A failure rolls the whole page back, markers included, and the next pass redoes it.
+            $work = function () use ($devices, $s, $loaded, $params, $slot, $slotTs, $runId, $schedule, &$st): bool {
+                $this->processPage($devices, $s, $loaded, is_array($params) ? $params : [], $slot, $slotTs, $runId, $schedule, $st);
+
+                return true;
+            };
+            $this->runner->batch(fn (): mixed => $this->sql->transaction($work));
             if (count($devices) < $pageSize) {
                 $exhausted = true;
                 break;
             }
         }
+        $pageCursor = $st['cursor'];
+        $created = $st['created'];
+        $targeted = $st['targeted'];
+        $deferred = $st['deferred'];
+        $skipped = ['overlap' => $st['overlap'], 'gate' => $st['gate'], 'other' => $st['other']];
 
         $state = null;
         if ($exhausted && $elapsed >= $jitter && !$deferred) {
@@ -228,6 +204,50 @@ final class ScheduleRunner
             [$useCursor ? $pageCursor : 0, $targeted, $created, $skipped['overlap'], $skipped['gate'], $skipped['other'], ...($state === null ? [] : [$state, gmdate('Y-m-d H:i:s', $now)]), $runId]);
 
         return ['created' => $created, 'skipped' => array_sum($skipped), 'closed' => $state !== null];
+    }
+
+    /**
+     * @param list<array<string,mixed>> $devices
+     * @param array<string,mixed> $s the schedule row
+     * @param array{script:array<string,mixed>,version:array<string,mixed>,schema:list<array<string,mixed>>} $loaded
+     * @param array<array-key,mixed> $params
+     * @param array<string,mixed> $schedule the schedule as the API shows it
+     * @param array{cursor:int,remaining:int,deferred:bool,targeted:int,created:int,overlap:int,gate:int,other:int} $st
+     */
+    private function processPage(array $devices, array $s, array $loaded, array $params, string $slot, int $slotTs, int $runId, array $schedule, array &$st): void
+    {
+        foreach ($devices as $d) {
+            $id = (int) $d['device_id'];
+            $st['cursor'] = $id;
+            $key = JobExtras::idemKey((int) $s['schedule_id'], $slot, $id);
+            $decision = $this->gate === null ? ScheduleGateInterface::RUN : $this->gate->decide($d, $schedule, $slotTs);
+            if ($decision === ScheduleGateInterface::DEFER) {
+                $st['deferred'] = true;   // not marked: asked again next pass, until the window closes
+                continue;
+            }
+            ++$st['targeted'];
+            --$st['remaining'];
+            if ($decision === ScheduleGateInterface::SKIP) {
+                $this->extras->markHandled($key, $id, (int) $s['schedule_id'], $runId);
+                ++$st['gate'];
+            } elseif ($s['overlap'] === 'skip' && $this->unfinished((int) $s['schedule_id'], $id)) {
+                $this->extras->markHandled($key, $id, (int) $s['schedule_id'], $runId);
+                ++$st['overlap'];
+            } else {
+                $prep = $this->runner->prepare($loaded, $d, $params, (int) $s['timeout_s']);
+                $r = $prep['ok'] ? $this->runner->dispatch($loaded, $d, $prep, (int) $s['created_by'], 'schedule',
+                    ['schedule_id' => (int) $s['schedule_id'], 'run_id' => $runId, 'idem_key' => $key, 'expires_in_s' => (int) $s['expires_s']]) : ['ok' => false];
+                if (!$r['ok']) {
+                    $this->extras->markHandled($key, $id, (int) $s['schedule_id'], $runId);
+                    ++$st['other'];
+                } elseif (empty($r['duplicate'])) {
+                    ++$st['created'];
+                }
+            }
+            if ($st['remaining'] <= 0) {
+                break;
+            }
+        }
     }
 
     private function unfinished(int $scheduleId, int $deviceId): bool

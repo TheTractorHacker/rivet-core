@@ -13,7 +13,7 @@ namespace RivetCore\Rmm\Scripts;
  */
 final class BulkRunner
 {
-    public function __construct(private readonly TargetResolver $targets, private readonly ScriptRunner $runner)
+    public function __construct(private readonly TargetResolver $targets, private readonly ScriptRunner $runner, private readonly ?\RivetCore\Rmm\Support\Sql $sql = null)
     {
     }
 
@@ -36,35 +36,46 @@ final class BulkRunner
             if ($page === []) {
                 break;
             }
-            foreach ($page as $d) {
-                $cursor = (int) $d['device_id'];
-                ++$out['device_count'];
-                $client = (int) $d['client_id'];
-                if ($allowed !== null) {
-                    $clientOk[$client] ??= $allowed($client);
-                    if (!$clientOk[$client]) {
-                        ++$out['skipped_denied'];
+            $work = function () use ($page, &$out, &$cursor, &$clientOk, $allowed, $loaded, $params, $timeoutS, $userId, $origin, $approvalId): bool {
+                foreach ($page as $d) {
+                    $cursor = (int) $d['device_id'];
+                    ++$out['device_count'];
+                    $client = (int) $d['client_id'];
+                    if ($allowed !== null) {
+                        $clientOk[$client] ??= $allowed($client);
+                        if (!$clientOk[$client]) {
+                            ++$out['skipped_denied'];
+                            continue;
+                        }
+                    }
+                    $prep = $this->runner->prepare($loaded, $d, $params, $timeoutS);
+                    if (!$prep['ok']) {
+                        ++$out['skipped_error'];
+                        if (count($out['errors']) < 5) {
+                            $out['errors'][] = ($d['hostname'] ?? 'device ' . $d['device_id']) . ': ' . $prep['error'];
+                        }
                         continue;
                     }
-                }
-                $prep = $this->runner->prepare($loaded, $d, $params, $timeoutS);
-                if (!$prep['ok']) {
-                    ++$out['skipped_error'];
-                    if (count($out['errors']) < 5) {
-                        $out['errors'][] = ($d['hostname'] ?? 'device ' . $d['device_id']) . ': ' . $prep['error'];
+                    $opts = $approvalId === null ? [] : ['approval_id' => $approvalId, 'idem_key' => hash('sha256', "approval:$approvalId:device:" . $d['device_id'])];
+                    $r = $this->runner->dispatch($loaded, $d, $prep, $userId, $origin, $opts);
+                    if (!$r['ok']) {
+                        ++$out['skipped_error'];
+                        if (count($out['errors']) < 5) {
+                            $out['errors'][] = ($d['hostname'] ?? 'device ' . $d['device_id']) . ': ' . ($r['error'] ?? 'could not be queued');
+                        }
+                    } elseif (empty($r['duplicate'])) {
+                        ++$out['created'];
                     }
-                    continue;
                 }
-                $opts = $approvalId === null ? [] : ['approval_id' => $approvalId, 'idem_key' => hash('sha256', "approval:$approvalId:device:" . $d['device_id'])];
-                $r = $this->runner->dispatch($loaded, $d, $prep, $userId, $origin, $opts);
-                if (!$r['ok']) {
-                    ++$out['skipped_error'];
-                    if (count($out['errors']) < 5) {
-                        $out['errors'][] = ($d['hostname'] ?? 'device ' . $d['device_id']) . ': ' . ($r['error'] ?? 'could not be queued');
-                    }
-                } elseif (empty($r['duplicate'])) {
-                    ++$out['created'];
-                }
+
+                return true;
+            };
+            // One transaction per page: a commit per job would cost a log flush each.
+            if ($this->sql === null) {
+                $work();
+            } else {
+                $sql = $this->sql;
+                $this->runner->batch(static fn (): mixed => $sql->transaction($work));
             }
         }
 

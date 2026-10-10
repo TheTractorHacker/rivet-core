@@ -7,7 +7,7 @@
     {
       "id": "features",
       "title": "RMM feature list",
-      "summary": "What the RMM does and contains, by area, with the phase that delivers each feature",
+      "summary": "What the RMM does and contains, by area, with the phase that delivers each feature (Phases 1 and 2 are built in Core: statuses show Core)",
       "path": "docs/rmm/FEATURES.md",
       "status": "draft",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/FEATURES.md",
@@ -79,7 +79,7 @@
     {
       "id": "capacity",
       "title": "Capacity, module switch and load control",
-      "summary": "The module switch, limits and defaults, load shedding, queued ingest, the capacity panel, sizing, measurements; Phase 1 write paths",
+      "summary": "The module switch, limits and defaults, load shedding, queued ingest, the capacity panel, sizing, measurements; Phase 1 write paths; section 12: Phase 2 limits and measurements",
       "path": "docs/rmm/CAPACITY.md",
       "status": "draft",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/CAPACITY.md",
@@ -88,7 +88,7 @@
     {
       "id": "protocol",
       "title": "RMM endpoint agent wire protocol",
-      "summary": "The frozen protocol: endpoints, credentials, signing, errors, installer trailer, generated constants, observed responses and examples",
+      "summary": "The frozen protocol: endpoints, credentials, signing, errors, installer trailer, generated constants, observed responses and examples; 3.2.2 policies (additive)",
       "path": "docs/rmm/PROTOCOL.md",
       "status": "current",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/PROTOCOL.md",
@@ -97,7 +97,7 @@
     {
       "id": "openapi-device",
       "title": "RMM device and technician API (OpenAPI 3.1)",
-      "summary": "Machine-readable description of the five device endpoints and the technician REST API",
+      "summary": "Machine-readable description of the five device endpoints and the technician REST API, including the Phase 2 policy, script library, approval, schedule and custom field routes",
       "path": "docs/rmm/openapi-device.yaml",
       "status": "current",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/openapi-device.yaml",
@@ -106,7 +106,7 @@
     {
       "id": "module",
       "title": "RMM module page",
-      "summary": "What the module owns, the contracts and abilities an edition implements, key classes, examples that run, failure modes",
+      "summary": "What the module owns, the contracts and abilities an edition implements, key classes, examples that run, failure modes; Phase 2 section: policies, script library, schedules, approvals, custom fields",
       "path": "docs/modules/rmm.md",
       "status": "current",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/modules/rmm.md",

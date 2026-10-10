@@ -109,6 +109,19 @@ For an edition that already runs the RMM module. Everything is additive: an edit
 6. **Limits.** `check_history_days`, `check_history_gap_s` and `software_history_days` are valid `limits_json` keys now; add them to your settings page if you want them editable (defaults 7, 3600, 365).
 7. **Differences to know.** `RmmReadModel::listDevices()` summaries gain a `tags` list in the extras mode (the technician REST list is unchanged). `InMemoryRmmMetricSink` implements the reader (it is `@internal`). `Housekeeping::run()` returns three more counters (`pruned_check_history`, `pruned_software_history`, `pruned_software_removed`) and, when applicable, `pruned_metrics` and `offline_events`.
 
+## Adopting RMM Phase 2 (1.0.0-rc.10)
+
+For an edition that already runs the RMM module. Everything is additive and off until switched on: an edition that changes nothing keeps working and the golden transcripts of the old agents replay identically.
+
+1. **Migrations.** `CoreMigrations::all()` now ends with `0019_rmm_policies_and_scripts`: eleven new tables, `CREATE TABLE IF NOT EXISTS`, `utf8mb4_general_ci`, nothing existing altered. If your `db.sql` mirrors Core's tables, add them (the DDL is `Rmm\Migration\RmmSchema::phase2Tables()`). Run it before, or immediately after, deploying the new code: the job list reads `rmm_job_extra` (it tolerates a missing table), but every other Phase 2 path needs the tables. A fresh install gets them from the migration runner.
+2. **The new ability.** Map `rmm.job.approve` in your `AccessPolicyInterface` (RivetIT: a role setting of its own is best; do not hand it to every role that has `rmm.job.run_saved`, the point is a second person). An unknown ability is denied, so until you map it nobody can approve and a request simply waits and expires.
+3. **Sub-switches.** `policies` and `scripts` are off. Switch them on (`RmmSettings::update(['features_json' => ...])`) once agents of this release are rolled out. Old agents get the policy's values in the fields they already read, without the new keys.
+4. **Job types.** `JobTypeRegistry::withDefaults()` now also registers `shell` and `python`, and `reboot` and `collect` list Linux. `JobService::create()` now refuses a type whose platforms do not include the device's operating system (`powershell` on a Linux device); a custom registry is unaffected unless it lists platforms.
+5. **Constructor arguments.** `RmmModule` builds everything; an edition that constructs `JobService`, `CheckinService`, `Housekeeping`, `TechnicianActions`, `TechnicianApi` or `RmmReadModel` itself passes the new optional trailing arguments or switches to `RmmModule`.
+6. **Pages and routes.** The new REST routes are served by `TechnicianApi` without a change to your bridge. Pages come from `readModel()->automation()` and `policyActions()`, `scriptActions()`, `fieldActions()`. Optional: `RmmModule::setScheduleGate()` with a maintenance-window gate.
+7. **Limits.** `approval_bulk_threshold` (0 = never), `approval_expiry_h`, `schedule_batch`, `bulk_run_max` are valid `limits_json` keys now.
+8. **Differences to know.** A job list entry for a library job carries a `library` member; every other job keeps its shape. The `rmm.*` event catalog has four more ids (13 in all); a webhook subscribed to `rmm.*` starts receiving them when the features are used.
+
 ## Migration order
 
 Core owns its migrations and tracks them in `rivet_core_migrations`, independent of the edition's database version. Migrations are
@@ -134,6 +147,7 @@ forward-only, additive and idempotent; running the whole list on a current datab
 | `0016_rmm_module_switches` | `Rmm\Migration\Migration0016ModuleSwitches` | five columns on `endpoint_agent_settings` | 1.0.0-rc.5 |
 | `0017_mcp_identity_binary_collation` | `Mcp\Migration\Migration0017McpIdentityBinaryCollation` | `mcp_unlinked_identities.issuer`/`subject` become `utf8mb4_bin` | 1.0.0-rc.7 |
 | `0018_rmm_inventory_foundation` | `Rmm\Migration\Migration0018InventoryFoundation` | eleven new tables: `rmm_device_state`, `rmm_device_software`, `rmm_software_history`, `rmm_tags`, `rmm_device_tags`, `rmm_groups`, `rmm_group_devices`, `rmm_group_tags`, `endpoint_agent_check_history`, `rmm_metric_latest`, `rmm_metric_hourly` (all `IF NOT EXISTS`, nothing existing altered) | 1.0.0-rc.9 |
+| `0019_rmm_policies_and_scripts` | `Rmm\Migration\Migration0019PoliciesAndScripts` | eleven new tables: `rmm_policies`, `rmm_policy_versions`, `rmm_policy_assignments`, `rmm_scripts_v2`, `rmm_script_versions`, `rmm_job_extra`, `rmm_schedules`, `rmm_schedule_runs`, `rmm_approvals`, `rmm_custom_fields`, `rmm_custom_field_values` (all `IF NOT EXISTS`, nothing existing altered) | 1.0.0-rc.10 |
 
 The authoritative list is `RivetCore\Migration\CoreMigrations::all()`; the exact ids (`$m->id()`) are what `rivet_core_migrations`
 stores. Print them with `php -r 'require "vendor/autoload.php"; foreach (RivetCore\Migration\CoreMigrations::all() as $m) echo $m->id(), "\n";'`.

@@ -183,13 +183,23 @@ final class CustomFieldService
      * script's `secret` parameter), never otherwise.
      *
      * @param array<string,mixed> $dev the device row
+     * @param list<string>|null $names only these fields (a run needs the ones its parameters name; the others are neither read nor decrypted)
      * @return array<string,array{type:string,value:?string}>
      */
-    public function resolveFor(array $dev, bool $withSecrets = false): array
+    public function resolveFor(array $dev, bool $withSecrets = false, ?array $names = null): array
     {
+        $where = '';
+        $params = [(int) $dev['client_id'], (int) $dev['location_id'], (int) $dev['device_id']];
+        if ($names !== null) {
+            if ($names === []) {
+                return [];
+            }
+            $where = ' WHERE f.name IN (' . implode(',', array_fill(0, count($names), '?')) . ')';
+            array_push($params, ...$names);
+        }
         $rows = $this->sql->all("SELECT f.name, f.type, f.default_value, v.value_text, v.value_enc FROM rmm_custom_fields f
-            LEFT JOIN rmm_custom_field_values v ON v.field_id = f.field_id AND v.scope_id = CASE f.scope WHEN 'client' THEN ? WHEN 'site' THEN ? ELSE ? END",
-            [(int) $dev['client_id'], (int) $dev['location_id'], (int) $dev['device_id']]);
+            LEFT JOIN rmm_custom_field_values v ON v.field_id = f.field_id AND v.scope_id = CASE f.scope WHEN 'client' THEN ? WHEN 'site' THEN ? ELSE ? END$where",
+            $params);
         $out = [];
         foreach ($rows as $r) {
             $value = null;
