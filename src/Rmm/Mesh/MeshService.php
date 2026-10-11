@@ -190,7 +190,11 @@ final class MeshService
      * result with the hash MeshCentral shows (My Server > Certificate hashes, or `openssl x509 -noout -fingerprint -sha384`) before saving it. The
      * connection goes through the same network policy and the same pinned addresses as {@see probe()} and always uses TLS.
      *
-     * @return array{ok:bool,pin?:string,sha256?:string,subject?:string,not_after?:string,error?:string}
+     * `publicly_trusted` says whether the certificate also verifies against the system trust store for that host name (a second, verified handshake): when
+     * true the pin is NOT needed and should be left empty, because a public CA certificate (Let's Encrypt renews about every 60 to 90 days) changes at
+     * each renewal and a pin of it would then break every new install.
+     *
+     * @return array{ok:bool,pin?:string,sha256?:string,subject?:string,not_after?:string,publicly_trusted?:bool,note?:string,error?:string}
      */
     public function probePin(string $base): array
     {
@@ -238,6 +242,11 @@ final class MeshService
         }
         $parsed = function_exists('openssl_x509_parse') ? @openssl_x509_parse($pem) : false;
         $out = ['ok' => true, 'pin' => hash('sha384', $der), 'sha256' => hash('sha256', $der)];
+        $trusted = $this->verifiesWithSystemRoots($norm, $target);
+        $out['publicly_trusted'] = $trusted;
+        $out['note'] = $trusted
+            ? 'This certificate is publicly trusted: no pin needed. Leave the pin empty so installs keep working when the certificate is renewed.'
+            : 'This certificate is not trusted by the system certificate store (a private CA or a self-signed certificate). Compare the pin with the hash MeshCentral shows before saving it, and update it whenever the certificate is replaced.';
         if (is_array($parsed)) {
             $cn = $parsed['subject']['CN'] ?? null;
             $out['subject'] = is_string($cn) ? mb_substr($cn, 0, 200) : '';
@@ -245,5 +254,39 @@ final class MeshService
         }
 
         return $out;
+    }
+
+    /**
+     * Does the server's certificate verify against the system trust store for its host name? One more handshake, verified this time, to the same pinned addresses.
+     *
+     * @param array{host:string,port:int,ips:list<string>} $target
+     */
+    private function verifiesWithSystemRoots(string $norm, array $target): bool
+    {
+        $ch = curl_init(rtrim($norm, '/') . '/health.ashx');
+        if ($ch === false) {
+            return false;
+        }
+        $opts = [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_NOBODY => true,
+            CURLOPT_TIMEOUT => self::PROBE_TIMEOUT_S,
+            CURLOPT_CONNECTTIMEOUT => self::PROBE_CONNECT_TIMEOUT_S,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_PROXY => '',
+            CURLOPT_NOPROXY => '*',
+        ];
+        if ($target['ips'] !== [] && filter_var($target['host'], FILTER_VALIDATE_IP) === false) {
+            $opts[CURLOPT_RESOLVE] = [$target['host'] . ':' . $target['port'] . ':' . implode(',', $target['ips'])];
+        }
+        curl_setopt_array($ch, $opts);
+        curl_exec($ch);
+        $errno = curl_errno($ch);
+        unset($ch);
+
+        return $errno === 0;
     }
 }

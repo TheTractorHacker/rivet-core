@@ -191,19 +191,24 @@ final class RmmAdmin
             }
         }
         $install = [];
+        $warnings = [];
         if ($this->meshSettings !== null) {
             $install = array_intersect_key($in, array_flip(['mesh_group_id', 'mesh_server_cert_pin', 'mesh_auto_map_overwrite', 'mesh_agent_ids', 'mesh_install_args']));
             if ($install !== []) {
-                $errors = $this->meshSettings->update($install, $by->userId);
+                $errors = $this->meshSettings->update($install, $by->userId, $norm);
                 if ($errors !== []) {
                     return ActionResult::fail(422, 'invalid', implode(' ', $errors));
                 }
+                $warnings = $this->meshSettings->lastWarnings();
             }
         }
         $this->settings->set($vals);
         $this->audit->record('Settings', "{$by->userName} edited the MeshCentral settings for the endpoint agent" . ($key !== '' ? ' (login key replaced)' : '')
             . ($install !== [] ? ' and the Mesh agent install settings (' . implode(', ', array_keys($install)) . ')' : ''), 0, 0);
         $extra = [];
+        if ($warnings !== []) {
+            $extra['warnings'] = $warnings;
+        }
         if (!empty($in['mesh_probe_pin']) && $norm !== '') {
             $extra['pin_probe'] = $this->mesh->probePin($norm);
         }

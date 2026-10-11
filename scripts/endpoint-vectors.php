@@ -189,6 +189,19 @@ function installerMeshVectors(): string
     $add('mesh_requested_without_source', 'asks for the agent but carries no source: the RivetIT install must still work, the Mesh part records an error', $enc($base + ['install_mesh_agent' => true]), ['outcome' => 'unusable']);
     $add('mesh_wrong_types', 'install_mesh_agent is a string and mesh a number: never an install, never a parse failure', $enc($base + ['install_mesh_agent' => 'yes', 'mesh' => 5]), ['outcome' => 'disabled']);
     $add('mesh_bad_source', 'asks for the agent with an http:// address: refused by the agent, the RivetIT install still works', $enc($base + ['install_mesh_agent' => true, 'mesh' => ['url' => 'http://mesh.example.com', 'meshid' => $group]]), ['outcome' => 'unusable']);
+    // ADDED in 1.0.0-rc.15: the group id in MeshCentral's 64-character URL form (the shape a real MeshCentral prints in its download address). The value is a fresh
+    // random 48-byte id made for these vectors, not any real server's. A pinned-free system-roots source, like a Let's Encrypt server.
+    $formHex = 'e10df2d66e829b53c567652d4d91add5c62f457fe0d70c32f9d2012df54eb7aad9e0cab782a7c99b0992317e235d849e';
+    $formUrl = '4Q3y1m6Cm1PFZ2UtTZGt1cYvRX$g1wwy@dIBLfVOt6rZ4Mq3gqfJmwmSMX4jXYSe';
+    $meshUrlForm = ['url' => 'https://mesh.example.com', 'meshid' => $formUrl, 'agent_ids' => $ids, 'install_args' => $args];
+    $meshHexForm = ['url' => 'https://mesh.example.com', 'meshid' => $formHex, 'agent_ids' => $ids, 'install_args' => $args];
+    $expectUrl = ['outcome' => 'install', 'url' => 'https://mesh.example.com', 'pin_len' => 0, 'agent_id' => ['linux/amd64' => 6, 'windows/amd64' => 4], 'wire_meshid' => $formUrl,
+        'download_query' => ['windows/amd64' => '/meshagents?id=4&meshid=' . $formUrl . '&installflags=0', 'linux/amd64' => '/meshagents?id=6&meshid=' . $formUrl . '&installflags=0']];
+    $add('mesh_url_form_meshid', 'meshid is MeshCentral\'s 64-character URL form (carries @ and $): sent to the Mesh server exactly as given, as the server now writes it', $enc($base + ['install_mesh_agent' => true, 'mesh' => $meshUrlForm]),
+        $expectUrl, $base + ['install_mesh_agent' => true, 'mesh' => $meshUrlForm]);
+    $add('mesh_hex_meshid_derives_url_form', 'meshid is the hex of the same 48 bytes (what a pre-rc.15 server wrote): the agent derives the identical URL form for the download address', $enc($base + ['install_mesh_agent' => true, 'mesh' => $meshHexForm]),
+        $expectUrl, $base + ['install_mesh_agent' => true, 'mesh' => $meshHexForm]);
+    $add('mesh_bad_meshid_forms', 'meshid with a space, an ampersand and a quote is refused by the agent; the RivetIT install still works', $enc($base + ['install_mesh_agent' => true, 'mesh' => ['url' => 'https://mesh.example.com', 'meshid' => 'a b&c"' . substr($formUrl, 6)]]), ['outcome' => 'unusable']);
     $add('unknown_future_members', 'members no agent knows yet are ignored (this is how an OLD agent reads every vector in this file)', $enc($base + ['install_mesh_agent' => true, 'mesh' => $meshOpen, 'future_member' => ['a' => 1], 'another' => [1, 2, 3]]), ['outcome' => 'install', 'url' => 'https://mesh.example.com:8443/mesh', 'pin_len' => 0, 'agent_id' => ['linux/amd64' => 6]]);
 
     // The three payloads the server can build must be exactly these bytes; and a payload that does not ask for Mesh is exactly the frozen one.
@@ -217,8 +230,24 @@ function installerMeshVectors(): string
     }
     unset($v);
 
-    return json_encode(['format' => 'RIVETIT-EMBED-v1', 'description' => 'Installer payloads that carry the OPTIONAL MeshCentral agent members (install_mesh_agent, mesh). Additive: payload version stays 1, the footer format is unchanged, and an agent that does not know the members ignores them. expect.outcome: install (the agent must parse a usable source), disabled (no Mesh install, the payload still parses) or unusable (Mesh requested but the source is unusable: the install of the RivetIT agent must still succeed). The default tables are what both the server (MeshAgentCatalog) and the agent (internal/mesh) must contain. VERIFY AGAINST YOUR MESH VERSION: the ids come from the MeshCentral source as remembered, not from a live server.',
-        'default_agent_ids' => $ids, 'default_install_args' => $args, 'vectors' => $vec], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
+    // The two forms of a device group id both sides must convert identically (base64 of the 48 bytes, "+" written "@", "/" written "$").
+    $forms = [];
+    foreach ([['fresh_random_with_at_and_dollar', $formHex, $formUrl], ['sequence_00_to_2f', bin2hex(implode('', array_map('chr', range(0, 47)))), null], ['fb_ff_bf_then_01', bin2hex("\xfb\xff\xbf" . str_repeat("\x01", 45)), null]] as [$name, $hex, $url]) {
+        $derived = strtr(base64_encode((string) hex2bin($hex)), ['+' => '@', '/' => '$']);
+        if ($url !== null && $url !== $derived) {
+            fwrite(STDERR, "group form vector $name: hand-written URL form differs from the derivation\n");
+            exit(1);
+        }
+        if (\RivetCore\Rmm\Mesh\MeshAgentCatalog::hexToUrl($hex) !== $derived || \RivetCore\Rmm\Mesh\MeshAgentCatalog::urlToHex($derived) !== $hex
+            || \RivetCore\Rmm\Mesh\MeshAgentCatalog::normalizeGroupId($derived) !== $hex || \RivetCore\Rmm\Mesh\MeshAgentCatalog::normalizeGroupId('mesh//' . $derived) !== $hex) {
+            fwrite(STDERR, "MeshAgentCatalog disagrees with group form vector $name\n");
+            exit(1);
+        }
+        $forms[] = ['name' => $name, 'hex' => $hex, 'url_form' => $derived];
+    }
+
+    return json_encode(['format' => 'RIVETIT-EMBED-v1', 'description' => 'Installer payloads that carry the OPTIONAL MeshCentral agent members (install_mesh_agent, mesh). Additive: payload version stays 1, the footer format is unchanged, and an agent that does not know the members ignores them. expect.outcome: install (the agent must parse a usable source), disabled (no Mesh install, the payload still parses) or unusable (Mesh requested but the source is unusable: the install of the RivetIT agent must still succeed). The default tables are what both the server (MeshAgentCatalog) and the agent (internal/mesh) must contain. Verified against a real MeshCentral (rc.15): the download address shape <mesh>/meshagents?id=4&meshid=<64-character URL form>&installflags=0 (id 4 = Windows x64). Still unverified: the Linux ids, the install arguments and the node-id locations. group_forms: the hex and the URL form of one group id, both directions.',
+        'default_agent_ids' => $ids, 'default_install_args' => $args, 'group_forms' => $forms, 'vectors' => $vec], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
 }
 
 $files = [

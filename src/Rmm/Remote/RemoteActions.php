@@ -549,15 +549,15 @@ final class RemoteActions
     private function meshSettingsView(): array
     {
         $cfg = $this->settings->get();
-        $m = $this->meshSettings?->get() ?? ['group_id' => '', 'server_cert_pin' => '', 'auto_map_overwrite' => false, 'agent_ids' => [], 'install_args' => []];
+        $m = $this->meshSettings?->get() ?? ['group_id' => '', 'group_id_url' => '', 'server_cert_pin' => '', 'auto_map_overwrite' => false, 'agent_ids' => [], 'install_args' => []];
         $t = $this->meshSettings?->effectiveTables() ?? ['agent_ids' => [], 'install_args' => []];
         $refusal = $this->meshAgents?->installRefusal();
 
-        return ['mesh_enabled' => (int) $cfg['mesh_enabled'] === 1, 'mesh_url' => (string) $cfg['mesh_url'], 'mesh_group_id' => $m['group_id'], 'mesh_server_cert_pin' => $m['server_cert_pin'],
+        return ['mesh_enabled' => (int) $cfg['mesh_enabled'] === 1, 'mesh_url' => (string) $cfg['mesh_url'], 'mesh_group_id' => $m['group_id'], 'mesh_group_id_url' => $m['group_id_url'], 'mesh_server_cert_pin' => $m['server_cert_pin'],
             'mesh_auto_map_overwrite' => $m['auto_map_overwrite'], 'mesh_agent_ids' => $m['agent_ids'], 'mesh_install_args' => $m['install_args'],
             'effective_agent_ids' => $t['agent_ids'], 'effective_install_args' => $t['install_args'], 'default_agent_ids' => \RivetCore\Rmm\Mesh\MeshAgentCatalog::DEFAULT_AGENT_IDS,
             'install_ready' => $refusal === null && $this->meshAgents !== null, 'install_refusal' => $this->meshAgents === null ? 'Not available.' : $refusal,
-            'note' => 'The agent ids, download address and install arguments are from the MeshCentral documentation and were not verified against a real server: check them against your Mesh version.'];
+            'note' => 'The download address shape (agent id 4 for Windows x64, installflags=0, meshid in MeshCentral\'s 64-character URL form) was checked against a real MeshCentral. The Linux agent ids, the install arguments and the node-id locations were not: check them against your Mesh version.'];
     }
 
     public function meshSettings(RmmPrincipal $who): ActionResult
@@ -593,10 +593,14 @@ final class RemoteActions
         if ($errors !== []) {
             return ActionResult::fail(422, 'invalid', implode(' ', $errors));
         }
+        $warnings = $this->meshSettings->lastWarnings();
         if ($in !== []) {
             $this->audit->record('Settings', "{$who->userName} changed the Mesh agent install settings (" . implode(', ', array_keys($in)) . ')', 0, 0);
         }
         $data = $this->meshSettingsView();
+        if ($warnings !== []) {
+            $data['warnings'] = $warnings;
+        }
         if ($probe) {
             $url = (string) $this->settings->get()['mesh_url'];
             $data['pin_probe'] = $url === '' ? ['ok' => false, 'error' => 'Save the MeshCentral address first.'] : $this->mesh->probePin($url);

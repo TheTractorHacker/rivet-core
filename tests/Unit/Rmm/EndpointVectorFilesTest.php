@@ -17,7 +17,7 @@ final class EndpointVectorFilesTest extends TestCase
 
     /** Files ADDED after the baseline (never edit the two above; add a file instead). */
     private const ADDED = [
-        'agent_installer_mesh_vectors.json' => '870b5edc2edbce3d312e6c0348a7dc3626be3def14f0d5e6b4c56e67e9d0d30b',   // 1.0.0-rc.12: the optional MeshCentral agent members
+        'agent_installer_mesh_vectors.json' => '39fb641e12abb3d10eac10132fc640991014c5dc994d8e8ca5f6e31ba2af61ea',   // 1.0.0-rc.12: the optional MeshCentral agent members
     ];
 
     public function testFilesMatchTheRivetItBaseline(): void

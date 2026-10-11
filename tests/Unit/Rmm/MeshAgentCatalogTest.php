@@ -10,6 +10,9 @@ use RivetCore\Rmm\Mesh\MeshAgentCatalog as C;
 
 final class MeshAgentCatalogTest extends TestCase
 {
+    /** A fresh random 48-byte id (NOT any real server's) in both forms; the URL form carries '@' and '$'. Also in the vector file. */
+    private const FRESH_HEX = 'e10df2d66e829b53c567652d4d91add5c62f457fe0d70c32f9d2012df54eb7aad9e0cab782a7c99b0992317e235d849e';
+    private const FRESH_URL = '4Q3y1m6Cm1PFZ2UtTZGt1cYvRX$g1wwy@dIBLfVOt6rZ4Mq3gqfJmwmSMX4jXYSe';
     private const HEX96 = '4a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9';
 
     public function testGroupIdAcceptsEvenHexOfTheRightLengthAndLowerCasesIt(): void
@@ -36,6 +39,108 @@ final class MeshAgentCatalogTest extends TestCase
         $this->assertSame(bin2hex("\xfb\xff\xbf" . str_repeat("\x01", 45)), C::normalizeGroupId('mesh//' . strtr($withSpecial, ['+' => '@', '/' => '$'])));
         $this->assertNull(C::normalizeGroupId('mesh//' . substr($mc, 6, 60)), 'wrong length');
         $this->assertNull(C::normalizeGroupId('mesh//' . str_repeat('!', 64)));
+    }
+
+    public function testTheURLFormRoundTripsAndDecodesToExactly48Bytes(): void
+    {
+        $this->assertSame(64, strlen(self::FRESH_URL));
+        $this->assertSame(self::FRESH_HEX, C::urlToHex(self::FRESH_URL));
+        $this->assertSame(self::FRESH_URL, C::hexToUrl(self::FRESH_HEX));
+        $this->assertSame(self::FRESH_URL, C::hexToUrl(strtoupper(self::FRESH_HEX)));
+        $this->assertSame(48, strlen((string) hex2bin((string) C::urlToHex(self::FRESH_URL))));
+        // the real-shape check: any 48 random bytes survive the trip through the URL form unchanged
+        for ($i = 0; $i < 200; $i++) {
+            $hex = bin2hex(random_bytes(48));
+            $url = C::hexToUrl($hex);
+            $this->assertNotNull($url);
+            $this->assertSame(64, strlen((string) $url));
+            $this->assertMatchesRegularExpression('/^[A-Za-z0-9@$]{64}\z/', (string) $url);
+            $this->assertSame($hex, C::urlToHex((string) $url));
+            $this->assertSame($hex, C::normalizeGroupId((string) $url));
+        }
+        $this->assertNull(C::hexToUrl(substr(self::FRESH_HEX, 2)), 'only 48 bytes have a URL form');
+        $this->assertNull(C::urlToHex(substr(self::FRESH_URL, 1)));
+        $this->assertNull(C::urlToHex(self::FRESH_URL . 'A'));
+        $this->assertSame(self::FRESH_URL, C::wireGroupId(self::FRESH_HEX), 'derived when only the hex is known');
+        $this->assertSame(self::FRESH_URL, C::wireGroupId(self::FRESH_HEX, self::FRESH_URL));
+        $this->assertSame(self::FRESH_URL, C::wireGroupId(self::FRESH_HEX, 'not the url form of this hex'), 'a stale or wrong stored URL form is never trusted');
+        $this->assertSame(str_repeat('ab', 20), C::wireGroupId(str_repeat('ab', 20)), 'a hex id of another length has no URL form');
+    }
+
+    public function testTheBareURLFormIsAcceptedAndKeptVerbatim(): void
+    {
+        $g = C::parseGroup(self::FRESH_URL);
+        $this->assertSame(self::FRESH_HEX, $g['hex'] ?? null);
+        $this->assertSame(self::FRESH_URL, $g['url'] ?? null, 'verbatim: what MeshCentral printed is what is sent back');
+        $this->assertSame([], $g['warnings'] ?? null);
+        $this->assertSame(self::FRESH_HEX, C::normalizeGroupId("  \n" . self::FRESH_URL . "\r\n\t"), 'surrounding whitespace and newlines');
+        $this->assertSame(self::FRESH_HEX, C::normalizeGroupId('mesh//' . self::FRESH_URL));
+        // base64url spelling is accepted too and decodes to the same bytes
+        $this->assertSame(self::FRESH_HEX, C::normalizeGroupId(strtr(self::FRESH_URL, ['@' => '-', '$' => '_'])));
+        // hex stays hex (no URL form recorded)
+        $this->assertNull(C::parseGroup(self::FRESH_HEX)['url']);
+        // a 64-character all-hex string is hex, not the URL form
+        $this->assertSame(str_repeat('ab', 32), C::normalizeGroupId(str_repeat('ab', 32)));
+        $this->assertNull(C::parseGroup(str_repeat('ab', 32))['url']);
+    }
+
+    public function testTheWholePastedDownloadAddressIsAccepted(): void
+    {
+        $addr = 'https://mesh.example.com/meshagents?id=4&meshid=' . self::FRESH_URL . '&installflags=0';
+        $g = C::parseGroup($addr, 'https://mesh.example.com');
+        $this->assertSame(self::FRESH_HEX, $g['hex'] ?? null);
+        $this->assertSame(self::FRESH_URL, $g['url'] ?? null);
+        $this->assertSame('mesh.example.com', $g['host'] ?? null);
+        $this->assertSame(4, $g['agent_id'] ?? null);
+        $this->assertSame([], $g['warnings'] ?? null);
+        $this->assertSame(self::FRESH_HEX, C::normalizeGroupId("\n  $addr  \n"), 'with whitespace and a newline');
+        $this->assertSame(self::FRESH_HEX, C::normalizeGroupId('https://mesh.example.com/meshagents?meshid=' . self::FRESH_URL), 'id and installflags are optional');
+        $this->assertSame(self::FRESH_HEX, C::normalizeGroupId('https://mesh.example.com/meshagents?installflags=0&id=4&meshid=' . self::FRESH_URL), 'any parameter order');
+        $this->assertSame(self::FRESH_HEX, C::normalizeGroupId('https://mesh.example.com/meshagents?id=4&meshid=' . rawurlencode(self::FRESH_URL) . '&installflags=0'), 'percent-encoded @ and $');
+        $this->assertSame(self::FRESH_HEX, C::normalizeGroupId('https://mesh.example.com/meshagents?id=4&meshid=' . self::FRESH_URL . '#frag'));
+        $this->assertSame(self::FRESH_HEX, C::normalizeGroupId('https://mesh.example.com/meshagents?id=4&meshid=' . self::FRESH_HEX), 'hex inside an address');
+        // another host is a warning, never an error, and only when a Mesh address is known
+        $w = C::parseGroup($addr, 'https://other.example.org');
+        $this->assertSame(self::FRESH_HEX, $w['hex'] ?? null);
+        $this->assertCount(1, $w['warnings'] ?? []);
+        $this->assertStringContainsString('mesh.example.com', $w['warnings'][0]);
+        $this->assertStringContainsString('other.example.org', $w['warnings'][0]);
+        $this->assertSame([], C::parseGroup($addr, 'https://MESH.example.com:8443/path')['warnings'] ?? null, 'host compared case-insensitively, port and path ignored');
+        $this->assertSame([], C::parseGroup($addr, '')['warnings'] ?? null);
+        $this->assertSame([], C::parseGroup($addr)['warnings'] ?? null);
+    }
+
+    public function testHostileOrMalformedGroupIdsAreRefused(): void
+    {
+        $u = self::FRESH_URL;
+        $bad = [
+            '', ' ', "\n", substr($u, 1), $u . 'A', substr($u, 0, 63) . '+', substr($u, 0, 63) . '/', substr($u, 0, 63) . '=', substr($u, 0, 63) . '.',
+            'a b' . substr($u, 3), substr($u, 0, 10) . ' ' . substr($u, 11), substr($u, 0, 10) . "\n" . substr($u, 11), substr($u, 0, 10) . "\0" . substr($u, 11),
+            substr($u, 0, 63) . '"', substr($u, 0, 63) . "'", substr($u, 0, 63) . '`', substr($u, 0, 63) . '&', substr($u, 0, 63) . '#', substr($u, 0, 63) . '?', substr($u, 0, 63) . ';',
+            substr($u, 0, 63) . '<', substr($u, 0, 63) . '\\', $u . '&x=1', $u . '"; rm -rf /', '$(id)' . substr($u, 5), 'mesh//' . substr($u, 1), 'mesh//' . $u . 'A', 'node//' . $u, 'mesh/' . $u,
+            'MESH//' . $u,
+            // addresses that are not what they look like
+            'http://mesh.example.com/meshagents?id=4',                                         // no meshid
+            'https://mesh.example.com/meshagents?id=4&meshid=',                                // empty meshid
+            'https://mesh.example.com/meshagents?id=4&meshid=' . substr($u, 1),                // wrong length
+            'https://mesh.example.com/meshagents?id=4&meshid=' . $u . ' x',                    // space inside
+            'https://mesh.example.com/meshagents?id=4&meshid=' . $u . '"',                     // quote
+            'https://mesh.example.com/meshagents?id=0&meshid=' . $u,                           // id out of range
+            'https://mesh.example.com/meshagents?id=256&meshid=' . $u,
+            'https://mesh.example.com/meshagents?id=abc&meshid=' . $u,
+            'https://mesh.example.com/meshagents?id[]=4&meshid=' . $u . '&id=x',
+            'https://user:pw@mesh.example.com/meshagents?id=4&meshid=' . $u,                   // credentials
+            'ftp://mesh.example.com/meshagents?id=4&meshid=' . $u,                             // scheme
+            'javascript://x/%0aalert(1)?meshid=' . $u,
+            'https:///meshagents?id=4&meshid=' . $u,                                           // no host
+            'https://mesh.example.com/meshagents?id=4&meshid[]=' . $u,                         // array
+            'https://mesh.example.com/meshagents?id=4&meshid=https://evil.example/?meshid=' . $u,
+            str_repeat('A', 3000),
+        ];
+        foreach ($bad as $in) {
+            $this->assertNull(C::parseGroup($in), json_encode($in));
+            $this->assertNull(C::normalizeGroupId($in), json_encode($in));
+        }
     }
 
     public function testPin(): void
@@ -84,7 +189,9 @@ final class MeshAgentCatalogTest extends TestCase
 
     public function testDownloadUrl(): void
     {
-        $this->assertSame('https://mesh.example.com/meshagents?id=6&meshid=' . self::HEX96 . '&installflags=0', C::downloadUrl('https://mesh.example.com/', 6, self::HEX96));
+        $this->assertSame('https://mesh.example.com/meshagents?id=6&meshid=' . C::hexToUrl(self::HEX96) . '&installflags=0', C::downloadUrl('https://mesh.example.com/', 6, self::HEX96), 'hex goes out in the URL form');
+        $this->assertSame('https://mesh.example.com/meshagents?id=4&meshid=' . self::FRESH_URL . '&installflags=0', C::downloadUrl('https://mesh.example.com', 4, self::FRESH_URL), 'the URL form goes out unchanged');
+        $this->assertSame(C::downloadUrl('https://mesh.example.com', 4, self::FRESH_URL), C::downloadUrl('https://mesh.example.com', 4, self::FRESH_HEX));
         $this->assertSame('https://m/x/meshagents?id=4&meshid=ab&installflags=2', C::downloadUrl('https://m/x', 4, 'ab', 2));
     }
 

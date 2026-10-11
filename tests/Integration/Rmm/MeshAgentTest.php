@@ -20,6 +20,8 @@ use RivetCore\Tests\Support\RmmHarness;
 final class MeshAgentTest extends RemoteTestCase
 {
     private const GROUP = '4a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9';
+    /** The URL form of GROUP: what MeshCentral prints in its download address and what the installer now carries. */
+    private const GROUP_URL = 'ShssPU5fYHGCk6S1xtfo@QobLD1OX2BxgpOktcbX6PkKGyw9Tl9gcYKTpLXG1@j5';
     private const NODE_A = 'node//AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@$AbCdEfGhIjKlMnOpQrStUvWxYz01';
     private const NODE_B = 'node//ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210@$ZyXwVuTsRqPoNmLkJiHgFeDcBa98';
     private InMemoryRmmEvents $bus;
@@ -106,7 +108,7 @@ final class MeshAgentTest extends RemoteTestCase
             $this->assertTrue($d['install_mesh_agent']);
             $m = $d['mesh'];
             $this->assertSame('https://mesh.example.com', $m['url']);
-            $this->assertSame(self::GROUP, $m['meshid']);
+            $this->assertSame(self::GROUP_URL, $m['meshid'], 'the payload carries the URL form, derived from the stored hex');
             $this->assertSame($pin, $m['pin'], 'stored normalised');
             $this->assertSame(40, $m['agent_ids']['windows/arm64']);
             $this->assertSame(4, $m['agent_ids']['windows/amd64'], 'the built-in ids fill the rest');
@@ -158,7 +160,7 @@ final class MeshAgentTest extends RemoteTestCase
         $without = $a->deploymentCommands($this->admin, $this->h->clientA, 0, 'stable', 24, 5, 'w', 'amd64');
         $this->assertTrue($with->ok, $with->message);
         $lx = $with->data['commands']['linux'];
-        $this->assertStringContainsString("--install-mesh-agent --mesh-url 'https://mesh.example.com' --mesh-group-id '" . self::GROUP . "' --mesh-cert-pin '" . hash('sha384', 'c') . "'", $lx);
+        $this->assertStringContainsString("--install-mesh-agent --mesh-url 'https://mesh.example.com' --mesh-group-id '" . self::GROUP_URL . "' --mesh-cert-pin '" . hash('sha384', 'c') . "'", $lx);
         $this->assertStringNotContainsString('mesh', $without->data['commands']['linux']);
         $this->assertStringNotContainsString('mesh', strtolower($with->data['commands']['powershell']), 'the stamped installer carries it; the snippet is unchanged');
         $this->assertStringNotContainsString('mesh', strtolower($without->data['commands']['powershell']));
@@ -200,6 +202,61 @@ final class MeshAgentTest extends RemoteTestCase
         $raw = implode('', array_map('chr', range(0, 47)));
         $this->assertSame([], $s->update(['mesh_group_id' => 'mesh//' . strtr(base64_encode($raw), ['+' => '@', '/' => '$'])], 1));
         $this->assertSame(bin2hex($raw), $s->get()['group_id']);
+    }
+
+    public function testThePastedDownloadAddressAndTheBareURLFormAreSavedAndCarriedVerbatim(): void
+    {
+        $fresh = 'e10df2d66e829b53c567652d4d91add5c62f457fe0d70c32f9d2012df54eb7aad9e0cab782a7c99b0992317e235d849e';
+        $url = '4Q3y1m6Cm1PFZ2UtTZGt1cYvRX$g1wwy@dIBLfVOt6rZ4Mq3gqfJmwmSMX4jXYSe';
+        $this->meshOn();
+        $s = $this->h->module->meshAgentSettings();
+        $addr = "\n  https://mesh.example.com/meshagents?id=4&meshid=$url&installflags=0  \n";
+        $this->assertSame([], $s->update(['mesh_group_id' => $addr], 1));
+        $this->assertSame([], $s->lastWarnings());
+        $g = $s->get();
+        $this->assertSame([$fresh, $url], [$g['group_id'], $g['group_id_url']]);
+        $this->assertSame($url, $this->h->module->meshAgents()->installBlock()['meshid'] ?? null, 'the block carries what MeshCentral printed');
+        $stored = $this->h->module->settings()->get();   // sanity: the Mesh address itself is untouched
+        $this->assertSame('https://mesh.example.com', $stored['mesh_url']);
+        // the bare form, the mesh// form and the hex give the same canonical id and the same wire form
+        foreach ([$url, 'mesh//' . $url, $fresh, strtoupper($fresh)] as $in) {
+            $this->assertSame([], $s->update(['mesh_group_id' => ''], 1));
+            $this->assertSame([], $s->update(['mesh_group_id' => $in], 1), $in);
+            $this->assertSame([$fresh, $url], [$s->get()['group_id'], $s->get()['group_id_url']], $in);
+            $this->assertSame($url, $this->h->module->meshAgents()->installBlock()['meshid'] ?? null, $in);
+        }
+        // an address for another host is saved, with a warning
+        $this->assertSame([], $s->update(['mesh_group_id' => "https://desktop.example.org/meshagents?id=4&meshid=$url&installflags=0"], 1));
+        $this->assertCount(1, $s->lastWarnings());
+        $this->assertStringContainsString('desktop.example.org', $s->lastWarnings()[0]);
+        $this->assertSame($fresh, $s->get()['group_id']);
+        // hostile values are refused with the help text and change nothing
+        foreach (["$url\"", "$url'", "$url x", "$url&installflags=0", "$url#", 'a b' . substr($url, 3), substr($url, 1), "https://mesh.example.com/meshagents?id=4&meshid=" . substr($url, 1)] as $bad) {
+            $before = $s->get();
+            $err = $s->update(['mesh_group_id' => $bad], 1);
+            $this->assertSame([\RivetCore\Rmm\Mesh\MeshAgentSettings::GROUP_HELP_ERROR], $err, json_encode($bad));
+            $this->assertSame($before, $s->get());
+        }
+        // the pin message tells the Let's Encrypt story
+        $err = $s->update(['mesh_server_cert_pin' => 'abc'], 1);
+        $this->assertStringContainsString('public CA', $err[0]);
+        $this->assertStringContainsString("Let's Encrypt", $err[0]);
+    }
+
+    public function testASettingsRowFromBeforeTheURLFormColumnStillWorks(): void
+    {
+        // a row saved by rc.14 (hex only, group_id_url empty) and a database where migration 0024 is not applied yet
+        $this->meshOn();
+        $this->h->module->meshAgentSettings()->update(['mesh_group_id' => 'x'], 1);
+        $this->assertSame([], $this->h->module->meshAgentSettings()->update(['mesh_group_id' => self::GROUP], 1));
+        $this->h->db->execute("UPDATE endpoint_agent_mesh_settings SET group_id_url = '' WHERE id = 1");
+        $this->h->module->meshAgentSettings()->refresh();
+        $this->assertSame(self::GROUP_URL, $this->h->module->meshAgents()->installBlock()['meshid'] ?? null);
+        $this->h->db->execute('ALTER TABLE endpoint_agent_mesh_settings DROP COLUMN group_id_url');
+        $this->h->module->meshAgentSettings()->refresh();
+        $this->assertSame([self::GROUP, self::GROUP_URL], [$this->h->module->meshAgentSettings()->get()['group_id'], $this->h->module->meshAgentSettings()->get()['group_id_url']]);
+        $this->assertSame([], $this->h->module->meshAgentSettings()->update(['mesh_group_id' => 'mesh//' . self::GROUP_URL, 'mesh_auto_map_overwrite' => false], 1), 'saving works without the column');
+        $this->assertSame(self::GROUP_URL, $this->h->module->meshAgents()->installBlock()['meshid'] ?? null);
     }
 
     public function testSettingsRoutesAreAdminOnlyAndRoundTrip(): void
@@ -247,6 +304,8 @@ final class MeshAgentTest extends RemoteTestCase
         $this->assertSame($tls->sha384, $j['pin_probe']['pin']);
         $this->assertSame($tls->sha256, $j['pin_probe']['sha256']);
         $this->assertSame('mesh.test.invalid', $j['pin_probe']['subject']);
+        $this->assertFalse($j['pin_probe']['publicly_trusted'], 'a self-signed certificate is not trusted by the system roots');
+        $this->assertStringContainsString('not trusted', $j['pin_probe']['note']);
         $this->assertSame('', $this->h->module->meshAgentSettings()->get()['server_cert_pin'], 'proposed, never saved by the probe');
         $r = $this->h->module->admin()->saveMesh($this->admin, ['mesh_enabled' => 1, 'mesh_url' => $tls->url(), 'mesh_probe_pin' => true]);
         $this->assertSame($tls->sha384, $r->data['pin_probe']['pin']);

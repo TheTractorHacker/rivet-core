@@ -753,7 +753,7 @@ final class RmmModule
     /** The install settings of the optional MeshCentral agent (device group, certificate pin, overwrite switch, table corrections). */
     public function meshAgentSettings(): MeshAgentSettings
     {
-        return $this->meshAgentSettings ??= new MeshAgentSettings($this->sql());
+        return $this->meshAgentSettings ??= new MeshAgentSettings($this->sql(), $this->settings());
     }
 
     /** The optional MeshCentral agent: the installer's Mesh block, the device's report and the automatic node-id mapping. */

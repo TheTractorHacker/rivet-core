@@ -81,7 +81,7 @@ final class MeshAgentService
         $cfg = $this->settings->get();
         $m = $this->meshSettings->get();
         $t = $this->meshSettings->effectiveTables();
-        $block = ['url' => (string) MeshService::normalizeUrlWith((string) $cfg['mesh_url'], false), 'meshid' => $m['group_id']];
+        $block = ['url' => (string) MeshService::normalizeUrlWith((string) $cfg['mesh_url'], false), 'meshid' => $m['group_id_url']];
         if ($m['server_cert_pin'] !== '') {
             $block['pin'] = $m['server_cert_pin'];
         }

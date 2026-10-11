@@ -25,6 +25,7 @@ use RivetCore\Rmm\Migration\Migration0020AlertingMaturity;
 use RivetCore\Rmm\Migration\Migration0021ScaleStorage;
 use RivetCore\Rmm\Migration\Migration0022RemoteAndLogs;
 use RivetCore\Rmm\Migration\Migration0023MeshAgent;
+use RivetCore\Rmm\Migration\Migration0024MeshGroupUrl;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
 
@@ -61,6 +62,7 @@ final class CoreMigrations
             new Migration0021ScaleStorage(),
             new Migration0022RemoteAndLogs(),
             new Migration0023MeshAgent(),
+            new Migration0024MeshGroupUrl(),
         ];
     }
 }

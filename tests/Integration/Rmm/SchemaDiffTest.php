@@ -420,6 +420,29 @@ final class SchemaDiffTest extends TestCase
         $this->assertSame($before, $this->describe('d'));
     }
 
+    public function testMigration0024AddsOneColumnAndIsIdempotent(): void
+    {
+        $this->reference();
+        $this->build('d', 'rivetit-2.6.146-final.sql', true);
+        $this->seed('d');
+        $this->runner('d')->run();
+        $col = static fn (\RivetCore\Database\DatabaseInterface $db): ?array => $db->fetchOne("SELECT COLUMN_TYPE t, COLUMN_DEFAULT d, IS_NULLABLE n, COLLATION_NAME c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'endpoint_agent_mesh_settings' AND COLUMN_NAME = 'group_id_url'");
+        $c = $col($this->db('d'));
+        $this->assertSame(['varchar(64)', 'NO'], [$c['t'] ?? null, $c['n'] ?? null]);
+        $this->assertSame('utf8mb4_general_ci', $c['c']);
+        $this->db('d')->execute("INSERT INTO endpoint_agent_mesh_settings (id, group_id, group_id_url) VALUES (1, 'abcd', 'keep')");
+        $before = $this->describe('d');
+        (new \RivetCore\Rmm\Migration\Migration0024MeshGroupUrl())->up($this->db('d'));
+        $this->assertSame([], $this->runner('d')->run());
+        $this->assertSame($before, $this->describe('d'));
+        $this->assertSame(['abcd', 'keep'], array_values(array_map('strval', array_intersect_key($this->db('d')->fetchOne('SELECT group_id, group_id_url FROM endpoint_agent_mesh_settings') ?? [], ['group_id' => 1, 'group_id_url' => 1]))));
+        // a database that went through 0023 only (rc.12 to rc.14) gains the column and keeps its rows
+        $this->db('d')->execute('ALTER TABLE endpoint_agent_mesh_settings DROP COLUMN group_id_url');
+        (new \RivetCore\Rmm\Migration\Migration0024MeshGroupUrl())->up($this->db('d'));
+        $this->assertSame('', (string) $this->db('d')->fetchOne('SELECT group_id_url c FROM endpoint_agent_mesh_settings')['c']);
+        $this->assertSame('abcd', (string) $this->db('d')->fetchOne('SELECT group_id c FROM endpoint_agent_mesh_settings')['c']);
+    }
+
     public function testFreshCoreInstallHasEveryPhase1Table(): void
     {
         $this->runner('b')->run();
