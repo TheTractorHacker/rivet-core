@@ -148,6 +148,9 @@ final class RmmSettings
     /** @var (\Closure(): void)|null called after a write that touches a column the state file mirrors */
     private ?\Closure $stateListener = null;
 
+    /** @var (\Closure(): void)|null called when the master switch goes from off to on (the warm start of {@see \RivetCore\Rmm\Capacity\HerdControl}) */
+    private ?\Closure $enableListener = null;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly SecretBoxInterface $box,
@@ -339,14 +342,28 @@ final class RmmSettings
      * Turn the module on: mint the instance signing key the first time and make sure the synthetic RMM integration row exists
      * (asset_rmm_links.integration_id points at it, so devices appear in the edition's RMM views).
      */
+    /** @param \Closure(): void|null $listener */
+    public function onEnable(?\Closure $listener): void
+    {
+        $this->enableListener = $listener;
+    }
+
     public function enable(): void
     {
         $cfg = $this->get(true);
+        $wasOff = (int) ($cfg['enabled'] ?? 0) !== 1;
         if ((string) $cfg['signing_public_key'] === '' || empty($cfg['signing_private_key_enc'])) {
             $this->generateSigningKey();
         }
         $this->integrationId();
         $this->set(['enabled' => 1]);
+        if ($wasOff && $this->enableListener !== null) {
+            try {
+                ($this->enableListener)();
+            } catch (\Throwable) {
+                // a warm start that cannot be recorded is simply not in force
+            }
+        }
     }
 
     /** Switch the master off. Nothing is deleted. */

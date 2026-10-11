@@ -17,9 +17,11 @@ use RivetCore\Rmm\Scripts\ApprovedRunExecutor;
 use RivetCore\Rmm\Scripts\ScheduleRunner;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmEvent;
+use RivetCore\Rmm\Metrics\ExternalMetricSink;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Storage\StorageMaintenance;
 use RivetCore\Rmm\Support\DatabaseMetricSink;
+use RivetCore\Rmm\Support\RmmCache;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 
@@ -64,6 +66,8 @@ final class Housekeeping
         private readonly ?PolicyStore $policies = null,
         private readonly ?AlertingHousekeeping $alerting = null,
         private readonly ?StorageMaintenance $storage = null,
+        private readonly ?RmmCache $cache = null,
+        private readonly ?ExternalMetricSink $external = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -109,6 +113,16 @@ final class Housekeeping
         if ($this->metricSink !== null) {
             $explicit = $this->settings->explicitLimits();
             $out['pruned_metrics'] = $this->metricSink->prune(self::PRUNE_RUN_CAP, $this->pause, $explicit['metric_hourly_days'] ?? null, $explicit['metric_daily_days'] ?? null, $partitioned);
+        }
+        if ($this->cache !== null) {
+            $out['pruned_cache'] = $this->cache->prune();
+        }
+        if ($this->external !== null) {
+            // Scale S4: deliver the buffered batches to the external metric store (bounded, backed off, never inside a check-in)
+            $f = $this->external->flush(5);
+            $out['external_sent'] = $f['sent'];
+            $out['external_failed'] = $f['failed'] + $f['permanent'];
+            $out['external_pending'] = $f['pending'];
         }
         if ($this->alerting !== null && $this->settings->featureOn('alerting')) {
             $out += $this->alerting->run();

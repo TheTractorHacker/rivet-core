@@ -16,7 +16,7 @@ use RivetCore\Rmm\Support\Sql;
  * (`rmm_storage_state`) moves only when a whole day is done. Every slice is a REPLACE-style upsert computed from the hourly rows, so running a slice twice,
  * or after a crash, gives the same rows: the job is idempotent. An hour that arrives after its day was rolled up stays in the hourly tier only.
  *
- * @internal
+ * @api
  */
 final class MetricRollup
 {
@@ -26,7 +26,8 @@ final class MetricRollup
 
     private readonly StorageState $state;
 
-    public function __construct(private readonly Sql $sql, ?StorageState $state = null)
+    /** @param int $assetsPerSlice assets one statement covers (a seam for tests; the default suits a 10,000 device fleet) */
+    public function __construct(private readonly Sql $sql, ?StorageState $state = null, private readonly int $assetsPerSlice = self::ASSETS_PER_SLICE)
     {
         $this->state = $state ?? new StorageState($sql);
     }
@@ -35,9 +36,10 @@ final class MetricRollup
      * Roll up as many complete days as the budget allows.
      *
      * @param int $budgetSeconds stop starting new slices after this many seconds
+     * @param int|null $maxSlices stop after this many slices (null = no limit); the next run resumes where this one stopped
      * @return array{days:int,slices:int,rows:int,watermark:?string,behind_days:int}
      */
-    public function run(int $budgetSeconds = 20): array
+    public function run(int $budgetSeconds = 20, ?int $maxSlices = null): array
     {
         $deadline = microtime(true) + max(1, $budgetSeconds);
         $now = $this->sql->time();
@@ -64,16 +66,16 @@ final class MetricRollup
             $done = $resumeAfter;
             $resumeAfter = 0;
             while ($done < $maxAsset) {
-                if (microtime(true) > $deadline) {
+                if (microtime(true) > $deadline || ($maxSlices !== null && $out['slices'] >= $maxSlices)) {
                     $this->state->put(StorageState::ROLLUP, $from, ['day' => $from, 'asset_done' => $done]);
                     $out['watermark'] = $from;
                     $out['behind_days'] = intdiv($lastDay - $day, 86400);
 
                     return $out;
                 }
-                $out['rows'] += $this->slice($from, $to, $done, $done + self::ASSETS_PER_SLICE);
+                $out['rows'] += $this->slice($from, $to, $done, $done + $this->assetsPerSlice);
                 ++$out['slices'];
-                $done += self::ASSETS_PER_SLICE;
+                $done += $this->assetsPerSlice;
             }
             $day += 86400;
             ++$out['days'];

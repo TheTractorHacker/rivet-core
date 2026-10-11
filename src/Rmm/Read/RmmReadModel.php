@@ -17,6 +17,7 @@ use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Software\SoftwareVersion;
+use RivetCore\Rmm\Support\RmmCache;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Tags\GroupService;
 use RivetCore\Rmm\Tags\TagService;
@@ -65,6 +66,7 @@ final class RmmReadModel
         private readonly ?GroupService $groupService = null,
         private readonly ?RmmMetricReaderInterface $metricReader = null,
         private readonly ?AutomationReader $automation = null,
+        private readonly ?RmmCache $cache = null,
     ) {
     }
 
@@ -441,6 +443,24 @@ final class RmmReadModel
      * @return array{online:int,offline:int,stale:int,never:int,total:int,pending_approval:int}
      */
     public function fleetCounts(?array $visibleClientIds = null): array
+    {
+        $limits = $this->settings->limits();
+        if ($this->cache === null || $limits['cache_fresh_s'] <= 0) {
+            return $this->computeFleetCounts($visibleClientIds);
+        }
+        // The dashboard counters are an aggregate over every device: cached for `cache_fresh_s`, served stale for `cache_stale_s` while ONE request refreshes them, and marked
+        // stale at once when a device is enrolled, approved, revoked, retired or moved.
+        /** @var array{online:int,offline:int,stale:int,never:int,total:int,pending_approval:int} $out */
+        $out = $this->cache->remember(RmmCache::GROUP_FLEET, 'counts:' . md5((string) json_encode($visibleClientIds)), $limits['cache_fresh_s'], $limits['cache_stale_s'], fn (): array => $this->computeFleetCounts($visibleClientIds));
+
+        return $out;
+    }
+
+    /**
+     * @param list<int>|null $visibleClientIds
+     * @return array{online:int,offline:int,stale:int,never:int,total:int,pending_approval:int}
+     */
+    private function computeFleetCounts(?array $visibleClientIds): array
     {
         $cfg = $this->settings->get();
         [$scope, $params] = $this->deviceWhere(['retired' => 'hide'], $visibleClientIds, $cfg);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Http;
 
+use RivetCore\Rmm\Capacity\HerdControl;
 use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Checkin\CheckinService;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
@@ -86,6 +87,7 @@ final class DeviceApi
         private readonly ?LoadShedder $shedder = null,
         private readonly string $disabledAnswer = self::DISABLED_UNIFORM,
         private readonly ?RmmState $state = null,
+        private readonly ?HerdControl $herd = null,
     ) {
         if ($disabledAnswer !== self::DISABLED_UNIFORM && $disabledAnswer !== self::DISABLED_COMPAT) {
             throw new \InvalidArgumentException('disabledAnswer must be "uniform" or "compat".');
@@ -145,6 +147,7 @@ final class DeviceApi
             if (strtoupper($req->method) !== 'POST') {
                 throw new ApiError(405, 'method_not_allowed', 'Use POST.', ['Allow' => 'POST']);
             }
+            $this->herd?->beforeCheckin($req->header('authorization'));   // warm start after an outage (off by default): refuses a share of check-ins before any query
             $this->shedder?->tick();   // at most one evaluation per 10 s, from cheap signals
             if ((int) ($this->settings->get()['shed_level'] ?? 0) >= 3) {
                 throw LoadShedder::refusal($this->settings->limits());   // level 3: refused before any other work
@@ -152,6 +155,7 @@ final class DeviceApi
             $dev = $this->devices->authenticate($req->header('authorization'));
             $this->deviceRateLimit((int) $dev['device_id'], 'checkin', ...RmmProtocol::RATE_CHECKIN);
             $this->globalCheckinLimit();
+            $this->herd?->clientBucket('checkin', (int) $dev['client_id']);   // opt-in token bucket per client (client_bucket_burst)
             $body = $this->body($req, RmmProtocol::CHECKIN_MAX_BODY);
 
             return RmmResponse::json(200, $this->checkin->handle($dev, $body, $req->clientIp));

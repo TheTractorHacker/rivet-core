@@ -102,26 +102,32 @@ final class StorageScaleTest extends RmmTestCase
         $this->assertGreaterThanOrEqual(1, $after['days']);
     }
 
-    public function testASmallBudgetStopsMidDayAndTheNextRunResumesWithoutLosingOrDoublingAnything(): void
+    public function testARunThatStopsMidDayResumesWithoutLosingOrDoublingAnything(): void
     {
-        $today = $this->today() - 3 * 86400;   // a window well in the past: complete days regardless of the time of day
         $this->clock->advance(3 * 86400);
-        $this->clock->advance(0);
         $day = $this->today() - 2 * 86400;
-        $assets = MetricRollup::ASSETS_PER_SLICE * 2 + 5;
         $values = [];
-        for ($a = 1; $a <= $assets; $a += 7) {
+        for ($a = 1; $a <= 25; ++$a) {
             $values[] = "($a, 'cpu.utilization', '', '" . gmdate('Y-m-d H:i:s', $day + 3600) . "', 2, 30, 10, 20)";
+            $values[] = "($a, 'cpu.utilization', '', '" . gmdate('Y-m-d H:i:s', $day + 7200) . "', 3, 60, 5, 30)";
         }
-        $values[] = "($assets, 'cpu.utilization', '', '" . gmdate('Y-m-d H:i:s', $day + 7200) . "', 2, 30, 10, 20)";
         $this->h->q('INSERT INTO rmm_metric_hourly (asset_id, metric_key, instance, hour_start, samples, sum_value, min_value, max_value) VALUES ' . implode(',', $values));
-        $roll = new MetricRollup($this->sql);
-        $expected = (int) $this->h->one('SELECT COUNT(*) FROM (SELECT asset_id FROM rmm_metric_hourly GROUP BY asset_id, metric_key, instance) t');
-        $roll->run(0);   // a zero budget still does nothing harmful
-        $roll->run(20);
-        $this->assertSame($expected, (int) $this->h->one('SELECT COUNT(*) FROM rmm_metric_daily'));
+        $roll = new MetricRollup($this->sql, null, 10);
+        $first = $roll->run(20, 1);
+        $this->assertSame(1, $first['slices']);
+        $this->assertSame(0, $first['days'], 'stopped inside the day: the watermark did not move past it');
+        $this->assertSame(gmdate('Y-m-d H:i:s', $day), $first['watermark']);
+        $this->assertSame(10, (int) $this->h->one('SELECT COUNT(*) FROM rmm_metric_daily'));
+        $second = $roll->run(20, 1);
+        $this->assertSame(1, $second['slices']);
+        $this->assertSame(20, (int) $this->h->one('SELECT COUNT(*) FROM rmm_metric_daily'));
+        $rest = $roll->run(20);
+        $this->assertGreaterThanOrEqual(1, $rest['days']);
+        $this->assertSame(25, (int) $this->h->one('SELECT COUNT(*) FROM rmm_metric_daily'), 'every asset has exactly one daily row');
+        $this->assertSame(5, (int) $this->h->one('SELECT SUM(samples) FROM rmm_metric_daily WHERE asset_id = 1'));
+        $this->assertSame([5.0, 30.0], array_map('floatval', [$this->h->one('SELECT min_value FROM rmm_metric_daily WHERE asset_id = 1'), $this->h->one('SELECT max_value FROM rmm_metric_daily WHERE asset_id = 1')]));
         $this->assertSame((int) $this->h->one('SELECT SUM(samples) FROM rmm_metric_hourly'), (int) $this->h->one('SELECT SUM(samples) FROM rmm_metric_daily'));
-        $this->assertSame($today, $today);
+        $this->assertSame(0, $roll->run(20)['days'], 'and a repeat changes nothing');
     }
 
     public function testReadersUseTheDailyTierBeyondAWeekAndMatchAHourlyOnlyAnswer(): void

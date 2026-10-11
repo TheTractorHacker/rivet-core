@@ -14,6 +14,7 @@ use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\RmmCache;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -36,6 +37,7 @@ final class DeviceService
         private readonly RmmTenancyInterface $tenancy,
         private readonly RmmAuditInterface $audit,
         private readonly EnrollmentService $enrollment,
+        private readonly ?RmmCache $cache = null,
     ) {
     }
 
@@ -79,6 +81,7 @@ final class DeviceService
         $this->sql->run('UPDATE endpoint_agent_devices SET revoked_at = ?, revoked_reason = ? WHERE device_id = ?', [$this->sql->utcNow(), mb_substr($reason, 0, 100), $deviceId]);
         $this->jobs->cancelAllQueued($deviceId, 'device_revoked');
         $this->audit->record('Device Revoked', "Device $deviceId revoked by user $userId: " . mb_substr($reason, 0, 100), (int) $dev['client_id'], (int) $dev['asset_id']);
+        $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
 
         return true;
     }
@@ -92,6 +95,7 @@ final class DeviceService
         }
         $this->sql->run("UPDATE endpoint_agent_devices SET revoked_at = NULL, revoked_reason = NULL, retired_at = NULL, link_state = IF(link_state = 'rejected', 'pending_approval', link_state), token_hash = '' WHERE device_id = ?", [$deviceId]);
         $this->audit->record('Device Re-enrollment Allowed', "Device $deviceId may re-enroll (user $userId)", (int) $dev['client_id'], (int) $dev['asset_id']);
+        $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
 
         return true;
     }
@@ -125,6 +129,7 @@ final class DeviceService
         $this->checks->resolveAllOpen($deviceId, 'device retired');
         $this->linker->drop($deviceId);
         $this->audit->record('Device Retired', "Device $deviceId retired by user $userId", (int) $dev['client_id'], (int) $dev['asset_id']);
+        $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
 
         return true;
     }
@@ -148,6 +153,7 @@ final class DeviceService
             }
         });
         $this->audit->record('Device Transferred', "Device $deviceId moved from department {$dev['client_id']} to $clientId by user $userId", $clientId, (int) $dev['asset_id']);
+        $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
 
         return true;
     }

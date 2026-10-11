@@ -9,7 +9,7 @@ namespace RivetCore\Rmm\Storage;
  * time partitions of the history tables (create the next ones, drop the expired ones), in that order so a partition is never dropped before its hours
  * are in the daily tier. Returns what it did and WHICH tables are partitioned, so the caller prunes only the others with batched DELETEs.
  *
- * @internal
+ * @api
  */
 final class StorageMaintenance
 {

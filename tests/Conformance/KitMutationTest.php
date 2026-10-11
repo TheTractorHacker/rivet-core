@@ -182,6 +182,25 @@ final class KitMutationTest extends TestCase
             [RmmModuleStateKitTest::class, 'relative_dir', ['testStateDirectoryIsNullOrAnExistingWritableDirectory']],
             [RmmModuleStateKitTest::class, 'missing_dir', ['testStateDirectoryIsNullOrAnExistingWritableDirectory']],
             [RmmModuleStateKitTest::class, 'changing_dir', ['testStateDirectoryIsNullOrAnExistingWritableDirectory']],
+            // External metric store (S4)
+            [ExternalMetricStoreKitTest::class, 'not_idempotent', ['testWritingTheSameBatchTwiceChangesNothing']],
+            [ExternalMetricStoreKitTest::class, 'empty_instance_differs', ['testNullAndEmptyInstanceAreTheSameSeries']],
+            [ExternalMetricStoreKitTest::class, 'instance_blur', ['testInstancesAreSeparateSeries']],
+            [ExternalMetricStoreKitTest::class, 'unknown_throws', ['testUnknownAssetKeyAndInstanceHaveNoData']],
+            [ExternalMetricStoreKitTest::class, 'wrong_peak_at', ['testPeakIsTheMinMaxAndMeanOfTheWindow']],
+            [ExternalMetricStoreKitTest::class, 'throws_hostile', ['testHostileStringsNeverLeakNorBreakAQuery', 'testInstancesWithSpecialCharactersRoundTrip']],
+            [ExternalMetricStoreKitTest::class, 'hostile_wildcard', ['testHostileStringsNeverLeakNorBreakAQuery']],
+            [ExternalMetricStoreKitTest::class, 'write_swallows', ['testAFailingWriteIsAnExternalStoreException']],
+            [ExternalMetricStoreKitTest::class, 'plain_exception', ['testAFailingWriteIsAnExternalStoreException']],
+            [ExternalMetricStoreKitTest::class, 'read_swallows', ['testAFailingReadIsAnExternalStoreException']],
+            [ExternalMetricStoreKitTest::class, 'ping_throws', ['testPingIsABoolAndNeverThrows']],
+            [ExternalMetricStoreKitTest::class, 'ping_true', ['testPingIsABoolAndNeverThrows']],
+            [ExternalMetricStoreKitTest::class, 'empty_write_throws', ['testEmptyWriteNeverThrows']],
+            [ExternalMetricStoreKitTest::class, 'avg_midrange', ['testWrittenPointsReadBackAsSeries', 'testPeakIsTheMinMaxAndMeanOfTheWindow']],
+            [ExternalMetricStoreKitTest::class, 'samples_distinct', ['testWrittenPointsReadBackAsSeries']],
+            [ExternalMetricStoreKitTest::class, 'newest_first', ['testWrittenPointsReadBackAsSeries']],
+            [ExternalMetricStoreKitTest::class, 'no_window', ['testSeriesIsBoundedByTheWindow']],
+            [ExternalMetricStoreKitTest::class, 'no_peak_window', ['testPeakExcludesDataBeforeTheWindow']],
         ];
         $out = [];
         foreach ($rows as [$class, $flaw, $tests]) {

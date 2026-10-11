@@ -237,6 +237,10 @@ final class LoadEdition
     private function sink(): RmmMetricSinkInterface
     {
         $db = $this->db;
+        if (getenv('RMM_LOAD_SINK') === 'database') {
+            // the real DatabaseMetricSink (latest + hourly rollup upserts) instead of the raw-row stand-in below: what an edition without a metrics subsystem really writes
+            return new \RivetCore\Rmm\Support\DatabaseMetricSink($db, $this->clock);
+        }
 
         return new class ($db) implements RmmMetricSinkInterface {
             public function __construct(private readonly DatabaseInterface $db)

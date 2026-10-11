@@ -10,7 +10,7 @@ use RivetCore\Rmm\Support\Sql;
  * Named watermarks and notes of the storage jobs (`rmm_storage_state`, migration 0021): where the daily rollup stands, the last partition probe
  * and maintenance result. Reads tolerate a missing table (an install that has not run migration 0021 yet): the answer is simply "nothing".
  *
- * @internal
+ * @api
  */
 final class StorageState
 {

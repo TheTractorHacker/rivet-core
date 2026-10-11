@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Capacity;
 
+use RivetCore\Rmm\Metrics\ExternalMetricSink;
 use RivetCore\Rmm\RmmState;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Storage\PartitionMaintenance;
+use RivetCore\Rmm\Support\RmmCache;
 use RivetCore\Rmm\Storage\StorageState;
 use RivetCore\Rmm\Support\Sql;
 
@@ -42,6 +44,9 @@ final class CapacityReport
         private readonly IngestQueue $queue,
         private readonly RmmState $state,
         private readonly ?LoadShedder $shedder = null,
+        private readonly ?RmmCache $cache = null,
+        private readonly ?HerdControl $herd = null,
+        private readonly ?ExternalMetricSink $external = null,
     ) {
     }
 
@@ -57,7 +62,8 @@ final class CapacityReport
         $features = $this->settings->features();
         $limits = $this->settings->limits();
         $now = $this->sql->time();
-        $d = $this->devices($cfg);
+        $d = $this->cache === null || $limits['cache_fresh_s'] <= 0 ? $this->devices($cfg)
+            : $this->cache->remember(RmmCache::GROUP_FLEET, 'capacity:devices', $limits['cache_fresh_s'], $limits['cache_stale_s'], fn (): array => $this->devices($cfg));   // @phpstan-ignore argument.type
         $perMin = (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_checkins WHERE received_at >= ?', [$this->sql->utcAt(-60)]);
         $perHour = (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_checkins WHERE received_at >= ?', [$this->sql->utcAt(-3600)]);
         $backlog = $this->queue->backlog();
@@ -87,12 +93,25 @@ final class CapacityReport
             'queue' => $backlog,
             'autoscale' => $this->queue->scaleHint($env['ingest_workers'] ?? null, (float) ($env['per_worker_jobs_per_s'] ?? AutoscaleHint::DEFAULT_PER_WORKER_JOBS_PER_S)),
             'storage' => $this->storage($limits),
+            'external_store' => $this->external === null ? null : ['pending_batches' => $this->external->pending(), 'dropped_points' => $this->external->droppedCount()],
+            'herd' => ['warm_start' => $this->herd?->status(), 'client_bucket_burst' => $limits['client_bucket_burst'], 'client_bucket_per_min' => $limits['client_bucket_per_min']],
             'tables' => $this->tables(),
             'settings' => $inputs + ['max_devices' => (int) $cfg['max_devices']],
             'projection' => $projection,
             'warnings' => self::warnings($facts),
             'presets' => self::presets($cfg, $features, $limits, $inputs['devices']),
         ];
+    }
+
+    /**
+     * The `rmm.ingest` queue gauges and the autoscaling hint in the Prometheus text format, for a scraper or a node_exporter textfile collector. Much cheaper than
+     * {@see build()} (it reads only the queue), so a scrape every 15 seconds is fine.
+     *
+     * @param int|null $workers how many drain workers the edition runs, when it knows
+     */
+    public function metricsText(?int $workers = null, float $perWorkerJobsPerSecond = AutoscaleHint::DEFAULT_PER_WORKER_JOBS_PER_S): string
+    {
+        return AutoscaleHint::exposition($this->queue->scaleHint($workers, $perWorkerJobsPerSecond), $this->queue->backlog()['dead_letter']);
     }
 
     /**

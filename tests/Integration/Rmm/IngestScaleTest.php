@@ -133,6 +133,83 @@ final class IngestScaleTest extends RmmTestCase
         $this->assertCount(5, $again, 'released jobs are claimable again');
     }
 
+    public function testAServerThatRefusesSkipLockedFallsBackToTheLease(): void
+    {
+        $this->seed(12);
+        $refusing = new class ($this->h->db) implements \RivetCore\Database\DatabaseInterface {
+            public int $refused = 0;
+
+            public function __construct(private readonly \RivetCore\Database\DatabaseInterface $inner)
+            {
+            }
+
+            public function fetchOne(string $sql, array $params = []): ?array
+            {
+                return $this->inner->fetchOne($sql, $params);
+            }
+
+            public function fetchAll(string $sql, array $params = []): array
+            {
+                if (str_contains($sql, 'SKIP LOCKED')) {
+                    ++$this->refused;
+
+                    throw new \RuntimeException("You have an error in your SQL syntax; check the manual ... near 'SKIP LOCKED'");
+                }
+
+                return $this->inner->fetchAll($sql, $params);
+            }
+
+            public function execute(string $sql, array $params = []): \RivetCore\Database\ExecutionResult
+            {
+                return $this->inner->execute($sql, $params);
+            }
+
+            public function transaction(callable $callback): mixed
+            {
+                return $this->inner->transaction($callback);
+            }
+        };
+        $claimer = new JobClaimer($refusing, true, JobClaimer::SKIP_LOCKED);
+        $jobs = $claimer->claim(5, 'rmm.ingest');
+        $this->assertCount(5, $jobs, 'the claim still succeeded');
+        $this->assertSame(1, $refusing->refused);
+        $this->assertSame(JobClaimer::LEASE, $claimer->strategy(), 'and the claimer stays on the lease from now on');
+        $this->assertCount(5, $claimer->claim(5, 'rmm.ingest'));
+        $this->assertSame(1, $refusing->refused, 'the refused statement is not tried again');
+        // a different error is not swallowed
+        $broken = new class ($this->h->db) implements \RivetCore\Database\DatabaseInterface {
+            public function __construct(private readonly \RivetCore\Database\DatabaseInterface $inner)
+            {
+            }
+
+            public function fetchOne(string $sql, array $params = []): ?array
+            {
+                return $this->inner->fetchOne($sql, $params);
+            }
+
+            public function fetchAll(string $sql, array $params = []): array
+            {
+                if (str_contains($sql, 'SKIP LOCKED')) {
+                    throw new \RuntimeException('connection lost');
+                }
+
+                return $this->inner->fetchAll($sql, $params);
+            }
+
+            public function execute(string $sql, array $params = []): \RivetCore\Database\ExecutionResult
+            {
+                return $this->inner->execute($sql, $params);
+            }
+
+            public function transaction(callable $callback): mixed
+            {
+                return $this->inner->transaction($callback);
+            }
+        };
+        $this->expectExceptionMessage('connection lost');
+        (new JobClaimer($broken, true, JobClaimer::SKIP_LOCKED))->claim(2, 'rmm.ingest');
+    }
+
     public function testTheGenericJobQueueClaimStillWorks(): void
     {
         $this->seed(5);
@@ -189,6 +266,8 @@ final class IngestScaleTest extends RmmTestCase
         $this->assertFalse($r['storage']['tables']['rmm_metric_hourly']['partitioned']);
         $q = $this->h->module->ingestQueue();
         $this->assertGreaterThan(0, $q->scaleHint()['pending']);
+        $text = $this->h->module->capacity()->metricsText(2);
+        $this->assertStringContainsString("rmm_ingest_pending_jobs 30\n", $text);
         $this->assertSame(IngestQueue::JOB_TYPE, 'rmm.ingest');
     }
 

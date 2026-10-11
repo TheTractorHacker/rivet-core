@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Enrollment;
 
+use RivetCore\Rmm\Capacity\HerdControl;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Contracts\RmmTenancyInterface;
@@ -12,6 +13,7 @@ use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\RmmEvent;
+use RivetCore\Rmm\Support\RmmCache;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 
@@ -44,6 +46,8 @@ final class EnrollmentService
         private readonly bool $allowLinux = false,
         private readonly string $clientLabel = 'client',
         private readonly ?RmmEventPublisher $events = null,
+        private readonly ?RmmCache $cache = null,
+        private readonly ?HerdControl $herd = null,
     ) {
     }
 
@@ -116,6 +120,7 @@ final class EnrollmentService
             throw new ApiError(422, 'invalid', 'enrollment_token and device are required');
         }
         $token = $this->authenticateToken($tokenStr, $ip);
+        $this->herd?->clientBucket('enroll', (int) $token['client_id']);   // opt-in token bucket per client (client_bucket_burst): a tenant's returning fleet cannot starve the rest
         try {
             $d = DeviceValidator::validateDevice($dev, $this->allowLinux);
         } catch (ApiError $e) {
@@ -141,6 +146,7 @@ final class EnrollmentService
         }
 
         $this->recordAttempt($ip, true, $result['event'], (string) $token['token_selector']);
+        $this->cache?->invalidate(RmmCache::GROUP_FLEET);   // soft: enrollment can come in thousands, the dashboard keeps its cached figure while one request refreshes it
         $this->audit->record('Enrolled', 'Device ' . $result['device_id'] . ' (' . $d['hostname'] . ') ' . $result['event'] . ' with token ' . $token['token_selector'] . ', state ' . $result['status'],
             (int) $token['client_id'], (int) ($result['matched_asset_id'] ?? 0));
         $this->events?->emit(RmmEvent::DEVICE_ENROLLED, ['device_id' => $result['device_id'], 'asset_id' => $result['matched_asset_id'], 'client_id' => (int) $token['client_id'], 'hostname' => $d['hostname']],
@@ -454,6 +460,7 @@ final class EnrollmentService
         if ($action === 'reject') {
             $this->sql->run("UPDATE endpoint_agent_devices SET revoked_at = ?, revoked_reason = 'rejected at approval', link_state = 'rejected', token_hash = '' WHERE device_id = ?", [$this->sql->utcNow(), $deviceId]);
             $this->audit->record('Rejected', "Pending device $deviceId rejected by user $userId", (int) $dev['client_id'], 0);
+            $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
 
             return ['ok' => true, 'message' => 'Device rejected and its credential revoked.'];
         }
@@ -483,6 +490,7 @@ final class EnrollmentService
             $this->linker->ensure($deviceId, $asset);
         });
         $this->audit->record('Approved', "Device $deviceId linked to asset $asset by user $userId ($action)", (int) $dev['client_id'], $asset);
+        $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
 
         return ['ok' => true, 'message' => 'Device linked to asset #' . $asset . '.'];
     }
