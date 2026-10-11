@@ -2449,6 +2449,40 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
         '422': {description: '`invalid` or `confirmation_required`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/remote/mesh:
+    get:
+      tags: [Technician]
+      operationId: getMeshAgentSettings
+      summary: Mesh agent install settings (administrators; 1.0.0-rc.12)
+      description: |
+        The settings of the optional "also install the MeshCentral agent" feature: the device group the devices join, the optional pin of the Mesh server certificate, whether an
+        automatically found node id may replace one mapped by hand, the optional corrections of the agent-id and install-argument tables, the effective tables an installer carries
+        and whether an installer can ask for the agent right now (`install_ready`, else `install_refusal`). The Mesh address and the on/off switch are the existing MeshCentral settings.
+        **The ids, arguments and download address are not verified against a real MeshCentral server** (`note`).
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Settings, content: {application/json: {schema: {$ref: '#/components/schemas/MeshAgentSettings'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    put:
+      tags: [Technician]
+      operationId: updateMeshAgentSettings
+      summary: Change them (administrators)
+      description: |
+        Only the keys sent are touched; nothing is written when any value is refused (`422 invalid`). `mesh_group_id` is the hex group id (32 to 128 characters) or MeshCentral's `mesh//...` form, stored as
+        hex; `mesh_server_cert_pin` is the SHA-384 (96 hex) or SHA-256 (64 hex) hash of the server certificate, colons and case ignored, empty to use the system trust store.
+        `probe_pin: true` reads the Mesh server's certificate through the network policy and answers a proposed pin in `pin_probe` WITHOUT saving it (trust on first use: compare it with the hash MeshCentral shows).
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, properties: {mesh_group_id: {type: string}, mesh_server_cert_pin: {type: string}, mesh_auto_map_overwrite: {type: boolean}, mesh_agent_ids: {type: object, additionalProperties: {type: integer, minimum: 1, maximum: 255}}, mesh_install_args: {type: object, properties: {windows: {type: array, maxItems: 8, items: {type: string}}, linux: {type: array, maxItems: 8, items: {type: string}}}}, probe_pin: {type: boolean}}}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/MeshAgentSettings'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
   /endpoint_devices/logs:
     get:
       tags: [Technician]
@@ -2682,6 +2716,41 @@ components:
         logs_worst_case_bytes_per_device: {type: integer}
         logs_fleet_cap_bytes: {type: integer}
         transfer_storage_error: {type: [string, 'null']}
+    MeshAgentSettings:
+      type: object
+      properties:
+        mesh_enabled: {type: boolean}
+        mesh_url: {type: string}
+        mesh_group_id: {type: string, description: Lower-case hex; empty when not set}
+        mesh_server_cert_pin: {type: string, description: 'SHA-384 (96) or SHA-256 (64) hex; empty = verify with the system trust store'}
+        mesh_auto_map_overwrite: {type: boolean}
+        mesh_agent_ids: {type: object, additionalProperties: {type: integer}, description: The administrator's corrections only}
+        mesh_install_args: {type: object, additionalProperties: {type: array, items: {type: string}}}
+        effective_agent_ids: {type: object, additionalProperties: {type: integer}, description: 'Built-in plus corrections: what an installer carries'}
+        effective_install_args: {type: object, additionalProperties: {type: array, items: {type: string}}}
+        default_agent_ids: {type: object, additionalProperties: {type: integer}}
+        install_ready: {type: boolean}
+        install_refusal: {type: [string, 'null']}
+        note: {type: string}
+        pin_probe:
+          type: object
+          description: Only when `probe_pin` was sent
+          properties:
+            ok: {type: boolean}
+            pin: {type: string}
+            sha256: {type: string}
+            subject: {type: string}
+            not_after: {type: string}
+            error: {type: string}
+    MeshAgentReport:
+      type: object
+      required: [installed]
+      description: 'Optional, additive (1.0.0-rc.12): the state of the MeshCentral agent on the device. Sent on the first check-in after it changes and then daily; absent on a device with no Mesh agent. Never an error for the check-in.'
+      properties:
+        installed: {type: boolean}
+        version: {type: string, maxLength: 60}
+        node_id: {type: string, description: '`node//` plus 16 to 100 characters of A-Za-z0-9@$_-; anything else is ignored'}
+        error: {type: string, maxLength: 300, description: Why the install failed; read only while installed is false}
     LogEvent:
       type: object
       required: [ts, level, message]
@@ -2846,9 +2915,11 @@ components:
           type: array
           maxItems: 64
           items: {type: string, maxLength: 64}
-          description: 'Optional, additive. `job:<type>`, `check:<type>` and, since Phase 1, `software_inventory`. A list that is not usable is ignored, never an error.'
+          description: 'Optional, additive. `job:<type>`, `check:<type>` and, since Phase 1, `software_inventory`; since 1.0.0-rc.12 `mesh:nodeid` (the agent can report the local MeshCentral node id). A list that is not usable is ignored, never an error.'
         software:
           $ref: '#/components/schemas/SoftwareReport'
+        mesh_agent:
+          $ref: '#/components/schemas/MeshAgentReport'
     CheckinResponse:
       type: object
       required: [ok, status, next_check_in_s, jobs_pending, config, server_time, signing_key_id]
@@ -2973,6 +3044,18 @@ components:
             metrics: {type: [object, 'null']}
             match_reason: {type: string, description: 'no_match, hostname_only, ambiguous, scope_mismatch, asset_already_linked, asset_retired, matched_serial, matched_mac, ...'}
             mesh_mapped: {type: boolean}
+            mesh_agent:
+              type: object
+              description: 'Additive (1.0.0-rc.12), present only once the device has reported a MeshCentral agent. `map_state`: mapped, conflict (the node is already mapped to another live device, nothing was moved) or kept_manual (a different node was mapped by hand and the overwrite switch is off); `conflict_device_id` only when the other device belongs to the same client.'
+              properties:
+                installed: {type: boolean}
+                version: {type: [string, 'null']}
+                node_id: {type: [string, 'null']}
+                error: {type: [string, 'null']}
+                map_state: {type: [string, 'null'], enum: [mapped, conflict, kept_manual, null]}
+                conflict_device_id: {type: [integer, 'null']}
+                first_installed_at: {type: [string, 'null'], format: date-time}
+                reported_at: {type: [string, 'null'], format: date-time}
             checks:
               type: array
               items:

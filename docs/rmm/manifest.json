@@ -87,8 +87,8 @@
     },
     {
       "id": "remote-and-logs",
-      "title": "Remote tools and log collection (Phases 6 and 8)",
-      "summary": "Operator guide: the service and process managers, file transfer, Mesh terminal and files, log collection and rules; the three sub-switches and their risk texts, limits, what is built and what remains",
+      "title": "Remote tools, log collection and the optional MeshCentral agent install",
+      "summary": "Operator guide: the service and process managers, file transfer, Mesh terminal and files, log collection and rules; the three sub-switches and their risk texts, limits, what is built and what remains; and (rc.12) installing the MeshCentral agent with the RivetIT agent: setup step by step (device group, meshid, certificate pin), node-id mapping rules, troubleshooting and what is unverified against a real MeshCentral",
       "path": "docs/rmm/REMOTE_AND_LOGS.md",
       "status": "draft",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/REMOTE_AND_LOGS.md",

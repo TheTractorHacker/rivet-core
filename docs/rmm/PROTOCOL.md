@@ -129,6 +129,14 @@ Everything here is optional on both sides; an agent that does not announce `logs
   A device receives only the sources of its own platform (`eventlog` for Windows, `journal` for Linux). `version` changes exactly when something the agent is told changes. The agent collects only while the latest response offers the feature and carries `config.logs`; the moment a response does not, it stops reading (its saved bookmark is kept) and drops what it had not sent.
 * **Sources.** Windows: `channel` (letters, digits, space and `_ . / % -`, at most 100), `levels` (`critical`, `error`, `warning`, `info`, `verbose`), `event_ids` (at most 50 numbers, 0 to 65535; empty means all), `contains` (at most 10 phrases of at most 80 characters, any may match, case-insensitive). Linux: `units` and `identifiers` (at most 20 names each, letters, digits and `: _ . @ -`), `min_level` (`critical`, `error`, `warning`, `info`, `debug`: that severity or worse), `contains` as above. No source ever carries a regular expression.
 
+#### 3.2.5 MeshCentral agent report (additive, 1.0.0-rc.12)
+
+Everything here is optional on both sides. The optional "also install the MeshCentral agent" feature (section 6) and the automatic mapping of a device to its Mesh node use one additive check-in member and one capability; an agent that predates them sends neither, and a server that predates them ignores both.
+
+* **Announce.** The agent adds `mesh:nodeid` to its `capabilities`: it can read and report the local MeshCentral node id (it does nothing on a machine without a Mesh agent). `disable_remote` withdraws it.
+* **Report.** `"mesh_agent": {"installed": true, "version": "1.1.10", "node_id": "node//<id>", "error": "..."}`. `installed` is required (a boolean); `version` (at most 60 characters), `node_id` and `error` (at most 300 characters, only while `installed` is false) are optional. The agent sends the member on the first check-in after it changes and then once a day, and never on a device that has no Mesh agent and never tried to install one. `node_id` is `node//` followed by the id (the agent adds the prefix to what `meshagent -nodeid` prints). The server never fails a check-in over this member: anything it cannot use is ignored, and a node id that is not `node//` plus 16 to 100 characters of `A-Za-z0-9@$_-` is dropped.
+* **What the server does with it.** It records the state (device detail `mesh_agent`), raises `rmm.mesh.agent_installed` the first time the agent is reported installed, and, only while MeshCentral is enabled, maps the node id to the device: no mapping yet means it is mapped (source `agent`); the same node changes nothing; a different node the agent set earlier is replaced; a different node an administrator set by hand is kept unless the `mesh_auto_map_overwrite` setting is on; a node already mapped to **another live device** is refused (`map_state` `conflict`, audit row, `rmm.mesh.node_conflict`), whatever the settings say; a node mapped to a retired or revoked device moves to the device that now reports it. `map_state` is `mapped`, `conflict`, `kept_manual` or null. The response to a check-in is not changed by any of this.
+
 ### 3.6 Remote-tool job types (Phase 6, additive)
 
 Six job types, queued only by their own technician endpoints, only for a device that announced the matching capability flag (an agent that announced no capability at all is never assumed to have it, unlike the `job:<type>` rule), and only while the `remote_tools` (services, processes) or `filetransfer` (files) sub-switch is on. They are signed like every job; their `params` are flat, validated on the server against strict allow-lists and validated again by the agent, which turns them into an argument list and never into a command string. The result is the job report: `succeeded` with exit code 0, or `failed` with exit code 1, and `output` is one compact JSON document (at most `max_output_bytes`; lists are shortened with `"truncated": true`, never cut mid-text).
@@ -178,6 +186,16 @@ payload     = UTF-8 JSON object, at most 16384 bytes:
                "department":"<client name>","ca_pem":null|"<PEM text>","created_at":"RFC3339 UTC","expires_at":"RFC3339 UTC"}
 footer      = 52 bytes: uint32 big-endian payload length || 32-byte raw SHA-256 of the payload || 16 ASCII bytes "RIVETIT-EMBED-v1"
 ```
+
+**Optional members (1.0.0-rc.12, additive; the version stays 1).** When an administrator ticked "also install the MeshCentral agent" the JSON object carries two more members **after** `expires_at`, and only then, so every payload that does not ask for it is byte for byte what it always was:
+
+```
+"install_mesh_agent":true,
+"mesh":{"url":"https://mesh.example.com","meshid":"<device group id, 32-128 hex>","pin":"<SHA-384 (96) or SHA-256 (64) hex of the Mesh server certificate>",
+        "agent_ids":{"linux/amd64":6,"windows/amd64":4,...},"install_args":{"linux":["-install"],"windows":["-fullinstall"]}}
+```
+
+`pin` is left out when the administrator set none (the agent then verifies the Mesh server with the system roots). `agent_ids` maps `GOOS/GOARCH` to the MeshCentral agent id for `<url>/meshagents?id=<N>&meshid=<meshid>&installflags=0`; the server always sends the full table (built-in plus the administrator's corrections), so a wrong id is corrected on the server without a new agent. The agent reads these two members leniently: a wrong type, a missing source or an unusable value never makes the installer unreadable and never fails the RivetIT install; it only records an error and reports it at the first check-in (3.2.5). An agent that does not know the members ignores them (proved by `agent_installer_mesh_vectors.json`, which every older reader decodes). The agent never ships a Mesh binary: it downloads it from the customer's own Mesh server over https, trusting either the system roots or exactly the pinned certificate hash, with a 64 MiB size cap, and runs it (`MeshAgent.exe -fullinstall` on Windows, `./meshagent -install` on Linux). **Unverified against a real MeshCentral server**: the download address, the agent ids, the install arguments and where the node id can be read are written from the MeshCentral documentation as remembered; see `docs/rmm/REMOTE_AND_LOGS.md`.
 
 The agent reads the last 52 bytes of its own executable, checks the magic, the length bound and the SHA-256, parses the JSON and installs and enrolls unattended. The base binary is stored unstamped; stamping happens per download (`Installer\InstallerStamp`). The SHA-256 detects truncation and corruption; it is not authentication: the payload carries the enrollment token, which is the secret, and its expiry is the token's expiry. The `department` key keeps its name (it is the client name).
 
@@ -314,6 +332,10 @@ These are the values of `RivetCore\Rmm\RmmProtocol`; `tests/Unit/Rmm/FrozenConst
 | `MESH_DEFAULT_ACCOUNT_TEMPLATE` | `rivetit-support` |
 | `MESH_COOKIE_ACCESS` | `3` |
 | `MESH_VIEWMODE` | `11` |
+| `CAP_MESH_NODEID` | `mesh:nodeid` |
+| `CHECKIN_MESH_AGENT` | `mesh_agent` |
+| `EMBED_MEMBER_INSTALL_MESH` | `install_mesh_agent` |
+| `EMBED_MEMBER_MESH` | `mesh` |
 
 **Redaction**
 
@@ -850,6 +872,7 @@ Both files live in `endpoint-agent/testdata/vectors/` and are read by the Go age
 |---|---|
 | `agent_job_signing_vectors.json` | `9850daf57252afbfc7eee7f9531239b9f8e0e68fb491b56bff5682e94f85deb6` |
 | `agent_installer_trailer_vectors.json` | `8a89e10349425d6370fcb9b56dbd25426b7116f24de5bb34f8b8d25055059304` |
+| `agent_installer_mesh_vectors.json` | `870b5edc2edbce3d312e6c0348a7dc3626be3def14f0d5e6b4c56e67e9d0d30b` |
 
 **Job signing** (`agent_job_signing_vectors.json`). Test key: SHA-256 of the ASCII string RivetIT-agent-TEST-seed (raw 32 bytes); public key `iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=`.
 
@@ -884,4 +907,6 @@ Negative cases, every one of which must be rejected (14):
 - length_off_by_one_long: length does not match the hashed payload (includes one exe byte)
 - payload_not_json: footer valid, payload is not JSON: the parser must refuse
 - payload_json_array: footer valid, payload is a JSON array, not an object
+
+**Optional Mesh members** (`agent_installer_mesh_vectors.json`, added in 1.0.0-rc.12; the two files above are unchanged): payloads with `install_mesh_agent` and `mesh`, which every reader must parse and an agent that predates them must still decode. Vectors (8): mesh_pinned_sha384; mesh_system_roots; mesh_table_override; mesh_not_requested; mesh_requested_without_source; mesh_wrong_types; mesh_bad_source; unknown_future_members.
 <!-- END GENERATED: vectors -->
