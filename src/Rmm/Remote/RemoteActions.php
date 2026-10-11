@@ -450,7 +450,7 @@ final class RemoteActions
             }
         }
 
-        return ActionResult::ok('ok', 200, 'ok', ['configured' => $configured, 'mapped' => $node !== null, 'node_id' => $node, 'views' => $configured && $node !== null ? $views : [],
+        return ActionResult::ok('ok', 200, 'ok', ['configured' => $configured, 'mapped' => $node !== null, 'node_id' => $views === [] ? null : $node, 'views' => $configured && $node !== null ? $views : [],
             'terminal_files_enabled' => $this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_TOOLS)]);
     }
 

@@ -84,6 +84,10 @@ final class LogActions
             return $e;
         }
         $visible = $this->authz->visibleClientIds($who->userId);
+        if ($visible !== null) {
+            // a caller limited to some clients reads log text only where the grant that reads job output holds for that client
+            $visible = array_values(array_filter($visible, fn (int $c): bool => $this->authz->check($who->userId, RmmAbility::JOB_RUN_SAVED, $c) === null));
+        }
         if (isset($f['device_id']) && (int) $f['device_id'] > 0) {
             [$dev, $err] = $this->device($who, (int) $f['device_id'], RmmAbility::JOB_RUN_SAVED);
             if ($err !== null || $dev === null) {

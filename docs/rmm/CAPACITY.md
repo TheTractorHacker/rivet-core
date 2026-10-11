@@ -139,7 +139,7 @@ collect interval and the raw retention are what shrink storage.
 | Level | What the server does | Never shed |
 |---|---|---|
 | 0 | normal | |
-| 1 | **drop optional samples**: buffered backlog samples older than 15 minutes are acknowledged but not ingested | enrollment, job reports, revocation |
+| 1 | **drop optional samples**: buffered backlog samples older than 15 minutes are acknowledged but not ingested; **log ingest stops** (`agent_logs` answers `503 unavailable` with a jittered `Retry-After`, and the check-in no longer offers `logs:collect`, so agents stop reading and keep their bookmarks) | enrollment, job reports, revocation, file transfer |
 | 2 | **lengthen intervals**: `next_check_in_s` is doubled (capped at 2 x 3600) in every check-in response; agents obey it | enrollment, job reports, revocation |
 | 3 | **refuse new work**: `agent_checkin` answers `503 unavailable` with a jittered `Retry-After` (`shed_retry_min_s` to `shed_retry_max_s`) before any other work, at the gate when there is one; agents keep their buffer and retry | enrollment, job reports, revocation, `agent_jobs`, `agent_update` |
 
@@ -461,3 +461,19 @@ devices do not all fetch their job in the same minute.
 What this does not show: the scheduler running next to a full check-in load, PHP-FPM, or the cost of group-membership sub-selects on a fleet with many groups (the
 assignment query is by scope and index; a device in many groups checks each assigned group only). The S9 validation on the reference hardware is where those belong.
 The default batch is deliberately small: with the cron every minute one due run queues 200 jobs a pass, so a 5,000-device schedule takes about 25 minutes to reach every device (use `jitter_s` and an `expires_s` window that covers it, or raise `schedule_batch`; a pass of 1,000 jobs takes about two seconds on the measured host). Up to 50 due schedules and 50 open runs are worked per pass.
+
+## 13. Phase 6 and 8 paths (file transfer and log collection)
+
+Both are off by default and cost nothing while off: a check-in costs the same number of statements as before (`LogsTest::testCostOfACheckinAndOfABatch` pins it), no table is read, and the housekeeping additions are three indexed reads on empty tables.
+
+| Path | Cost | Bound |
+|---|---|---|
+| Check-in with `logs` on | at most two more statements, only for an agent that announced `logs:collect` (the remote-settings row, read once per request) | none above one object in the response (a few hundred bytes) |
+| `agent_logs` batch | 11 statements for a 200-entry batch measured on MySQL 8.4 (device authentication, settings, the device's counter row locked, the fleet figure, two multi-row `INSERT IGNORE`, the counter update); ten rules that match nothing add none (matching is in memory over the batch) and a rule with a count above one adds one bounded `COUNT` per matching rule | 200 entries and 256 KiB per request, 30 requests per 60 s per device, `logs_rate_per_min` entries per minute per device (default 600), the device and fleet row caps |
+| Log storage | about 330 bytes per entry for a typical 70-character message (data and indexes, measured on 99,000 rows); up to about 4.5 KB for a 1024-character one. The settings view shows 600 bytes per entry as its planning figure | `logs_device_max_rows` (20,000) and `logs_fleet_max_rows` (2,000,000): at the defaults the fleet cap is about 1.2 GB planned and 0.7 GB for typical messages; retention 7 days |
+| Log pruning | batches of 2000 rows, each in its own transaction with the counter update, at most 100,000 rows per `Housekeeping::run()` pass, an optional pause between batches | the time of the pass is bounded by the row cap; a backlog is worked off over several passes |
+| Log search | an index range on `(device_id, occurred_at)` for a device and on `occurred_at` for the fleet; text and source filters are substring matches inside that window | a fleet search spans at most 7 days, a device search 90; `limit` at most 500, `offset` at most 100,000; the total is counted up to 10,001 |
+| Shedding | level 1 and above: the check-in stops offering `logs:collect` and `agent_logs` answers `503 unavailable` with the jittered shed `Retry-After`; agents keep their bookmark | file transfer and job reports are never shed |
+| File transfer | one ledger row, one stored file, and per chunk (at most 1 MiB) one row lock and an append; the SHA-256 of the whole file is computed once, when the last chunk arrives | `transfer_max_bytes` (50 MiB default, 512 MiB hard), `transfer_store_max_bytes` (1 GiB), 600 requests per 60 s per device, expiry `transfer_ttl_s` (24 h) after which housekeeping deletes the bytes |
+
+PHP-FPM note for file transfer: a chunk is read into memory (at most 1 MiB, the request body cap of the endpoint), so a worker holds a few MiB at most; the 50 MiB default file is 50 requests. Put the transfer folder on a disk that can absorb the budget. Not measured: log ingest and prune at fleet scale on PHP-FPM (the S9 validation is where that belongs).

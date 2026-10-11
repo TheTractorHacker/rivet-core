@@ -13,7 +13,7 @@ info:
 
     **Technician endpoints** (`endpoint_devices`) need a user API token (the legacy shared key is refused by the edition) and are authorized
     on every call through the edition's access policy: abilities `rmm.device.view`, `rmm.job.run_saved`, `rmm.job.run_script`,
-    `rmm.job.reboot`, `rmm.remote.launch` and (Phase 3) `rmm.alert.manage`, scoped to the device's client. A device outside the caller's clients is a 404, the same as a
+    `rmm.job.reboot`, `rmm.remote.launch`, (Phase 3) `rmm.alert.manage` and (Phase 6) `rmm.remote.manage`, scoped to the device's client. A device outside the caller's clients is a 404, the same as a
     missing one. Their responses carry no cache or CORS headers (the edition front controller adds the latter).
 
     A switched-off module answers every device endpoint `503 module_disabled` with `Retry-After: 3600`; the technician API answers
@@ -200,6 +200,98 @@ paths:
         '426': {$ref: '#/components/responses/TlsRequired'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ModuleDisabled'}
+  /agent_transfer:
+    get:
+      tags: [Device]
+      operationId: agentTransferRead
+      summary: Read a range of a file the server holds for this device (Phase 6, `filetransfer` switch)
+      description: |
+        Used by the agent while it runs a signed `file_put` job. Needs the device credential AND the transfer's one-time token in the `X-Transfer-Token` header
+        (never in the URL), only for a transfer that belongs to this device, is still unexpired and has not been read more than twice over. `length` is at most 1 MiB.
+        The response is the raw bytes with `X-Transfer-Size` and `X-Transfer-Sha256` (the agent checks both against the signed job). At most 600 per 60 s per device.
+      security: [{deviceAuth: []}]
+      parameters:
+        - {name: transfer_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: offset, in: query, required: true, schema: {type: integer, minimum: 0}}
+        - {name: length, in: query, required: true, schema: {type: integer, minimum: 1, maximum: 1048576}}
+        - {name: X-Transfer-Token, in: header, required: true, schema: {type: string, pattern: '^[0-9a-f]{64}$'}}
+      responses:
+        '200':
+          description: The bytes
+          headers:
+            X-Transfer-Size: {schema: {type: integer}}
+            X-Transfer-Sha256: {schema: {type: string}}
+          content: {application/octet-stream: {schema: {type: string, format: binary}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {description: 'Unknown transfer, another device''s transfer, a wrong token or the wrong direction (all the same `not_found`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '416': {description: 'The range is outside the file (`invalid`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+    post:
+      tags: [Device]
+      operationId: agentTransferWrite
+      summary: Send one chunk of a file to the server (Phase 6, `filetransfer` switch)
+      description: |
+        Used by the agent while it runs a signed `file_get` job. Raw body of at most 1 MiB at `offset`; the final chunk (an empty one for an empty file) carries
+        `X-Transfer-Last: 1` and `X-Transfer-Sha256` of the whole file, which the server compares with the SHA-256 of what it stored before it keeps the file. A chunk the server
+        already holds is acknowledged without being stored twice; an offset gap is `409 conflict` with `received` (resume there). The running total must stay within the
+        transfer's size cap (`413 too_large` fails the transfer and deletes what arrived). Same authority rules as the read side. At most 600 per 60 s per device.
+      security: [{deviceAuth: []}]
+      parameters:
+        - {name: transfer_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: offset, in: query, required: true, schema: {type: integer, minimum: 0}}
+        - {name: X-Transfer-Token, in: header, required: true, schema: {type: string, pattern: '^[0-9a-f]{64}$'}}
+        - {name: X-Transfer-Last, in: header, required: false, schema: {type: string, enum: ['1']}}
+        - {name: X-Transfer-Sha256, in: header, required: false, schema: {type: string, pattern: '^[0-9a-f]{64}$'}}
+      requestBody:
+        required: true
+        content: {application/octet-stream: {schema: {type: string, format: binary}}}
+      responses:
+        '200':
+          description: Stored
+          content: {application/json: {schema: {type: object, required: [ok, received, complete], properties: {ok: {type: boolean}, received: {type: integer}, complete: {type: boolean}}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {description: 'Unknown transfer, another device''s transfer, a wrong token or the wrong direction', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {description: '`conflict`; the body carries `received`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {description: '`checksum_mismatch` (the transfer failed and the bytes are deleted) or `invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+  /agent_logs:
+    post:
+      tags: [Device]
+      operationId: agentLogsShip
+      summary: Ship a batch of collected log entries (Phase 8, `logs` switch)
+      description: |
+        Sent only after a check-in response offered the feature `logs:collect` (the agent announced the capability of the same name) with `config.logs`. At most 200 entries
+        and 262144 bytes per request; the server drops what it cannot understand or what exceeds the device's per-minute budget, the device's row cap or the fleet cap, and says so
+        in `dropped`. An entry stored before (same time, level, source, event id and text) is counted in `duplicates`, never stored twice, so resending a batch whose answer was lost
+        is safe. Under load shedding (level 1 and up) the answer is `503 unavailable` with a jittered `Retry-After`; the agent keeps its bookmark and tries again. At most 30 per 60 s per device.
+      security: [{deviceAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events: {type: array, maxItems: 200, items: {$ref: '#/components/schemas/LogEvent'}}
+                dropped: {type: integer, minimum: 0, description: 'Entries the agent itself dropped since its last request (rate cap)'}
+                config_version: {type: string}
+      responses:
+        '200':
+          description: Processed
+          content: {application/json: {schema: {type: object, required: [ok, accepted, dropped, duplicates], properties: {ok: {type: boolean}, accepted: {type: integer}, dropped: {type: integer}, duplicates: {type: integer}}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
   /endpoint_devices:
     get:
       tags: [Technician]
@@ -350,6 +442,7 @@ paths:
               type: object
               properties:
                 force: {type: boolean}
+                view: {type: string, enum: [desktop, terminal, files], default: desktop, description: 'Phase 6: terminal and files also need `rmm.remote.manage` and the `remote_tools` switch (`409 feature_disabled` while it is off)'}
       responses:
         '200':
           description: Launch URL
@@ -2062,6 +2155,433 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/services:
+    get:
+      tags: [Technician]
+      operationId: getServices
+      summary: The latest service list the device reported (Phase 6)
+      description: Needs `rmm.remote.manage`. Read the answer a moment after `POST .../services/query`; `state` is the state of the job that produced it (`none` before the first request).
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      responses:
+        '200': {description: The snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/RemoteSnapshot'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/services/query:
+    post:
+      tags: [Technician]
+      operationId: queryServices
+      summary: Ask the device for its services (Phase 6, `remote_tools` switch)
+      description: Queues a signed `svc_list` job. `409 feature_disabled` while the switch is off, `409 unsupported` when the agent never announced `remote:services`.
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/Queued'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /endpoint_devices/{id}/services/{name}/{action}:
+    post:
+      tags: [Technician]
+      operationId: controlService
+      summary: Start, stop, restart, enable, disable or set a service to manual (Phase 6)
+      description: |
+        Needs `rmm.remote.manage`. `name` is a service name (letters, digits and `_ . @ $ : -`, at most 200, never starting with a symbol; on Linux a systemd `.service` unit, the suffix
+        is added when missing). `action` is `start`, `stop`, `restart`, `enable`, `disable` or `manual` (Windows only). `stop`, `restart` and `disable` need `confirm: true` and are
+        queued as destructive jobs (offered at most once). The RMM agent's own service is refused (`422 protected`). The server never builds a command: the signed job carries exactly `{name, action}`.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: name, in: path, required: true, schema: {type: string}}
+        - {name: action, in: path, required: true, schema: {type: string, enum: [start, stop, restart, enable, disable, manual]}}
+      requestBody:
+        required: false
+        content: {application/json: {schema: {type: object, properties: {confirm: {type: boolean}}}}}
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/Queued'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {description: '`invalid`, `protected` or `confirmation_required`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/{id}/processes:
+    get:
+      tags: [Technician]
+      operationId: getProcesses
+      summary: The latest process list the device reported (Phase 6)
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      responses:
+        '200': {description: The snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/RemoteSnapshot'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/processes/query:
+    post:
+      tags: [Technician]
+      operationId: queryProcesses
+      summary: Ask the device for its processes with CPU and memory (Phase 6)
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      requestBody:
+        required: false
+        content: {application/json: {schema: {type: object, properties: {limit: {type: integer, minimum: 1, maximum: 500}, sort: {type: string, enum: [cpu, mem]}}}}}
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/Queued'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/{id}/processes/{pid}/kill:
+    post:
+      tags: [Technician]
+      operationId: killProcess
+      summary: End a process (Phase 6)
+      description: |
+        Needs `rmm.remote.manage` and `confirm: true`. The caller names the process id AND the process name as listed; the agent re-reads the name when the job runs and refuses on a mismatch
+        (a recycled id cannot end another program). The agent also refuses system processes, itself and its parent. Queued as a destructive job.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: pid, in: path, required: true, schema: {type: integer, minimum: 2, maximum: 4194304}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [name, confirm], properties: {name: {type: string}, force: {type: boolean}, confirm: {type: boolean}}}}}
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/Queued'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {description: '`invalid` or `confirmation_required`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/{id}/remote/mesh:
+    get:
+      tags: [Technician]
+      operationId: getMeshInfo
+      summary: Is MeshCentral set up, is the device mapped, and which views may this caller open (Phase 6)
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      responses:
+        '200':
+          description: Mesh information
+          content: {application/json: {schema: {type: object, properties: {configured: {type: boolean}, mapped: {type: boolean}, node_id: {type: [string, 'null']}, views: {type: array, items: {type: string, enum: [desktop, terminal, files]}}, terminal_files_enabled: {type: boolean}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/remote/node:
+    put:
+      tags: [Technician]
+      operationId: mapMeshNode
+      summary: Map (or clear, with an empty string) the MeshCentral node of a device (administrators)
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [node_id], properties: {node_id: {type: string}}}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {type: object, properties: {ok: {type: boolean}, node_id: {type: string}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/{id}/remote/jobs/{job_id}:
+    get:
+      tags: [Technician]
+      operationId: getRemoteJobResult
+      summary: The structured result of a remote-tool job (Phase 6)
+      description: Needs `rmm.remote.manage`. Only jobs of the six remote-tool types; the output of those jobs is never in the generic job list.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: job_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: The result, content: {application/json: {schema: {type: object, properties: {job_id: {type: string}, type: {type: string}, state: {type: string}, reason: {type: [string, 'null']}, exit_code: {type: [integer, 'null']}, finished_at: {type: [string, 'null']}, result: {type: [object, 'null']}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/files:
+    get:
+      tags: [Technician]
+      operationId: listTransfers
+      summary: The file transfers of a device (Phase 6)
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      responses:
+        '200': {description: Transfers, newest first, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/Transfer'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/files/download:
+    post:
+      tags: [Technician]
+      operationId: requestFileDownload
+      summary: Ask the device to send one file to the server (Phase 6, `filetransfer` switch)
+      description: |
+        Needs `rmm.remote.manage`. The path must be absolute, free of `..`, inside a folder an administrator allowed for the device's platform and not on the never-transfer list
+        (password databases, private keys, credential stores, the agent's own files); a refusal is `422 path_denied` with a `reason` (`not_absolute`, `traversal`, `not_allowed`, `deny_list`,
+        `no_allowed_roots`, `invalid`). Queues a signed `file_get` job and a transfer record; follow it with `GET .../files/{transfer_id}`.
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [path], properties: {path: {type: string}}}}}
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {type: object, properties: {transfer_id: {type: string}, job_id: {type: string}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {description: '`invalid` or `path_denied`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '507': {description: 'The transfer storage is full (`too_large`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/{id}/files/upload:
+    post:
+      tags: [Technician]
+      operationId: declareFileUpload
+      summary: Declare a file to send to the device (administrators, `filetransfer` switch)
+      description: |
+        Needs `rmm.admin`, `confirm: true`, a destination inside an allowed folder, the size in bytes (at most the transfer size limit) and the file's SHA-256. The content follows with
+        `PUT .../files/{transfer_id}/content`. Nothing is queued before the bytes arrive and match.
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [path, size, sha256, confirm], properties: {path: {type: string}, size: {type: integer, minimum: 0}, sha256: {type: string, pattern: '^[0-9a-fA-F]{64}$'}, overwrite: {type: boolean}, confirm: {type: boolean}}}}}
+      responses:
+        '201': {description: Declared, content: {application/json: {schema: {type: object, properties: {transfer_id: {type: string}, state: {type: string, const: awaiting_content}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {description: '`invalid`, `confirmation_required` or `path_denied`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '507': {description: 'The transfer storage is full (`too_large`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/{id}/files/{transfer_id}:
+    get:
+      tags: [Technician]
+      operationId: getTransfer
+      summary: State of one transfer (Phase 6)
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: transfer_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: The transfer, content: {application/json: {schema: {$ref: '#/components/schemas/Transfer'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    delete:
+      tags: [Technician]
+      operationId: deleteTransfer
+      summary: Delete the stored copy of a transfer (the ledger row stays for the audit trail)
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: transfer_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {$ref: '#/components/responses/Ok'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/files/{transfer_id}/content:
+    get:
+      tags: [Technician]
+      operationId: downloadTransferContent
+      summary: The verified file of a finished download (Phase 6)
+      description: Needs `rmm.remote.manage`; only a download whose SHA-256 matched and that has not expired or been deleted (otherwise `409 conflict`). The fetch is audited. The body is the raw file.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: transfer_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: The file, content: {application/octet-stream: {schema: {type: string, format: binary}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    put:
+      tags: [Technician]
+      operationId: uploadTransferContent
+      summary: The bytes of a declared upload (administrators)
+      description: Raw body. The server checks the byte count and the SHA-256 against the declaration; on a mismatch nothing is kept (`422 checksum_mismatch`) and the transfer still waits for a correct send. On a match the signed `file_put` job is queued (destructive, so offered at most once).
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: transfer_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content: {application/octet-stream: {schema: {type: string, format: binary}}}
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {type: object, properties: {transfer_id: {type: string}, job_id: {type: string}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/remote/settings:
+    get:
+      tags: [Technician]
+      operationId: getRemoteSettings
+      summary: Remote-tools and log-collection settings (administrators)
+      description: The sub-switches (`remote_tools`, `filetransfer`, `logs`), the folders file transfer may touch, the log sources, the caps and the plain-language risk and storage texts to show before switching them on.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Settings, content: {application/json: {schema: {$ref: '#/components/schemas/RemoteSettings'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    put:
+      tags: [Technician]
+      operationId: updateRemoteSettings
+      summary: Change them (administrators)
+      description: |
+        Only the keys sent are touched; nothing is written when any value is refused. Turning `filetransfer` on needs `accept_filetransfer_risk: true`, turning `logs` on needs
+        `accept_logs_storage: true`; without it the answer is `422 confirmation_required` with the text the person must read.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, properties: {features: {type: object, properties: {remote_tools: {type: boolean}, filetransfer: {type: boolean}, logs: {type: boolean}}}, transfer_allow: {type: object, properties: {linux: {type: array, items: {type: string}}, windows: {type: array, items: {type: string}}}}, logs_collect: {type: object}, limits: {type: object, additionalProperties: {type: integer}}, accept_filetransfer_risk: {type: boolean}, accept_logs_storage: {type: boolean}}}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/RemoteSettings'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: '`invalid` or `confirmation_required`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/logs:
+    get:
+      tags: [Technician]
+      operationId: searchLogs
+      summary: Search collected log entries across the caller's clients (Phase 8)
+      description: Needs `rmm.device.view` and `rmm.job.run_saved`. Newest first. A fleet search spans at most 7 days (default the last 24 hours). `level` means that severity or worse; `source` and `q` are case-insensitive substring matches. A `device_id` or `client_id` outside the caller's clients is `404`.
+      security: [{userToken: []}]
+      parameters:
+        - {name: device_id, in: query, required: false, schema: {type: integer}}
+        - {name: client_id, in: query, required: false, schema: {type: integer}}
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: level, in: query, required: false, schema: {type: string, enum: [critical, error, warning, info, debug]}}
+        - {name: source, in: query, required: false, schema: {type: string}}
+        - {name: code, in: query, required: false, schema: {type: integer}}
+        - {name: q, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0}}
+      responses:
+        '200': {description: Entries, content: {application/json: {schema: {$ref: '#/components/schemas/LogSearch'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/logs/stats:
+    get:
+      tags: [Technician]
+      operationId: logStats
+      summary: Fleet log storage figures (Phase 8)
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Figures, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/logs/rules:
+    get:
+      tags: [Technician]
+      operationId: listLogRules
+      summary: Log rules (Phase 8)
+      description: A caller limited to some clients sees only the rules of those clients, never the all-clients ones.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Rules, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/LogRule'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    post:
+      tags: [Technician]
+      operationId: createLogRule
+      summary: Create a log rule (needs `rmm.alert.manage`)
+      description: A rule for all clients (`client_id` 0) needs access to all clients; a rule for one client needs that client. A rule is a phrase filter, never a regular expression. A match raises the check `log.rule_<id>` through the check evaluator, so debounce, the alerting engine, maintenance windows and escalation apply.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/LogRuleInput'}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/LogRule'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/logs/rules/{rule_id}:
+    get:
+      tags: [Technician]
+      operationId: getLogRule
+      summary: One log rule
+      security: [{userToken: []}]
+      parameters: [{name: rule_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {description: The rule, content: {application/json: {schema: {$ref: '#/components/schemas/LogRule'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    patch:
+      tags: [Technician]
+      operationId: updateLogRule
+      summary: Change a log rule (PUT is the same)
+      security: [{userToken: []}]
+      parameters: [{name: rule_id, in: path, required: true, schema: {type: integer}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/LogRuleInput'}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/LogRule'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Technician]
+      operationId: deleteLogRule
+      summary: Delete a log rule (alerts it had open close at the next housekeeping run)
+      security: [{userToken: []}]
+      parameters: [{name: rule_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {$ref: '#/components/responses/Ok'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/logs:
+    get:
+      tags: [Technician]
+      operationId: deviceLogs
+      summary: Search the collected log entries of one device (Phase 8)
+      description: Same filters as the fleet search; a device search may span up to 90 days.
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: level, in: query, required: false, schema: {type: string, enum: [critical, error, warning, info, debug]}}
+        - {name: source, in: query, required: false, schema: {type: string}}
+        - {name: code, in: query, required: false, schema: {type: integer}}
+        - {name: q, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0}}
+      responses:
+        '200': {description: Entries, content: {application/json: {schema: {$ref: '#/components/schemas/LogSearch'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/logs/stats:
+    get:
+      tags: [Technician]
+      operationId: deviceLogStats
+      summary: Log storage figures of one device (Phase 8)
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      responses:
+        '200': {description: Figures, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
 components:
   securitySchemes:
     deviceAuth:
@@ -2119,6 +2639,88 @@ components:
       headers: {Retry-After: {schema: {type: integer}}}
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
   schemas:
+    Queued:
+      type: object
+      properties:
+        job_id: {type: string}
+    RemoteSnapshot:
+      type: object
+      properties:
+        job_id: {type: [string, 'null']}
+        state: {type: string, description: 'none, queued, running, succeeded, failed, timed_out, cancelled or expired'}
+        requested_at: {type: [string, 'null']}
+        finished_at: {type: [string, 'null']}
+        data: {type: [object, 'null'], description: 'The document the agent reported: {v, platform, truncated, count, services[]} or {v, sampled_ms, count, truncated, processes[]}'}
+        error: {type: [string, 'null']}
+    Transfer:
+      type: object
+      properties:
+        transfer_id: {type: string}
+        device_id: {type: integer}
+        direction: {type: string, enum: [download, upload], description: 'download = device to server'}
+        path: {type: string}
+        file_name: {type: string}
+        state: {type: string, enum: [awaiting_content, queued, receiving, delivering, complete, failed, expired, deleted]}
+        size_bytes: {type: integer}
+        sha256: {type: [string, 'null']}
+        job_id: {type: [string, 'null']}
+        job_state: {type: [string, 'null']}
+        error: {type: string}
+        created_by: {type: integer}
+        created_at: {type: string}
+        expires_at: {type: string}
+        completed_at: {type: [string, 'null']}
+    RemoteSettings:
+      type: object
+      properties:
+        features: {type: object, properties: {remote_tools: {type: boolean}, filetransfer: {type: boolean}, logs: {type: boolean}}}
+        transfer_allow: {type: object, properties: {linux: {type: array, items: {type: string}}, windows: {type: array, items: {type: string}}}}
+        logs_collect: {type: object}
+        limits: {type: object, additionalProperties: {type: integer}}
+        file_transfer_risk: {type: string}
+        logs_storage_warning: {type: string}
+        logs_worst_case_bytes_per_device: {type: integer}
+        logs_fleet_cap_bytes: {type: integer}
+        transfer_storage_error: {type: [string, 'null']}
+    LogEvent:
+      type: object
+      required: [ts, level, message]
+      properties:
+        ts: {type: string, format: date-time}
+        level: {type: string, enum: [critical, error, warning, info, debug, verbose]}
+        source: {type: string, maxLength: 100}
+        event_id: {type: [integer, 'null']}
+        message: {type: string, description: 'Truncated to 1024 characters; control characters become spaces; credential-shaped text is redacted before it is stored'}
+    LogSearch:
+      type: object
+      properties:
+        items: {type: array, items: {type: object, properties: {event_id: {type: integer}, device_id: {type: integer}, hostname: {type: string}, client_id: {type: integer}, occurred_at: {type: string}, level: {type: string}, source: {type: string}, code: {type: [integer, 'null']}, message: {type: string}}}}
+        total: {type: integer, description: 'Counted up to 10001'}
+        from: {type: string}
+        to: {type: string}
+    LogRuleInput:
+      type: object
+      properties:
+        name: {type: string, maxLength: 100}
+        enabled: {type: boolean}
+        client_id: {type: integer, description: '0 = all clients'}
+        min_level: {type: string, enum: [critical, error, warning, info, debug], description: 'This severity or worse'}
+        source_contains: {type: string, maxLength: 100}
+        code: {type: [integer, 'null']}
+        contains: {type: string, maxLength: 200}
+        threshold: {type: integer, minimum: 1, maximum: 1000}
+        window_min: {type: integer, minimum: 1, maximum: 1440}
+        severity: {type: string, enum: [warn, fail]}
+        resolve_after_min: {type: integer, minimum: 1, maximum: 10080}
+    LogRule:
+      allOf:
+        - {$ref: '#/components/schemas/LogRuleInput'}
+        - type: object
+          properties:
+            rule_id: {type: integer}
+            check_key: {type: string, description: 'log.rule_<id>'}
+            created_at: {type: string}
+            updated_at: {type: string}
     Ok:
       type: object
       required: [ok]
@@ -2132,7 +2734,7 @@ components:
         code:
           type: string
           description: The contract. One of the codes listed in PROTOCOL.md.
-          enum: [invalid_token, revoked, expired, forbidden, not_found, method_not_allowed, conflict, too_large, invalid, tls_required, rate_limited, internal, unavailable, token_in_url, device_limit, module_disabled, feature_disabled, confirmation_required, device_offline, unmapped, not_configured, device_retired, mesh_unavailable, disabled]
+          enum: [invalid_token, revoked, expired, forbidden, not_found, method_not_allowed, conflict, too_large, invalid, tls_required, rate_limited, internal, unavailable, token_in_url, device_limit, module_disabled, feature_disabled, confirmation_required, device_offline, unmapped, not_configured, device_retired, mesh_unavailable, disabled, protected, unsupported, path_denied, checksum_mismatch]
     EnrollRequest:
       type: object
       required: [enrollment_token, device]

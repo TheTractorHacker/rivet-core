@@ -332,6 +332,47 @@ final class LogsTest extends RemoteTestCase
         $this->assertLessThanOrEqual(500, count($this->h->module->logService()->search([], null, 99999)['items']));
     }
 
+    // ------------------------------------------------------------------ cost
+
+    public function testCostOfACheckinAndOfABatch(): void
+    {
+        $caps = self::allCaps();
+        $cost = function (callable $f): int {
+            $before = $this->h->counting->statements;
+            $f();
+
+            return $this->h->counting->statements - $before;
+        };
+        $this->switchOn([]);
+        $this->announce($this->devToken, $caps);   // warm: first announce writes the capability row
+        $this->announce($this->devToken, $caps);
+        $off = $cost(fn () => $this->announce($this->devToken, $caps));
+        $old = $cost(fn () => $this->h->checkin($this->devToken));
+        $this->enableLogs();
+        $on = $cost(fn () => $this->announce($this->devToken, $caps));
+        $this->assertLessThanOrEqual($off + 2, $on, 'offering the log config costs at most two more statements (the remote-settings row, read once, and the capability read)');
+        $this->switchOn([]);
+        $this->announce($this->devToken, $caps);   // the settings cache is cold after a write
+        $this->assertSame($off, $cost(fn () => $this->announce($this->devToken, $caps)), 'with the switch off a check-in costs what it did before Phase 8');
+        $this->assertGreaterThan(0, $old);
+
+        // one batch of 200 entries with no rule: the transaction, the counter row, the fleet figure, two multi-row inserts, the counter update
+        $this->enableLogs();
+        $batch = array_map(static fn (int $i): array => self::ev("entry $i", 'error', 100 + $i, $i), range(1, 200));
+        $this->h->module->settings()->refresh();
+        $n = $cost(fn () => $this->ship($batch));
+        $this->assertLessThanOrEqual(12, $n, "a 200-entry batch costs $n statements");
+        $this->assertSame(200, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_log_events'));
+        // the same batch with ten rules that match nothing adds no statement (matching is in memory; only a match with a threshold above one counts rows)
+        for ($i = 0; $i < 10; ++$i) {
+            $this->rule(['name' => "r$i", 'contains' => "nomatch$i"]);
+        }
+        $this->h->clock->advance(61);
+        $batch2 = array_map(static fn (int $i): array => self::ev("other $i", 'error', 100 + $i, 1000 + $i), range(1, 200));
+        $m = $cost(fn () => $this->ship($batch2));
+        $this->assertLessThanOrEqual($n + 2, $m, 'ten rules cost one read of the rule list, not a statement per entry');
+    }
+
     // ------------------------------------------------------------------ rules and alerts
 
     /** @return array<string,mixed> */
