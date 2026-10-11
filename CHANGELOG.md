@@ -2,7 +2,7 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
-## Unreleased
+## 1.0.0-rc.13 (RMM starter pack: 73 scripts, check templates, policy drafts)
 
 ### RMM starter pack
 
