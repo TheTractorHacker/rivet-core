@@ -1,6 +1,8 @@
 package jobs
 
 import (
+	"bytes"
+	"encoding/json"
 	"regexp"
 	"strings"
 )
@@ -39,4 +41,31 @@ func Redact(s string, literals ...string) string {
 		}
 	}
 	return s
+}
+
+var jsonStringRE = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
+
+// RedactJSONStrings applies Redact to the contents of every string literal of a
+// JSON document, so the result stays valid JSON and keeps its member order. A
+// remote-tool result (service names, process names, file paths) is a JSON
+// document: redacting the whole text could cut a quote, redacting each literal
+// cannot.
+func RedactJSONStrings(doc string, literals ...string) string {
+	return jsonStringRE.ReplaceAllStringFunc(doc, func(lit string) string {
+		var s string
+		if json.Unmarshal([]byte(lit), &s) != nil {
+			return lit
+		}
+		r := Redact(s, literals...)
+		if r == s {
+			return lit
+		}
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		if enc.Encode(r) != nil {
+			return lit
+		}
+		return strings.TrimRight(buf.String(), "\n")
+	})
 }

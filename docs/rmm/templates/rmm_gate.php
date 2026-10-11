@@ -13,7 +13,7 @@
  * (The constant may instead come from the environment variable RMM_GATE_STATE_DIR. With neither, the gate does nothing.)
  *
  * WHAT IT DOES. It reads the module's state file (rmm_state.json, written by RivetCore\Rmm\RmmStateFile) and
- *  - when the module is OFF answers a request for a device endpoint (agent_enroll, agent_checkin, agent_jobs, agent_update,
+ *  - when the module is OFF answers a request for a device endpoint (agent_enroll, agent_checkin, agent_jobs, agent_update, agent_transfer, agent_logs,
  *    agent_installer) with exactly:  503, "Retry-After: 3600", "Cache-Control: no-store", "Content-Type: application/json",
  *    {"error":"The RMM service is disabled on this server.","code":"module_disabled"}, then exits. No database
  *    connection, no query, no class loaded: a stat and a read of a few hundred bytes.
@@ -42,7 +42,7 @@
     }
     $uri = $_SERVER['REQUEST_URI'] ?? '';
     $path = is_string($uri) ? parse_url($uri, PHP_URL_PATH) : null;
-    if (!is_string($path) || preg_match('#(?:^|/)(agent_enroll|agent_checkin|agent_jobs|agent_update|agent_installer)(?:\.php)?(?:/|$)#', $path, $m) !== 1) {
+    if (!is_string($path) || preg_match('#(?:^|/)(agent_enroll|agent_checkin|agent_jobs|agent_update|agent_installer|agent_transfer|agent_logs)(?:\.php)?(?:/|$)#', $path, $m) !== 1) {
         return;
     }
     $raw = @file_get_contents(rtrim($dir, '/\\') . '/rmm_state.json', false, null, 0, 65536);

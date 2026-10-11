@@ -20,7 +20,7 @@ final class RmmModuleTest extends RmmTestCase
         $this->assertSame($m->jobs(), $m->jobs());
         $this->assertSame($m->updates(), $m->updates());
         $this->assertSame($m->enrollment(), $m->enrollment());
-        $this->assertSame($m->jobs()->registry()->types(), ['powershell', 'shell', 'python', 'reboot', 'collect']);
+        $this->assertSame($m->jobs()->registry()->types(), ['powershell', 'shell', 'python', 'reboot', 'collect', 'svc_list', 'svc_control', 'proc_list', 'proc_kill', 'file_get', 'file_put']);
     }
 
     public function testEnabledIsTheEditionKillSwitchAndTheMasterSwitch(): void

@@ -126,6 +126,8 @@ type srv struct {
 	token      string
 	reportFn   func(r api.JobReport) (int, any)
 	hits       map[string]int
+	// transferFn answers agent_transfer (RMM Phase 6); nil = 404
+	transferFn func(r *http.Request, body []byte) (int, any)
 }
 
 func newSrv(t *testing.T) *srv {
@@ -214,6 +216,16 @@ func (s *srv) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.writeJSON(w, 200, map[string]any{"ok": true}, nil)
+	case r.URL.Path == "/api/v1/agent_transfer":
+		s.mu.Lock()
+		fn := s.transferFn
+		s.mu.Unlock()
+		if fn == nil {
+			http.NotFound(w, r)
+			return
+		}
+		code, v := fn(r, body)
+		s.writeJSON(w, code, v, nil)
 	default:
 		http.NotFound(w, r)
 	}

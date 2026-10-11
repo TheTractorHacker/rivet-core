@@ -111,6 +111,53 @@ The offered release (in the check-in `update` manifest) is the highest release n
 
 `{"token": "rvte1...", "arch": "amd64"|"arm64"}` as JSON or a form (body cap 4096 bytes): the stamped per-client installer (section 6). Every unusable token (malformed, unknown, wrong secret, revoked, expired, used up) is the same generic 404; no published binary or no https service URL is 409 `unavailable`. The download does not use up an enrollment use (enrolling does). Limits per 600 s from the database: per address 10 failures or 30 attempts, per token selector 30 downloads or 20 failures (429 + `Retry-After: 600`).
 
+#### 3.2.4 Log collection offer (additive, Phase 8)
+
+Everything here is optional on both sides; an agent that does not announce `logs:collect` gets the same response as before.
+
+* **Announce.** The agent adds `logs:collect` to its `capabilities`.
+* **Offer.** Only when the device announced it, the `logs` sub-switch is on, no load is being shed (`shed_level` 0) and at least one log source is configured for the device's platform, the response carries `"logs:collect"` in `features` and `config.logs`:
+
+```json
+{"features": ["logs:collect"],
+ "config": {"logs": {"version": "a1b2c3d4e5f60718", "interval_s": 60, "batch_max": 200, "max_message_bytes": 1024, "rate_per_min": 600,
+   "sources": [
+     {"kind": "eventlog", "channel": "System", "levels": ["critical", "error", "warning"], "event_ids": [7036], "contains": []},
+     {"kind": "journal", "units": ["ssh.service"], "identifiers": [], "min_level": "warning", "contains": ["failed password"]}]}}}
+```
+
+  A device receives only the sources of its own platform (`eventlog` for Windows, `journal` for Linux). `version` changes exactly when something the agent is told changes. The agent collects only while the latest response offers the feature and carries `config.logs`; the moment a response does not, it stops reading (its saved bookmark is kept) and drops what it had not sent.
+* **Sources.** Windows: `channel` (letters, digits, space and `_ . / % -`, at most 100), `levels` (`critical`, `error`, `warning`, `info`, `verbose`), `event_ids` (at most 50 numbers, 0 to 65535; empty means all), `contains` (at most 10 phrases of at most 80 characters, any may match, case-insensitive). Linux: `units` and `identifiers` (at most 20 names each, letters, digits and `: _ . @ -`), `min_level` (`critical`, `error`, `warning`, `info`, `debug`: that severity or worse), `contains` as above. No source ever carries a regular expression.
+
+### 3.6 Remote-tool job types (Phase 6, additive)
+
+Six job types, queued only by their own technician endpoints, only for a device that announced the matching capability flag (an agent that announced no capability at all is never assumed to have it, unlike the `job:<type>` rule), and only while the `remote_tools` (services, processes) or `filetransfer` (files) sub-switch is on. They are signed like every job; their `params` are flat, validated on the server against strict allow-lists and validated again by the agent, which turns them into an argument list and never into a command string. The result is the job report: `succeeded` with exit code 0, or `failed` with exit code 1, and `output` is one compact JSON document (at most `max_output_bytes`; lists are shortened with `"truncated": true`, never cut mid-text).
+
+| Type | Flag | Params | Destructive | Result document |
+|---|---|---|---|---|
+| `svc_list` | `remote:services` | none | no | `{v, platform, truncated, count, services: [{name, display, state, startup}]}`; `state` running, stopped, starting, stopping, paused, failed, unknown; `startup` auto, manual, disabled, static, unknown |
+| `svc_control` | `remote:services` | `name` (letters, digits and `_ . @ $ : -`, at most 200, first character a letter, digit or `_`), `action` (`start`, `stop`, `restart`, `enable`, `disable`, `manual`) | `stop`, `restart`, `disable` | `{v, name, action, before, after, startup, ok, detail}`; Linux runs `systemctl <verb> -- <unit>` with an argument list, Windows uses the service manager API |
+| `proc_list` | `remote:processes` | `limit` (1 to 500, default 200), `sort` (`cpu`, `mem`) | no | `{v, sampled_ms, count, truncated, processes: [{pid, ppid, name, user, cpu_pct, mem_bytes, threads, started}]}`; no command lines (they can hold secrets) |
+| `proc_kill` | `remote:processes` | `pid` (2 to 4194304), `name` (as listed), `force` | always | `{v, pid, name, signal, ok, detail}`; the agent re-reads the name at kill time (`name_mismatch`), refuses itself and its parent (`refused_self`), system processes (`refused_protected`) and kernel threads |
+| `file_get` | `remote:files` | `transfer_id`, `token`, `path`, `max_bytes`, `allow`, `chunk` | no | `{v, transfer_id, bytes, sha256}` |
+| `file_put` | `remote:files` | `transfer_id`, `token`, `path`, `size`, `sha256`, `overwrite`, `allow`, `mode` | always | `{v, transfer_id, path, bytes, sha256}` |
+
+The agent also refuses (`failed`, a stable `detail`) to stop, restart or disable its own service (`refused_self`) and a short list of critical services (`refused_protected`). The server refuses the agent's own service names first (`422 protected`). A destructive job is offered at most once and never retried (3.3). A technician needs `rmm.remote.manage` for all of them except `file_put`, which needs `rmm.admin`.
+
+**Path policy of `file_get` and `file_put`.** The path must be absolute (a Linux path starting with `/`; a Windows path with a drive letter, never a UNC or device path), free of `.`, `..`, empty parts, control characters and (Windows) alternate data streams, wildcards, trailing dots and 8.3 short names, and at most 1000 characters. `allow` is the administrator's list of folders for the device's platform, newline separated (each at least two levels deep: never a whole drive, `/etc`, `/root` or `/home`); the path, after the agent has resolved symbolic links, must lie inside one of them, compared by whole path elements (`/srv/data` never allows `/srv/data2`) and, on Windows, case-insensitively. An empty list refuses everything (`no_allowed_roots`). The never-transfer list always applies and wins over the allow list: Linux `/etc/shadow`, `/etc/gshadow`, `/etc/sudoers` and `/etc/sudoers.d`, `/etc/ssh/ssh_host_*`, `/proc`, `/sys`, `/dev`, `/run/secrets`, `/root/.ssh`, any `.ssh` or `.gnupg` folder, files named `id_rsa*`, `id_ed25519*`, `id_ecdsa*`, `id_dsa*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.kdbx`, `*.keystore`, and the agent's own folders; Windows `<SystemRoot>\System32\config` (the SAM, SECURITY, SYSTEM and SOFTWARE hives), `\Windows\NTDS`, `ntds.dit`, `pagefile.sys`, `hiberfil.sys`, `swapfile.sys` and the agent's own `ProgramData` folder. A refusal by the agent is `failed` with `detail` `path_denied:<reason>`. `file_put` writes to a temporary file in the destination folder (never creating folders, never following a symbolic link), checks the byte count and the SHA-256 against the signed job, then renames it into place; any failure removes the temporary file and leaves the destination untouched.
+
+### 3.7 `agent_transfer` (GET and POST, device token plus transfer token; Phase 6)
+
+Carries the bytes of `file_get` and `file_put`. Off (`503 feature_disabled`, `Retry-After: 3600`) while the `filetransfer` sub-switch is off. Needs the device credential AND the one-time `X-Transfer-Token` header (64 lower-case hex characters, from the signed job's `token`; never in the URL; the server keeps only its SHA-256), only for a transfer of this device, only before it expires (`transfer_ttl_s`, default 24 hours), only in its direction. At most 600 requests per 60 s per device. Chunks are at most 1 MiB.
+
+* `POST ?transfer_id=<uuid>&offset=<n>` (raw body): a chunk of a download. The final chunk, which for an empty file is an empty one, adds `X-Transfer-Last: 1` and `X-Transfer-Sha256: <hex of the whole file>`. `200 {ok, received, complete}`. A chunk the server already holds is acknowledged without being stored twice; a gap or a different offset is `409 conflict` with `received` (resume there); past the size cap `413 too_large` (the transfer fails and the bytes are deleted); a final checksum that differs from the server's own is `422 checksum_mismatch` (same). The server hashes the stored file itself; it never trusts the agent's figure.
+* `GET ?transfer_id=<uuid>&offset=<n>&length=<m>`: a range of an upload. The body is the raw bytes; `X-Transfer-Size` and `X-Transfer-Sha256` repeat the signed size and hash. `416` outside the file. The server counts the bytes it serves and stops at twice the file size.
+* Anything else (another device, a wrong token, the other direction, an unknown id) is the same `404 not_found`.
+
+### 3.8 `agent_logs` (POST, device token; Phase 8)
+
+Body cap 262144 bytes: `{events: [{ts, level, source, event_id, message}], dropped, config_version}` with at most 200 events. `ts` is RFC 3339 (a clock more than five minutes ahead is clamped; an entry older than the retention is dropped), `level` is `critical`, `error`, `warning`, `info`, `debug` (or `verbose`, stored as `debug`), `source` at most 100 characters (a channel provider or a unit), `event_id` a whole number or null, `message` at most 1024 characters. `200 {ok, accepted, dropped, duplicates}`: the server drops an entry it cannot understand, or one beyond the device's per-minute budget (`logs_rate_per_min`, default 600), the device's row cap (`logs_device_max_rows`, default 20000) or the fleet cap (`logs_fleet_max_rows`, default 2000000), and counts what it dropped; an entry stored before (same time, level, source, event id, text) is a duplicate and is not stored twice, so resending a batch whose answer was lost is safe. Control characters in a message become spaces and credential-shaped text is redacted before it is stored. The agent advances its bookmark (journal cursor, Windows record id) only after a `200`. `503 feature_disabled` while the `logs` sub-switch is off; `503 unavailable` with a jittered `Retry-After` at load-shedding level 1 and up (log ingest is the first optional work given up); `429` above 30 requests per 60 s per device; `422` for a body that is not shaped like this. The new error codes of this phase are `protected`, `unsupported`, `path_denied` and `checksum_mismatch` (technician and transfer answers); `feature_disabled`, `not_configured`, `confirmation_required`, `too_large` and `conflict` already existed.
+
 ## 4. Signing
 
 * **Canonical JSON** (what is signed): UTF-8; object keys sorted by their UTF-8 bytes, recursively; arrays in order; no whitespace; strings escape only `"`, `\`, `\b`, `\f`, `\n`, `\r`, `\t` and the other code points below U+0020 as lower-case `\u00xx`, everything else raw (including `/ < > &`, U+007F, U+2028, U+2029); **integers only** (floats are rejected in check definitions); `true`, `false`, `null`.
@@ -140,7 +187,7 @@ Job id: UUID v4. Alert key `agent:<device_id>:<check_key>:<episode>` (and, for t
 
 ## 8. Technician REST
 
-`endpoint_devices` (list, detail, jobs, cancel, remote launch) is the technician side of the same module and is authenticated by the edition with a user API token; its routes, shapes and status codes are in [openapi-device.yaml](openapi-device.yaml) and implemented by `Http\TechnicianApi`. Phase 1 added software, tags, groups, check history and the live document; Phase 2 adds policies (`policies`, `{id}/policy`), the script library (`scripts`, versions, `runs`, `library_script_id` on a job), approvals (`approvals`), scheduled scripts (`schedules`) and custom fields (`fields`, `{id}/fields`), all additive.
+`endpoint_devices` (list, detail, jobs, cancel, remote launch) is the technician side of the same module and is authenticated by the edition with a user API token; its routes, shapes and status codes are in [openapi-device.yaml](openapi-device.yaml) and implemented by `Http\TechnicianApi`. Phase 1 added software, tags, groups, check history and the live document; Phase 2 adds policies (`policies`, `{id}/policy`), the script library (`scripts`, versions, `runs`, `library_script_id` on a job), approvals (`approvals`), scheduled scripts (`schedules`) and custom fields (`fields`, `{id}/fields`); Phase 3 adds alerts, maintenance windows, escalation policies and thresholds; Phase 6 adds the service and process managers (`{id}/services`, `{id}/processes`), file transfer (`{id}/files`), the Mesh views (`{id}/remote/mesh`, `view` on `POST {id}/remote`), `remote/settings`; Phase 8 adds `logs` and `logs/rules`. All additive.
 
 ## 9. Frozen constants
 

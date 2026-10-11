@@ -15,6 +15,7 @@ use RivetCore\Rmm\Migration\Migration0018InventoryFoundation;
 use RivetCore\Rmm\Migration\Migration0019PoliciesAndScripts;
 use RivetCore\Rmm\Migration\Migration0020AlertingMaturity;
 use RivetCore\Rmm\Migration\Migration0021ScaleStorage;
+use RivetCore\Rmm\Migration\Migration0022RemoteAndLogs;
 use RivetCore\Rmm\RmmModule;
 use RivetCore\Support\SystemClock;
 use RivetCore\Testing\InMemoryRmmAssets;
@@ -76,7 +77,7 @@ final class GoldenEdition
         $db = new MysqliDatabase($m);
         $this->module = new RmmModule($db, $this->clock, $this->tenancy, $this->assets, $this->bridge, $this->box, $this->audit, $this->metrics,
             $withModuleState ? new \RivetCore\Testing\InMemoryRmmModuleState(true) : null,
-            ['binary_dir' => $stateDir . '/bin', 'allow_insecure_http' => $insecureHttp], null, new AllowUsersPolicy([self::ADMIN_USER_ID => true]));
+            ['binary_dir' => $stateDir . '/bin', 'allow_insecure_http' => $insecureHttp, 'allow_linux' => getenv('RMM_GOLDEN_ALLOW_LINUX') === '1'], null, new AllowUsersPolicy([self::ADMIN_USER_ID => true]));
         $limiter = TestRedis::available() ? new RateLimiter(new TestRedis(), 'rmm-golden:') : null;
         $this->api = $this->module->deviceApi(
             static fn (string $bucket, int $limit, int $window): bool => $limiter === null || $limiter->hit($bucket, $limit, $window)['allowed'],
@@ -87,7 +88,7 @@ final class GoldenEdition
     public static function migrate(\mysqli $m): void
     {
         $db = new MysqliDatabase($m);
-        foreach ([new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage()] as $mig) {
+        foreach ([new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs()] as $mig) {
             $mig->up($db);
         }
     }

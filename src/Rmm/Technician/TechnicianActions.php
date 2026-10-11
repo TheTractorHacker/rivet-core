@@ -45,6 +45,7 @@ final class TechnicianActions
         private readonly RmmAuditInterface $audit,
         private readonly string $clientLabel = 'client',
         private readonly ?ScriptActions $library = null,
+        private readonly ?\RivetCore\Rmm\Settings\RmmSettings $settings = null,
     ) {
     }
 
@@ -114,6 +115,10 @@ final class TechnicianActions
         if ($def === null) {
             return ActionResult::fail(422, 'invalid', 'Unknown job type.');
         }
+        if (in_array($type, \RivetCore\Rmm\Remote\RemoteProtocol::JOB_TYPES, true)) {
+            // The remote tools carry validated parameters, per-action confirmation, the feature switches and the file-transfer ledger: only their own endpoints may queue them.
+            return ActionResult::fail(422, 'invalid', 'That job type is queued through the remote-tools endpoints (services, processes, files).');
+        }
         // A script from the saved library needs the lower grant than free-form script text.
         $ability = $def->requiresScript && $savedId > 0 ? RmmAbility::JOB_RUN_SAVED : $def->ability;
         $denied = $this->authz->check($who->userId, $ability, $client);
@@ -171,10 +176,14 @@ final class TechnicianActions
 
     /**
      * Launch a MeshCentral session. The session id is the only identifier stored (through the edition's remote-session log): the login
-     * token and URL are never written anywhere.
+     * token and URL are never written anywhere. `$view` is desktop (the default), terminal or files; the last two (Phase 6) need `rmm.remote.manage` as well
+     * and the `remote_tools` sub-switch, because a terminal is a shell on the device.
      */
-    public function launchRemote(RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = null, ?string $userAgent = null): ActionResult
+    public function launchRemote(RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = null, ?string $userAgent = null, string $view = 'desktop'): ActionResult
     {
+        if (!isset(MeshService::VIEWMODES[$view])) {
+            return ActionResult::fail(422, 'invalid', 'The view must be desktop, terminal or files.');
+        }
         [$dev, $err] = $this->deviceFor($who->userId, $deviceId);
         if ($err !== null || $dev === null) {
             return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
@@ -187,7 +196,18 @@ final class TechnicianActions
 
             return ActionResult::fail(403, 'forbidden', $denied);
         }
-        $r = $this->mesh->launch($dev, $who->userName, $who->userId, $force);
+        if ($view !== 'desktop') {
+            $why = $this->authz->check($who->userId, RmmAbility::REMOTE_MANAGE, $client);
+            if ($why !== null) {
+                $this->audit->record('Remote Denied', "User {$who->userId} denied Mesh $view on device $deviceId: $why", $client, $asset);
+
+                return ActionResult::fail(403, 'forbidden', $why);
+            }
+            if ($this->settings === null || !$this->settings->featureOn('remote_tools')) {
+                return ActionResult::fail(409, 'feature_disabled', 'The Mesh terminal and file views are switched off. An administrator can turn the remote tools on in the RMM remote-tools settings.');
+            }
+        }
+        $r = $this->mesh->launch($dev, $who->userName, $who->userId, $force, $view);
         if (!$r['ok']) {
             $this->audit->record('Remote Failed', "{$who->userName} remote session on device $deviceId did not start: {$r['code']}", $client, $asset);
             $http = ['unmapped' => 404, 'device_offline' => 409, 'not_configured' => 409, 'device_retired' => 409, 'mesh_unavailable' => 503][$r['code']] ?? 409;
@@ -197,7 +217,7 @@ final class TechnicianActions
         $sessionId = (string) ($r['session_id'] ?? '');
         $this->bridge->recordRemoteSession($asset, $client, $who->userId, 'meshcentral', 'meshcentral:session:' . $sessionId,
             $ip === null ? null : substr($ip, 0, 100), $userAgent === null ? null : substr($userAgent, 0, 300));
-        $this->audit->record('Remote Session', "{$who->userName} opened MeshCentral session $sessionId on device $deviceId" . ($force ? ' (forced while offline)' : ''), $client, $asset);
+        $this->audit->record('Remote Session', "{$who->userName} opened MeshCentral " . ($view === 'desktop' ? '' : "$view ") . "session $sessionId on device $deviceId" . ($force ? ' (forced while offline)' : ''), $client, $asset);
 
         return ActionResult::ok('Opening the remote session.', 200, 'ok', ['url' => (string) ($r['url'] ?? ''), 'session_id' => $sessionId]);
     }

@@ -1,6 +1,6 @@
 # RivetIT / RivetMSP RMM: what it does and contains
 
-Status: DRAFT for owner review, 2026-10-07; statuses updated for RivetCore v1.0.0-rc.10 (2026-10-10). This is the product-level feature list for the RMM module that is moving into RivetCore (`RivetCore\Rmm\*`). It is derived from, and must stay consistent with, [the extraction design](../design/endpoint-module-extraction.md) (sections 9 to 13), [ADR-010](../architecture/ADR-010-endpoint-agent-module.md) and the RMM section of [ROADMAP.md](../../ROADMAP.md). It promises nothing beyond the phases those documents define. How the asset (device) page and the fleet pages show all this is in [ASSET_PAGE_REDESIGN.md](ASSET_PAGE_REDESIGN.md).
+Status: DRAFT for owner review, 2026-10-07; statuses updated for RivetCore v1.0.0-rc.10 and the Phase 3, 6 and 8 work after it (2026-10-11). This is the product-level feature list for the RMM module that is moving into RivetCore (`RivetCore\Rmm\*`). It is derived from, and must stay consistent with, [the extraction design](../design/endpoint-module-extraction.md) (sections 9 to 13), [ADR-010](../architecture/ADR-010-endpoint-agent-module.md) and the RMM section of [ROADMAP.md](../../ROADMAP.md). It promises nothing beyond the phases those documents define. How the asset (device) page and the fleet pages show all this is in [ASSET_PAGE_REDESIGN.md](ASSET_PAGE_REDESIGN.md).
 
 ## How to read this list
 
@@ -16,9 +16,9 @@ Status: DRAFT for owner review, 2026-10-07; statuses updated for RivetCore v1.0.
 | **P3** | [#71](https://github.com/TheTractorHacker/rivet-core/issues/71) Alerting maturity: thresholds, maintenance windows, suppression, escalation, more check types |
 | **P4** | [#72](https://github.com/TheTractorHacker/rivet-core/issues/72) Patch management (needs real Windows test machines) |
 | **P5** | [#73](https://github.com/TheTractorHacker/rivet-core/issues/73) Software deployment and reporting |
-| **P6** | [#74](https://github.com/TheTractorHacker/rivet-core/issues/74) Remote tools: service/process manager, file transfer, embedded Mesh terminal and files |
+| **P6** | [#74](https://github.com/TheTractorHacker/rivet-core/issues/74) Remote tools: service/process manager, file transfer, embedded Mesh terminal and files. Built in Core after rc.10 (migration 0022): the six job types with capability flags, `rmm.remote.manage`, the `remote_tools` and `filetransfer` switches, chunked and checksum-verified file transfer with an allow list and a never-transfer list, the Mesh terminal and files launch, the REST routes, the agent side. Still to do: every edition page, a Windows host to run the Windows code on, a real MeshCentral to confirm the terminal and files views. Details: [REMOTE_AND_LOGS.md](REMOTE_AND_LOGS.md) |
 | **P7** | [#75](https://github.com/TheTractorHacker/rivet-core/issues/75) macOS agent, Authenticode-signed binaries, MSI (blocked: no test Mac, no signing certificates) |
-| **P8** | [#76](https://github.com/TheTractorHacker/rivet-core/issues/76) Event-log and syslog collection (optional, off by default) |
+| **P8** | [#76](https://github.com/TheTractorHacker/rivet-core/issues/76) Event-log and syslog collection (optional, off by default). Built in Core after rc.10 (migration 0022) behind the `logs` switch: Windows event-log and Linux journald collectors with bookmarks, bounded batches and a rate cap, retention and per-device and per-fleet caps, search, pattern rules that raise alerts through the alerting engine. Still to do: per-policy log sources, the edition pages, a Windows host to run the event-log reader on, regular-expression rules (deliberately not offered). Details: [REMOTE_AND_LOGS.md](REMOTE_AND_LOGS.md) |
 | **Not planned** | Appears in what commercial RMMs offer, has no phase in the design. Not a promise and not a refusal; it needs a new design addendum first. |
 
 The **Windows / Linux / macOS** columns give the same vocabulary per platform. `-` means the feature does not apply to, or is not planned for, that platform. macOS is deferred to P7 as a whole, so its column is `P7` or `-`. Where a row is only about the server or the UI the platform columns say `all`.
@@ -84,7 +84,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 4.8 | Metric history in RivetMSP | Core | all | all | P7 | `DatabaseMetricSink`: hourly rollups (count, sum, min, max) and the latest reading, 14 days by default, through the same sink contract. RivetMSP shows the latest reading only until it passes the sink to the module. |
 | 4.9 | Ping, port and HTTP(S) probes with latency | Core | Core | Core | P7 | Check types `ping` (system `ping`, loss and latency), `port` (TCP connect time) and `http` (status range, latency, text, redirects, certificate expiry); each reports its latency as a `value` the server can put thresholds on. Probes run from the device, not from the server. |
 | 4.10 | Per-process top N, temperatures, battery | Not planned | - | - | - | |
-| 4.11 | Event-log and syslog collection (bounded volume, short retention, alert on event) | P8 | P8 | P8 | P7 | Optional, off by default, storage heavy. |
+| 4.11 | Event-log and syslog collection (bounded volume, short retention, alert on event) | Core | Core | Core | P7 | Optional, off by default (`logs` switch, with a storage warning), storage heavy. Windows channels (levels, event ids, phrases) and Linux journald (units, identifiers, severity, phrases) are read with bookmarks, shipped in bounded batches (200 entries, a per-minute budget), stored with retention (7 days by default) and per-device and per-fleet row caps, searched by device, time, level, source, event id and text, and phrase rules raise alerts through the check evaluator. The Windows reader is cross-compiled and vetted, not run on Windows. Collection is configured once for the instance; per-policy sources are not built. |
 
 ## 5. Checks
 
@@ -139,9 +139,9 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 8.1 | MeshCentral remote desktop launch: a login cookie is minted per click, no URL or token is stored | Shipped | Shipped | P0 | P7 | Needs your own MeshCentral server; optional (`mesh_enabled`). |
 | 8.2 | Remote-session log (who, when, from where) | Shipped | all | all | all | |
 | 8.3 | Manual mapping of a device to a MeshCentral node | Shipped | all | all | all | |
-| 8.4 | Service and process manager (list, start, stop, restart, kill) as signed jobs | P6 | P6 | P6 | P7 | |
-| 8.5 | File download and upload with size caps, audited | P6 | P6 | P6 | P7 | |
-| 8.6 | Embedded MeshCentral terminal and file browser | P6 | P6 | P6 | P7 | |
+| 8.4 | Service and process manager (list, start, stop, restart, enable, disable, kill) as signed jobs | Core | Core | Core | P7 | `remote_tools` switch, `rmm.remote.manage`; strict name and pid allow lists, argument lists only, confirmation for stop, restart, disable and every kill, the agent refuses itself, its parent, system processes and critical services. The Windows code is cross-compiled and vetted, not run on Windows. |
+| 8.5 | File download and upload with size caps, audited | Core | Core | Core | P7 | Off by default behind `filetransfer` with a plain-language risk text. Folder allow list per platform, a never-transfer list (password databases, private keys, credential stores), one-time token, chunks of 1 MiB, SHA-256 verified by the server (download) and by the agent (upload), size cap and storage budget, expiry, every step audited; upload is administrator-only. |
+| 8.6 | Embedded MeshCentral terminal and file browser | Core | Core | Core | P7 | Launch URLs for Mesh's terminal and files views (same per-click login token as the desktop), needs `rmm.remote.manage` and `remote_tools`; MeshCentral itself is not embedded. Not yet opened against a real MeshCentral. |
 | 8.7 | Native remote desktop or terminal relay built into RivetIT | Not planned | - | - | - | The design does not recommend it: it needs a persistent-connection service that PHP-FPM cannot hold. |
 | 8.8 | Registry editor, wake-on-LAN, session recording and consent prompts | Not planned | - | - | - | |
 
@@ -209,7 +209,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 |---|---|---|---|---|---|---|
 | 14.1 | Administration page: settings, enrollment tokens, agent binaries and releases, rings, approval queue, MeshCentral, signing key, device list | Shipped | all | all | all | RivetIT. |
 | 14.2 | Master switch "Enable RMM module"; existing installs keep their current value, new installs start OFF | P0 | all | all | all | |
-| 14.3 | Sub-switches: monitoring, metrics, jobs, remote, updates (later: inventory, policies, patching, software, logs, reports) with Light and Standard presets | P0 | all | all | all | |
+| 14.3 | Sub-switches: monitoring, metrics, jobs, remote, updates (later: inventory, policies, patching, software, logs, reports) with Light and Standard presets | P0 | all | all | all | Phase 6 and 8 add `remote_tools`, `filetransfer` and `logs`, all off by default. |
 | 14.4 | Module off costs nothing: device endpoints answer `503 module_disabled` with `Retry-After: 3600` and no database work; no navigation, cron work or search entries | P0 | all | all | all | The only intentional wire-visible change in Phase 0. Data is kept; re-enabling resumes. |
 | 14.5 | Device status frozen with a banner while the module is off (no false offline alerts) | P0 | all | all | all | |
 | 14.6 | RMM in RivetMSP (administration, asset page, device page, jobs, remote) | P0 | all | all | all | RivetMSP gets its own kill switch `config_core_rmm_enabled`. |
@@ -263,7 +263,7 @@ Comparison for the headline capabilities only. Cells for other products reflect 
 | Metrics graphs per device | Yes (RivetIT only) | Yes, both editions (built in Core in rc.9, edition adoption pending) | Yes (not verified in detail) | Yes | Not verified |
 | Checks and alerts | 4 check types, global schedule | Policy-assigned (P2), 16 check types, thresholds, windows, escalation (P3, built in Core) | Yes, policy-assigned | Yes, policy-assigned | Not verified |
 | Script library, scheduled scripts | Saved scripts, run now | Yes (P2) | Yes | Yes | Yes (not verified in detail) |
-| Remote desktop | MeshCentral launch (you host Mesh) | Plus Mesh terminal and files (P6) | MeshCentral based | Built-in remote | Built-in remote (not verified in detail) |
+| Remote desktop | MeshCentral launch (you host Mesh) | Plus Mesh terminal and files (P6, built in Core) | MeshCentral based | Built-in remote | Built-in remote (not verified in detail) |
 | Patch management | No (vendor-RMM status only) | Yes (P4) | Yes | Yes | Not verified |
 | Software deployment | No | Yes (P5) | Yes (Chocolatey based) | Yes | Not verified |
 | Policies by client/site/group | Client only | Yes (P2) | Yes | Yes | Not verified |

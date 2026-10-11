@@ -14,6 +14,9 @@ use RivetCore\Rmm\Enrollment\EnrollmentService;
 use RivetCore\Rmm\Installer\InstallerDownload;
 use RivetCore\Rmm\Installer\InstallerStamp;
 use RivetCore\Rmm\Job\JobService;
+use RivetCore\Rmm\Logs\LogService;
+use RivetCore\Rmm\Remote\RemoteProtocol;
+use RivetCore\Rmm\Remote\TransferService;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\RmmState;
 use RivetCore\Rmm\Settings\RmmSettings;
@@ -88,6 +91,8 @@ final class DeviceApi
         private readonly string $disabledAnswer = self::DISABLED_UNIFORM,
         private readonly ?RmmState $state = null,
         private readonly ?HerdControl $herd = null,
+        private readonly ?TransferService $transfers = null,
+        private readonly ?LogService $logs = null,
     ) {
         if ($disabledAnswer !== self::DISABLED_UNIFORM && $disabledAnswer !== self::DISABLED_COMPAT) {
             throw new \InvalidArgumentException('disabledAnswer must be "uniform" or "compat".');
@@ -108,6 +113,8 @@ final class DeviceApi
             'agent_jobs' => $this->jobs($req),
             'agent_update' => $this->update($req),
             'agent_installer' => $this->installer($req),
+            'agent_transfer' => $this->transfer($req),
+            'agent_logs' => $this->logs($req),
             default => RmmResponse::error(new ApiError(404, 'not_found', 'Not found.')),
         };
     }
@@ -202,6 +209,88 @@ final class DeviceApi
                 return RmmResponse::json(200, ['ok' => true]);
             }
             throw new ApiError(405, 'method_not_allowed', 'Use GET or POST.', ['Allow' => 'GET, POST']);
+        });
+    }
+
+    // ------------------------------------------------------------------ agent_transfer (Phase 6, additive)
+
+    /**
+     * File transfer chunks, device auth plus the one-time transfer token in the `X-Transfer-Token` header (never in the URL), only while the `filetransfer`
+     * sub-switch is on.
+     *
+     * POST ?transfer_id=U&offset=N (raw body, at most 1 MiB; `X-Transfer-Last: 1` and `X-Transfer-Sha256` on the final chunk): a download from the device.
+     *   200 {ok, received, complete}; 409 {code: conflict, received} to resume; 413 over the size cap; 422 checksum_mismatch.
+     * GET ?transfer_id=U&offset=N&length=M: a range of an upload to the device, raw bytes with `X-Transfer-Size` and `X-Transfer-Sha256`.
+     */
+    public function transfer(RmmRequest $req): RmmResponse
+    {
+        return $this->guard(function () use ($req): RmmResponse {
+            if (($off = $this->moduleOff()) !== null) {
+                return $off;
+            }
+            $this->requireTls($req);
+            if ($this->transfers === null || ($off = $this->featureOff(RemoteProtocol::FEATURE_FILE_TRANSFER)) !== null) {
+                return $off ?? RmmResponse::error(new ApiError(404, 'not_found', 'Not found.'));
+            }
+            $dev = $this->devices->authenticate($req->header('authorization'));
+            $this->deviceRateLimit((int) $dev['device_id'], 'transfer', ...RemoteProtocol::TRANSFER_RATE);
+            $tid = $req->query['transfer_id'] ?? '';
+            $token = $req->header('x-transfer-token') ?? '';
+            $offset = isset($req->query['offset']) && ctype_digit($req->query['offset']) && strlen($req->query['offset']) <= 12 ? (int) $req->query['offset'] : null;
+            if (preg_match(RemoteProtocol::TRANSFER_TOKEN_RE, $token) !== 1 || $offset === null) {
+                throw new ApiError(422, 'invalid', 'transfer_id, offset and the X-Transfer-Token header are required.');
+            }
+            $method = strtoupper($req->method);
+            if ($method === 'POST') {
+                $bytes = $this->rawBody($req, RemoteProtocol::TRANSFER_CHUNK_MAX);
+                $sha = $req->header('x-transfer-sha256');
+                $r = $this->transfers->receiveChunk($dev, $tid, $token, $offset, $bytes, $req->header('x-transfer-last') === '1', $sha === null ? null : strtolower($sha));
+
+                return RmmResponse::json($r['http'], $r['body']);
+            }
+            if ($method === 'GET') {
+                $len = isset($req->query['length']) && ctype_digit($req->query['length']) && strlen($req->query['length']) <= 9 ? (int) $req->query['length'] : 0;
+                $r = $this->transfers->serveChunk($dev, $tid, $token, $offset, $len);
+                if ($r['http'] !== 200) {
+                    return RmmResponse::json($r['http'], $r['body']);
+                }
+
+                return new RmmResponse(200, ['Content-Type' => 'application/octet-stream', 'Cache-Control' => 'no-store', 'X-Content-Type-Options' => 'nosniff', 'X-Transfer-Size' => (string) $r['size'],
+                    'X-Transfer-Sha256' => (string) $r['sha256'], 'X-Transfer-Offset' => (string) $offset], $r['data'] ?? '');
+            }
+            throw new ApiError(405, 'method_not_allowed', 'Use GET or POST.', ['Allow' => 'GET, POST']);
+        });
+    }
+
+    // ------------------------------------------------------------------ agent_logs (Phase 8, additive)
+
+    /**
+     * POST (device auth, body cap 262144 bytes): a batch of collected log entries `{events: [{ts, level, source, event_id, message}], dropped, config_version}` ->
+     * 200 `{ok, accepted, dropped, duplicates}`. 503 `feature_disabled` while the `logs` sub-switch is off, 503 `unavailable` with a jittered Retry-After under load
+     * shedding (level 1 and up: log ingest is the first thing the server gives up), 429 above 30 requests per 60 s per device.
+     */
+    public function logs(RmmRequest $req): RmmResponse
+    {
+        return $this->guard(function () use ($req): RmmResponse {
+            if (($off = $this->moduleOff()) !== null) {
+                return $off;
+            }
+            $this->requireTls($req);
+            if (strtoupper($req->method) !== 'POST') {
+                throw new ApiError(405, 'method_not_allowed', 'Use POST.', ['Allow' => 'POST']);
+            }
+            if ($this->logs === null || ($off = $this->featureOff(RemoteProtocol::FEATURE_LOGS)) !== null) {
+                return $off ?? RmmResponse::error(new ApiError(404, 'not_found', 'Not found.'));
+            }
+            $this->shedder?->tick();
+            if ((int) ($this->settings->get()['shed_level'] ?? 0) >= 1) {
+                throw LoadShedder::refusal($this->settings->limits());   // level 1 and up: logs are the first optional work to go
+            }
+            $dev = $this->devices->authenticate($req->header('authorization'));
+            $this->deviceRateLimit((int) $dev['device_id'], 'logs', ...RemoteProtocol::LOG_RATE);
+            $body = $this->body($req, RemoteProtocol::LOG_BODY_MAX);
+
+            return RmmResponse::json(200, $this->logs->ingest($dev, $body));
         });
     }
 

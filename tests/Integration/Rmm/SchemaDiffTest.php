@@ -369,6 +369,31 @@ final class SchemaDiffTest extends TestCase
         $this->assertSame($before, $this->describe('d'));
     }
 
+    public function testMigration0022AddsOnlyNewTablesAndIsIdempotent(): void
+    {
+        $this->reference();
+        $this->build('d', 'rivetit-2.6.146-final.sql', true);
+        $this->seed('d');
+        $before = $this->describe('d');
+        $rows = $this->checksums('d');
+
+        $applied = $this->runner('d')->run();
+        $this->assertContains('0022_rmm_remote_and_logs', $applied);
+        $this->assertSame($before, $this->describe('d'), 'the ten original tables are not altered');
+        $this->assertSame($rows, $this->checksums('d'));
+        foreach (\RivetCore\Rmm\Migration\RemoteSchema::tables() as $name => $_) {
+            $this->assertSame(1, (int) $this->db('d')->fetchOne('SELECT COUNT(*) c FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND TABLE_COLLATION = ? AND ENGINE = ?', [$name, 'utf8mb4_general_ci', 'InnoDB'])['c'], $name);
+            $this->assertSame(0, (int) $this->db('d')->fetchOne('SELECT COUNT(*) c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLLATION_NAME IS NOT NULL AND COLLATION_NAME <> ?', [$name, 'utf8mb4_general_ci'])['c'], "$name columns");
+        }
+        $this->assertCount(5, \RivetCore\Rmm\Migration\RemoteSchema::tables());
+        // idempotent, and a row survives a second run
+        $this->db('d')->execute("INSERT INTO endpoint_agent_remote_settings (id, transfer_allow_json) VALUES (1, '{}')");
+        (new \RivetCore\Rmm\Migration\Migration0022RemoteAndLogs())->up($this->db('d'));
+        $this->assertSame([], $this->runner('d')->run());
+        $this->assertSame('{}', (string) $this->db('d')->fetchOne('SELECT transfer_allow_json c FROM endpoint_agent_remote_settings')['c']);
+        $this->assertSame($before, $this->describe('d'));
+    }
+
     public function testFreshCoreInstallHasEveryPhase1Table(): void
     {
         $this->runner('b')->run();
@@ -383,7 +408,7 @@ final class SchemaDiffTest extends TestCase
 
     public function testEveryTableIsUtf8mb4GeneralCiExplicitly(): void
     {
-        foreach (RmmSchema::tables() + RmmSchema::phase1Tables() + RmmSchema::phase2Tables() + \RivetCore\Rmm\Migration\AlertingSchema::tables() + \RivetCore\Rmm\Migration\ScaleSchema::tables() as $name => $ddl) {
+        foreach (RmmSchema::tables() + RmmSchema::phase1Tables() + RmmSchema::phase2Tables() + \RivetCore\Rmm\Migration\AlertingSchema::tables() + \RivetCore\Rmm\Migration\ScaleSchema::tables() + \RivetCore\Rmm\Migration\RemoteSchema::tables() as $name => $ddl) {
             $this->assertStringContainsString('COLLATE=utf8mb4_general_ci', $ddl, $name);
             $this->assertStringContainsString('ENGINE=InnoDB', $ddl, $name);
         }

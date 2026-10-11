@@ -57,11 +57,17 @@ use RivetCore\Rmm\Job\JobExtras;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Job\JobTypeRegistry;
 use RivetCore\Rmm\Link\RmmLinker;
+use RivetCore\Rmm\Logs\LogActions;
+use RivetCore\Rmm\Logs\LogRuleService;
+use RivetCore\Rmm\Logs\LogService;
 use RivetCore\Rmm\Maintenance\Housekeeping;
 use RivetCore\Rmm\Mesh\MeshService;
 use RivetCore\Rmm\Policy\EffectivePolicy;
 use RivetCore\Rmm\Policy\PolicyStore;
 use RivetCore\Rmm\Read\AutomationReader;
+use RivetCore\Rmm\Remote\RemoteActions;
+use RivetCore\Rmm\Remote\RemoteSettings;
+use RivetCore\Rmm\Remote\TransferService;
 use RivetCore\Rmm\Read\RmmReadModel;
 use RivetCore\Rmm\Scripts\ApprovedRunExecutor;
 use RivetCore\Rmm\Scripts\BulkRunner;
@@ -102,7 +108,7 @@ use RivetCore\Webhooks\UrlPolicy;
  * The composition root: builds the module's services from the storage contract and the edition's adapters, once, lazily. The
  * edition's five-line REST bridges call {@see deviceApi()}; its cron entry calls {@see housekeeping()}.
  *
- * Options: `binary_dir` (where hosted agent binaries live, default none), `allow_insecure_http` (loopback test servers only),
+ * Options: `binary_dir` (where hosted agent binaries live, default none), `transfer_dir` (where file transfers are stored, default `<binary_dir>/transfers`; without either, file transfer answers not_configured), `allow_insecure_http` (loopback test servers only),
  * `allow_linux` (admit the Linux test agent), `host_fallback`, `integration_name`, `installer_prefix`, `max_upload_bytes` (size cap of one
  * hosted agent binary, default 64 MiB), `client_label` (what the edition calls a client in user-facing text, default "client"; RivetIT: "department"),
  * `denial_reasons` (ability => sentence, replaces the generic denial text of that ability, see {@see RmmAuthorizer}), `escalation` (a
@@ -173,13 +179,20 @@ final class RmmModule
     private ?ScriptActions $scriptActions = null;
     private ?FieldActions $fieldActions = null;
     private ?ScheduleGateInterface $scheduleGate = null;
+    private ?RemoteSettings $remoteSettings = null;
+    private ?TransferService $transferService = null;
+    private ?LogRuleService $logRuleService = null;
+    private ?LogService $logService = null;
+    private ?RemoteActions $remoteActions = null;
+    private ?LogActions $logActions = null;
+    private ?\RivetCore\Rmm\Http\RemoteApi $remoteApi = null;
 
     private readonly RmmAuditInterface $audit;
     private readonly RmmMetricSinkInterface $metrics;
     private readonly RmmEventsInterface $events;
 
     /**
-     * @param array{binary_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface} $options
+     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -263,6 +276,55 @@ final class RmmModule
     public function checks(): CheckEvaluator
     {
         return $this->checks ??= new CheckEvaluator($this->sql(), $this->settings(), $this->bridge, $this->devices(), $this->eventPublisher(), $this->alertingEngine());
+    }
+
+    // ------------------------------------------------------------------ Phases 6 and 8: remote tools and log collection
+
+    /** The remote-tools row: allowed transfer folders, log sources and the caps on both. */
+    public function remoteSettings(): RemoteSettings
+    {
+        return $this->remoteSettings ??= new RemoteSettings($this->sql());
+    }
+
+    /**
+     * File transfer between devices and the server. Needs a storage folder: option `transfer_dir`, else `<binary_dir>/transfers`; with neither, transfers answer
+     * 409 `not_configured` and nothing is stored.
+     */
+    public function transfers(): TransferService
+    {
+        $dir = $this->options['transfer_dir'] ?? (isset($this->options['binary_dir']) && $this->options['binary_dir'] !== '' ? rtrim($this->options['binary_dir'], '/\\') . '/transfers' : null);
+
+        return $this->transferService ??= new TransferService($this->sql(), $this->remoteSettings(), $this->jobs(), $dir, $this->audit, $this->eventPublisher());
+    }
+
+    /** Log rules: a match raises an alert through the check evaluator (and so through the Phase 3 alerting engine). */
+    public function logRules(): LogRuleService
+    {
+        return $this->logRuleService ??= new LogRuleService($this->sql(), $this->settings(), $this->checks(), $this->devices(), $this->eventPublisher());
+    }
+
+    /** Collected logs: ingest, search, retention. */
+    public function logService(): LogService
+    {
+        return $this->logService ??= new LogService($this->sql(), $this->remoteSettings(), $this->logRules());
+    }
+
+    /** Service and process managers, file transfer, Mesh view information and the remote-tools settings (shared by the REST API and the edition's pages). */
+    public function remoteActions(): RemoteActions
+    {
+        return $this->remoteActions ??= new RemoteActions($this->sql(), $this->devices(), $this->authorizer(), $this->settings(), $this->jobs(), $this->transfers(), $this->remoteSettings(), $this->mesh(), $this->audit);
+    }
+
+    /** Reading collected logs and managing log rules. */
+    public function logActions(): LogActions
+    {
+        return $this->logActions ??= new LogActions($this->devices(), $this->authorizer(), $this->logService(), $this->logRules(), $this->audit);
+    }
+
+    /** The remote-tools and log routes (mounted by {@see technicianApi()}). */
+    public function remoteApi(): \RivetCore\Rmm\Http\RemoteApi
+    {
+        return $this->remoteApi ??= new \RivetCore\Rmm\Http\RemoteApi($this->remoteActions(), $this->logActions(), $this->technician());
     }
 
     // ------------------------------------------------------------------ Phase 3: alerting
@@ -352,7 +414,7 @@ final class RmmModule
         return new CheckinService($this->sql(), $this->settings(), $this->devices(), $this->checks(), $this->jobs(), $this->updates(), $this->linker(), $this->assets, $this->metrics,
             function (array $work): void {
                 $this->ingestQueue()->enqueue($work);
-            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy());
+            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy(), $this->remoteSettings());
     }
 
     /** Capabilities, presence and software bookkeeping of a device (table rmm_device_state). */
@@ -428,7 +490,8 @@ final class RmmModule
     {
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
             $this->databaseSink(), $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
-            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->storage(), $this->cache(), $this->externalSink());
+            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->storage(), $this->cache(), $this->externalSink(),
+            $this->logService(), $this->logRules(), $this->transfers());
     }
 
     /** The database metric sink, whether it was passed as the sink or inside a {@see CompositeMetricSink}. */
@@ -630,7 +693,7 @@ final class RmmModule
     {
         return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore(),
             $this->assets instanceof RmmAssetNamesInterface ? $this->assets : null, $this->clientLabel(),
-            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache());
+            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers());
     }
 
     /** Hosted agent binaries: validate, store, publish, serve. */
@@ -655,7 +718,7 @@ final class RmmModule
     public function technician(): TechnicianActions
     {
         return $this->technician ??= new TechnicianActions($this->sql(), $this->devices(), $this->deviceService(), $this->enrollment(), $this->jobs(), $this->updates(),
-            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions());
+            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings());
     }
 
     /** The validated administration operations (settings, MeshCentral, signing key, binaries, releases, installers). */
@@ -668,7 +731,7 @@ final class RmmModule
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */
     public function technicianApi(): TechnicianApi
     {
-        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi());
+        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi());
     }
 
     /** The alerts, maintenance windows, escalation policies and thresholds routes (mounted by {@see technicianApi()}). */
@@ -692,7 +755,7 @@ final class RmmModule
             $this->settings(), $this->devices(), $this->enrollment(), $this->checkin(), $this->jobs(), $this->updates(),
             $this->installerDownload(), $this->audit, $rateLimit, $this->options['allow_insecure_http'] ?? false,
             $this->state, $sleep, $now, $this->shedder(),
-            $disabledAnswer ?? ($withModuleState ? DeviceApi::DISABLED_UNIFORM : DeviceApi::DISABLED_COMPAT), $this->state(), $this->herd(),
+            $disabledAnswer ?? ($withModuleState ? DeviceApi::DISABLED_UNIFORM : DeviceApi::DISABLED_COMPAT), $this->state(), $this->herd(), $this->transfers(), $this->logService(),
         );
     }
 

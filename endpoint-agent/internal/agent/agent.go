@@ -26,6 +26,8 @@ import (
 	"rivetit-agent/internal/buffer"
 	"rivetit-agent/internal/collect"
 	"rivetit-agent/internal/jobs"
+	"rivetit-agent/internal/logs"
+	"rivetit-agent/internal/remote"
 	"rivetit-agent/internal/store"
 	"rivetit-agent/internal/update"
 )
@@ -86,6 +88,7 @@ type Agent struct {
 	exec     *jobs.Executor
 	verifier *jobs.Verifier
 	upd      *update.Manager
+	logs     *logs.Manager // RMM Phase 8 log collection; idle until a check-in offers logs:collect
 	skew     time.Duration
 
 	tokCache struct {
@@ -139,6 +142,15 @@ func New(o Options) (*Agent, error) {
 	a.runner = collect.NewCheckRunner(a.col)
 	a.ring = buffer.Open(o.Store.BufferPath(), cfg.BufferMaxSamples, cfg.BufferMaxBytes)
 	a.verifier = &jobs.Verifier{Now: a.now}
+	a.logs = logs.New(logs.Options{
+		Readers:   logs.PlatformReaders(remote.ExecRunner{}),
+		Send:      a.sendLogs,
+		StatePath: o.Store.LogsStatePath(),
+		Now:       a.now,
+		Redact:    func(s string) string { return jobs.Redact(s, a.token()) },
+		Log:       a.log,
+		OnRevoked: func(err error) { a.goDormant(revokedMessage + " (" + err.Error() + ")") },
+	})
 	if o.Updater != nil {
 		a.upd = o.Updater
 	} else if o.Exe != "" {
@@ -249,6 +261,8 @@ func (a *Agent) newExecutor(ctx context.Context) {
 			return string(b), err
 		},
 	}
+	e.Remote = remote.Deps{StateDir: a.o.Store.Dir, T: agentTransport{a}}.Handlers()
+	e.DisableRemote = cfg.DisableRemote
 	e.OnRevoked = func(err error) { a.goDormant(revokedMessage + " (" + err.Error() + ")") }
 	e.Recover()
 	e.Start(ctx)
@@ -269,6 +283,7 @@ func (a *Agent) goDormant(reason string) {
 	if e := a.executor(); e != nil {
 		e.Halt()
 	}
+	a.logs.Configure(nil) // a revoked device ships nothing
 	if err := a.o.Store.WipeToken(); err != nil {
 		a.log.Error("could not wipe device token", "err", err)
 	}
@@ -435,8 +450,57 @@ func Capabilities() []string {
 		out = append(out, featureSoftware)
 	}
 	out = append(out, featurePolicies) // this agent applies the effective policy of config.policy
+	// RMM Phase 6 and 8: the remote tools (services, processes, files) and log collection. The server only queues a remote
+	// tool for, and only offers log collection to, an agent that announced the flag.
+	out = append(out, remote.CapServices, remote.CapProcesses, remote.CapFiles)
+	if logs.Supported() {
+		out = append(out, api.FeatureLogs)
+	}
 	sort.Strings(out)
 	return out
+}
+
+// capabilities is Capabilities() minus what the local configuration switches off (disable_remote, disable_logs): an
+// agent that cannot do a thing must not announce it.
+func (a *Agent) capabilities() []string {
+	a.mu.Lock()
+	cfg := a.cfg
+	a.mu.Unlock()
+	caps := Capabilities()
+	if !cfg.DisableRemote && !cfg.DisableLogs {
+		return caps
+	}
+	out := caps[:0:0]
+	for _, c := range caps {
+		switch {
+		case cfg.DisableRemote && (c == remote.CapServices || c == remote.CapProcesses || c == remote.CapFiles || (strings.HasPrefix(c, "job:") && jobs.IsRemoteType(strings.TrimPrefix(c, "job:")))):
+			continue
+		case cfg.DisableLogs && c == api.FeatureLogs:
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// agentTransport lets the file tools use whatever API client the agent holds now (it is rebuilt when the configuration changes).
+type agentTransport struct{ a *Agent }
+
+func (t agentTransport) Transfer(ctx context.Context, tr api.TransferRequest) (*api.TransferResponse, error) {
+	c := t.a.api()
+	if c == nil {
+		return nil, errors.New("no api client")
+	}
+	return c.Transfer(ctx, tr)
+}
+
+// sendLogs ships one agent_logs body for the log manager.
+func (a *Agent) sendLogs(ctx context.Context, body []byte) (*api.LogAck, error) {
+	c := a.api()
+	if c == nil {
+		return nil, errors.New("no api client")
+	}
+	return c.SendLogs(ctx, body)
 }
 
 func (a *Agent) rand() float64 {
@@ -488,7 +552,7 @@ func (a *Agent) buildInflight(ctx context.Context) (*store.Inflight, error) {
 		entries = a.ring.Snapshot()
 	}
 	req := api.CheckinRequest{AgentVersion: a.o.Version, Buffered: []api.Buffered{}}
-	req.Platform, req.Arch, req.Capabilities = runtime.GOOS, runtime.GOARCH, Capabilities()
+	req.Platform, req.Arch, req.Capabilities = runtime.GOOS, runtime.GOARCH, a.capabilities()
 	var through uint64
 	if n := len(entries); n > 0 {
 		latest := entries[n-1]
@@ -706,6 +770,7 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 		a.ackSoftware(in, now)
 	}
 	a.sw.resync = hasFeature(resp.Features, featureSoftware) && hasFeature(resp.Resync, resyncSoftware)
+	a.configureLogs(resp)
 	st, _ := a.o.Store.LoadState()
 
 	// jobs: immediately when pending, otherwise a periodic safety poll
@@ -729,6 +794,20 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 		d = a.o.MinInterval
 	}
 	return checkinOutcome{delay: d, ok: true}
+}
+
+// configureLogs applies the log-collection config of a check-in response. Collection runs only while the LATEST response offered the
+// feature and carried config.logs; any response that does not (an old server, the switch turned off, load being shed) stops it, and
+// the local switch disable_logs overrides everything.
+func (a *Agent) configureLogs(resp *api.CheckinResponse) {
+	a.mu.Lock()
+	off := a.cfg.DisableLogs
+	a.mu.Unlock()
+	if off || !logs.Supported() || !hasFeature(resp.Features, api.FeatureLogs) || resp.Config == nil {
+		a.logs.Configure(nil)
+		return
+	}
+	a.logs.Configure(logs.Normalize(api.ParseLogsConfig(resp.Config.Logs)))
 }
 
 func (a *Agent) pollJobs(ctx context.Context) {
@@ -834,7 +913,15 @@ func (a *Agent) Run(ctx context.Context) error {
 	st, _ := a.o.Store.LoadState()
 	a.syncVerifier(st)
 	a.newExecutor(ctx)
+	logsCtx, stopLogs := context.WithCancel(ctx)
+	logsDone := make(chan struct{})
+	go func() {
+		defer close(logsDone)
+		a.logs.Run(logsCtx)
+	}()
 	defer func() {
+		stopLogs() // Run also returns when the loop ends for a restart, with ctx still alive
+		<-logsDone
 		if e := a.executor(); e != nil {
 			e.Halt()
 			e.Wait()

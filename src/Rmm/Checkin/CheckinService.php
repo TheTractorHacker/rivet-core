@@ -16,6 +16,8 @@ use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\Policy\EffectivePolicy;
+use RivetCore\Rmm\Remote\RemoteProtocol;
+use RivetCore\Rmm\Remote\RemoteSettings;
 use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Software\SoftwareService;
@@ -61,6 +63,7 @@ final class CheckinService
         private readonly ?SoftwareService $software = null,
         private readonly ?RmmEventPublisher $events = null,
         private readonly ?EffectivePolicy $policies = null,
+        private readonly ?RemoteSettings $remote = null,
     ) {
     }
 
@@ -180,6 +183,15 @@ final class CheckinService
         }
         if ($wantsSoftware && $this->deviceState !== null) {
             $offered[] = DeviceState::CAP_SOFTWARE_INVENTORY;
+        }
+        // Phase 8, additive: only an agent that announced `logs:collect`, while the `logs` sub-switch is on, no load is being shed (log ingest goes first) and at
+        // least one source is configured for its platform. Every other response is byte-identical to before.
+        if ($features['logs'] && $this->remote !== null && (int) ($cfg['shed_level'] ?? 0) === 0 && in_array(RemoteProtocol::CAP_LOGS, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
+            $logConfig = $this->remote->agentLogConfig((string) ($dev['os'] ?? 'windows'));
+            if ($logConfig !== null) {
+                $offered[] = RemoteProtocol::CAP_LOGS;
+                $out['config']['logs'] = $logConfig;
+            }
         }
         if ($offered !== []) {
             sort($offered, SORT_STRING);

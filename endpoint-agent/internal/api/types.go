@@ -67,6 +67,11 @@ type ServerConfig struct {
 	Checks           []CheckSpec `json:"checks"`
 	CollectIntervalS int         `json:"collect_interval_s,omitempty"`
 	Policy           *PolicyInfo `json:"policy,omitempty"`
+	// Logs is the log-collection config (Phase 8). It is kept raw so that a
+	// malformed block can never fail the whole check-in decode; ParseLogsConfig
+	// reads it leniently and the agent only acts on it when the response also
+	// offered the "logs:collect" feature.
+	Logs json.RawMessage `json:"logs,omitempty"`
 }
 
 type EnrollResponse struct {
