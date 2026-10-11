@@ -81,6 +81,7 @@ final class Housekeeping
         $out['shed_level'] = $this->shedder === null ? (int) ($cfg['shed_level'] ?? 0) : $this->shedder->evaluate()['level'];
         if ($this->ingest !== null) {
             $out['pruned_ingest_jobs'] = $this->ingest->pruneCompleted();
+            $out['reclaimed_ingest_jobs'] = $this->ingest->reclaimStale();
         }
         $integration = $this->settings->integrationId();
         $out['offline'] = $this->flipOffline($integration, $this->sql->utcAt(-(int) $cfg['offline_after_s']));

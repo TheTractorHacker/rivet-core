@@ -226,7 +226,7 @@ final class JobWorkerTest extends TestCase
                 return $this->inner->transaction($callback);
             }
         };
-        $this->assertSame([], (new JobQueue($racing))->claim());
+        $this->assertSame([], (new JobQueue($racing, \RivetCore\Jobs\JobClaimer::LEASE))->claim());
         $this->assertSame('1', (string) $this->row($id)['attempts'], 'exactly one claim happened');
     }
 

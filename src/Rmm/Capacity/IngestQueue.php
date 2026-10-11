@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Capacity;
 
 use RivetCore\Database\DatabaseInterface;
+use RivetCore\Jobs\JobClaimer;
 use RivetCore\Jobs\JobContext;
 use RivetCore\Jobs\JobQueue;
 use RivetCore\Jobs\JobWorker;
@@ -47,6 +48,8 @@ final class IngestQueue
     public const COMPLETED_RETENTION_S = 600;
     public const PRUNE_BATCH = 5000;
     public const PRUNE_RUN_CAP = 200000;
+    /** Seconds a running job may go unseen before {@see reclaimStale()} takes it back. */
+    public const LEASE_S = 120;
 
     public function __construct(
         private readonly JobQueue $queue,
@@ -103,6 +106,37 @@ final class IngestQueue
         }
 
         return $out;
+    }
+
+    /**
+     * Arrival and completion rate of the last minute, for the autoscaling hint ({@see AutoscaleHint}). One bounded scan of the (pruned) job table: for the panel and a
+     * scraper, never for the request path.
+     *
+     * @return array{arrival_per_s:float,completion_per_s:float}
+     */
+    public function rates(): array
+    {
+        $r = $this->db->fetchOne(
+            "SELECT COALESCE(SUM(created_at >= NOW() - INTERVAL 60 SECOND), 0) AS arr, COALESCE(SUM(status = 'completed' AND completed_at >= NOW() - INTERVAL 60 SECOND), 0) AS done
+             FROM integration_jobs WHERE job_type = ? AND (created_at >= NOW() - INTERVAL 60 SECOND OR completed_at >= NOW() - INTERVAL 60 SECOND)",
+            [self::JOB_TYPE]
+        ) ?? [];
+
+        return ['arrival_per_s' => round((int) ($r['arr'] ?? 0) / 60, 3), 'completion_per_s' => round((int) ($r['done'] ?? 0) / 60, 3)];
+    }
+
+    /**
+     * The autoscaling hint for the current backlog.
+     *
+     * @param int|null $workers how many drain workers the edition runs, when it knows
+     * @return array<string,mixed> {@see AutoscaleHint::compute()}
+     */
+    public function scaleHint(?int $workers = null, float $perWorkerJobsPerSecond = AutoscaleHint::DEFAULT_PER_WORKER_JOBS_PER_S): array
+    {
+        $b = $this->backlog();
+
+        return AutoscaleHint::compute($this->rates() + ['pending' => $b['pending'], 'running' => $b['running'], 'oldest_pending_age_s' => $b['oldest_pending_age_s'], 'dead_letter' => $b['dead_letter'],
+            'workers' => $workers, 'per_worker_jobs_per_s' => $perWorkerJobsPerSecond, 'batch' => $this->settings->limits()['ingest_batch']]);
     }
 
     /**
@@ -184,11 +218,12 @@ final class IngestQueue
      */
     public function drain(int $max = self::BATCH): array
     {
+        $max = min($max, $this->settings->limits()['ingest_batch']);
         $out = ['claimed' => 0, 'completed' => 0, 'failed' => 0, 'skipped' => 0, 'samples' => 0, 'sink_calls' => 0];
         if (!$this->state->enabled()) {
             return $out;
         }
-        $jobs = $this->claim(max(1, min(self::BATCH, $max)));
+        $jobs = $this->claim(max(1, min(RmmSettings::LIMIT_KEYS['ingest_batch'][1], $max)));
         $out['claimed'] = count($jobs);
         $waiting = [];
         $merged = [];
@@ -239,30 +274,31 @@ final class IngestQueue
     }
 
     /**
-     * Claim due rmm.ingest jobs with the same conditional UPDATE {@see JobQueue::claim()} uses (only the jobs this call wins are returned).
+     * Claim due rmm.ingest jobs for this worker (SKIP LOCKED where the server has it, otherwise the conditional-UPDATE lease; see {@see JobClaimer}), honouring
+     * the `ingest_max_running` limit across all workers.
      *
      * @return list<array<string,mixed>>
      */
     private function claim(int $limit): array
     {
-        $candidates = $this->db->fetchAll(
-            "SELECT * FROM integration_jobs WHERE job_type = ? AND status = 'pending' AND available_at <= NOW() ORDER BY priority DESC, job_id ASC LIMIT ?",
-            [self::JOB_TYPE, $limit]
-        );
-        $hb = $this->queue->supportsHeartbeat() ? ', heartbeat_at = NOW()' : '';
-        $claimed = [];
-        foreach ($candidates as $job) {
-            $won = $this->db->execute(
-                "UPDATE integration_jobs SET status = 'running', started_at = NOW(), attempts = attempts + 1{$hb} WHERE job_id = ? AND status = 'pending'",
-                [$job['job_id']]
-            );
-            if ($won->affectedRows === 1) {
-                $job['status'] = 'running';
-                $job['attempts'] = (int) $job['attempts'] + 1;
-                $claimed[] = $job;
-            }
-        }
+        return $this->queue->claimer()->claim($limit, self::JOB_TYPE, $this->settings->limits()['ingest_max_running']);
+    }
 
-        return $claimed;
+    /**
+     * A worker that died leaves its jobs 'running'. Put the ones nobody has touched for $leaseSeconds back in the queue (or in the dead letters when their
+     * attempts are used up): a job takes milliseconds, so a lease of a couple of minutes is generous and recovery is quick, unlike Core's 15 minute default.
+     *
+     * @return int jobs released or dead-lettered
+     */
+    public function reclaimStale(int $leaseSeconds = self::LEASE_S): int
+    {
+        $last = $this->queue->supportsHeartbeat() ? 'COALESCE(heartbeat_at, started_at)' : 'started_at';
+
+        return $this->db->execute(
+            "UPDATE integration_jobs SET error = IF(attempts >= max_attempts, 'worker stopped before finishing; attempts exhausted', 'worker stopped before finishing; retrying'),
+                status = IF(attempts >= max_attempts, 'dead_letter', 'pending')
+             WHERE job_type = ? AND status = 'running' AND {$last} < (NOW() - INTERVAL ? SECOND)",
+            [self::JOB_TYPE, max(10, $leaseSeconds)]
+        )->affectedRows;
     }
 }
