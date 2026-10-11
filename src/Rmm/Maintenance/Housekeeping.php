@@ -16,6 +16,9 @@ use RivetCore\Rmm\Policy\PolicyStore;
 use RivetCore\Rmm\Scripts\ApprovedRunExecutor;
 use RivetCore\Rmm\Scripts\ScheduleRunner;
 use RivetCore\Rmm\Link\RmmLinker;
+use RivetCore\Rmm\Logs\LogRuleService;
+use RivetCore\Rmm\Logs\LogService;
+use RivetCore\Rmm\Remote\TransferService;
 use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Support\DatabaseMetricSink;
@@ -62,6 +65,9 @@ final class Housekeeping
         private readonly ?JobExtras $extras = null,
         private readonly ?PolicyStore $policies = null,
         private readonly ?AlertingHousekeeping $alerting = null,
+        private readonly ?LogService $logs = null,
+        private readonly ?LogRuleService $logRules = null,
+        private readonly ?TransferService $transfers = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -98,12 +104,42 @@ final class Housekeeping
         if ($this->alerting !== null && $this->settings->featureOn('alerting')) {
             $out += $this->alerting->run();
         }
+        // Phases 6 and 8: collected logs age out and are trimmed to their caps whatever the switch says (switching a feature off never keeps its data forever),
+        // log rules recover their alerts, and transfer files past their expiry are deleted. A failure here never stops the rest of the run.
+        $out += $this->remoteAndLogs((int) $cfg['job_retention_days']);
         if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {
             $out['offline_events'] = $this->announceOffline((int) $cfg['offline_after_s'], (int) $cfg['stale_after_s']);
         }
         // Phase 2: only while the `scripts` sub-switch is on (a module that never uses the library pays nothing here).
         if ($this->settings->featureOn('scripts')) {
             $out += $this->automation($cfg);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<string,int>
+     */
+    private function remoteAndLogs(int $retentionDays): array
+    {
+        $out = [];
+        try {
+            if ($this->logs !== null) {
+                foreach ($this->logs->prune($this->pause) as $k => $v) {
+                    $out['pruned_logs_' . $k] = $v;
+                }
+            }
+            if ($this->logRules !== null && ($this->settings->featureOn('logs') || (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_log_rules') > 0)) {
+                $out['log_rule_alerts_recovered'] = $this->logRules->sweep();
+            }
+            if ($this->transfers !== null) {
+                foreach ($this->transfers->prune($retentionDays) as $k => $v) {
+                    $out['transfers_' . $k] = $v;
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('rmm housekeeping (remote and logs): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0022 not applied yet
         }
 
         return $out;

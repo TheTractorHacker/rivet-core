@@ -29,6 +29,8 @@ use RivetCore\Webhooks\UrlPolicy;
  */
 final class MeshService
 {
+    /** The Mesh views a launch can open (MeshCentral's `viewmode` values). Verified against MeshCentral's own URL scheme, not against a live server: see docs/modules/rmm.md. */
+    public const VIEWMODES = ['desktop' => 11, 'terminal' => 12, 'files' => 13];
     public const PROBE_TIMEOUT_S = 4;
     public const PROBE_CONNECT_TIMEOUT_S = 3;
     public const POLICY_REFUSAL = 'The MeshCentral address is not allowed by the network policy (see Administration > Webhooks > Internal network access).';
@@ -89,9 +91,10 @@ final class MeshService
      * cannot diverge. The caller has already authorized the user for this device.
      *
      * @param array<string,mixed> $dev the device row
+     * @param string $view desktop (the default), terminal or files: the Mesh view the URL opens (Phase 6; the caller has already checked that the user may open it)
      * @return array{ok:bool,code:string,message:string,url?:string,session_id?:string}
      */
-    public function launch(array $dev, string $username, int $userId, bool $force = false): array
+    public function launch(array $dev, string $username, int $userId, bool $force = false, string $view = 'desktop'): array
     {
         $cfg = $this->settings->get();
         if ((int) $cfg['mesh_enabled'] !== 1 || (string) $cfg['mesh_url'] === '' || empty($cfg['mesh_login_key_enc'])) {
@@ -127,7 +130,7 @@ final class MeshService
             return self::fail('not_configured', 'The MeshCentral login key is not usable.');
         }
 
-        return ['ok' => true, 'code' => 'ok', 'message' => 'Opening the remote session.', 'url' => MeshCookie::launchUrl($base, $domain, $cookie, $node), 'session_id' => bin2hex(random_bytes(8))];
+        return ['ok' => true, 'code' => 'ok', 'message' => 'Opening the remote session.', 'url' => MeshCookie::launchUrl($base, $domain, $cookie, $node, self::VIEWMODES[$view] ?? \RivetCore\Rmm\RmmProtocol::MESH_VIEWMODE), 'session_id' => bin2hex(random_bytes(8))];
     }
 
     /**

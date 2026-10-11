@@ -68,7 +68,7 @@ final class JobService
      *        Phase 2: `job_id` (chosen by the caller), `expires_in_s` (how long the job may wait for the device, default job_expiry_s) and `extra`, the
      *        sidecar rows ({@see JobExtras}); with an `idem_key` already present nothing is created and `duplicate` is true. Secret parameters are listed in
      *        `extra.secret` and carry {@see JobExtras::SECRET_MARK} in `$params`
-     * @return array{ok:bool,error?:string,job_id?:string,duplicate?:bool}
+     * @return array{ok:bool,error?:string,code?:string,job_id?:string,duplicate?:bool}
      */
     public function create(array $dev, string $type, ?string $script, array $params, ?int $timeout, bool $destructive, int $userId, array $opts = []): array
     {
@@ -83,6 +83,9 @@ final class JobService
         $os = (string) ($dev['os'] ?? '');
         if ($def->platforms !== [] && $os !== '' && !in_array($os, $def->platforms, true)) {
             return ['ok' => false, 'error' => 'That job type cannot run on a ' . $os . ' device.'];
+        }
+        if ($def->capability !== null && $this->deviceState !== null && !in_array($def->capability, DeviceState::capabilitiesOf($this->deviceState->get((int) $dev['device_id'])), true)) {
+            return ['ok' => false, 'error' => 'This device\'s agent does not support that yet. Update the agent first.', 'code' => 'unsupported'];
         }
         if ($def->requiresScript) {
             if ($script === null || trim($script) === '' || strlen($script) > self::MAX_SCRIPT_BYTES || str_contains($script, "\0") || !mb_check_encoding($script, 'UTF-8')) {
@@ -232,6 +235,10 @@ final class JobService
      */
     public static function deviceCanRun(array $caps, string $type): bool
     {
+        $needs = \RivetCore\Rmm\Remote\RemoteProtocol::capabilityFor($type);
+        if ($needs !== null && !in_array($needs, $caps, true)) {
+            return false;   // a remote tool is never assumed: only an agent that announced the flag is offered it
+        }
         $any = false;
         foreach ($caps as $c) {
             if (str_starts_with($c, 'job:')) {

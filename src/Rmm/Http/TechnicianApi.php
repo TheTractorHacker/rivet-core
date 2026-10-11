@@ -58,6 +58,9 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   GET    endpoint_devices/schedules | POST schedules | GET,PATCH,PUT,DELETE schedules/{id} | GET schedules/{id}/history (device_id, limit, offset)
  *   GET    endpoint_devices/fields (scope) | POST fields | PATCH,PUT,DELETE fields/{id} | GET fields/{id}/values/{scope_id}... | PUT fields/{id}/values/{scope_id} {value, client_id?}
  *
+ * Phase 6 and 8 additions (service and process managers, file transfer, the Mesh terminal and files views, collected logs and log rules) are routed to
+ * {@see RemoteApi}, which lists them; `POST endpoint_devices/{id}/remote` also takes `view` (desktop, terminal or files).
+ *
  * Phase 3 additions (alerts, maintenance windows, escalation policies, device parents, thresholds, the check type catalog) are routed to
  * {@see AlertingApi}, which lists them.
  *
@@ -81,6 +84,7 @@ final class TechnicianApi
         private readonly ?ScriptActions $scripts = null,
         private readonly ?FieldActions $fields = null,
         private readonly ?AlertingApi $alerting = null,
+        private readonly ?RemoteApi $remoteApi = null,
     ) {
     }
 
@@ -114,6 +118,9 @@ final class TechnicianApi
         if ($id === null) {
             if ($seg !== [] && $this->alerting !== null && in_array($seg[0], AlertingApi::FLEET, true)) {
                 return $this->alerting->fleet($req, $who, $seg);
+            }
+            if ($seg !== [] && $this->remoteApi !== null && in_array($seg[0], RemoteApi::FLEET, true)) {
+                return $this->remoteApi->fleet($req, $who, $seg);
             }
             if ($seg !== [] && in_array($seg[0], ['policies', 'scripts', 'runs', 'approvals', 'schedules', 'fields'], true) && $this->read->automation() !== null) {
                 return $this->automationRoute($req, $who, $method, $seg);
@@ -184,12 +191,20 @@ final class TechnicianApi
             return self::notFound();
         }
 
+        if ($this->remoteApi !== null && ($what !== 'remote' || $method !== 'POST' || $job !== null) && in_array($what, ['services', 'processes', 'files', 'logs', 'remote'], true)
+            && ($routed = $this->remoteApi->device($req, $who, $id, $seg)) !== null) {
+            return $routed;
+        }
         if ($what === 'remote' && $method === 'POST') {
             [$in, $bad] = $this->jsonBody($req);
             if ($bad !== null) {
                 return $bad;
             }
-            $r = $this->actions->launchRemote($who, $id, !empty($in['force']), $req->clientIp, $req->userAgent);
+            $view = $in['view'] ?? 'desktop';
+            if (!is_string($view)) {
+                return self::json(422, ['error' => 'The view must be desktop, terminal or files.', 'code' => 'invalid']);
+            }
+            $r = $this->actions->launchRemote($who, $id, !empty($in['force']), $req->clientIp, $req->userAgent, $view);
 
             return $r->ok ? self::json(200, ['url' => $r->data['url'] ?? null, 'session_id' => $r->data['session_id'] ?? null]) : self::failure($r);
         }

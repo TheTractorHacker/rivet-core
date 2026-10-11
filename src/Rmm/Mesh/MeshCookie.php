@@ -94,11 +94,17 @@ final class MeshCookie
         return self::encode(['u' => 'user/' . $domain . '/' . $account, 'a' => RmmProtocol::MESH_COOKIE_ACCESS, 'time' => $now - self::BACKDATE_S], $keyHex, $iv);
     }
 
-    /** The launch URL: viewmode 11 = Desktop. $base is a normalised https base URL without trailing slash. */
-    public static function launchUrl(string $base, string $domain, string $cookie, string $nodeId): string
+    /**
+     * The launch URL: viewmode 11 = Desktop (the default and the only one before Phase 6), 12 = Terminal, 13 = Files. $base is a normalised https base URL without
+     * trailing slash. `$viewmode` must be one of those three (anything else falls back to the desktop).
+     */
+    public static function launchUrl(string $base, string $domain, string $cookie, string $nodeId, int $viewmode = RmmProtocol::MESH_VIEWMODE): string
     {
         $path = ($domain !== '' ? '/' . rawurlencode($domain) : '') . '/';
+        if (!in_array($viewmode, [RmmProtocol::MESH_VIEWMODE, RmmProtocol::MESH_VIEWMODE + 1, RmmProtocol::MESH_VIEWMODE + 2], true)) {
+            $viewmode = RmmProtocol::MESH_VIEWMODE;
+        }
 
-        return $base . $path . '?login=' . rawurlencode($cookie) . '&gotonode=' . rawurlencode($nodeId) . '&viewmode=' . RmmProtocol::MESH_VIEWMODE;
+        return $base . $path . '?login=' . rawurlencode($cookie) . '&gotonode=' . rawurlencode($nodeId) . '&viewmode=' . $viewmode;
     }
 }

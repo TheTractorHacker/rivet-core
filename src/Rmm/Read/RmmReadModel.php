@@ -65,7 +65,62 @@ final class RmmReadModel
         private readonly ?GroupService $groupService = null,
         private readonly ?RmmMetricReaderInterface $metricReader = null,
         private readonly ?AutomationReader $automation = null,
+        private readonly ?\RivetCore\Rmm\Logs\LogService $logService = null,
+        private readonly ?\RivetCore\Rmm\Remote\TransferService $transferService = null,
     ) {
+    }
+
+    // ------------------------------------------------------------------ Phases 6 and 8: remote tools and logs (reads only; the caller has authorized the device)
+
+    /**
+     * The latest list a device reported for the service or process manager.
+     *
+     * @param string $kind services | processes
+     * @return array{job_id:?string,state:string,requested_at:?string,finished_at:?string,data:?array<string,mixed>}
+     */
+    public function remoteSnapshot(int $deviceId, string $kind): array
+    {
+        $type = $kind === 'services' ? \RivetCore\Rmm\Remote\RemoteProtocol::JOB_SERVICE_LIST : \RivetCore\Rmm\Remote\RemoteProtocol::JOB_PROCESS_LIST;
+        $j = $this->sql->one('SELECT job_id, state, output, created_at, finished_at FROM endpoint_agent_jobs WHERE device_id = ? AND type = ? ORDER BY created_at DESC, job_id LIMIT 1', [$deviceId, $type]);
+        if ($j === null) {
+            return ['job_id' => null, 'state' => 'none', 'requested_at' => null, 'finished_at' => null, 'data' => null];
+        }
+        $data = $j['state'] === 'succeeded' ? json_decode((string) $j['output'], true) : null;
+
+        return ['job_id' => (string) $j['job_id'], 'state' => (string) $j['state'], 'requested_at' => Sql::iso((string) $j['created_at']),
+            'finished_at' => Sql::iso($j['finished_at'] === null ? null : (string) $j['finished_at']), 'data' => is_array($data) ? $data : null];
+    }
+
+    /**
+     * The file-transfer ledger of a device, newest first.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function fileTransfers(int $deviceId, int $limit = 50): array
+    {
+        return $this->transferService === null ? [] : $this->transferService->listFor($deviceId, $limit);
+    }
+
+    /**
+     * Search the collected log entries (see {@see \RivetCore\Rmm\Logs\LogService::search()}). `$visibleClientIds` is the caller's client scope (null = all).
+     *
+     * @param array<string,mixed> $filters
+     * @param list<int>|null $visibleClientIds
+     * @return array{items:list<array<string,mixed>>,total:int,from:string,to:string}
+     */
+    public function logSearch(array $filters, ?array $visibleClientIds, int $limit = 100, int $offset = 0): array
+    {
+        return $this->logService === null ? ['items' => [], 'total' => 0, 'from' => '', 'to' => ''] : $this->logService->search($filters, $visibleClientIds, $limit, $offset);
+    }
+
+    /**
+     * Log storage figures for the fleet (and one device).
+     *
+     * @return array<string,mixed>
+     */
+    public function logStats(?int $deviceId = null): array
+    {
+        return $this->logService === null ? [] : $this->logService->stats($deviceId);
     }
 
     /** The Phase 2 reads (policies, script library, approvals, schedules, custom fields), or null when the module was built without them. */
@@ -215,7 +270,9 @@ final class RmmReadModel
             'destructive' => (bool) $j['destructive'], 'run_as' => $j['run_as'], 'timeout_s' => (int) $j['timeout_s'], 'exit_code' => $j['exit_code'] === null ? null : (int) $j['exit_code'],
             'created_by' => (int) $j['created_by'], 'created_at' => Sql::iso((string) $j['created_at']), 'started_at' => Sql::iso($j['started_at'] === null ? null : (string) $j['started_at']),
             'finished_at' => Sql::iso($j['finished_at'] === null ? null : (string) $j['finished_at']), 'expires_at' => Sql::iso((string) $j['expires_at'])];
-        if ($withOutput) {
+        // The output of a remote-tool job (service and process lists, file paths and checksums) is read through the remote endpoints, which need `rmm.remote.manage`;
+        // a job list that only needs the saved-script grant never carries it.
+        if ($withOutput && !in_array($j['type'], \RivetCore\Rmm\Remote\RemoteProtocol::JOB_TYPES, true)) {
             $o['output'] = $j['output'];
             $o['output_truncated'] = (bool) $j['output_truncated'];
         }
@@ -253,6 +310,10 @@ final class RmmReadModel
         }
         if (!$authz->allowed($who->userId, RmmAbility::JOB_RUN_SAVED, $client)) {
             return ActionResult::fail(403, 'forbidden', $authz->denial(RmmAbility::JOB_RUN_SAVED));
+        }
+        $isRemote = in_array($row['type'], \RivetCore\Rmm\Remote\RemoteProtocol::JOB_TYPES, true);
+        if ($isRemote && !$authz->allowed($who->userId, RmmAbility::REMOTE_MANAGE, $client)) {
+            return ActionResult::fail(403, 'forbidden', $authz->denial(RmmAbility::REMOTE_MANAGE));
         }
         $job = self::jobRow($row, true);
         $job['output'] = Redactor::redact((string) ($row['output'] ?? ''));

@@ -21,6 +21,8 @@ final class JobType
      * @param (\Closure(array<string,mixed>):array{0:array<string,mixed>,1:?string})|null $paramValidator receives the params, returns [normalised params, error]
      * @param int|null $defaultTimeoutS null means the instance default (job_default_timeout_s)
      * @param bool $keepOutput false for types whose output is never stored
+     * @param string|null $capability a capability flag the device must have ANNOUNCED ("remote:services" ...) before the job can be queued or offered: unlike the
+     *        `job:<type>` rule, an agent that announced nothing is never assumed to have it (null: no such requirement)
      */
     public function __construct(
         public readonly string $type,
@@ -31,6 +33,7 @@ final class JobType
         public readonly ?\Closure $paramValidator = null,
         public readonly ?int $defaultTimeoutS = null,
         public readonly bool $keepOutput = true,
+        public readonly ?string $capability = null,
     ) {
     }
 }
