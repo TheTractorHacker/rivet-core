@@ -394,6 +394,32 @@ final class SchemaDiffTest extends TestCase
         $this->assertSame($before, $this->describe('d'));
     }
 
+    public function testMigration0023AddsOnlyNewTablesAndIsIdempotent(): void
+    {
+        $this->reference();
+        $this->build('d', 'rivetit-2.6.146-final.sql', true);
+        $this->seed('d');
+        $before = $this->describe('d');
+        $rows = $this->checksums('d');
+
+        $applied = $this->runner('d')->run();
+        $this->assertContains('0023_rmm_mesh_agent', $applied);
+        $this->assertSame($before, $this->describe('d'), 'the ten original tables are not altered');
+        $this->assertSame($rows, $this->checksums('d'));
+        foreach (\RivetCore\Rmm\Migration\MeshAgentSchema::tables() as $name => $_) {
+            $this->assertSame(1, (int) $this->db('d')->fetchOne('SELECT COUNT(*) c FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND TABLE_COLLATION = ? AND ENGINE = ?', [$name, 'utf8mb4_general_ci', 'InnoDB'])['c'], $name);
+            $this->assertSame(0, (int) $this->db('d')->fetchOne('SELECT COUNT(*) c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLLATION_NAME IS NOT NULL AND COLLATION_NAME <> ?', [$name, 'utf8mb4_general_ci'])['c'], "$name columns");
+        }
+        $this->assertSame(['endpoint_agent_mesh_settings', 'endpoint_agent_mesh_agents', 'endpoint_agent_installer_options'], array_keys(\RivetCore\Rmm\Migration\MeshAgentSchema::tables()));
+        $this->db('d')->execute("INSERT INTO endpoint_agent_mesh_settings (id, group_id) VALUES (1, 'abcd')");
+        $this->db('d')->execute("INSERT INTO endpoint_agent_installer_options (token_id, install_mesh_agent, created_at) VALUES (5, 1, '2026-10-11 00:00:00')");
+        (new \RivetCore\Rmm\Migration\Migration0023MeshAgent())->up($this->db('d'));
+        $this->assertSame([], $this->runner('d')->run());
+        $this->assertSame('abcd', (string) $this->db('d')->fetchOne('SELECT group_id c FROM endpoint_agent_mesh_settings')['c']);
+        $this->assertSame(1, (int) $this->db('d')->fetchOne('SELECT install_mesh_agent c FROM endpoint_agent_installer_options WHERE token_id = 5')['c']);
+        $this->assertSame($before, $this->describe('d'));
+    }
+
     public function testFreshCoreInstallHasEveryPhase1Table(): void
     {
         $this->runner('b')->run();
@@ -408,7 +434,7 @@ final class SchemaDiffTest extends TestCase
 
     public function testEveryTableIsUtf8mb4GeneralCiExplicitly(): void
     {
-        foreach (RmmSchema::tables() + RmmSchema::phase1Tables() + RmmSchema::phase2Tables() + \RivetCore\Rmm\Migration\AlertingSchema::tables() + \RivetCore\Rmm\Migration\ScaleSchema::tables() + \RivetCore\Rmm\Migration\RemoteSchema::tables() as $name => $ddl) {
+        foreach (RmmSchema::tables() + RmmSchema::phase1Tables() + RmmSchema::phase2Tables() + \RivetCore\Rmm\Migration\AlertingSchema::tables() + \RivetCore\Rmm\Migration\ScaleSchema::tables() + \RivetCore\Rmm\Migration\RemoteSchema::tables() + \RivetCore\Rmm\Migration\MeshAgentSchema::tables() as $name => $ddl) {
             $this->assertStringContainsString('COLLATE=utf8mb4_general_ci', $ddl, $name);
             $this->assertStringContainsString('ENGINE=InnoDB', $ddl, $name);
         }

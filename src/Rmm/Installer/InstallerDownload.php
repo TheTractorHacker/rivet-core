@@ -9,6 +9,7 @@ use RivetCore\Rmm\Contracts\RmmTenancyInterface;
 use RivetCore\Rmm\Enrollment\AttemptLog;
 use RivetCore\Rmm\Enrollment\DeviceValidator;
 use RivetCore\Rmm\Http\ApiError;
+use RivetCore\Rmm\Mesh\MeshAgentService;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Support\Sql;
@@ -32,6 +33,7 @@ final class InstallerDownload
         private readonly AttemptLog $attempts,
         private readonly string $filenamePrefix = RmmProtocol::INSTALLER_NAME_PREFIX,
         private readonly string $clientLabel = 'client',
+        private readonly ?MeshAgentService $meshAgents = null,
     ) {
     }
 
@@ -77,19 +79,54 @@ final class InstallerDownload
         if ($base === null) {
             return [null, 'Set the service URL to an https:// address first: the installer needs it to find this server.'];
         }
-        try {
-            return [InstallerStamp::buildPayload([
-                'installer_id' => $installerId,
-                'server_url' => $base,
-                'enrollment_token' => $tokenPlain,
-                'department' => $this->departmentName((int) $token['client_id']),
-                'ca_pem' => $this->caPem(),
-                'created_at' => $this->sql->isoNow(),
-                'expires_at' => (string) Sql::iso((string) $token['expires_at']),
-            ]), null];
-        } catch (\LengthException) {
-            return [null, 'The installer payload is too large (' . $this->clientLabel . ' name or CA certificate).'];
+        $fields = [
+            'installer_id' => $installerId,
+            'server_url' => $base,
+            'enrollment_token' => $tokenPlain,
+            'department' => $this->departmentName((int) $token['client_id']),
+            'ca_pem' => $this->caPem(),
+            'created_at' => $this->sql->isoNow(),
+            'expires_at' => (string) Sql::iso((string) $token['expires_at']),
+        ];
+        $mesh = $this->meshBlockFor($token);
+        if ($mesh !== null) {
+            $fields[RmmProtocol::EMBED_MEMBER_INSTALL_MESH] = true;
+            $fields[RmmProtocol::EMBED_MEMBER_MESH] = $mesh;
         }
+        try {
+            return [InstallerStamp::buildPayload($fields), null];
+        } catch (\LengthException) {
+            return [null, 'The installer payload is too large (' . $this->clientLabel . ' name, CA certificate or Mesh settings).'];
+        }
+    }
+
+    /**
+     * The Mesh block for a token whose installer was issued with "also install the MeshCentral agent", or null (not asked for, or Mesh settings no longer
+     * allow it: the installer is then served WITHOUT it, audited, and the RivetIT agent installs as usual).
+     *
+     * @param array<string,mixed> $token the enrollment token row
+     * @return array<string,mixed>|null
+     */
+    private function meshBlockFor(array $token): ?array
+    {
+        if ($this->meshAgents === null) {
+            return null;
+        }
+        try {
+            $asked = (int) $this->sql->val('SELECT install_mesh_agent FROM endpoint_agent_installer_options WHERE token_id = ?', [$token['token_id']]) === 1;
+        } catch (\Throwable) {
+            $asked = false;   // migration 0023 not applied yet: an installer is never refused over an optional feature
+        }
+        if (!$asked) {
+            return null;
+        }
+        $block = $this->meshAgents->installBlock();
+        if ($block === null) {
+            $this->audit->record('Installer Mesh Skipped', "Installer for token #{$token['token_id']} was asked to install the MeshCentral agent, but the MeshCentral settings no longer allow it ("
+                . (string) $this->meshAgents->installRefusal() . ') It is served without the Mesh agent.', (int) $token['client_id'], 0);
+        }
+
+        return $block;
     }
 
     /** Preconditions shared by both download paths. @return string|null a refusal message */

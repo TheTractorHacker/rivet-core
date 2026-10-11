@@ -20,6 +20,7 @@ use RivetCore\Rmm\Migration\Migration0019PoliciesAndScripts;
 use RivetCore\Rmm\Migration\Migration0020AlertingMaturity;
 use RivetCore\Rmm\Migration\Migration0021ScaleStorage;
 use RivetCore\Rmm\Migration\Migration0022RemoteAndLogs;
+use RivetCore\Rmm\Migration\Migration0023MeshAgent;
 use RivetCore\Rmm\RmmModule;
 use RivetCore\Support\SystemClock;
 use RivetCore\Testing\InMemoryRmmAudit;
@@ -72,7 +73,7 @@ final class LoadEdition
     public static function migrate(DatabaseInterface $db): void
     {
         foreach ([new \RivetCore\Jobs\Migration\Migration0002IntegrationJobs(), new \RivetCore\Jobs\Migration\Migration0012JobHeartbeat(), new Migration0014EndpointAgent(),
-            new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs()] as $mig) {
+            new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs(), new Migration0023MeshAgent()] as $mig) {
             $mig->up($db);
         }
         $db->execute('CREATE TABLE IF NOT EXISTS load_assets (asset_id int AUTO_INCREMENT PRIMARY KEY, client_id int NOT NULL, name varchar(200), serial varchar(100), model varchar(200), make varchar(200), os varchar(200), KEY idx_serial (serial)) ENGINE=InnoDB');

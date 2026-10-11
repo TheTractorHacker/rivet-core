@@ -10,6 +10,7 @@ use RivetCore\Rmm\Contracts\RmmTenancyInterface;
 use RivetCore\Rmm\Enrollment\EnrollmentService;
 use RivetCore\Rmm\Http\RmmResponse;
 use RivetCore\Rmm\Job\JobService;
+use RivetCore\Rmm\Mesh\MeshAgentService;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Update\UpdateService;
 
@@ -38,6 +39,7 @@ final class InstallerService
         private readonly RmmAuditInterface $audit,
         private readonly BinaryStore $binaries,
         private readonly string $clientLabel = 'client',
+        private readonly ?MeshAgentService $meshAgents = null,
     ) {
     }
 
@@ -46,13 +48,24 @@ final class InstallerService
     /**
      * Create the enrollment token and the stamp payload for a client. Nothing is created when a precondition fails.
      *
+     * $installMeshAgent is the tick-box "also install the MeshCentral agent" (off by default): the installer then carries the Mesh source from the
+     * MeshCentral settings, and the choice is remembered for the token, so the token-gated download that scripts call serves the same payload. It is
+     * refused up front when the Mesh settings cannot support it (switched off, no https address, no device group id). The RivetIT agent never bundles a
+     * Mesh binary and a failed Mesh install never fails the RivetIT install.
+     *
      * @return array{ok:bool,error?:string,token?:array<string,mixed>,token_plain?:string,payload?:string,installer_id?:string,department?:string}
      */
-    public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName): array
+    public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false): array
     {
         $refusal = $this->installer->preflight($arch);
         if ($refusal !== null) {
             return ['ok' => false, 'error' => $refusal];
+        }
+        if ($installMeshAgent) {
+            $why = $this->meshAgents === null ? 'The MeshCentral agent install is not available.' : $this->meshAgents->installRefusal();
+            if ($why !== null) {
+                return ['ok' => false, 'error' => $why];
+            }
         }
         if ($clientId <= 0 || $this->tenancy->clientName($clientId) === null) {
             return ['ok' => false, 'error' => 'Choose the ' . $this->clientLabel . ' the devices belong to.'];
@@ -66,6 +79,9 @@ final class InstallerService
         if ($row === null) {
             return ['ok' => false, 'error' => 'The enrollment token could not be created.'];
         }
+        if ($installMeshAgent) {
+            $this->sql->run('INSERT INTO endpoint_agent_installer_options (token_id, install_mesh_agent, created_at) VALUES (?, 1, ?) ON DUPLICATE KEY UPDATE install_mesh_agent = 1', [$t['token_id'], $this->sql->utcNow()]);
+        }
         [$payload, $err] = $this->installer->payloadFor($row, $t['token'], $installerId);
         if ($payload === null) {
             $this->enrollment->revokeToken($t['token_id'], $userId);
@@ -74,7 +90,7 @@ final class InstallerService
         }
         $dept = $this->installer->departmentName($clientId);
         $this->audit->record('Installer Created', "$actorName created installer $installerId ($arch) for {$this->clientLabel} \"$dept\" with enrollment token #{$t['token_id']} ({$row['token_selector']}), "
-            . "{$row['max_uses']} uses, expires {$row['expires_at']} UTC", $clientId, 0);
+            . "{$row['max_uses']} uses, expires {$row['expires_at']} UTC" . ($installMeshAgent ? ', also installs the MeshCentral agent' : ''), $clientId, 0);
 
         return ['ok' => true, 'token' => $row, 'token_plain' => $t['token'], 'payload' => $payload, 'installer_id' => $installerId, 'department' => $dept];
     }
@@ -85,9 +101,9 @@ final class InstallerService
      *
      * @return RmmResponse|string the download, or the refusal message
      */
-    public function issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName): RmmResponse|string
+    public function issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false): RmmResponse|string
     {
-        $r = $this->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, $label, $arch, $userId, $actorName);
+        $r = $this->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, $label, $arch, $userId, $actorName, $installMeshAgent);
         if (!$r['ok'] || !isset($r['token'], $r['payload'], $r['department'])) {
             return (string) ($r['error'] ?? 'The installer could not be created.');
         }
@@ -109,7 +125,7 @@ final class InstallerService
      * @param array{token:array<string,mixed>,token_plain:string,department:string} $issued the result of {@see issue()}
      * @return array{server:string,filename:string,powershell:string,linux:string,detection:array{service:string,file:string}}|null
      */
-    public function deploymentCommands(array $issued, string $arch): ?array
+    public function deploymentCommands(array $issued, string $arch, bool $installMeshAgent = false): ?array
     {
         $server = $this->updates->serviceBase();
         if ($server === null) {
@@ -120,7 +136,7 @@ final class InstallerService
             'server' => $server,
             'filename' => $this->installer->filename($issued['department'], $arch),
             'powershell' => self::powershellSnippet($server, $issued['token_plain'], $arch, $issued['department']),
-            'linux' => self::linuxSnippet($server, $issued['token_plain'], $arch, $issued['department'], $this->installer->caPem()),
+            'linux' => self::linuxSnippet($server, $issued['token_plain'], $arch, $issued['department'], $this->installer->caPem(), $installMeshAgent ? $this->meshAgents?->installBlock() : null),
             'detection' => ['service' => self::WINDOWS_SERVICE, 'file' => self::WINDOWS_INSTALLED_FILE],
         ];
     }
@@ -174,9 +190,12 @@ final class InstallerService
     /**
      * Install snippet for a Linux (systemd) host, to run as root next to `install-linux.sh` from the agent's release tarball
      * (`rivetit-agent-linux-<arch>.tar.gz`). The enrollment token reaches the script through a root-only temporary file, never a
-     * command line, and the file is removed afterwards whatever the result.
+     * command line, and the file is removed afterwards whatever the result. With $mesh (the installer's Mesh block) the script is also told to install the
+     * MeshCentral agent from the customer's own Mesh server; that never changes the result of the RivetIT install.
+     *
+     * @param array<string,mixed>|null $mesh url, meshid, optional pin
      */
-    public static function linuxSnippet(string $serverUrl, string $token, string $arch, string $department, ?string $caPem = null): string
+    public static function linuxSnippet(string $serverUrl, string $token, string $arch, string $department, ?string $caPem = null, ?array $mesh = null): string
     {
         $arch = $arch === 'arm64' ? 'arm64' : 'amd64';
         $comment = trim((string) preg_replace('/[^A-Za-z0-9 ._-]+/', '?', $department));
@@ -189,7 +208,11 @@ final class InstallerService
             . 'trap \'rm -f "$T"' . ($ca ? ' "$C"' : '') . '\' EXIT' . "\n"
             . 'printf \'%s\' ' . self::shQuote($token) . ' > "$T"' . "\n"
             . ($ca ? 'printf \'%s\' ' . self::shQuote(rtrim((string) $caPem) . "\n", true) . ' > "$C"' . "\n" : '')
-            . './install-linux.sh --server ' . self::shQuote(rtrim($serverUrl, '/')) . ' --token-file "$T"' . ($ca ? ' --ca "$C"' : '') . "\n";
+            . './install-linux.sh --server ' . self::shQuote(rtrim($serverUrl, '/')) . ' --token-file "$T"' . ($ca ? ' --ca "$C"' : '')
+            . ($mesh !== null && is_string($mesh['url'] ?? null) && is_string($mesh['meshid'] ?? null)
+                ? ' --install-mesh-agent --mesh-url ' . self::shQuote($mesh['url']) . ' --mesh-group-id ' . self::shQuote($mesh['meshid']) . (is_string($mesh['pin'] ?? null) && $mesh['pin'] !== '' ? ' --mesh-cert-pin ' . self::shQuote($mesh['pin']) : '')
+                : '')
+            . "\n";
 
         return $s;
     }

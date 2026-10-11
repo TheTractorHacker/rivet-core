@@ -61,6 +61,8 @@ use RivetCore\Rmm\Logs\LogActions;
 use RivetCore\Rmm\Logs\LogRuleService;
 use RivetCore\Rmm\Logs\LogService;
 use RivetCore\Rmm\Maintenance\Housekeeping;
+use RivetCore\Rmm\Mesh\MeshAgentService;
+use RivetCore\Rmm\Mesh\MeshAgentSettings;
 use RivetCore\Rmm\Mesh\MeshService;
 use RivetCore\Rmm\Policy\EffectivePolicy;
 use RivetCore\Rmm\Policy\PolicyStore;
@@ -143,6 +145,8 @@ final class RmmModule
     private ?RmmReadModel $readModel = null;
     private ?BinaryStore $binaryStore = null;
     private ?MeshService $mesh = null;
+    private ?MeshAgentSettings $meshAgentSettings = null;
+    private ?MeshAgentService $meshAgents = null;
     private ?InstallerService $installerService = null;
     private ?TechnicianActions $technician = null;
     private ?RmmAdmin $admin = null;
@@ -312,7 +316,7 @@ final class RmmModule
     /** Service and process managers, file transfer, Mesh view information and the remote-tools settings (shared by the REST API and the edition's pages). */
     public function remoteActions(): RemoteActions
     {
-        return $this->remoteActions ??= new RemoteActions($this->sql(), $this->devices(), $this->authorizer(), $this->settings(), $this->jobs(), $this->transfers(), $this->remoteSettings(), $this->mesh(), $this->audit);
+        return $this->remoteActions ??= new RemoteActions($this->sql(), $this->devices(), $this->authorizer(), $this->settings(), $this->jobs(), $this->transfers(), $this->remoteSettings(), $this->mesh(), $this->audit, $this->meshAgentSettings(), $this->meshAgents());
     }
 
     /** Reading collected logs and managing log rules. */
@@ -414,7 +418,7 @@ final class RmmModule
         return new CheckinService($this->sql(), $this->settings(), $this->devices(), $this->checks(), $this->jobs(), $this->updates(), $this->linker(), $this->assets, $this->metrics,
             function (array $work): void {
                 $this->ingestQueue()->enqueue($work);
-            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy(), $this->remoteSettings());
+            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy(), $this->remoteSettings(), $this->meshAgents());
     }
 
     /** Capabilities, presence and software bookkeeping of a device (table rmm_device_state). */
@@ -483,7 +487,7 @@ final class RmmModule
 
     public function installerDownload(): InstallerDownload
     {
-        return new InstallerDownload($this->sql(), $this->settings(), $this->updates(), $this->tenancy, $this->audit, $this->attempts(), $this->options['installer_prefix'] ?? RmmProtocol::INSTALLER_NAME_PREFIX, $this->clientLabel());
+        return new InstallerDownload($this->sql(), $this->settings(), $this->updates(), $this->tenancy, $this->audit, $this->attempts(), $this->options['installer_prefix'] ?? RmmProtocol::INSTALLER_NAME_PREFIX, $this->clientLabel(), $this->meshAgents());
     }
 
     public function housekeeping(): Housekeeping
@@ -693,7 +697,7 @@ final class RmmModule
     {
         return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore(),
             $this->assets instanceof RmmAssetNamesInterface ? $this->assets : null, $this->clientLabel(),
-            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers());
+            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers(), $this->meshAgents());
     }
 
     /** Hosted agent binaries: validate, store, publish, serve. */
@@ -708,10 +712,22 @@ final class RmmModule
         return $this->mesh ??= new MeshService($this->sql(), $this->settings(), $this->devices(), $this->box, $this->urlPolicy ?? new UrlPolicy(false), $this->options['allow_insecure_http'] ?? false);
     }
 
+    /** The install settings of the optional MeshCentral agent (device group, certificate pin, overwrite switch, table corrections). */
+    public function meshAgentSettings(): MeshAgentSettings
+    {
+        return $this->meshAgentSettings ??= new MeshAgentSettings($this->sql());
+    }
+
+    /** The optional MeshCentral agent: the installer's Mesh block, the device's report and the automatic node-id mapping. */
+    public function meshAgents(): MeshAgentService
+    {
+        return $this->meshAgents ??= new MeshAgentService($this->sql(), $this->settings(), $this->meshAgentSettings(), $this->devices(), $this->audit, $this->eventPublisher());
+    }
+
     /** Per-client installers and deployment snippets (the administrator side). */
     public function installerService(): InstallerService
     {
-        return $this->installerService ??= new InstallerService($this->sql(), $this->updates(), $this->installerDownload(), $this->enrollment(), $this->tenancy, $this->audit, $this->binaryStore(), $this->clientLabel());
+        return $this->installerService ??= new InstallerService($this->sql(), $this->updates(), $this->installerDownload(), $this->enrollment(), $this->tenancy, $this->audit, $this->binaryStore(), $this->clientLabel(), $this->meshAgents());
     }
 
     /** Technician and administrator actions on devices, shared by the web handlers and the REST API. */
@@ -725,7 +741,7 @@ final class RmmModule
     public function admin(): RmmAdmin
     {
         return $this->admin ??= new RmmAdmin($this->sql(), $this->settings(), $this->box, $this->authorizer(), $this->binaryStore(), $this->updates(), $this->mesh(),
-            $this->installerService(), $this->devices(), $this->audit);
+            $this->installerService(), $this->devices(), $this->audit, $this->meshAgentSettings());
     }
 
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */

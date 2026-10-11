@@ -183,4 +183,67 @@ final class MeshService
 
         return $code >= 200 && $code < 400 ? null : self::UNREACHABLE;
     }
+
+    /**
+     * Read the Mesh server's certificate and propose a pin for it: the SHA-384 of the leaf certificate (DER), the form the installer checks. This is
+     * trust on first use: the certificate is NOT verified here (a Mesh server usually has a self-signed one), so the administrator must compare the
+     * result with the hash MeshCentral shows (My Server > Certificate hashes, or `openssl x509 -noout -fingerprint -sha384`) before saving it. The
+     * connection goes through the same network policy and the same pinned addresses as {@see probe()} and always uses TLS.
+     *
+     * @return array{ok:bool,pin?:string,sha256?:string,subject?:string,not_after?:string,error?:string}
+     */
+    public function probePin(string $base): array
+    {
+        $norm = self::normalizeUrlWith($base, false);
+        if ($norm === null) {
+            return ['ok' => false, 'error' => 'The MeshCentral address must be a plain https:// address.'];
+        }
+        try {
+            $target = $this->urlPolicy->vet($norm);
+        } catch (\Throwable) {
+            $target = null;
+        }
+        if ($target === null) {
+            return ['ok' => false, 'error' => self::POLICY_REFUSAL];
+        }
+        $ch = curl_init(rtrim($norm, '/') . '/health.ashx');
+        if ($ch === false) {
+            return ['ok' => false, 'error' => self::UNREACHABLE];
+        }
+        $opts = [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_NOBODY => true,
+            CURLOPT_TIMEOUT => self::PROBE_TIMEOUT_S,
+            CURLOPT_CONNECTTIMEOUT => self::PROBE_CONNECT_TIMEOUT_S,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_SSL_VERIFYPEER => false,   // trust on first use: see the method comment
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_CERTINFO => true,
+            CURLOPT_PROXY => '',
+            CURLOPT_NOPROXY => '*',
+        ];
+        if ($target['ips'] !== [] && filter_var($target['host'], FILTER_VALIDATE_IP) === false) {
+            $opts[CURLOPT_RESOLVE] = [$target['host'] . ':' . $target['port'] . ':' . implode(',', $target['ips'])];
+        }
+        curl_setopt_array($ch, $opts);
+        curl_exec($ch);
+        $info = curl_getinfo($ch, CURLINFO_CERTINFO);
+        unset($ch);
+        $leaf = $info[0] ?? null;
+        $pem = is_array($leaf) && is_string($leaf['Cert'] ?? null) ? $leaf['Cert'] : null;
+        $der = $pem === null ? false : base64_decode((string) preg_replace('/-----[A-Z ]+-----|\s+/', '', $pem), true);
+        if ($der === false || $der === '') {
+            return ['ok' => false, 'error' => self::UNREACHABLE];
+        }
+        $parsed = function_exists('openssl_x509_parse') ? @openssl_x509_parse($pem) : false;
+        $out = ['ok' => true, 'pin' => hash('sha384', $der), 'sha256' => hash('sha256', $der)];
+        if (is_array($parsed)) {
+            $cn = $parsed['subject']['CN'] ?? null;
+            $out['subject'] = is_string($cn) ? mb_substr($cn, 0, 200) : '';
+            $out['not_after'] = isset($parsed['validTo_time_t']) ? gmdate('Y-m-d\TH:i:s\Z', (int) $parsed['validTo_time_t']) : '';
+        }
+
+        return $out;
+    }
 }

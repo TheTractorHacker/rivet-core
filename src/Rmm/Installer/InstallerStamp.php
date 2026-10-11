@@ -28,7 +28,11 @@ final class InstallerStamp
     public const PAYLOAD_VERSION = RmmProtocol::EMBED_PAYLOAD_VERSION;
 
     /**
-     * @param array<string,mixed> $fields installer_id, server_url, enrollment_token, department, created_at, expires_at, optional ca_pem
+     * The optional MeshCentral agent install is two further members, appended AFTER expires_at and only when asked for, so every payload that does not
+     * ask for it is byte for byte what it always was: `install_mesh_agent` (true) and `mesh` ({url, meshid, pin?, agent_ids, install_args}). An agent that
+     * does not know them ignores them (it reads the JSON leniently); the footer's SHA-256 covers them like every other byte.
+     *
+     * @param array<string,mixed> $fields installer_id, server_url, enrollment_token, department, created_at, expires_at, optional ca_pem, optional mesh (array)
      * @throws \LengthException when the payload exceeds MAX_PAYLOAD
      */
     public static function buildPayload(array $fields): string
@@ -43,6 +47,10 @@ final class InstallerStamp
             'created_at' => self::text($fields['created_at']),
             'expires_at' => self::text($fields['expires_at']),
         ];
+        if (!empty($fields[RmmProtocol::EMBED_MEMBER_INSTALL_MESH]) && is_array($fields[RmmProtocol::EMBED_MEMBER_MESH] ?? null)) {
+            $p[RmmProtocol::EMBED_MEMBER_INSTALL_MESH] = true;
+            $p[RmmProtocol::EMBED_MEMBER_MESH] = $fields[RmmProtocol::EMBED_MEMBER_MESH];
+        }
         $json = json_encode($p, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         if (strlen($json) > self::MAX_PAYLOAD) {
             throw new \LengthException('installer payload is larger than ' . self::MAX_PAYLOAD . ' bytes');
