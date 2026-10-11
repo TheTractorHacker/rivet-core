@@ -6,6 +6,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,6 +28,9 @@ func cmdStamp(args []string) int {
 	dept := fs.String("department", "", "department label")
 	ca := fs.String("ca", "", "PEM file with the CA certificate(s) to embed")
 	ttl := fs.Duration("ttl", time.Hour, "validity")
+	meshURL := fs.String("mesh-url", "", "ask the installer to also install the MeshCentral agent from this https URL (needs --mesh-group)")
+	meshGroup := fs.String("mesh-group", "", "MeshCentral device group id (hex)")
+	meshPin := fs.String("mesh-pin", "", "SHA-384/256 hex pin of the Mesh server certificate (empty = system roots)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -70,6 +74,14 @@ func cmdStamp(args []string) int {
 		}
 		s := string(b)
 		p.CAPEM = &s
+	}
+	if *meshURL != "" {
+		p.InstallMeshAgent = json.RawMessage(`true`)
+		spec := map[string]any{"url": *meshURL, "meshid": *meshGroup}
+		if *meshPin != "" {
+			spec["pin"] = *meshPin
+		}
+		p.Mesh, _ = json.Marshal(spec)
 	}
 	pl, err := embed.Marshal(p, now)
 	if err != nil {

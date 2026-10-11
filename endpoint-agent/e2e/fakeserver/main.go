@@ -253,6 +253,9 @@ func (s *server) checkin(w http.ResponseWriter, r *http.Request) {
 		}
 		s.logf("SOFTWARE mode=%v count=%v items=%d removed=%d truncated=%v hash=%v base_hash=%v first=%v sample=%s", sw["mode"], sw["count"], len(items), len(asSlice(sw["removed"])), sw["truncated"], sw["hash"], sw["base_hash"], first, sample)
 	}
+	if ma, ok := req["mesh_agent"].(map[string]any); ok {
+		s.logf("MESH-REPORT installed=%v node_id=%v version=%v error=%v", ma["installed"], ma["node_id"], ma["version"], ma["error"])
+	}
 	if m, ok := req["metrics"].(map[string]any); ok {
 		s.logf("METRICS cpu=%v mem=%v disk=%v rx=%v tx=%v", m["cpu_pct"], m["mem_pct"], m["disk"], m["net_rx_bps"], m["net_tx_bps"])
 	}
@@ -324,8 +327,12 @@ func (s *server) jobsH(w http.ResponseWriter, r *http.Request) {
 }
 
 func selfSigned(dir string) (tls_cert [2][]byte) {
+	return selfSignedNamed(dir, "ca.pem", "rivetit-fakeserver")
+}
+
+func selfSignedNamed(dir, file, cn string) (tls_cert [2][]byte) {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	tpl := &x509.Certificate{SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: "rivetit-fakeserver"},
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: cn},
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(48 * time.Hour),
 		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true, IsCA: true, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, DNSNames: []string{"localhost"}}
@@ -333,7 +340,7 @@ func selfSigned(dir string) (tls_cert [2][]byte) {
 	kb, _ := x509.MarshalECPrivateKey(key)
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb})
-	os.WriteFile(filepath.Join(dir, "ca.pem"), certPEM, 0o644)
+	os.WriteFile(filepath.Join(dir, file), certPEM, 0o644)
 	return [2][]byte{certPEM, keyPEM}
 }
 
@@ -351,6 +358,9 @@ func main() {
 	updBin := flag.String("update-binary", "", "file served as the self-update artifact (with -update-version)")
 	updVer := flag.String("update-version", "", "version offered to agents running a different version (once /_ctl?update=on)")
 	ctlListen := flag.String("ctl-listen", "", "plain-HTTP 127.0.0.1:PORT (0 = any) for /_ctl; address written to <dir>/ctl (lets a shell without curl drive faults)")
+	meshListen := flag.String("mesh-listen", "", "also serve a MOCK MeshCentral server (GET /meshagents) on this TLS address; its URL and SHA-384 pin go to <dir>/mesh_url and <dir>/mesh_pin")
+	meshGroup := flag.String("mesh-group", "", "device group id (hex) the mock Mesh server accepts as meshid")
+	meshNode := flag.String("mesh-node", "", "node id the fake MeshAgent prints for -nodeid (without the node// prefix, like the real one is assumed to)")
 	flag.Parse()
 	if *dir == "" {
 		log.Fatal("-dir required")
@@ -392,6 +402,9 @@ func main() {
 		cm := http.NewServeMux()
 		cm.HandleFunc("/_ctl", s.ctl)
 		go http.Serve(cl, cm)
+	}
+	if *meshListen != "" {
+		startMockMesh(*dir, *meshListen, *meshGroup, *meshNode, s)
 	}
 	ln, err := newTLSListener(*listen, cert)
 	if err != nil {

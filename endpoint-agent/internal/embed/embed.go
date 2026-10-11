@@ -62,8 +62,14 @@ type Payload struct {
 	CAPEM           *string `json:"ca_pem"`
 	CreatedAt       string  `json:"created_at"`
 	ExpiresAt       string  `json:"expires_at"`
-	created         time.Time
-	expires         time.Time
+	// Optional, additive members (RivetCore 1.0.0-rc.12). Kept raw on purpose: they
+	// must NEVER make an otherwise valid installer unreadable, so a malformed value
+	// is judged later by internal/mesh (which records the problem and carries on).
+	// An older agent that does not know them ignores them (see vectors_test.go).
+	InstallMeshAgent json.RawMessage `json:"install_mesh_agent,omitempty"`
+	Mesh             json.RawMessage `json:"mesh,omitempty"`
+	created          time.Time
+	expires          time.Time
 }
 
 // Expires returns the parsed expiry.

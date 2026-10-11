@@ -15,6 +15,7 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
@@ -27,6 +28,7 @@ import (
 	"rivetit-agent/internal/collect"
 	"rivetit-agent/internal/jobs"
 	"rivetit-agent/internal/logs"
+	"rivetit-agent/internal/mesh"
 	"rivetit-agent/internal/remote"
 	"rivetit-agent/internal/store"
 	"rivetit-agent/internal/update"
@@ -47,6 +49,7 @@ const (
 	lowRateInterval    = 300 * time.Second // pending_approval / ambiguous
 	inventoryEvery     = 15 * time.Minute
 	inventoryMaxAge    = 24 * time.Hour
+	meshMaxAge         = 24 * time.Hour
 	dormantPoll        = 60 * time.Second
 	maxBuffered        = 100
 	safetyJobPollEvery = 10
@@ -72,6 +75,9 @@ type Options struct {
 	// Rand returns a value in [0,1) for interval jitter and the module_disabled
 	// back-off. nil = math/rand/v2; tests pin it for deterministic delays.
 	Rand func() float64
+	// Mesh reads the MeshCentral agent state and node id (nil = the real
+	// machine: the saved install outcome plus the platform's usual locations).
+	Mesh *mesh.Reporter
 }
 
 // Agent is the endpoint agent runtime.
@@ -88,6 +94,7 @@ type Agent struct {
 	exec     *jobs.Executor
 	verifier *jobs.Verifier
 	upd      *update.Manager
+	meshRep  *mesh.Reporter
 	logs     *logs.Manager // RMM Phase 8 log collection; idle until a check-in offers logs:collect
 	skew     time.Duration
 
@@ -127,7 +134,10 @@ func New(o Options) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &Agent{o: o, log: o.Log, cfg: cfg}
+	a := &Agent{o: o, log: o.Log, cfg: cfg, meshRep: o.Mesh}
+	if a.meshRep == nil {
+		a.meshRep = &mesh.Reporter{StateDir: o.Store.Dir, Probe: mesh.Probe{GOOS: runtime.GOOS}, Now: o.Now, Override: a.meshNodeOverride}
+	}
 	a.col = collect.New(o.Platform, func() store.Config { a.mu.Lock(); defer a.mu.Unlock(); return a.cfg })
 	a.col.SetStateDir(o.Store.Dir)
 	a.col.VerifyCheck = func(c store.CheckSpec) error {
@@ -453,6 +463,7 @@ func Capabilities() []string {
 	// RMM Phase 6 and 8: the remote tools (services, processes, files) and log collection. The server only queues a remote
 	// tool for, and only offers log collection to, an agent that announced the flag.
 	out = append(out, remote.CapServices, remote.CapProcesses, remote.CapFiles)
+	out = append(out, api.CapMeshNodeID) // can read and report the local MeshCentral node id (a no-op without a Mesh agent)
 	if logs.Supported() {
 		out = append(out, api.FeatureLogs)
 	}
@@ -473,7 +484,7 @@ func (a *Agent) capabilities() []string {
 	out := caps[:0:0]
 	for _, c := range caps {
 		switch {
-		case cfg.DisableRemote && (c == remote.CapServices || c == remote.CapProcesses || c == remote.CapFiles || (strings.HasPrefix(c, "job:") && jobs.IsRemoteType(strings.TrimPrefix(c, "job:")))):
+		case cfg.DisableRemote && (c == api.CapMeshNodeID || c == remote.CapServices || c == remote.CapProcesses || c == remote.CapFiles || (strings.HasPrefix(c, "job:") && jobs.IsRemoteType(strings.TrimPrefix(c, "job:")))):
 			continue
 		case cfg.DisableLogs && c == api.FeatureLogs:
 			continue
@@ -581,6 +592,10 @@ func (a *Agent) buildInflight(ctx context.Context) (*store.Inflight, error) {
 		req.Inventory = inv
 		in.WithInventory, in.InventoryHash = true, collect.InventoryHash(*inv)
 	}
+	if mr := a.meshIfDue(ctx, st); mr != nil {
+		req.MeshAgent = &api.MeshAgentReport{Installed: mr.Installed, Version: mr.Version, NodeID: mr.NodeID, Error: mr.Error}
+		in.WithMesh, in.MeshHash = true, mr.Hash()
+	}
 	a.sw.pending = nil
 	if rep, plan := a.softwareIfDue(ctx, st); rep != nil {
 		req.Software = rep
@@ -604,6 +619,40 @@ func (a *Agent) buildInflight(ctx context.Context) (*store.Inflight, error) {
 		return nil, err
 	}
 	return in, nil
+}
+
+// meshNodeOverride is the node id an operator set by hand: the config value, else mesh_node_id.txt in the state directory (the same two places the older
+// inventory field honours).
+func (a *Agent) meshNodeOverride() string {
+	a.mu.Lock()
+	v := strings.TrimSpace(a.cfg.MeshNodeID)
+	a.mu.Unlock()
+	if v == "" {
+		if b, err := os.ReadFile(filepath.Join(a.o.Store.Dir, "mesh_node_id.txt")); err == nil && len(b) < 1024 {
+			v = strings.TrimSpace(string(b))
+		}
+	}
+	return v
+}
+
+// meshIfDue returns the MeshCentral agent state when it changed since the last
+// acknowledged report or a day has passed; nil on a machine with no Mesh agent
+// and nothing to say (the common case: no process is started then).
+func (a *Agent) meshIfDue(ctx context.Context, st store.State) *mesh.Report {
+	a.mu.Lock()
+	off := a.cfg.DisableRemote
+	a.mu.Unlock()
+	if off || a.meshRep == nil {
+		return nil
+	}
+	r := a.meshRep.Current(ctx)
+	if r == nil {
+		return nil
+	}
+	if r.Hash() == st.MeshHash && a.o.Now().Sub(st.MeshSentAt) < meshMaxAge {
+		return nil
+	}
+	return r
 }
 
 func (a *Agent) inventoryIfDue(ctx context.Context, st store.State) *api.Inventory {
@@ -722,6 +771,9 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 		st.LastCheckIn, st.LastError = now, ""
 		if in.WithInventory {
 			st.InventoryHash, st.InventorySentAt = in.InventoryHash, now
+		}
+		if in.WithMesh {
+			st.MeshHash, st.MeshSentAt = in.MeshHash, now
 		}
 		st.ServerFeatures = slices.Clone(resp.Features) // the last word of the server; absence = none
 		if resp.Config != nil {

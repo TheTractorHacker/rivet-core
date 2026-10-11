@@ -120,6 +120,10 @@ type State struct {
 	PolicyVersion  string          `json:"policy_version,omitempty"`
 	PolicyApplied  bool            `json:"policy_applied,omitempty"`
 	PolicyFeatures map[string]bool `json:"policy_features,omitempty"`
+	// MeshHash is the hash of the last mesh_agent block the server acknowledged,
+	// MeshSentAt when (it is repeated daily).
+	MeshHash   string    `json:"mesh_hash,omitempty"`
+	MeshSentAt time.Time `json:"mesh_sent_at,omitempty"`
 }
 
 // UpdateResultS is a pending update_result report.
@@ -143,6 +147,9 @@ type Inflight struct {
 	WithSoftware bool   `json:"with_software,omitempty"`
 	SoftwareHash string `json:"software_hash,omitempty"`
 	SoftwareFull bool   `json:"software_full,omitempty"`
+	// WithMesh marks a body that carries a mesh_agent block with hash MeshHash.
+	WithMesh bool   `json:"with_mesh,omitempty"`
+	MeshHash string `json:"mesh_hash,omitempty"`
 }
 
 // Store is a directory of agent files.

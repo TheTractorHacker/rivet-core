@@ -170,6 +170,22 @@ type CheckinRequest struct {
 	// Software is the installed-software report (docs/rmm/PROTOCOL.md 3.2.1). It is
 	// only ever present after a response offered the "software_inventory" feature.
 	Software *SoftwareReport `json:"software,omitempty"`
+	// MeshAgent is the optional MeshCentral agent state (docs/rmm/PROTOCOL.md 3.7). Sent
+	// on the first check-in after it changes and then daily; absent on a device
+	// without a Mesh agent and from every agent older than 1.0.0-rc.12.
+	MeshAgent *MeshAgentReport `json:"mesh_agent,omitempty"`
+}
+
+// CapMeshNodeID is announced by an agent that can read and report the local
+// MeshCentral node id.
+const CapMeshNodeID = "mesh:nodeid"
+
+// MeshAgentReport is the "mesh_agent" block of a check-in.
+type MeshAgentReport struct {
+	Installed bool   `json:"installed"`
+	Version   string `json:"version,omitempty"`
+	NodeID    string `json:"node_id,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // SoftwareItem is one installed product. Its identity is (Source, Name).

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,6 +23,8 @@ func cmdInstall(args []string) int {
 	installDir := fs.String("install-dir", defaultInstallDir(), "binary directory")
 	noService := fs.Bool("no-service", false, "install files and enroll but do not create or start the systemd unit")
 	level := fs.String("log-level", "info", "log level")
+	var mf meshFlags
+	mf.register(fs)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -35,8 +38,9 @@ func cmdInstall(args []string) int {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
 	}
+	log := consoleLog(*level)
 	res := performInstall(installParams{flags: f, stateDir: *dir, installDir: *installDir, noService: *noService, self: self, version: version},
-		ops, consoleLog(*level))
+		ops, log)
 	switch res.Kind {
 	case instNoToken:
 		fmt.Fprintln(os.Stderr, "error:", res.Msg)
@@ -47,6 +51,11 @@ func cmdInstall(args []string) int {
 	case instConfig, instFail:
 		fmt.Fprintln(os.Stderr, "error:", res.Msg)
 		return 1
+	}
+	if mi, ms := mf.raw(); mi != nil {
+		if line := installMeshAgent(context.Background(), ops, mi, ms, *dir, log); line != "" {
+			fmt.Println(line)
+		}
 	}
 	if *noService {
 		fmt.Println("RivetIT Agent installed (no service created)")
@@ -65,6 +74,7 @@ func cmdInstall(args []string) int {
 func cmdUninstall(args []string) int {
 	fs, dir := newFlags("uninstall")
 	purge := fs.Bool("purge", false, "also delete local state (config, credential, buffers)")
+	meshAgent := fs.Bool("remove-meshagent", false, "ALSO uninstall a MeshCentral agent (default: leave it untouched)")
 	installDir := fs.String("install-dir", defaultInstallDir(), "binary directory")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -78,6 +88,11 @@ func cmdUninstall(args []string) int {
 		return 1
 	}
 	fmt.Println("systemd unit stopped and removed")
+	if *meshAgent {
+		removeMeshAgentIfPresent()
+	} else {
+		fmt.Println("MeshCentral agent (if any) left untouched; use --remove-meshagent to remove it")
+	}
 	if *purge {
 		if *dir == "" {
 			fmt.Fprintln(os.Stderr, "error: --state-dir is required for --purge")
