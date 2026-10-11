@@ -47,7 +47,9 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=rivetit-proof" -add
 SETUP="$(RMM_GOLDEN_ALLOW_LINUX=1 php "$HERE/php_scratch/setup.php" "$WORK/state" "https://$GATEWAY:$TLSPORT")" || { echo "setup failed: $SETUP"; exit 2; }
 TOKEN="$(printf '%s' "$SETUP" | php -r 'echo json_decode(stream_get_contents(STDIN), true)["token"];')"
 ADMIN="$(printf '%s' "$SETUP" | php -r 'echo json_decode(stream_get_contents(STDIN), true)["admin_api_token"];')"
-RMM_GOLDEN_STATE="$WORK/state" RMM_GOLDEN_ALLOW_LINUX=1 php -d display_errors=0 -d log_errors=1 -d "error_log=$WORK/php.log" -S "127.0.0.1:$PHPPORT" "$HERE/php_scratch/router.php" >/dev/null 2>&1 &
+dbq() { php -r 'mysqli_report(MYSQLI_REPORT_OFF); $m = new mysqli(getenv("RIVETCORE_TEST_DB_HOST") ?: "127.0.0.1", getenv("RIVETCORE_TEST_DB_USER") ?: "root", getenv("RIVETCORE_TEST_DB_PASS") ?: "", getenv("RIVETCORE_TEST_DB_NAME"), (int) (getenv("RIVETCORE_TEST_DB_PORT") ?: 3306)); $r = $m->query($argv[1]); if ($r instanceof mysqli_result) { $row = $r->fetch_row(); echo $row[0] ?? ""; }' "$1"; }
+# the agent long-polls agent_jobs, so one php -S worker would starve the technician calls; the fixture's state file is only written by enrollment
+PHP_CLI_SERVER_WORKERS=4 RMM_GOLDEN_STATE="$WORK/state" RMM_GOLDEN_ALLOW_LINUX=1 php -d display_errors=0 -d log_errors=1 -d "error_log=$WORK/php.log" -S "127.0.0.1:$PHPPORT" "$HERE/php_scratch/router.php" >/dev/null 2>&1 &
 PHPPID=$!
 wait_for 15 "curl -s -o /dev/null http://127.0.0.1:$PHPPORT/api/v1/nothing" || { bad "php -S did not start"; exit 1; }
 cat >"$WORK/nginx.conf" <<NG
@@ -67,8 +69,9 @@ api() { # api METHOD path [json-body] -> body on stdout; sets $CODE
   local m=$1 p=$2 b="${3:-}" out
   if [ -n "$b" ]; then out="$(curl -s -w '\n%{http_code}' -X "$m" -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' --data "$b" "http://127.0.0.1:$PHPPORT/api/v1/endpoint_devices/$p")"
   else out="$(curl -s -w '\n%{http_code}' -X "$m" -H "Authorization: Bearer $ADMIN" "http://127.0.0.1:$PHPPORT/api/v1/endpoint_devices/$p")"; fi
-  CODE="${out##*$'\n'}"; printf '%s' "${out%$'\n'*}"
+  printf '%s' "${out##*$'\n'}" >"$WORK/code"; printf '%s' "${out%$'\n'*}"
 }
+A() { R="$(api "$@")"; CODE="$(cat "$WORK/code")"; }   # api in the current shell: sets R (body) and CODE (status)
 jget() { php -r '$d=json_decode(stream_get_contents(STDIN), true); $v=$d; foreach (explode(".", $argv[1]) as $k) { if (is_array($v) && array_key_exists($k, $v)) { $v=$v[$k]; } else { $v=null; break; } } echo is_bool($v) ? ($v ? "true" : "false") : (is_scalar($v) ? $v : json_encode($v));' "$1"; }
 
 echo "== real systemd container, agent installed with install-linux.sh"
@@ -98,64 +101,63 @@ docker exec "$NAME" bash /w/install-linux.sh --binary /w/rivetit-agent --server 
 chk "install exit 0" '[ $? = 0 ]'
 wait_for 40 "[ \"\$(api GET '' | jget total)\" = 1 ]" ; DEV="$(api GET '' | jget data.0.device_id)"
 chk "the agent enrolled against the PHP server and is a device ($DEV)" '[ -n "$DEV" ] && [ "$DEV" != "null" ]'
-wait_for 40 "api GET $DEV | grep -q remote:services" || true
-chk "the agent announced the new capabilities" 'docker exec $NAME /opt/rivetit-agent/rivetit-agent status | grep -q enrolled'
+chk "the agent announced the new capabilities (remote:services, remote:processes, remote:files, logs:collect)" 'wait_for 40 "dbq \"SELECT capabilities_json FROM rmm_device_state WHERE device_id = $DEV\" | grep -q logs:collect" && dbq "SELECT capabilities_json FROM rmm_device_state WHERE device_id = $DEV" | grep -q remote:services'
 q() { docker exec "$NAME" "$@"; }
 job_done() { # job_done JOBID [seconds] -> waits for a final state; prints it
   local j=$1 t="${2:-90}" i=0 st; while [ $i -lt $((t*2)) ]; do st="$(api GET "$DEV/remote/jobs/$j" | jget state)"; case "$st" in succeeded|failed|timed_out|cancelled|expired) echo "$st"; return 0;; esac; i=$((i+1)); sleep 0.5; done; echo "$st"; return 1; }
 
 echo "== service manager"
-R="$(api POST "$DEV/services/query")"; J="$(printf '%s' "$R" | jget job_id)"
+A POST "$DEV/services/query"; J="$(printf '%s' "$R" | jget job_id)"
 chk "service list queued (202)" '[ "$CODE" = 202 ] && [ -n "$J" ]'
 chk "service list job succeeded" '[ "$(job_done $J)" = succeeded ]'
 S="$(api GET "$DEV/services")"
 chk "the list holds the harmless probe unit with state running" 'printf "%s" "$S" | php -r "\$d=json_decode(stream_get_contents(STDIN),true); foreach (\$d[\"data\"][\"services\"] as \$s) { if (\$s[\"name\"]===\"rivetproof-probe.service\" && \$s[\"state\"]===\"running\") exit(0);} exit(1);"'
 PID1="$(q systemctl show -p MainPID --value rivetproof-probe.service)"
-R="$(api POST "$DEV/services/rivetproof-probe/restart" '{}')"
+A POST "$DEV/services/rivetproof-probe/restart" '{}'
 chk "restart without confirm is refused (422 confirmation_required)" '[ "$CODE" = 422 ] && [ "$(printf "%s" "$R" | jget code)" = confirmation_required ]'
-R="$(api POST "$DEV/services/rivetproof-probe/restart" '{"confirm":true}')"; J="$(printf '%s' "$R" | jget job_id)"
+A POST "$DEV/services/rivetproof-probe/restart" '{"confirm":true}'; J="$(printf '%s' "$R" | jget job_id)"
 chk "restart queued (202)" '[ "$CODE" = 202 ]'
 chk "restart job succeeded" '[ "$(job_done $J)" = succeeded ]'
 PID2="$(q systemctl show -p MainPID --value rivetproof-probe.service)"
 chk "the unit really restarted under systemd (new MainPID $PID1 -> $PID2)" '[ -n "$PID2" ] && [ "$PID2" != 0 ] && [ "$PID1" != "$PID2" ]'
 chk "systemd says it is active" '[ "$(q systemctl is-active rivetproof-probe.service)" = active ]'
-R="$(api POST "$DEV/services/rivetit-agent/stop" '{"confirm":true}')"
-chk "the server refuses to stop the agent'"'"'s own service" '[ "$CODE" = 422 ] && [ "$(printf "%s" "$R" | jget code)" = protected ]'
-R="$(api POST "$DEV/services/%2D%2Dnow/start" '{}')"
+A POST "$DEV/services/rivetit-agent/stop" '{"confirm":true}'
+chk "the server refuses to stop the agent own service" '[ "$CODE" = 422 ] && [ "$(printf "%s" "$R" | jget code)" = protected ]'
+A POST "$DEV/services/%2D%2Dnow/start" '{}'
 chk "a hostile unit name (--now) is refused before it is queued" '[ "$CODE" = 422 ]'
-R="$(api POST "$DEV/services/nonexistent-unit-xyz/start" '{}')"; J="$(printf '%s' "$R" | jget job_id)"
+A POST "$DEV/services/nonexistent-unit-xyz/start" '{}'; J="$(printf '%s' "$R" | jget job_id)"
 ST="$(job_done $J)"; RES="$(api GET "$DEV/remote/jobs/$J")"
 chk "an unknown unit is a clean failed result (not_found)" '[ "$ST" = failed ] && printf "%s" "$RES" | grep -q not_found'
 echo "== process manager"
-R="$(api POST "$DEV/processes/query" '{"limit":200,"sort":"cpu"}')"; J="$(printf '%s' "$R" | jget job_id)"
+A POST "$DEV/processes/query" '{"limit":200,"sort":"cpu"}'; J="$(printf '%s' "$R" | jget job_id)"
 chk "process list job succeeded" '[ "$(job_done $J)" = succeeded ]'
 P="$(api GET "$DEV/processes")"
 SLEEPPID="$(printf '%s' "$P" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach ($d["data"]["processes"] as $p) { if ($p["name"]==="sleep" && $p["pid"]>1) { echo $p["pid"]; exit; } }')"
 chk "the list has processes with cpu and memory, including the test sleeper ($SLEEPPID)" 'printf "%s" "$P" | grep -q mem_bytes && [ -n "$SLEEPPID" ]'
-R="$(api POST "$DEV/processes/$SLEEPPID/kill" "{\"name\":\"definitely-not-sleep\",\"confirm\":true}")"; J="$(printf '%s' "$R" | jget job_id)"
+A POST "$DEV/processes/$SLEEPPID/kill" "{\"name\":\"definitely-not-sleep\",\"confirm\":true}"; J="$(printf '%s' "$R" | jget job_id)"
 ST="$(job_done $J)"; RES="$(api GET "$DEV/remote/jobs/$J")"
 chk "a kill whose name does not match is refused by the agent (name_mismatch) and nothing is killed" '[ "$ST" = failed ] && printf "%s" "$RES" | grep -q name_mismatch && q test -d /proc/$SLEEPPID'
-R="$(api POST "$DEV/processes/1/kill" '{"name":"systemd","confirm":true}')"
+A POST "$DEV/processes/1/kill" '{"name":"systemd","confirm":true}'
 chk "pid 1 is refused by the server" '[ "$CODE" = 422 ]'
-R="$(api POST "$DEV/processes/$SLEEPPID/kill" "{\"name\":\"sleep\",\"confirm\":true}")"; J="$(printf '%s' "$R" | jget job_id)"
+A POST "$DEV/processes/$SLEEPPID/kill" "{\"name\":\"sleep\",\"confirm\":true}"; J="$(printf '%s' "$R" | jget job_id)"
 chk "a correct kill succeeds" '[ "$(job_done $J)" = succeeded ]'
 chk "the process is gone" 'wait_for 10 "! q test -d /proc/$SLEEPPID"'
 echo "== file transfer"
-R="$(api POST "$DEV/files/download" '{"path":"/srv/proof/report.txt"}')"; T="$(printf '%s' "$R" | jget transfer_id)"; J="$(printf '%s' "$R" | jget job_id)"
+A POST "$DEV/files/download" '{"path":"/srv/proof/report.txt"}'; T="$(printf '%s' "$R" | jget transfer_id)"; J="$(printf '%s' "$R" | jget job_id)"
 chk "download queued (202)" '[ "$CODE" = 202 ]'
 chk "download job succeeded" '[ "$(job_done $J)" = succeeded ]'
 S="$(api GET "$DEV/files/$T")"
 WANT="$(q sha256sum /srv/proof/report.txt | cut -d' ' -f1)"
-chk "the transfer is complete with the device's SHA-256" '[ "$(printf "%s" "$S" | jget state)" = complete ] && [ "$(printf "%s" "$S" | jget sha256)" = "$WANT" ]'
+chk "the transfer is complete with the device SHA-256" '[ "$(printf "%s" "$S" | jget state)" = complete ] && [ "$(printf "%s" "$S" | jget sha256)" = "$WANT" ]'
 curl -s -H "Authorization: Bearer $ADMIN" "http://127.0.0.1:$PHPPORT/api/v1/endpoint_devices/$DEV/files/$T/content" -o "$WORK/got.txt"
 chk "the technician fetches identical bytes" 'cmp -s "$WORK/got.txt" <(q cat /srv/proof/report.txt)'
-R="$(api POST "$DEV/files/download" '{"path":"/etc/shadow"}')"
+A POST "$DEV/files/download" '{"path":"/etc/shadow"}'
 chk "the server refuses /etc/shadow (outside the allowed folder)" '[ "$CODE" = 422 ] && printf "%s" "$R" | grep -q path_denied'
-R="$(api POST "$DEV/files/download" '{"path":"/srv/proof/shadow-link"}')"; J="$(printf '%s' "$R" | jget job_id)"
+A POST "$DEV/files/download" '{"path":"/srv/proof/shadow-link"}'; J="$(printf '%s' "$R" | jget job_id)"
 ST="$(job_done $J)"; RES="$(api GET "$DEV/remote/jobs/$J")"
 chk "a symlink inside the allowed folder that points at /etc/shadow is refused BY THE AGENT (deny list after symlink resolution)" '[ "$CODE" != 422 ] && [ "$ST" = failed ] && printf "%s" "$RES" | grep -q path_denied'
 head -c 3000000 /dev/urandom >"$WORK/payload.bin"; SHA="$(sha256sum "$WORK/payload.bin" | cut -d' ' -f1)"; SZ="$(stat -c %s "$WORK/payload.bin")"
-R="$(api POST "$DEV/files/upload" "{\"path\":\"/srv/proof/drop/tool.bin\",\"size\":$SZ,\"sha256\":\"$SHA\",\"confirm\":true}")"; T="$(printf '%s' "$R" | jget transfer_id)"
+A POST "$DEV/files/upload" "{\"path\":\"/srv/proof/drop/tool.bin\",\"size\":$SZ,\"sha256\":\"$SHA\",\"confirm\":true}"; T="$(printf '%s' "$R" | jget transfer_id)"
 chk "upload declared (201)" '[ "$CODE" = 201 ]'
 BADSHA="$(printf '%064d' 0)"
 R="$(curl -s -w '\n%{http_code}' -X PUT -H "Authorization: Bearer $ADMIN" --data-binary @"$WORK/payload.bin" "http://127.0.0.1:$PHPPORT/api/v1/endpoint_devices/$DEV/files/$T/content")"
@@ -164,7 +166,7 @@ chk "content accepted and the delivery job queued (202)" '[ "$CODE" = 202 ] && [
 chk "upload job succeeded" '[ "$(job_done $J 120)" = succeeded ]'
 chk "the device has the file with the same SHA-256 (hash verified by the agent)" '[ "$(q sha256sum /srv/proof/drop/tool.bin | cut -d" " -f1)" = "$SHA" ]'
 chk "no temporary file is left behind" '[ -z "$(q sh -c "ls -A /srv/proof/drop | grep -v ^tool.bin$")" ]'
-R="$(api POST "$DEV/files/upload" "{\"path\":\"/srv/proof/drop/tool.bin\",\"size\":5,\"sha256\":\"$(printf hello | sha256sum | cut -d' ' -f1)\",\"confirm\":true}")"; T="$(printf '%s' "$R" | jget transfer_id)"
+A POST "$DEV/files/upload" "{\"path\":\"/srv/proof/drop/tool.bin\",\"size\":5,\"sha256\":\"$(printf hello | sha256sum | cut -d' ' -f1)\",\"confirm\":true}"; T="$(printf '%s' "$R" | jget transfer_id)"
 R="$(curl -s -w '\n%{http_code}' -X PUT -H "Authorization: Bearer $ADMIN" --data-binary 'hello' "http://127.0.0.1:$PHPPORT/api/v1/endpoint_devices/$DEV/files/$T/content")"; J="$(printf '%s' "${R%$'\n'*}" | jget job_id)"
 ST="$(job_done $J)"; RES="$(api GET "$DEV/remote/jobs/$J")"
 chk "overwrite=false on an existing file is refused by the agent and the file is untouched" '[ "$ST" = failed ] && printf "%s" "$RES" | grep -q exists && [ "$(q sha256sum /srv/proof/drop/tool.bin | cut -d" " -f1)" = "$SHA" ]'
