@@ -159,7 +159,6 @@ chk "a symlink inside the allowed folder that points at /etc/shadow is refused B
 head -c 3000000 /dev/urandom >"$WORK/payload.bin"; SHA="$(sha256sum "$WORK/payload.bin" | cut -d' ' -f1)"; SZ="$(stat -c %s "$WORK/payload.bin")"
 A POST "$DEV/files/upload" "{\"path\":\"/srv/proof/drop/tool.bin\",\"size\":$SZ,\"sha256\":\"$SHA\",\"confirm\":true}"; T="$(printf '%s' "$R" | jget transfer_id)"
 chk "upload declared (201)" '[ "$CODE" = 201 ]'
-BADSHA="$(printf '%064d' 0)"
 R="$(curl -s -w '\n%{http_code}' -X PUT -H "Authorization: Bearer $ADMIN" --data-binary @"$WORK/payload.bin" "http://127.0.0.1:$PHPPORT/api/v1/endpoint_devices/$DEV/files/$T/content")"
 J="$(printf '%s' "${R%$'\n'*}" | jget job_id)"; CODE="${R##*$'\n'}"
 chk "content accepted and the delivery job queued (202)" '[ "$CODE" = 202 ] && [ -n "$J" ]'
