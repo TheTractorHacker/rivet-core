@@ -341,7 +341,8 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 | `agent.log`, `agent.log.1` | service log (5 MiB x 2, rotated); no secrets or job output are logged |
 
 Local kill switches (set in `config.json` by an administrator of the endpoint): `disable_jobs` (never execute server jobs) and
-`disable_script_checks`.
+`disable_script_checks`, plus (RMM Phases 6 and 8) `disable_remote` (the service, process and file tools fail with `disabled_locally`, and the agent stops announcing
+`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) and `disable_logs` (never collect or ship logs; `logs:collect` is not announced).
 
 ## Monitoring and checks
 
@@ -417,6 +418,34 @@ remote access (rivet-core #59), and every submission audited. Least-privilege op
 (`NT SERVICE\RivetITAgent`, enable with `sc config RivetITAgent obj= "NT SERVICE\RivetITAgent"`) and grant it only what your jobs need — then
 inventory/service/pending-reboot checks work but most maintenance does not; or split a low-privilege collector from an on-demand elevated
 executor (follow-up). The default is SYSTEM because maintenance jobs generally need it.
+
+## Remote tools and log collection (RMM Phases 6 and 8)
+
+Six job types, signed and verified like every other job (`internal/jobs/verify.go` allows them without a script): `svc_list`, `svc_control`, `proc_list`, `proc_kill`, `file_get`,
+`file_put`. The agent announces `remote:services`, `remote:processes` and `remote:files` (and the matching `job:<type>`); the server only queues them for an agent that did. The
+wire contract is `docs/rmm/PROTOCOL.md` 3.6 and 3.7, the operator guide `docs/rmm/REMOTE_AND_LOGS.md`. Code: `internal/remote`.
+
+* **Services** (`services.go`, `systemd.go`, `svc_windows.go`). Linux: `systemctl list-units`/`list-unit-files` and `systemctl <verb> -- <unit>` with an argument list (the `--` makes an option-shaped name harmless),
+  names matched against `^[A-Za-z0-9:_.@-]{1,200}$`, never starting with `-` or `.`, `.service` added, any other unit type refused. Windows: the service control manager API (`x/sys/windows/svc/mgr`), no command string.
+  The agent refuses to stop, restart or disable its own service (`refused_self`) and a short list of critical ones (`refused_protected`).
+* **Processes** (`procs.go`, `proc_linux.go`, `proc_windows.go`). A list from two snapshots about 500 ms apart (CPU percent of one core, resident memory, no command lines). A kill needs the pid AND the name as listed: the agent
+  re-reads the name at the moment of the kill (`name_mismatch`), refuses itself and its parent, kernel threads and a never-kill list (init, systemd, lsass, csrss, ...).
+* **Files** (`pathpolicy.go`, `xfer.go`). `file_get` streams a file to `agent_transfer` in chunks of at most 1 MiB with a running SHA-256 sent on the last chunk, resumes where the server says (at most 3 resyncs) and retries transient
+  failures; `file_put` downloads ranges into a temporary file (`.rivetit-xfer-<id>.tmp`, created exclusively, mode 0600) next to the destination, checks the byte count and the SHA-256 against the signed job and the server's headers,
+  then renames it into place (an existing file is replaced only with `overwrite`, and a symlink destination is refused). The path policy is pure and tested for both operating systems on any host: absolute path only, no `..`, no
+  alternate data streams, short names or reserved device names on Windows, symbolic links resolved before the decision, whole-element comparison against the signed allow list, and an always-on deny list (shadow, sudoers, SSH host keys,
+  private keys and certificates, credential stores, SAM and NTDS, the agent's own state folder) that wins over the allow list.
+* **Results** are one compact JSON document per job; lists are shortened to fit `max_output_bytes` (`"truncated": true`) and never cut mid-text; strings inside the document are redacted one by one so it stays valid JSON.
+
+**Log collection** (`internal/logs`). Off until a check-in response offers the feature `logs:collect` together with `config.logs`; the agent stops the moment a response does not. Linux: `journalctl --output=json` with
+`--after-cursor` (the first run starts five minutes back), `--priority` from the source's `min_level`, `_SYSTEMD_UNIT=` / `SYSLOG_IDENTIFIER=` matches, all as an argument list with every name validated; a phrase filter runs in the
+agent. Windows: `wevtutil qe <channel> /f:xml /rd:false /c:<n> /q:<XPath>` where the query is built only from validated integers, the first run starts at the newest record (no backfill), and the message is made from the event's data
+values (the localized rendered text is not used). Batches of at most 200 entries and 200,000 bytes, at most `rate_per_min` entries per minute (the rest is dropped and counted in `dropped`), shipped about every `interval_s`
+seconds on a goroutine of their own. The bookmark (journal cursor, event record id; `logs_state.json`, mode 0600, nothing sensitive) moves only after the server answered 200; a refused batch (other 4xx) is dropped so the loop
+cannot wedge; `feature_disabled` pauses for at least 15 minutes; a bookmark that fails three reads in a row is dropped and the source restarts.
+
+**Windows**: the service manager, process APIs, the `wevtutil` reader and the Windows path rules are cross-compiled and `go vet` clean for windows/amd64 and windows/arm64 and have **never run on a Windows host**; the
+pure parts (path policy, XML parsing, query building) are tested on Linux with the Windows syntax.
 
 ## Updates and rollback
 
@@ -495,6 +524,7 @@ Everything below compiles and vets for windows/amd64 and windows/arm64 and has *
 - `internal/jobs/exec_windows.go`, `shell_windows.go` (PowerShell `-EncodedCommand` execution, `taskkill /T /F` tree kill, minimal environment)
 - `internal/agent/reboot_windows.go` (`shutdown.exe /r /t`), `cmd_install_windows.go` (install/uninstall, self-copy, delayed self-delete, `MeshAgent.exe -fulluninstall`)
 - `scripts/install-windows.ps1`
+- `internal/remote/svc_windows.go`, `proc_windows.go`, `files_windows.go` and the Windows branches of the path policy (service manager, toolhelp and process APIs, file handling), and the `wevtutil` event-log reader in `internal/logs` (RMM Phases 6 and 8)
 - The self-installing installer's elevation, MessageBox, Add/Remove Programs entry and manifest (see "Self-installing per-department installer")
 - The update rename/restart sequence on a real SCM, and the whole system under EDR/AV
 - Authenticode signing (not performed), MSI packaging (not built)

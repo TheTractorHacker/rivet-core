@@ -170,7 +170,7 @@ final class RemoteRulesTest extends TestCase
         yield 'agent state' => ['/var/lib/rivetit-agent/state.json', 'linux', ['/var/lib/rivetit-agent'], PathPolicy::DENY_LIST];
         yield 'shadow in an allowed etc' => ['/etc/shadow', 'linux', ['/etc/nginx'], PathPolicy::NOT_ALLOWED];
         yield 'ok windows' => ['C:\\Data\\report.csv', 'windows', $win, null];
-        yield 'ok windows slash' => ['C:/Data/report.csv', 'windows', $win, null];
+        yield 'windows forward slash is refused, the agent would have to rewrite it' => ['C:/Data/report.csv', 'windows', $win, PathPolicy::INVALID];
         yield 'windows case' => ['c:\\data\\Report.csv', 'windows', $win, null];
         yield 'windows other drive' => ['E:\\Data\\a', 'windows', $win, PathPolicy::NOT_ALLOWED];
         yield 'windows unc' => ['\\\\server\\share\\a', 'windows', $win, PathPolicy::NOT_ABSOLUTE];

@@ -34,6 +34,9 @@ final class PathPolicy
     public static function check(string $path, string $os, array $roots): ?string
     {
         $windows = $os === 'windows';
+        if ($windows && str_contains($path, '/')) {
+            return self::INVALID;   // a Windows path is written with backslashes; the agent refuses anything it would have to rewrite
+        }
         if ($path === '' || strlen($path) > RemoteProtocol::TRANSFER_PATH_MAX || preg_match('/[\x00-\x1f\x7f]/', $path) === 1 || !mb_check_encoding($path, 'UTF-8')) {
             return self::INVALID;
         }
@@ -73,6 +76,9 @@ final class PathPolicy
     public static function validRoot(string $root, string $os): bool
     {
         $windows = $os === 'windows';
+        if ($windows && str_contains($root, '/')) {
+            return false;
+        }
         if ($root === '' || strlen($root) > 400 || preg_match('/[\x00-\x1f\x7f]/', $root) === 1 || !mb_check_encoding($root, 'UTF-8')) {
             return false;
         }

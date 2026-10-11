@@ -34,6 +34,9 @@ type APIError struct {
 	// module_disabled back-off uses it; everything else keeps the 1 h cap.
 	RetryAfterRaw time.Duration
 	Err           error
+	// Received is the "received" member of a transfer 409 answer (bytes the server
+	// already holds); nil when the body had none.
+	Received *int64
 }
 
 func (e *APIError) Error() string {
@@ -215,19 +218,7 @@ func (c *Client) DoRaw(ctx context.Context, method, name string, raw []byte, out
 		return &APIError{Err: errors.New("response exceeds size cap")}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		ra := resp.Header.Get("Retry-After")
-		ae := &APIError{Status: resp.StatusCode, RetryAfter: ParseRetryAfter(ra, c.opt.Now()), RetryAfterRaw: ParseRetryAfterCap(ra, c.opt.Now(), MaxModuleRetryAfter)}
-		var e struct {
-			Error string `json:"error"`
-			Code  string `json:"code"`
-		}
-		if json.Unmarshal(data, &e) == nil {
-			ae.Code, ae.Message = e.Code, e.Error
-		}
-		if ae.Message == "" {
-			ae.Message = http.StatusText(resp.StatusCode)
-		}
-		return ae
+		return c.errorFrom(resp, data)
 	}
 	if out == nil {
 		return nil
@@ -240,6 +231,26 @@ func (c *Client) DoRaw(ctx context.Context, method, name string, raw []byte, out
 		return &APIError{Status: resp.StatusCode, Err: fmt.Errorf("decode response: %w", err), Message: "undecodable response"}
 	}
 	return nil
+}
+
+// errorFrom builds the APIError of a non-2xx response (JSON error/code members are
+// read when the body has them; "received" is the byte count a transfer answer
+// carries on a 409 resync).
+func (c *Client) errorFrom(resp *http.Response, data []byte) *APIError {
+	ra := resp.Header.Get("Retry-After")
+	ae := &APIError{Status: resp.StatusCode, RetryAfter: ParseRetryAfter(ra, c.opt.Now()), RetryAfterRaw: ParseRetryAfterCap(ra, c.opt.Now(), MaxModuleRetryAfter)}
+	var e struct {
+		Error    string `json:"error"`
+		Code     string `json:"code"`
+		Received *int64 `json:"received"`
+	}
+	if json.Unmarshal(data, &e) == nil {
+		ae.Code, ae.Message, ae.Received = e.Code, e.Error, e.Received
+	}
+	if ae.Message == "" {
+		ae.Message = http.StatusText(resp.StatusCode)
+	}
+	return ae
 }
 
 // Enroll POSTs agent_enroll.

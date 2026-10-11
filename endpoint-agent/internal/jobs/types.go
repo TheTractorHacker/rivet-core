@@ -18,7 +18,29 @@ const (
 	TypePython     = "python"
 	TypeCollect    = "collect"
 	TypeReboot     = "reboot"
+
+	// Remote tools (RMM Phase 6). They are implemented by handlers the agent
+	// injects (Executor.Remote) and run on every OS the agent supports.
+	TypeSvcList    = "svc_list"
+	TypeSvcControl = "svc_control"
+	TypeProcList   = "proc_list"
+	TypeProcKill   = "proc_kill"
+	TypeFileGet    = "file_get"
+	TypeFilePut    = "file_put"
 )
+
+// RemoteTypes are the remote tool job types.
+var RemoteTypes = []string{TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut}
+
+// IsRemoteType reports whether typ is one of the remote tool job types.
+func IsRemoteType(typ string) bool {
+	for _, t := range RemoteTypes {
+		if t == typ {
+			return true
+		}
+	}
+	return false
+}
 
 // ReasonUnsupportedPlatform is the local reason (and the output prefix) of a
 // job that is authentic but cannot run on this OS.
@@ -27,7 +49,7 @@ const ReasonUnsupportedPlatform = "unsupported_platform"
 // supportedOn reports whether a job type can run on the given GOOS.
 func supportedOn(goos, typ string) bool {
 	switch typ {
-	case TypeCollect, TypeReboot:
+	case TypeCollect, TypeReboot, TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut:
 		return true
 	case TypePowerShell:
 		return goos == "windows"
@@ -51,7 +73,7 @@ func ScriptType() string {
 // JobTypes lists the job types this agent runs, sorted.
 func JobTypes() []string {
 	var out []string
-	for _, t := range []string{TypePowerShell, TypeShell, TypePython, TypeCollect, TypeReboot} {
+	for _, t := range append([]string{TypePowerShell, TypeShell, TypePython, TypeCollect, TypeReboot}, RemoteTypes...) {
 		if t == TypePython && !pythonAvailable() {
 			continue
 		}

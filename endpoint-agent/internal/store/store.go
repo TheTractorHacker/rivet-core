@@ -26,6 +26,8 @@ type Config struct {
 	MaxConcurrentJobs int      `json:"max_concurrent_jobs,omitempty"`
 	DisableJobs       bool     `json:"disable_jobs,omitempty"`          // local kill switch: never execute server jobs
 	DisableScriptChk  bool     `json:"disable_script_checks,omitempty"` // local kill switch for script checks
+	DisableRemote     bool     `json:"disable_remote,omitempty"`        // local kill switch: svc_*/proc_*/file_* jobs fail with disabled_locally
+	DisableLogs       bool     `json:"disable_logs,omitempty"`          // local kill switch: never collect or ship logs
 	UpdateHosts       []string `json:"update_hosts,omitempty"`          // extra hosts allowed to serve update binaries (default: server host)
 	BufferMaxSamples  int      `json:"buffer_max_samples,omitempty"`
 	BufferMaxBytes    int      `json:"buffer_max_bytes,omitempty"`
@@ -173,6 +175,7 @@ func (s *Store) InflightPath() string    { return s.path("inflight.json") }
 func (s *Store) UpdatePath() string      { return s.path("update.json") }
 func (s *Store) SoftwarePath() string    { return s.path("software.json") }
 func (s *Store) LogPath() string         { return s.path("agent.log") }
+func (s *Store) LogsStatePath() string   { return s.path("logs_state.json") }
 
 func readJSON(path string, v any) (bool, error) {
 	b, err := os.ReadFile(path)

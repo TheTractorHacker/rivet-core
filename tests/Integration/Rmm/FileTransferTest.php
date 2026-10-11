@@ -82,7 +82,7 @@ final class FileTransferTest extends RemoteTestCase
     {
         $this->enableTransfers();
         foreach ([['C:\\Data\\..\\Windows\\win.ini', 'traversal'], ['C:\\Windows\\win.ini', 'not_allowed'], ['C:\\Data2\\a', 'not_allowed'], ['\\\\srv\\share\\a', 'not_absolute'], ['data\\a', 'not_absolute'],
-            ['C:\\Data\\a.txt:ads', 'invalid'], ['C:\\Data\\site.pfx', 'deny_list'], ['C:\\Data\\.ssh\\id_ed25519', 'deny_list'], ["C:\\Data\\a\0b", 'invalid'], ['/etc/shadow', 'not_absolute']] as [$path, $reason]) {
+            ['C:\\Data\\a.txt:ads', 'invalid'], ['C:\\Data\\site.pfx', 'deny_list'], ['C:\\Data\\.ssh\\id_ed25519', 'deny_list'], ["C:\\Data\\a\0b", 'invalid'], ['/etc/shadow', 'invalid']] as [$path, $reason]) {
             [$c, $j] = $this->api('POST', [$this->d(), 'files', 'download'], $this->tech, ['path' => $path]);
             $this->assertSame([422, $reason], [$c, $j['reason'] ?? null], json_encode($path));
         }

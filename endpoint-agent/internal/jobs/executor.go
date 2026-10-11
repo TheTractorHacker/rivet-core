@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"rivetit-agent/internal/api"
+	"rivetit-agent/internal/remote"
 )
 
 // Reporter sends job state transitions to the server.
@@ -37,6 +39,11 @@ type Executor struct {
 	Attempts    int // report attempts per transition (default 5)
 	Log         *slog.Logger
 	Disabled    bool // config.disable_jobs: never execute
+
+	// Remote holds the handlers of the remote-tool job types (RMM Phase 6) by type; DisableRemote
+	// (config.disable_remote) makes every one of them fail with disabled_locally without running.
+	Remote        map[string]remote.Handler
+	DisableRemote bool
 
 	mu       sync.Mutex
 	active   map[string]bool
@@ -216,6 +223,8 @@ func (e *Executor) process(j api.Job) {
 	switch j.Type {
 	case TypePowerShell, TypeShell, TypePython:
 		state, reason, output, exit = e.runScript(ctx, j, timeout, maxOut)
+	case TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut:
+		state, reason, output, exit = e.runRemote(ctx, j, timeout, maxOut)
 	case "collect":
 		state, reason, output = StateSucceeded, "", ""
 		if e.Collect == nil {
@@ -274,6 +283,49 @@ func (e *Executor) runScript(ctx context.Context, j api.Job, timeout time.Durati
 	default:
 		return StateFailed, "nonzero_exit", res.Output, exit
 	}
+}
+
+// runRemote runs one remote-tool job through its handler. The handler returns a compact JSON document that
+// already fits the output cap; it is redacted string by string (so it stays valid JSON) and never cut. A job
+// that never started (bad parameters, disabled locally) is a failure without an exit code, one that ran and
+// failed has exit code 1.
+func (e *Executor) runRemote(ctx context.Context, j api.Job, timeout time.Duration, maxOut int) (state, reason, output string, exit *int) {
+	if e.DisableRemote {
+		return StateFailed, "disabled_locally", `{"v":1,"ok":false,"detail":"disabled_locally"}`, nil
+	}
+	h := e.Remote[j.Type]
+	if h == nil {
+		return StateFailed, "unsupported", `{"v":1,"ok":false,"detail":"unsupported"}`, nil
+	}
+	rctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	res := h(rctx, j.Params, maxOut)
+	out := RedactJSONStrings(res.Output, e.secrets()...)
+	if len(out) > maxOut {
+		out = `{"v":1,"ok":false,"detail":"output_too_large"}`
+	}
+	switch {
+	case rctx.Err() != nil && ctx.Err() == nil:
+		return StateTimedOut, "timeout", out, nil
+	case res.OK:
+		zero := 0
+		return StateSucceeded, "", out, &zero
+	case res.Cannot:
+		return StateFailed, reasonCode(res.Detail), out, nil
+	}
+	one := 1
+	return StateFailed, reasonCode(res.Detail), out, &one
+}
+
+// reasonCode reduces a handler's detail to the short code kept as the job's local reason.
+func reasonCode(detail string) string {
+	if i := strings.IndexAny(detail, ": "); i > 0 {
+		detail = detail[:i]
+	}
+	if detail == "" || len(detail) > 40 {
+		return "failed"
+	}
+	return detail
 }
 
 // RebootParams are the reboot job params.
