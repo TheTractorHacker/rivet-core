@@ -23,6 +23,9 @@
  *  - when load shedding is at level 3 (and the level is younger than 180 s) answers agent_checkin with 503 and a jittered
  *    Retry-After from the shed window of the state file (503 {"code":"unavailable"}); enrollment, job reports and the other
  *    endpoints are never shed.
+ *  - while a WARM START is running (rmm_herd.json, written by RivetCore\Rmm\Capacity\HerdControl when the module is switched back on or after a quiet gap;
+ *    off unless the warm_start_s limit is set) answers the share of agent_checkin requests that HerdControl::admits() turns away with 503 and a jittered
+ *    Retry-After, with the same hash of the Authorization header and the ten second slot, so the gate and the module agree. No database, no class loaded.
  *  - otherwise returns and lets the normal request run.
  *
  * FAIL-SAFE. A missing, unreadable, empty, garbled, wrong-type or wrong-version file is "unknown", never "off": the gate returns and the
@@ -70,6 +73,14 @@
         $lo = max(1, min($s['shed_retry'][0], $s['shed_retry'][1]));
         $hi = max($lo, $s['shed_retry'][1]);
         header('Retry-After: ' . random_int($lo, $hi));
+    } elseif ($endpoint === 'agent_checkin' && ($w = @file_get_contents(rtrim($dir, '/\\') . '/rmm_herd.json', false, null, 0, 4096)) !== false
+        && is_array($h = json_decode($w, true)) && is_int($h['from'] ?? null) && is_int($h['until'] ?? null) && is_int($h['pct'] ?? null) && ($now = time()) < $h['until'] && $h['until'] > $h['from']
+        && is_string($auth = $_SERVER['HTTP_AUTHORIZATION'] ?? null) && $auth !== ''
+        && (crc32($auth . '|' . intdiv($now, 10)) % 10000) >= (int) round(min(100.0, max(1, min(100, $h['pct'])) + (100 - max(1, min(100, $h['pct']))) * max(0, $now - $h['from']) / ($h['until'] - $h['from'])) * 100)) {
+        // warm start: this device is not admitted in this ten second slot (the decision of HerdControl::admits())
+        $status = 503;
+        $body = '{"error":"The service is starting up. Try again later.","code":"unavailable"}';
+        header('Retry-After: ' . random_int(10, max(20, min(120, intdiv($h['until'] - $now, 6)))));
     } else {
         return;
     }
