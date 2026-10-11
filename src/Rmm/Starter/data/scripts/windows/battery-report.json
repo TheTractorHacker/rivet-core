@@ -1,0 +1,16 @@
+{
+  "id": "win-battery-report",
+  "name": "Battery health report (Windows)",
+  "description": "Reports battery status and charge, and compares design to full-charge capacity as a health percentage.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "battery",
+    "hardware",
+    "health"
+  ],
+  "timeout_s": 90,
+  "params": [],
+  "output": "Battery lines and a Health percentage, or No battery present on desktops. Exit 0."
+}

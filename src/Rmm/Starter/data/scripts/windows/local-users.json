@@ -1,0 +1,16 @@
+{
+  "id": "win-local-users",
+  "name": "Local user accounts (Windows)",
+  "description": "Lists local accounts with enabled state, last logon, password last set and whether a password is required. No password data is shown.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "security",
+    "accounts",
+    "inventory"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Table of local accounts. Exit 0."
+}

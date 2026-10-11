@@ -1,0 +1,24 @@
+{
+  "id": "win-windows-update-reset",
+  "name": "Reset Windows Update components (Windows)",
+  "description": "Stops the update services, renames SoftwareDistribution and catroot2 to dated .bak folders, removes older .bak folders and restarts the services. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "changes_system",
+  "tags": [
+    "updates",
+    "repair",
+    "maintenance"
+  ],
+  "timeout_s": 300,
+  "params": [
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When enabled, nothing is changed and the script only prints what it would do."
+    }
+  ],
+  "output": "[DRY-RUN] or [DONE]/[SKIP] lines per step. Exit 0; exit 3 if services could not be stopped. Services are restored even on failure."
+}

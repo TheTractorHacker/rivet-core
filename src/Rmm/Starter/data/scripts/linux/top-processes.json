@@ -1,0 +1,25 @@
+{
+  "id": "lin-top-processes",
+  "name": "Top processes by CPU and memory (Linux)",
+  "description": "Lists the busiest processes by CPU and by memory using ps.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "diagnostics",
+    "performance"
+  ],
+  "timeout_s": 30,
+  "params": [
+    {
+      "name": "top_n",
+      "type": "int",
+      "label": "Rows to show",
+      "description": "How many processes to list per ranking.",
+      "default": 10,
+      "min": 1,
+      "max": 50
+    }
+  ],
+  "output": "Two tables (by CPU, by memory). Exit 0; NOT AVAILABLE if ps is missing."
+}

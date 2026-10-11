@@ -1,0 +1,15 @@
+{
+  "id": "lin-network-interfaces",
+  "name": "Network interfaces and routes (Linux)",
+  "description": "Shows addresses, routes, default gateway and DNS servers.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "network",
+    "inventory"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "Interface, route and resolver listing. Exit 0."
+}

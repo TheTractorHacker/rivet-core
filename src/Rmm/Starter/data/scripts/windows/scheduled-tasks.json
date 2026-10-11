@@ -1,0 +1,26 @@
+{
+  "id": "win-scheduled-tasks",
+  "name": "Non-Microsoft scheduled tasks (Windows)",
+  "description": "Lists scheduled tasks outside the Microsoft folders with state, run-as account, last result and last/next run times.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "tasks",
+    "inventory",
+    "diagnostics"
+  ],
+  "timeout_s": 120,
+  "params": [
+    {
+      "name": "limit",
+      "type": "int",
+      "label": "Maximum tasks",
+      "description": "Maximum number of tasks to list.",
+      "default": 200,
+      "min": 10,
+      "max": 500
+    }
+  ],
+  "output": "Table of tasks, marked (truncated) when the limit is hit. Exit 0; exit 2 on invalid parameters."
+}

@@ -1,0 +1,40 @@
+{
+  "id": "lin-restart-unit",
+  "name": "Restart a systemd unit (Linux)",
+  "description": "Restarts a named systemd unit and reports its state before and after. Refuses rivet*, systemd-* and dbus* units.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "disruptive",
+  "tags": [
+    "services",
+    "remediation"
+  ],
+  "timeout_s": 360,
+  "params": [
+    {
+      "name": "unit_name",
+      "type": "string",
+      "label": "Unit name",
+      "description": "Name of the systemd unit to restart, for example nginx.service.",
+      "max_length": 100,
+      "required": true
+    },
+    {
+      "name": "wait_seconds",
+      "type": "int",
+      "label": "Wait seconds",
+      "description": "How long to wait for the unit to become active.",
+      "default": 30,
+      "min": 5,
+      "max": 300
+    },
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When true (default) only reports what would be restarted."
+    }
+  ],
+  "output": "[DRY-RUN]/[DONE]/[SKIP] lines with is-active before and after. Exit 0; 2 invalid or refused name; 3 unit missing or restart failed."
+}

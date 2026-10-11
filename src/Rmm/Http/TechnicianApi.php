@@ -58,6 +58,9 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   GET    endpoint_devices/schedules | POST schedules | GET,PATCH,PUT,DELETE schedules/{id} | GET schedules/{id}/history (device_id, limit, offset)
  *   GET    endpoint_devices/fields (scope) | POST fields | PATCH,PUT,DELETE fields/{id} | GET fields/{id}/values/{scope_id}... | PUT fields/{id}/values/{scope_id} {value, client_id?}
  *
+ * Starter pack (administrators; routed to {@see StarterApi}, which lists them): GET endpoint_devices/starter/catalog, POST starter/plan, POST starter/install,
+ * POST starter/uninstall.
+ *
  * Phase 6 and 8 additions (service and process managers, file transfer, the Mesh terminal and files views, collected logs and log rules) are routed to
  * {@see RemoteApi}, which lists them; `POST endpoint_devices/{id}/remote` also takes `view` (desktop, terminal or files).
  *
@@ -85,6 +88,7 @@ final class TechnicianApi
         private readonly ?FieldActions $fields = null,
         private readonly ?AlertingApi $alerting = null,
         private readonly ?RemoteApi $remoteApi = null,
+        private readonly ?StarterApi $starterApi = null,
     ) {
     }
 
@@ -121,6 +125,9 @@ final class TechnicianApi
             }
             if ($seg !== [] && $this->remoteApi !== null && in_array($seg[0], RemoteApi::FLEET, true)) {
                 return $this->remoteApi->fleet($req, $who, $seg);
+            }
+            if ($seg !== [] && $this->starterApi !== null && in_array($seg[0], StarterApi::FLEET, true)) {
+                return $this->starterApi->fleet($req, $who, $seg);
             }
             if ($seg !== [] && in_array($seg[0], ['policies', 'scripts', 'runs', 'approvals', 'schedules', 'fields'], true) && $this->read->automation() !== null) {
                 return $this->automationRoute($req, $who, $method, $seg);

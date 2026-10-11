@@ -1,0 +1,15 @@
+{
+  "id": "lin-cron-jobs",
+  "name": "Scheduled jobs (Linux)",
+  "description": "Lists system crontab, cron.d, per-user crontabs and systemd timers.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "scheduling",
+    "audit"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Non-comment cron lines and the timer list. Exit 0."
+}

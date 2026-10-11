@@ -1,0 +1,15 @@
+{
+  "id": "lin-containers",
+  "name": "Containers (Linux)",
+  "description": "Lists Docker and Podman containers and disk usage if installed.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "containers",
+    "inventory"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "ps -a and system df per engine. Exit 0; NOT AVAILABLE if neither is present."
+}

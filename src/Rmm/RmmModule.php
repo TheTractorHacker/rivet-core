@@ -100,6 +100,10 @@ use RivetCore\Rmm\Technician\FieldActions;
 use RivetCore\Rmm\Technician\InventoryActions;
 use RivetCore\Rmm\Technician\PolicyActions;
 use RivetCore\Rmm\Technician\ScriptActions;
+use RivetCore\Rmm\Technician\StarterActions;
+use RivetCore\Rmm\Starter\StarterInstaller;
+use RivetCore\Rmm\Starter\StarterPack;
+use RivetCore\Rmm\Http\StarterApi;
 use RivetCore\Rmm\Technician\TechnicianActions;
 use RivetCore\Rmm\Update\UpdateService;
 use RivetCore\Webhooks\UrlPolicy;
@@ -178,6 +182,9 @@ final class RmmModule
     private ?PolicyActions $policyActions = null;
     private ?ScriptActions $scriptActions = null;
     private ?FieldActions $fieldActions = null;
+    private ?StarterInstaller $starterInstaller = null;
+    private ?StarterActions $starterActions = null;
+    private ?StarterApi $starterApi = null;
     private ?ScheduleGateInterface $scheduleGate = null;
     private ?RemoteSettings $remoteSettings = null;
     private ?TransferService $transferService = null;
@@ -192,7 +199,7 @@ final class RmmModule
     private readonly RmmEventsInterface $events;
 
     /**
-     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface} $options
+     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -676,6 +683,37 @@ final class RmmModule
         return $this->fieldActions ??= new FieldActions($this->authorizer(), $this->customFields(), $this->devices(), $this->audit, $this->tenancy);
     }
 
+    /**
+     * The starter pack installer: the bundled pack plus any pack folders listed in the `starter_packs` option (see docs/rmm/STARTER_PACK.md). No tables of
+     * its own; it installs through {@see scripts()} and {@see policyStore()}.
+     */
+    public function starterInstaller(): StarterInstaller
+    {
+        if ($this->starterInstaller === null) {
+            $packs = [StarterPack::bundled()];
+            foreach ((array) ($this->options['starter_packs'] ?? []) as $dir) {
+                if (is_string($dir) && $dir !== '') {
+                    $packs[] = StarterPack::fromDirectory($dir);
+                }
+            }
+            $this->starterInstaller = new StarterInstaller($this->sql(), $this->scripts(), $this->policyStore(), $this->settings(), $packs);
+        }
+
+        return $this->starterInstaller;
+    }
+
+    /** Browse, preview, install and remove starter pack content (administrators; needs the edition's AccessPolicy). */
+    public function starterActions(): StarterActions
+    {
+        return $this->starterActions ??= new StarterActions($this->authorizer(), $this->starterInstaller(), $this->audit, $this->eventPublisher());
+    }
+
+    /** The starter pack routes (mounted by {@see technicianApi()}). */
+    public function starterApi(): StarterApi
+    {
+        return $this->starterApi ??= new StarterApi($this->starterActions());
+    }
+
     // ------------------------------------------------------------------ technician and administration side
 
     /** Who may do what: the edition's AccessPolicy plus its tenancy scope, with the module switch. @throws \LogicException without a policy */
@@ -731,7 +769,7 @@ final class RmmModule
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */
     public function technicianApi(): TechnicianApi
     {
-        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi());
+        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi());
     }
 
     /** The alerts, maintenance windows, escalation policies and thresholds routes (mounted by {@see technicianApi()}). */

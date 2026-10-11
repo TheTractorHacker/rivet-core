@@ -1,0 +1,16 @@
+{
+  "id": "win-disk-health",
+  "name": "Physical disk health (Windows)",
+  "description": "Reports physical disk health, operational status, media type and size, plus temperature, wear and read error counters when available.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "disk",
+    "health",
+    "storage"
+  ],
+  "timeout_s": 90,
+  "params": [],
+  "output": "Disk table and per-disk reliability counters; NOT AVAILABLE where cmdlets are missing. Exit 0."
+}

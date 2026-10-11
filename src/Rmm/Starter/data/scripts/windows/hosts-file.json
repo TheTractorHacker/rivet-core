@@ -1,0 +1,16 @@
+{
+  "id": "win-hosts-file",
+  "name": "Hosts file contents (Windows)",
+  "description": "Prints the active entries of the hosts file with the entry count, SHA256 hash and last write time.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "hosts",
+    "dns",
+    "security"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "File metadata and the non-comment lines (up to 200). Exit 0."
+}

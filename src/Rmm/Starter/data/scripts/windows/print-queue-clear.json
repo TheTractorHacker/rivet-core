@@ -1,0 +1,24 @@
+{
+  "id": "win-print-queue-clear",
+  "name": "Clear print queue (Windows)",
+  "description": "Stops the Print Spooler, deletes only the *.SPL and *.SHD files in the spool PRINTERS folder, then starts the Spooler again. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "disruptive",
+  "tags": [
+    "print",
+    "spooler",
+    "cleanup"
+  ],
+  "timeout_s": 180,
+  "params": [
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When true (default) nothing is changed and the script only reports what it would do."
+    }
+  ],
+  "output": "File count and bytes, then [DONE]/[SKIP] lines or a [DRY-RUN] line. Exit 0; 3 if the spooler is not running afterwards."
+}

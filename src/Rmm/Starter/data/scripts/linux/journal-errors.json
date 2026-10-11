@@ -1,0 +1,34 @@
+{
+  "id": "lin-journal-errors",
+  "name": "Recent journal errors (Linux)",
+  "description": "Shows error-level log entries from the last N hours grouped by unit, with a fallback to syslog files.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "logs",
+    "diagnostics"
+  ],
+  "timeout_s": 60,
+  "params": [
+    {
+      "name": "hours",
+      "type": "int",
+      "label": "Hours to look back",
+      "description": "Time window in hours.",
+      "default": 24,
+      "min": 1,
+      "max": 168
+    },
+    {
+      "name": "limit",
+      "type": "int",
+      "label": "Max lines",
+      "description": "Maximum number of log lines to show.",
+      "default": 200,
+      "min": 10,
+      "max": 1000
+    }
+  ],
+  "output": "Counts by unit then the most recent lines. Exit 0."
+}

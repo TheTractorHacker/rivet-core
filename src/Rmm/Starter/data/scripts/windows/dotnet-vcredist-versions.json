@@ -1,0 +1,16 @@
+{
+  "id": "win-dotnet-vcredist-versions",
+  "name": ".NET and Visual C++ runtimes (Windows)",
+  "description": "Lists the installed .NET Framework version, .NET runtimes (if dotnet is installed) and Visual C++ redistributables.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "dotnet",
+    "inventory",
+    "software"
+  ],
+  "timeout_s": 90,
+  "params": [],
+  "output": "Three sections: .NET Framework, .NET runtimes, Visual C++ redistributables. Exit 0."
+}

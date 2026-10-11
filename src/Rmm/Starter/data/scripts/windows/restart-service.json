@@ -1,0 +1,41 @@
+{
+  "id": "win-restart-service",
+  "name": "Restart a named service (Windows)",
+  "description": "Restarts one service by exact name after strict validation. Refuses the agent and critical system services. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "disruptive",
+  "tags": [
+    "service",
+    "restart",
+    "remediation"
+  ],
+  "timeout_s": 180,
+  "params": [
+    {
+      "name": "service_name",
+      "type": "string",
+      "label": "Service name",
+      "description": "Exact service name (not display name), letters, digits and _ . @ : - only. No wildcards.",
+      "required": true,
+      "max_length": 100
+    },
+    {
+      "name": "wait_seconds",
+      "type": "int",
+      "label": "Wait seconds",
+      "description": "How long to wait for the service to stop and to start.",
+      "default": 60,
+      "min": 5,
+      "max": 300
+    },
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When true (default) nothing is changed and the script only reports what it would do."
+    }
+  ],
+  "output": "State before and after plus [DONE]/[SKIP] lines, or [DRY-RUN] lines. Exit 0 on success, 2 invalid or refused name, 3 service not running afterwards."
+}

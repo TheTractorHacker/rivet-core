@@ -1,0 +1,36 @@
+{
+  "id": "win-browser-cache-clean",
+  "name": "Clean Chrome and Edge cache (Windows)",
+  "description": "Clears the Cache, Code Cache and GPUCache folders of Chrome and Edge for all user profiles, skipping a running browser. Cookies, history and passwords are not touched. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "changes_system",
+  "tags": [
+    "browser",
+    "cache",
+    "cleanup"
+  ],
+  "timeout_s": 300,
+  "params": [
+    {
+      "name": "browser",
+      "type": "choice",
+      "label": "Browser",
+      "description": "Which browser caches to clear.",
+      "default": "both",
+      "choices": [
+        "both",
+        "chrome",
+        "edge"
+      ]
+    },
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When true (default) nothing is changed and the script only reports what it would do."
+    }
+  ],
+  "output": "Per-folder [DONE]/[DRY-RUN]/[SKIP] lines and total bytes. Exit 0; exit 2 on invalid parameters."
+}

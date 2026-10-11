@@ -1,0 +1,15 @@
+{
+  "id": "lin-smart-health",
+  "name": "Disk SMART health (Linux)",
+  "description": "Runs smartctl health checks on physical disks and NVMe devices.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "disk",
+    "hardware"
+  ],
+  "timeout_s": 120,
+  "params": [],
+  "output": "Per-device health line. Exit 0; NOT AVAILABLE without smartmontools."
+}

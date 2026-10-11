@@ -1,0 +1,16 @@
+{
+  "id": "win-local-administrators",
+  "name": "Local Administrators group members (Windows)",
+  "description": "Lists the members of the local Administrators group with their source and object class. Report only.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "security",
+    "accounts",
+    "inventory"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Table of members with name, class and source. Exit 0."
+}

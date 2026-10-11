@@ -1,0 +1,15 @@
+{
+  "id": "lin-last-logins",
+  "name": "Recent logins (Linux)",
+  "description": "Shows recent logins, failed login count when readable, and users currently logged in.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "security",
+    "audit"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "last, lastb count and who output. Exit 0."
+}

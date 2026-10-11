@@ -1,0 +1,2637 @@
+{
+    "pack": {
+        "id": "rivet-core-starter",
+        "name": "RivetCore RMM starter pack",
+        "version": "1.0.0",
+        "description": "Ready-made scripts, check templates and policy drafts so a new RMM install is useful on day one.",
+        "pack_sha256": "587e930b0b03e0fd976d28da568f92a9d643098c66b41897c2e365724b9a404f"
+    },
+    "counts": {
+        "scripts": 73,
+        "windows": 41,
+        "linux": 32,
+        "check_sets": 3,
+        "policies": 3
+    },
+    "scripts": [
+        {
+            "id": "lin-cert-expiry",
+            "name": "Certificate expiry check (Linux)",
+            "description": "Shows subject, issuer and days left for a PEM certificate file. Refuses files containing private keys.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "certificates",
+                "security"
+            ],
+            "timeout_s": 30,
+            "params": [
+                {
+                    "name": "cert_file",
+                    "type": "string",
+                    "required": true,
+                    "label": "Certificate file",
+                    "description": "Absolute path of a PEM or CRT certificate file.",
+                    "max_length": 250
+                }
+            ],
+            "output": "Subject, issuer, expiry date and days left. Exit 0; 2 invalid path or private key file; NOT AVAILABLE without openssl.",
+            "file": "scripts/linux/cert-expiry.sh",
+            "size_bytes": 1465,
+            "body_sha256": "2e4ae03d325553497ffaf122eb561745b0a2f920583e4bf5b84111dbe7f81289",
+            "content_hash": "5abbb61a7782e5653606e72080ed7acab045a8d32e2e1c51a3980f73652e34b8"
+        },
+        {
+            "id": "lin-containers",
+            "name": "Containers (Linux)",
+            "description": "Lists Docker and Podman containers and disk usage if installed.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "containers",
+                "inventory"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "ps -a and system df per engine. Exit 0; NOT AVAILABLE if neither is present.",
+            "file": "scripts/linux/containers.sh",
+            "size_bytes": 671,
+            "body_sha256": "8c5c301ba608f317c8c0fad5af66c79f2ef3289668ff223c69493aa655f2e48b",
+            "content_hash": "2a39babe1d5ef31fb75193013cfc8a1e291ef00c65d2afc8c9f9e5abcb132c34"
+        },
+        {
+            "id": "lin-cron-jobs",
+            "name": "Scheduled jobs (Linux)",
+            "description": "Lists system crontab, cron.d, per-user crontabs and systemd timers.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "scheduling",
+                "audit"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Non-comment cron lines and the timer list. Exit 0.",
+            "file": "scripts/linux/cron-jobs.sh",
+            "size_bytes": 1130,
+            "body_sha256": "4bf76d30331e0f41c8f7051e8e9a270d3ac72f299ade1498406c0a39f75226ad",
+            "content_hash": "bc696b21ead13ff208fdeca96134f412ede7b7010548220df60d807d12c7ee7b"
+        },
+        {
+            "id": "lin-disk-usage",
+            "name": "Disk usage by filesystem (Linux)",
+            "description": "Shows filesystem usage with df, excluding tmpfs, overlay and similar noise.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "disk",
+                "diagnostics"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "df -hT table and a list of filesystems at 90 percent or more. Exit 0.",
+            "file": "scripts/linux/disk-usage.sh",
+            "size_bytes": 618,
+            "body_sha256": "9cec6b0a8f96614880d2e8e8b04f0ec1df8373d3b92bcc32e9a73381bc1d235e",
+            "content_hash": "34bb89337f79ea112c22c2f106011aa59470de4ce1dde2d30840893c1b40968a"
+        },
+        {
+            "id": "lin-fail2ban-status",
+            "name": "Fail2ban status (Linux)",
+            "description": "Shows fail2ban jails and their ban counts if fail2ban is installed.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "logs"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "Jail list and per-jail summary. Exit 0; NOT AVAILABLE if absent.",
+            "file": "scripts/linux/fail2ban-status.sh",
+            "size_bytes": 515,
+            "body_sha256": "0392ed9b8f10aee3a1ff6694e3c742efaf41e622b38fa9f56287da73086ee133",
+            "content_hash": "3167a8559402c3fff71b85ef06ad8df62469d57c6008feafe60849749dc331a5"
+        },
+        {
+            "id": "lin-failed-units",
+            "name": "Failed systemd units (Linux)",
+            "description": "Lists failed systemd units and the slowest boot units.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "services",
+                "diagnostics"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Prints 'FAILED UNITS: N' and details. Exit 0 even when units have failed; NOT AVAILABLE without systemd.",
+            "file": "scripts/linux/failed-units.sh",
+            "size_bytes": 662,
+            "body_sha256": "3c4e09692998ba576e54bd9d7e84e614cc57261909d0d44f601a0a517614587f",
+            "content_hash": "343e68a0deec02fd41f49e00cf37ff2874216e607de850a28ef20c073ce6037c"
+        },
+        {
+            "id": "lin-firewall-status",
+            "name": "Firewall status (Linux)",
+            "description": "Reports the state and rules summary of ufw, firewalld, nftables and iptables, whichever exist.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "network",
+                "security"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Per-tool status and a trimmed rule listing. Exit 0.",
+            "file": "scripts/linux/firewall-status.sh",
+            "size_bytes": 963,
+            "body_sha256": "aed80412b49efc30a64ab21ceeb2fa55ac66dd2a3aaf0890fb71373b1eec1a54",
+            "content_hash": "811cbc747d043fa7e73a603ec78296a1a7c49f03a117d19de92b676b35efc936"
+        },
+        {
+            "id": "lin-inode-usage",
+            "name": "Inode usage (Linux)",
+            "description": "Shows inode usage per filesystem with df -i and flags filesystems at 90 percent or more.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "disk",
+                "diagnostics"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "df -i table plus a warning list. Exit 0.",
+            "file": "scripts/linux/inode-usage.sh",
+            "size_bytes": 622,
+            "body_sha256": "e9bdafc5790600e42a3bf8b72017677f26684bb9ca73feb4d2b6b988e3cf8290",
+            "content_hash": "38c022c0b07ef1d650a3a166959e71e69afde20bc91072fcfef3f8eca6378ab2"
+        },
+        {
+            "id": "lin-installed-packages",
+            "name": "Installed packages (Linux)",
+            "description": "Lists installed package names and versions sorted by name.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "inventory",
+                "software"
+            ],
+            "timeout_s": 60,
+            "params": [
+                {
+                    "name": "limit",
+                    "type": "int",
+                    "required": false,
+                    "label": "Max packages",
+                    "description": "Maximum number of packages to list.",
+                    "min": 50,
+                    "max": 5000,
+                    "default": 500
+                }
+            ],
+            "output": "Total count and name-version lines (truncated). Exit 0.",
+            "file": "scripts/linux/installed-packages.sh",
+            "size_bytes": 787,
+            "body_sha256": "66c5ab2787719c3396a1da5c3fcf3cfe66c7a4b7e033d437e828ecb658bcb17d",
+            "content_hash": "4cb054a458f5a3a0c3c5a54b7bf84d27e67047bc9938d53a1a03ac992e436f5a"
+        },
+        {
+            "id": "lin-journal-errors",
+            "name": "Recent journal errors (Linux)",
+            "description": "Shows error-level log entries from the last N hours grouped by unit, with a fallback to syslog files.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "logs",
+                "diagnostics"
+            ],
+            "timeout_s": 60,
+            "params": [
+                {
+                    "name": "hours",
+                    "type": "int",
+                    "required": false,
+                    "label": "Hours to look back",
+                    "description": "Time window in hours.",
+                    "min": 1,
+                    "max": 168,
+                    "default": 24
+                },
+                {
+                    "name": "limit",
+                    "type": "int",
+                    "required": false,
+                    "label": "Max lines",
+                    "description": "Maximum number of log lines to show.",
+                    "min": 10,
+                    "max": 1000,
+                    "default": 200
+                }
+            ],
+            "output": "Counts by unit then the most recent lines. Exit 0.",
+            "file": "scripts/linux/journal-errors.sh",
+            "size_bytes": 1582,
+            "body_sha256": "4c1b87992d69ee1e4a4d02069185fe7e39cf91a85d48eb6a06e98652ac5079cb",
+            "content_hash": "f98da5a8a4d0da474f98161491e8fb8c663219ff26277672c572e79afd358b9b"
+        },
+        {
+            "id": "lin-journal-vacuum",
+            "name": "Vacuum systemd journal (Linux)",
+            "description": "Removes journal entries older than a number of days and reports size before and after.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "changes_system",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "maintenance",
+                "logs",
+                "disk"
+            ],
+            "timeout_s": 120,
+            "params": [
+                {
+                    "name": "keep_days",
+                    "type": "int",
+                    "required": false,
+                    "label": "Days to keep",
+                    "description": "Journal entries older than this are removed.",
+                    "min": 1,
+                    "max": 365,
+                    "default": 14
+                },
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When true (default) only reports the journal size.",
+                    "default": true
+                }
+            ],
+            "output": "[DRY-RUN]/[DONE]/[SKIP] lines with sizes. Exit 0; NOT AVAILABLE without journalctl.",
+            "file": "scripts/linux/journal-vacuum.sh",
+            "size_bytes": 981,
+            "body_sha256": "b1b5da6afca04632186e40999845809ad884b2c48b67bb089fe2b68413d6d5cf",
+            "content_hash": "36483cd83dde135a4b51b53238fa59ca9aa0ff3740064ec6cea026d00bba2cec"
+        },
+        {
+            "id": "lin-largest-dirs",
+            "name": "Largest directories under a path (Linux)",
+            "description": "Shows the largest first-level directories under a root directory, staying on one filesystem. Aborts after 120 seconds.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "disk",
+                "diagnostics"
+            ],
+            "timeout_s": 180,
+            "params": [
+                {
+                    "name": "root_dir",
+                    "type": "string",
+                    "required": false,
+                    "label": "Root directory",
+                    "description": "Absolute path whose first-level subdirectories are measured.",
+                    "max_length": 250,
+                    "default": "/"
+                },
+                {
+                    "name": "top_n",
+                    "type": "int",
+                    "required": false,
+                    "label": "Rows to show",
+                    "description": "How many directories to list.",
+                    "min": 1,
+                    "max": 50,
+                    "default": 15
+                }
+            ],
+            "output": "Sorted size list. Exit 0; exit 2 on an invalid path or number; notes when the scan timed out.",
+            "file": "scripts/linux/largest-dirs.sh",
+            "size_bytes": 1296,
+            "body_sha256": "6affb1ae765e8e2cf1505720b77565bb53b7c5d74dcc6a6ead4fd492a1dd5605",
+            "content_hash": "c782b3d040ff7f803423fd923bcc0a750f5ddbd1b4e4d6912f046b9786f94902"
+        },
+        {
+            "id": "lin-last-logins",
+            "name": "Recent logins (Linux)",
+            "description": "Shows recent logins, failed login count when readable, and users currently logged in.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "audit"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "last, lastb count and who output. Exit 0.",
+            "file": "scripts/linux/last-logins.sh",
+            "size_bytes": 709,
+            "body_sha256": "fb73575ed09968cfe083f6893ba10b4c66a144d8aceb5add269bb5654aae0bf9",
+            "content_hash": "9580052daf8b146db9115e0a8b2149b9f1bf71457a250f6c1d47f9ac29394496"
+        },
+        {
+            "id": "lin-listening-ports",
+            "name": "Listening ports (Linux)",
+            "description": "Lists listening TCP and UDP sockets with owning processes using ss or netstat.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "network",
+                "security"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "Socket table. Exit 0; NOT AVAILABLE without ss or netstat.",
+            "file": "scripts/linux/listening-ports.sh",
+            "size_bytes": 331,
+            "body_sha256": "dfc174b232dd82e3b6a3f5957e91a7749c2fd6494730bca81b2e8fb02d96952a",
+            "content_hash": "1b643ada6745d8e240dcae53cc895389fe7c5875e85b36b3760d54b6d1376977"
+        },
+        {
+            "id": "lin-logged-in-users-sessions",
+            "name": "Logged-in users and sessions (Linux)",
+            "description": "Shows active login sessions using loginctl, who and w.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "sessions",
+                "audit"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "Session listings. Exit 0.",
+            "file": "scripts/linux/logged-in-users-sessions.sh",
+            "size_bytes": 543,
+            "body_sha256": "1ae46fb1c4fd3ce3bf7e9e3ea7f4dd219dea5964531953b3cc138e54f91b23f3",
+            "content_hash": "8fdb7269b04d04a2b227c3e0bcbbf0e2df79f74efe1ede5f73a5e127b5ec449e"
+        },
+        {
+            "id": "lin-memory-swap",
+            "name": "Memory, swap and pressure (Linux)",
+            "description": "Reports free memory, swap devices, the top memory consumers and pressure stall information when present.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "memory",
+                "diagnostics"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "free output, swap devices, top 5 processes by memory, PSI if present. Exit 0.",
+            "file": "scripts/linux/memory-swap.sh",
+            "size_bytes": 839,
+            "body_sha256": "0e251c835d08f650d5ba26a07276f575cc5399208085d684eea8cea1c38d6e5d",
+            "content_hash": "cbc85f08842f457955b1a347e0d34565492dd666f28d2f0fc7915839a402a5cf"
+        },
+        {
+            "id": "lin-mounts-fstab",
+            "name": "Mounts and fstab review (Linux)",
+            "description": "Lists mounts, read-only mounts, fstab contents and filesystems at 90 percent or more.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "disk",
+                "diagnostics"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "Mount table, flags and warnings. Exit 0.",
+            "file": "scripts/linux/mounts-fstab.sh",
+            "size_bytes": 1570,
+            "body_sha256": "51795b1ba99e723d6cf66809af52aa51eca05cb8d8f4f39bf2d74b0ba7a88be3",
+            "content_hash": "52a7bd1526cddee339ffd7a0b9199241aa24cafa90ad68d74e17d9f699286d3d"
+        },
+        {
+            "id": "lin-needrestart-check",
+            "name": "Reboot and restart needed check (Linux)",
+            "description": "Reports whether a reboot is required and which services need a restart (needrestart, Debian flag files, needs-restarting, zypper ps).",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "patching",
+                "diagnostics"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Prints 'REBOOT REQUIRED: yes/no' plus details. Always exits 0.",
+            "file": "scripts/linux/needrestart-check.sh",
+            "size_bytes": 1207,
+            "body_sha256": "d2878d888a8b28633fe29d1dae0350938b11db5ed8ea4a87fabdce6bbb5f5117",
+            "content_hash": "f3eba5b1fd8755e931dfde4eef7d1ba0dcdd15f811392615bff9ec9c72d5d113"
+        },
+        {
+            "id": "lin-network-diagnostics",
+            "name": "Network diagnostics to a target (Linux)",
+            "description": "Pings, traces the route to and resolves a validated host name or IP address.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "network",
+                "diagnostics"
+            ],
+            "timeout_s": 120,
+            "params": [
+                {
+                    "name": "target",
+                    "type": "string",
+                    "required": true,
+                    "label": "Target host",
+                    "description": "Host name or IP address to test.",
+                    "max_length": 253
+                },
+                {
+                    "name": "count",
+                    "type": "int",
+                    "required": false,
+                    "label": "Ping count",
+                    "description": "Number of ping packets.",
+                    "min": 1,
+                    "max": 10,
+                    "default": 4
+                }
+            ],
+            "output": "ping summary, route trace, name resolution. Exit 0; 2 invalid target.",
+            "file": "scripts/linux/network-diagnostics.sh",
+            "size_bytes": 1239,
+            "body_sha256": "11feabc4a9d12cc06e2eae088956a683a0456d55e6388585823c650dbb61e7ca",
+            "content_hash": "412d9108959d9d4d3fb043447cf5322c6c23a9ada0f97b24ff15beec0324b147"
+        },
+        {
+            "id": "lin-network-interfaces",
+            "name": "Network interfaces and routes (Linux)",
+            "description": "Shows addresses, routes, default gateway and DNS servers.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "network",
+                "inventory"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "Interface, route and resolver listing. Exit 0.",
+            "file": "scripts/linux/network-interfaces.sh",
+            "size_bytes": 789,
+            "body_sha256": "60943ba5287c4c804ef8e9572c58eb48134ef1967a448f30a53e10029b44283b",
+            "content_hash": "1369d6ba5a998aa013f233258a3282093e1c128c026b743c6929471f917b2b23"
+        },
+        {
+            "id": "lin-package-cache-clean",
+            "name": "Clean package cache (Linux)",
+            "description": "Cleans the apt, dnf, yum or zypper package cache and reports bytes before and after.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "changes_system",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "maintenance",
+                "disk"
+            ],
+            "timeout_s": 180,
+            "params": [
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When true (default) only reports the cache size and what would be cleaned.",
+                    "default": true
+                }
+            ],
+            "output": "[DRY-RUN]/[DONE]/[SKIP] lines with sizes. Exit 0.",
+            "file": "scripts/linux/package-cache-clean.sh",
+            "size_bytes": 1244,
+            "body_sha256": "f1acad5a6a348d31964a8bb52e50990d6b3afc0acb3791d7d236aed452991204",
+            "content_hash": "a1b130fffb7b148cfa2bf13ec33530caddbc5aacff048bcff9bfa91b2b85a967"
+        },
+        {
+            "id": "lin-privileged-accounts",
+            "name": "Privileged accounts audit (Linux)",
+            "description": "Lists uid 0 accounts, sudo/wheel/admin members, sudoers entries, NOPASSWD rules, login shells and password-less accounts without printing hashes.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "audit",
+                "accounts"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Sections per check. Exit 0.",
+            "file": "scripts/linux/privileged-accounts.sh",
+            "size_bytes": 1427,
+            "body_sha256": "75a98d544f20b311b89e34e0f65f50928948f4e4ba70e38cc61075f632969dfc",
+            "content_hash": "b0ec617a7a938cadc363295312862fbbbd8850e6d999b0fc951ddd5c66f1809f"
+        },
+        {
+            "id": "lin-reboot-if-required",
+            "name": "Reboot if required (Linux)",
+            "description": "Schedules a delayed reboot with a wall message only if a reboot is required and none is already scheduled.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "disruptive",
+            "requires_approval": true,
+            "destructive": true,
+            "tags": [
+                "patching",
+                "reboot"
+            ],
+            "timeout_s": 60,
+            "params": [
+                {
+                    "name": "delay_minutes",
+                    "type": "int",
+                    "required": false,
+                    "label": "Delay minutes",
+                    "description": "Minutes until the reboot.",
+                    "min": 1,
+                    "max": 1440,
+                    "default": 15
+                },
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When true (default) only reports whether a reboot would be scheduled.",
+                    "default": true
+                }
+            ],
+            "output": "[DRY-RUN]/[DONE]/[SKIP] lines. Exit 0; 3 if scheduling fails.",
+            "file": "scripts/linux/reboot-if-required.sh",
+            "size_bytes": 1767,
+            "body_sha256": "f58e8ff09501159fedd4bfde2fa642246b968a141e43e16dc92b6cf17575ec45",
+            "content_hash": "6e2ea17376998364f920d56ecea3813fea8d5f7141b4d7337f2ccf981037962f"
+        },
+        {
+            "id": "lin-restart-unit",
+            "name": "Restart a systemd unit (Linux)",
+            "description": "Restarts a named systemd unit and reports its state before and after. Refuses rivet*, systemd-* and dbus* units.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "disruptive",
+            "requires_approval": true,
+            "destructive": true,
+            "tags": [
+                "services",
+                "remediation"
+            ],
+            "timeout_s": 360,
+            "params": [
+                {
+                    "name": "unit_name",
+                    "type": "string",
+                    "required": true,
+                    "label": "Unit name",
+                    "description": "Name of the systemd unit to restart, for example nginx.service.",
+                    "max_length": 100
+                },
+                {
+                    "name": "wait_seconds",
+                    "type": "int",
+                    "required": false,
+                    "label": "Wait seconds",
+                    "description": "How long to wait for the unit to become active.",
+                    "min": 5,
+                    "max": 300,
+                    "default": 30
+                },
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When true (default) only reports what would be restarted.",
+                    "default": true
+                }
+            ],
+            "output": "[DRY-RUN]/[DONE]/[SKIP] lines with is-active before and after. Exit 0; 2 invalid or refused name; 3 unit missing or restart failed.",
+            "file": "scripts/linux/restart-unit.sh",
+            "size_bytes": 1904,
+            "body_sha256": "e3aad51a6d6588f3602acb27fa8a08db40f95b0b7a0aab9a5c8da795aa0ef0cd",
+            "content_hash": "691db96f7dc9ae9bbf1b90079f980670907b0ec3a0e7b9282bb29e8f44ac86ee"
+        },
+        {
+            "id": "lin-security-updates",
+            "name": "Security updates available (Linux)",
+            "description": "Lists pending security-only updates using apt, dnf, yum or zypper without installing anything.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "patching",
+                "security"
+            ],
+            "timeout_s": 180,
+            "params": [],
+            "output": "Count and list of security updates (first 100). Exit 0.",
+            "file": "scripts/linux/security-updates.sh",
+            "size_bytes": 1579,
+            "body_sha256": "269c452f8e0a02a3c02a0de511b0dbed1a575287c22f730453589c397cd2dd56",
+            "content_hash": "a728f09e1b761bd1b658e230fb8a9140cfa58fa214f36d6a3b7223af664a70bb"
+        },
+        {
+            "id": "lin-services-running",
+            "name": "Running services (Linux)",
+            "description": "Lists running systemd services and counts enabled unit files.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "services",
+                "inventory"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "Running service list and enabled count. Exit 0; NOT AVAILABLE without systemd.",
+            "file": "scripts/linux/services-running.sh",
+            "size_bytes": 588,
+            "body_sha256": "55ea4b5105766958cf1854c1cfbc317a6be2fa7811f8d40954502422ab06619a",
+            "content_hash": "39e194905f84468c9796baced92ce93bd8b8f88d1fd4d4ba01c863100b4f68f2"
+        },
+        {
+            "id": "lin-smart-health",
+            "name": "Disk SMART health (Linux)",
+            "description": "Runs smartctl health checks on physical disks and NVMe devices.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "disk",
+                "hardware"
+            ],
+            "timeout_s": 120,
+            "params": [],
+            "output": "Per-device health line. Exit 0; NOT AVAILABLE without smartmontools.",
+            "file": "scripts/linux/smart-health.sh",
+            "size_bytes": 1114,
+            "body_sha256": "6f3e6a2d6edadc669c40c906aaa9036c0e0f2849e366532d012ff4f5c37aa295",
+            "content_hash": "53d28f68682bd2a2d5cc35e6358e6b0f4a46a91c8318eaab34985c33a2520730"
+        },
+        {
+            "id": "lin-ssh-audit",
+            "name": "SSH server configuration audit (Linux)",
+            "description": "Read-only audit of the effective sshd configuration with PASS or REVIEW remarks.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "audit"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "One line per setting with PASS/REVIEW. Exit 0; NOT AVAILABLE if sshd is not installed.",
+            "file": "scripts/linux/ssh-audit.sh",
+            "size_bytes": 2519,
+            "body_sha256": "df9db90c7b4dd6772292a5aa7bf1e9f5957a4e8aaa9564649cda599bd00db6cb",
+            "content_hash": "61fecaa6d9d2e64c20babfb4dbd1809730ef91df557f9bbb2bc43ce714b83936"
+        },
+        {
+            "id": "lin-system-summary",
+            "name": "System summary (Linux)",
+            "description": "OS release, kernel, architecture, uptime, load, virtualization, CPU and memory, hostname and last boot time.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "inventory",
+                "diagnostics"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "Prints a labelled summary. Always exits 0.",
+            "file": "scripts/linux/system-summary.sh",
+            "size_bytes": 1657,
+            "body_sha256": "2b1579bf85921d193648b3d5c9f274402cfbf782e1321b9798e214d0e50a8be2",
+            "content_hash": "4e2eb445983f8511b21b166000e8ad36c9cba2132278028ef025d6391d402391"
+        },
+        {
+            "id": "lin-time-sync",
+            "name": "Time synchronization (Linux)",
+            "description": "Reports clock sync state using timedatectl, chrony, ntpq or systemd-timesyncd.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "time",
+                "diagnostics"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "Prints 'SYNCHRONIZED: yes/no/unknown' plus tool output. Exit 0.",
+            "file": "scripts/linux/time-sync.sh",
+            "size_bytes": 1323,
+            "body_sha256": "2a3f007c51e259e3835ecec86e5ee8d71d3a1c5dd4f1dca39bea94b2784b56db",
+            "content_hash": "9a4609795e45b812b5d6bccf77c26b11744a6f15ed9a4416ddd62c848b747a4e"
+        },
+        {
+            "id": "lin-top-processes",
+            "name": "Top processes by CPU and memory (Linux)",
+            "description": "Lists the busiest processes by CPU and by memory using ps.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "diagnostics",
+                "performance"
+            ],
+            "timeout_s": 30,
+            "params": [
+                {
+                    "name": "top_n",
+                    "type": "int",
+                    "required": false,
+                    "label": "Rows to show",
+                    "description": "How many processes to list per ranking.",
+                    "min": 1,
+                    "max": 50,
+                    "default": 10
+                }
+            ],
+            "output": "Two tables (by CPU, by memory). Exit 0; NOT AVAILABLE if ps is missing.",
+            "file": "scripts/linux/top-processes.sh",
+            "size_bytes": 636,
+            "body_sha256": "71e1c04ef177870094784feba326ee3f6cbb284f113aaa796aa52760262e9d88",
+            "content_hash": "0398eb4162b8887218794f6d74b01f8d5db3a0db347be2f0b219cfd7f9c948db"
+        },
+        {
+            "id": "lin-updates-available",
+            "name": "Updates available (Linux)",
+            "description": "Lists pending package updates using apt, dnf, yum or zypper without refreshing indexes or installing anything.",
+            "platform": "linux",
+            "language": "bash",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "patching",
+                "updates"
+            ],
+            "timeout_s": 180,
+            "params": [],
+            "output": "Package manager name, index age (apt), and a list of upgradable packages (first 100). Exit 0.",
+            "file": "scripts/linux/updates-available.sh",
+            "size_bytes": 2019,
+            "body_sha256": "16eae7e442cbcfdec051d1dfedc96d7f703832b830b08de1dd1e730b3c7c8e7a",
+            "content_hash": "85cb7ea86afb7a92c8e70a83a98f295fdc35258b7c3fd844be674f9dd1a5f254"
+        },
+        {
+            "id": "win-battery-report",
+            "name": "Battery health report (Windows)",
+            "description": "Reports battery status and charge, and compares design to full-charge capacity as a health percentage.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "battery",
+                "hardware",
+                "health"
+            ],
+            "timeout_s": 90,
+            "params": [],
+            "output": "Battery lines and a Health percentage, or No battery present on desktops. Exit 0.",
+            "file": "scripts/windows/battery-report.ps1",
+            "size_bytes": 1881,
+            "body_sha256": "86ea33fd1304f5b37d6e61f00e6d32031fd4b3b86bd04e5e8e1c701001f48b1f",
+            "content_hash": "a37033aba7ff2fbd6850389d1cf6b98be7fbad6f4673f8a456e68a94a48597dc"
+        },
+        {
+            "id": "win-bitlocker-status",
+            "name": "BitLocker status (Windows)",
+            "description": "Reports BitLocker protection status, encryption percentage and key protector types for each volume. Never prints recovery passwords or keys.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "encryption",
+                "bitlocker"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Table of volumes with status and protector types. Exit 0; prints NOT AVAILABLE if BitLocker cmdlets are missing.",
+            "file": "scripts/windows/bitlocker-status.ps1",
+            "size_bytes": 980,
+            "body_sha256": "be75e411ad999fe1fe38b3e7b4ac6c1cbd5e4bf97cb7df6928eba2b16dcf888b",
+            "content_hash": "e79cd6fe5477d22c2a392eed41508c41e46cf1e2da39a1cf05fb4b12eabdfcba"
+        },
+        {
+            "id": "win-browser-cache-clean",
+            "name": "Clean Chrome and Edge cache (Windows)",
+            "description": "Clears the Cache, Code Cache and GPUCache folders of Chrome and Edge for all user profiles, skipping a running browser. Cookies, history and passwords are not touched. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "changes_system",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "browser",
+                "cache",
+                "cleanup"
+            ],
+            "timeout_s": 300,
+            "params": [
+                {
+                    "name": "browser",
+                    "type": "choice",
+                    "required": false,
+                    "label": "Browser",
+                    "description": "Which browser caches to clear.",
+                    "choices": [
+                        "both",
+                        "chrome",
+                        "edge"
+                    ],
+                    "default": "both"
+                },
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When true (default) nothing is changed and the script only reports what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "Per-folder [DONE]/[DRY-RUN]/[SKIP] lines and total bytes. Exit 0; exit 2 on invalid parameters.",
+            "file": "scripts/windows/browser-cache-clean.ps1",
+            "size_bytes": 2350,
+            "body_sha256": "4cd7ba131f8f74a1efc6da169956f4c68fe8fe65fed445a76147a9c79ba3f931",
+            "content_hash": "8f138e5696ff5423a96fd8a0c00e7d098c57b63df8eebc8bc0bdbfea5b5e7d10"
+        },
+        {
+            "id": "win-cert-expiring",
+            "name": "Expiring certificates (Windows)",
+            "description": "Lists certificates in a LocalMachine store that are expired or expire within a number of days.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "certificates",
+                "security",
+                "expiry"
+            ],
+            "timeout_s": 60,
+            "params": [
+                {
+                    "name": "days",
+                    "type": "int",
+                    "required": false,
+                    "label": "Days ahead",
+                    "description": "Report certificates expiring within this many days (expired ones are always included).",
+                    "min": 1,
+                    "max": 3650,
+                    "default": 30
+                },
+                {
+                    "name": "store",
+                    "type": "choice",
+                    "required": false,
+                    "label": "Certificate store",
+                    "description": "LocalMachine store to inspect.",
+                    "choices": [
+                        "My",
+                        "WebHosting",
+                        "Remote Desktop"
+                    ],
+                    "default": "My"
+                }
+            ],
+            "output": "Count and table of expired or expiring certificates (status, days left, subject, thumbprint). Exit 0; exit 2 on invalid parameters.",
+            "file": "scripts/windows/cert-expiring.ps1",
+            "size_bytes": 1555,
+            "body_sha256": "e9a87417914787240b95534d9d4834fded7f4e9a70fd2fbedc8559b406baa0f0",
+            "content_hash": "ad738f4f19025949a28aa4ede4515614b2cd320610f0cd7c9d13b4b0029af168"
+        },
+        {
+            "id": "win-clean-temp",
+            "name": "Clean Windows and user temp files (Windows)",
+            "description": "Removes files older than N days from C:\\Windows\\Temp and each profile Temp folder, reports bytes freed. Does not touch SoftwareDistribution. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "changes_system",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "cleanup",
+                "storage",
+                "maintenance"
+            ],
+            "timeout_s": 600,
+            "params": [
+                {
+                    "name": "age_days",
+                    "type": "int",
+                    "required": false,
+                    "label": "Minimum age in days",
+                    "description": "Only files last modified more than this many days ago are removed (1 to 365).",
+                    "min": 1,
+                    "max": 365,
+                    "default": 7
+                },
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When enabled, nothing is changed and the script only prints what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "Per-location [DRY-RUN]/[DONE]/[SKIP] lines and a total of bytes freed. Exit 0; exit 2 on a bad parameter.",
+            "file": "scripts/windows/clean-temp.ps1",
+            "size_bytes": 2905,
+            "body_sha256": "9cbf4d5ab5327a055bfd117535e035ed2960be760fa1fc72e6452a93d08cb9ee",
+            "content_hash": "f09d322b0e15688daa309434dc62fe72438da042b1574ac8fed2182e0cdfcfe7"
+        },
+        {
+            "id": "win-defender-quick-scan",
+            "name": "Start Microsoft Defender quick scan (Windows)",
+            "description": "Starts a Defender quick scan and waits a limited time for it to finish. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "changes_system",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "defender",
+                "antivirus"
+            ],
+            "timeout_s": 600,
+            "params": [
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When enabled, nothing is changed and the script only prints what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "[DRY-RUN] or [DONE]/[SKIP] lines. Exit 0; exit 3 if Defender is not usable.",
+            "file": "scripts/windows/defender-quick-scan.ps1",
+            "size_bytes": 1351,
+            "body_sha256": "54687e3703834402e4d96d6084d5cb5ec9dc4fb6c7d2671e4f9e031785eb8fcb",
+            "content_hash": "69b6a061aabbbb171178e66ccd031334e06a58c1d06c39a1483aa5ce26f97e7f"
+        },
+        {
+            "id": "win-defender-status",
+            "name": "Microsoft Defender status (Windows)",
+            "description": "Reports real-time protection, signature age and version, last scan times and tamper protection state.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "defender",
+                "antivirus"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Key/value Defender status lines. Exit 0; prints NOT AVAILABLE if Defender is absent.",
+            "file": "scripts/windows/defender-status.ps1",
+            "size_bytes": 992,
+            "body_sha256": "9e5a3f724998e3be21a644c2ed0d7a49bb70796d9bb464f02a6684fcc2a3d1ea",
+            "content_hash": "9ca48a91b3d8a0e1198eab0b9605a66f9e55633d9d9416697912e7f96b559d7f"
+        },
+        {
+            "id": "win-defender-update-signatures",
+            "name": "Update Microsoft Defender signatures (Windows)",
+            "description": "Asks Defender to update its antimalware signatures with Update-MpSignature. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "changes_system",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "defender",
+                "antivirus"
+            ],
+            "timeout_s": 300,
+            "params": [
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When enabled, nothing is changed and the script only prints what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "[DRY-RUN] or [DONE]/[SKIP] lines with signature version before and after. Exit 0; exit 1 if the update failed.",
+            "file": "scripts/windows/defender-update-signatures.ps1",
+            "size_bytes": 993,
+            "body_sha256": "d00a4b8226528a4c004deb7fc872b239d2a8c81b7e539e81ba7bb3cc938b33f4",
+            "content_hash": "069c74592fb50f8125b155ffd9ec74c66d0f747c549d008982da4816b86ba30d"
+        },
+        {
+            "id": "win-disk-health",
+            "name": "Physical disk health (Windows)",
+            "description": "Reports physical disk health, operational status, media type and size, plus temperature, wear and read error counters when available.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "disk",
+                "health",
+                "storage"
+            ],
+            "timeout_s": 90,
+            "params": [],
+            "output": "Disk table and per-disk reliability counters; NOT AVAILABLE where cmdlets are missing. Exit 0.",
+            "file": "scripts/windows/disk-health.ps1",
+            "size_bytes": 1470,
+            "body_sha256": "b6a64af08f5e4248cabf66a8d620a8ab0f2311adf7b93b7812e4ffe5edbf14e6",
+            "content_hash": "17644c58e857d48eff6e3012637d02df822cd76eb931a1954c288427045ae2ff"
+        },
+        {
+            "id": "win-dotnet-vcredist-versions",
+            "name": ".NET and Visual C++ runtimes (Windows)",
+            "description": "Lists the installed .NET Framework version, .NET runtimes (if dotnet is installed) and Visual C++ redistributables.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "dotnet",
+                "inventory",
+                "software"
+            ],
+            "timeout_s": 90,
+            "params": [],
+            "output": "Three sections: .NET Framework, .NET runtimes, Visual C++ redistributables. Exit 0.",
+            "file": "scripts/windows/dotnet-vcredist-versions.ps1",
+            "size_bytes": 1524,
+            "body_sha256": "fcd2f233f4035f75223dbf1c5f0f5487e875e06af48ca7ce41e1f572e6a0c0be",
+            "content_hash": "ba32944ef1c46f8170ef68773f70a05a78b915e0e9b93e1c0dce078c8e6c1b7d"
+        },
+        {
+            "id": "win-eventlog-errors",
+            "name": "Critical and error events (Windows)",
+            "description": "Summarises Critical and Error events from the System and Application logs, grouped by source and event ID with the newest message.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "eventlog",
+                "diagnostics",
+                "errors"
+            ],
+            "timeout_s": 120,
+            "params": [
+                {
+                    "name": "hours",
+                    "type": "int",
+                    "required": false,
+                    "label": "Hours to look back",
+                    "description": "How many hours of events to scan.",
+                    "min": 1,
+                    "max": 168,
+                    "default": 24
+                }
+            ],
+            "output": "Top 40 groups with counts and truncated newest message. Exit 0; exit 2 on invalid parameters.",
+            "file": "scripts/windows/eventlog-errors.ps1",
+            "size_bytes": 1593,
+            "body_sha256": "e11e6c45f671fb9baf9063ca45ce0548dab61a440de0c3afda8db34f202227cc",
+            "content_hash": "9e470ffd0d4baaff1f0c01e7af025d4a2785611d16c9e82d00fadd69427474f5"
+        },
+        {
+            "id": "win-firewall-status",
+            "name": "Windows Firewall status (Windows)",
+            "description": "Shows each firewall profile with enabled state and default actions, plus counts of enabled rules.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "firewall",
+                "network"
+            ],
+            "timeout_s": 90,
+            "params": [],
+            "output": "Profile table and rule counts by direction and action. Exit 0; prints NOT AVAILABLE if the cmdlets are missing.",
+            "file": "scripts/windows/firewall-status.ps1",
+            "size_bytes": 908,
+            "body_sha256": "19013d4e84752b673d6fe4be638ed8627eb0c0543a586109c2d8a7fea9571705",
+            "content_hash": "9d86856d195d966ff7ca66f91f907636e4daad3b5022f5f0388e7a00986d554a"
+        },
+        {
+            "id": "win-flush-dns",
+            "name": "Flush DNS resolver cache (Windows)",
+            "description": "Clears the Windows DNS client resolver cache. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "changes_system",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "dns",
+                "network",
+                "maintenance"
+            ],
+            "timeout_s": 30,
+            "params": [
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When enabled, nothing is changed and the script only prints what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "[DRY-RUN] or [DONE]/[SKIP] line. Exit 0; exit 3 if the cache could not be cleared.",
+            "file": "scripts/windows/flush-dns.ps1",
+            "size_bytes": 652,
+            "body_sha256": "d067bde9ba743c6d4040c2224370a75e89c828226829da8f58fc6e34f673de31",
+            "content_hash": "20e71e09eefe293ea787e64094b62eddcffadb6a85bbfe36c3dda26c58d28fe5"
+        },
+        {
+            "id": "win-free-space-volumes",
+            "name": "Free space by volume (Windows)",
+            "description": "Lists each fixed volume with size, free space and percent free.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "storage",
+                "disk",
+                "inventory"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Table of volumes with total, free and percent free. Exit 0.",
+            "file": "scripts/windows/free-space-volumes.ps1",
+            "size_bytes": 722,
+            "body_sha256": "db38f2da396ddeae9b9cbfe6c04b07973c40d7d7b7ce762193bdf65a9a88303b",
+            "content_hash": "da8920fd4e33789eacbf9c1ee70e4254fd7cebc857bc03ddbdc098912fbc7323"
+        },
+        {
+            "id": "win-hosts-file",
+            "name": "Hosts file contents (Windows)",
+            "description": "Prints the active entries of the hosts file with the entry count, SHA256 hash and last write time.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "hosts",
+                "dns",
+                "security"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "File metadata and the non-comment lines (up to 200). Exit 0.",
+            "file": "scripts/windows/hosts-file.ps1",
+            "size_bytes": 944,
+            "body_sha256": "cbe7aa0d1fb6f7bfbc2dbbd56fcdebbf18d4752eee3885f4b96b8776838c0caa",
+            "content_hash": "593080cb17d040a3bfdd19a20b97bfdc534e12557c8e1e97b3b8aec7a892fe1b"
+        },
+        {
+            "id": "win-installed-software",
+            "name": "Installed software list (Windows)",
+            "description": "Lists installed programs from the 64-bit, 32-bit and loaded user uninstall registry keys, de-duplicated and sorted by name.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "inventory",
+                "software"
+            ],
+            "timeout_s": 60,
+            "params": [
+                {
+                    "name": "limit",
+                    "type": "int",
+                    "required": false,
+                    "label": "Maximum rows",
+                    "description": "Maximum number of programs to list (10 to 1000).",
+                    "min": 10,
+                    "max": 1000,
+                    "default": 300
+                }
+            ],
+            "output": "Table of name, version, publisher. Exit 0; exit 2 on a bad limit.",
+            "file": "scripts/windows/installed-software.ps1",
+            "size_bytes": 1135,
+            "body_sha256": "c3d35d30f2a928ac028253b88db5b3254f1753c4345c189018cfa90e1de63647",
+            "content_hash": "51650bcc9cbea088dbe511e446f755006a01feb7939ea661617be1e492673153"
+        },
+        {
+            "id": "win-largest-folders",
+            "name": "Largest top-level folders (Windows)",
+            "description": "Totals disk usage of each top-level folder under a root directory (one level deep) and lists the largest, within a time budget.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "storage",
+                "diagnostics",
+                "disk"
+            ],
+            "timeout_s": 600,
+            "params": [
+                {
+                    "name": "root_dir",
+                    "type": "string",
+                    "required": false,
+                    "label": "Root directory",
+                    "description": "Absolute Windows path whose immediate sub-folders are measured.",
+                    "max_length": 250,
+                    "default": "C:\\"
+                },
+                {
+                    "name": "top_n",
+                    "type": "int",
+                    "required": false,
+                    "label": "Number of folders",
+                    "description": "How many folders to list (1 to 50).",
+                    "min": 1,
+                    "max": 50,
+                    "default": 15
+                }
+            ],
+            "output": "Table of the largest sub-folders with sizes and a note if the time budget cut the scan short. Exit 0; exit 2 on an invalid parameter.",
+            "file": "scripts/windows/largest-folders.ps1",
+            "size_bytes": 2391,
+            "body_sha256": "c9fd1296b511c4fe49ee2c56c9711d573688ab2857cbe9239656152f0d613d21",
+            "content_hash": "f7bc69eecf8748ff051882cd48af7d708d68c227e26b16927c3527d6f71d8fea"
+        },
+        {
+            "id": "win-last-logons",
+            "name": "Recent interactive logons (Windows)",
+            "description": "Lists recent interactive, RDP and cached logons from Security event 4624 and the last use time of each local profile. Reports clearly if the Security log is unreadable.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "logons",
+                "security",
+                "audit"
+            ],
+            "timeout_s": 90,
+            "params": [
+                {
+                    "name": "days",
+                    "type": "int",
+                    "required": false,
+                    "label": "Days to look back",
+                    "description": "How many days of Security log to scan.",
+                    "min": 1,
+                    "max": 30,
+                    "default": 7
+                },
+                {
+                    "name": "limit",
+                    "type": "int",
+                    "required": false,
+                    "label": "Maximum events",
+                    "description": "Maximum number of logon events to list.",
+                    "min": 10,
+                    "max": 500,
+                    "default": 100
+                }
+            ],
+            "output": "Logon table (time, account, type, source) followed by per-profile last use. Exit 0 always; exit 2 on invalid parameters.",
+            "file": "scripts/windows/last-logons.ps1",
+            "size_bytes": 2586,
+            "body_sha256": "c8fef40dc3072efa003e3ad6104ad459bd967e7c8570a6a1f3656fa65961f89b",
+            "content_hash": "b0891a178e48d3cae2fa17725c26af8c661aab97630ffb6ddeb77f82ee5d4d8d"
+        },
+        {
+            "id": "win-listening-ports",
+            "name": "Listening ports and owning processes (Windows)",
+            "description": "Lists listening TCP ports and bound UDP endpoints with the process that owns each.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "network",
+                "security",
+                "diagnostics"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Tables of TCP listeners and UDP endpoints (first 200 each). Exit 0.",
+            "file": "scripts/windows/listening-ports.ps1",
+            "size_bytes": 1338,
+            "body_sha256": "b5c0bfc998b843e9d16a18c28efed978ecaf0b4c26757cb3c998d9d16c8e8ea2",
+            "content_hash": "557c08ce736e3db600eb05d070fdcc540224409a58731e112110c6b022a96c55"
+        },
+        {
+            "id": "win-local-administrators",
+            "name": "Local Administrators group members (Windows)",
+            "description": "Lists the members of the local Administrators group with their source and object class. Report only.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "accounts",
+                "inventory"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Table of members with name, class and source. Exit 0.",
+            "file": "scripts/windows/local-administrators.ps1",
+            "size_bytes": 1227,
+            "body_sha256": "b9d02f2f0fb70c6cdf7283ec3b69739c1f1e829381802adbd787d1ed9d9d9c84",
+            "content_hash": "3cca99279e24882d3da4189d440ec475f1663f1253a1c5a9445dd5602a53be11"
+        },
+        {
+            "id": "win-local-users",
+            "name": "Local user accounts (Windows)",
+            "description": "Lists local accounts with enabled state, last logon, password last set and whether a password is required. No password data is shown.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "security",
+                "accounts",
+                "inventory"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Table of local accounts. Exit 0.",
+            "file": "scripts/windows/local-users.ps1",
+            "size_bytes": 739,
+            "body_sha256": "1698009d4d6bd77cdf03c0562a014388c5a235049b06887471370a7c8353bd31",
+            "content_hash": "07ba70fb62dbd7b843c83e8eeea24800bf449029478064bf7ac70f3e3cdf278d"
+        },
+        {
+            "id": "win-network-diagnostics",
+            "name": "Network diagnostics to a target (Windows)",
+            "description": "Runs ping, a traceroute (max 15 hops, no name lookups) and a DNS lookup against one validated host name or IP address.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "network",
+                "diagnostics",
+                "dns"
+            ],
+            "timeout_s": 180,
+            "params": [
+                {
+                    "name": "target",
+                    "type": "string",
+                    "required": true,
+                    "label": "Target host or IP",
+                    "description": "Host name or IP address to test.",
+                    "max_length": 253
+                },
+                {
+                    "name": "count",
+                    "type": "int",
+                    "required": false,
+                    "label": "Ping count",
+                    "description": "Number of ping packets (1 to 10).",
+                    "min": 1,
+                    "max": 10,
+                    "default": 4
+                }
+            ],
+            "output": "Ping output, traceroute output and DNS answers. Exit 0; exit 2 on an invalid target or count.",
+            "file": "scripts/windows/network-diagnostics.ps1",
+            "size_bytes": 1029,
+            "body_sha256": "151723ef92c89c3718d419c6936074a59d10e6ecea95541874dbe53d02f9ef39",
+            "content_hash": "744eb3196d24cbf775aaf8aeaff5b229b277affdf5de3d383c963e0c36be04f8"
+        },
+        {
+            "id": "win-pending-reboot-reasons",
+            "name": "Pending reboot reasons (Windows)",
+            "description": "Reports each pending-reboot signal separately (CBS, Windows Update, file renames, rename, domain join, SCCM) and a final verdict.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "reboot",
+                "updates",
+                "diagnostics"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "One line per signal and a final REBOOT PENDING: yes/no line. Exit 0 always.",
+            "file": "scripts/windows/pending-reboot-reasons.ps1",
+            "size_bytes": 2342,
+            "body_sha256": "a95502ae4e820eed0508e8a1153f6d28bdd5a8777ea6ab13fd1068d6a34cfe3d",
+            "content_hash": "aa74119a56f736c1d0d8a079a5b20035f885e9344b680e7fd6040d1bec7376b3"
+        },
+        {
+            "id": "win-pending-windows-updates",
+            "name": "Pending Windows updates (Windows)",
+            "description": "Lists updates not yet installed and not hidden, using the Windows Update Agent search. May take a few minutes.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "updates",
+                "patching",
+                "diagnostics"
+            ],
+            "timeout_s": 420,
+            "params": [],
+            "output": "List of pending updates with KB and size, or a note if the search failed or timed out. Exit 0.",
+            "file": "scripts/windows/pending-windows-updates.ps1",
+            "size_bytes": 1282,
+            "body_sha256": "7a5ad82752b53c25ba09ac75092b97a273edc90147762644afcd3db298c416ba",
+            "content_hash": "3b7d6b9fd2af8dc271508c594e972496df5d8be5920e7eba04655a6e7f0acfc4"
+        },
+        {
+            "id": "win-print-queue-clear",
+            "name": "Clear print queue (Windows)",
+            "description": "Stops the Print Spooler, deletes only the *.SPL and *.SHD files in the spool PRINTERS folder, then starts the Spooler again. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "disruptive",
+            "requires_approval": true,
+            "destructive": true,
+            "tags": [
+                "print",
+                "spooler",
+                "cleanup"
+            ],
+            "timeout_s": 180,
+            "params": [
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When true (default) nothing is changed and the script only reports what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "File count and bytes, then [DONE]/[SKIP] lines or a [DRY-RUN] line. Exit 0; 3 if the spooler is not running afterwards.",
+            "file": "scripts/windows/print-queue-clear.ps1",
+            "size_bytes": 2126,
+            "body_sha256": "39c797ecc138ff49769d2da07aef278309e79288241a89764fa2d3980303c8a0",
+            "content_hash": "f6969c2c44eafdd602798fdac3e5f6cffdb6bab63f21fcab0a6033eace0c6ab0"
+        },
+        {
+            "id": "win-print-spooler-restart",
+            "name": "Restart Print Spooler (Windows)",
+            "description": "Restarts the Print Spooler service and reports its state before and after. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "disruptive",
+            "requires_approval": true,
+            "destructive": true,
+            "tags": [
+                "print",
+                "spooler",
+                "restart"
+            ],
+            "timeout_s": 120,
+            "params": [
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When true (default) nothing is changed and the script only reports what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "State before/after with [DONE]/[SKIP] lines, or a [DRY-RUN] line. Exit 0; 3 if the spooler is not running afterwards.",
+            "file": "scripts/windows/print-spooler-restart.ps1",
+            "size_bytes": 1302,
+            "body_sha256": "378e2b271fbe6c32a2c80ebcd9ec2d1a7c370a5b047c1c10feff3cdef5dfe3fb",
+            "content_hash": "5bf494528de914ac11f3fd9a1113edc1ad808eebedb173062110139377f649f9"
+        },
+        {
+            "id": "win-rdp-status",
+            "name": "Remote Desktop status (Windows)",
+            "description": "Reports whether RDP is enabled, whether NLA is required, the port, the Remote Desktop firewall rules and current sessions.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "rdp",
+                "security",
+                "network"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Lines for each RDP setting plus quser session output. Exit 0.",
+            "file": "scripts/windows/rdp-status.ps1",
+            "size_bytes": 1894,
+            "body_sha256": "1305c6e128e8fb46de8ec7fc8cf389b141124a29acf054e344ca2eaee4271fa3",
+            "content_hash": "8350143b76b4fe7fe4c418584f18066b8a8bec93130896226148bb26e6062d00"
+        },
+        {
+            "id": "win-reboot-if-pending",
+            "name": "Restart if a reboot is pending (Windows)",
+            "description": "Checks for a pending reboot and, if one is needed, schedules a restart after a delay with a visible message. Will not stack a second schedule. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "disruptive",
+            "requires_approval": true,
+            "destructive": true,
+            "tags": [
+                "reboot",
+                "patching",
+                "maintenance"
+            ],
+            "timeout_s": 60,
+            "params": [
+                {
+                    "name": "delay_minutes",
+                    "type": "int",
+                    "required": false,
+                    "label": "Delay in minutes",
+                    "description": "Minutes before the restart happens (1 to 1440).",
+                    "min": 1,
+                    "max": 1440,
+                    "default": 15
+                },
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When enabled, nothing is changed and the script only prints what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "Reasons a reboot is pending and a [DRY-RUN]/[DONE]/[SKIP] line. Exit 0; exit 2 on a bad delay; exit 3 if scheduling failed.",
+            "file": "scripts/windows/reboot-if-pending.ps1",
+            "size_bytes": 3276,
+            "body_sha256": "b75c5b8e80a36099689c6c84678c583d575754c193b9d5de0c9b78c9dfadeb2e",
+            "content_hash": "a0ced98960ea90050a4585400896c6a4c54abace155b7e112e64f5fa000481ed"
+        },
+        {
+            "id": "win-restart-service",
+            "name": "Restart a named service (Windows)",
+            "description": "Restarts one service by exact name after strict validation. Refuses the agent and critical system services. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "disruptive",
+            "requires_approval": true,
+            "destructive": true,
+            "tags": [
+                "service",
+                "restart",
+                "remediation"
+            ],
+            "timeout_s": 180,
+            "params": [
+                {
+                    "name": "service_name",
+                    "type": "string",
+                    "required": true,
+                    "label": "Service name",
+                    "description": "Exact service name (not display name), letters, digits and _ . @ : - only. No wildcards.",
+                    "max_length": 100
+                },
+                {
+                    "name": "wait_seconds",
+                    "type": "int",
+                    "required": false,
+                    "label": "Wait seconds",
+                    "description": "How long to wait for the service to stop and to start.",
+                    "min": 5,
+                    "max": 300,
+                    "default": 60
+                },
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When true (default) nothing is changed and the script only reports what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "State before and after plus [DONE]/[SKIP] lines, or [DRY-RUN] lines. Exit 0 on success, 2 invalid or refused name, 3 service not running afterwards.",
+            "file": "scripts/windows/restart-service.ps1",
+            "size_bytes": 2168,
+            "body_sha256": "0ae1767c88abc7b73755a7b909c7340099d4beafa8c613be7c225602e5beda3e",
+            "content_hash": "497a0d664e014ed3206752a0f8918ab568db9ce8f59d72566babc60cf06d4f09"
+        },
+        {
+            "id": "win-scheduled-tasks",
+            "name": "Non-Microsoft scheduled tasks (Windows)",
+            "description": "Lists scheduled tasks outside the Microsoft folders with state, run-as account, last result and last/next run times.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "tasks",
+                "inventory",
+                "diagnostics"
+            ],
+            "timeout_s": 120,
+            "params": [
+                {
+                    "name": "limit",
+                    "type": "int",
+                    "required": false,
+                    "label": "Maximum tasks",
+                    "description": "Maximum number of tasks to list.",
+                    "min": 10,
+                    "max": 500,
+                    "default": 200
+                }
+            ],
+            "output": "Table of tasks, marked (truncated) when the limit is hit. Exit 0; exit 2 on invalid parameters.",
+            "file": "scripts/windows/scheduled-tasks.ps1",
+            "size_bytes": 1343,
+            "body_sha256": "fee380f59ff3b83938023748494a4afc2168fb1c0536e3c8a4b571453b220386",
+            "content_hash": "3f761abc87d030ff4d92a33e74bfb45f33c5906a58ea3015bbb2a96f6b3c0106"
+        },
+        {
+            "id": "win-services-auto-stopped",
+            "name": "Stopped automatic services (Windows)",
+            "description": "Lists services set to start automatically that are not running, excluding trigger-start services and known benign ones.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "services",
+                "diagnostics",
+                "health"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Count and table of stopped automatic services. Exit 0.",
+            "file": "scripts/windows/services-auto-stopped.ps1",
+            "size_bytes": 1389,
+            "body_sha256": "564cdb2796b7c9e7c8a5ab9f82e1ce2df853996301ce8d5bca2e59b9ab95111f",
+            "content_hash": "570566c6bb183c7d7b9833dc569992e42be9bf888e5de4bf01cf370bc912308b"
+        },
+        {
+            "id": "win-smb1-status",
+            "name": "SMB1 status (Windows)",
+            "description": "Checks the SMB1 server and client features and the SMB server configuration, and gives a plain-language verdict.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "smb",
+                "security",
+                "network"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Feature and configuration lines followed by a Verdict line. Exit 0.",
+            "file": "scripts/windows/smb1-status.ps1",
+            "size_bytes": 1577,
+            "body_sha256": "64b7f8397561ca51be764df9bb27cddc456c94c59782c904d05723988ef1d45d",
+            "content_hash": "7b211d0a59c9ccb70f0f5375bff1352690d01fdc64a68af3b61efb5848898772"
+        },
+        {
+            "id": "win-startup-items",
+            "name": "Startup items (Windows)",
+            "description": "Lists Run and RunOnce registry entries (machine and loaded user hives), startup folders and Win32_StartupCommand entries.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "startup",
+                "inventory",
+                "security"
+            ],
+            "timeout_s": 90,
+            "params": [],
+            "output": "Sections for registry, folders and WMI startup commands. Exit 0.",
+            "file": "scripts/windows/startup-items.ps1",
+            "size_bytes": 2063,
+            "body_sha256": "4e8e00aea1736ab5c291ce9762994b3769393034cac3cd70b0d5fcd0052f2d72",
+            "content_hash": "938fa145f717b3431f18bb60416d5bb29f88fe1d10fae072f8688dda515cb986"
+        },
+        {
+            "id": "win-system-info",
+            "name": "System information summary (Windows)",
+            "description": "Prints OS and build, model, serial number, CPU, memory, domain or workgroup, IP addresses, last boot time and BIOS details.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "inventory",
+                "diagnostics"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Key/value summary lines. Exit 0.",
+            "file": "scripts/windows/system-info.ps1",
+            "size_bytes": 1822,
+            "body_sha256": "2baf3e7ba24ee84df0bbdc0402ba25fa10fb701e011d15e55b6b0b391baec3a5",
+            "content_hash": "e8419d959fd656335341e3224ce728976f9ad063cb772cc4334ad067be93b1c0"
+        },
+        {
+            "id": "win-teams-cache-clean",
+            "name": "Clean Microsoft Teams cache (Windows)",
+            "description": "Clears classic Teams cache folders and the new Teams local cache for all user profiles. Skips everything if Teams is running and skip_running is true. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "changes_system",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "teams",
+                "cache",
+                "cleanup"
+            ],
+            "timeout_s": 300,
+            "params": [
+                {
+                    "name": "skip_running",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Skip if Teams is running",
+                    "description": "When true, nothing is cleaned while Teams is running.",
+                    "default": true
+                },
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When true (default) nothing is changed and the script only reports what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "Per-folder [DONE]/[DRY-RUN]/[SKIP] lines and total bytes. Exit 0.",
+            "file": "scripts/windows/teams-cache-clean.ps1",
+            "size_bytes": 1900,
+            "body_sha256": "ece2a2e1ca66d6a0521f63ab65bee23abc84a87c79f1a7de00c037d4dec87449",
+            "content_hash": "b5f29ec6f7ec6b150c249ff541305e38b4e18fee290c455aac72c80ce701a840"
+        },
+        {
+            "id": "win-time-resync",
+            "name": "Force time resync (Windows)",
+            "description": "Starts the Windows Time service if stopped and runs w32tm /resync /force, reporting offset before and after. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "changes_system",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "time",
+                "ntp",
+                "remediation"
+            ],
+            "timeout_s": 120,
+            "params": [
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When true (default) nothing is changed and the script only reports what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "Before/after offset with [DONE]/[SKIP] lines, or [DRY-RUN] lines. Exit 0; 3 if W32Time cannot be started.",
+            "file": "scripts/windows/time-resync.ps1",
+            "size_bytes": 1970,
+            "body_sha256": "511ab27e8c13767f70828735b39ee48088eb723dafad54ea4590b3c1aed56af7",
+            "content_hash": "184a8fcfd4805afda098aa295c28206abe191e11f7a929774c138e1256041fcb"
+        },
+        {
+            "id": "win-time-status",
+            "name": "Time synchronisation status (Windows)",
+            "description": "Shows W32Time service state, time source, configuration, offset, last sync and the time zone.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "time",
+                "ntp",
+                "diagnostics"
+            ],
+            "timeout_s": 60,
+            "params": [],
+            "output": "Service, time zone, w32tm status and configuration lines. Exit 0.",
+            "file": "scripts/windows/time-status.ps1",
+            "size_bytes": 1616,
+            "body_sha256": "7d8e269915b4b89ed4c621fb30c9463c16888c4e8cd2a7c1df376a5e9f836b9a",
+            "content_hash": "46f448d7257e879eae04fa7a61b0843cb43d99dbd80b6404d40aae04068e4f28"
+        },
+        {
+            "id": "win-top-processes",
+            "name": "Top processes by CPU and memory (Windows)",
+            "description": "Lists the busiest processes by current CPU use and by working set memory.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "diagnostics",
+                "performance",
+                "processes"
+            ],
+            "timeout_s": 60,
+            "params": [
+                {
+                    "name": "top_n",
+                    "type": "int",
+                    "required": false,
+                    "label": "Number of processes",
+                    "description": "How many processes to list in each ranking (1 to 50).",
+                    "min": 1,
+                    "max": 50,
+                    "default": 10
+                }
+            ],
+            "output": "Two tables: top CPU and top memory. CPU is a one-moment sample summed across cores. Exit 0; exit 2 on a bad top_n.",
+            "file": "scripts/windows/top-processes.ps1",
+            "size_bytes": 1287,
+            "body_sha256": "ec9b9af10f747b87f3e18c003e9b3181104c34a7d6c13a8902229fcd7a643538",
+            "content_hash": "cac24ecc710057a09f4ff0270acb3244d1bf4ad00f173b625558584ac7e26cdd"
+        },
+        {
+            "id": "win-uptime-last-boot",
+            "name": "Uptime and last boot time (Windows)",
+            "description": "Shows the last boot time and how long the machine has been running, with a note when Fast Startup can make uptime look longer than it is.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "diagnostics",
+                "uptime"
+            ],
+            "timeout_s": 30,
+            "params": [],
+            "output": "Last boot time, uptime in days/hours/minutes and a Fast Startup note. Exit 0.",
+            "file": "scripts/windows/uptime-last-boot.ps1",
+            "size_bytes": 743,
+            "body_sha256": "6db039c33be469d7b37a2a15628c1257446133c07211b5b231c3fe0c9d7d6c83",
+            "content_hash": "9bf1c294888c31026e39e6cbe3dad8c3e0df03db37f5f5fe8fe955078e09bfe8"
+        },
+        {
+            "id": "win-windows-update-reset",
+            "name": "Reset Windows Update components (Windows)",
+            "description": "Stops the update services, renames SoftwareDistribution and catroot2 to dated .bak folders, removes older .bak folders and restarts the services. Dry run by default.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "changes_system",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "updates",
+                "repair",
+                "maintenance"
+            ],
+            "timeout_s": 300,
+            "params": [
+                {
+                    "name": "dry_run",
+                    "type": "bool",
+                    "required": false,
+                    "label": "Dry run (only report what would happen)",
+                    "description": "When enabled, nothing is changed and the script only prints what it would do.",
+                    "default": true
+                }
+            ],
+            "output": "[DRY-RUN] or [DONE]/[SKIP] lines per step. Exit 0; exit 3 if services could not be stopped. Services are restored even on failure.",
+            "file": "scripts/windows/windows-update-reset.ps1",
+            "size_bytes": 3070,
+            "body_sha256": "48ad61fbc66410c8383097c1550d3a339d783dcfcfb35e062f6d9f7997ccc7ac",
+            "content_hash": "972f2e956fd265ae25028f89c08f005279558188045f764cc9b86c857c565fb2"
+        },
+        {
+            "id": "win-winget-outdated",
+            "name": "Outdated packages (winget) (Windows)",
+            "description": "Lists packages with available upgrades using winget. Only lists; nothing is installed or upgraded.",
+            "platform": "windows",
+            "language": "powershell",
+            "risk": "read_only",
+            "requires_approval": false,
+            "destructive": false,
+            "tags": [
+                "software",
+                "updates",
+                "winget"
+            ],
+            "timeout_s": 300,
+            "params": [],
+            "output": "The winget upgrade table. Exit 0; prints NOT AVAILABLE if winget is not found.",
+            "file": "scripts/windows/winget-outdated.ps1",
+            "size_bytes": 1264,
+            "body_sha256": "2a8f32d4308d969f66a34f10e5f12738904b811f373b47ad4269754d38f645c7",
+            "content_hash": "48b9cd590d98a4f05d66891b4733af079619f4267d30d73d22c218cf6f581d68"
+        }
+    ],
+    "check_sets": [
+        {
+            "id": "workstation-baseline",
+            "name": "Workstation baseline (Windows)",
+            "description": "Disk, memory, sustained CPU, key services, pending reboot, clock, certificates, disk health, uptime and antivirus for Windows desktops and laptops.",
+            "platform": "windows",
+            "use": "workstation",
+            "params": [
+                {
+                    "name": "ntp_server",
+                    "type": "string",
+                    "label": "Time server",
+                    "description": "Server the time check compares against. On a domain use a domain controller.",
+                    "default": "pool.ntp.org",
+                    "example": "pool.ntp.org"
+                },
+                {
+                    "name": "uptime_warn_days",
+                    "type": "int",
+                    "label": "Uptime warning (days)",
+                    "description": "Warn when the machine has not restarted for this many days.",
+                    "default": 30,
+                    "example": 30
+                },
+                {
+                    "name": "uptime_fail_days",
+                    "type": "int",
+                    "label": "Uptime critical (days)",
+                    "description": "Critical when the machine has not restarted for this many days.",
+                    "default": 60,
+                    "example": 60
+                }
+            ],
+            "checks": [
+                {
+                    "key": "starter.disk_free",
+                    "label": "Disk free space",
+                    "type": "disk",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.memory",
+                    "label": "Memory in use (sustained)",
+                    "type": "memory",
+                    "interval_s": 60,
+                    "when": null
+                },
+                {
+                    "key": "starter.cpu_sustained",
+                    "label": "CPU busy (sustained)",
+                    "type": "cpu",
+                    "interval_s": 60,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_eventlog",
+                    "label": "Windows Event Log service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_firewall",
+                    "label": "Windows Firewall service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_dns_client",
+                    "label": "DNS Client service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_wmi",
+                    "label": "WMI service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.pending_reboot",
+                    "label": "Reboot pending",
+                    "type": "pending_reboot",
+                    "interval_s": 3600,
+                    "when": null
+                },
+                {
+                    "key": "starter.time_skew",
+                    "label": "Clock offset",
+                    "type": "ntp",
+                    "interval_s": 3600,
+                    "when": null
+                },
+                {
+                    "key": "starter.cert_expiry",
+                    "label": "Machine certificates expiring",
+                    "type": "cert",
+                    "interval_s": 21600,
+                    "when": null
+                },
+                {
+                    "key": "starter.smart",
+                    "label": "Disk health (SMART)",
+                    "type": "smart",
+                    "interval_s": 21600,
+                    "when": null
+                },
+                {
+                    "key": "starter.uptime",
+                    "label": "Uptime too long",
+                    "type": "script",
+                    "interval_s": 3600,
+                    "when": null
+                },
+                {
+                    "key": "starter.av",
+                    "label": "Antivirus status",
+                    "type": "av",
+                    "interval_s": 3600,
+                    "when": null
+                }
+            ]
+        },
+        {
+            "id": "windows-server-baseline",
+            "name": "Server baseline (Windows)",
+            "description": "The workstation checks with stricter disk limits, the server, time and scheduler services and an optional backup agent service.",
+            "platform": "windows",
+            "use": "windows-server",
+            "params": [
+                {
+                    "name": "ntp_server",
+                    "type": "string",
+                    "label": "Time server",
+                    "description": "Server the time check compares against. On a domain use a domain controller.",
+                    "default": "pool.ntp.org",
+                    "example": "pool.ntp.org"
+                },
+                {
+                    "name": "uptime_warn_days",
+                    "type": "int",
+                    "label": "Uptime warning (days)",
+                    "description": "Warn when the machine has not restarted for this many days.",
+                    "default": 45,
+                    "example": 45
+                },
+                {
+                    "name": "uptime_fail_days",
+                    "type": "int",
+                    "label": "Uptime critical (days)",
+                    "description": "Critical when the machine has not restarted for this many days.",
+                    "default": 90,
+                    "example": 90
+                },
+                {
+                    "name": "backup_service",
+                    "type": "string",
+                    "label": "Backup agent service",
+                    "description": "Name of your backup agent's service. Leave empty to skip the check.",
+                    "default": null,
+                    "example": "VeeamEndpointBackupSvc"
+                }
+            ],
+            "checks": [
+                {
+                    "key": "starter.disk_free",
+                    "label": "Disk free space",
+                    "type": "disk",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.memory",
+                    "label": "Memory in use (sustained)",
+                    "type": "memory",
+                    "interval_s": 60,
+                    "when": null
+                },
+                {
+                    "key": "starter.cpu_sustained",
+                    "label": "CPU busy (sustained)",
+                    "type": "cpu",
+                    "interval_s": 60,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_eventlog",
+                    "label": "Windows Event Log service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_firewall",
+                    "label": "Windows Firewall service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_dns_client",
+                    "label": "DNS Client service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_wmi",
+                    "label": "WMI service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_server",
+                    "label": "Server service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_time",
+                    "label": "Windows Time service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_scheduler",
+                    "label": "Task Scheduler service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.pending_reboot",
+                    "label": "Reboot pending",
+                    "type": "pending_reboot",
+                    "interval_s": 3600,
+                    "when": null
+                },
+                {
+                    "key": "starter.time_skew",
+                    "label": "Clock offset",
+                    "type": "ntp",
+                    "interval_s": 3600,
+                    "when": null
+                },
+                {
+                    "key": "starter.cert_expiry",
+                    "label": "Machine certificates expiring",
+                    "type": "cert",
+                    "interval_s": 21600,
+                    "when": null
+                },
+                {
+                    "key": "starter.smart",
+                    "label": "Disk health (SMART)",
+                    "type": "smart",
+                    "interval_s": 21600,
+                    "when": null
+                },
+                {
+                    "key": "starter.uptime",
+                    "label": "Uptime too long",
+                    "type": "script",
+                    "interval_s": 3600,
+                    "when": null
+                },
+                {
+                    "key": "starter.av",
+                    "label": "Antivirus status",
+                    "type": "av",
+                    "interval_s": 3600,
+                    "when": null
+                },
+                {
+                    "key": "starter.backup_service",
+                    "label": "Backup agent service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": "backup_service"
+                }
+            ]
+        },
+        {
+            "id": "linux-server-baseline",
+            "name": "Server baseline (Linux)",
+            "description": "Disk and inode space, memory, swap, sustained CPU, failed systemd units, SSH, pending reboot, clock, certificates, disk health, uptime and an optional backup service.",
+            "platform": "linux",
+            "use": "linux-server",
+            "params": [
+                {
+                    "name": "ntp_server",
+                    "type": "string",
+                    "label": "Time server",
+                    "description": "Server the time check compares against. On a domain use a domain controller.",
+                    "default": "pool.ntp.org",
+                    "example": "pool.ntp.org"
+                },
+                {
+                    "name": "ssh_service",
+                    "type": "string",
+                    "label": "SSH service",
+                    "description": "systemd unit of the SSH server (ssh on some Debian releases).",
+                    "default": "sshd",
+                    "example": "sshd"
+                },
+                {
+                    "name": "cert_paths",
+                    "type": "list",
+                    "label": "Certificate files or folders",
+                    "description": "Absolute paths of certificates to watch (for example /etc/letsencrypt/live/example.org/fullchain.pem). Leave empty to skip the check.",
+                    "default": null,
+                    "example": [
+                        "/etc/ssl/certs/ca-certificates.crt"
+                    ]
+                },
+                {
+                    "name": "uptime_warn_days",
+                    "type": "int",
+                    "label": "Uptime warning (days)",
+                    "description": "Warn when the machine has not restarted for this many days.",
+                    "default": 45,
+                    "example": 45
+                },
+                {
+                    "name": "uptime_fail_days",
+                    "type": "int",
+                    "label": "Uptime critical (days)",
+                    "description": "Critical when the machine has not restarted for this many days.",
+                    "default": 90,
+                    "example": 90
+                },
+                {
+                    "name": "backup_service",
+                    "type": "string",
+                    "label": "Backup agent service",
+                    "description": "Name of your backup agent's service. Leave empty to skip the check.",
+                    "default": null,
+                    "example": "VeeamEndpointBackupSvc"
+                }
+            ],
+            "checks": [
+                {
+                    "key": "starter.disk_free",
+                    "label": "Disk free space",
+                    "type": "disk",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.inodes",
+                    "label": "Inode usage",
+                    "type": "inodes",
+                    "interval_s": 600,
+                    "when": null
+                },
+                {
+                    "key": "starter.memory",
+                    "label": "Memory in use (sustained)",
+                    "type": "memory",
+                    "interval_s": 60,
+                    "when": null
+                },
+                {
+                    "key": "starter.swap",
+                    "label": "Swap in use (sustained)",
+                    "type": "memory",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.cpu_sustained",
+                    "label": "CPU busy (sustained)",
+                    "type": "cpu",
+                    "interval_s": 60,
+                    "when": null
+                },
+                {
+                    "key": "starter.systemd_failed",
+                    "label": "Failed systemd units",
+                    "type": "systemd_failed",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.svc_ssh",
+                    "label": "SSH service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": null
+                },
+                {
+                    "key": "starter.pending_reboot",
+                    "label": "Reboot pending",
+                    "type": "pending_reboot",
+                    "interval_s": 3600,
+                    "when": null
+                },
+                {
+                    "key": "starter.time_skew",
+                    "label": "Clock offset",
+                    "type": "ntp",
+                    "interval_s": 3600,
+                    "when": null
+                },
+                {
+                    "key": "starter.cert_expiry",
+                    "label": "Certificates expiring",
+                    "type": "cert",
+                    "interval_s": 21600,
+                    "when": "cert_paths"
+                },
+                {
+                    "key": "starter.smart",
+                    "label": "Disk health (SMART)",
+                    "type": "smart",
+                    "interval_s": 21600,
+                    "when": null
+                },
+                {
+                    "key": "starter.uptime",
+                    "label": "Uptime too long",
+                    "type": "script",
+                    "interval_s": 3600,
+                    "when": null
+                },
+                {
+                    "key": "starter.backup_service",
+                    "label": "Backup service",
+                    "type": "service",
+                    "interval_s": 300,
+                    "when": "backup_service"
+                }
+            ]
+        }
+    ],
+    "policies": [
+        {
+            "id": "policy-workstation",
+            "name": "Starter: Workstation baseline",
+            "description": "Draft. Baseline checks for Windows workstations. Review, then enable and assign it.",
+            "platform": "windows",
+            "check_sets": [
+                "workstation-baseline"
+            ],
+            "params": [
+                {
+                    "name": "ntp_server",
+                    "type": "string",
+                    "label": "Time server",
+                    "description": "Server the time check compares against. On a domain use a domain controller.",
+                    "default": "pool.ntp.org",
+                    "example": "pool.ntp.org"
+                },
+                {
+                    "name": "uptime_warn_days",
+                    "type": "int",
+                    "label": "Uptime warning (days)",
+                    "description": "Warn when the machine has not restarted for this many days.",
+                    "default": 30,
+                    "example": 30
+                },
+                {
+                    "name": "uptime_fail_days",
+                    "type": "int",
+                    "label": "Uptime critical (days)",
+                    "description": "Critical when the machine has not restarted for this many days.",
+                    "default": 60,
+                    "example": 60
+                }
+            ],
+            "content_hash": "febfb67c8e9f2d8562cc066dd6b79fa0387a1dbb7703a64f8edea9dd2fbd9043"
+        },
+        {
+            "id": "policy-windows-server",
+            "name": "Starter: Windows Server baseline",
+            "description": "Draft. Baseline checks for Windows servers, with an optional backup agent service. Review, then enable and assign it.",
+            "platform": "windows",
+            "check_sets": [
+                "windows-server-baseline"
+            ],
+            "params": [
+                {
+                    "name": "ntp_server",
+                    "type": "string",
+                    "label": "Time server",
+                    "description": "Server the time check compares against. On a domain use a domain controller.",
+                    "default": "pool.ntp.org",
+                    "example": "pool.ntp.org"
+                },
+                {
+                    "name": "uptime_warn_days",
+                    "type": "int",
+                    "label": "Uptime warning (days)",
+                    "description": "Warn when the machine has not restarted for this many days.",
+                    "default": 45,
+                    "example": 45
+                },
+                {
+                    "name": "uptime_fail_days",
+                    "type": "int",
+                    "label": "Uptime critical (days)",
+                    "description": "Critical when the machine has not restarted for this many days.",
+                    "default": 90,
+                    "example": 90
+                },
+                {
+                    "name": "backup_service",
+                    "type": "string",
+                    "label": "Backup agent service",
+                    "description": "Name of your backup agent's service. Leave empty to skip the check.",
+                    "default": null,
+                    "example": "VeeamEndpointBackupSvc"
+                }
+            ],
+            "content_hash": "a86fb39ee6f566625aa1647df9f5616881c5424ebf80cfc3e01998e6a5f99dda"
+        },
+        {
+            "id": "policy-linux-server",
+            "name": "Starter: Linux Server baseline",
+            "description": "Draft. Baseline checks for Linux servers, with optional certificate and backup service checks. Review, then enable and assign it.",
+            "platform": "linux",
+            "check_sets": [
+                "linux-server-baseline"
+            ],
+            "params": [
+                {
+                    "name": "ntp_server",
+                    "type": "string",
+                    "label": "Time server",
+                    "description": "Server the time check compares against. On a domain use a domain controller.",
+                    "default": "pool.ntp.org",
+                    "example": "pool.ntp.org"
+                },
+                {
+                    "name": "ssh_service",
+                    "type": "string",
+                    "label": "SSH service",
+                    "description": "systemd unit of the SSH server (ssh on some Debian releases).",
+                    "default": "sshd",
+                    "example": "sshd"
+                },
+                {
+                    "name": "cert_paths",
+                    "type": "list",
+                    "label": "Certificate files or folders",
+                    "description": "Absolute paths of certificates to watch (for example /etc/letsencrypt/live/example.org/fullchain.pem). Leave empty to skip the check.",
+                    "default": null,
+                    "example": [
+                        "/etc/ssl/certs/ca-certificates.crt"
+                    ]
+                },
+                {
+                    "name": "uptime_warn_days",
+                    "type": "int",
+                    "label": "Uptime warning (days)",
+                    "description": "Warn when the machine has not restarted for this many days.",
+                    "default": 45,
+                    "example": 45
+                },
+                {
+                    "name": "uptime_fail_days",
+                    "type": "int",
+                    "label": "Uptime critical (days)",
+                    "description": "Critical when the machine has not restarted for this many days.",
+                    "default": 90,
+                    "example": 90
+                },
+                {
+                    "name": "backup_service",
+                    "type": "string",
+                    "label": "Backup agent service",
+                    "description": "Name of your backup agent's service. Leave empty to skip the check.",
+                    "default": null,
+                    "example": "VeeamEndpointBackupSvc"
+                }
+            ],
+            "content_hash": "c7d0e9db6e8a62a702a48f71e29b32279258a106f7306a89fdb9f81babab531f"
+        }
+    ]
+}

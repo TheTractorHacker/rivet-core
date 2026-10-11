@@ -1,0 +1,16 @@
+{
+  "id": "win-time-status",
+  "name": "Time synchronisation status (Windows)",
+  "description": "Shows W32Time service state, time source, configuration, offset, last sync and the time zone.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "time",
+    "ntp",
+    "diagnostics"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Service, time zone, w32tm status and configuration lines. Exit 0."
+}

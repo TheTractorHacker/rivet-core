@@ -1,0 +1,15 @@
+{
+  "id": "win-uptime-last-boot",
+  "name": "Uptime and last boot time (Windows)",
+  "description": "Shows the last boot time and how long the machine has been running, with a note when Fast Startup can make uptime look longer than it is.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "diagnostics",
+    "uptime"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "Last boot time, uptime in days/hours/minutes and a Fast Startup note. Exit 0."
+}

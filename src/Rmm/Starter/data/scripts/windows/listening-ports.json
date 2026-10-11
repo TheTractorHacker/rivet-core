@@ -1,0 +1,16 @@
+{
+  "id": "win-listening-ports",
+  "name": "Listening ports and owning processes (Windows)",
+  "description": "Lists listening TCP ports and bound UDP endpoints with the process that owns each.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "network",
+    "security",
+    "diagnostics"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Tables of TCP listeners and UDP endpoints (first 200 each). Exit 0."
+}

@@ -1,0 +1,24 @@
+{
+  "id": "win-time-resync",
+  "name": "Force time resync (Windows)",
+  "description": "Starts the Windows Time service if stopped and runs w32tm /resync /force, reporting offset before and after. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "changes_system",
+  "tags": [
+    "time",
+    "ntp",
+    "remediation"
+  ],
+  "timeout_s": 120,
+  "params": [
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When true (default) nothing is changed and the script only reports what it would do."
+    }
+  ],
+  "output": "Before/after offset with [DONE]/[SKIP] lines, or [DRY-RUN] lines. Exit 0; 3 if W32Time cannot be started."
+}

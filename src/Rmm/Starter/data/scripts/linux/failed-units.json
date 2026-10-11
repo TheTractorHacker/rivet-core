@@ -1,0 +1,15 @@
+{
+  "id": "lin-failed-units",
+  "name": "Failed systemd units (Linux)",
+  "description": "Lists failed systemd units and the slowest boot units.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "services",
+    "diagnostics"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Prints 'FAILED UNITS: N' and details. Exit 0 even when units have failed; NOT AVAILABLE without systemd."
+}

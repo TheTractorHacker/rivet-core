@@ -1,0 +1,35 @@
+{
+  "id": "win-last-logons",
+  "name": "Recent interactive logons (Windows)",
+  "description": "Lists recent interactive, RDP and cached logons from Security event 4624 and the last use time of each local profile. Reports clearly if the Security log is unreadable.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "logons",
+    "security",
+    "audit"
+  ],
+  "timeout_s": 90,
+  "params": [
+    {
+      "name": "days",
+      "type": "int",
+      "label": "Days to look back",
+      "description": "How many days of Security log to scan.",
+      "default": 7,
+      "min": 1,
+      "max": 30
+    },
+    {
+      "name": "limit",
+      "type": "int",
+      "label": "Maximum events",
+      "description": "Maximum number of logon events to list.",
+      "default": 100,
+      "min": 10,
+      "max": 500
+    }
+  ],
+  "output": "Logon table (time, account, type, source) followed by per-profile last use. Exit 0 always; exit 2 on invalid parameters."
+}

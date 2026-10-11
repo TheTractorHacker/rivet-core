@@ -106,7 +106,7 @@ final class ScriptService
                 [$body, $schema] = $this->content($language, $bodyIn, $paramsIn);
                 $same = $current !== null && self::bodyHash($body) === $current['body_sha256'] && self::schemaHash($schema) === self::schemaHash(self::decodeSchema($current['params_schema_json']));
                 if (!$same) {
-                    $next = (int) $cur['current_version'] + 1;
+                    $next = $this->nextVersion($scriptId);
                     if ($next > self::MAX_VERSIONS) {
                         throw new \InvalidArgumentException('A script keeps at most ' . self::MAX_VERSIONS . ' versions.');
                     }
@@ -116,6 +116,36 @@ final class ScriptService
 
             return $this->get($scriptId, true) ?? [];
         });
+    }
+
+    /**
+     * Publish a new numbered version WITHOUT making it the current one: the script keeps running what it ran, and the new text waits in the version
+     * list (signed like any other) for an administrator to look at it. Used by the starter pack to offer an update of a script an administrator edited.
+     *
+     * @param array<string,mixed> $in {body, params?, note?}
+     * @return int the version number
+     */
+    public function stage(int $scriptId, array $in, int $userId): int
+    {
+        return $this->sql->transaction(function () use ($scriptId, $in, $userId): int {
+            $cur = $this->sql->one('SELECT * FROM rmm_scripts_v2 WHERE script_id = ? FOR UPDATE', [$scriptId]);
+            if ($cur === null) {
+                throw new \InvalidArgumentException('Script not found.');
+            }
+            [$body, $schema] = $this->content((string) $cur['language'], $in['body'] ?? null, $in['params'] ?? null);
+            $next = $this->nextVersion($scriptId);
+            if ($next > self::MAX_VERSIONS) {
+                throw new \InvalidArgumentException('A script keeps at most ' . self::MAX_VERSIONS . ' versions.');
+            }
+            $this->publish($scriptId, $next, (string) $cur['language'], $body, $schema, self::text($in['note'] ?? '', 200), $userId, $this->sql->utcNow(), false);
+
+            return $next;
+        });
+    }
+
+    private function nextVersion(int $scriptId): int
+    {
+        return (int) $this->sql->val('SELECT COALESCE(MAX(version), 0) FROM rmm_script_versions WHERE script_id = ?', [$scriptId]) + 1;
     }
 
     /** Retire a script (it can no longer be run or scheduled, its history stays) or restore it. */
@@ -271,14 +301,16 @@ final class ScriptService
     }
 
     /** @param list<array<string,mixed>> $schema */
-    private function publish(int $scriptId, int $version, string $language, string $body, array $schema, string $note, int $userId, string $now): void
+    private function publish(int $scriptId, int $version, string $language, string $body, array $schema, string $note, int $userId, string $now, bool $makeCurrent = true): void
     {
         $platform = ScriptLanguage::defaultPlatform($language);
         $hash = self::bodyHash($body);
         [$sig, $keyId] = $this->sign($scriptId, $version, $language, $platform, $hash, self::schemaHash($schema));
         $this->sql->run('INSERT INTO rmm_script_versions (script_id, version, body, body_sha256, params_schema_json, signature, signing_key_id, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [$scriptId, $version, $body, $hash, (string) json_encode($schema), $sig, $keyId, $note, $userId, $now]);
-        $this->sql->run('UPDATE rmm_scripts_v2 SET current_version = ?, updated_at = ? WHERE script_id = ?', [$version, $now, $scriptId]);
+        if ($makeCurrent) {
+            $this->sql->run('UPDATE rmm_scripts_v2 SET current_version = ?, updated_at = ? WHERE script_id = ?', [$version, $now, $scriptId]);
+        }
     }
 
     /** @return array{0:string,1:string} [signature, key id] */

@@ -1,0 +1,15 @@
+{
+  "id": "win-system-info",
+  "name": "System information summary (Windows)",
+  "description": "Prints OS and build, model, serial number, CPU, memory, domain or workgroup, IP addresses, last boot time and BIOS details.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "inventory",
+    "diagnostics"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Key/value summary lines. Exit 0."
+}

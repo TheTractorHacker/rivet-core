@@ -1,0 +1,24 @@
+{
+  "id": "win-flush-dns",
+  "name": "Flush DNS resolver cache (Windows)",
+  "description": "Clears the Windows DNS client resolver cache. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "changes_system",
+  "tags": [
+    "dns",
+    "network",
+    "maintenance"
+  ],
+  "timeout_s": 30,
+  "params": [
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When enabled, nothing is changed and the script only prints what it would do."
+    }
+  ],
+  "output": "[DRY-RUN] or [DONE]/[SKIP] line. Exit 0; exit 3 if the cache could not be cleared."
+}

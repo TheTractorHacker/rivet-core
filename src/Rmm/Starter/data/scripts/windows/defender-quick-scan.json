@@ -1,0 +1,24 @@
+{
+  "id": "win-defender-quick-scan",
+  "name": "Start Microsoft Defender quick scan (Windows)",
+  "description": "Starts a Defender quick scan and waits a limited time for it to finish. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "changes_system",
+  "tags": [
+    "security",
+    "defender",
+    "antivirus"
+  ],
+  "timeout_s": 600,
+  "params": [
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When enabled, nothing is changed and the script only prints what it would do."
+    }
+  ],
+  "output": "[DRY-RUN] or [DONE]/[SKIP] lines. Exit 0; exit 3 if Defender is not usable."
+}

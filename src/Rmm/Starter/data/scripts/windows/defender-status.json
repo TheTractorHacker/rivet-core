@@ -1,0 +1,16 @@
+{
+  "id": "win-defender-status",
+  "name": "Microsoft Defender status (Windows)",
+  "description": "Reports real-time protection, signature age and version, last scan times and tamper protection state.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "security",
+    "defender",
+    "antivirus"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Key/value Defender status lines. Exit 0; prints NOT AVAILABLE if Defender is absent."
+}

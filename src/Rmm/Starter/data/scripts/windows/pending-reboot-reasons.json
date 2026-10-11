@@ -1,0 +1,16 @@
+{
+  "id": "win-pending-reboot-reasons",
+  "name": "Pending reboot reasons (Windows)",
+  "description": "Reports each pending-reboot signal separately (CBS, Windows Update, file renames, rename, domain join, SCCM) and a final verdict.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "reboot",
+    "updates",
+    "diagnostics"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "One line per signal and a final REBOOT PENDING: yes/no line. Exit 0 always."
+}

@@ -1,0 +1,15 @@
+{
+  "id": "lin-fail2ban-status",
+  "name": "Fail2ban status (Linux)",
+  "description": "Shows fail2ban jails and their ban counts if fail2ban is installed.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "security",
+    "logs"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "Jail list and per-jail summary. Exit 0; NOT AVAILABLE if absent."
+}

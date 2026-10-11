@@ -1,0 +1,23 @@
+{
+  "id": "lin-package-cache-clean",
+  "name": "Clean package cache (Linux)",
+  "description": "Cleans the apt, dnf, yum or zypper package cache and reports bytes before and after.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "changes_system",
+  "tags": [
+    "maintenance",
+    "disk"
+  ],
+  "timeout_s": 180,
+  "params": [
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When true (default) only reports the cache size and what would be cleaned."
+    }
+  ],
+  "output": "[DRY-RUN]/[DONE]/[SKIP] lines with sizes. Exit 0."
+}

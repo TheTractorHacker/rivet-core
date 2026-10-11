@@ -1,0 +1,15 @@
+{
+  "id": "lin-listening-ports",
+  "name": "Listening ports (Linux)",
+  "description": "Lists listening TCP and UDP sockets with owning processes using ss or netstat.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "network",
+    "security"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "Socket table. Exit 0; NOT AVAILABLE without ss or netstat."
+}

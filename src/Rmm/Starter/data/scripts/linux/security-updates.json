@@ -1,0 +1,15 @@
+{
+  "id": "lin-security-updates",
+  "name": "Security updates available (Linux)",
+  "description": "Lists pending security-only updates using apt, dnf, yum or zypper without installing anything.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "patching",
+    "security"
+  ],
+  "timeout_s": 180,
+  "params": [],
+  "output": "Count and list of security updates (first 100). Exit 0."
+}

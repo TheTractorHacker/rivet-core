@@ -1,0 +1,15 @@
+{
+  "id": "lin-system-summary",
+  "name": "System summary (Linux)",
+  "description": "OS release, kernel, architecture, uptime, load, virtualization, CPU and memory, hostname and last boot time.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "inventory",
+    "diagnostics"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "Prints a labelled summary. Always exits 0."
+}

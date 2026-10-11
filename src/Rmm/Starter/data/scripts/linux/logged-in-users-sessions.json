@@ -1,0 +1,15 @@
+{
+  "id": "lin-logged-in-users-sessions",
+  "name": "Logged-in users and sessions (Linux)",
+  "description": "Shows active login sessions using loginctl, who and w.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "sessions",
+    "audit"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "Session listings. Exit 0."
+}
