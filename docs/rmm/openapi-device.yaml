@@ -2582,6 +2582,88 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/starter/catalog:
+    get:
+      tags: [Technician]
+      operationId: starterCatalog
+      summary: The starter pack catalog with each item's state in this instance (starter pack)
+      description: Needs `rmm.admin`. Lists every pack (the bundled `rivet-core-starter` pack and any pack folder the edition added) with its scripts (no script text), check template sets and policy drafts. The state of an item is `not_installed`, `current`, `update_available`, `modified` (an administrator changed the script, so an update would be parked, not applied), `update_staged`, `retired`, and for a policy also `modified` when its settings were edited. Filters are combined with AND.
+      security: [{userToken: []}]
+      parameters:
+        - {name: pack, in: query, schema: {type: string}}
+        - {name: platform, in: query, schema: {type: string, enum: [windows, linux]}}
+        - {name: risk, in: query, description: Comma separated, schema: {type: string}, example: 'read_only,changes_system'}
+        - {name: tags, in: query, description: Comma separated; a script matches when it has any of them, schema: {type: string}}
+        - {name: q, in: query, description: Words in the name or description, schema: {type: string}}
+      responses:
+        '200':
+          description: The catalog
+          content: {application/json: {schema: {$ref: '#/components/schemas/StarterCatalog'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/starter/plan:
+    post:
+      tags: [Technician]
+      operationId: starterPlan
+      summary: What an install of a selection would do; writes nothing (starter pack)
+      description: Needs `rmm.admin`. Every item has an `action`. `add` creates it, `update` publishes a new version of a script nobody edited (or updates a policy draft that is untouched, off and unassigned), `stage` adds the pack's new text as a further version flagged `starter-updated` next to a script an administrator edited (the script keeps running what it ran), `unchanged`, `skip` (retired by an administrator, an update already parked, a policy that is edited, switched on or assigned) and `blocked` (no signing key, a name clash that cannot be resolved, a bad policy parameter). Without `ids`, `tags`, `risk` or `platform` it covers the whole pack.
+      security: [{userToken: []}]
+      requestBody:
+        required: false
+        content: {application/json: {schema: {$ref: '#/components/schemas/StarterSelection'}}}
+      responses:
+        '200':
+          description: The plan
+          content: {application/json: {schema: {$ref: '#/components/schemas/StarterPlan'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/starter/install:
+    post:
+      tags: [Technician]
+      operationId: starterInstall
+      summary: Install a selection of the starter pack (starter pack)
+      description: Needs `rmm.admin`. Idempotent per (pack id, item id, content hash). Scripts are signed with the instance key and installed active, with `requires_approval` and `destructive` from their risk class (read only none, changes the system none, disruptive both); policies are created switched off and assigned to nothing. An item that fails does not stop the others. One activity-log line per changed item and one `rmm.starter.installed` event when anything changed.
+      security: [{userToken: []}]
+      requestBody:
+        required: false
+        content: {application/json: {schema: {$ref: '#/components/schemas/StarterSelection'}}}
+      responses:
+        '200':
+          description: Per item outcome (`added`, `updated`, `staged`, `unchanged`, `skipped`, `blocked`, `failed`) and counts
+          content: {application/json: {schema: {$ref: '#/components/schemas/StarterResult'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/starter/uninstall:
+    post:
+      tags: [Technician]
+      operationId: starterUninstall
+      summary: Remove untouched starter content (starter pack)
+      description: Needs `rmm.admin`. Retires starter scripts whose current version is still the pack's (the history stays and a retired script can be restored) and deletes starter policy drafts that are untouched, switched off and unassigned. Anything an administrator changed is left alone. `dry_run` previews.
+      security: [{userToken: []}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: '#/components/schemas/StarterSelection'}
+                - type: object
+                  properties:
+                    dry_run: {type: boolean, default: false}
+      responses:
+        '200':
+          description: Per item outcome (`retired`, `deleted`, `skipped`, or `would_retire` and `would_delete` on a dry run)
+          content: {application/json: {schema: {$ref: '#/components/schemas/StarterResult'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
 components:
   securitySchemes:
     deviceAuth:
@@ -3484,3 +3566,95 @@ components:
             storm_global_window_s: {type: integer}
             storm_client_max: {type: integer}
             storm_client_window_s: {type: integer}
+    StarterSelection:
+      type: object
+      description: Which items. Unknown members are refused. A `risk` or `tags` filter is about scripts, so policies are then left out unless `kinds` or `ids` ask for them.
+      properties:
+        pack: {type: string, example: rivet-core-starter}
+        ids: {type: array, maxItems: 500, items: {type: string}, description: 'Item ids, for example win-flush-dns or policy-linux-server'}
+        tags: {type: array, items: {type: string}}
+        platform: {type: string, enum: [windows, linux]}
+        risk: {type: array, items: {type: string, enum: [read_only, changes_system, disruptive]}}
+        kinds: {type: array, items: {type: string, enum: [scripts, policies]}}
+        params:
+          type: object
+          description: Values for the parameters of the policy drafts (backup_service, ntp_server, ssh_service, cert_paths, uptime_warn_days, uptime_fail_days). An empty optional parameter leaves its check out.
+          additionalProperties: true
+        policy_params:
+          type: object
+          description: The same, per policy id; wins over `params`.
+          additionalProperties: {type: object, additionalProperties: true}
+        q: {type: string}
+    StarterItem:
+      type: object
+      properties:
+        kind: {type: string, enum: [script, policy]}
+        pack: {type: string}
+        pack_version: {type: string}
+        id: {type: string}
+        name: {type: string}
+        platform: {type: string, enum: [windows, linux]}
+        risk: {type: [string, 'null'], enum: [read_only, changes_system, disruptive, null]}
+        action: {type: string, enum: [add, update, stage, unchanged, skip, blocked]}
+        reason: {type: string}
+        script_id: {type: [integer, 'null']}
+        policy_id: {type: [integer, 'null']}
+        omitted: {type: array, items: {type: string}, description: Policy checks left out because their optional parameter is empty}
+        outcome: {type: string, description: Only in an install or uninstall answer}
+        message: {type: string}
+    StarterPlan:
+      type: object
+      properties:
+        ready: {type: boolean, description: False without an instance signing key (scripts are blocked)}
+        blocker: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/StarterItem'}}
+        counts: {type: object, additionalProperties: {type: integer}}
+    StarterResult:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/StarterItem'}}
+        counts: {type: object, additionalProperties: {type: integer}}
+    StarterCatalog:
+      type: object
+      properties:
+        ready: {type: boolean}
+        blocker: {type: [string, 'null']}
+        totals: {type: object, properties: {scripts: {type: integer}, installed: {type: integer}, policies: {type: integer}}}
+        packs:
+          type: array
+          items:
+            type: object
+            properties:
+              pack:
+                type: object
+                properties:
+                  id: {type: string}
+                  name: {type: string}
+                  version: {type: string}
+                  description: {type: string}
+                  pack_sha256: {type: string}
+              counts: {type: object, additionalProperties: {type: integer}}
+              scripts:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: {type: string}
+                    name: {type: string}
+                    description: {type: string}
+                    platform: {type: string, enum: [windows, linux]}
+                    language: {type: string, enum: [powershell, bash]}
+                    risk: {type: string, enum: [read_only, changes_system, disruptive]}
+                    requires_approval: {type: boolean}
+                    destructive: {type: boolean}
+                    tags: {type: array, items: {type: string}}
+                    timeout_s: {type: integer}
+                    params: {type: array, items: {type: object, additionalProperties: true}}
+                    output: {type: string}
+                    size_bytes: {type: integer}
+                    content_hash: {type: string}
+                    state: {type: string, enum: [not_installed, current, update_available, modified, update_staged, retired]}
+                    script_id: {type: [integer, 'null']}
+                    installed_version: {type: [integer, 'null']}
+              check_sets: {type: array, items: {type: object, additionalProperties: true}}
+              policies: {type: array, items: {type: object, additionalProperties: true}}

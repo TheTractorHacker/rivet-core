@@ -486,7 +486,7 @@ final class StarterPack
         }
 
         return ['id' => $id, 'name' => $name, 'description' => $desc, 'platform' => $platform, 'language' => $language, 'risk' => $risk,
-            'requires_approval' => $approval, 'destructive' => $risk === 'disruptive', 'tags' => array_values($tags), 'timeout_s' => $timeout, 'params' => $params, 'output' => $output,
+            'requires_approval' => $approval, 'destructive' => $risk === 'disruptive', 'tags' => $tags, 'timeout_s' => $timeout, 'params' => $params, 'output' => $output,
             'file' => $bodyPath, 'size_bytes' => strlen($body), 'body_sha256' => hash('sha256', $body), 'content_hash' => self::scriptHash($language, $platform, $body, $params), 'body' => $body];
     }
 
@@ -664,8 +664,7 @@ final class StarterPack
      * Replace `{"$param": name}` objects by the value, `{"$file": path}` objects by the text of a pack file (whose `{{name}}` tokens become whole
      * numbers), anywhere in a check's params.
      *
-     * @param array<mixed> $values
-     * @param array<string,mixed> $params
+     * @param array<string,mixed> $values parameter name => resolved value
      */
     private static function substitute(mixed $node, array $values, string $dir): mixed
     {

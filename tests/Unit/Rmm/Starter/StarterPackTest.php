@@ -48,6 +48,14 @@ final class StarterPackTest extends TestCase
         $this->assertSame(self::pack()->catalog(), $public, 'docs/rmm/starter-pack.manifest.json is stale: run php scripts/build-starter-pack.php');
     }
 
+    public function testTheBuildScriptSaysEverythingGeneratedIsCurrent(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $out = [];
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($root . '/scripts/build-starter-pack.php') . ' --check 2>&1', $out, $code);
+        $this->assertSame(0, $code, implode("\n", $out));
+    }
+
     public function testATamperedOrUnlistedFileRefusesThePack(): void
     {
         $tmp = sys_get_temp_dir() . '/starter_tamper_' . getmypid();

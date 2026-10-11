@@ -398,14 +398,15 @@ final class StarterInstaller
                 $marker = $e;
             }
         }
+        $markerHash = $marker['hash'] ?? '';
         $untouched = $marker !== null && $v !== null
-            && hash_equals($marker['hash'], StarterPack::scriptHash((string) $s['language'], (string) $s['platform'], (string) $v['body'], ScriptService::decodeSchema($v['params_schema_json'])));
+            && hash_equals($markerHash, StarterPack::scriptHash((string) $s['language'], (string) $s['platform'], (string) $v['body'], ScriptService::decodeSchema($v['params_schema_json'])));
         $r = ['script_id' => $scriptId, 'version' => $cur, 'untouched' => $untouched, 'staged' => null];
         if ($s['retired_at'] !== null) {
             return ['state' => 'retired'] + $r;
         }
         $target = (string) $item['content_hash'];
-        if ($untouched && $marker !== null && hash_equals($marker['hash'], $target)) {
+        if ($untouched && hash_equals($markerHash, $target)) {
             return ['state' => 'current'] + $r;
         }
         foreach ($mine as $e) {

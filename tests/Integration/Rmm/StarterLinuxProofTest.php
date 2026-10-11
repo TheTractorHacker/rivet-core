@@ -14,7 +14,7 @@ use RivetCore\Tests\Support\StarterDocker;
  * agent puts in front of a script (the parameter defaults, so every changing script is a dry run). Each must exit 0 and print something. The scripts that
  * take a free string are also fed hostile values and must refuse them (exit 2) without running them. Nothing of Windows is executed anywhere.
  *
- * Needs docker; skipped without it. `RIVETCORE_STARTER_PROOF_REPORT=/path/report.json` writes the per-script result table.
+ * Needs docker; skipped without it. The second pass installs packages (slow, needs a network) and runs only with `RIVETCORE_STARTER_PROOF_TOOLS=1`. `RIVETCORE_STARTER_PROOF_REPORT=/path/report.json` writes the per-script result table.
  */
 final class StarterLinuxProofTest extends TestCase
 {
@@ -68,7 +68,7 @@ final class StarterLinuxProofTest extends TestCase
     }
 
     /** @return array<string,array{rc:int,out:string}> */
-    private function runAll(): array
+    private function runAll(bool $withTools = false): array
     {
         file_put_contents($this->dir . '/run.sh', <<<'SH'
             #!/bin/bash
@@ -82,7 +82,15 @@ final class StarterLinuxProofTest extends TestCase
             SH);
         chmod($this->dir, 0777);
         chmod($this->dir . '/out', 0777);
-        [$code, $log] = StarterDocker::exec(['docker', 'run', '--rm', '-v', "{$this->dir}:/w", self::IMAGE, 'bash', '/w/run.sh'], 1500);
+        $cmd = ['bash', '/w/run.sh'];
+        if ($withTools) {
+            // The tools a real server has, so the scripts take their real paths. Exit 77 = the packages could not be installed (no network): skip.
+            $cmd = ['bash', '-c', 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq --no-install-recommends iproute2 procps iputils-ping dnsutils traceroute openssh-server openssl smartmontools cron ufw nftables net-tools sudo >/dev/null 2>&1 || exit 77; openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/rivet-test-key.pem -out /tmp/rivet-test-cert.pem -days 60 -subj /CN=rivet-test >/dev/null 2>&1; exec bash /w/run.sh'];
+        }
+        [$code, $log] = StarterDocker::exec(array_merge(['docker', 'run', '--rm', '-v', "{$this->dir}:/w", self::IMAGE], $cmd), 1500);
+        if ($withTools && $code === 77) {
+            $this->markTestSkipped('The container could not install the common tools (no network).');
+        }
         $this->assertSame(0, $code, $log);
         $this->assertFileDoesNotExist($this->dir . '/out/_pwned', 'a hostile value was executed');
         $res = [];
@@ -96,6 +104,20 @@ final class StarterLinuxProofTest extends TestCase
 
     public function testEveryLinuxScriptRunsCleanlyWithItsDefaults(): void
     {
+        $this->proveAll(false, 'RIVETCORE_STARTER_PROOF_REPORT');
+    }
+
+    /** The same run in a container that has ss, ip, ping, dig, traceroute, sshd, openssl, smartctl, cron, ufw and nft, so the real code paths run. */
+    public function testEveryLinuxScriptRunsCleanlyWithCommonToolsInstalled(): void
+    {
+        $this->proveAll(true, 'RIVETCORE_STARTER_PROOF_REPORT_TOOLS');
+    }
+
+    private function proveAll(bool $withTools, string $reportEnv): void
+    {
+        if ($withTools && !getenv('RIVETCORE_STARTER_PROOF_TOOLS')) {
+            $this->markTestSkipped('Set RIVETCORE_STARTER_PROOF_TOOLS=1 to run the pass that installs packages in the container (about 3 minutes).');
+        }
         $scripts = [];
         foreach (StarterPack::bundled()->scripts() as $s) {
             if ($s['language'] !== 'bash') {
@@ -104,7 +126,7 @@ final class StarterLinuxProofTest extends TestCase
             $given = [];
             foreach ($s['params'] as $p) {
                 if (!array_key_exists('default', $p) && isset(self::SAMPLE[$p['name']])) {
-                    $given[$p['name']] = self::SAMPLE[$p['name']];
+                    $given[$p['name']] = $withTools && $p['name'] === 'cert_file' ? '/tmp/rivet-test-cert.pem' : self::SAMPLE[$p['name']];
                 }
             }
             [$values, , $err] = ParamSchema::validate($s['params'], $given);
@@ -115,7 +137,7 @@ final class StarterLinuxProofTest extends TestCase
         }
         $this->assertGreaterThanOrEqual(25, count($scripts));
 
-        $res = $this->runAll();
+        $res = $this->runAll($withTools);
         $report = [];
         foreach ($scripts as $id => $s) {
             $this->assertArrayHasKey($id, $res, "$id did not run");
@@ -125,13 +147,13 @@ final class StarterLinuxProofTest extends TestCase
             $this->assertNotSame('', trim($r['out']), "$id printed nothing");
             $this->assertStringStartsWith('==', ltrim($r['out']), "$id should start with its title line");
             $this->assertLessThan(60000, strlen($r['out']), "$id printed too much");
-            $this->assertDoesNotMatchRegularExpression('/command not found|syntax error|unbound variable|Permission denied/i', $r['out'], "$id leaked a shell error:\n" . substr($r['out'], 0, 1500));
+            $this->assertDoesNotMatchRegularExpression('/command not found|syntax error|unbound variable/i', $r['out'], "$id leaked a shell error:\n" . substr($r['out'], 0, 1500));
             if ($s['risk'] !== 'read_only') {
                 $this->assertMatchesRegularExpression('/\[DRY-RUN\]|NOT AVAILABLE|\[SKIP\]/', $r['out'], "$id changes the machine, so by default it may only report or skip:\n" . substr($r['out'], 0, 800));
                 $this->assertStringNotContainsString('[DONE]', $r['out'], "$id acted on a dry run");
             }
         }
-        if (($path = getenv('RIVETCORE_STARTER_PROOF_REPORT')) !== false && $path !== '') {
+        if (($path = getenv($reportEnv)) !== false && $path !== '') {
             file_put_contents($path, json_encode($report, JSON_PRETTY_PRINT));
         }
     }

@@ -692,7 +692,7 @@ final class RmmModule
         if ($this->starterInstaller === null) {
             $packs = [StarterPack::bundled()];
             foreach ((array) ($this->options['starter_packs'] ?? []) as $dir) {
-                if (is_string($dir) && $dir !== '') {
+                if ($dir !== '') {
                     $packs[] = StarterPack::fromDirectory($dir);
                 }
             }
