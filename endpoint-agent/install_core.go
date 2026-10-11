@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"rivetit-agent/internal/embed"
+	"rivetit-agent/internal/mesh"
 )
 
 // sysOps is every operating-system side effect of an install, so the flow (and
@@ -23,6 +25,8 @@ type sysOps struct {
 	registerARP  func(installDir, exe string) error
 	removeARP    func() error
 	message      func(title, text string, isError bool)
+	// meshInstall downloads and runs the optional MeshCentral agent installer (nil = the real one; tests inject a fake).
+	meshInstall func(ctx context.Context, s *mesh.Spec, o mesh.InstallOptions) mesh.Result
 }
 
 type instKind int

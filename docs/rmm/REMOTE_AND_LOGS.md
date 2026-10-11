@@ -2,7 +2,7 @@
 
 Status: built in RivetCore after v1.0.0-rc.10 ([#74](https://github.com/TheTractorHacker/rivet-core/issues/74) remote tools, [#76](https://github.com/TheTractorHacker/rivet-core/issues/76) log collection); migration `0022_rmm_remote_and_logs`; not yet adopted by an edition. Everything here is **off by default** behind three sub-switches, and each switch has its own plain-language warning.
 
-This page is for the person who runs the server. The wire contract is [PROTOCOL.md](PROTOCOL.md) (3.2.4, 3.6 to 3.8), the routes are in [openapi-device.yaml](openapi-device.yaml), the engineering notes for editions are in [modules/rmm.md](../modules/rmm.md).
+This page is for the person who runs the server. (Installing the MeshCentral agent together with the RivetIT agent, and mapping the node automatically, is described in its own section below: "Install the MeshCentral agent with the RivetIT agent".) The wire contract is [PROTOCOL.md](PROTOCOL.md) (3.2.4, 3.6 to 3.8), the routes are in [openapi-device.yaml](openapi-device.yaml), the engineering notes for editions are in [modules/rmm.md](../modules/rmm.md).
 
 ## What you get
 
@@ -47,6 +47,70 @@ File transfers are stored under the module option `transfer_dir`, or `<binary_di
 ## Log rules
 
 A rule is a plain filter: severity or worse, a source substring, an optional event id, a phrase, a count within a window, and a severity for the alert. **It is never a regular expression**, so a careless pattern cannot cost the server more than a substring search. A match reports the check `log.rule_<id>` through the existing check evaluator: debounce (a log match is reported enough times to pass it at once), the Phase 3 alerting engine (maintenance windows, dependency and storm control, escalation) and the edition's alert and ticket path all apply unchanged. When the rule has not matched on that device for `resolve_after_min` minutes (or the rule was disabled or deleted), housekeeping reports the check `ok` and the alert closes.
+
+## Install the MeshCentral agent with the RivetIT agent
+
+Status: 1.0.0-rc.12, migration `0023_rmm_mesh_agent`. **Optional and off by default.** Wire contract: [PROTOCOL.md](PROTOCOL.md) 3.2.5 and 6.
+
+Remote desktop, terminal and files use your own MeshCentral server (above). This feature saves you a second install: when you issue a RivetIT installer you can tick **Also install the MeshCentral agent**, and the installer, after the RivetIT agent is in place, pulls the Mesh agent for **your** Mesh server and device group and runs it. Afterwards the device's Mesh node is mapped to it automatically, so "Remote" works without anyone pasting a node id.
+
+What it does **not** do, on purpose:
+
+* The RivetIT installer never contains a Mesh binary. A MeshCentral agent is specific to one Mesh server and one device group, so it comes from your server, over https, at install time.
+* A failure never fails the RivetIT install. If the Mesh download or install fails (wrong group id, Mesh down, certificate mismatch, the installer errors) the RivetIT agent is installed and enrolled as usual, the installer exits 0, and the failure is recorded and shown in the device's Mesh state (`mesh_agent.error`) at the first check-in.
+* Uninstalling the RivetIT agent leaves the Mesh agent alone. Add `--remove-meshagent` to remove it too.
+* An existing Mesh agent on the machine is never reinstalled or touched by the installer.
+
+### Set it up, step by step
+
+1. **Create the device group in MeshCentral.** Sign in to your Mesh server, My Devices, **Add Device Group**, name it (for example "Acme laptops"), type **Manage using a software agent**. The devices will join this group.
+2. **Get the group id (`meshid`).** Open the group, click **Add Agent**, choose an operating system and look at the download address or install command it shows: it contains `meshagents?id=4&meshid=<long hex>&installflags=0`. The long hex after `meshid=` is the id (usually 96 hex characters). MeshCentral's own `mesh//...` form (shown in the group's details and in its API) is accepted too and converted. **Treat the group id as a secret**: anyone who has it and can reach your Mesh server can download an agent that joins the group.
+3. **Decide how the installer trusts your Mesh server.**
+   * Your Mesh server has a certificate from a public CA (for example Let's Encrypt): leave the pin **empty**. The installer verifies it with the machine's trusted roots.
+   * Your Mesh server has its own self-signed certificate (MeshCentral's default): pin it. Use **Read the certificate from the server** in the Mesh settings (it connects through the network policy and shows a SHA-384 hash; it is trust on first use, so compare it with the hash MeshCentral shows under My Server, or with `echo | openssl s_client -connect mesh.example.com:443 2>/dev/null | openssl x509 -noout -fingerprint -sha384` run from a machine you trust) and save it. The pin is the SHA-384 (96 hex) or SHA-256 (64 hex) hash of the server's certificate. The installer then accepts exactly that certificate and nothing else.
+   * A pin on a certificate that is renewed every few months breaks at each renewal (the leaf hash changes). Pin long-lived self-signed certificates, not auto-renewed ones.
+4. **Save the Mesh settings in RivetIT.** MeshCentral enabled, the address (`https://` only), the device group id, the pin if any. These are the existing MeshCentral settings plus `mesh_group_id`, `mesh_server_cert_pin` and `mesh_auto_map_overwrite` (below). REST: `PUT endpoint_devices/remote/mesh`.
+5. **Issue an installer with the box ticked.** Add device, download installer or deployment commands, tick **Also install the MeshCentral agent**. If Mesh cannot support it (switched off, not https, no group id) RivetIT says so and creates nothing. The box is remembered for the enrollment token, so the scripted download (`agent_installer`) gives the same installer.
+6. **Run it** like any RivetIT installer. On Windows, `RivetIT-Agent-Setup-....exe setup --silent` (or double-click): the RivetIT agent installs first, then `MeshAgent.exe -fullinstall` runs from the file downloaded from your Mesh server. On Linux, `install-linux.sh --fetch-installer ...` or a stamped installer; or with a plain agent `install-linux.sh --server ... --token-file ... --install-mesh-agent --mesh-url https://mesh.example.com --mesh-group-id <hex> [--mesh-cert-pin <hex>]`. `--no-mesh-agent` skips the Mesh part of a stamped installer.
+7. **Check the result** on the device page: the Mesh state shows installed or the error, the node id and whether it was mapped. The audit log has `Mesh Agent Installed` / `Mesh Agent Install Failed` and `Mesh Node Mapped`. The webhook event is `rmm.mesh.agent_installed`.
+
+### Where the node id comes from, and how it is mapped
+
+The RivetIT agent reads the local node id after the install and then at every start and once a day (only on a machine with a Mesh agent, so nothing is run elsewhere): it asks the Mesh agent (`MeshAgent.exe -nodeid` / `meshagent -nodeid`), then looks for a `.msh` file beside it that records a `NodeID`, then (Windows) the registry; an operator can also set `mesh_node_id` in the agent's config or drop `mesh_node_id.txt` in its state directory. It normalises the result to `node//<id>` and reports it with the Mesh state. The server maps it **only while MeshCentral is enabled** and the id has the right shape:
+
+| Situation | What happens |
+|---|---|
+| The device has no mapping | mapped (source `agent`), audit `Mesh Node Mapped` |
+| Same node as already mapped | nothing |
+| A different node the agent set earlier | replaced (the machine got a new Mesh identity), audited |
+| A different node an administrator set by hand | **kept**; state `kept_manual`, audit `Mesh Node Differs` once. Turn on `mesh_auto_map_overwrite` to let the agent's node replace it (audited) |
+| The node is already mapped to **another live device** | **refused**; state `conflict`, audit `Mesh Node Conflict`, event `rmm.mesh.node_conflict`. Nothing is moved, even with the overwrite switch on: check which machine really owns the node (a cloned image carries the same node id) |
+| The node is mapped to a **retired or revoked** device | moved to the device that now reports it (a re-enrolled machine), audit `Mesh Node Moved` |
+
+### Troubleshooting
+
+| You see | Likely cause |
+|---|---|
+| `the Mesh server certificate does not match the pinned hash` | wrong pin, or the certificate was renewed: read it again and save the new pin |
+| `x509: certificate signed by unknown authority` | no pin and a self-signed certificate: pin it |
+| `the Mesh server answered HTTP 404` | wrong group id, or the agent id for that platform does not exist on your Mesh version (see below) |
+| `the Mesh server sent a web page instead of an installer` | the group id is wrong or the address is a login page |
+| `no Mesh agent id is known for windows/arm64` (or another platform) | add the id under the Mesh settings (`mesh_agent_ids`) |
+| `the Mesh installer exited with code N` | the Mesh installer failed; the last lines of its output are in the agent's `install.log` (Windows `%ProgramData%\RivetIT\Agent\install.log`, Linux `/var/lib/rivetit-agent/install.log`) |
+| installed, but no node id | the agent could not be asked; see "unverified" below, set `mesh_node_id.txt` as a stop-gap |
+
+### What is unverified: check these against YOUR Mesh version
+
+Everything about talking to MeshCentral was written from its documentation and source as remembered, and tested only against mocks and fixtures. Before a fleet roll-out, try one machine of each operating system and confirm:
+
+1. **The download address.** `https://<mesh>/meshagents?id=<N>&meshid=<group hex>&installflags=0` returning the agent installer with the group settings embedded (`installflags` 0 = both interactive and background, 1 = background only, 2 = interactive only).
+2. **The agent ids**, from MeshCentral's `meshAgentsArchitectureNumbers` (My Server, Mesh Agents lists them): 3 Windows x86-32 service, 4 Windows x86-64 service, 5 Linux x86-32, 6 Linux x86-64, 26 Linux ARM 64-bit (aarch64), and 36 for Windows ARM64, which is the **least certain**. A wrong id is corrected under the Mesh settings (`mesh_agent_ids`), from the server, without a new agent: it travels in the installer.
+3. **The install arguments.** Windows `MeshAgent.exe -fullinstall`; Linux `./meshagent -install`. MeshCentral's own Linux script also passes `--installPath=/usr/local/mesh_services/meshagent` and may copy a `.msh` file; whether a binary downloaded with a `meshid` already embeds the group on your version, or needs a `.msh`, has to be confirmed. Correct them with `mesh_install_args`.
+4. **The uninstall arguments** used by `--remove-meshagent`: Windows `-fulluninstall`, Linux `-uninstall`.
+5. **The node id.** That `-nodeid` prints the id (the code accepts a bare id or `node//<id>`, alone on a line, optionally after `NodeID:`), that it is the same id MeshCentral shows for the device, and whether a registry value or the `.msh` ever holds it (the standard `.msh` holds the server and group, not the node; the registry key `HKLM\SOFTWARE\Open Source\MeshAgent2` is a guess). The default locations are `%ProgramFiles%\Mesh Agent\MeshAgent.exe` and `/usr/local/mesh_services/meshagent/meshagent`.
+6. **The Windows agent code** was cross-compiled and vetted, never run on a Windows host.
+
+What was proven: the whole flow on Linux in a container against a mock Mesh server that serves a fake `meshagent` (download, pin, run, node id report, no-fail, uninstall behaviour); the pinning, size, redirect and error handling and the parsers with unit tests; the server rules with integration tests. See `endpoint-agent/e2e/run_linux_container_e2e.sh` and `endpoint-agent/internal/mesh`.
 
 ## What is built, what is verified, what remains
 

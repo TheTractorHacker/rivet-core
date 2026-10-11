@@ -209,7 +209,7 @@ function vectorsBlock(string $root): string
     $t = json_decode((string) file_get_contents($dir . '/agent_installer_trailer_vectors.json'), true);
     $out = "Both files live in `endpoint-agent/testdata/vectors/` and are read by the Go agent and by the PHP tests; `php scripts/endpoint-vectors.php --check` regenerates them and fails on any byte difference.\n\n";
     $out .= "| File | SHA-256 |\n|---|---|\n";
-    foreach (['agent_job_signing_vectors.json', 'agent_installer_trailer_vectors.json'] as $f) {
+    foreach (['agent_job_signing_vectors.json', 'agent_installer_trailer_vectors.json', 'agent_installer_mesh_vectors.json'] as $f) {
         $out .= '| `' . $f . '` | `' . hash_file('sha256', $dir . '/' . $f) . "` |\n";
     }
     $out .= "\n**Job signing** (`agent_job_signing_vectors.json`). Test key: " . trim((string) preg_replace('/\s+/', ' ', $j['test_key']['seed_derivation'])) . '; public key `' . $j['test_key']['public_key_base64'] . "`.\n\n";
@@ -225,6 +225,8 @@ function vectorsBlock(string $root): string
     foreach ($t['negative'] as $n) {
         $out .= '- ' . $n['name'] . ': ' . $n['reason'] . "\n";
     }
+    $m = json_decode((string) file_get_contents($dir . '/agent_installer_mesh_vectors.json'), true);
+    $out .= "\n**Optional Mesh members** (`agent_installer_mesh_vectors.json`, added in 1.0.0-rc.12; the two files above are unchanged): payloads with `install_mesh_agent` and `mesh`, which every reader must parse and an agent that predates them must still decode. Vectors (" . count($m['vectors']) . '): ' . implode('; ', array_column($m['vectors'], 'name')) . ".\n";
 
     return rtrim($out, "\n");
 }

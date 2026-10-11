@@ -4,12 +4,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"rivetit-agent/internal/svc"
 )
@@ -25,6 +25,8 @@ func cmdInstall(args []string) int {
 	fs.StringVar(&f.department, "department", "", "informational department label")
 	installDir := fs.String("install-dir", defaultInstallDir(), "binary directory")
 	level := fs.String("log-level", "info", "log level")
+	var mf meshFlags
+	mf.register(fs)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -33,8 +35,8 @@ func cmdInstall(args []string) int {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
 	}
-	res := performInstall(installParams{flags: f, stateDir: *dir, installDir: *installDir, self: self, version: version},
-		realOps(), consoleLog(*level))
+	ops, log := realOps(), consoleLog(*level)
+	res := performInstall(installParams{flags: f, stateDir: *dir, installDir: *installDir, self: self, version: version}, ops, log)
 	switch res.Kind {
 	case instNoToken:
 		fmt.Fprintln(os.Stderr, "error:", res.Msg)
@@ -47,6 +49,11 @@ func cmdInstall(args []string) int {
 		return 1
 	}
 	fmt.Println("RivetIT Agent installed and started")
+	if mi, ms := mf.raw(); mi != nil {
+		if line := installMeshAgent(context.Background(), ops, mi, ms, *dir, log); line != "" {
+			fmt.Println(line)
+		}
+	}
 	st, err := openStore(*dir)
 	if err != nil {
 		return 1
@@ -99,7 +106,7 @@ func cmdUninstall(args []string) int {
 		fmt.Fprintln(os.Stderr, "warning: removing the Add/Remove Programs entry:", err)
 	}
 	if *meshAgent {
-		removeMeshAgent()
+		removeMeshAgentIfPresent()
 	} else {
 		fmt.Println("MeshCentral agent (if any) left untouched; use --remove-meshagent to remove it")
 	}
@@ -136,29 +143,4 @@ func removeInstallDir(dir string) {
 	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CmdLine: `cmd.exe ` + cmdline, CreationFlags: 0x00000008} // DETACHED_PROCESS
 	_ = c.Start()
 	fmt.Println("agent binary scheduled for deletion")
-}
-
-// removeMeshAgent runs the MeshAgent's own uninstaller. The flag name is from
-// MeshAgent documentation as summarised by search; it was NOT run here.
-func removeMeshAgent() {
-	root := os.Getenv("ProgramFiles")
-	exe := filepath.Join(root, "Mesh Agent", "MeshAgent.exe")
-	if _, err := os.Stat(exe); err != nil {
-		fmt.Println("no MeshCentral agent found at", exe)
-		return
-	}
-	c := exec.Command(exe, "-fulluninstall")
-	done := make(chan error, 1)
-	go func() { done <- c.Run() }()
-	select {
-	case err := <-done:
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "warning: MeshAgent uninstall returned:", err)
-		} else {
-			fmt.Println("MeshCentral agent uninstalled (as requested)")
-		}
-	case <-time.After(60 * time.Second):
-		_ = c.Process.Kill()
-		fmt.Fprintln(os.Stderr, "warning: MeshAgent uninstall timed out")
-	}
 }

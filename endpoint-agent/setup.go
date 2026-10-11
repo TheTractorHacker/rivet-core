@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -90,6 +91,7 @@ func joinArgs(args []string) string {
 
 type setupOpts struct {
 	silent, noService, elevated bool
+	noMesh                      bool // --no-mesh-agent: ignore a Mesh request in the installer payload
 	stateDir, installDir        string
 	explicit                    map[string]bool
 }
@@ -105,6 +107,9 @@ func (o setupOpts) elevatedArgs() []string {
 	if o.noService {
 		a = append(a, "--no-service")
 	}
+	if o.noMesh {
+		a = append(a, "--no-mesh-agent")
+	}
 	return a
 }
 
@@ -114,6 +119,7 @@ func parseSetup(args []string) (setupOpts, int) {
 	fs.BoolVar(&o.silent, "silent", false, "never show UI; report the result through the exit code")
 	fs.BoolVar(&o.noService, "no-service", false, "do not register or start the service (test mode)")
 	fs.BoolVar(&o.elevated, "elevated", false, "internal: this process was relaunched elevated")
+	fs.BoolVar(&o.noMesh, "no-mesh-agent", false, "do not install the MeshCentral agent even if this installer carries a request for it")
 	installDir := fs.String("install-dir", defaultInstallDir(), "binary directory")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -226,6 +232,12 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 	res := performInstall(installParams{flags: f, stateDir: o.stateDir, installDir: o.installDir, noService: o.noService,
 		skipIfEnroll: true, self: self, version: version}, ops, log)
 	code, msg, isErr := setupOutcome(res, logPath)
+	// The optional MeshCentral agent comes AFTER the RivetIT agent is in place and can never change the outcome or the exit code.
+	if !o.noMesh && (res.Kind == instOK || res.Kind == instDeferred || res.Kind == instDeferredFail) {
+		if line := installMeshAgent(context.Background(), ops, pl.InstallMeshAgent, pl.Mesh, st.Dir, log); line != "" {
+			msg += "\n" + line
+		}
+	}
 	log.Info("setup finished", "exit", code, "result", res.Msg)
 	say(msg, isErr)
 	return code

@@ -64,6 +64,7 @@ final class CheckinService
         private readonly ?RmmEventPublisher $events = null,
         private readonly ?EffectivePolicy $policies = null,
         private readonly ?RemoteSettings $remote = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
     ) {
     }
 
@@ -109,6 +110,8 @@ final class CheckinService
         $this->shedIfOverloaded($dev, $cfg);
         // Phase 1, all optional and never an error: what the agent announced and the software report it may carry.
         $announce = ['caps' => DeviceState::cleanCapabilities($body['capabilities'] ?? null), 'platform' => is_string($body['platform'] ?? null) ? $body['platform'] : null, 'software' => null];
+        // The optional MeshCentral agent report: read here, applied in process() (tiny, so it is never queued). Never an error.
+        $announce['mesh_agent'] = $this->meshAgents !== null && array_key_exists(RmmProtocol::CHECKIN_MESH_AGENT, $body) ? $body[RmmProtocol::CHECKIN_MESH_AGENT] : null;
         $wantsSoftware = $features['inventory_software'] && $this->software !== null && $announce['caps'] !== null && in_array(DeviceState::CAP_SOFTWARE_INVENTORY, $announce['caps'], true);
         // Phase 2: the policies that reach this device (one read, only while the `policies` sub-switch is on).
         $policy = null;
@@ -251,7 +254,7 @@ final class CheckinService
      * @param array<mixed> $buffered
      * @param array<string,mixed> $cfg
      * @param array<string,bool> $features
-     * @param array{caps?:?list<string>,platform?:?string,software?:?array<string,mixed>,alert_defs?:array<string,array<string,mixed>>} $announce what the agent announced (capabilities, platform) and its validated software report
+     * @param array{caps?:?list<string>,platform?:?string,software?:?array<string,mixed>,alert_defs?:array<string,array<string,mixed>>,mesh_agent?:mixed} $announce what the agent announced (capabilities, platform) and its validated software report
      * @param array{last_checkin_at:string,last_ip:string} $live the liveness columns, written with the rest of the device row in ONE statement
      * @return array<string,mixed> the device row as the check-in leaves it
      */
@@ -279,6 +282,9 @@ final class CheckinService
                     $this->events->emit(RmmEvent::DEVICE_ONLINE, $dev, ['offline_since' => $since]);
                 }
             }
+        }
+        if (($announce['mesh_agent'] ?? null) !== null && $this->meshAgents !== null) {
+            $this->meshAgents->report($row, $announce['mesh_agent']);
         }
         $work = ['device_id' => $deviceId, 'seq' => $seq, 'collected' => $collectedSql, 'received' => $this->sql->time(), 'newer' => $newer, 'inventory' => $inventory,
             'metrics' => $metrics, 'checks' => $primaryChecks, 'buffered' => $buffered, 'shed' => (int) ($cfg['shed_level'] ?? 0) >= 1];

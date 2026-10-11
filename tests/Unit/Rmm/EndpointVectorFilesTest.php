@@ -15,6 +15,11 @@ final class EndpointVectorFilesTest extends TestCase
         'agent_job_signing_vectors.json' => '9850daf57252afbfc7eee7f9531239b9f8e0e68fb491b56bff5682e94f85deb6',
     ];
 
+    /** Files ADDED after the baseline (never edit the two above; add a file instead). */
+    private const ADDED = [
+        'agent_installer_mesh_vectors.json' => '870b5edc2edbce3d312e6c0348a7dc3626be3def14f0d5e6b4c56e67e9d0d30b',   // 1.0.0-rc.12: the optional MeshCentral agent members
+    ];
+
     public function testFilesMatchTheRivetItBaseline(): void
     {
         foreach (self::RIVETIT_BASELINE as $file => $sha) {
@@ -32,7 +37,14 @@ final class EndpointVectorFilesTest extends TestCase
             $listed[$m[2]] = $m[1];
             $this->assertSame($m[1], hash_file('sha256', RmmVectors::dir() . '/' . $m[2]), $m[2]);
         }
-        $this->assertSame(self::RIVETIT_BASELINE, $listed);
+        $this->assertSame(self::RIVETIT_BASELINE + self::ADDED, $listed, 'the two baseline lines keep their place and bytes; additions only come after them');
+    }
+
+    public function testAddedFilesMatchTheirPinnedHash(): void
+    {
+        foreach (self::ADDED as $file => $sha) {
+            $this->assertSame($sha, hash_file('sha256', RmmVectors::dir() . '/' . $file), $file);
+        }
     }
 
     public function testGeneratorReproducesTheFilesByteForByte(): void

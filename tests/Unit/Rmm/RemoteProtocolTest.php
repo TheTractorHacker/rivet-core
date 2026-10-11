@@ -104,6 +104,7 @@ final class RemoteProtocolTest extends TestCase
     {
         $ids = array_map(static fn ($m): string => $m->id(), \RivetCore\Migration\CoreMigrations::all());
         $this->assertContains('0022_rmm_remote_and_logs', $ids);
+        $this->assertContains('0023_rmm_mesh_agent', $ids);
         $this->assertSame($ids, array_values(array_unique($ids)));
         $this->assertSame(['endpoint_agent_remote_settings', 'endpoint_agent_transfers', 'endpoint_agent_log_events', 'endpoint_agent_log_state', 'endpoint_agent_log_rules'], array_keys(\RivetCore\Rmm\Migration\RemoteSchema::tables()));
         foreach (\RivetCore\Rmm\Migration\RemoteSchema::tables() as $name => $ddl) {

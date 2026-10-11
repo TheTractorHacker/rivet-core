@@ -42,6 +42,8 @@ final class RemoteActions
         private readonly RemoteSettings $remote,
         private readonly MeshService $mesh,
         private readonly RmmAuditInterface $audit,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshAgentSettings $meshSettings = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
     ) {
     }
 
@@ -539,5 +541,67 @@ final class RemoteActions
         $this->remote->refresh();
 
         return ActionResult::ok('Saved.', 200, 'saved', $this->settingsView());
+    }
+
+    // ------------------------------------------------------------------ Mesh agent install settings (administrators)
+
+    /** @return array<string,mixed> */
+    private function meshSettingsView(): array
+    {
+        $cfg = $this->settings->get();
+        $m = $this->meshSettings?->get() ?? ['group_id' => '', 'server_cert_pin' => '', 'auto_map_overwrite' => false, 'agent_ids' => [], 'install_args' => []];
+        $t = $this->meshSettings?->effectiveTables() ?? ['agent_ids' => [], 'install_args' => []];
+        $refusal = $this->meshAgents?->installRefusal();
+
+        return ['mesh_enabled' => (int) $cfg['mesh_enabled'] === 1, 'mesh_url' => (string) $cfg['mesh_url'], 'mesh_group_id' => $m['group_id'], 'mesh_server_cert_pin' => $m['server_cert_pin'],
+            'mesh_auto_map_overwrite' => $m['auto_map_overwrite'], 'mesh_agent_ids' => $m['agent_ids'], 'mesh_install_args' => $m['install_args'],
+            'effective_agent_ids' => $t['agent_ids'], 'effective_install_args' => $t['install_args'], 'default_agent_ids' => \RivetCore\Rmm\Mesh\MeshAgentCatalog::DEFAULT_AGENT_IDS,
+            'install_ready' => $refusal === null && $this->meshAgents !== null, 'install_refusal' => $this->meshAgents === null ? 'Not available.' : $refusal,
+            'note' => 'The agent ids, download address and install arguments are from the MeshCentral documentation and were not verified against a real server: check them against your Mesh version.'];
+    }
+
+    public function meshSettings(RmmPrincipal $who): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::ADMIN, 0, false);
+        if ($denied !== null) {
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+
+        return ActionResult::ok('ok', 200, 'ok', $this->meshSettingsView());
+    }
+
+    /**
+     * Change the Mesh agent install settings: `mesh_group_id`, `mesh_server_cert_pin`, `mesh_auto_map_overwrite`, `mesh_agent_ids`, `mesh_install_args`. Nothing is written when
+     * any value is invalid. `probe_pin: true` reads the Mesh server's certificate and answers with a proposed pin (`pin_probe`) WITHOUT saving it.
+     *
+     * @param array<string,mixed> $in
+     */
+    public function updateMeshSettings(RmmPrincipal $who, array $in): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::ADMIN, 0, false);
+        if ($denied !== null) {
+            $this->audit->record('Remote Settings Denied', "User {$who->userId} denied Mesh agent settings change: $denied", 0, 0);
+
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        if ($this->meshSettings === null) {
+            return ActionResult::fail(409, 'unsupported', 'The Mesh agent install settings are not available.');
+        }
+        $probe = !empty($in['probe_pin']);
+        unset($in['probe_pin']);
+        $errors = $this->meshSettings->update($in, $who->userId);
+        if ($errors !== []) {
+            return ActionResult::fail(422, 'invalid', implode(' ', $errors));
+        }
+        if ($in !== []) {
+            $this->audit->record('Settings', "{$who->userName} changed the Mesh agent install settings (" . implode(', ', array_keys($in)) . ')', 0, 0);
+        }
+        $data = $this->meshSettingsView();
+        if ($probe) {
+            $url = (string) $this->settings->get()['mesh_url'];
+            $data['pin_probe'] = $url === '' ? ['ok' => false, 'error' => 'Save the MeshCentral address first.'] : $this->mesh->probePin($url);
+        }
+
+        return ActionResult::ok('Saved.', 200, 'saved', $data);
     }
 }

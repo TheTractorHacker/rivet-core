@@ -14,6 +14,7 @@ use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Http\RmmResponse;
 use RivetCore\Rmm\Technician\ActionResult;
 use RivetCore\Rmm\Installer\InstallerService;
+use RivetCore\Rmm\Mesh\MeshAgentSettings;
 use RivetCore\Rmm\Mesh\MeshService;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
@@ -53,6 +54,7 @@ final class RmmAdmin
         private readonly InstallerService $installers,
         private readonly DeviceRepository $devices,
         private readonly RmmAuditInterface $audit,
+        private readonly ?MeshAgentSettings $meshSettings = null,
     ) {
     }
 
@@ -145,7 +147,11 @@ final class RmmAdmin
     /**
      * Save the MeshCentral settings (and optionally test the connection). `mesh_login_key` is write-only: empty keeps the stored key.
      *
-     * @param array<string,mixed> $in mesh_enabled, mesh_url, mesh_domain, mesh_account_template, mesh_policy, mesh_token_ttl_s, mesh_login_key
+     * The optional agent-install settings ride along when present: `mesh_group_id`, `mesh_server_cert_pin`, `mesh_auto_map_overwrite`, `mesh_agent_ids`,
+     * `mesh_install_args` (see {@see MeshAgentSettings}); they are validated first and nothing is written when any of them is invalid. `mesh_probe_pin`
+     * (true) reads the server's certificate and returns a proposed pin in `pin_probe` WITHOUT saving it.
+     *
+     * @param array<string,mixed> $in mesh_enabled, mesh_url, mesh_domain, mesh_account_template, mesh_policy, mesh_token_ttl_s, mesh_login_key, and the install settings above
      * @return ActionResult data: `probe` (null when MeshCentral answered, otherwise the error text) when $test is set and a URL is saved
      */
     public function saveMesh(RmmPrincipal $by, array $in, bool $test = false): ActionResult
@@ -184,15 +190,30 @@ final class RmmAdmin
                 return self::sealFailed();
             }
         }
+        $install = [];
+        if ($this->meshSettings !== null) {
+            $install = array_intersect_key($in, array_flip(['mesh_group_id', 'mesh_server_cert_pin', 'mesh_auto_map_overwrite', 'mesh_agent_ids', 'mesh_install_args']));
+            if ($install !== []) {
+                $errors = $this->meshSettings->update($install, $by->userId);
+                if ($errors !== []) {
+                    return ActionResult::fail(422, 'invalid', implode(' ', $errors));
+                }
+            }
+        }
         $this->settings->set($vals);
-        $this->audit->record('Settings', "{$by->userName} edited the MeshCentral settings for the endpoint agent" . ($key !== '' ? ' (login key replaced)' : ''), 0, 0);
+        $this->audit->record('Settings', "{$by->userName} edited the MeshCentral settings for the endpoint agent" . ($key !== '' ? ' (login key replaced)' : '')
+            . ($install !== [] ? ' and the Mesh agent install settings (' . implode(', ', array_keys($install)) . ')' : ''), 0, 0);
+        $extra = [];
+        if (!empty($in['mesh_probe_pin']) && $norm !== '') {
+            $extra['pin_probe'] = $this->mesh->probePin($norm);
+        }
         if ($test && $norm !== '') {
             $err = $this->mesh->probe($norm);
 
-            return $err === null ? ActionResult::ok('MeshCentral answered.', 200, 'ok', ['probe' => null]) : ActionResult::fail(503, 'mesh_unavailable', $err, ['probe' => $err, 'saved' => true]);
+            return $err === null ? ActionResult::ok('MeshCentral answered.', 200, 'ok', ['probe' => null] + $extra) : ActionResult::fail(503, 'mesh_unavailable', $err, ['probe' => $err, 'saved' => true] + $extra);
         }
 
-        return ActionResult::ok('MeshCentral settings saved.', 200, 'saved', ['probe' => null]);
+        return ActionResult::ok('MeshCentral settings saved.', 200, 'saved', ['probe' => null] + $extra);
     }
 
     // ------------------------------------------------------------------ signing key
@@ -332,12 +353,12 @@ final class RmmAdmin
      *
      * @return ActionResult data: `download` (an {@see RmmResponse}) on success; on a refusal the message says why and no token is left behind
      */
-    public function downloadInstaller(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch): ActionResult
+    public function downloadInstaller(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false): ActionResult
     {
         if (($d = $this->deny($by, RmmAbility::TOKEN_MANAGE, $clientId)) !== null) {
             return $d;
         }
-        $out = $this->installers->issueDownload($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName);
+        $out = $this->installers->issueDownload($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent);
         if (is_string($out)) {
             return ActionResult::fail(422, 'invalid', $out);
         }
@@ -350,16 +371,16 @@ final class RmmAdmin
      *
      * @return ActionResult data: `token` (row), `token_plain`, `commands` (see {@see InstallerService::deploymentCommands()})
      */
-    public function deploymentCommands(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch): ActionResult
+    public function deploymentCommands(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false): ActionResult
     {
         if (($d = $this->deny($by, RmmAbility::TOKEN_MANAGE, $clientId)) !== null) {
             return $d;
         }
-        $r = $this->installers->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName);
+        $r = $this->installers->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent);
         if (!$r['ok'] || !isset($r['token'], $r['token_plain'], $r['department'])) {
             return ActionResult::fail(422, 'invalid', (string) ($r['error'] ?? 'The installer could not be created.'));
         }
-        $commands = $this->installers->deploymentCommands(['token' => $r['token'], 'token_plain' => $r['token_plain'], 'department' => $r['department']], $arch);
+        $commands = $this->installers->deploymentCommands(['token' => $r['token'], 'token_plain' => $r['token_plain'], 'department' => $r['department']], $arch, $installMeshAgent);
 
         return ActionResult::ok('Enrollment token created. Copy the commands now: the token is shown only once.', 201, 'created',
             ['token' => $r['token'], 'token_plain' => $r['token_plain'], 'commands' => $commands, 'department' => $r['department']]);

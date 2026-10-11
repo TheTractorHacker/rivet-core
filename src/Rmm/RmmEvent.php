@@ -68,6 +68,10 @@ final class RmmEvent
      * hostname empty, client_id 0. Fields: action ("install" or "uninstall"), pack_id, added, updated, staged, removed, skipped, user_id. Never a script text.
      */
     public const STARTER_INSTALLED = 'rmm.starter.installed';
+    /** The MeshCentral agent was found installed on a device that had not reported one (optional Mesh agent install). Fields: version (null when unknown), node_id (null when not yet known). */
+    public const MESH_AGENT_INSTALLED = 'rmm.mesh.agent_installed';
+    /** A device reported a MeshCentral node id that is already mapped to another live device, so it was NOT mapped. Fields: node_id, other_device_id. */
+    public const MESH_NODE_CONFLICT = 'rmm.mesh.node_conflict';
 
     /** @return list<string> */
     public static function all(): array
@@ -75,6 +79,6 @@ final class RmmEvent
         return [self::DEVICE_ENROLLED, self::DEVICE_OFFLINE, self::DEVICE_ONLINE, self::CHECK_FAILED, self::CHECK_RECOVERED,
             self::JOB_COMPLETED, self::JOB_FAILED, self::SOFTWARE_INSTALLED, self::SOFTWARE_REMOVED,
             self::ALERT_OPENED, self::ALERT_ESCALATED, self::ALERT_ACKNOWLEDGED, self::ALERT_RESOLVED, self::MAINTENANCE_STARTED, self::MAINTENANCE_ENDED,
-            self::POLICY_ASSIGNED, self::SCRIPT_RUN, self::APPROVAL_REQUESTED, self::APPROVAL_DECIDED, self::FILE_TRANSFERRED, self::LOG_RULE_MATCHED, self::STARTER_INSTALLED];
+            self::POLICY_ASSIGNED, self::SCRIPT_RUN, self::APPROVAL_REQUESTED, self::APPROVAL_DECIDED, self::FILE_TRANSFERRED, self::LOG_RULE_MATCHED, self::MESH_AGENT_INSTALLED, self::MESH_NODE_CONFLICT, self::STARTER_INSTALLED];
     }
 }

@@ -38,6 +38,8 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  * Settings (administrators):
  *   GET    endpoint_devices/remote/settings                            sub-switches, allowed folders, log sources, limits, the risk and storage texts
  *   PUT    endpoint_devices/remote/settings                            {features?, transfer_allow?, logs_collect?, limits?, accept_filetransfer_risk?, accept_logs_storage?}
+ *   GET    endpoint_devices/remote/mesh                                the Mesh agent install settings (group id, certificate pin, overwrite switch, id and argument tables, whether an installer can ask for the agent)
+ *   PUT    endpoint_devices/remote/mesh                                {mesh_group_id?, mesh_server_cert_pin?, mesh_auto_map_overwrite?, mesh_agent_ids?, mesh_install_args?, probe_pin?}; probe_pin answers a proposed pin without saving it
  * Logs (Phase 8):
  *   GET    endpoint_devices/logs                                       search across the caller's clients (device_id, client_id, from, to, level, source, code, q, limit, offset)
  *   GET    endpoint_devices/logs/stats                                 fleet storage figures
@@ -69,6 +71,18 @@ final class RemoteApi
         $limit = max(1, min(500, (int) ($req->query['limit'] ?? 100)));
         $offset = max(0, (int) ($req->query['offset'] ?? 0));
         if ($seg[0] === 'remote') {
+            if (($seg[1] ?? null) === 'mesh' && !isset($seg[2])) {
+                if ($m === 'GET') {
+                    return self::result($this->remote->meshSettings($who));
+                }
+                if (in_array($m, ['PUT', 'PATCH', 'POST'], true)) {
+                    [$in, $bad] = $this->body($req);
+
+                    return $bad ?? self::result($this->remote->updateMeshSettings($who, $in));
+                }
+
+                return self::method();
+            }
             if (($seg[1] ?? null) !== 'settings' || isset($seg[2])) {
                 return self::notFound();
             }

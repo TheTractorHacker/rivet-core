@@ -61,7 +61,8 @@ Run `RmmBridgeInterface` on the same database connection Core uses so its writes
 | `Admin\RmmAdmin` | settings (switch, intervals, limits, checks, CA certificate, sub-switch presets), MeshCentral settings, signing key rotation, binaries, releases and rings, installers and deployment commands |
 | `Binaries\BinaryStore` | validate (PE and ELF headers), store, publish, make current, offer as an update, serve agent binaries |
 | `Installer\InstallerService`, `InstallerDownload`, `InstallerStamp` | per-client installers, token-gated download, deployment snippets (PowerShell for an RMM, Intune or GPO; a shell one-liner for Linux), the stamp format |
-| `Mesh\MeshService`, `MeshCookie` | MeshCentral URL and node-id validation, the network-policy probe, the launch |
+| `Mesh\MeshService`, `MeshCookie` | MeshCentral URL and node-id validation, the network-policy probe, the pin probe, the launch |
+| `Mesh\MeshAgentCatalog`, `MeshAgentSettings`, `MeshAgentService` | the optional MeshCentral agent install: id tables and validation, the settings row, the installer's Mesh block, the device report and the automatic node-id mapping |
 | `Settings\RmmSettings`, `Job\JobService`, `Device\DeviceService`, ... | the device-facing services (see the design) |
 
 ### Compose the module and answer a device request
@@ -256,6 +257,30 @@ Built after v1.0.0-rc.10 (migration `0022_rmm_remote_and_logs`, five new tables,
 6. Optional: subscribe to `rmm.file.transferred` and `rmm.log.rule_matched`.
 7. Render the pages, using `remoteActions()`, `logActions()` and the read-model methods above, and show the two risk texts verbatim when an administrator turns a switch on.
 8. Roll out an agent of this release (it announces `remote:*` and `logs:collect`), then switch the features on. An older agent keeps working and is simply never offered a remote tool or a log config.
+
+## Optional MeshCentral agent install and node-id mapping (1.0.0-rc.12)
+
+Built after v1.0.0-rc.11 (migration `0023_rmm_mesh_agent`, three new tables, nothing existing altered). Off by default: nothing changes until an administrator saves the Mesh install settings and ticks "also install the MeshCentral agent" when issuing an installer. The RivetIT installer never bundles a Mesh binary; the agent pulls it from the customer's own Mesh server over https (system roots or a pinned certificate hash), a failure never fails the RivetIT install, and uninstall leaves Mesh alone unless `--remove-meshagent`. Operator guide: [REMOTE_AND_LOGS.md](../rmm/REMOTE_AND_LOGS.md) ("Install the MeshCentral agent with the RivetIT agent"); wire contract: [PROTOCOL.md](../rmm/PROTOCOL.md) 3.2.5 and 6.
+
+| Area | Behaviour | Core classes | Storage |
+|---|---|---|---|
+| Installer option | `InstallerService::issue()` / `issueDownload()` and `RmmAdmin::downloadInstaller()` / `deploymentCommands()` take a trailing `bool $installMeshAgent = false`. Refused up front (nothing created) unless Mesh is enabled, the address is https and a group id is set. Remembered per enrollment token, so the token-gated `agent_installer` download serves the same payload; if the Mesh settings stopped allowing it by then the installer is served WITHOUT it and `Installer Mesh Skipped` is audited | `Installer\InstallerService`, `InstallerDownload`, `InstallerStamp` | `endpoint_agent_installer_options` |
+| Payload | two optional members after `expires_at`: `install_mesh_agent` (true) and `mesh` (`url`, `meshid`, optional `pin`, the full `agent_ids` table, `install_args`). A payload that does not ask for Mesh is byte for byte the old one; the version stays 1 | `Installer\InstallerStamp::buildPayload()` | |
+| Settings | `mesh_group_id` (hex 32 to 128, or `mesh//...`, converted), `mesh_server_cert_pin` (SHA-384 or SHA-256 hex, empty = system roots), `mesh_auto_map_overwrite`, optional corrections `mesh_agent_ids` / `mesh_install_args`. All validated, nothing written on any error. `mesh_enabled` and `mesh_url` stay in `RmmSettings`. REST `GET`/`PUT endpoint_devices/remote/mesh` (`rmm.admin`); `RmmAdmin::saveMesh()` takes them too | `Mesh\MeshAgentSettings`, `MeshAgentCatalog`, `Remote\RemoteActions::meshSettings()`, `updateMeshSettings()` | `endpoint_agent_mesh_settings` |
+| Pin probe | `MeshService::probePin($base)`: TLS only, through the `UrlPolicy`-vetted pinned addresses, certificate NOT verified (trust on first use), proposes the SHA-384; never saved by the probe (`saveMesh(['mesh_probe_pin' => true])` returns `pin_probe`) | `Mesh\MeshService` | |
+| Device report | optional `mesh_agent` member of the check-in and capability `mesh:nodeid`: state recorded on change, `rmm.mesh.agent_installed` once, node-id mapping (rules in [REMOTE_AND_LOGS.md](../rmm/REMOTE_AND_LOGS.md)), conflicts refused and flagged. Never fails a check-in; costs nothing for an agent that does not send it | `Mesh\MeshAgentService::report()`, `Checkin\CheckinService` | `endpoint_agent_mesh_agents`, `endpoint_agent_mesh_nodes` |
+| Read model | `RmmReadModel::detail()` / REST `GET endpoint_devices/{id}` gain `mesh_agent` only once the device has reported one (the golden transcripts therefore replay identically); `conflict_device_id` is given only when the other device belongs to the same client | `Mesh\MeshAgentService::stateFor()` | |
+| Events | `rmm.mesh.agent_installed`, `rmm.mesh.node_conflict` (23 `rmm.*` events); audit `Mesh Agent Installed`, `Mesh Agent Install Failed`, `Mesh Node Mapped`, `Mesh Node Moved`, `Mesh Node Differs`, `Mesh Node Conflict`, `Installer Mesh Skipped` | `RmmEvent`, `Webhooks\EventCatalog` | |
+
+**What an edition does to adopt it**
+1. Run the Core migrations (0023). Until then an installer download is never refused over the optional feature.
+2. Add the check box "Also install the MeshCentral agent" (off by default) to the Add device / download installer dialog and pass it as `$installMeshAgent`; show the refusal text when it comes back.
+3. Add the fields to the MeshCentral settings page: device group id, certificate pin with a "read it from the server" button (`mesh_probe_pin`, show `pin_probe`, let the administrator confirm before saving), the overwrite switch, and (advanced) the id and argument corrections.
+4. Show the Mesh agent state on the device page from `detail()['mesh_agent']`, with a visible hint for `conflict` and `kept_manual`.
+5. Optional: subscribe to the two events. No new ability: settings are `rmm.admin`, issuing the installer is `rmm.token.manage`.
+6. Ship the agent of this release (an older agent never sends the report and ignores the payload members).
+
+**Verified:** PHP unit and integration tests, the Go tests with a mock Mesh server, a Linux container run against a mock Mesh server serving a fake `meshagent`. **Not verified against a real MeshCentral:** the download address, the agent ids (Windows ARM64 least certain), the install and uninstall arguments, where the node id can be read, and the Windows code on a Windows host.
 
 ## Behaviour that matters
 

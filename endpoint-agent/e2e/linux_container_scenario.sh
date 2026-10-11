@@ -26,12 +26,16 @@ exit 0
 SH
 chmod +x /usr/local/bin/systemctl
 
+# the mock Mesh server's device group (hex) and the node id its fake MeshAgent prints (bare, like the real one is assumed to)
+MESHGROUP=4a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9
+MESHNODE_RAW='AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@$AbCdEfGhIjKlMnOpQrStUvWxYz01'
 echo "== start the fake server"
 "$BIN/fakeserver" -dir "$OUT" -interval 3 -collect 3 -token rvte1.e2esel.E2Esecret123 -job-type shell -foreign-job \
   -job-script 'echo e2e-job-ok uid=$(id -u) shell=$(basename "$0") cwd-ok; exit 0' \
-  -update-binary "$BIN/rivetit-agent-1.0.1" -update-version 1.0.1 -ctl-listen 127.0.0.1:0 >"$OUT/fakeserver.stdout" 2>&1 &
+  -update-binary "$BIN/rivetit-agent-1.0.1" -update-version 1.0.1 -ctl-listen 127.0.0.1:0 \
+  -mesh-listen 127.0.0.1:0 -mesh-group "$MESHGROUP" -mesh-node "$MESHNODE_RAW" >"$OUT/fakeserver.stdout" 2>&1 &
 FAKE=$!
-wait_for 10 '[ -s "$OUT/url" ] && [ -s "$OUT/ctl" ]' || { bad "fake server did not start"; cat "$OUT/fakeserver.stdout"; exit 1; }
+wait_for 10 '[ -s "$OUT/url" ] && [ -s "$OUT/ctl" ] && [ -s "$OUT/mesh_url" ] && [ -s "$OUT/mesh_pin" ]' || { bad "fake server did not start"; cat "$OUT/fakeserver.stdout"; exit 1; }
 SERVER="$(cat "$OUT/url")"
 printf 'rvte1.e2esel.E2Esecret123' >"$OUT/enroll.token"; chmod 600 "$OUT/enroll.token"
 
@@ -151,6 +155,85 @@ $IS --binary "$OUT/installer-stamped" >"$OUT/stamped2.out" 2>&1; rc=$?
 chk "re-running the stamped installer is idempotent (no second enrollment)" '[ $rc = 0 ] && [ "$(grep -c "^.*ENROLL install_id" $OUT/events.log)" = 2 ]'
 $IS --uninstall >/dev/null 2>&1
 chk "uninstall without --purge keeps state" '[ -d /var/lib/rivetit-agent ] && [ ! -e /opt/rivetit-agent/rivetit-agent ]'
+
+echo "== optional MeshCentral agent: pulled from the (mock) customer Mesh server, pinned, never fatal"
+MESHURL="$(cat "$OUT/mesh_url")"; MESHPIN="$(cat "$OUT/mesh_pin")"
+# the variables below are read inside the eval'd chk strings, which shellcheck cannot see
+# shellcheck disable=SC2034
+MESHDIR=/usr/local/mesh_services/meshagent
+stampmesh() { # stampmesh OUTFILE URL GROUP PIN
+  "$BIN/rivetit-agent-dev" stamp --in "$BIN/rivetit-agent-1.0.0" --out "$1" --server "$SERVER" --token rvte1.e2esel.E2Esecret123 --department "E2E" --ttl 1h --ca "$OUT/ca.pem" \
+    --mesh-url "$2" --mesh-group "$3" --mesh-pin "$4" >/dev/null 2>&1; }
+supervise_start() { "$OUT/supervise.sh" & SUPER=$!; }
+supervise_stop() { kill "$SUPER" 2>/dev/null; killagent; sleep 1; }
+rm -f "$OUT/mesh-installed.marker" "$OUT/mesh-uninstalled.marker"; : >"$OUT/agent.log"
+$IS --uninstall --purge >/dev/null 2>&1
+# shellcheck disable=SC2034
+M0="$(grep -c MESH-DOWNLOAD "$OUT/events.log")"
+
+echo "-- a pin that does not match: the RivetIT agent installs, the Mesh agent does not"
+stampmesh "$OUT/inst-badpin" "$MESHURL" "$MESHGROUP" "$(printf 0%.0s {1..96})"
+$IS --binary "$OUT/inst-badpin" >"$OUT/mesh1.out" 2>&1; rc=$?
+chk "RivetIT install exits 0 although the Mesh part failed" '[ $rc = 0 ] && [ -f $UNIT ] && /opt/rivetit-agent/rivetit-agent status | grep -q "enrolled and linked"'
+chk "no Mesh installer ran and no Mesh agent exists" '[ ! -e "$MESHDIR/meshagent" ] && [ ! -e "$OUT/mesh-installed.marker" ]'
+chk "the failure is on record (state file) and names the pin, never the group id" 'grep -q "\"installed\": false" /var/lib/rivetit-agent/mesh_agent.json && grep -qi pinned /var/lib/rivetit-agent/mesh_agent.json && ! grep -rqa "$MESHGROUP" /var/lib/rivetit-agent "$OUT/mesh1.out"'
+chk "the mock Mesh server never saw an HTTP request (the TLS handshake was refused)" '[ "$(grep -c MESH-DOWNLOAD "$OUT/events.log")" = "$M0" ]'
+supervise_start
+chk "the first check-in reports the failure to the server" 'wait_for 30 "grep -q \"MESH-REPORT installed=false\" $OUT/events.log" && grep MESH-REPORT "$OUT/events.log" | grep -q "pinned"'
+chk "the agent announces mesh:nodeid" 'grep -q "caps=.*mesh:nodeid" $OUT/events.log'
+supervise_stop
+$IS --uninstall --purge >/dev/null 2>&1
+
+echo "-- a wrong device group: the mock server answers 404"
+stampmesh "$OUT/inst-badgroup" "$MESHURL" "$(printf 1%.0s {1..96})" "$MESHPIN"
+$IS --binary "$OUT/inst-badgroup" >"$OUT/mesh2.out" 2>&1; rc=$?
+chk "exit 0, Mesh not installed, HTTP 404 on record" '[ $rc = 0 ] && [ ! -e "$MESHDIR/meshagent" ] && grep -q "HTTP 404" /var/lib/rivetit-agent/mesh_agent.json'
+$IS --uninstall --purge >/dev/null 2>&1
+
+echo "-- no pin and a self-signed Mesh certificate: refused (system roots only)"
+stampmesh "$OUT/inst-noroots" "$MESHURL" "$MESHGROUP" ""
+$IS --binary "$OUT/inst-noroots" >"$OUT/mesh3.out" 2>&1; rc=$?
+chk "exit 0, Mesh not installed because the certificate is not trusted" '[ $rc = 0 ] && [ ! -e "$MESHDIR/meshagent" ] && grep -q "\"installed\": false" /var/lib/rivetit-agent/mesh_agent.json'
+$IS --uninstall --purge >/dev/null 2>&1
+
+echo "-- --no-mesh-agent wins over the installer"
+stampmesh "$OUT/inst-good" "$MESHURL" "$MESHGROUP" "$MESHPIN"
+# shellcheck disable=SC2034
+D0="$(grep -c MESH-DOWNLOAD "$OUT/events.log")"
+$IS --binary "$OUT/inst-good" --no-mesh-agent >"$OUT/mesh4.out" 2>&1; rc=$?
+chk "exit 0 and Mesh untouched (no state file, no download)" '[ $rc = 0 ] && [ ! -e /var/lib/rivetit-agent/mesh_agent.json ] && [ "$(grep -c MESH-DOWNLOAD "$OUT/events.log")" = "$D0" ]'
+$IS --uninstall --purge >/dev/null 2>&1
+
+echo "-- the good case: pinned download, the installer runs, the node id is reported"
+# shellcheck disable=SC2034
+D1="$(grep -c MESH-DOWNLOAD "$OUT/events.log")"
+$IS --binary "$OUT/inst-good" >"$OUT/mesh5.out" 2>&1; rc=$?
+chk "install exit 0" '[ $rc = 0 ]'
+chk "downloaded from <mesh>/meshagents?id=6&meshid=<group>&installflags=0 (linux/amd64 = 6)" 'grep -q "MESH-DOWNLOAD id=6 meshid=$MESHGROUP installflags=0" "$OUT/events.log"'
+chk "the downloaded installer ran with -install and put the agent in place" 'grep -q "installed by: .* -install" "$OUT/mesh-installed.marker" && [ -x "$MESHDIR/meshagent" ]'
+chk "the work directory was removed" '[ -z "$(ls -d /var/lib/rivetit-agent/mesh-install-* 2>/dev/null)" ]'
+chk "outcome saved 0600 without the group id" '[ "$(stat -c %a /var/lib/rivetit-agent/mesh_agent.json)" = 600 ] && grep -q "\"installed\": true" /var/lib/rivetit-agent/mesh_agent.json && ! grep -rqa "$MESHGROUP" /var/lib/rivetit-agent'
+chk "the install output says so" 'grep -q "MeshCentral agent: installed" "$OUT/mesh5.out"'
+supervise_start
+chk "the first check-in reports installed=true with the node id from -nodeid, normalised to node//" 'wait_for 30 "grep -qF \"MESH-REPORT installed=true node_id=node//\$MESHNODE_RAW\" \$OUT/events.log"'
+# shellcheck disable=SC2034
+R1="$(grep -c "MESH-REPORT" "$OUT/events.log")"; sleep 8
+chk "the report is sent once, not on every check-in (3 s interval, 8 s later nothing new)" '[ "$(grep -c "MESH-REPORT" "$OUT/events.log")" = "$R1" ]'
+supervise_stop
+
+echo "-- re-running the installer leaves the Mesh agent alone; a plain uninstall too"
+$IS --binary "$OUT/inst-good" >"$OUT/mesh6.out" 2>&1; rc=$?
+chk "re-run exits 0 and does not download again" '[ $rc = 0 ] && [ "$(grep -c MESH-DOWNLOAD "$OUT/events.log")" = "$((D1+1))" ] && grep -q "already installed" "$OUT/mesh6.out"'
+$IS --uninstall >"$OUT/mesh7.out" 2>&1; rc=$?
+chk "uninstall (no flag) removes the RivetIT agent and leaves Mesh" '[ $rc = 0 ] && [ ! -e /opt/rivetit-agent/rivetit-agent ] && [ -x "$MESHDIR/meshagent" ] && [ ! -e "$OUT/mesh-uninstalled.marker" ] && grep -q "left untouched" "$OUT/mesh7.out"'
+$IS --binary "$OUT/inst-good" >/dev/null 2>&1
+$IS --uninstall --purge --remove-meshagent >"$OUT/mesh8.out" 2>&1; rc=$?
+chk "uninstall --remove-meshagent runs the Mesh agent's own uninstaller" '[ $rc = 0 ] && [ -e "$OUT/mesh-uninstalled.marker" ] && [ ! -e "$MESHDIR/meshagent" ] && [ ! -e /var/lib/rivetit-agent ]'
+
+echo "-- a plain agent with --install-mesh-agent flags (no stamped installer)"
+$IS --binary "$BIN/rivetit-agent-1.0.0" --server "$SERVER" --token-file "$OUT/enroll.token" --ca "$OUT/ca.pem" --install-mesh-agent --mesh-url "$MESHURL" --mesh-group-id "$MESHGROUP" --mesh-cert-pin "$MESHPIN" >"$OUT/mesh9.out" 2>&1; rc=$?
+chk "plain install with the Mesh flags exits 0 and installs Mesh" '[ $rc = 0 ] && [ -x "$MESHDIR/meshagent" ] && grep -q "MeshCentral agent: installed" "$OUT/mesh9.out"'
+$IS --uninstall --purge --remove-meshagent >/dev/null 2>&1
 
 kill $FAKE 2>/dev/null
 rm -f /tmp/e2e-foreign-ran

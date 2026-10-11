@@ -9,8 +9,10 @@ declare(strict_types=1);
  *                                              (both JSON files and SHA256SUMS); exit 1 on any difference
  *   php scripts/endpoint-vectors.php --write   rewrite the files
  *
- * Files: agent_job_signing_vectors.json (canonical JSON rule, job/check/manifest Ed25519 signatures) and
- * agent_installer_trailer_vectors.json (the stamped-installer footer format). Ed25519 signatures are deterministic, so
+ * Files: agent_job_signing_vectors.json (canonical JSON rule, job/check/manifest Ed25519 signatures),
+ * agent_installer_trailer_vectors.json (the stamped-installer footer format; FROZEN, never regenerate it with different bytes) and
+ * agent_installer_mesh_vectors.json (ADDED in 1.0.0-rc.12: payloads that carry the optional `install_mesh_agent` / `mesh` members, plus the
+ * Mesh agent-id and install-argument tables both sides must agree on; an additive file so the frozen one keeps its bytes). Ed25519 signatures are deterministic, so
  * regenerating changes nothing. The key derives from a fixed seed; never use it anywhere real. The trailer vectors are written
  * with raw pack()/hash() on purpose (an independent statement of the format) and then cross-checked against Installer\InstallerStamp.
  * The bytes are the RivetIT origin/beta bytes: do not change generator output without changing the protocol.
@@ -146,9 +148,83 @@ function installerTrailerVectors(): string
         'footer_length' => 52, 'max_payload' => 16384, 'vectors' => $vec, 'negative' => $neg], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
 }
 
+/**
+ * The optional MeshCentral agent members of the installer payload. Written with raw json_encode on purpose, then cross-checked against
+ * InstallerStamp::buildPayload() (which must produce the same bytes for the three payloads it can build).
+ */
+function installerMeshVectors(): string
+{
+    $magic = 'RIVETIT-EMBED-v1';
+    $footer = static fn (string $p): string => pack('N', strlen($p)) . hash('sha256', $p, true) . $magic;
+    $base = [
+        'version' => 1, 'installer_id' => '3f2b8c1e-5d4a-4e7b-9a10-6c2d8e9f0a1b', 'server_url' => 'https://rivet.example.com/rivetit',
+        'enrollment_token' => 'rvte1.0123456789ab.0123456789abcdef0123456789abcdef01234567', 'department' => 'Acme Corp', 'ca_pem' => null,
+        'created_at' => '2026-10-06T12:00:00Z', 'expires_at' => '2026-10-09T12:00:00Z',
+    ];
+    $group = '4a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9';
+    $pin = hash('sha384', 'RivetIT mesh test server certificate');
+    $ids = ['linux/386' => 5, 'linux/amd64' => 6, 'linux/arm64' => 26, 'windows/386' => 3, 'windows/amd64' => 4, 'windows/arm64' => 36];
+    $args = ['linux' => ['-install'], 'windows' => ['-fullinstall']];
+    $enc = static fn (array $p): string => (string) json_encode($p, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $fakeExe = 'MZ' . str_repeat("\x90\x00\xFF\x7F", 16);
+    $vec = [];
+    $add = static function (string $name, string $note, string $payload, array $expect, ?array $built = null) use (&$vec, $footer, $fakeExe): void {
+        $vec[] = ['name' => $name, 'note' => $note, 'exe_hex' => bin2hex($fakeExe), 'payload' => $payload, 'payload_length' => strlen($payload), 'payload_sha256_hex' => hash('sha256', $payload),
+            'footer_hex' => bin2hex($footer($payload)), 'stamped_hex' => bin2hex($fakeExe . $payload . $footer($payload)), 'expect' => $expect, 'build_fields' => $built];
+    };
+    $meshPinned = ['url' => 'https://mesh.example.com', 'meshid' => $group, 'pin' => $pin, 'agent_ids' => $ids, 'install_args' => $args];
+    $meshOpen = ['url' => 'https://mesh.example.com:8443/mesh', 'meshid' => $group, 'agent_ids' => $ids, 'install_args' => $args];
+    $override = $ids;
+    $override['windows/arm64'] = 40;
+    $override['linux/amd64'] = 99;
+    $meshOverride = ['url' => 'https://mesh.example.com', 'meshid' => $group, 'pin' => strtoupper(substr($pin, 0, 64)), 'agent_ids' => $override, 'install_args' => ['linux' => ['-install', '--installPath=/opt/mesh'], 'windows' => ['-fullinstall']]];
+    $add('mesh_pinned_sha384', 'asks for the Mesh agent, server certificate pinned by its SHA-384', $enc($base + ['install_mesh_agent' => true, 'mesh' => $meshPinned]),
+        ['outcome' => 'install', 'url' => 'https://mesh.example.com', 'pin_len' => 96, 'agent_id' => ['linux/amd64' => 6, 'windows/amd64' => 4]],
+        $base + ['install_mesh_agent' => true, 'mesh' => $meshPinned]);
+    $add('mesh_system_roots', 'no pin: the agent verifies the Mesh server with the system trust store', $enc($base + ['install_mesh_agent' => true, 'mesh' => $meshOpen]),
+        ['outcome' => 'install', 'url' => 'https://mesh.example.com:8443/mesh', 'pin_len' => 0, 'agent_id' => ['linux/amd64' => 6]], $base + ['install_mesh_agent' => true, 'mesh' => $meshOpen]);
+    $add('mesh_table_override', 'a corrected agent-id table and install arguments, a pin in upper case (the agent normalises it)', $enc($base + ['install_mesh_agent' => true, 'mesh' => $meshOverride]),
+        ['outcome' => 'install', 'url' => 'https://mesh.example.com', 'pin_len' => 64, 'agent_id' => ['linux/amd64' => 99, 'windows/arm64' => 40, 'windows/amd64' => 4]], $base + ['install_mesh_agent' => true, 'mesh' => $meshOverride]);
+    $add('mesh_not_requested', 'install_mesh_agent false: Mesh is not touched even though a source is present', $enc($base + ['install_mesh_agent' => false, 'mesh' => $meshPinned]), ['outcome' => 'disabled']);
+    $add('mesh_requested_without_source', 'asks for the agent but carries no source: the RivetIT install must still work, the Mesh part records an error', $enc($base + ['install_mesh_agent' => true]), ['outcome' => 'unusable']);
+    $add('mesh_wrong_types', 'install_mesh_agent is a string and mesh a number: never an install, never a parse failure', $enc($base + ['install_mesh_agent' => 'yes', 'mesh' => 5]), ['outcome' => 'disabled']);
+    $add('mesh_bad_source', 'asks for the agent with an http:// address: refused by the agent, the RivetIT install still works', $enc($base + ['install_mesh_agent' => true, 'mesh' => ['url' => 'http://mesh.example.com', 'meshid' => $group]]), ['outcome' => 'unusable']);
+    $add('unknown_future_members', 'members no agent knows yet are ignored (this is how an OLD agent reads every vector in this file)', $enc($base + ['install_mesh_agent' => true, 'mesh' => $meshOpen, 'future_member' => ['a' => 1], 'another' => [1, 2, 3]]), ['outcome' => 'install', 'url' => 'https://mesh.example.com:8443/mesh', 'pin_len' => 0, 'agent_id' => ['linux/amd64' => 6]]);
+
+    // The three payloads the server can build must be exactly these bytes; and a payload that does not ask for Mesh is exactly the frozen one.
+    foreach ($vec as $v) {
+        if ($v['build_fields'] !== null) {
+            $fields = $v['build_fields'];
+            $fields['mesh']['pin'] = $fields['mesh']['pin'] ?? null;
+            if ($fields['mesh']['pin'] === null) {
+                unset($fields['mesh']['pin']);
+            }
+            if ($v['name'] === 'mesh_table_override') {
+                continue;   // the pin of this vector is deliberately not in the normalised form the server writes
+            }
+            if (InstallerStamp::buildPayload($fields) !== $v['payload']) {
+                fwrite(STDERR, "InstallerStamp::buildPayload disagrees with mesh vector {$v['name']}\n");
+                exit(1);
+            }
+        }
+    }
+    if (InstallerStamp::buildPayload($base) !== $enc($base)) {
+        fwrite(STDERR, "a payload without Mesh must be byte for byte the frozen one\n");
+        exit(1);
+    }
+    foreach ($vec as &$v) {
+        unset($v['build_fields']);
+    }
+    unset($v);
+
+    return json_encode(['format' => 'RIVETIT-EMBED-v1', 'description' => 'Installer payloads that carry the OPTIONAL MeshCentral agent members (install_mesh_agent, mesh). Additive: payload version stays 1, the footer format is unchanged, and an agent that does not know the members ignores them. expect.outcome: install (the agent must parse a usable source), disabled (no Mesh install, the payload still parses) or unusable (Mesh requested but the source is unusable: the install of the RivetIT agent must still succeed). The default tables are what both the server (MeshAgentCatalog) and the agent (internal/mesh) must contain. VERIFY AGAINST YOUR MESH VERSION: the ids come from the MeshCentral source as remembered, not from a live server.',
+        'default_agent_ids' => $ids, 'default_install_args' => $args, 'vectors' => $vec], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
+}
+
 $files = [
     'agent_installer_trailer_vectors.json' => installerTrailerVectors(),
     'agent_job_signing_vectors.json' => jobSigningVectors(),
+    'agent_installer_mesh_vectors.json' => installerMeshVectors(),   // appended last: the two frozen lines of SHA256SUMS keep their place
 ];
 $sums = '';
 foreach ($files as $name => $bytes) {

@@ -8,7 +8,10 @@
 #     sudo ./install-linux.sh --server https://rmm.example.com --token-file /root/enroll.token          # binary next to this script
 #     sudo ./install-linux.sh --url https://mirror.example.com/rivetit-agent-linux-amd64 --sha256 <64 hex> \
 #                             --server https://rmm.example.com --token-file /root/enroll.token
-#   Remove:  sudo ./install-linux.sh --uninstall [--purge]
+#   Optional MeshCentral agent, installed from YOUR OWN Mesh server (never bundled; a failure never fails the RivetIT install):
+#     a stamped installer carries it when the administrator ticked "also install the MeshCentral agent"; add --no-mesh-agent to skip it.
+#     with a plain agent:  ... --install-mesh-agent --mesh-url https://mesh.example.com --mesh-group-id <hex meshid> [--mesh-cert-pin <sha384 hex>]
+#   Remove:  sudo ./install-linux.sh --uninstall [--purge] [--remove-meshagent]   (Mesh is left alone unless --remove-meshagent)
 #
 # What it does: picks the binary for this CPU, VERIFIES it (SHA-256 for --url downloads, ELF header and a `version`
 # run for everything), then runs `rivetit-agent setup --silent` (stamped) or `rivetit-agent install` (plain), which
@@ -24,10 +27,11 @@ umask 077
 die()  { echo "install-linux.sh: error: $*" >&2; exit "${2:-64}"; }
 note() { echo "install-linux.sh: $*"; }
 
-usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 BINARY="" URL="" SHA256="" SERVER="" TOKEN_FILE="" CA="" PIN="" DEPARTMENT="" STATE_DIR="" INSTALL_DIR=""
 NO_SERVICE=0 FETCH=0 UNINSTALL=0 PURGE=0
+MESH_INSTALL=0 MESH_URL="" MESH_GROUP="" MESH_PIN="" NO_MESH=0 REMOVE_MESH=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --binary) BINARY="${2:?}"; shift 2;;
@@ -44,6 +48,12 @@ while [ $# -gt 0 ]; do
     --no-service) NO_SERVICE=1; shift;;
     --uninstall) UNINSTALL=1; shift;;
     --purge) PURGE=1; shift;;
+    --install-mesh-agent) MESH_INSTALL=1; shift;;
+    --mesh-url) MESH_URL="${2:?}"; shift 2;;
+    --mesh-group-id) MESH_GROUP="${2:?}"; shift 2;;
+    --mesh-cert-pin) MESH_PIN="${2:?}"; shift 2;;
+    --no-mesh-agent) NO_MESH=1; shift;;
+    --remove-meshagent) REMOVE_MESH=1; shift;;
     -h|--help) usage 0;;
     *) echo "unknown option: $1" >&2; usage 64;;
   esac
@@ -79,7 +89,7 @@ if [ "$UNINSTALL" = 1 ]; then
   BIN="$DEST_INSTALL/rivetit-agent"
   [ -x "$BIN" ] || BIN="$(command -v rivetit-agent || true)"
   [ -n "$BIN" ] || die "the agent is not installed (no $DEST_INSTALL/rivetit-agent)" 1
-  args=(uninstall "${COMMON[@]}"); [ "$PURGE" = 1 ] && args+=(--purge)
+  args=(uninstall "${COMMON[@]}"); [ "$PURGE" = 1 ] && args+=(--purge); [ "$REMOVE_MESH" = 1 ] && args+=(--remove-meshagent)
   exec "$BIN" "${args[@]}"
 fi
 
@@ -152,7 +162,7 @@ if [ "$FETCH" = 1 ] || { [ -z "$SERVER" ] && [ -z "$TOKEN_FILE" ]; }; then
   STAMPED_MODE=1
 fi
 if [ "$STAMPED_MODE" = 1 ]; then
-  args=(setup --silent "${COMMON[@]}"); [ "$NO_SERVICE" = 1 ] && args+=(--no-service)
+  args=(setup --silent "${COMMON[@]}"); [ "$NO_SERVICE" = 1 ] && args+=(--no-service); [ "$NO_MESH" = 1 ] && args+=(--no-mesh-agent)
   exec "$BINARY" "${args[@]}"
 fi
 [ -n "$SERVER" ] && [ -n "$TOKEN_FILE" ] || die "a plain agent needs --server and --token-file (or use a stamped installer)"
@@ -162,4 +172,7 @@ args=(install --server "$SERVER" --token-file "$TOKEN_FILE" "${COMMON[@]}")
 [ -n "$PIN" ] && args+=(--pin-spki "$PIN")
 [ -n "$DEPARTMENT" ] && args+=(--department "$DEPARTMENT")
 [ "$NO_SERVICE" = 1 ] && args+=(--no-service)
+if [ "$MESH_INSTALL" = 1 ]; then
+  args+=(--install-mesh-agent --mesh-url "$MESH_URL" --mesh-group-id "$MESH_GROUP"); [ -n "$MESH_PIN" ] && args+=(--mesh-cert-pin "$MESH_PIN")
+fi
 exec "$BINARY" "${args[@]}"

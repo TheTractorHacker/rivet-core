@@ -13,7 +13,7 @@ A single static Go binary (`rivetit-agent`, no CGO, no runtime) that runs as a W
 - executes **signed** maintenance jobs (`powershell` on Windows, `shell` on Linux, `reboot`, `collect`) fetched from `/api/v1/agent_jobs`,
 - updates itself from a **hash- and signature-verified** manifest, with automatic rollback,
 - backs off cleanly when the server's RMM module is switched off (`503 module_disabled`),
-- reads (never installs or manages) an existing MeshCentral agent's node id.
+- reads an existing MeshCentral agent's node id, and can OPTIONALLY install the MeshCentral agent from the customer's own Mesh server (opt-in, never bundled, never able to fail the install; see the MeshCentral section).
 
 > **Read this first: verification status.** The Linux agent is verified by unit tests and an end-to-end run as root in an `ubuntu:24.04` container (details in
 > `docs/rmm/AGENT_BUILD.md`), and the unit has run under a real systemd inside a privileged container; it has not yet run on a physical host. The Windows agent was built on Linux without any Windows host. The portable
@@ -267,7 +267,7 @@ Interactive runs print short progress text and end with a MessageBox (success or
 **Elevation.** The manifest says `asInvoker`, so the service (SYSTEM), the CLI and the updater's selftest are unaffected. When `setup` (or `uninstall`)
 runs without elevation on Windows it validates the payload first (a bad installer fails before any prompt), then relaunches itself with
 `ShellExecuteEx` verb `runas`, waits and returns the child's exit code. The child command line is rebuilt from the *parsed* options only
-(allowlist: `setup --elevated [--no-service]`; `uninstall --elevated [--purge] [--remove-meshagent]`), each argument quoted with CommandLineToArgvW rules.
+(allowlist: `setup --elevated [--no-service] [--no-mesh-agent]`; `uninstall --elevated [--purge] [--remove-meshagent]`), each argument quoted with CommandLineToArgvW rules.
 `--silent` is never forwarded, `--elevated` stops a child that is still not elevated from relaunching again (exit 6), and a custom `--state-dir`/`--install-dir`
 is refused with exit 6 unless the process is already elevated, so an unelevated user cannot aim an administrator-approved process at a path of their choosing.
 
@@ -317,8 +317,8 @@ itself, a detached `cmd.exe` removes it a few seconds after exit.
 
 ### Coexistence
 
-The agent does not install, configure, update or remove any other RMM, MeshCentral, antivirus/EDR or backup software, and has no
-code path that does so (the only action on another product is the explicit `--remove-meshagent` opt-in). Default schedule: one HTTPS request
+The agent does not install, configure, update or remove any other RMM, antivirus/EDR or backup software, and has no
+code path that does so. The only actions on another product are the two explicit MeshCentral opt-ins: installing the Mesh agent from the customer's own Mesh server (stamped-installer option or `--install-mesh-agent`) and `--remove-meshagent`. Default schedule: one HTTPS request
 every 5 minutes plus a 60 s local sample; checks default to 5 minutes. Heavy collectors (WMI/CIM) run at most once per process life
 for static data. Add the agent exe/service to your EDR allow-listing by publisher (after signing) rather than path.
 
@@ -504,12 +504,26 @@ The Windows rename dance and SCM restart are exercised only by the Linux equival
 
 ## MeshCentral
 
-The agent never installs or configures MeshCentral. It reports `inventory.mesh_node_id` from, in order: `config.json` `mesh_node_id`; a
-`mesh_node_id.txt` file in the state dir (for deployment tooling); then the output of `"<Program Files>\Mesh Agent\MeshAgent.exe" -nodeid` (10 s cap).
-Evidence and limits: MeshCentral's agent documentation (docs.meshcentral.com/meshcentral/agents) documents `C:\Program Files\Mesh Agent\` with
-`MeshAgent.exe`, `meshagent.msh`, `meshagent.db` and `meshagent.log`, but **does not document where the node id is stored**; the `-nodeid` CLI option
-is known from the MeshAgent README only as summarised by a web search, and was **not run here**. The `.msh` file holds the *mesh (device group) id*, not the
-node id, so it is deliberately not parsed. If `-nodeid` does not behave as assumed, the field stays `null` (safe) and the override file/config keys remain.
+By default the agent never installs or configures MeshCentral. Two things are optional and explicit:
+
+**Reading the node id** (always, only on a machine that has a Mesh agent). The agent reports `inventory.mesh_node_id` (the older field) and, since 1.0.0-rc.12, the
+`mesh_agent` check-in member and the capability `mesh:nodeid` (docs/rmm/PROTOCOL.md 3.2.5). Order: `config.json` `mesh_node_id`; a `mesh_node_id.txt` file in the
+state dir (for deployment tooling); `"<Program Files>\Mesh Agent\MeshAgent.exe" -nodeid` / `/usr/local/mesh_services/meshagent/meshagent -nodeid` (10 s cap, once a day),
+then a `.msh` beside it that records a `NodeID`, then (Windows) a `NodeId` value under `HKLM\SOFTWARE\Open Source\MeshAgent2`. The result is normalised to `node//<id>`.
+Evidence and limits: MeshCentral's agent documentation (docs.meshcentral.com/meshcentral/agents) documents `C:\Program Files\Mesh Agent\` with `MeshAgent.exe`,
+`meshagent.msh`, `meshagent.db` and `meshagent.log`, but **does not document where the node id is stored**; `-nodeid` is known from the MeshAgent README only as summarised
+by a web search; the registry key is a guess. A standard `.msh` holds the server and the *mesh (device group) id*, not the node id. None of this was run against a real Mesh agent.
+If nothing works the field stays absent (safe) and the override file/config keys remain.
+
+**Installing it from your own Mesh server** (opt-in, off by default). A stamped installer built with "also install the MeshCentral agent" carries the Mesh server address, the
+device group id, an optional certificate pin and the agent-id and argument tables (`install_mesh_agent` / `mesh` members, PROTOCOL.md section 6); `install` takes
+`--install-mesh-agent --mesh-url U --mesh-group-id HEX [--mesh-cert-pin HEX]`; `install-linux.sh` passes them through and has `--no-mesh-agent`. After the RivetIT agent is installed the
+agent downloads `<mesh>/meshagents?id=<N>&meshid=<group>&installflags=0` over https only (system roots, or exactly the pinned SHA-384/256 of the server certificate; redirects only
+within the host; 64 MiB cap; an HTML page or a wrong file type is refused), runs it from a private 0700 directory (`MeshAgent.exe -fullinstall` / `./meshagent -install`,
+5 minute limit) and records the outcome in `mesh_agent.json` (never the group id), reported at the first check-in. **It can never fail the RivetIT install**: every failure is a
+warning, the exit code is unchanged. An existing Mesh agent is left alone. The agent ids (Windows ARM64 = 36 is the least certain), the flags and the download address are
+**unverified against a real MeshCentral**; the ids and arguments can be corrected from the server without a new agent. The Windows layer was never run on Windows.
+`uninstall` leaves Mesh alone; `uninstall --remove-meshagent` (Windows and, since rc.12, Linux) runs the Mesh agent's own uninstaller (`-fulluninstall` / `-uninstall`).
 
 ## What is Windows-only and UNVERIFIED
 

@@ -69,6 +69,7 @@ final class RmmReadModel
         private readonly ?RmmCache $cache = null,
         private readonly ?\RivetCore\Rmm\Logs\LogService $logService = null,
         private readonly ?\RivetCore\Rmm\Remote\TransferService $transferService = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
     ) {
     }
 
@@ -199,6 +200,11 @@ final class RmmReadModel
         $out['metrics'] = self::decode($d['last_metrics_json'] ?? null);
         $out['match_reason'] = $d['match_reason'];
         $out['mesh_mapped'] = $this->sql->val('SELECT 1 FROM endpoint_agent_mesh_nodes WHERE device_id = ?', [$d['device_id']]) !== null;
+        // Additive and only present once the device has reported a MeshCentral agent, so the detail of every other device is byte for byte what it was:
+        // {installed, version, node_id, error, map_state (mapped|conflict|kept_manual|null), conflict_device_id, first_installed_at, reported_at}.
+        if (($meshAgent = $this->meshAgents?->stateFor((int) $d['device_id'])) !== null) {
+            $out['mesh_agent'] = $meshAgent;
+        }
         $out['checks'] = array_map($richChecks ? self::richCheck(...) : self::shortCheck(...),
             $this->sql->all('SELECT * FROM endpoint_agent_checks WHERE device_id = ? ORDER BY check_key', [$d['device_id']]));
         $out['jobs'] = $this->jobs((int) $d['device_id'], $jobLimit, $showJobOutput);
