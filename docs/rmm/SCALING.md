@@ -1,7 +1,6 @@
 # RMM scaling plan: 5,000 devices supported, 10,000 before the RMM leaves beta
 
-Status: PLAN, 2026-10-07. The numbers below are a model (docs/design/endpoint-module-extraction.md, section 13) until the load simulator
-(task T9) replaces them with measurements. Nothing here is a promise until the validation run (S9) passes.
+Status: S1 to S8 BUILT in Core (2026-10-11), S9 PENDING. The load model below is the design's; the measurements that replace it are in [CAPACITY.md](CAPACITY.md) section 8 and, for the scale work, sections 13 to 16. Nothing here is a promise until the validation run (S9) passes on the reference hardware: the tooling for it is [SOAK_RUNBOOK.md](SOAK_RUNBOOK.md) and `scripts/rmm-load/soak.sh`.
 
 ## Goal
 
@@ -55,7 +54,23 @@ Reference hardware (documented, not a minimum): 8 vCPU, 16 GB RAM, NVMe, one tun
 | S8 | Operations | Performance and capacity panel with lag/backlog/queue-depth alerts, a sizing calculator, MariaDB tuning guide, runbook, `docs/rmm/CAPACITY.md` | Admins can see and plan |
 | S9 | Validation | 24-hour soak with 10,000 simulated devices on the reference hardware plus the thundering-herd test; results published in `docs/rmm/CAPACITY.md`; failures become bugs before GA | The gate for leaving beta |
 
-S1 (baseline) and S7/S2 (the cheap wins) start in Phase 0 with the module switch and capacity controls (task T9). S3 to S6 are scheduled before GA. S4 is decided by the S1 and S9 results.
+S1 (baseline) and S7/S2 (the cheap wins) started in Phase 0 with the module switch and capacity controls (task T9). The rest is built; S4 stays optional and off.
+
+### Where each item stands (2026-10-11)
+
+The work-item names in the table above are the design's. The GitHub issues number them differently (issue numbers in brackets); this is the map and the state.
+
+| Design item | Issue | State | Where |
+|---|---|---|---|
+| S1 simulator and harness | #79 S1 | done (Phase 0) | `endpoint-agent/cmd/rmm-sim`, `scripts/rmm-load/` |
+| S2 cheaper write path, part 1 (queued ingest, batched inserts, `config_version`, backpressure) and S7 herd/backpressure basics | #80 S2, #85 S7 | done (Phase 0) | CAPACITY.md sections 3, 4 |
+| S2 cheaper write path, part 2 | #81 S3 | **done**: 27.2 to 15.6 statements per check-in (14.8 with the opt-in `check_touch_s`), response bytes unchanged | CAPACITY.md 13 |
+| S4 optional metric store abstraction | #82 S4 | **done, off by default**: `ExternalMetricStoreInterface`, VictoriaMetrics reference adapter, bounded outbox | [EXTERNAL_METRICS.md](EXTERNAL_METRICS.md) |
+| S3 storage model: partitions, rollups, retention | #83 S5 | **done**: daily tier, opt-in probed time partitions with DELETE fallback, retention limits | [STORAGE.md](STORAGE.md) |
+| S5 compute and workers | #84 S6 | **done**: SKIP LOCKED claiming with lease fallback, per-queue limit, stale-lease reclaim, autoscaling hint | CAPACITY.md 14 |
+| S6 read path and S7 herd control | #86 S8 | **done**: stale-while-revalidate cache, warm start, per-client token bucket, measured herd | CAPACITY.md 15, 16 |
+| S8 operations (panel, runbook) | part of each | panel gained `autoscale`, `storage`, `herd`, `external_store` | CAPACITY.md 5 |
+| S9 validation (24 h, 10,000 devices) | #87 S9 | **PENDING**: tooling and runbook built, a short run recorded; the 24 h run on reference hardware has not been done | [SOAK_RUNBOOK.md](SOAK_RUNBOOK.md) |
 
 ## Why not PostgreSQL
 

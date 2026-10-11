@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Capacity;
 
+use RivetCore\Rmm\Metrics\ExternalMetricSink;
 use RivetCore\Rmm\RmmState;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Storage\PartitionMaintenance;
+use RivetCore\Rmm\Support\RmmCache;
+use RivetCore\Rmm\Storage\StorageState;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -40,13 +44,16 @@ final class CapacityReport
         private readonly IngestQueue $queue,
         private readonly RmmState $state,
         private readonly ?LoadShedder $shedder = null,
+        private readonly ?RmmCache $cache = null,
+        private readonly ?HerdControl $herd = null,
+        private readonly ?ExternalMetricSink $external = null,
     ) {
     }
 
     /**
      * Everything the panel shows, read-only.
      *
-     * @param array{redis_available?:?bool,storage_budget_gb?:?float} $env what only the edition knows
+     * @param array{redis_available?:?bool,storage_budget_gb?:?float,ingest_workers?:?int,per_worker_jobs_per_s?:?float} $env what only the edition knows (how many drain workers it runs, a measured per-worker rate)
      * @return array<string,mixed>
      */
     public function build(array $env = []): array
@@ -55,7 +62,8 @@ final class CapacityReport
         $features = $this->settings->features();
         $limits = $this->settings->limits();
         $now = $this->sql->time();
-        $d = $this->devices($cfg);
+        $d = $this->cache === null || $limits['cache_fresh_s'] <= 0 ? $this->devices($cfg)
+            : $this->cache->remember(RmmCache::GROUP_FLEET, 'capacity:devices', $limits['cache_fresh_s'], $limits['cache_stale_s'], fn (): array => $this->devices($cfg));
         $perMin = (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_checkins WHERE received_at >= ?', [$this->sql->utcAt(-60)]);
         $perHour = (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_checkins WHERE received_at >= ?', [$this->sql->utcAt(-3600)]);
         $backlog = $this->queue->backlog();
@@ -83,12 +91,27 @@ final class CapacityReport
             'shed' => ['level' => (int) $cfg['shed_level'], 'signals' => $mem['signals'] ?? [], 'evaluated_at' => $mem['at'] ?? 0, 'thresholds' => array_intersect_key($limits, array_flip(array_filter(array_keys($limits), static fn (string $k): bool => str_starts_with($k, 'shed_'))))],
             'ingest_mode' => (string) $cfg['ingest_mode'],
             'queue' => $backlog,
+            'autoscale' => $this->queue->scaleHint($env['ingest_workers'] ?? null, (float) ($env['per_worker_jobs_per_s'] ?? AutoscaleHint::DEFAULT_PER_WORKER_JOBS_PER_S)),
+            'storage' => $this->storage($limits),
+            'external_store' => $this->external === null ? null : ['pending_batches' => $this->external->pending(), 'dropped_points' => $this->external->droppedCount()],
+            'herd' => ['warm_start' => $this->herd?->status(), 'client_bucket_burst' => $limits['client_bucket_burst'], 'client_bucket_per_min' => $limits['client_bucket_per_min']],
             'tables' => $this->tables(),
             'settings' => $inputs + ['max_devices' => (int) $cfg['max_devices']],
             'projection' => $projection,
             'warnings' => self::warnings($facts),
             'presets' => self::presets($cfg, $features, $limits, $inputs['devices']),
         ];
+    }
+
+    /**
+     * The `rmm.ingest` queue gauges and the autoscaling hint in the Prometheus text format, for a scraper or a node_exporter textfile collector. Much cheaper than
+     * {@see build()} (it reads only the queue), so a scrape every 15 seconds is fine.
+     *
+     * @param int|null $workers how many drain workers the edition runs, when it knows
+     */
+    public function metricsText(?int $workers = null, float $perWorkerJobsPerSecond = AutoscaleHint::DEFAULT_PER_WORKER_JOBS_PER_S): string
+    {
+        return AutoscaleHint::exposition($this->queue->scaleHint($workers, $perWorkerJobsPerSecond), $this->queue->backlog()['dead_letter']);
     }
 
     /**
@@ -132,7 +155,7 @@ final class CapacityReport
         $out = [];
         $rows = $this->sql->all(
             "SELECT TABLE_NAME AS t, COALESCE(TABLE_ROWS, 0) AS r, COALESCE(DATA_LENGTH, 0) AS d, COALESCE(INDEX_LENGTH, 0) AS i FROM information_schema.TABLES
-             WHERE TABLE_SCHEMA = DATABASE() AND (TABLE_NAME LIKE 'endpoint\\_agent\\_%' OR TABLE_NAME = 'integration_jobs') ORDER BY (DATA_LENGTH + INDEX_LENGTH) DESC"
+             WHERE TABLE_SCHEMA = DATABASE() AND (TABLE_NAME LIKE 'endpoint\\_agent\\_%' OR TABLE_NAME IN ('integration_jobs', 'rmm_metric_hourly', 'rmm_metric_daily', 'rmm_metric_latest', 'rmm_cache', 'rmm_metric_outbox', 'rmm_token_buckets')) ORDER BY (DATA_LENGTH + INDEX_LENGTH) DESC"
         );
         foreach ($rows as $r) {
             $d = (float) $r['d'] / 1048576;
@@ -141,6 +164,29 @@ final class CapacityReport
         }
 
         return $out;
+    }
+
+    /**
+     * Storage tiers and time partitions (scaling item S5): where the daily rollup stands and which history tables are partitioned.
+     *
+     * @param array<string,int> $limits
+     * @return array{partitioning_enabled:bool,rollup_watermark:?string,rollup_behind_days:?int,tables:array<string,array{partitioned:bool,partitions:int,retention_days:int}>}
+     */
+    public function storage(array $limits): array
+    {
+        $state = new StorageState($this->sql);
+        $wm = $state->rollupWatermark();
+        $pm = new PartitionMaintenance($this->sql, $state);
+        $explicit = $this->settings->explicitLimits();
+        $retention = ['rmm_metric_hourly' => $explicit['metric_hourly_days'] ?? $limits['metric_hourly_days'], 'rmm_metric_daily' => $explicit['metric_daily_days'] ?? $limits['metric_daily_days'],
+            'endpoint_agent_check_history' => max(1, $limits['check_history_days'])];
+        $tables = [];
+        foreach (array_keys(PartitionMaintenance::TABLES) as $t) {
+            $parts = $pm->partitions($t);
+            $tables[$t] = ['partitioned' => $parts !== [], 'partitions' => count($parts), 'retention_days' => $retention[$t]];
+        }
+
+        return ['partitioning_enabled' => $limits['partitioning'] === 1, 'rollup_watermark' => $wm, 'rollup_behind_days' => $wm === null ? null : max(0, intdiv($this->sql->time() - Sql::ts($wm), 86400)), 'tables' => $tables];
     }
 
     // ------------------------------------------------------------------ the pure model

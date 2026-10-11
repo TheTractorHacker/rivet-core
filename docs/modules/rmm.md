@@ -211,6 +211,21 @@ Migration `0020_rmm_alerting_maturity` (eight new tables, nothing existing alter
 5. Switch on `alerting` (`RmmSettings::update(['features_json' => [..., 'alerting' => true]])`) once agents of this release are rolled out. Alerts that were open before are adopted by the next housekeeping run.
 6. Render the new read models; it should also stop honouring its own `rmm_maintenance_mode` flag for agent alerts if it wants windows to be the single source (Core's windows do not read that flag).
 
+## Scale: the write path, storage, workers, read cache, herd control
+
+Migration `0021_rmm_scale_storage` (five new tables, nothing existing altered). All of it is on by default only where it changes no behaviour (the cheaper check-in, the cache of the dashboard counters); the rest is off until a limit or an option turns it on. Measurements and the model are in [CAPACITY.md](../rmm/CAPACITY.md) 13 to 16; [SCALING.md](../rmm/SCALING.md) says what is done and what is pending (the 24 hour / 10,000 device validation is NOT done).
+
+| Area | Behaviour | Core classes | Storage |
+|---|---|---|---|
+| Write path | A steady check-in: one device `UPDATE`, no re-read of the device row, check rows read in one statement and upserted in one, one job probe. Same response bytes (the golden replay is the proof). Opt-in `check_touch_s` skips the "last reported" refresh of an unchanged healthy check | `Checkin\CheckinService`, `Checks\CheckEvaluator`, `Job\JobService` | none |
+| Rollups and partitions | Daily tier from the hourly rows (windows over 7 days read it); opt-in, probed time partitions of the history tables with `DROP PARTITION` retention, the batched DELETE as the fallback | `Storage\MetricRollup`, `PartitionMaintenance`, `StorageMaintenance`; `Support\DatabaseMetricSink` | `rmm_metric_daily`, `rmm_storage_state` |
+| Workers | SKIP LOCKED claiming (lease fallback), exact per-queue limit, dead-worker reclaim, autoscaling hint and Prometheus gauges | `Jobs\JobClaimer`, `Capacity\IngestQueue`, `AutoscaleHint` | `integration_jobs` |
+| Read path | Stale-while-revalidate cache for the fleet counters, the panel and (shared cache) the release list; soft and hard invalidation hooks | `Support\RmmCache` | `rmm_cache` or your PSR-16 cache |
+| Herd control | Warm start ramp, token bucket per client for check-ins and enrollment, both optional; the gate template enforces the warm start before any database work | `Capacity\HerdControl`, `DbTokenBucketStore`, `RedisTokenBucketStore` | `rmm_token_buckets`, `rmm_herd.json` |
+| External metric store | Optional time-series store behind a bounded outbox; the database sink stays for "latest" and as the fallback | `Metrics\*`, `Contracts\ExternalMetricStoreInterface` | `rmm_metric_outbox` |
+
+**What an edition does to adopt it:** see UPGRADING.md ("Adopting RMM scale"). The new `RmmModule` options are `cache` (a PSR-16 cache), `redis` (a `RedisClientProviderInterface`) and `metric_reader`; the new accessors are `storage()`, `partitions()`, `cache()` and `herd()`.
+
 ## Phases 6 and 8: remote tools and log collection
 
 Built after v1.0.0-rc.10 (migration `0022_rmm_remote_and_logs`, five new tables, nothing existing altered). Everything is off until an administrator turns on the sub-switches `remote_tools`, `filetransfer` and `logs` (none of them is in the legacy defaults, so an upgrade changes nothing and the golden transcripts of the old agents replay identically). The operator guide, with the risk texts, the limits and the built-versus-remaining list, is [REMOTE_AND_LOGS.md](../rmm/REMOTE_AND_LOGS.md); the wire contract is PROTOCOL.md 3.2.4 and 3.6 to 3.8.

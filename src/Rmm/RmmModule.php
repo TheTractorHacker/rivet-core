@@ -78,7 +78,16 @@ use RivetCore\Rmm\Scripts\ScriptService;
 use RivetCore\Rmm\Scripts\TargetResolver;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Software\SoftwareService;
+use RivetCore\Rmm\Capacity\DbTokenBucketStore;
+use RivetCore\Rmm\Metrics\CompositeMetricSink;
+use RivetCore\Rmm\Metrics\ExternalMetricSink;
+use RivetCore\Rmm\Capacity\HerdControl;
+use RivetCore\Rmm\Capacity\RedisTokenBucketStore;
+use RivetCore\Rmm\Storage\MetricRollup;
+use RivetCore\Rmm\Storage\PartitionMaintenance;
+use RivetCore\Rmm\Storage\StorageMaintenance;
 use RivetCore\Rmm\Support\DatabaseMetricSink;
+use RivetCore\Rmm\Support\RmmCache;
 use RivetCore\Rmm\Support\NullRmmAudit;
 use RivetCore\Rmm\Support\NullRmmEscalation;
 use RivetCore\Rmm\Support\NullRmmEvents;
@@ -126,6 +135,10 @@ final class RmmModule
     private ?IngestQueue $ingestQueue = null;
     private ?LoadShedder $shedder = null;
     private ?CapacityReport $capacity = null;
+    private ?StorageMaintenance $storage = null;
+    private ?RmmCache $cache = null;
+    private ?HerdControl $herd = null;
+    private ?PartitionMaintenance $partitions = null;
     private ?RmmAuthorizer $authorizer = null;
     private ?RmmReadModel $readModel = null;
     private ?BinaryStore $binaryStore = null;
@@ -179,7 +192,7 @@ final class RmmModule
     private readonly RmmEventsInterface $events;
 
     /**
-     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface} $options
+     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -225,6 +238,10 @@ final class RmmModule
             // Every change of a mirrored setting rewrites the zero-database state file in the same request.
             $this->settings->onStateChange(function (): void {
                 $this->state()->sync();
+            });
+            // Scale S8: switching the module back on begins a warm start (when the `warm_start_s` limit is set).
+            $this->settings->onEnable(function (): void {
+                $this->herd()->startWarmStart();
             });
         }
 
@@ -374,7 +391,7 @@ final class RmmModule
 
     public function updates(): UpdateService
     {
-        return $this->updates ??= new UpdateService($this->sql(), $this->settings(), $this->audit, $this->options['binary_dir'] ?? null, $this->options['allow_insecure_http'] ?? false, $this->options['host_fallback'] ?? null);
+        return $this->updates ??= new UpdateService($this->sql(), $this->settings(), $this->audit, $this->options['binary_dir'] ?? null, $this->options['allow_insecure_http'] ?? false, $this->options['host_fallback'] ?? null, $this->cache());
     }
 
     public function attempts(): AttemptLog
@@ -384,12 +401,12 @@ final class RmmModule
 
     public function enrollment(): EnrollmentService
     {
-        return $this->enrollment ??= new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel(), $this->eventPublisher());
+        return $this->enrollment ??= new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel(), $this->eventPublisher(), $this->cache(), $this->herd());
     }
 
     public function deviceService(): DeviceService
     {
-        return new DeviceService($this->sql(), $this->devices(), $this->settings(), $this->jobs(), $this->checks(), $this->linker(), $this->bridge, $this->assets, $this->tenancy, $this->audit, $this->enrollment());
+        return new DeviceService($this->sql(), $this->devices(), $this->settings(), $this->jobs(), $this->checks(), $this->linker(), $this->bridge, $this->assets, $this->tenancy, $this->audit, $this->enrollment(), $this->cache());
     }
 
     public function checkin(): CheckinService
@@ -451,7 +468,7 @@ final class RmmModule
     /** Data of the "Performance and capacity" panel. */
     public function capacity(): CapacityReport
     {
-        return $this->capacity ??= new CapacityReport($this->sql(), $this->settings(), $this->ingestQueue(), $this->state(), $this->shedder());
+        return $this->capacity ??= new CapacityReport($this->sql(), $this->settings(), $this->ingestQueue(), $this->state(), $this->shedder(), $this->cache(), $this->herd(), $this->externalSink());
     }
 
     /**
@@ -472,9 +489,84 @@ final class RmmModule
     public function housekeeping(): Housekeeping
     {
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
-            $this->metrics instanceof DatabaseMetricSink ? $this->metrics : null, $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
-            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()),
+            $this->databaseSink(), $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
+            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->storage(), $this->cache(), $this->externalSink(),
             $this->logService(), $this->logRules(), $this->transfers());
+    }
+
+    /** The database metric sink, whether it was passed as the sink or inside a {@see CompositeMetricSink}. */
+    private function databaseSink(): ?DatabaseMetricSink
+    {
+        if ($this->metrics instanceof DatabaseMetricSink) {
+            return $this->metrics;
+        }
+
+        return $this->metrics instanceof CompositeMetricSink ? $this->metrics->find(DatabaseMetricSink::class) : null;
+    }
+
+    /** The buffer in front of an external metric store (scaling item S4), whether it was passed as the sink or inside a {@see CompositeMetricSink}. */
+    private function externalSink(): ?ExternalMetricSink
+    {
+        if ($this->metrics instanceof ExternalMetricSink) {
+            return $this->metrics;
+        }
+
+        return $this->metrics instanceof CompositeMetricSink ? $this->metrics->find(ExternalMetricSink::class) : null;
+    }
+
+    /**
+     * What answers the pages' history questions: the `metric_reader` option (for example an {@see \RivetCore\Rmm\Metrics\ExternalMetricReader}), else the sink when it
+     * is a reader, else the database sink inside a composite.
+     */
+    private function metricReader(): ?RmmMetricReaderInterface
+    {
+        $given = $this->options['metric_reader'] ?? null;
+        if ($given !== null) {
+            return $given;
+        }
+        if ($this->metrics instanceof RmmMetricReaderInterface) {
+            return $this->metrics;
+        }
+
+        return $this->databaseSink();
+    }
+
+    /**
+     * Scale S5: the daily metric rollup (only with a {@see DatabaseMetricSink}) and the time partitions of the history tables. Called by {@see housekeeping()};
+     * also the entry point for an administrator's explicit probe or conversion (`partitions()->probe()`, `partitions()->convert()`).
+     */
+    public function storage(): StorageMaintenance
+    {
+        return $this->storage ??= new StorageMaintenance($this->partitions(), $this->databaseSink() !== null ? new MetricRollup($this->sql()) : null);
+    }
+
+    /**
+     * The read-path cache (scaling item S8): fleet counters, the capacity panel, the release list. Pass a PSR-16 cache as the `cache` option to share it across web nodes
+     * (Core's {@see \RivetCore\Mcp\RedisMetadataCache} is one); without it the `rmm_cache` table is used.
+     */
+    public function cache(): RmmCache
+    {
+        return $this->cache ??= new RmmCache($this->sql(), $this->options['cache'] ?? null);
+    }
+
+    /**
+     * Warm start and the per-client token buckets. The buckets use Redis when the edition passes a `redis` option (a RedisClientProviderInterface), otherwise the
+     * `rmm_token_buckets` table.
+     */
+    public function herd(): HerdControl
+    {
+        if ($this->herd === null) {
+            $redis = $this->options['redis'] ?? null;
+            $this->herd = new HerdControl($this->sql(), $this->settings(), $this->state(), $redis !== null ? new RedisTokenBucketStore($redis) : new DbTokenBucketStore($this->sql()));
+        }
+
+        return $this->herd;
+    }
+
+    /** Capability probe, conversion and maintenance of the time partitions (docs/rmm/STORAGE.md). */
+    public function partitions(): PartitionMaintenance
+    {
+        return $this->partitions ??= new PartitionMaintenance($this->sql());
     }
 
     // ------------------------------------------------------------------ Phase 2: policies, script library, schedules, approvals, custom fields
@@ -601,7 +693,7 @@ final class RmmModule
     {
         return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore(),
             $this->assets instanceof RmmAssetNamesInterface ? $this->assets : null, $this->clientLabel(),
-            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metrics instanceof RmmMetricReaderInterface ? $this->metrics : null, $this->automationReader(), $this->logService(), $this->transfers());
+            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers());
     }
 
     /** Hosted agent binaries: validate, store, publish, serve. */
@@ -663,7 +755,7 @@ final class RmmModule
             $this->settings(), $this->devices(), $this->enrollment(), $this->checkin(), $this->jobs(), $this->updates(),
             $this->installerDownload(), $this->audit, $rateLimit, $this->options['allow_insecure_http'] ?? false,
             $this->state, $sleep, $now, $this->shedder(),
-            $disabledAnswer ?? ($withModuleState ? DeviceApi::DISABLED_UNIFORM : DeviceApi::DISABLED_COMPAT), $this->state(), $this->transfers(), $this->logService(),
+            $disabledAnswer ?? ($withModuleState ? DeviceApi::DISABLED_UNIFORM : DeviceApi::DISABLED_COMPAT), $this->state(), $this->herd(), $this->transfers(), $this->logService(),
         );
     }
 

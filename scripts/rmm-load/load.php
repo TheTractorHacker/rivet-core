@@ -8,7 +8,7 @@ declare(strict_types=1);
  *   php scripts/rmm-load/load.php setup <devices> [mode=sync|queued] [json-settings]   migrate, wipe, enable, mint an enrollment token (printed)
  *   php scripts/rmm-load/load.php worker [seconds]                                       the queued-ingest worker (drain loop)
  *   php scripts/rmm-load/load.php stats                                                  table sizes, queue and shed state as JSON
- *   php scripts/rmm-load/load.php shed                                                   shed level and queue backlog (cheap, for polling)
+ *   php scripts/rmm-load/load.php shed [since-utc]                                        shed level and queue backlog (cheap, for polling); with a UTC time also the devices caught up since
  *   php scripts/rmm-load/load.php counters                                               the database server's own counters as JSON
  */
 
@@ -62,10 +62,21 @@ switch ($cmd) {
             'device_seq_mismatch' => (int) $e->db->fetchOne('SELECT COUNT(*) AS c FROM endpoint_agent_devices d WHERE d.last_seq <> COALESCE((SELECT MAX(seq) FROM endpoint_agent_checkins c WHERE c.device_id = d.device_id), 0)')['c'],
         ]), "\n";
         break;
+    case 'warmstart':
+        // the module "was just switched back on": begin the warm start now (needs the warm_start_s limit)
+        $e->module->herd()->startWarmStart();
+        echo json_encode($e->module->herd()->status()), "\n";
+        break;
     case 'shed':
         $row = $e->db->fetchOne('SELECT shed_level, ingest_mode FROM endpoint_agent_settings WHERE id = 1');
         $q = $e->module->ingestQueue()->backlog();
-        echo json_encode(['level' => (int) $row['shed_level'], 'backlog' => $q['pending'], 'oldest_s' => $q['oldest_pending_age_s']]), "\n";
+        $out = ['level' => (int) $row['shed_level'], 'backlog' => $q['pending'], 'oldest_s' => $q['oldest_pending_age_s']];
+        if (isset($argv[2]) && $argv[2] !== '') {
+            // devices that have delivered at least one check-in since the given UTC time: how far a herd has recovered
+            $out['caught_up'] = (int) $e->db->fetchOne('SELECT COUNT(DISTINCT device_id) AS c FROM endpoint_agent_checkins WHERE received_at >= ?', [$argv[2]])['c'];
+            $out['checkins_since'] = (int) $e->db->fetchOne('SELECT COUNT(*) AS c FROM endpoint_agent_checkins WHERE received_at >= ?', [$argv[2]])['c'];
+        }
+        echo json_encode($out), "\n";
         break;
     case 'counters':
         $out = [];

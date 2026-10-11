@@ -9,13 +9,13 @@ declare(strict_types=1);
  *
  *   php scripts/rmm-load/run.php --mode=sync|queued --devices=200 --interval=6s --duration=120s [--workers=8] [--concurrency=32]
  *       [--batches=4] [--settings='{"collect_interval_s":60}'] [--sim=endpoint-agent/dist/rmm-sim] [--herd] [--state-dir=<dir>] [--port=8700]
- *       [--drain-seconds=120] [--no-teardown] [--poll-shed] [--value-check]
+ *       [--drain-seconds=120] [--no-teardown] [--poll-shed] [--value-check] [--warm-at-start]
  *
  * The statements per check-in are the server's Questions delta divided by the check-ins that were accepted (the device rows' last_seq
  * sums), minus the counter queries of the harness itself, which are negligible against thousands of requests.
  */
 
-$o = getopt('', ['mode:', 'devices:', 'interval:', 'duration:', 'workers:', 'concurrency:', 'batches:', 'settings:', 'sim:', 'herd', 'state-dir:', 'port:', 'drain-seconds:', 'no-teardown', 'retry-scale:', 'poll-shed', 'value-check']);
+$o = getopt('', ['mode:', 'devices:', 'interval:', 'duration:', 'workers:', 'concurrency:', 'batches:', 'settings:', 'sim:', 'herd', 'state-dir:', 'port:', 'drain-seconds:', 'no-teardown', 'retry-scale:', 'poll-shed', 'value-check', 'warm-at-start']);
 $mode = $o['mode'] ?? 'sync';
 $devices = (int) ($o['devices'] ?? 200);
 $interval = $o['interval'] ?? '6s';
@@ -71,7 +71,8 @@ $cpu = static function (int $pid, bool $children = false): float {
 
     return $ticks / 100;
 };
-$dbPid = (int) trim((string) @file_get_contents((string) (getenv('RMM_LOAD_DB_PIDFILE') ?: '')));
+$pidFile = (string) getenv('RMM_LOAD_DB_PIDFILE');
+$dbPid = $pidFile !== '' ? (int) trim((string) @file_get_contents($pidFile)) : 0;   // unset (a container): database CPU is not measured
 $srvPid = (int) (proc_get_status($srv)['pid'] ?? 0);
 $counters = static fn (): array => json_decode(trim($php([$load, 'counters'])), true) ?: [];
 $simArgs = [$sim, '-url', "http://127.0.0.1:$port/api/v1/", '-token', $token, '-devices', (string) $devices, '-interval', $interval, '-duration', $duration, '-concurrency', (string) $conc,
@@ -96,6 +97,10 @@ while (($line = fgets($pipes[1])) !== false) {
         $cpu0 = [$dbPid > 0 ? $cpu($dbPid) : 0.0, $cpu($srvPid, true)];
         $load0 = sys_getloadavg()[0];
         $t0 = microtime(true);
+        $sinceUtc = gmdate('Y-m-d H:i:s');
+        if (isset($o['warm-at-start'])) {
+            $php([$load, 'warmstart']);   // the module "was just switched back on" as the fleet comes back
+        }
         $stats0 = json_decode(trim($php([$load, 'stats'])), true);
     } elseif ($line === 'rmm-sim: measurement end') {
         $c1 = $counters();
@@ -104,9 +109,9 @@ while (($line = fgets($pipes[1])) !== false) {
         $load1 = sys_getloadavg()[0];
         $stats1 = json_decode(trim($php([$load, 'stats'])), true);
     } elseif (isset($o['poll-shed']) && str_starts_with($line, 't=')) {
-        $sh = json_decode(trim($php([$load, 'shed'])), true) ?: [];
-        $timeline[] = ['level' => $sh['level'] ?? null, 'backlog' => $sh['backlog'] ?? null, 'line' => preg_replace('/\s+/', ' ', $line)];
-        fwrite(STDERR, $line . "  shed=" . ($sh['level'] ?? '?') . " backlog=" . ($sh['backlog'] ?? '?') . "\n");
+        $sh = json_decode(trim($php([$load, 'shed', $sinceUtc ?? ''])), true) ?: [];
+        $timeline[] = ['t' => round(microtime(true) - $t0, 1), 'level' => $sh['level'] ?? null, 'backlog' => $sh['backlog'] ?? null, 'caught_up' => $sh['caught_up'] ?? null, 'line' => preg_replace('/\s+/', ' ', $line)];
+        fwrite(STDERR, $line . "  shed=" . ($sh['level'] ?? '?') . " backlog=" . ($sh['backlog'] ?? '?') . " caught_up=" . ($sh['caught_up'] ?? '?') . "\n");
     } elseif (str_starts_with($line, '{')) {
         $last = $line;
     } else {
@@ -155,7 +160,22 @@ $out = [
     'integrity' => ['duplicate_seq' => $final['duplicate_seq'], 'device_seq_mismatch' => $final['device_seq_mismatch'], 'metrics_rows' => $final['metrics_rows'], 'checkin_rows' => $final['checkin_rows']],
     'queue_after' => $final['capacity']['queue'] ?? null,
     'shed_level_after' => $final['capacity']['shed']['level'] ?? null,
-    'shed_timeline' => $timeline === [] ? null : array_map(static fn (array $r): array => ['level' => $r['level'], 'backlog' => $r['backlog']], $timeline),
+    'shed_timeline' => $timeline === [] ? null : array_map(static fn (array $r): array => ['t' => $r['t'], 'level' => $r['level'], 'backlog' => $r['backlog'], 'caught_up' => $r['caught_up']], $timeline),
+    // seconds from the start of the measurement until 50 / 90 / 99 / 100 % of the devices had delivered a check-in (needs --poll-shed; the poll period is the resolution)
+    'recovery_s' => $timeline === [] ? null : (static function (array $tl, int $devices): array {
+        $out = [];
+        foreach ([50, 90, 99, 100] as $p) {
+            $out[(string) $p] = null;
+            foreach ($tl as $r) {
+                if ($r['caught_up'] !== null && $r['caught_up'] >= (int) ceil($devices * $p / 100)) {
+                    $out[(string) $p] = $r['t'];
+                    break;
+                }
+            }
+        }
+
+        return $out;
+    })($timeline, $devices),
 ];
 echo json_encode($out, JSON_PRETTY_PRINT), "\n";
 if (!isset($o['no-teardown'])) {

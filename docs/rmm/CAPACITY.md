@@ -5,7 +5,7 @@ what they default to, how the server protects itself under load (shedding, queue
 the measurements taken so far. The plan and the targets (5,000 devices supported in beta, 10,000 proven before the RMM leaves beta) are in
 [SCALING.md](SCALING.md); the model and the design are section 12 and 13 of `docs/design/endpoint-module-extraction.md`.
 
-Status: Phase 0 (Phase 1 and Phase 3 additions in 11 and 8.4). The numbers in "Measured so far" come from a single scratch host and `php -S`, not from PHP-FPM on the reference hardware; they are a
+Status: Phase 0 (Phase 1 and Phase 3 additions in 11 and 8.4; the scale work S3 to S8 in 13 to 16; the S9 tooling and a short run in 17). The numbers in "Measured so far" come from a single scratch host and `php -S`, not from PHP-FPM on the reference hardware; they are a
 floor and a regression baseline, not a capacity promise. The validation on the reference hardware (S9) is planned at the end of this file.
 
 ## 1. The module switch
@@ -106,6 +106,13 @@ and in a few columns. Defaults below are what an unset key means; `RmmSettings::
 | `shed_backlog_l1/l2/l3` | limits | 500, 2000, 8000 | 0 to 10,000,000 | Pending `rmm.ingest` jobs that raise shed level 1, 2, 3 (0: that level never triggers on this signal) |
 | `shed_db_ms_l1/l2/l3` | limits | 100, 300, 1000 | 0 to 60,000 | Database probe latency in milliseconds (median of three primary-key SELECTs) |
 | `shed_rate_per_min` | limits | 0 (off) | 0 to 10,000,000 | Check-ins accepted in the last minute: level 1 at 1x, level 2 at 2x, level 3 at 4x this number |
+| `check_touch_s` | limits | 0 (every check-in) | 0 to 3,600 | Scale S3. An unchanged check result (same status, detail and counters, same history bucket) does not refresh its "last reported" stamp more often than this; the ok counter past the recovery debounce stops growing. See 13 |
+| `metric_hourly_days`, `metric_daily_days` | limits | 14, 400 | 1 to 400, 1 to 3,650 | Scale S5. Retention of the hourly and daily metric rollups of `DatabaseMetricSink`; unset means the retention given to the sink. See [STORAGE.md](STORAGE.md) |
+| `partitioning`, `partition_span_days`, `partition_ahead` | limits | 0, 1, 7 | 0 to 1, 1 to 7, 1 to 60 | Scale S5. Opt-in time partitions of the history tables, days per partition, partitions kept created ahead. See [STORAGE.md](STORAGE.md) |
+| `ingest_batch`, `ingest_max_running` | limits | 50, 0 (no limit) | 1 to 200, 0 to 10,000 | Scale S6. Jobs one `drain()` claims, and the most `rmm.ingest` jobs running at once across ALL workers (exact). See 14 |
+| `cache_fresh_s`, `cache_stale_s` | limits | 15, 300 | 0 to 3,600, 0 to 86,400 | Scale S8. Seconds a cached fleet figure is fresh, and further seconds it may be served stale while one request refreshes it (`cache_fresh_s` 0: no caching). See 15 |
+| `client_bucket_burst`, `client_bucket_per_min` | limits | 0 (off), 0 | 0 to 1,000,000 | Scale S8. Token bucket per client for check-ins and, separately, enrollment: burst size and refill per minute. See 16 |
+| `warm_start_s`, `warm_start_pct`, `warm_quiet_s` | limits | 0 (off), 10, 120 | 0 to 7,200, 1 to 100, 30 to 86,400 | Scale S8. Warm start ramp after the module is switched back on or after a quiet gap: its length, the share admitted at its start, the quiet gap that counts as an outage. See 16 |
 | per-device rate limits | frozen | check-in 40/60 s, jobs 120/60 s, update 60/60 s | | Part of the wire contract |
 | body caps | frozen | check-in 1 MiB, enroll 16 KiB, job report 256 KiB, installer 4 KiB | | Part of the wire contract |
 
@@ -193,6 +200,10 @@ The data of Administration > RMM > "Performance and capacity"; the edition rende
 | `settings`, `projection` | the model of 13.2 filled with the live settings | projected check-ins/s, rows/s, statements/s, workers busy (average and peak), raw storage per month and steady state at the current retention |
 | `warnings` | device limit at 80 %, collect interval under 60 s with more than 200 devices, queue age over 5 min, dead letters, shed level above 0, Redis recommended above 1,000 devices (only when the edition says Redis is absent), raw retention above 14 days with more than 500 devices, projected storage above the budget, queued ingest recommended above 1,000 devices | |
 | `presets` | id, label, applicable, patch, before, after | each patch is a valid `RmmSettings::update()` input |
+| `autoscale` | hint (`up`, `hold`, `down`), reason, workers_desired, workers_current, arrival and completion per second, drain_eta_s | the `rmm.ingest` autoscaling hint (14); `metricsText()` renders it as Prometheus gauges |
+| `storage` | partitioning_enabled, rollup_watermark, rollup_behind_days, per table partitioned / partitions / retention_days | [STORAGE.md](STORAGE.md) |
+| `herd` | warm_start (active, admitted_percent, from, until), client bucket settings | 16 |
+| `external_store` | pending_batches, dropped_points (null unless an external store is wired) | [EXTERNAL_METRICS.md](EXTERNAL_METRICS.md) |
 
 ## 6. Sizing calculator
 
@@ -232,7 +243,7 @@ The constants (7 rows per batch, 12 base statements, 120 bytes per row, 0.15 s p
 * **MariaDB**: `innodb_buffer_pool_size` large enough for the hot tables (`endpoint_agent_devices`, the edition's metric indexes); `innodb_flush_log_at_trx_commit=1` costs
   one fsync per transaction, so a slow disk shows up as check-in latency before anything else (queued ingest moves the sample writes out of the request); keep
   `innodb_lock_wait_timeout` at the default: check-ins of different devices never contend, a duplicate of one device serialises on its row.
-* **Pruning** is batched (`DELETE ... LIMIT 5000` with a 20 ms pause, at most 200,000 rows per table per run), so retention never blocks check-ins.
+* **Pruning** is batched (`DELETE ... LIMIT 5000` with a 20 ms pause, at most 200,000 rows per table per run), so retention never blocks check-ins. Where the server allows it, the history tables can be time-partitioned instead and retention becomes `DROP PARTITION` ([STORAGE.md](STORAGE.md)).
 * **After an outage** every device reconnects at once: agents back off with full jitter and honour `Retry-After`; level 3 plus a wide `shed_retry_min_s`/`shed_retry_max_s`
   window spreads the herd. Raise the window rather than the thresholds if the herd is the problem.
 
@@ -374,6 +385,7 @@ server gives exact counters (a shared server's global counters are noisy).
 | Simulator | `endpoint-agent/cmd/rmm-sim/` |
 | Harness and measurement scripts | `scripts/rmm-load/`, `tests/Support/LoadEdition.php` |
 | Tests | `tests/Integration/Rmm/{ModuleSwitch,LoadShedder,Capacity,IngestQueue}Test.php`, `endpoint-agent/cmd/rmm-sim/sim_test.go` |
+| Scale work (S3 to S8) | `Checkin\CheckinService`, `Checks\CheckEvaluator`, `Job\JobService` (write path); `Storage\{MetricRollup,PartitionMaintenance,StorageMaintenance,StorageState}`; `Jobs\JobClaimer`, `Capacity\{AutoscaleHint,HerdControl,DbTokenBucketStore,RedisTokenBucketStore}`; `Support\RmmCache`; `Metrics\*`; tests `tests/Integration/Rmm/{ScaleWritePath,StorageScale,IngestScale,HerdAndCache,ScaleWiring,ExternalMetricSink}Test.php`; harness `scripts/rmm-load/{run,load,dashboard,workers,soak*}` |
 
 ## 11. Phase 1 write paths (software inventory, check history, the database metric sink)
 

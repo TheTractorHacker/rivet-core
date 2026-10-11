@@ -13,8 +13,8 @@ use RivetCore\Database\DatabaseInterface;
  * All timestamps come from the database clock (NOW()), so enqueue, due-checks and backoff agree no matter what
  * timezone PHP runs in.
  *
- * claim() is safe for concurrent workers: each candidate is claimed with a conditional UPDATE
- * (status must still be 'pending'), and only rows this call actually won are returned.
+ * claim() is safe for concurrent workers: see {@see JobClaimer} (SKIP LOCKED where the server has it, otherwise a conditional-UPDATE lease);
+ * only rows this call actually won are returned.
  *
  * @api
  */
@@ -24,8 +24,12 @@ final class JobQueue
     private const BACKOFF_MINUTES = [1, 5, 30, 120];
 
     private ?bool $hasHeartbeat = null;
+    private ?JobClaimer $claimer = null;
 
-    public function __construct(private DatabaseInterface $database)
+    /**
+     * @param string|null $claimStrategy force {@see JobClaimer::SKIP_LOCKED} or {@see JobClaimer::LEASE}; null detects it from the server version
+     */
+    public function __construct(private DatabaseInterface $database, private ?string $claimStrategy = null)
     {
     }
 
@@ -106,30 +110,13 @@ final class JobQueue
      */
     public function claim(int $limit = 10): array
     {
-        $candidates = $this->database->fetchAll(
-            "SELECT * FROM integration_jobs
-             WHERE status = 'pending' AND available_at <= NOW()
-             ORDER BY priority DESC, job_id ASC
-             LIMIT ?",
-            [max(0, $limit)]
-        );
+        return $this->claimer()->claim($limit);
+    }
 
-        $hb = $this->supportsHeartbeat() ? ', heartbeat_at = NOW()' : '';
-        $claimed = [];
-        foreach ($candidates as $job) {
-            $won = $this->database->execute(
-                "UPDATE integration_jobs SET status = 'running', started_at = NOW(), attempts = attempts + 1{$hb}
-                 WHERE job_id = ? AND status = 'pending'",
-                [$job['job_id']]
-            );
-            if ($won->affectedRows === 1) {
-                $job['status'] = 'running';
-                $job['attempts'] = (int) $job['attempts'] + 1;
-                $claimed[] = $job;
-            }
-        }
-
-        return $claimed;
+    /** The claiming strategy in use: {@see JobClaimer::SKIP_LOCKED} on MariaDB 10.6+ / MySQL 8.0.1+, otherwise the conditional-UPDATE lease. */
+    public function claimer(): JobClaimer
+    {
+        return $this->claimer ??= new JobClaimer($this->database, $this->supportsHeartbeat(), $this->claimStrategy);
     }
 
     /**

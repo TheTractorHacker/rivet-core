@@ -158,6 +158,10 @@ final class JobService
 
     public function pendingCount(int $deviceId): int
     {
+        // Almost every device has no queued or running job at all: one indexed probe replaces the sweep (three UPDATEs and a SELECT) and the count.
+        if ($this->sql->one("SELECT 1 AS x FROM endpoint_agent_jobs WHERE device_id = ? AND state IN ('queued','running') LIMIT 1", [$deviceId]) === null) {
+            return 0;
+        }
         $this->sweep($deviceId);
         $cfg = $this->settings->get();
         $ackBefore = gmdate('Y-m-d H:i:s', $this->sql->time() - (int) $cfg['job_ack_timeout_s']);

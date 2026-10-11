@@ -254,6 +254,7 @@ final class BinaryStore
     {
         $n = $this->sql->run('UPDATE endpoint_agent_binaries SET active = 0, is_current = 0 WHERE binary_id = ?', [$binaryId]);
         $this->sql->run('UPDATE endpoint_agent_releases SET active = 0 WHERE binary_id = ?', [$binaryId]);
+        $this->updates->releasesChanged();
 
         return $n > 0;
     }
@@ -291,6 +292,7 @@ final class BinaryStore
             ON DUPLICATE KEY UPDATE url = VALUES(url), sha256 = VALUES(sha256), rollout_pct = VALUES(rollout_pct), notes = VALUES(notes), active = 1, binary_id = VALUES(binary_id)',
             [$b['version'], $url, $b['sha256'], '0.0.0', $ring, max(0, min(100, $pct)), mb_substr($notes, 0, 500), $userId, $this->sql->utcNow(), $b['arch'], $b['binary_id']]);
         $this->audit->record('Agent Release Published', "Release {$b['version']} ({$b['arch']}, $ring, $pct%) from hosted binary #{$b['binary_id']} by user $userId", 0, 0);
+        $this->updates->releasesChanged();
 
         return null;
     }
@@ -302,6 +304,7 @@ final class BinaryStore
             return false;
         }
         $this->sql->run('UPDATE endpoint_agent_releases SET rollout_pct = ?, active = ? WHERE release_id = ?', [max(0, min(100, $pct)), $active ? 1 : 0, $releaseId]);
+        $this->updates->releasesChanged();
 
         return true;
     }

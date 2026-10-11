@@ -20,6 +20,7 @@ use RivetCore\Rmm\Migration\Migration0016ModuleSwitches;
 use RivetCore\Rmm\Migration\Migration0018InventoryFoundation;
 use RivetCore\Rmm\Migration\Migration0019PoliciesAndScripts;
 use RivetCore\Rmm\Migration\Migration0020AlertingMaturity;
+use RivetCore\Rmm\Migration\Migration0021ScaleStorage;
 use RivetCore\Rmm\Migration\Migration0022RemoteAndLogs;
 use RivetCore\Rmm\RmmModule;
 use RivetCore\Testing\InMemoryRmmAssets;
@@ -43,7 +44,7 @@ final class RmmHarness
         'rmm_group_tags', 'rmm_metric_latest', 'rmm_metric_hourly', 'rmm_policies', 'rmm_policy_versions', 'rmm_policy_assignments', 'rmm_scripts_v2',
         'rmm_script_versions', 'rmm_job_extra', 'rmm_schedules', 'rmm_schedule_runs', 'rmm_approvals', 'rmm_custom_fields', 'rmm_custom_field_values',
         'rmm_alerting_settings', 'rmm_check_eval', 'rmm_alert_meta', 'rmm_storm_summaries', 'rmm_maintenance_windows', 'rmm_device_parents',
-        'rmm_escalation_policies', 'rmm_escalation_steps', 'endpoint_agent_remote_settings', 'endpoint_agent_transfers', 'endpoint_agent_log_events', 'endpoint_agent_log_state', 'endpoint_agent_log_rules'];
+        'rmm_escalation_policies', 'rmm_escalation_steps', 'rmm_metric_daily', 'rmm_storage_state', 'rmm_cache', 'rmm_metric_outbox', 'rmm_token_buckets', 'endpoint_agent_remote_settings', 'endpoint_agent_transfers', 'endpoint_agent_log_events', 'endpoint_agent_log_state', 'endpoint_agent_log_rules'];
 
     public \mysqli $mysqli;
     public MysqliDatabase $db;
@@ -98,7 +99,7 @@ final class RmmHarness
         $this->binaryDir = sys_get_temp_dir() . '/rmm_bin_' . bin2hex(random_bytes(4));
         mkdir($this->binaryDir, 0700);
 
-        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0022RemoteAndLogs()] as $mig) {
+        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs()] as $mig) {
             $mig->up($this->db);
         }
         $this->wipe();

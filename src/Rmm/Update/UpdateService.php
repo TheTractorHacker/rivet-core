@@ -10,6 +10,7 @@ use RivetCore\Rmm\Enrollment\DeviceValidator;
 use RivetCore\Rmm\Http\RmmFileBody;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\RmmCache;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -37,7 +38,33 @@ final class UpdateService
         private readonly ?string $binaryDir = null,
         private readonly bool $allowInsecureHttp = false,
         private readonly ?string $hostFallback = null,
+        private readonly ?RmmCache $cache = null,
     ) {
+    }
+
+    /**
+     * Tell the read cache that the release list changed (Core's own writers call this; an edition that writes `endpoint_agent_releases` itself should too).
+     */
+    public function releasesChanged(): void
+    {
+        $this->cache?->invalidate(RmmCache::GROUP_RELEASES, true);
+    }
+
+    /**
+     * The active releases. On a SHARED read cache (cheap to read) they are cached for `cache_fresh_s` seconds: every check-in looks them up, and they change a few times a year.
+     * With no shared cache the table is read, as it always was (a database-backed cache would only swap one SELECT for another).
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function activeReleases(): array
+    {
+        $read = fn (): array => $this->sql->all('SELECT * FROM endpoint_agent_releases WHERE active = 1 ORDER BY release_id');
+        if ($this->cache === null || !$this->cache->shared()) {
+            return $read();
+        }
+        $limits = $this->settings->limits();
+
+        return $this->cache->remember(RmmCache::GROUP_RELEASES, 'active', $limits['cache_fresh_s'], $limits['cache_stale_s'], $read);
     }
 
     /**
@@ -77,7 +104,7 @@ final class UpdateService
         $failed = $this->failedVersions($dev);
         $rings = $dev['ring'] === 'pilot' ? ['pilot', 'stable'] : ['stable'];
         $best = null;
-        foreach ($this->sql->all('SELECT * FROM endpoint_agent_releases WHERE active = 1 ORDER BY release_id') as $r) {
+        foreach ($this->activeReleases() as $r) {
             if (!in_array($r['ring'], $rings, true)) {
                 continue;
             }
@@ -188,6 +215,7 @@ final class UpdateService
             ON DUPLICATE KEY UPDATE url = VALUES(url), sha256 = VALUES(sha256), min_version = VALUES(min_version), rollout_pct = VALUES(rollout_pct), notes = VALUES(notes), active = 1',
             [$version, $url, strtolower($sha256), $minVersion, $ring, max(0, min(100, $pct)), mb_substr($notes, 0, 500), $userId, $this->sql->utcNow()]);
         $this->audit->record('Agent Release Published', "Release $version ($ring, $pct%) published by user $userId", 0, 0);
+        $this->releasesChanged();
 
         return null;
     }

@@ -22,6 +22,7 @@ use RivetCore\Rmm\Migration\Migration0016ModuleSwitches;
 use RivetCore\Rmm\Migration\Migration0018InventoryFoundation;
 use RivetCore\Rmm\Migration\Migration0019PoliciesAndScripts;
 use RivetCore\Rmm\Migration\Migration0020AlertingMaturity;
+use RivetCore\Rmm\Migration\Migration0021ScaleStorage;
 use RivetCore\Rmm\Migration\Migration0022RemoteAndLogs;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
@@ -56,6 +57,7 @@ final class CoreMigrations
             new Migration0018InventoryFoundation(),
             new Migration0019PoliciesAndScripts(),
             new Migration0020AlertingMaturity(),
+            new Migration0021ScaleStorage(),
             new Migration0022RemoteAndLogs(),
         ];
     }
