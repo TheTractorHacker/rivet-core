@@ -53,8 +53,8 @@ $inv = json_encode(['hostname' => 'x', 'cpu' => ['model' => str_repeat('Intel Co
 $cfg = $e->module->settings()->get(true);
 $offline = (int) $cfg['offline_after_s'];
 $stale = (int) $cfg['stale_after_s'];
-for ($from = 1; $from <= $devices; $from += 2000) {
-    $to = min($devices, $from + 1999);
+for ($from = 1; $from <= $devices; $from += 900) {
+    $to = min($devices, $from + 899);
     $m->query("INSERT INTO endpoint_agent_devices (install_id, machine_guid, hostname, os, os_version, arch, serial, manufacturer, model, agent_version, asset_id, client_id, link_state, token_hash, enroll_count, last_checkin_at, last_seq, inventory_json)
         SELECT UUID(), CONCAT('g', n), CONCAT('HOST-', n), 'windows', 'Windows 11 23H2', 'amd64', CONCAT('SN', n), 'Dell', 'Latitude', '1.0.0', 100000 + n, 1 + (n % 40), 'linked', SHA2(CONCAT('t', n), 256), 1,
         CASE WHEN n % 20 = 0 THEN NULL WHEN n % 20 = 1 THEN UTC_TIMESTAMP() - INTERVAL " . ($stale + 3600) . " SECOND WHEN n % 10 < 2 THEN UTC_TIMESTAMP() - INTERVAL " . ($offline + 600) . " SECOND

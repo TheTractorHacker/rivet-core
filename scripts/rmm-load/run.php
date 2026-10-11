@@ -37,6 +37,9 @@ if (!str_starts_with($token, 'rvte1.')) {
     exit(1);
 }
 $stateDir = $o['state-dir'] ?? '';
+if ($stateDir !== '') {
+    putenv('RMM_LOAD_STATE_DIR=' . $stateDir);   // the helper commands (setup, shed, warmstart) must see the same state directory as the server
+}
 $env = array_merge(getenv(), ['PHP_CLI_SERVER_WORKERS' => (string) $workers, 'RMM_LOAD_TRUST_SIM_IP' => '1', 'RMM_LOAD_STATE_DIR' => $stateDir]);
 $srv = proc_open([PHP_BINARY, '-d', 'display_errors=0', '-d', 'opcache.enable_cli=1', '-d', 'opcache.jit=off', '-S', "127.0.0.1:$port", "$root/scripts/rmm-load/router.php"],
     [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'a'], 2 => ['file', "/tmp/claude-1000/t9/server_$port.log", 'a']], $p1, $root, $env);

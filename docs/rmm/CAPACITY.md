@@ -473,3 +473,73 @@ devices do not all fetch their job in the same minute.
 What this does not show: the scheduler running next to a full check-in load, PHP-FPM, or the cost of group-membership sub-selects on a fleet with many groups (the
 assignment query is by scope and index; a device in many groups checks each assigned group only). The S9 validation on the reference hardware is where those belong.
 The default batch is deliberately small: with the cron every minute one due run queues 200 jobs a pass, so a 5,000-device schedule takes about 25 minutes to reach every device (use `jitter_s` and an `expires_s` window that covers it, or raise `schedule_batch`; a pass of 1,000 jobs takes about two seconds on the measured host). Up to 50 due schedules and 50 open runs are worked per pass.
+
+## 13. Scale S3: the cheaper write path
+
+Measured with the S1 harness on the same host as section 8 (`run.php --mode=sync --devices=200 --interval=6s --duration=60s`, three checks, steady state), statements are the server's own `Questions` counter per accepted check-in, so they do not depend on host load:
+
+| Run | Statements per check-in | SELECT | INSERT | UPDATE |
+|---|---|---|---|---|
+| Before (4a7869c) | 27.2 | 11.4 | 2.5 | 9.2 |
+| After S3 | 15.6 | 6.2 | 3.1 | 2.2 |
+| After S3 with `check_touch_s = 3600` | 14.8 | 6.2 | 2.4 | 2.2 |
+| Herd run, 5,000 first check-ins with inventory and 6 buffered batches, before / after | 32.3 to 35 / 17.9 to 20.3 | | | |
+
+What was removed (counted from the server's general log, one steady check-in, 25 statements before): the second device `UPDATE` (liveness and agent columns are one statement), two re-reads of the device row (after the transaction and after the inventory step; kept only when the check-in rewrote more of the row), a SELECT and an UPDATE per check (now one SELECT for the device's checks and one multi-row upsert), and the job sweep (three UPDATEs, a SELECT and a COUNT for a device that has no queued or running job: now one indexed probe). The response bytes did not change: `php scripts/rmm-golden/replay-core.php replay` prints `replay identical (10 files)`.
+
+`check_touch_s` (default 0 = exactly the old behaviour) lets an unchanged healthy check skip its write; the ok counter past the recovery debounce then stops growing (nothing reads it while no alert is open).
+
+Not done, on purpose: skipping an unchanged inventory by hash. The inventory carries `uptime_s`, which changes at every report, so it is never unchanged; it is also sent about once in 288 check-ins. The software inventory already skips unchanged lists by hash (section 11).
+
+## 14. Scale S6: several workers
+
+Claiming. On MariaDB 10.6+ and MySQL 8.0.1+ (`JobClaimer::versionSupportsSkipLocked()`) a worker reads the next jobs without locking, then locks only the rows it will take (`FOR UPDATE SKIP LOCKED`, READ COMMITTED, retry on a deadlock) and flips them with one `UPDATE`. A single `ORDER BY priority ... LIMIT n FOR UPDATE SKIP LOCKED` would sort after locking every pending row and leave the other workers nothing; the test that holds rows from a second connection and the four-process test (300 jobs, claimed exactly once on every database version) cover it. Elsewhere, or if the statement is refused, the old conditional `UPDATE ... WHERE status = 'pending'` over a window twice the batch is the lease. Both keep FIFO inside a priority. A claimed job is a lease: `IngestQueue::reclaimStale()` (every housekeeping run) returns the jobs of a worker that stopped for 120 s.
+
+Measured (`scripts/rmm-load/workers.php --devices=1500`, a backlog of 1,567 queued check-ins drained by `load.php worker` processes, MariaDB 10.11 in a container, shared host):
+
+| Workers | Seconds | Jobs/s | Jobs/s per worker | Jobs done twice |
+|---|---|---|---|---|
+| 1 (cold caches, an outlier) | 132.9 | 11.8 | 11.8 | 0 |
+| 2 | 29.9 | 52.5 | 26.2 | 0 |
+| 4 | 12.6 | 124.4 | 31.1 | 0 |
+
+Throughput scales with workers on this host (no contention in the claim). Guidance: one worker drains about 25 `rmm.ingest` jobs a second here (the constant in `AutoscaleHint`, conservative), and a fleet at the recommended profile produces 33 jobs a second at 10,000 devices, so run at least 2, and 4 for headroom and a backlog. `ingest_max_running` caps the jobs running at once across all workers (exact, under a named lock); `ingest_batch` is the jobs one pass claims.
+
+The autoscaling hint (`CapacityReport::build(['ingest_workers' => N])['autoscale']`, or `metricsText($workers)` in the Prometheus text format for a scraper): `workers_desired = ceil((arrival + pending / 60) x 1.5 / per_worker)`; `up` when the oldest pending job has waited 30 s or when more than one batch is pending and not shrinking, `down` only when the caller states the worker count, the queue is empty and fewer workers would carry the arrival rate. Gauges: `rmm_ingest_pending_jobs`, `_running_jobs`, `_dead_letter_jobs`, `_oldest_pending_age_seconds`, `_arrival_per_second`, `_completion_per_second`, `_desired_workers`, `_scale_hint`.
+
+## 15. Scale S8: the read path
+
+`RmmCache` serves the fleet counters, the capacity panel's device aggregate and (on a shared PSR-16 cache) the active release list: fresh for `cache_fresh_s` (15), stale for `cache_stale_s` (300) while exactly one request refreshes (a named lock), computed inline only when missing or expired, and never failing the caller. Admin actions (revoke, retire, approve, reject, transfer, release changes) invalidate hard; enrollment invalidates soft.
+
+Measured with `scripts/rmm-load/dashboard.php --devices=10000` (10,000 devices with 3 KB of inventory each, 1,500 assets with 14 days of hourly history, MariaDB 10.11, medians of 5 runs):
+
+| Read | No cache | Cold | Warm |
+|---|---|---|---|
+| Fleet counters | 13.6 ms | 24 ms | 0.3 ms |
+| Capacity panel | 21.5 ms | 48 ms | 8.8 ms |
+| Device list page 1 / page 100 / online filter | 15.9 / 35.3 / 16.2 ms | | |
+| One device's 14 day graph, hourly tier / with the daily tier | 1.5 / 1.7 ms (29 daily points against 336 hourly) | | |
+
+The aggregates are fast at 10,000 devices on this host (the targets are 2 s and 1 s), so the cache buys headroom under many open dashboards, not a rescue. The tables were small (3 million hourly rows, not the 40 million of a real fleet) and the cache cannot make a slow query fast, it only runs it once. The daily rollup of those 3 million rows took 45 s (14 days, in 500 asset slices) and conversion of the hourly table to 24 partitions 157 s with writers blocked; retention of one day: 225,000 rows by batched DELETE 9.4 s (45 statements), 81,000 rows by `DROP PARTITION` 0.07 s.
+
+## 16. Scale S8: herd control, and the 5,000 device herd
+
+Where a refused request gets its `Retry-After`: shed level 3 and the global check-in limit are jittered windows (`shed_retry_*`, `retry_after_*`); the warm start and the client bucket refuse with a jittered window of their own (10 s up to a sixth of the time left in the ramp, at most 120 s; the time to the next token plus up to 50 % jitter, at most 300 s); the per-device 429 and the disabled-module 503 keep their frozen values (wire contract; the agent adds its own jitter and a 15 minute floor).
+
+Method. 5,000 simulated devices enroll, then `-herd` makes every first check-in fall in 10 s, each carrying 6 buffered batches (a 30 minute outage at the recommended 300 s collect interval) and the inventory; the server is `php -S` with 8 workers on the shared 14 vCPU host of section 8, MariaDB 10.11 in a container tuned to 1 GB buffer pool and 1 GB redo log, sync ingest; the simulator is on the same host, 128 requests in flight; `-retry-scale 1` (the real agent backoff). "Recovered" is the time until all 5,000 devices have delivered a check-in. The outage itself is not waited for: the herd is its end. Runs, two repetitions each (`run.php --poll-shed [--warm-at-start]`):
+
+| Configuration | Recovered 50 / 90 / 100 % (s) | p95 / p99 (ms) | 503 answered | Statements per check-in |
+|---|---|---|---|---|
+| Before (4a7869c, defaults) | 20 to 30 / 30 to 45 / 35 to 50 | 1,463 to 2,690 / 1,652 to 3,295 | 0 | 35 |
+| After S3, defaults | 10 to 25 / 15 to 40 / 15 (one run did not finish its last device in the 150 s window) | 405 to 1,675 / 463 to 2,196 | 0 | 20.2 |
+| Warm start 180 s from 10 % | 50 / 115 / not within 150 s (the ramp is 180 s) | 496 to 975 / 4,320 to 5,292 | 11,738 and 12,253 | 20.1 |
+| Client bucket (burst 200, 3,600 a minute) | 40 to 45 / 75 to 80 / 85 or not within 150 s | 1,116 to 2,196 / 2,690 | 13,500 and 5,962 | 33.6 to 45.8 (retries inflate it) |
+| Warm start and bucket | 50 / 120 to 135 / not within 150 s | 378 to 744 / 695 to 1,675 | 12,254 and 12,464 | 24 |
+
+Reading it, honestly. (1) Repeatability is poor: the host is shared (load average 3 to 9 from other work) and the same configuration varied by a factor of two between runs, so only large differences mean anything. A first, noisier series with 30 buffered batches and a smaller redo log showed the same ordering and recoveries of 25 to 165 s. (2) The statement count is the solid result: 32 to 35 statements per first check-in before, 18 to 20 after. (3) On this host the unconstrained herd is absorbed in under a minute with no error: the sim keeps 128 requests in flight and the server simply queues, so latency rises, nothing fails. The controls do what they are for, not what a faster recovery would be: warm start and the bucket turn the arrival into a ramp, keep the latency of ADMITTED requests low (p95 below one second) and refuse the rest cheaply (the 503s cost almost nothing, they are answered before authentication, or by the gate before any database work), at the price of a longer recovery and a lot of retries. They protect a server that would otherwise fall over (a real FPM install behind a pool limit, a database near its connection limit); this host did not fall over, so no recovery-time gain is claimed. (4) The agent retries 503 after the Retry-After with its own jitter, so the 503 volume (12,000 refusals for 5,000 devices) is mostly the simulator's 10 s minimum wait against a window that opens slowly: a wider `warm_start_pct` or a shorter ramp makes fewer. (5) Not measured: PHP-FPM, a database on another host, real network latency, a real 30 minute dead period (the quiet-gap trigger is covered by tests, not by this run), and 10,000 devices.
+
+## 17. S9 tooling and a short run (NOT the validation)
+
+`scripts/rmm-load/soak.sh` (driver and once-a-minute sampler), `soak-report.php` (PASS / FAIL / NOT MEASURED against the targets of SCALING.md), `soak-selftest.sh` (six scenarios against a scratch install) and [SOAK_RUNBOOK.md](SOAK_RUNBOOK.md) (reference hardware, PHP-FPM and MariaDB checklists, how to run 24 h, what to attach to #87).
+
+Short validation run of the tooling: 2,000 devices at a 60 s interval (the 33 check-ins/s of 10,000 devices at 300 s) for 10 minutes, queued ingest, 2 workers, `php -S`, MariaDB 10.11 in a container, same shared host. Verdict **FAIL**, as the report says, and it is not a validation: sustained 26 req/s of 33.3 expected (-22.6 %), 192 transport errors (client timeouts after 30 s), p95 4.6 s, p99 30 s, backlog up to 6,379 jobs with the oldest pending 308 s and 1,929 left at the end, 119 statements over 1 s, database CPU 1.8 % average (so the database was not the limit; PHP workers and host contention were), shed level 0, no lock-wait timeouts. This is a result for this host and this harness: two queue workers at about 26 jobs/s each cannot keep up with 33 a second plus the web requests on a shared machine, which the worker guidance in 14 predicts. The 24 hour, 10,000 device run on the reference hardware has NOT been done and nothing here says the targets are met.

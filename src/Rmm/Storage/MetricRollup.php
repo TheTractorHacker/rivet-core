@@ -62,8 +62,9 @@ final class MetricRollup
         for ($n = 0; $day < $lastDay && $n < self::MAX_DAYS_PER_RUN; ++$n) {
             $from = gmdate('Y-m-d H:i:s', $day);
             $to = gmdate('Y-m-d H:i:s', $day + 86400);
-            $maxAsset = (int) $this->sql->val('SELECT COALESCE(MAX(asset_id), 0) FROM rmm_metric_hourly WHERE hour_start >= ? AND hour_start < ?', [$from, $to]);
-            $done = $resumeAfter;
+            $range = $this->sql->one('SELECT COALESCE(MIN(asset_id), 0) AS lo, COALESCE(MAX(asset_id), 0) AS hi FROM rmm_metric_hourly WHERE hour_start >= ? AND hour_start < ?', [$from, $to]) ?? ['lo' => 0, 'hi' => 0];
+            $maxAsset = (int) $range['hi'];
+            $done = max($resumeAfter, (int) $range['lo'] - 1);   // skip the empty id range below the first asset that has data
             $resumeAfter = 0;
             while ($done < $maxAsset) {
                 if (microtime(true) > $deadline || ($maxSlices !== null && $out['slices'] >= $maxSlices)) {

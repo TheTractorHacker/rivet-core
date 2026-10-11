@@ -23,8 +23,8 @@ final class AutoscaleHint
     public const DRAIN_TARGET_S = 60;
     public const HEADROOM = 1.5;
     public const URGENT_AGE_S = 30;
-    /** Jobs one drain() worker finishes per second (measured on the scratch host, docs/rmm/CAPACITY.md section 8.5); override with the measured value of your hardware. */
-    public const DEFAULT_PER_WORKER_JOBS_PER_S = 60.0;
+    /** Jobs one drain() worker finishes per second (26 to 31 on the scratch host with 2 and 4 workers, docs/rmm/CAPACITY.md section 14; a conservative round number); override with the measured value of your hardware. */
+    public const DEFAULT_PER_WORKER_JOBS_PER_S = 25.0;
 
     /**
      * @param array{pending:int,running:int,oldest_pending_age_s:int,dead_letter?:int,arrival_per_s:float,completion_per_s:float,per_worker_jobs_per_s?:float,workers?:?int,batch?:int,max_workers?:int} $f
