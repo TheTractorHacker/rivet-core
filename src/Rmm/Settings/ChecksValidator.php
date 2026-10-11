@@ -27,7 +27,7 @@ final class ChecksValidator
     public const SCRIPT_TIMEOUT_MAX_S = 60;
 
     /**
-     * @return array{0:?list<array{key:mixed,type:string,params:array<mixed>|\stdClass,interval_s:int}>,1:?string} [normalised list, error]
+     * @return array{0:?list<array{key:mixed,type:string,params:array<mixed>,interval_s:int}>,1:?string} [normalised list, error]
      */
     public static function validate(string $json): array
     {
@@ -88,7 +88,7 @@ final class ChecksValidator
                     $params['flap'] = $flap;
                 }
             }
-            $out[] = ['key' => $c['key'], 'type' => $type, 'params' => $params ?: new \stdClass(), 'interval_s' => $iv];
+            $out[] = ['key' => $c['key'], 'type' => $type, 'params' => $params, 'interval_s' => $iv];
         }
 
         return [$out, null];
@@ -119,5 +119,40 @@ final class ChecksValidator
     private static function int(mixed $v): int
     {
         return is_scalar($v) ? (int) $v : 0;
+    }
+
+    /**
+     * The wire/storage form of a check list: an empty params array becomes an object ({}), because the agent protocol and the signed message
+     * require params to be an object. Inside the module a check's params is always an array; this is the only place it turns into \stdClass.
+     *
+     * @param list<array<string,mixed>> $checks
+     * @return list<array<string,mixed>>
+     */
+    public static function toWire(array $checks): array
+    {
+        foreach ($checks as $i => $c) {
+            $p = $c['params'] ?? [];
+            if ($p instanceof \stdClass || $p === []) {
+                $checks[$i]['params'] = new \stdClass();
+            }
+        }
+
+        return $checks;
+    }
+
+    /**
+     * A check definition's params as an array, whatever shape it arrived in (array, \stdClass from a hand-built definition, or absent).
+     *
+     * @param array<string,mixed> $check
+     * @return array<string,mixed>
+     */
+    public static function paramsOf(array $check): array
+    {
+        $p = $check['params'] ?? [];
+        if ($p instanceof \stdClass) {
+            $p = json_decode((string) json_encode($p), true);
+        }
+
+        return is_array($p) ? $p : [];
     }
 }

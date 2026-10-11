@@ -2,6 +2,16 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.14 (fix: asset page thresholds failed on a check with empty params)
+
+Bug fix. Loading the Alerting thresholds part of an agent-linked device logged `Cannot use object of type stdClass as array` from `AlertingActions::getThresholds` and the part failed.
+
+- **Root cause.** Inside the module a check definition's `params` was sometimes a `\stdClass` instead of an array: `RmmSettings::defaultChecks()` built `pending_reboot` with `new \stdClass()` and `settings->checks()` returns that list whenever no `checks_json` is stored (every install that never edited its checks), `ChecksValidator::validate()` returned `stdClass` for empty params, and `EffectiveConfig::compose()` (the per-device policy list) converted empty params to `stdClass` too. Anything that read `$def['params']['thresholds']` (`getThresholds`, `setThresholds`) then threw; `AlertingEngine::definitionsOf` only survived through an `is_array` guard. Present since the thresholds routes first shipped (rc.10); invisible in tests because they always stored a list through `json_encode` and read it back as arrays.
+- **Fix.** Inside the module `params` is always an array. `\stdClass` now exists only at the wire edges: `ChecksValidator::toWire()` turns an empty `params` into `{}` for storage (`checks_json` still stores `{}`), for the settings read model, the policy explanation, the policy version hash and (as before) `signCheckList()` / `Signer::checkMessage()`. `ChecksValidator::paramsOf()` reads a definition's params as an array whatever shape it arrived in, and `AlertingActions` uses it, so a hand-built definition with `stdClass` params also works. Wire bytes are unchanged: the golden transcripts still replay identically (`replay identical (10 files)`), the signed check messages and the policy `version` hashes are byte for byte what they were.
+- **Audit.** Every `json_decode(` in `src/Rmm` was checked: all decode as arrays except the three that need objects on purpose (`Signer::checkMessage` and `JobService::jobObject`, which keep `{}` vs `[]` for the signed bytes, and `InstallerStamp`, which only tests `is_object`). The other `\stdClass` producers (`JobService`, `ScheduleService`, `ScriptActions`, `PolicyStore`, `RmmSettings` features/limits, `StarterPack`, `StarterInstaller`) only build output or hashes and never read the value back as an array.
+- **API (additive).** `ChecksValidator::toWire()` and `ChecksValidator::paramsOf()`.
+- **Tests.** `CheckParamsShapeTest` (the default list and the four checks of the real agent, `{}` and `[]`, the technician `device/{id}/alerting` and `checks/{key}/thresholds` GET/PUT/DELETE routes, a Phase 3 check with thresholds, a policy-provided template, no `stdClass` in any internal list); `ChecksValidatorTest` and `EffectiveConfigTest` now assert arrays inside and `{}` on the wire.
+
 ## 1.0.0-rc.13 (RMM starter pack: 73 scripts, check templates, policy drafts)
 
 ### RMM starter pack

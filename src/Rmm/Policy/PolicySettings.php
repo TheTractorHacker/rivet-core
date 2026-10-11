@@ -133,7 +133,7 @@ final class PolicySettings
                 $c = $list[0];
                 $params = $c['params'];
 
-                return [['type' => $c['type'], 'params' => $params instanceof \stdClass ? [] : $params, 'interval_s' => $c['interval_s']], null];
+                return [['type' => $c['type'], 'params' => $params, 'interval_s' => $c['interval_s']], null];
         }
     }
 

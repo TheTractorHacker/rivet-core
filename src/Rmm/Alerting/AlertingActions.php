@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Alerting;
 
+use RivetCore\Rmm\Settings\ChecksValidator;
 use RivetCore\Rmm\Authz\RmmAbility;
 use RivetCore\Rmm\Authz\RmmAuthorizer;
 use RivetCore\Rmm\Authz\RmmPrincipal;
@@ -557,7 +558,7 @@ final class AlertingActions
         }
         $row = $this->eval->load($deviceId, [$checkKey])[$checkKey] ?? null;
         $override = $row === null || $row['override_json'] === null ? null : json_decode((string) $row['override_json'], true);
-        $defined = isset($def['params']['thresholds']) && is_array($def['params']['thresholds']) ? $def['params']['thresholds'] : null;
+        $defined = self::thresholdsOf($def);
         $merged = $this->merge($defined, is_array($override) ? $override : null);
         [$eff] = $merged === null ? [null] : Thresholds::normalize($merged);
 
@@ -582,7 +583,8 @@ final class AlertingActions
         if ($def === null) {
             return ActionResult::fail(404, 'not_found', 'No such check is defined.');
         }
-        if (!isset($def['params']['thresholds']) || !is_array($def['params']['thresholds'])) {
+        $declared = self::thresholdsOf($def);
+        if ($declared === null) {
             return ActionResult::fail(409, 'conflict', 'This check declares no thresholds, so it has nothing to override. Add thresholds to its definition first.');
         }
         if ($in === []) {
@@ -591,7 +593,7 @@ final class AlertingActions
 
             return ActionResult::ok('Override removed.');
         }
-        $merged = $this->merge($def['params']['thresholds'], $in);
+        $merged = $this->merge($declared, $in);
         [$eff, $why] = $merged === null ? [null, 'Nothing left.'] : Thresholds::normalize($merged);
         if ($eff === null) {
             return ActionResult::fail(422, 'invalid', (string) $why);
@@ -619,6 +621,20 @@ final class AlertingActions
         }
 
         return $m === [] ? null : $m;
+    }
+
+    /** @return array<string,mixed>|null */
+    /**
+     * The thresholds a check definition declares, or null. Tolerates params as an array, an empty array or a \stdClass.
+     *
+     * @param array<string,mixed> $def
+     * @return array<string,mixed>|null
+     */
+    private static function thresholdsOf(array $def): ?array
+    {
+        $t = ChecksValidator::paramsOf($def)['thresholds'] ?? null;
+
+        return is_array($t) ? $t : null;
     }
 
     /** @return array<string,mixed>|null */

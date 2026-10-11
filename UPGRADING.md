@@ -135,6 +135,10 @@ For an edition that already runs the RMM module. Everything is additive: an edit
 6. **Limits.** `check_history_days`, `check_history_gap_s` and `software_history_days` are valid `limits_json` keys now; add them to your settings page if you want them editable (defaults 7, 3600, 365).
 7. **Differences to know.** `RmmReadModel::listDevices()` summaries gain a `tags` list in the extras mode (the technician REST list is unchanged). `InMemoryRmmMetricSink` implements the reader (it is `@internal`). `Housekeeping::run()` returns three more counters (`pruned_check_history`, `pruned_software_history`, `pruned_software_removed`) and, when applicable, `pruned_metrics` and `offline_events`.
 
+## Check params are arrays inside the module (1.0.0-rc.14)
+
+`RmmSettings::checks()`, `RmmSettings::defaultChecks()`, `ChecksValidator::validate()` and `EffectiveConfig::compose()` now return an empty check `params` as `[]`, no longer as `\stdClass`. If your edition reads those lists and relied on `instanceof \stdClass`, or JSON-encodes them itself, pass the list through `ChecksValidator::toWire()` first to get `{}` back. Nothing on the wire changes (`signedChecks()`, the stored `checks_json`, the settings read model and the policy `version` are byte for byte the same).
+
 ## Adopting RMM Phase 2 (1.0.0-rc.10)
 
 For an edition that already runs the RMM module. Everything is additive and off until switched on: an edition that changes nothing keeps working and the golden transcripts of the old agents replay identically.

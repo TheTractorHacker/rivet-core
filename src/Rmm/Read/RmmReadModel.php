@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Read;
 
+use RivetCore\Rmm\Settings\ChecksValidator;
 use RivetCore\Rmm\Authz\RmmAbility;
 use RivetCore\Rmm\Authz\RmmAuthorizer;
 use RivetCore\Rmm\Authz\RmmPrincipal;
@@ -1056,7 +1057,7 @@ final class RmmReadModel
         $out['signing_key_created_at'] = Sql::iso($c['signing_key_created_at'] === null ? null : (string) $c['signing_key_created_at']);
         $out['signing_key_set'] = (string) $c['signing_public_key'] !== '' && !empty($c['signing_private_key_enc']);
         $out['mesh_login_key_set'] = !empty($c['mesh_login_key_enc']);
-        $out['checks'] = $this->settings->checks();
+        $out['checks'] = ChecksValidator::toWire($this->settings->checks());
         $out['features'] = $this->settings->features();
         $out['limits'] = $this->settings->limits();
         $out['service_base'] = $this->updates->serviceBase();

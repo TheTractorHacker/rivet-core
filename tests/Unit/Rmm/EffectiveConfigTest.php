@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use RivetCore\Rmm\Policy\EffectiveConfig;
 use RivetCore\Rmm\Policy\PolicyLayer;
 use RivetCore\Rmm\Policy\PolicyResolver;
+use RivetCore\Rmm\Settings\ChecksValidator;
 use RivetCore\Rmm\Settings\RmmSettings;
 
 final class EffectiveConfigTest extends TestCase
@@ -31,8 +32,8 @@ final class EffectiveConfigTest extends TestCase
         $this->assertSame([300, 60, null], [$e['check_in_interval_s'], $e['collect_interval_s'], $e['ring']]);
         $this->assertSame(['software_inventory' => true, 'script_checks' => true, 'checks' => true], $e['features']);
         $this->assertSame(['disk_c', 'pending_reboot', 'svc_eventlog'], array_column($e['checks'], 'key'));
-        $this->assertEquals(self::base()[1]['params'], $e['checks'][1]['params'], 'an empty params object stays an empty object');
-        $this->assertInstanceOf(\stdClass::class, $e['checks'][1]['params']);
+        $this->assertSame([], $e['checks'][1]['params'], 'empty params are an empty array inside the module');
+        $this->assertInstanceOf(\stdClass::class, ChecksValidator::toWire($e['checks'])[1]['params'], 'and an empty object on the wire');
     }
 
     public function testIntervalsAreClampedToTheGlobalLimits(): void

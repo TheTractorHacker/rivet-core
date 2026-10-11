@@ -284,7 +284,7 @@ final class RmmSettings
                 if ($e !== null) {
                     $err[] = $e;
                 } else {
-                    $out['checks_json'] = json_encode($list);
+                    $out['checks_json'] = json_encode(ChecksValidator::toWire($list));
                 }
             }
         }
@@ -566,7 +566,7 @@ final class RmmSettings
     {
         return [
             ['key' => 'disk_c', 'type' => 'disk', 'params' => ['mount' => 'C:', 'warn_pct' => 85, 'fail_pct' => 95], 'interval_s' => 300],
-            ['key' => 'pending_reboot', 'type' => 'pending_reboot', 'params' => new \stdClass(), 'interval_s' => 3600],
+            ['key' => 'pending_reboot', 'type' => 'pending_reboot', 'params' => [], 'interval_s' => 3600],
             ['key' => 'svc_eventlog', 'type' => 'service', 'params' => ['name' => 'EventLog', 'expect' => 'running'], 'interval_s' => 300],
         ];
     }

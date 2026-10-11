@@ -17,9 +17,10 @@ final class ChecksValidatorTest extends TestCase
         $this->assertNotNull($out);
         $this->assertCount(4, $out);
         $this->assertSame(['key', 'type', 'params', 'interval_s'], array_keys($out[3]));
-        $this->assertEquals(new \stdClass(), $out[2]['params'], 'absent params become {}');
+        $this->assertSame([], $out[2]['params'], 'inside the module absent params are an empty array');
+        $this->assertEquals(new \stdClass(), C::toWire($out)[2]['params'], 'absent params become {} on the wire');
         $this->assertSame(['script' => '(Get-Date).Year', 'timeout_s' => 10], $out[1]['params']);
-        $this->assertSame('{"interval_s":3600,"key":"pr","params":{},"type":"pending_reboot"}', Signer::checkMessage($out[2]));
+        $this->assertSame('{"interval_s":3600,"key":"pr","params":{},"type":"pending_reboot"}', Signer::checkMessage(C::toWire($out)[2]));
     }
 
     public function testScriptTimeoutClamp(): void

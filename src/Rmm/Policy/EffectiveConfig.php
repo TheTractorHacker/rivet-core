@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Policy;
 
+use RivetCore\Rmm\Settings\ChecksValidator;
 use RivetCore\Rmm\Crypto\CanonicalJson;
 use RivetCore\Rmm\Settings\RmmSettings;
 
@@ -86,8 +87,7 @@ final class EffectiveConfig
         }
         $checks = self::filterByCapabilities($checks, $capabilities);
         $checks = array_map(static function (array $c): array {
-            $p = $c['params'] ?? [];
-            $c['params'] = is_array($p) && $p === [] ? new \stdClass() : $p;
+            $c['params'] = ChecksValidator::paramsOf($c);
             $c['interval_s'] = (int) $c['interval_s'];
 
             return ['key' => (string) $c['key'], 'type' => (string) $c['type'], 'params' => $c['params'], 'interval_s' => $c['interval_s']];
@@ -97,7 +97,7 @@ final class EffectiveConfig
         foreach ($resolved as $key => $d) {
             $sources[$key] = ['mode' => $d['mode']] + $d['source'];
         }
-        $version = hash('sha256', CanonicalJson::encode(['checks' => $checks, 'check_in_interval_s' => $checkIn, 'collect_interval_s' => $collect, 'features' => $features, 'ring' => $ring]));
+        $version = hash('sha256', CanonicalJson::encode(['checks' => ChecksValidator::toWire($checks), 'check_in_interval_s' => $checkIn, 'collect_interval_s' => $collect, 'features' => $features, 'ring' => $ring]));
 
         return ['applied' => $resolved !== [], 'checks' => $checks, 'check_in_interval_s' => $checkIn, 'collect_interval_s' => $collect, 'features' => $features,
             'ring' => $ring, 'version' => $version, 'sources' => $sources];
