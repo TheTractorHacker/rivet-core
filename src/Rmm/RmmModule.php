@@ -179,7 +179,7 @@ final class RmmModule
     private readonly RmmEventsInterface $events;
 
     /**
-     * @param array{binary_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface} $options
+     * @param array{binary_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -458,7 +458,7 @@ final class RmmModule
     private function metricReader(): ?RmmMetricReaderInterface
     {
         $given = $this->options['metric_reader'] ?? null;
-        if ($given instanceof RmmMetricReaderInterface) {
+        if ($given !== null) {
             return $given;
         }
         if ($this->metrics instanceof RmmMetricReaderInterface) {
@@ -483,9 +483,7 @@ final class RmmModule
      */
     public function cache(): RmmCache
     {
-        $shared = $this->options['cache'] ?? null;
-
-        return $this->cache ??= new RmmCache($this->sql(), $shared instanceof \Psr\SimpleCache\CacheInterface ? $shared : null);
+        return $this->cache ??= new RmmCache($this->sql(), $this->options['cache'] ?? null);
     }
 
     /**
@@ -496,8 +494,7 @@ final class RmmModule
     {
         if ($this->herd === null) {
             $redis = $this->options['redis'] ?? null;
-            $this->herd = new HerdControl($this->sql(), $this->settings(), $this->state(),
-                $redis instanceof \RivetCore\Redis\RedisClientProviderInterface ? new RedisTokenBucketStore($redis) : new DbTokenBucketStore($this->sql()));
+            $this->herd = new HerdControl($this->sql(), $this->settings(), $this->state(), $redis !== null ? new RedisTokenBucketStore($redis) : new DbTokenBucketStore($this->sql()));
         }
 
         return $this->herd;

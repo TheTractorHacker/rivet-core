@@ -132,7 +132,11 @@ final class JobClaimer
                 if ($ids === []) {
                     return [];
                 }
-                $this->database->execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+                try {
+                    $this->database->execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+                } catch (\Throwable) {
+                    // the caller is already inside a transaction (the level cannot change there): claim at the level it has
+                }
 
                 return $this->database->transaction(function () use ($limit, $ids, $hb): array {
                     $rows = [];

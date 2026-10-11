@@ -74,7 +74,11 @@ final class HerdControl
         return (crc32($deviceKey . '|' . intdiv($nowSeconds, self::SLOT_S)) % 10000) < (int) round($percent * 100);
     }
 
-    /** The Retry-After window of a refused check-in: wide while the ramp is young, never under one slot. @return array{0:int,1:int} [min, max] seconds */
+    /**
+     * The Retry-After window of a refused check-in: wide while the ramp is young, never under one slot.
+     *
+     * @return array{0:int,1:int} [min, max] seconds
+     */
     public static function retryWindow(int $remainingS): array
     {
         return [self::SLOT_S, max(2 * self::SLOT_S, min(120, intdiv($remainingS, 6)))];

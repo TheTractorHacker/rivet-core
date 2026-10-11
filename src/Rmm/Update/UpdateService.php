@@ -64,7 +64,7 @@ final class UpdateService
         }
         $limits = $this->settings->limits();
 
-        return $this->cache->remember(RmmCache::GROUP_RELEASES, 'active', $limits['cache_fresh_s'], $limits['cache_stale_s'], $read);   // @phpstan-ignore return.type
+        return $this->cache->remember(RmmCache::GROUP_RELEASES, 'active', $limits['cache_fresh_s'], $limits['cache_stale_s'], $read);
     }
 
     /**

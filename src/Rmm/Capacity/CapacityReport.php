@@ -63,7 +63,7 @@ final class CapacityReport
         $limits = $this->settings->limits();
         $now = $this->sql->time();
         $d = $this->cache === null || $limits['cache_fresh_s'] <= 0 ? $this->devices($cfg)
-            : $this->cache->remember(RmmCache::GROUP_FLEET, 'capacity:devices', $limits['cache_fresh_s'], $limits['cache_stale_s'], fn (): array => $this->devices($cfg));   // @phpstan-ignore argument.type
+            : $this->cache->remember(RmmCache::GROUP_FLEET, 'capacity:devices', $limits['cache_fresh_s'], $limits['cache_stale_s'], fn (): array => $this->devices($cfg));
         $perMin = (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_checkins WHERE received_at >= ?', [$this->sql->utcAt(-60)]);
         $perHour = (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_checkins WHERE received_at >= ?', [$this->sql->utcAt(-3600)]);
         $backlog = $this->queue->backlog();
