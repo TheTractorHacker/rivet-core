@@ -10,7 +10,7 @@
 #                             --server https://rmm.example.com --token-file /root/enroll.token
 #   Optional MeshCentral agent, installed from YOUR OWN Mesh server (never bundled; a failure never fails the RivetIT install):
 #     a stamped installer carries it when the administrator ticked "also install the MeshCentral agent"; add --no-mesh-agent to skip it.
-#     with a plain agent:  ... --install-mesh-agent --mesh-url https://mesh.example.com --mesh-group-id <hex meshid> [--mesh-cert-pin <sha384 hex>]
+#     with a plain agent:  ... --install-mesh-agent --mesh-url https://mesh.example.com --mesh-group-id <meshid from the Mesh download address, 64 chars or hex> [--mesh-cert-pin <sha384 hex>]
 #   Remove:  sudo ./install-linux.sh --uninstall [--purge] [--remove-meshagent]   (Mesh is left alone unless --remove-meshagent)
 #
 # What it does: picks the binary for this CPU, VERIFIES it (SHA-256 for --url downloads, ELF header and a `version`

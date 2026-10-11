@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 )
 
-// startMockMesh serves a stand-in for a MeshCentral server's agent download: GET /meshagents?id=N&meshid=HEX&installflags=F answers a tiny shell script that
+// startMockMesh serves a stand-in for a MeshCentral server's agent download: GET /meshagents?id=N&meshid=<64-character URL form>&installflags=F answers a tiny shell script that
 // behaves like a MeshAgent for the three commands the installer uses (-install, -nodeid, -uninstall). It is NOT MeshCentral: it proves our side of the
 // protocol (URL, pinning, running the installer, reporting the node id), not that a real Mesh server speaks it. See docs/rmm/REMOTE_AND_LOGS.md.
 func startMockMesh(dir, addr, group, node string, s *server) {
@@ -41,7 +41,7 @@ exit 2
 	mux := http.NewServeMux()
 	mux.HandleFunc("/meshagents", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		s.logf("MESH-DOWNLOAD id=%s meshid=%s installflags=%s", q.Get("id"), q.Get("meshid"), q.Get("installflags"))
+		s.logf("MESH-DOWNLOAD id=%s meshid=%s installflags=%s raw=%s", q.Get("id"), q.Get("meshid"), q.Get("installflags"), r.URL.RawQuery)
 		if group != "" && q.Get("meshid") != group {
 			http.NotFound(w, r)
 			return

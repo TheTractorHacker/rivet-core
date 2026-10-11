@@ -8,13 +8,17 @@
 // hash), runs it, and records the outcome. Nothing in this package may ever make
 // the RivetIT install fail: every function reports through a Result.
 //
-// UNVERIFIED against a real MeshCentral server. The download URL, the agent id
-// table, the install flags and the node-id locations are written from the
-// MeshCentral documentation and source as remembered, and are exercised here
-// only against mock servers and fixtures. See docs/rmm/REMOTE_AND_LOGS.md.
+// PARTLY VERIFIED against a real MeshCentral: the download address shape
+// `<mesh>/meshagents?id=4&meshid=<64-character URL form>&installflags=0` (id 4 is
+// the Windows x64 agent). STILL UNVERIFIED: the Linux agent ids, the install
+// arguments and the node-id locations, written from the MeshCentral
+// documentation and source as remembered and exercised here only against mock
+// servers and fixtures. See docs/rmm/REMOTE_AND_LOGS.md.
 package mesh
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +39,8 @@ const (
 
 var (
 	hexRe  = regexp.MustCompile(`^[0-9a-f]+$`)
+	hexCI  = regexp.MustCompile(`^[0-9a-fA-F]+$`)
+	urlRe  = regexp.MustCompile(`^[A-Za-z0-9@$_-]{64}$`)
 	argRe  = regexp.MustCompile(`^-{0,2}[A-Za-z0-9][A-Za-z0-9=_./:@-]*$`)
 	osArch = regexp.MustCompile(`^(windows|linux)/[a-z0-9]{2,10}$`)
 )
@@ -65,7 +71,39 @@ var DefaultInstallArgs = map[string][]string{
 	"linux":   {"-install"},
 }
 
-// Spec is the validated Mesh source carried in the installer payload.
+// GroupURLForm is MeshCentral's URL form of a device group id: base64 of the 48-byte
+// hash, 64 characters, with '@' written for '+' and '$' for '/'. It is what the
+// download address carries (`meshagents?id=4&meshid=<this>&installflags=0`, checked
+// against a real MeshCentral). For a 96-character hex id it is derived; any other
+// hex id has no URL form and is sent as it is.
+func GroupURLForm(hexID string) (string, bool) {
+	if len(hexID) != 96 || !hexCI.MatchString(hexID) {
+		return "", false
+	}
+	raw, err := hex.DecodeString(hexID)
+	if err != nil || len(raw) != 48 {
+		return "", false
+	}
+	return strings.NewReplacer("+", "@", "/", "$").Replace(base64.StdEncoding.EncodeToString(raw)), true
+}
+
+// groupURLToHex decodes the URL form back to hex; false unless it is exactly 48 bytes.
+func groupURLToHex(u string) (string, bool) {
+	if !urlRe.MatchString(u) {
+		return "", false
+	}
+	b64 := strings.NewReplacer("@", "+", "$", "/", "-", "+", "_", "/").Replace(u)
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil || len(raw) != 48 {
+		return "", false
+	}
+	return hex.EncodeToString(raw), true
+}
+
+// Spec is the validated Mesh source carried in the installer payload. MeshID is
+// the device group id as the payload gave it: MeshCentral's 64-character URL form
+// (what the server sends since 1.0.0-rc.15, used on the wire unchanged) or hex
+// (older servers; the URL form is derived from it).
 type Spec struct {
 	URL          string              `json:"url"`
 	MeshID       string              `json:"meshid"`
@@ -116,9 +154,11 @@ func (s *Spec) Validate() error {
 		}
 	}
 	s.base = u
-	s.MeshID = strings.ToLower(s.MeshID)
-	if n := len(s.MeshID); n < 32 || n > 128 || n%2 != 0 || !hexRe.MatchString(s.MeshID) {
-		return errors.New("the Mesh device group id must be 32-128 hex characters")
+	s.MeshID = strings.TrimPrefix(strings.TrimSpace(s.MeshID), "mesh//")
+	if n := len(s.MeshID); n >= 32 && n <= 128 && n%2 == 0 && hexCI.MatchString(s.MeshID) {
+		s.MeshID = strings.ToLower(s.MeshID) // hex (a 64-character all-hex string is hex, not the URL form)
+	} else if _, ok := groupURLToHex(s.MeshID); !ok {
+		return errors.New("the Mesh device group id must be the 64-character meshid of the MeshCentral download address, or 32-128 hex characters")
 	}
 	if s.Pin != "" {
 		p := strings.ToLower(strings.ReplaceAll(s.Pin, ":", ""))
@@ -173,10 +213,21 @@ func (s *Spec) Args(goos string) []string {
 	return DefaultInstallArgs[goos]
 }
 
-// DownloadURL is `<mesh>/meshagents?id=<N>&meshid=<group>&installflags=<F>`.
+// WireMeshID is the group id exactly as it goes into the download address: the URL
+// form (kept as given, or derived from a 96-character hex id), else the hex.
+// '@' and '$' are sent literally, as MeshCentral prints them: both are legal in
+// a query string and MeshCentral's own address is built that way.
+func (s *Spec) WireMeshID() string {
+	if u, ok := GroupURLForm(s.MeshID); ok {
+		return u
+	}
+	return s.MeshID
+}
+
+// DownloadURL is `<mesh>/meshagents?id=<N>&meshid=<group URL form>&installflags=<F>`.
 func (s *Spec) DownloadURL(id int) string {
 	base := strings.TrimRight(s.URL, "/")
-	return base + "/meshagents?id=" + strconv.Itoa(id) + "&meshid=" + s.MeshID + "&installflags=" + strconv.Itoa(s.InstallFlags)
+	return base + "/meshagents?id=" + strconv.Itoa(id) + "&meshid=" + s.WireMeshID() + "&installflags=" + strconv.Itoa(s.InstallFlags)
 }
 
 // Host is the Mesh server's host name (for logs; never the group id).
@@ -190,8 +241,13 @@ func (s *Spec) Host() string {
 // redact removes the device group id (which would let anyone who sees a log
 // download an agent that joins the group) from text.
 func (s *Spec) redact(t string) string {
-	if s.MeshID != "" {
-		t = strings.ReplaceAll(t, s.MeshID, "[meshid]")
+	for _, id := range []string{s.WireMeshID(), s.MeshID} {
+		if id != "" {
+			t = strings.ReplaceAll(t, id, "[meshid]")
+		}
+	}
+	if h, ok := groupURLToHex(s.MeshID); ok {
+		t = strings.ReplaceAll(t, h, "[meshid]")
 	}
 	return t
 }

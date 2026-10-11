@@ -217,3 +217,21 @@ func TestInstallFlagsBuildTheSamePayloadMembers(t *testing.T) {
 		t.Fatal("an http address must be refused")
 	}
 }
+
+// The server now writes the group id in MeshCentral's 64-character URL form: it reaches the Mesh installer unchanged.
+func TestSetupCarriesTheURLFormGroupIDToTheMeshInstaller(t *testing.T) {
+	const urlForm = "4Q3y1m6Cm1PFZ2UtTZGt1cYvRX$g1wwy@dIBLfVOt6rZ4Mq3gqfJmwmSMX4jXYSe"
+	withNoMeshOnDisk(t)
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	spec := goodSpec()
+	spec["meshid"] = urlForm
+	e.stampWith(srv, meshPayload(true, spec))
+	f := &fakeMesh{res: mesh.Result{Installed: true, AgentID: 4, Host: "mesh.example.com"}}
+	if code := e.setupWithMesh(f); code != exitOK {
+		t.Fatalf("exit %d", code)
+	}
+	if f.calls != 1 || f.spec.MeshID != urlForm || f.spec.WireMeshID() != urlForm {
+		t.Fatalf("calls=%d spec=%+v", f.calls, f.spec)
+	}
+}

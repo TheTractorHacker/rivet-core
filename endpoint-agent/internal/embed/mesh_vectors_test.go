@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +18,12 @@ import (
 type meshVectorFile struct {
 	DefaultAgentIDs map[string]int      `json:"default_agent_ids"`
 	DefaultArgs     map[string][]string `json:"default_install_args"`
-	Vectors         []struct {
+	GroupForms      []struct {
+		Name    string `json:"name"`
+		Hex     string `json:"hex"`
+		URLForm string `json:"url_form"`
+	} `json:"group_forms"`
+	Vectors []struct {
 		Name    string `json:"name"`
 		ExeHex  string `json:"exe_hex"`
 		Payload string `json:"payload"`
@@ -27,6 +33,9 @@ type meshVectorFile struct {
 			URL     string         `json:"url"`
 			PinLen  int            `json:"pin_len"`
 			AgentID map[string]int `json:"agent_id"`
+			// ADDED in rc.15: the group id as it goes to the Mesh server, and the exact download target per platform
+			WireMeshID    string            `json:"wire_meshid"`
+			DownloadQuery map[string]string `json:"download_query"`
 		} `json:"expect"`
 	} `json:"vectors"`
 }
@@ -85,6 +94,16 @@ func TestMeshVectorsReadWithTheCurrentAgent(t *testing.T) {
 						t.Fatalf("agent id for %s: %d (%v), want %d", k, got, ok, want)
 					}
 				}
+				if c.Expect.WireMeshID != "" && spec.WireMeshID() != c.Expect.WireMeshID {
+					t.Fatalf("wire meshid %q, want %q", spec.WireMeshID(), c.Expect.WireMeshID)
+				}
+				for k, want := range c.Expect.DownloadQuery {
+					goos, arch, _ := strings.Cut(k, "/")
+					id, _ := spec.AgentID(goos, arch)
+					if got := strings.TrimPrefix(spec.DownloadURL(id), spec.URL); got != want {
+						t.Fatalf("download target for %s: %q, want %q", k, got, want)
+					}
+				}
 			case "disabled":
 				if err != mesh.ErrDisabled {
 					t.Fatalf("want ErrDisabled, got %v", err)
@@ -130,6 +149,24 @@ func TestDefaultTablesMatchTheServersVectors(t *testing.T) {
 	}
 	if !reflect.DeepEqual(v.DefaultArgs, mesh.DefaultInstallArgs) {
 		t.Fatalf("install args differ: vectors %v, agent %v", v.DefaultArgs, mesh.DefaultInstallArgs)
+	}
+}
+
+func TestGroupFormVectorsConvertBothWays(t *testing.T) {
+	v := loadMeshVectors(t)
+	if len(v.GroupForms) < 3 {
+		t.Fatal("group_forms vectors missing")
+	}
+	for _, f := range v.GroupForms {
+		for _, in := range []string{f.Hex, f.URLForm} {
+			s := mesh.Spec{URL: "https://mesh.example.com", MeshID: in}
+			if err := s.Validate(); err != nil || s.WireMeshID() != f.URLForm {
+				t.Fatalf("%s: %q -> %q (%v), want %q", f.Name, in, s.WireMeshID(), err, f.URLForm)
+			}
+		}
+		if u, ok := mesh.GroupURLForm(f.Hex); !ok || u != f.URLForm {
+			t.Fatalf("%s: hex -> URL form %q", f.Name, u)
+		}
 	}
 }
 

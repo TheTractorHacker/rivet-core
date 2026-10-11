@@ -29,7 +29,7 @@ func cmdStamp(args []string) int {
 	ca := fs.String("ca", "", "PEM file with the CA certificate(s) to embed")
 	ttl := fs.Duration("ttl", time.Hour, "validity")
 	meshURL := fs.String("mesh-url", "", "ask the installer to also install the MeshCentral agent from this https URL (needs --mesh-group)")
-	meshGroup := fs.String("mesh-group", "", "MeshCentral device group id (hex)")
+	meshGroup := fs.String("mesh-group", "", "MeshCentral device group id (the meshid of the download address, or hex)")
 	meshPin := fs.String("mesh-pin", "", "SHA-384/256 hex pin of the Mesh server certificate (empty = system roots)")
 	if err := fs.Parse(args); err != nil {
 		return 2

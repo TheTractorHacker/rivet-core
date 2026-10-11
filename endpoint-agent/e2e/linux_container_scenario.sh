@@ -26,8 +26,8 @@ exit 0
 SH
 chmod +x /usr/local/bin/systemctl
 
-# the mock Mesh server's device group (hex) and the node id its fake MeshAgent prints (bare, like the real one is assumed to)
-MESHGROUP=4a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9
+# the mock Mesh server's device group, in MeshCentral's 64-character URL form (a fresh random value, with @ and $ like a real one; rc.15) and the node id its fake MeshAgent prints (bare, like the real one is assumed to)
+MESHGROUP='4Q3y1m6Cm1PFZ2UtTZGt1cYvRX$g1wwy@dIBLfVOt6rZ4Mq3gqfJmwmSMX4jXYSe'
 MESHNODE_RAW='AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@$AbCdEfGhIjKlMnOpQrStUvWxYz01'
 echo "== start the fake server"
 "$BIN/fakeserver" -dir "$OUT" -interval 3 -collect 3 -token rvte1.e2esel.E2Esecret123 -job-type shell -foreign-job \
@@ -176,7 +176,7 @@ stampmesh "$OUT/inst-badpin" "$MESHURL" "$MESHGROUP" "$(printf 0%.0s {1..96})"
 $IS --binary "$OUT/inst-badpin" >"$OUT/mesh1.out" 2>&1; rc=$?
 chk "RivetIT install exits 0 although the Mesh part failed" '[ $rc = 0 ] && [ -f $UNIT ] && /opt/rivetit-agent/rivetit-agent status | grep -q "enrolled and linked"'
 chk "no Mesh installer ran and no Mesh agent exists" '[ ! -e "$MESHDIR/meshagent" ] && [ ! -e "$OUT/mesh-installed.marker" ]'
-chk "the failure is on record (state file) and names the pin, never the group id" 'grep -q "\"installed\": false" /var/lib/rivetit-agent/mesh_agent.json && grep -qi pinned /var/lib/rivetit-agent/mesh_agent.json && ! grep -rqa "$MESHGROUP" /var/lib/rivetit-agent "$OUT/mesh1.out"'
+chk "the failure is on record (state file) and names the pin, never the group id" 'grep -q "\"installed\": false" /var/lib/rivetit-agent/mesh_agent.json && grep -qi pinned /var/lib/rivetit-agent/mesh_agent.json && ! grep -rqaF -- "$MESHGROUP" /var/lib/rivetit-agent "$OUT/mesh1.out"'
 chk "the mock Mesh server never saw an HTTP request (the TLS handshake was refused)" '[ "$(grep -c MESH-DOWNLOAD "$OUT/events.log")" = "$M0" ]'
 supervise_start
 chk "the first check-in reports the failure to the server" 'wait_for 30 "grep -q \"MESH-REPORT installed=false\" $OUT/events.log" && grep MESH-REPORT "$OUT/events.log" | grep -q "pinned"'
@@ -209,10 +209,10 @@ echo "-- the good case: pinned download, the installer runs, the node id is repo
 D1="$(grep -c MESH-DOWNLOAD "$OUT/events.log")"
 $IS --binary "$OUT/inst-good" >"$OUT/mesh5.out" 2>&1; rc=$?
 chk "install exit 0" '[ $rc = 0 ]'
-chk "downloaded from <mesh>/meshagents?id=6&meshid=<group>&installflags=0 (linux/amd64 = 6)" 'grep -q "MESH-DOWNLOAD id=6 meshid=$MESHGROUP installflags=0" "$OUT/events.log"'
+chk "downloaded from <mesh>/meshagents?id=6&meshid=<group URL form, @ and $ literal>&installflags=0 (linux/amd64 = 6)" 'grep -qF -- "MESH-DOWNLOAD id=6 meshid=$MESHGROUP installflags=0 raw=id=6&meshid=$MESHGROUP&installflags=0" "$OUT/events.log"'
 chk "the downloaded installer ran with -install and put the agent in place" 'grep -q "installed by: .* -install" "$OUT/mesh-installed.marker" && [ -x "$MESHDIR/meshagent" ]'
 chk "the work directory was removed" '[ -z "$(ls -d /var/lib/rivetit-agent/mesh-install-* 2>/dev/null)" ]'
-chk "outcome saved 0600 without the group id" '[ "$(stat -c %a /var/lib/rivetit-agent/mesh_agent.json)" = 600 ] && grep -q "\"installed\": true" /var/lib/rivetit-agent/mesh_agent.json && ! grep -rqa "$MESHGROUP" /var/lib/rivetit-agent'
+chk "outcome saved 0600 without the group id" '[ "$(stat -c %a /var/lib/rivetit-agent/mesh_agent.json)" = 600 ] && grep -q "\"installed\": true" /var/lib/rivetit-agent/mesh_agent.json && ! grep -rqaF -- "$MESHGROUP" /var/lib/rivetit-agent'
 chk "the install output says so" 'grep -q "MeshCentral agent: installed" "$OUT/mesh5.out"'
 supervise_start
 chk "the first check-in reports installed=true with the node id from -nodeid, normalised to node//" 'wait_for 30 "grep -qF \"MESH-REPORT installed=true node_id=node//\$MESHNODE_RAW\" \$OUT/events.log"'

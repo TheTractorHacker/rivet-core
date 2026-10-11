@@ -20,7 +20,9 @@ import (
 
 const (
 	testGroup = "4a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
-	testNode  = "node//AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@$AbCdEfGhIjKlMnOpQrStUvWxYz01"
+	// the same 48 bytes in MeshCentral's URL form (base64, '+' written '@', '/' written '$'): the form the download address carries
+	testGroupURL = "ShssPU5fYHGCk6S1xtfo@QobLD1OX2BxgpOktcbX6PkKGyw9Tl9gcYKTpLXG1@j5"
+	testNode     = "node//AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@$AbCdEfGhIjKlMnOpQrStUvWxYz01"
 )
 
 func quiet() *slog.Logger {
@@ -41,6 +43,16 @@ type mock struct {
 	*httptest.Server
 	mu   sync.Mutex
 	hits []string
+	uris []string // the request line target exactly as the server received it
+}
+
+func (m *mock) lastURI() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.uris) == 0 {
+		return ""
+	}
+	return m.uris[len(m.uris)-1]
 }
 
 func (m *mock) lastQuery() string {
@@ -58,6 +70,7 @@ func newMock(t *testing.T, status int, ctype string, body []byte) *mock {
 	m.Server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		m.hits = append(m.hits, r.URL.Path+"?"+r.URL.RawQuery)
+		m.uris = append(m.uris, r.RequestURI)
 		m.mu.Unlock()
 		if r.URL.Path != "/meshagents" {
 			http.NotFound(w, r)
@@ -105,7 +118,7 @@ func TestInstallSuccessPinnedSHA384(t *testing.T) {
 	if got, _ := os.ReadFile(marker); !strings.Contains(string(got), "ran with -install") {
 		t.Fatalf("installer did not run with -install: %q", got)
 	}
-	if q := m.lastQuery(); q != "/meshagents?id=6&meshid="+testGroup+"&installflags=0" {
+	if q := m.lastQuery(); q != "/meshagents?id=6&meshid="+testGroupURL+"&installflags=0" {
 		t.Fatalf("download URL %q", q)
 	}
 	if res.SHA256 == "" || res.AgentID != 6 || !strings.Contains(res.Log, "installer-output") {
@@ -158,7 +171,7 @@ func TestPinMismatchIsRefusedAndNothingRuns(t *testing.T) {
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("the installer ran despite a pin mismatch")
 	}
-	if strings.Contains(res.Error+res.Log, testGroup) {
+	if strings.Contains(res.Error+res.Log, testGroup) || strings.Contains(res.Error+res.Log, testGroupURL) {
 		t.Fatal("group id leaked into the result")
 	}
 }

@@ -29,7 +29,7 @@ type meshFlags struct {
 func (m *meshFlags) register(fs *flag.FlagSet) {
 	fs.BoolVar(&m.install, "install-mesh-agent", false, "ALSO install the MeshCentral agent from your Mesh server (needs --mesh-url and --mesh-group-id); a failure never fails this install")
 	fs.StringVar(&m.url, "mesh-url", "", "MeshCentral base URL (https only)")
-	fs.StringVar(&m.group, "mesh-group-id", "", "MeshCentral device group id (hex) the device should join")
+	fs.StringVar(&m.group, "mesh-group-id", "", "MeshCentral device group id the device should join (the meshid of the Mesh download address: 64 characters, or hex)")
 	fs.StringVar(&m.pin, "mesh-cert-pin", "", "SHA-384 (or SHA-256) hex hash of the Mesh server certificate; empty = verify with the system roots")
 }
 

@@ -359,7 +359,7 @@ func main() {
 	updVer := flag.String("update-version", "", "version offered to agents running a different version (once /_ctl?update=on)")
 	ctlListen := flag.String("ctl-listen", "", "plain-HTTP 127.0.0.1:PORT (0 = any) for /_ctl; address written to <dir>/ctl (lets a shell without curl drive faults)")
 	meshListen := flag.String("mesh-listen", "", "also serve a MOCK MeshCentral server (GET /meshagents) on this TLS address; its URL and SHA-384 pin go to <dir>/mesh_url and <dir>/mesh_pin")
-	meshGroup := flag.String("mesh-group", "", "device group id (hex) the mock Mesh server accepts as meshid")
+	meshGroup := flag.String("mesh-group", "", "device group id (MeshCentral's 64-character URL form) the mock Mesh server accepts as meshid")
 	meshNode := flag.String("mesh-node", "", "node id the fake MeshAgent prints for -nodeid (without the node// prefix, like the real one is assumed to)")
 	flag.Parse()
 	if *dir == "" {
