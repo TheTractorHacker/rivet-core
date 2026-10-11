@@ -93,7 +93,7 @@ Description=RivetIT proof noisy unit (harmless)
 [Service]
 Type=oneshot
 SyslogIdentifier=rivetproof
-ExecStart=/bin/sh -c "echo \"Failed password for invalid user proofuser from 203.0.113.9 port 2222 ssh2\" >&2; echo \"routine: nothing to see\""
+ExecStart=/bin/sh -c "echo \"<3>Failed password for invalid user proofuser from 203.0.113.9 port 2222 ssh2\" >&2; echo \"<6>routine: nothing to see\" >&2"
 U
 systemctl daemon-reload && systemctl start rivetproof-probe.service
 printf "hello from the device\n" >/srv/proof/report.txt; ln -sf /etc/shadow /srv/proof/shadow-link; mkdir -p /srv/proof/drop; (sleep 3000 &) ; true'
@@ -182,7 +182,8 @@ sleep 2
 ST="$(api GET "$DEV/logs/stats")"
 chk "storage figures are reported" 'printf "%s" "$ST" | grep -q device_max_rows'
 echo "== audit"
-chk "every action above left an audit trail row" 'true'
+AUD="$(RMM_GOLDEN_STATE="$WORK/state" php -r 'require "'"$REPO"'/vendor/autoload.php"; $d = unserialize(file_get_contents($argv[1]."/edition.ser")); echo json_encode($d["audit"]->records());' "$WORK/state")"
+chk "the audit log has the service, process and file actions (queued, completed, downloaded)" 'for k in "Remote Tool Queued" "File Download Requested" "File Transfer Completed" "File Downloaded" "File Upload Queued"; do printf "%s" "$AUD" | grep -q "$k" || { echo "missing $k"; false; break; }; done'
 echo "== uninstall"
 q bash /w/install-linux.sh --uninstall --purge >"$WORK/uninstall.out" 2>&1
 chk "uninstall exit 0" '[ $? = 0 ]'
