@@ -2,7 +2,7 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
-## Unreleased (after 1.0.0-rc.10): RMM scale (S3 to S8, S9 tooling)
+## 1.0.0-rc.11 (RMM scale S3 to S8, Phase 6 remote tools, Phase 8 log collection)
 
 RMM scale work ([#81](https://github.com/TheTractorHacker/rivet-core/issues/81) S3 cheaper write path, [#82](https://github.com/TheTractorHacker/rivet-core/issues/82) S4 optional external metric store, [#83](https://github.com/TheTractorHacker/rivet-core/issues/83) S5 storage, [#84](https://github.com/TheTractorHacker/rivet-core/issues/84) S6 workers, [#86](https://github.com/TheTractorHacker/rivet-core/issues/86) S8 read path and herd control; tooling for [#87](https://github.com/TheTractorHacker/rivet-core/issues/87) S9). Built in Core only, additive, not adopted by an edition and not tagged. **S9, the 24 hour / 10,000 device validation on the reference hardware, has NOT been run**: only its tooling, its runbook and a short validation run of that tooling exist. The golden transcripts still replay identically (`replay identical (10 files)`): not one response byte changed.
 
@@ -17,7 +17,7 @@ RMM scale work ([#81](https://github.com/TheTractorHacker/rivet-core/issues/81) 
 - **API compatibility.** Additive. Constructor arguments added to `Housekeeping`, `CapacityReport`, `RmmReadModel`, `UpdateService`, `EnrollmentService`, `DeviceService`, `DeviceApi`, `JobQueue` and `DatabaseMetricSink` are optional and last; `DatabaseMetricSink::prune()` gained three optional parameters; `RmmSettings::LIMIT_KEYS` and `LIMIT_DEFAULTS` gained 15 keys; `RmmModule` gains `storage()`, `partitions()`, `cache()`, `herd()` and the options `cache`, `redis`, `metric_reader`. Behaviour changes an edition can see: `JobQueue::claim()` locks with SKIP LOCKED where the server has it; `RmmReadModel::fleetCounts()` is cached for 15 seconds by default (set `cache_fresh_s` to 0 to turn it off); a metric key with a trailing newline is now dropped.
 - **What remains.** S9 itself (24 h, 10,000 devices, reference hardware, PHP-FPM) and the herd on real FPM; the edition adoption and its screens for partitioning, the cache and the herd settings; the Windows-only parts of the write path were not run on a Windows host.
 
-### RMM Phase 3 (also unreleased)
+### Earlier in this window (formerly unreleased): RMM Phase 3
 
 RMM Phase 6 ([#74](https://github.com/TheTractorHacker/rivet-core/issues/74)): remote tools, and Phase 8 ([#76](https://github.com/TheTractorHacker/rivet-core/issues/76)): optional event-log and syslog collection. Built in Core behind three new sub-switches that are all **off** by default (`remote_tools`, `filetransfer`, `logs`); with them off nothing of either phase runs and the golden transcripts of the old agents replay byte for byte. Operator guide: [docs/rmm/REMOTE_AND_LOGS.md](docs/rmm/REMOTE_AND_LOGS.md).
 
