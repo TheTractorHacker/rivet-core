@@ -2470,9 +2470,9 @@ paths:
       operationId: updateMeshAgentSettings
       summary: Change them (administrators)
       description: |
-        Only the keys sent are touched; nothing is written when any value is refused (`422 invalid`). `mesh_group_id` is the hex group id (32 to 128 characters) or MeshCentral's `mesh//...` form, stored as
-        hex; `mesh_server_cert_pin` is the SHA-384 (96 hex) or SHA-256 (64 hex) hash of the server certificate, colons and case ignored, empty to use the system trust store.
-        `probe_pin: true` reads the Mesh server's certificate through the network policy and answers a proposed pin in `pin_probe` WITHOUT saving it (trust on first use: compare it with the hash MeshCentral shows).
+        Only the keys sent are touched; nothing is written when any value is refused (`422 invalid`). `mesh_group_id` is the `meshid` of MeshCentral's download address (64 characters of letters, digits, `@` and `$`), the WHOLE pasted download address (only the `meshid` is taken; a host other than the saved Mesh address is a `warnings` entry, not an error; nothing is fetched), MeshCentral's `mesh//...` form or the hex group id (32 to 128 characters); stored as canonical
+        hex plus the URL form when one was given (answered as `mesh_group_id_url`); `mesh_server_cert_pin` is the SHA-384 (96 hex) or SHA-256 (64 hex) hash of the server certificate, colons and case ignored, empty to use the system trust store. Leave it empty when the server certificate is issued by a public CA such as Let's Encrypt (it is renewed every 60 to 90 days and would break a pin); use a pin only for a private CA or a self-signed certificate.
+        `probe_pin: true` reads the Mesh server's certificate through the network policy and answers a proposed pin in `pin_probe` WITHOUT saving it (trust on first use: compare it with the hash MeshCentral shows); `pin_probe.publicly_trusted` is true when the certificate also verifies against the system roots, and `pin_probe.note` then says no pin is needed.
       security: [{userToken: []}]
       requestBody:
         required: true
@@ -2803,7 +2803,9 @@ components:
       properties:
         mesh_enabled: {type: boolean}
         mesh_url: {type: string}
-        mesh_group_id: {type: string, description: Lower-case hex; empty when not set}
+        mesh_group_id: {type: string, description: Canonical lower-case hex of the group id; empty when not set}
+        mesh_group_id_url: {type: string, description: "The group id in MeshCentral's 64-character URL form (what the installer carries); empty when not set"}
+        warnings: {type: array, items: {type: string}, description: 'Present on a save: for example a pasted address for a host other than mesh_url'}
         mesh_server_cert_pin: {type: string, description: 'SHA-384 (96) or SHA-256 (64) hex; empty = verify with the system trust store'}
         mesh_auto_map_overwrite: {type: boolean}
         mesh_agent_ids: {type: object, additionalProperties: {type: integer}, description: The administrator's corrections only}
