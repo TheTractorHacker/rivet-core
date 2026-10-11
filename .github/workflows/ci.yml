@@ -54,6 +54,8 @@ jobs:
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
           RIVETCORE_TEST_REDIS_PORT: '6391'
+          # The starter pack's Linux proof also runs in a container with common tools installed (about 3 minutes); once is enough.
+          RIVETCORE_STARTER_PROOF_TOOLS: ${{ matrix.php == '8.4' && matrix.db == 'mariadb:11' && '1' || '' }}
 
   lowest:
     name: lowest supported dependencies

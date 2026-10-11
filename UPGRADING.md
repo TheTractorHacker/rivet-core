@@ -189,6 +189,17 @@ For an edition that already runs the RMM module. Everything is additive. With no
 7. **External metric store (optional).** See EXTERNAL_METRICS.md; pass a `CompositeMetricSink` as the module's sink and an `ExternalMetricReader` as the `metric_reader` option. Run the new conformance case against any adapter of your own.
 8. **If you wrap the module's classes** (a subclass is impossible, they are `final`), nothing changes; if you construct `Housekeeping`, `CapacityReport`, `RmmReadModel`, `UpdateService`, `EnrollmentService`, `DeviceService`, `DeviceApi` or `DatabaseMetricSink` yourself instead of through `RmmModule`, the new constructor arguments are optional and last.
 
+## Adopting the RMM starter pack (no migration)
+
+For an edition that already runs RMM Phase 2 (the script library and the policy store). Additive: with nothing done, nothing changes, and no migration is needed. Details: [docs/rmm/STARTER_PACK.md](docs/rmm/STARTER_PACK.md).
+
+1. **Nothing to wire for the API.** `RmmModule::technicianApi()` now routes `endpoint_devices/starter/{catalog,plan,install,uninstall}` (all `rmm.admin`; `TechnicianApi` gained an optional last constructor argument, `StarterApi`). If you construct `TechnicianApi` yourself, pass `$module->starterApi()`. Pages can call `$module->starterActions()` (`catalog`, `plan`, `install`, `uninstall`) directly.
+2. **What an install writes**: library scripts (through `ScriptService`, signed with the instance key, so the instance needs its signing key first) and policy drafts (through `PolicyStore`, switched off, assigned to nothing). The pack is recognised by markers in existing data: the version `note` of a script, the tags `starter` and `risk:*`, and a ` [starter|...]` marker at the end of a policy description. If your edition shows or edits those fields, keep them.
+3. **Pages to build**: a "Starter pack" page (browse, plan, install selected, uninstall) and a "Starter" badge in the script library; see section 10 of the starter pack document.
+4. **A new pack version** ships in a RivetCore release as a changed folder `src/Rmm/Starter/data/`. Nothing happens until an administrator installs again; an untouched script then gets a new version, a script an administrator edited gets the new text as a non-current version flagged `starter-updated`, and a policy draft that is edited, switched on or assigned is left alone. Your own packs: pass folders in the `starter_packs` module option.
+5. **API changes**: `ScriptService::stage()` is new (publishes a version without making it current). `ScriptService::update()` numbers the next version after the highest existing one instead of after the current one (the same result unless a version is parked). New event `rmm.starter.installed` (`RmmEvent::STARTER_INSTALLED`, `EventCatalog`); `RmmModule` gains `starterInstaller()`, `starterActions()` and `starterApi()`.
+6. **Your CI**: `php scripts/build-starter-pack.php --check` verifies the manifest, the public catalog and the document tables. The Linux proof and the PowerShell parse need docker; they skip themselves without it.
+
 ## Migration order
 
 Core owns its migrations and tracks them in `rivet_core_migrations`, independent of the edition's database version. Migrations are

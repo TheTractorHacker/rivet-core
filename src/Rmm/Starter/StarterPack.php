@@ -346,7 +346,7 @@ final class StarterPack
                 throw new \InvalidArgumentException("$path does not match the checksum in manifest.json.");
             }
         }
-        foreach ($actual as $path => $_) {
+        foreach (array_keys($actual) as $path) {
             if (!isset($listed[$path])) {
                 throw new \InvalidArgumentException("$path is not listed in manifest.json (run scripts/build-starter-pack.php).");
             }
