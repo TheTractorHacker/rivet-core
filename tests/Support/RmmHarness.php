@@ -43,7 +43,7 @@ final class RmmHarness
         'rmm_group_tags', 'rmm_metric_latest', 'rmm_metric_hourly', 'rmm_policies', 'rmm_policy_versions', 'rmm_policy_assignments', 'rmm_scripts_v2',
         'rmm_script_versions', 'rmm_job_extra', 'rmm_schedules', 'rmm_schedule_runs', 'rmm_approvals', 'rmm_custom_fields', 'rmm_custom_field_values',
         'rmm_alerting_settings', 'rmm_check_eval', 'rmm_alert_meta', 'rmm_storm_summaries', 'rmm_maintenance_windows', 'rmm_device_parents',
-        'rmm_escalation_policies', 'rmm_escalation_steps'];
+        'rmm_escalation_policies', 'rmm_escalation_steps', 'rmm_metric_daily', 'rmm_storage_state', 'rmm_cache', 'rmm_metric_outbox', 'rmm_token_buckets'];
 
     public \mysqli $mysqli;
     public MysqliDatabase $db;

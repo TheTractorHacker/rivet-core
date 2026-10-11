@@ -18,6 +18,7 @@ use RivetCore\Rmm\Scripts\ScheduleRunner;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Storage\StorageMaintenance;
 use RivetCore\Rmm\Support\DatabaseMetricSink;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
@@ -62,6 +63,7 @@ final class Housekeeping
         private readonly ?JobExtras $extras = null,
         private readonly ?PolicyStore $policies = null,
         private readonly ?AlertingHousekeeping $alerting = null,
+        private readonly ?StorageMaintenance $storage = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -88,12 +90,24 @@ final class Housekeeping
         $out['pruned_jobs'] = $this->prune('endpoint_agent_jobs', "state IN ('succeeded','failed','timed_out','cancelled','expired') AND finished_at < ?",
             [$this->sql->utcAt(-(int) $cfg['job_retention_days'] * 86400)]);
         $limits = $this->settings->limits();
-        $out['pruned_check_history'] = $this->prune('endpoint_agent_check_history', 'reported_at < ?', [$this->sql->utcAt(-max(1, $limits['check_history_days']) * 86400)]);
+        // Scale S5: roll days up and keep the time partitions; a partitioned table is pruned by dropping partitions, every other one by batched DELETE as before.
+        $partitioned = [];
+        if ($this->storage !== null) {
+            $st = $this->storage->run($limits, $this->settings->explicitLimits(), $this->metricSink?->retentionDays() ?? 14, $this->metricSink?->dailyRetentionDays() ?? 400);
+            $partitioned = $st['partitioned'];
+            $out['rollup_days'] = (int) ($st['rollup']['days'] ?? 0);
+            $out['rollup_behind_days'] = (int) ($st['rollup']['behind_days'] ?? 0);
+            $out['partitions_created'] = array_sum(array_column($st['partitions'], 'created'));
+            $out['partitions_dropped'] = array_sum(array_column($st['partitions'], 'dropped'));
+        }
+        $out['pruned_check_history'] = in_array('endpoint_agent_check_history', $partitioned, true) ? 0
+            : $this->prune('endpoint_agent_check_history', 'reported_at < ?', [$this->sql->utcAt(-max(1, $limits['check_history_days']) * 86400)]);
         $softwareBefore = $this->sql->utcAt(-$limits['software_history_days'] * 86400);
         $out['pruned_software_history'] = $this->prune('rmm_software_history', 'occurred_at < ?', [$softwareBefore]);
         $out['pruned_software_removed'] = $this->prune('rmm_device_software', 'removed_at IS NOT NULL AND removed_at < ?', [$softwareBefore]);
         if ($this->metricSink !== null) {
-            $out['pruned_metrics'] = $this->metricSink->prune(self::PRUNE_RUN_CAP, $this->pause);
+            $explicit = $this->settings->explicitLimits();
+            $out['pruned_metrics'] = $this->metricSink->prune(self::PRUNE_RUN_CAP, $this->pause, $explicit['metric_hourly_days'] ?? null, $explicit['metric_daily_days'] ?? null, $partitioned);
         }
         if ($this->alerting !== null && $this->settings->featureOn('alerting')) {
             $out += $this->alerting->run();

@@ -8,6 +8,7 @@ use RivetCore\Contracts\ClockInterface;
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Rmm\Contracts\RmmMetricReaderInterface;
 use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
+use RivetCore\Rmm\Storage\StorageState;
 
 /**
  * A metric sink backed by two Core tables (migration 0018), for editions without a metrics subsystem (RivetMSP): the newest reading of
@@ -31,15 +32,26 @@ final class DatabaseMetricSink implements RmmMetricSinkInterface, RmmMetricReade
     public const ROWS_PER_STATEMENT = 200;
     public const DEFAULT_RETENTION_DAYS = 14;
     public const PRUNE_BATCH = 5000;
+    public const DEFAULT_DAILY_RETENTION_DAYS = 400;
+    /** Windows longer than a week are read from the daily tier (7 days of hourly points are 168 per series; 90 days would be 2,160). */
+    public const DAILY_FROM_SECONDS = 604800;
     /** Metrics worth an hourly history; the rest (totals, uptime, pending reboot) only keep their latest value. */
     public const ROLLUP_KEYS = ['cpu.utilization', 'memory.utilization', 'disk.utilization', 'disk.free_bytes', 'network.rx_bytes_per_s', 'network.tx_bytes_per_s'];
-    private const KEY_RE = '/^[a-z0-9_.]{1,64}$/';
+    private const KEY_RE = '/^[a-z0-9_.]{1,64}$/D';
 
     private readonly Sql $sql;
+    private readonly StorageState $state;
 
-    public function __construct(DatabaseInterface $database, ClockInterface $clock, private readonly int $retentionDays = self::DEFAULT_RETENTION_DAYS)
+    /**
+     * @param int $retentionDays days the hourly rollups and the latest readings are kept (the `metric_hourly_days` limit overrides it when an administrator set one)
+     * @param int $dailyFromSeconds windows longer than this are answered from the daily tier ({@see \RivetCore\Rmm\Storage\MetricRollup}) where it covers them
+     * @param int $dailyRetentionDays days the daily rollups are kept (the `metric_daily_days` limit overrides it)
+     */
+    public function __construct(DatabaseInterface $database, ClockInterface $clock, private readonly int $retentionDays = self::DEFAULT_RETENTION_DAYS, private readonly int $dailyFromSeconds = self::DAILY_FROM_SECONDS,
+        private readonly int $dailyRetentionDays = self::DEFAULT_DAILY_RETENTION_DAYS)
     {
         $this->sql = new Sql($database, $clock);
+        $this->state = new StorageState($this->sql);
     }
 
     public function ingest(array $samples, int $integrationId): void
@@ -98,6 +110,16 @@ final class DatabaseMetricSink implements RmmMetricSinkInterface, RmmMetricReade
         }
     }
 
+    public function retentionDays(): int
+    {
+        return $this->retentionDays;
+    }
+
+    public function dailyRetentionDays(): int
+    {
+        return $this->dailyRetentionDays;
+    }
+
     public function latest(int $assetId, ?array $keys = null): array
     {
         $sql = 'SELECT metric_key, instance, value, label, sampled_at FROM rmm_metric_latest WHERE asset_id = ?';
@@ -120,26 +142,83 @@ final class DatabaseMetricSink implements RmmMetricSinkInterface, RmmMetricReade
 
     public function peak(int $assetId, string $key, ?string $instance, \DateTimeImmutable $since): ?array
     {
-        $from = gmdate('Y-m-d H:i:s', $since->getTimestamp() - $since->getTimestamp() % 3600);
-        $agg = $this->sql->one('SELECT COALESCE(SUM(samples), 0) AS n, COALESCE(SUM(sum_value), 0) AS total, MIN(min_value) AS lo, MAX(max_value) AS hi
-            FROM rmm_metric_hourly WHERE asset_id = ? AND metric_key = ? AND instance = ? AND hour_start >= ?', [$assetId, $key, $instance ?? '', $from]);
+        $inst = $instance ?? '';
+        $sinceTs = $since->getTimestamp();
+        $split = $this->dailySplit($sinceTs, $this->sql->time());
+        $from = gmdate('Y-m-d H:i:s', $sinceTs - $sinceTs % 3600);
+        /** @var list<array{n:int,total:float,lo:float,hi:float,at:string}> $tiers one aggregate per tier that has data */
+        $tiers = [];
+        if ($split !== null) {
+            // a window beyond a week: complete days from the daily tier (day-granular), the days since the rollup watermark from the hourly tier
+            $dayFrom = gmdate('Y-m-d H:i:s', $sinceTs - $sinceTs % 86400);
+            $from = max($from, $split);
+            $tier = $this->tierAggregate('rmm_metric_daily', 'day_start', $assetId, $key, $inst, $dayFrom, $split);
+            if ($tier !== null) {
+                $tiers[] = $tier;
+            }
+        }
+        $tier = $this->tierAggregate('rmm_metric_hourly', 'hour_start', $assetId, $key, $inst, $from, null);
+        if ($tier !== null) {
+            $tiers[] = $tier;
+        }
+        if ($tiers === []) {
+            return null;
+        }
+        $n = 0;
+        $total = 0.0;
+        $lo = $tiers[0]['lo'];
+        $hi = $tiers[0]['hi'];
+        $at = $tiers[0]['at'];
+        foreach ($tiers as $t) {
+            $n += $t['n'];
+            $total += $t['total'];
+            $lo = min($lo, $t['lo']);
+            if ($t['hi'] >= $hi) {
+                $hi = $t['hi'];
+                $at = $t['at'];   // on a tie the later tier (more recent data) holds the peak
+            }
+        }
+
+        return ['min' => $lo, 'max' => $hi, 'avg' => $total / $n, 'samples' => $n, 'peak_at' => self::at($at)];
+    }
+
+    /** @return array{n:int,total:float,lo:float,hi:float,at:string}|null */
+    private function tierAggregate(string $table, string $col, int $assetId, string $key, string $inst, string $from, ?string $before): ?array
+    {
+        $range = "`$col` >= ?" . ($before === null ? '' : " AND `$col` < ?");
+        $params = [$assetId, $key, $inst, $from, ...($before === null ? [] : [$before])];
+        $agg = $this->sql->one("SELECT COALESCE(SUM(samples), 0) AS n, COALESCE(SUM(sum_value), 0) AS total, MIN(min_value) AS lo, MAX(max_value) AS hi
+            FROM `$table` WHERE asset_id = ? AND metric_key = ? AND instance = ? AND $range", $params);
         if ($agg === null || (int) $agg['n'] === 0) {
             return null;
         }
-        $at = $this->sql->one('SELECT hour_start FROM rmm_metric_hourly WHERE asset_id = ? AND metric_key = ? AND instance = ? AND hour_start >= ?
-            ORDER BY max_value DESC, hour_start DESC LIMIT 1', [$assetId, $key, $instance ?? '', $from]);
+        $at = $this->sql->one("SELECT `$col` AS t FROM `$table` WHERE asset_id = ? AND metric_key = ? AND instance = ? AND $range ORDER BY max_value DESC, `$col` DESC LIMIT 1", $params);
 
-        return ['min' => (float) $agg['lo'], 'max' => (float) $agg['hi'], 'avg' => (float) $agg['total'] / (int) $agg['n'], 'samples' => (int) $agg['n'],
-            'peak_at' => self::at((string) ($at['hour_start'] ?? $from))];
+        return ['n' => (int) $agg['n'], 'total' => (float) $agg['total'], 'lo' => (float) $agg['lo'], 'hi' => (float) $agg['hi'], 'at' => (string) ($at['t'] ?? $from)];
     }
 
     public function series(int $assetId, string $key, ?string $instance, \DateTimeImmutable $since, \DateTimeImmutable $until): array
     {
-        $from = gmdate('Y-m-d H:i:s', $since->getTimestamp() - $since->getTimestamp() % 3600);
+        $inst = $instance ?? '';
+        $sinceTs = $since->getTimestamp();
+        $untilTs = $until->getTimestamp();
+        $from = gmdate('Y-m-d H:i:s', $sinceTs - $sinceTs % 3600);
+        $to = $until->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+        $out = [];
+        $split = $untilTs - $sinceTs > $this->dailyFromSeconds ? $this->dailySplit($sinceTs, $untilTs) : null;
+        if ($split !== null) {
+            $dayFrom = gmdate('Y-m-d H:i:s', $sinceTs - $sinceTs % 86400);
+            foreach ($this->sql->all('SELECT day_start, samples, sum_value, min_value, max_value FROM rmm_metric_daily
+                WHERE asset_id = ? AND metric_key = ? AND instance = ? AND day_start >= ? AND day_start < ? AND day_start <= ? ORDER BY day_start LIMIT 4000',
+                [$assetId, $key, $inst, $dayFrom, $split, $to]) as $r) {
+                $c = max(1, (int) $r['samples']);
+                $out[] = ['at' => self::at((string) $r['day_start']), 'min' => (float) $r['min_value'], 'max' => (float) $r['max_value'], 'avg' => (float) $r['sum_value'] / $c, 'samples' => (int) $r['samples']];
+            }
+            $from = max($from, $split);
+        }
         $rows = $this->sql->all('SELECT hour_start, samples, sum_value, min_value, max_value FROM rmm_metric_hourly
             WHERE asset_id = ? AND metric_key = ? AND instance = ? AND hour_start >= ? AND hour_start <= ? ORDER BY hour_start LIMIT 2000',
-            [$assetId, $key, $instance ?? '', $from, $until->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s')]);
-        $out = [];
+            [$assetId, $key, $inst, $from, $to]);
         foreach ($rows as $r) {
             $n = max(1, (int) $r['samples']);
             $out[] = ['at' => self::at((string) $r['hour_start']), 'min' => (float) $r['min_value'], 'max' => (float) $r['max_value'], 'avg' => (float) $r['sum_value'] / $n, 'samples' => (int) $r['samples']];
@@ -149,18 +228,42 @@ final class DatabaseMetricSink implements RmmMetricSinkInterface, RmmMetricReade
     }
 
     /**
+     * The rollup watermark (first day NOT in the daily tier, as a UTC datetime) when a window starting at $sinceTs and ending at $untilTs is long enough
+     * to be answered from the daily tier and the tier has completed days inside it; otherwise null (the hourly tier answers alone).
+     */
+    private function dailySplit(int $sinceTs, int $untilTs): ?string
+    {
+        if ($untilTs - $sinceTs <= $this->dailyFromSeconds) {
+            return null;
+        }
+        $wm = $this->state->rollupWatermark();
+        if ($wm === null || Sql::ts($wm) <= $sinceTs - $sinceTs % 86400) {
+            return null;
+        }
+
+        return $wm;
+    }
+
+    /**
      * Delete expired rows in batches (hourly rollups older than the retention, latest readings of assets that stopped reporting for
      * longer). Returns the rows deleted.
      *
      * @param int $cap rows one call may delete (the next call continues)
      * @param (\Closure(int):void)|null $pause called between batches with microseconds to wait
+     * @param int|null $hourlyDays retention of the hourly rollups and latest readings for this call (default: the constructor's)
+     * @param int|null $dailyDays retention of the daily rollups for this call
+     * @param list<string> $skip tables not to delete from (they are partitioned and maintained by drop)
      */
-    public function prune(int $cap = 200000, ?\Closure $pause = null): int
+    public function prune(int $cap = 200000, ?\Closure $pause = null, ?int $hourlyDays = null, ?int $dailyDays = null, array $skip = []): int
     {
-        $days = max(1, $this->retentionDays);
+        $days = max(1, $hourlyDays ?? $this->retentionDays);
         $total = 0;
-        foreach ([['rmm_metric_hourly', 'hour_start'], ['rmm_metric_latest', 'sampled_at']] as [$table, $column]) {
-            $before = $this->sql->utcAt(-$days * 86400);
+        $targets = [['rmm_metric_hourly', 'hour_start', $days], ['rmm_metric_latest', 'sampled_at', $days], ['rmm_metric_daily', 'day_start', max(1, $dailyDays ?? $this->dailyRetentionDays)]];
+        foreach ($targets as [$table, $column, $keep]) {
+            if (in_array($table, $skip, true)) {
+                continue;   // a partitioned table drops whole partitions instead (Storage\PartitionMaintenance)
+            }
+            $before = $this->sql->utcAt(-$keep * 86400);
             $done = 0;
             while ($done < $cap) {
                 $n = $this->sql->run("DELETE FROM `$table` WHERE `$column` < ? LIMIT " . self::PRUNE_BATCH, [$before]);

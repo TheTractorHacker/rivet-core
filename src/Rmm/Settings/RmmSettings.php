@@ -409,6 +409,28 @@ final class RmmSettings
     }
 
     /**
+     * Only the limits an administrator stored (valid ones), without the defaults filled in. For a setting that has an older home elsewhere (the retention
+     * of the database metric sink is a constructor argument of the edition) the stored value wins and the absence of one means "keep what the edition set".
+     *
+     * @return array<string,int>
+     */
+    public function explicitLimits(): array
+    {
+        $raw = $this->get()['limits_json'] ?? null;
+        $stored = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+        $out = [];
+        if (is_array($stored)) {
+            foreach (self::LIMIT_KEYS as $k => [$min, $max]) {
+                if (isset($stored[$k]) && is_int($stored[$k]) && $stored[$k] >= $min && $stored[$k] <= $max) {
+                    $out[$k] = $stored[$k];
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * @return array{0:?string,1:?string} [normalised JSON text or null for "legacy defaults", error]
      */
     public static function validateFeatures(mixed $in): array

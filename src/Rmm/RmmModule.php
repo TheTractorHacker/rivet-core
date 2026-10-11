@@ -72,6 +72,9 @@ use RivetCore\Rmm\Scripts\ScriptService;
 use RivetCore\Rmm\Scripts\TargetResolver;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Software\SoftwareService;
+use RivetCore\Rmm\Storage\MetricRollup;
+use RivetCore\Rmm\Storage\PartitionMaintenance;
+use RivetCore\Rmm\Storage\StorageMaintenance;
 use RivetCore\Rmm\Support\DatabaseMetricSink;
 use RivetCore\Rmm\Support\NullRmmAudit;
 use RivetCore\Rmm\Support\NullRmmEscalation;
@@ -120,6 +123,8 @@ final class RmmModule
     private ?IngestQueue $ingestQueue = null;
     private ?LoadShedder $shedder = null;
     private ?CapacityReport $capacity = null;
+    private ?StorageMaintenance $storage = null;
+    private ?PartitionMaintenance $partitions = null;
     private ?RmmAuthorizer $authorizer = null;
     private ?RmmReadModel $readModel = null;
     private ?BinaryStore $binaryStore = null;
@@ -411,7 +416,22 @@ final class RmmModule
     {
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
             $this->metrics instanceof DatabaseMetricSink ? $this->metrics : null, $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
-            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()));
+            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->storage());
+    }
+
+    /**
+     * Scale S5: the daily metric rollup (only with a {@see DatabaseMetricSink}) and the time partitions of the history tables. Called by {@see housekeeping()};
+     * also the entry point for an administrator's explicit probe or conversion (`partitions()->probe()`, `partitions()->convert()`).
+     */
+    public function storage(): StorageMaintenance
+    {
+        return $this->storage ??= new StorageMaintenance($this->partitions(), $this->metrics instanceof DatabaseMetricSink ? new MetricRollup($this->sql()) : null);
+    }
+
+    /** Capability probe, conversion and maintenance of the time partitions (docs/rmm/STORAGE.md). */
+    public function partitions(): PartitionMaintenance
+    {
+        return $this->partitions ??= new PartitionMaintenance($this->sql());
     }
 
     // ------------------------------------------------------------------ Phase 2: policies, script library, schedules, approvals, custom fields
