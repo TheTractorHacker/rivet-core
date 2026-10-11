@@ -10,6 +10,7 @@
 #   RIVETCORE_TEST_DB_HOST/PORT/USER/PASS/NAME=... AGENT_BIN=dist/rivetit-agent-linux-amd64 e2e/run_real_agent_proof.sh
 #
 # Prints "ok:"/"FAIL:" lines and a final "PROOF PASS" or "PROOF FAIL". Windows is not exercised (cross-compiled and vetted only).
+# shellcheck disable=SC2034  # variables are read inside the eval-ed check strings
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(cd "$HERE/.." && pwd)"; REPO="$(cd "$ROOT/.." && pwd)"
 AGENT_BIN="${AGENT_BIN:-$ROOT/dist/rivetit-agent-linux-amd64}"
