@@ -125,7 +125,8 @@ final class CheckinService
 
         $this->events?->hold();
         try {
-            $this->sql->transaction(function () use ($dev, $seq, $collected, $ver, $inventory, $metrics, $primaryChecks, $buffered, $cfg, $features, $ip, $body, $announce): void {
+            /** @var array<string,mixed> $dev the device row as this check-in leaves it (mirrored in memory; re-read only when something else may have changed it) */
+            $dev = $this->sql->transaction(function () use ($dev, $seq, $collected, $ver, $inventory, $metrics, $primaryChecks, $buffered, $cfg, $features, $ip, $body, $announce): array {
                 // Serialise check-ins of ONE device; different devices never contend.
                 $cur = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ? FOR UPDATE', [$dev['device_id']]);
                 if ($cur === null || $cur['revoked_at'] !== null || $cur['retired_at'] !== null || $cur['token_hash'] !== $dev['token_hash']) {
@@ -134,11 +135,15 @@ final class CheckinService
                 $now = $this->sql->utcNow();
                 $fresh = $this->sql->run('INSERT IGNORE INTO endpoint_agent_checkins (device_id, seq, received_at, collected_at) VALUES (?, ?, ?, ?)',
                     [$cur['device_id'], $seq, $now, $collected->format('Y-m-d H:i:s')]);
-                // Liveness is real even for a duplicate delivery.
-                $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ? WHERE device_id = ?', [$now, substr($ip, 0, 64), $cur['device_id']]);
+                // Liveness is real even for a duplicate delivery. A fresh check-in writes it together with the rest of the device row (one UPDATE, see process()).
+                $live = ['last_checkin_at' => $now, 'last_ip' => substr($ip, 0, 64)];
                 if ($fresh === 1) {
-                    $this->process($cur, $seq, $collected, $ver, $inventory, $metrics, $primaryChecks, $buffered, $cfg, $features, $body['update_result'] ?? null, $announce);
+
+                    return $this->process($cur, $seq, $collected, $ver, $inventory, $metrics, $primaryChecks, $buffered, $cfg, $features, $body['update_result'] ?? null, $announce, $live);
                 }
+                $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ? WHERE device_id = ?', [$live['last_checkin_at'], $live['last_ip'], $cur['device_id']]);
+
+                return array_merge($cur, $live);
             });
         } catch (\Throwable $e) {
             $this->events?->discard();
@@ -146,7 +151,6 @@ final class CheckinService
         }
         $this->events?->release();
 
-        $dev = $this->devices->find((int) $dev['device_id']) ?? $dev;
         $interval = $policy === null ? (int) $cfg['check_in_interval_s'] : $policy['check_in_interval_s'];
         if ((int) ($cfg['shed_level'] ?? 0) >= 2) {
             $interval = min(RmmSettings::CHECK_IN_INTERVAL_MAX_S * 2, $interval * 2);   // level 2: lengthen the intervals
@@ -236,18 +240,23 @@ final class CheckinService
      * @param array<string,mixed> $cfg
      * @param array<string,bool> $features
      * @param array{caps?:?list<string>,platform?:?string,software?:?array<string,mixed>,alert_defs?:array<string,array<string,mixed>>} $announce what the agent announced (capabilities, platform) and its validated software report
+     * @param array{last_checkin_at:string,last_ip:string} $live the liveness columns, written with the rest of the device row in ONE statement
+     * @return array<string,mixed> the device row as the check-in leaves it
      */
-    private function process(array $dev, int $seq, \DateTimeImmutable $collected, string $ver, ?array $inventory, ?array $metrics, array $primaryChecks, array $buffered, array $cfg, array $features, mixed $updateResult, array $announce = []): void
+    private function process(array $dev, int $seq, \DateTimeImmutable $collected, string $ver, ?array $inventory, ?array $metrics, array $primaryChecks, array $buffered, array $cfg, array $features, mixed $updateResult, array $announce, array $live): array
     {
         $deviceId = (int) $dev['device_id'];
         $collectedSql = $collected->format('Y-m-d H:i:s');
         $newer = $dev['last_collected_at'] === null || $collectedSql >= $dev['last_collected_at'];
         $this->updates->recordResult($dev, $updateResult);
+        $row = array_merge($dev, $live, ['last_seq' => max((int) $dev['last_seq'], $seq)]);
         if ($newer) {
-            $this->sql->run('UPDATE endpoint_agent_devices SET agent_version = ?, last_collected_at = ?, last_seq = GREATEST(last_seq, ?),
-                last_metrics_json = ? WHERE device_id = ?', [$ver, $collectedSql, $seq, $metrics === null ? null : json_encode(self::cleanMetrics($metrics)), $deviceId]);
+            $metricsJson = $metrics === null ? null : json_encode(self::cleanMetrics($metrics));
+            $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ?, agent_version = ?, last_collected_at = ?, last_seq = GREATEST(last_seq, ?),
+                last_metrics_json = ? WHERE device_id = ?', [$live['last_checkin_at'], $live['last_ip'], $ver, $collectedSql, $seq, $metricsJson, $deviceId]);
+            $row = array_merge($row, ['agent_version' => $ver, 'last_collected_at' => $collectedSql, 'last_metrics_json' => $metricsJson]);
         } else {
-            $this->sql->run('UPDATE endpoint_agent_devices SET last_seq = GREATEST(last_seq, ?) WHERE device_id = ?', [$seq, $deviceId]);
+            $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ?, last_seq = GREATEST(last_seq, ?) WHERE device_id = ?', [$live['last_checkin_at'], $live['last_ip'], $seq, $deviceId]);
         }
         if ($this->deviceState !== null) {
             $state = ($announce['caps'] ?? null) !== null ? $this->deviceState->note($deviceId, $announce['platform'] ?? null, $announce['caps']) : null;
@@ -272,10 +281,22 @@ final class CheckinService
             if (is_string($encoded) && strlen($encoded) <= self::MAX_QUEUED_PAYLOAD_BYTES) {
                 ($this->enqueue)($work);
 
-                return;
+                return $this->withUpdateBookkeeping($row, $updateResult);
             }
         }
-        $this->applyWork($work, false, $dev);
+        $this->applyWork($work, false, $row);
+
+        // The inline path may have rewritten more of the row (inventory) and recordResult() rewrote update_state_json: read it back only then.
+        return ($inventory !== null && $newer) || is_array($updateResult) ? ($this->devices->find($deviceId) ?? $row) : $row;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    private function withUpdateBookkeeping(array $row, mixed $updateResult): array
+    {
+        return is_array($updateResult) ? ($this->devices->find((int) $row['device_id']) ?? $row) : $row;   // recordResult() rewrote update_state_json
     }
 
     /**
@@ -310,7 +331,9 @@ final class CheckinService
         if ($inventory !== null && !empty($w['newer'])) {
             $cleanInv = $this->applyInventory($dev, $inventory);
         }
-        $dev = $this->devices->find($deviceId) ?? $dev;
+        if ($cleanInv !== null) {
+            $dev = $this->devices->find($deviceId) ?? $dev;   // the inventory rewrote hostname, model, uptime ...; nothing else in this method changes the row
+        }
         if (is_array($w['software'] ?? null) && $features['inventory_software'] && $this->software !== null && $this->deviceState !== null) {
             if (!empty($w['shed'])) {
                 $this->deviceState->requestSoftwareResync($deviceId);   // load shedding: acknowledged, not ingested, so ask again later

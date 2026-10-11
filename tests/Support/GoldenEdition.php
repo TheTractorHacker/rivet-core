@@ -14,6 +14,7 @@ use RivetCore\Rmm\Migration\Migration0016ModuleSwitches;
 use RivetCore\Rmm\Migration\Migration0018InventoryFoundation;
 use RivetCore\Rmm\Migration\Migration0019PoliciesAndScripts;
 use RivetCore\Rmm\Migration\Migration0020AlertingMaturity;
+use RivetCore\Rmm\Migration\Migration0021ScaleStorage;
 use RivetCore\Rmm\RmmModule;
 use RivetCore\Support\SystemClock;
 use RivetCore\Testing\InMemoryRmmAssets;
@@ -86,7 +87,7 @@ final class GoldenEdition
     public static function migrate(\mysqli $m): void
     {
         $db = new MysqliDatabase($m);
-        foreach ([new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity()] as $mig) {
+        foreach ([new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage()] as $mig) {
             $mig->up($db);
         }
     }

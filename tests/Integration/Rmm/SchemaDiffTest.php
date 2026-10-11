@@ -346,6 +346,29 @@ final class SchemaDiffTest extends TestCase
         $this->assertSame($before, $this->describe('d'));
     }
 
+    public function testMigration0021AddsOnlyNewTablesAndIsIdempotent(): void
+    {
+        $this->reference();
+        $this->build('d', 'rivetit-2.6.146-final.sql', true);
+        $this->seed('d');
+        $before = $this->describe('d');
+        $rows = $this->checksums('d');
+
+        $applied = $this->runner('d')->run();
+        $this->assertContains('0021_rmm_scale_storage', $applied);
+        $this->assertSame($before, $this->describe('d'), 'the ten original tables are not altered');
+        $this->assertSame($rows, $this->checksums('d'));
+        foreach (\RivetCore\Rmm\Migration\ScaleSchema::tables() as $name => $_) {
+            $this->assertSame(1, (int) $this->db('d')->fetchOne('SELECT COUNT(*) c FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND TABLE_COLLATION = ? AND ENGINE = ?', [$name, 'utf8mb4_general_ci', 'InnoDB'])['c'], $name);
+        }
+        $this->assertCount(5, \RivetCore\Rmm\Migration\ScaleSchema::tables());
+        $this->db('d')->execute("INSERT INTO rmm_storage_state (name, detail) VALUES ('probe', 'kept')");
+        (new \RivetCore\Rmm\Migration\Migration0021ScaleStorage())->up($this->db('d'));
+        $this->assertSame([], $this->runner('d')->run());
+        $this->assertSame('kept', $this->db('d')->fetchOne("SELECT detail c FROM rmm_storage_state WHERE name = 'probe'")['c']);
+        $this->assertSame($before, $this->describe('d'));
+    }
+
     public function testFreshCoreInstallHasEveryPhase1Table(): void
     {
         $this->runner('b')->run();
@@ -360,7 +383,7 @@ final class SchemaDiffTest extends TestCase
 
     public function testEveryTableIsUtf8mb4GeneralCiExplicitly(): void
     {
-        foreach (RmmSchema::tables() + RmmSchema::phase1Tables() + RmmSchema::phase2Tables() + \RivetCore\Rmm\Migration\AlertingSchema::tables() as $name => $ddl) {
+        foreach (RmmSchema::tables() + RmmSchema::phase1Tables() + RmmSchema::phase2Tables() + \RivetCore\Rmm\Migration\AlertingSchema::tables() + \RivetCore\Rmm\Migration\ScaleSchema::tables() as $name => $ddl) {
             $this->assertStringContainsString('COLLATE=utf8mb4_general_ci', $ddl, $name);
             $this->assertStringContainsString('ENGINE=InnoDB', $ddl, $name);
         }

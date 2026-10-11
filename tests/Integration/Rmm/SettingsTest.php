@@ -137,10 +137,13 @@ final class SettingsTest extends RmmTestCase
 
     public function testLimitsAreValidatedAndDefaultsFilledIn(): void
     {
+        $scale = ['check_touch_s', 'metric_hourly_days', 'metric_daily_days', 'partitioning', 'partition_span_days', 'partition_ahead', 'ingest_batch', 'ingest_max_running', 'cache_fresh_s',
+            'cache_stale_s', 'client_bucket_burst', 'client_bucket_per_min', 'warm_start_s', 'warm_start_pct', 'warm_quiet_s'];
+        $this->assertSame([0, 14, 400, 0, 1, 7, 50, 0, 15, 300, 0, 0, 0, 10, 120], array_values(array_intersect_key($this->s()->limits(), array_flip($scale))), 'the scale limits and their defaults');
         $this->assertSame(['max_checkins_per_min' => 0, 'retry_after_min_s' => 30, 'retry_after_max_s' => 120, 'shed_retry_min_s' => 60, 'shed_retry_max_s' => 300,
             'shed_backlog_l1' => 500, 'shed_backlog_l2' => 2000, 'shed_backlog_l3' => 8000, 'shed_db_ms_l1' => 100, 'shed_db_ms_l2' => 300, 'shed_db_ms_l3' => 1000, 'shed_rate_per_min' => 0,
             'check_history_days' => 7, 'check_history_gap_s' => 3600, 'software_history_days' => 365,
-            'approval_bulk_threshold' => 0, 'approval_expiry_h' => 48, 'schedule_batch' => 200, 'bulk_run_max' => 1000], $this->s()->limits());
+            'approval_bulk_threshold' => 0, 'approval_expiry_h' => 48, 'schedule_batch' => 200, 'bulk_run_max' => 1000], array_diff_key($this->s()->limits(), array_flip($scale)));
         $this->assertSame([], $this->s()->update(['limits_json' => '{"max_checkins_per_min":200,"retry_after_min_s":10}']));
         $l = $this->s()->limits();
         $this->assertSame([200, 10, 120], [$l['max_checkins_per_min'], $l['retry_after_min_s'], $l['retry_after_max_s']]);

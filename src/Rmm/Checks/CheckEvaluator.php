@@ -59,13 +59,28 @@ final class CheckEvaluator
         $gap = $limits['check_history_gap_s'];
         /** @var list<array{0:string,1:string,2:string,3:string}> $history rows for endpoint_agent_check_history */
         $history = [];
+        // ONE read of this device's check rows for every key in the batch, then the evaluation runs on an in-memory copy (a key that appears twice,
+        // a buffered result followed by the current one, sees the first result's effect exactly as it did when each result was its own UPDATE) and
+        // the changed rows are written back in ONE multi-row upsert. A key that has no row yet starts as the row the old INSERT IGNORE created.
+        $keys = [];
         foreach ($results as $r) {
-            $row = $this->sql->one('SELECT * FROM endpoint_agent_checks WHERE device_id = ? AND check_key = ?', [$dev['device_id'], $r['key']]);
-            if ($row === null) {
-                $this->sql->run('INSERT IGNORE INTO endpoint_agent_checks (device_id, check_key, status, detail, last_reported_at, last_changed_at) VALUES (?, ?, ?, ?, ?, ?)',
-                    [$dev['device_id'], $r['key'], 'unknown', '', $now, $now]);
-                $row = $this->sql->one('SELECT * FROM endpoint_agent_checks WHERE device_id = ? AND check_key = ?', [$dev['device_id'], $r['key']]) ?? [];
-            }
+            $keys[$r['key']] = true;
+        }
+        /** @var array<string,array<string,mixed>> $rows */
+        $rows = [];
+        foreach ($this->sql->all('SELECT * FROM endpoint_agent_checks WHERE device_id = ? AND check_key IN (' . implode(',', array_fill(0, count($keys), '?')) . ')',
+            [$dev['device_id'], ...array_map('strval', array_keys($keys))]) as $row) {
+            $rows[(string) $row['check_key']] = $row;
+        }
+        /** @var array<string,true> $dirty */
+        $dirty = [];
+        $touch = $limits['check_touch_s'];
+        $nowTs = Sql::ts($now);
+        foreach ($results as $r) {
+            $isNew = !isset($rows[$r['key']]);
+            $row = $rows[$r['key']] ?? ['status' => 'unknown', 'detail' => '', 'consecutive_failures' => 0, 'consecutive_ok' => 0, 'episode' => 0, 'alert_id' => null,
+                'last_reported_at' => $now, 'last_changed_at' => $now];
+            $loaded = $row;
             $fails = (int) ($row['consecutive_failures'] ?? 0);
             $oks = (int) ($row['consecutive_ok'] ?? 0);
             $alertId = ($row['alert_id'] ?? null) === null ? null : (int) $row['alert_id'];
@@ -80,18 +95,24 @@ final class CheckEvaluator
                 $hold = $adj['hold'];
                 $needFails = $adj['fail_n'] ?? $failN;
             }
+            $prev = Sql::ts((string) ($row['last_reported_at'] ?? ''));
+            $sameBucket = true;
             if ($keepDays > 0) {
                 // Trend data without a row per sample: a change of status is always kept, an unchanged status once per $gap seconds.
-                $prev = Sql::ts((string) ($row['last_reported_at'] ?? ''));
-                if (($row['status'] ?? 'unknown') !== $r['status'] || intdiv(Sql::ts($r['at']), $gap) !== intdiv($prev, $gap)) {
+                $sameBucket = intdiv(Sql::ts($r['at']), $gap) === intdiv($prev, $gap);
+                if (($row['status'] ?? 'unknown') !== $r['status'] || !$sameBucket) {
                     $history[] = [$r['key'], $r['status'], mb_substr($r['detail'], 0, 200), $r['at']];
                 }
             }
             $bad = in_array($r['status'], ['fail', 'warn'], true);
             // A flapping check, or a check inside a `suppress` maintenance window, is recorded but not evaluated: no counter moves, nothing opens or resolves.
             if ($pipe !== null && ($hold || (($bad || $alertId !== null) && $pipe->suppressChecks()))) {
-                $this->sql->run('UPDATE endpoint_agent_checks SET status = ?, detail = ?, last_reported_at = ?, last_changed_at = IF(status <> ?, ?, last_changed_at) WHERE device_id = ? AND check_key = ?',
-                    [$r['status'], $r['detail'], $now, $r['status'], $now, $dev['device_id'], $r['key']]);
+                $row['status'] = $r['status'];
+                $row['detail'] = $r['detail'];
+                $row['last_reported_at'] = $now;
+                $row['last_changed_at'] = $prevStatus !== $r['status'] ? $now : $row['last_changed_at'];
+                $rows[$r['key']] = $row;
+                $dirty[$r['key']] = true;
                 continue;
             }
             if ($bad) {
@@ -118,11 +139,31 @@ final class CheckEvaluator
                     $alertId = null;
                 }
             }
-            $this->sql->run('UPDATE endpoint_agent_checks SET status = ?, detail = ?, consecutive_failures = ?, consecutive_ok = ?, episode = ?, alert_id = ?, last_reported_at = ?,
-                last_changed_at = IF(status <> ?, ?, last_changed_at) WHERE device_id = ? AND check_key = ?',
-                [$r['status'], $r['detail'], $fails, $oks, $episode, $alertId, $now, $r['status'], $now, $dev['device_id'], $r['key']]);
+            if ($touch > 0 && $r['status'] === 'ok' && $alertId === null && (int) $row['consecutive_ok'] >= $okN) {
+                $oks = (int) $row['consecutive_ok'];   // opt-in: with no alert open the count of ok results past the recovery debounce decides nothing, so it stops growing
+            }
+            $unchanged = !$isNew && $prevStatus === $r['status'] && (string) $row['detail'] === $r['detail'] && (int) $row['consecutive_failures'] === $fails
+                && (int) $row['consecutive_ok'] === $oks && (int) $row['episode'] === $episode && (($row['alert_id'] ?? null) === null ? null : (int) $row['alert_id']) === $alertId;
+            if ($unchanged && $touch > 0 && $sameBucket && $nowTs - $prev < $touch && !isset($dirty[$r['key']])) {
+                continue;   // opt-in (check_touch_s): nothing but the "last reported" stamp would move, and the history gap logic cannot tell the difference
+            }
+            $rows[$r['key']] = ['status' => $r['status'], 'detail' => $r['detail'], 'consecutive_failures' => $fails, 'consecutive_ok' => $oks, 'episode' => $episode,
+                'alert_id' => $alertId, 'last_reported_at' => $now, 'last_changed_at' => $prevStatus !== $r['status'] ? $now : $loaded['last_changed_at']];
+            $dirty[$r['key']] = true;
         }
         $pipe?->finish();
+        foreach (array_chunk(array_keys($dirty), 200) as $chunk) {
+            $params = [];
+            foreach ($chunk as $key) {
+                $row = $rows[(string) $key];
+                array_push($params, $dev['device_id'], (string) $key, $row['status'], $row['detail'], $row['consecutive_failures'], $row['consecutive_ok'], $row['episode'], $row['alert_id'],
+                    $row['last_reported_at'], $row['last_changed_at']);
+            }
+            $this->sql->run('INSERT INTO endpoint_agent_checks (device_id, check_key, status, detail, consecutive_failures, consecutive_ok, episode, alert_id, last_reported_at, last_changed_at) VALUES '
+                . implode(',', array_fill(0, count($chunk), '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'))
+                . ' ON DUPLICATE KEY UPDATE status = VALUES(status), detail = VALUES(detail), consecutive_failures = VALUES(consecutive_failures), consecutive_ok = VALUES(consecutive_ok),'
+                . ' episode = VALUES(episode), alert_id = VALUES(alert_id), last_reported_at = VALUES(last_reported_at), last_changed_at = VALUES(last_changed_at)', $params);
+        }
         foreach (array_chunk($history, 200) as $chunk) {
             $params = [];
             foreach ($chunk as [$key, $status, $detail, $at]) {

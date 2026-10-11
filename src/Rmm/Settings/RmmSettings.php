@@ -74,6 +74,9 @@ final class RmmSettings
         'check_history_days' => [0, 365],
         'check_history_gap_s' => [60, 86400],
         'software_history_days' => [1, 3650],
+        // Scale S3: when above 0, a check result that changes nothing (same status, detail and counters, same history bucket) does not refresh the
+        // row's "last reported" stamp more often than this many seconds (0 = every check-in, the exact old behaviour).
+        'check_touch_s' => [0, 3600],
         // Phase 2: a run on more devices than approval_bulk_threshold needs a second user (0 = never, the default), an approval request
         // lapses after approval_expiry_h hours, one scheduled run creates at most schedule_batch jobs per housekeeping pass (shed levels
         // divide it), and one bulk run may target at most bulk_run_max devices.
@@ -81,6 +84,26 @@ final class RmmSettings
         'approval_expiry_h' => [1, 720],
         'schedule_batch' => [10, 5000],
         'bulk_run_max' => [1, 100000],
+        // Scale S5 (storage): days the hourly and the daily metric rollups of the database sink are kept, time partitioning on (1) or off (0, the
+        // batched DELETE pruning), the days one partition spans, and how many partitions are kept created ahead of now.
+        'metric_hourly_days' => [1, 400],
+        'metric_daily_days' => [1, 3650],
+        'partitioning' => [0, 1],
+        'partition_span_days' => [1, 7],
+        'partition_ahead' => [1, 60],
+        // Scale S6 (workers): most rmm.ingest jobs one drain() claims, and the most that may be running at once across all workers (0 = no limit).
+        'ingest_batch' => [1, 200],
+        'ingest_max_running' => [0, 10000],
+        // Scale S8 (read path and herd control): seconds a cached fleet figure is fresh and the further seconds it may be served stale while one request
+        // refreshes it (0 fresh = no caching); a token bucket per client for check-ins and enrollment (0 burst = off); the warm start ramp after the module is
+        // switched back on or after a quiet gap (0 = off): seconds it lasts, the share of check-ins admitted at its start, and the quiet gap that counts as an outage.
+        'cache_fresh_s' => [0, 3600],
+        'cache_stale_s' => [0, 86400],
+        'client_bucket_burst' => [0, 1000000],
+        'client_bucket_per_min' => [0, 1000000],
+        'warm_start_s' => [0, 7200],
+        'warm_start_pct' => [1, 100],
+        'warm_quiet_s' => [30, 86400],
     ];
     public const LIMIT_DEFAULTS = [
         'max_checkins_per_min' => 0,
@@ -98,10 +121,25 @@ final class RmmSettings
         'check_history_days' => 7,
         'check_history_gap_s' => 3600,
         'software_history_days' => 365,
+        'check_touch_s' => 0,
         'approval_bulk_threshold' => 0,
         'approval_expiry_h' => 48,
         'schedule_batch' => 200,
         'bulk_run_max' => 1000,
+        'metric_hourly_days' => 14,
+        'metric_daily_days' => 400,
+        'partitioning' => 0,
+        'partition_span_days' => 1,
+        'partition_ahead' => 7,
+        'ingest_batch' => 50,
+        'ingest_max_running' => 0,
+        'cache_fresh_s' => 15,
+        'cache_stale_s' => 300,
+        'client_bucket_burst' => 0,
+        'client_bucket_per_min' => 0,
+        'warm_start_s' => 0,
+        'warm_start_pct' => 10,
+        'warm_quiet_s' => 120,
     ];
 
     /** @var array<string,mixed>|null */

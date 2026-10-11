@@ -71,7 +71,8 @@ $cpu = static function (int $pid, bool $children = false): float {
 
     return $ticks / 100;
 };
-$dbPid = (int) trim((string) @file_get_contents((string) (getenv('RMM_LOAD_DB_PIDFILE') ?: '')));
+$pidFile = (string) getenv('RMM_LOAD_DB_PIDFILE');
+$dbPid = $pidFile !== '' ? (int) trim((string) @file_get_contents($pidFile)) : 0;   // unset (a container): database CPU is not measured
 $srvPid = (int) (proc_get_status($srv)['pid'] ?? 0);
 $counters = static fn (): array => json_decode(trim($php([$load, 'counters'])), true) ?: [];
 $simArgs = [$sim, '-url', "http://127.0.0.1:$port/api/v1/", '-token', $token, '-devices', (string) $devices, '-interval', $interval, '-duration', $duration, '-concurrency', (string) $conc,
