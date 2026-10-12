@@ -258,6 +258,22 @@ Built after v1.0.0-rc.10 (migration `0022_rmm_remote_and_logs`, five new tables,
 7. Render the pages, using `remoteActions()`, `logActions()` and the read-model methods above, and show the two risk texts verbatim when an administrator turns a switch on.
 8. Roll out an agent of this release (it announces `remote:*` and `logs:collect`), then switch the features on. An older agent keeps working and is simply never offered a remote tool or a log config.
 
+## Pushed Mesh agent install and the MSI installer (1.0.0-rc.16)
+
+Built after v1.0.0-rc.15 (migration `0025_rmm_msi_templates`, one new table). Operator guides: [REMOTE_AND_LOGS.md](../rmm/REMOTE_AND_LOGS.md) ("Push the Mesh agent to a device that is already enrolled"), [AGENT_BUILD.md](../rmm/AGENT_BUILD.md) ("The Windows MSI template"), [MSI_VERIFY.md](../rmm/MSI_VERIFY.md) (the Windows checklist); wire contract: [PROTOCOL.md](../rmm/PROTOCOL.md) 3.2.6, 3.5 and 6.
+
+| Area | Behaviour | Core classes | Storage |
+|---|---|---|---|
+| Push install | `RemoteActions::installMeshAgent($who, $deviceId, $force)` queues a signed `mesh_install` job whose parameters are `MeshAgentService::jobParams()` (the stored Mesh settings, nothing the caller sent); the device group id is sealed out of the job row (`extra.secret`). Idempotent, `rmm.remote.manage`, `remote_tools` switch, Mesh configured, agent announced `job:mesh_install` | `Remote\RemoteActions`, `Remote\RemoteJobTypes`, `Mesh\MeshAgentService`, `Job\JobExtras` | `endpoint_agent_jobs`, `rmm_job_extra` |
+| Bulk install | `installMeshAgentBulk($who, {target, force?, confirm})`: the target's live linked devices inside the caller's clients, capped by `bulk_run_max`, refused above `approval_bulk_threshold` | `Remote\RemoteActions`, `Scripts\TargetResolver` | none |
+| Removal | `uninstallMeshAgent($who, $deviceId, $confirm)`: destructive `mesh_uninstall` job | `Remote\RemoteActions` | `endpoint_agent_jobs` |
+| Routes | `POST {id}/mesh/install`, `POST {id}/mesh/uninstall`, `POST mesh/install` | `Http\RemoteApi` | none |
+| Device detail | `mesh_install` `{available, agent_supports, installed}` while the install is available | `Read\RmmReadModel` | none |
+| MSI templates | `BinaryStore::publishMsi/setCurrentMsi/currentMsi/deactivateMsi/activateMsi/downloadMsi`, `RmmAdmin::uploadMsiTemplate/msiTemplateAction`, `RmmReadModel::msiTemplates()`; validated by `Binaries\MsiInspector` (OLE signature, size, not stamped, platform from the summary information) | `Binaries\BinaryStore`, `Binaries\MsiInspector` | `endpoint_agent_msi_templates` |
+| Installer format | `format` = `exe` (default) or `msi` on `InstallerService::issue/issueDownload`, `RmmAdmin::downloadInstaller/deploymentCommands` and `POST agent_installer`; an MSI is a copy of the current template for the architecture with the unchanged `payload || footer` trailer appended, named `RivetIT-Agent-<client>-x64.msi` | `Installer\InstallerService`, `Installer\InstallerDownload`, `Installer\InstallerFormat`, `Http\DeviceApi` | `endpoint_agent_installer_options` (unchanged) |
+
+Edition work: the device-page and fleet buttons, the Add device `Format` selector, the MSI template upload page and the `msiexec` deployment commands (UPGRADING.md, "1.0.0-rc.16").
+
 ## Optional MeshCentral agent install and node-id mapping (1.0.0-rc.12)
 
 Built after v1.0.0-rc.11 (migration `0023_rmm_mesh_agent`, three new tables, nothing existing altered). Off by default: nothing changes until an administrator saves the Mesh install settings and ticks "also install the MeshCentral agent" when issuing an installer. The RivetIT installer never bundles a Mesh binary; the agent pulls it from the customer's own Mesh server over https (system roots or a pinned certificate hash), a failure never fails the RivetIT install, and uninstall leaves Mesh alone unless `--remove-meshagent`. From rc.15 (migration `0024_rmm_mesh_group_url`) the device group id is MeshCentral's 64-character URL form (the `meshid` of its download address, verified against a real MeshCentral), accepted as the bare value, the whole pasted address, `mesh//...` or hex, and a public-CA certificate needs no pin. Operator guide: [REMOTE_AND_LOGS.md](../rmm/REMOTE_AND_LOGS.md) ("Install the MeshCentral agent with the RivetIT agent"); wire contract: [PROTOCOL.md](../rmm/PROTOCOL.md) 3.2.5 and 6.

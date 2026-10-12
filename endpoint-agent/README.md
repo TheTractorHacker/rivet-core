@@ -104,6 +104,8 @@ Checks: `service` (`systemctl show`: active state and enablement), `disk`, `pend
 installed binary, atomic `rename` swap (a running executable can be renamed on Linux), exit 75, systemd restarts the new binary, probation (health deadline / 3 start attempts) with
 automatic rollback to `.prev`.
 
+**MSI (1.0.0-rc.16).** `make msi VERSION=X` builds a Windows Installer template for windows/amd64 on Linux (`packaging/msi`); the server appends the per-client payload to a copy of it and the package runs `rivetit-agent.exe setup --silent --from-msi --payload-from "[OriginalDatabase]"`. Public properties `SERVER`, `ENROLL_TOKEN`, `ENROLL_TOKEN_FILE`, `CA_PEM_FILE` replace the payload for managed deployment; `REMOVE_MESHAGENT=1` also removes the Mesh agent on uninstall. No arm64 MSI (wixl cannot build it). **Never run on Windows**; see `docs/rmm/MSI_VERIFY.md`.
+
 **Packages.** `make packages VERSION=X` builds `.deb` and `.rpm` for amd64 and arm64 with nfpm in Docker (`packaging/nfpm.yaml`). They install the binary only; enrolling is still
 `rivetit-agent install ...`. Removal stops and disables the unit and deletes the unit file; `purge` also deletes the state directory.
 
@@ -165,6 +167,7 @@ make build VERSION=1.0.0            # dist/rivetit-agent-windows-{amd64,arm64}.e
 make tarballs                       # reproducible dist/rivetit-agent-linux-<arch>.tar.gz (binary + install-linux.sh)
 make dist VERSION=0.1.0             # clean dist/: Windows exes, Linux binaries, tarballs, install-linux.sh and SHA256SUMS (what CI builds)
 make packages VERSION=0.1.0         # .deb/.rpm in dist/packages/ (nfpm in Docker; not part of SHA256SUMS)
+make msi VERSION=0.1.0              # dist/rivetit-agent-windows-amd64.msi (msitools wixl in Docker, built twice and compared; then `make checksums`)
 make checksums                      # dist/SHA256SUMS only
 make syso                           # regenerate rsrc_windows_*.syso (needs goversioninfo; see winres/gen.sh)
 make fuzz                           # FuzzCanonical (job canonical JSON/signature path), FuzzDecoders (check-in/jobs/enroll decoders)

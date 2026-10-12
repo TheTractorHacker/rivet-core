@@ -15,9 +15,9 @@ use RivetCore\Tests\Support\ScratchDb;
 $root = dirname(__DIR__, 3);
 require $root . '/vendor/autoload.php';
 $K = require $root . '/scripts/rmm-golden/constants.php';
-[$state, $url] = [$argv[1] ?? '', $argv[2] ?? ''];
+[$state, $url, $meshUrl] = [$argv[1] ?? '', $argv[2] ?? '', $argv[3] ?? ''];
 if ($state === '' || !str_starts_with($url, 'https://')) {
-    fwrite(STDERR, "usage: setup.php <state dir> <https service url>\n");
+    fwrite(STDERR, "usage: setup.php <state dir> <https service url> [<https mesh url>]\n");
     exit(2);
 }
 if (!str_contains((string) getenv('RIVETCORE_TEST_DB_NAME'), 'scratch')) {
@@ -41,6 +41,10 @@ if ($errors !== []) {
 }
 // short intervals so the proof does not wait minutes (the server's own settings floor is for production; this is a scratch fixture)
 $s->set(['check_in_interval_s' => 5, 'collect_interval_s' => 5, 'job_ack_timeout_s' => 60]);
+if ($meshUrl !== '') {
+    // the pushed Mesh agent install (rc.16): MeshCentral on, pointing at the mock Mesh server; the device group, pin and tables are set through the REST API by the proof itself
+    $s->set(['mesh_enabled' => 1, 'mesh_url' => $meshUrl]);
+}
 $errors = $e->module->remoteSettings()->update([
     'transfer_allow' => ['linux' => ['/srv/proof'], 'windows' => ['C:\\Proof']],
     'logs_collect' => ['linux' => [['units' => ['rivetproof-noisy.service'], 'min_level' => 'warning', 'contains' => ['failed password', 'segfault']]], 'windows' => []],

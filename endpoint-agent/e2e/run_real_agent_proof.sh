@@ -31,6 +31,7 @@ PHPPID=""
 cleanup() {
   docker rm -f "$NAME" "$NAME-nginx" >/dev/null 2>&1 || true
   [ -n "$PHPPID" ] && kill "$PHPPID" 2>/dev/null || true
+  [ -n "${MESHPID:-}" ] && kill "$MESHPID" 2>/dev/null || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -45,11 +46,22 @@ php -r '
 mkdir -p "$WORK/state" "$WORK/tls"
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=rivetit-proof" -addext "subjectAltName=IP:$GATEWAY,IP:127.0.0.1,DNS:localhost" \
   -keyout "$WORK/tls/key.pem" -out "$WORK/tls/ca.pem" >/dev/null 2>&1
-SETUP="$(RMM_GOLDEN_ALLOW_LINUX=1 php "$HERE/php_scratch/setup.php" "$WORK/state" "https://$GATEWAY:$TLSPORT")" || { echo "setup failed: $SETUP"; exit 2; }
+MESHPORT="${MESH_PORT:-8644}"
+# the mock MeshCentral server of the pushed-install checks (the fakeserver's mock Mesh; built with the go.mod toolchain in Docker)
+MESHGROUP='4Q3y1m6Cm1PFZ2UtTZGt1cYvRX$g1wwy@dIBLfVOt6rZ4Mq3gqfJmwmSMX4jXYSe'
+MESHNODE_RAW='AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@$AbCdEfGhIjKlMnOpQrStUvWxYz01'
+SETUP="$(RMM_GOLDEN_ALLOW_LINUX=1 php "$HERE/php_scratch/setup.php" "$WORK/state" "https://$GATEWAY:$TLSPORT" "https://$GATEWAY:$MESHPORT")" || { echo "setup failed: $SETUP"; exit 2; }
 TOKEN="$(printf '%s' "$SETUP" | php -r 'echo json_decode(stream_get_contents(STDIN), true)["token"];')"
 ADMIN="$(printf '%s' "$SETUP" | php -r 'echo json_decode(stream_get_contents(STDIN), true)["admin_api_token"];')"
 dbq() { php -r 'mysqli_report(MYSQLI_REPORT_OFF); $m = new mysqli(getenv("RIVETCORE_TEST_DB_HOST") ?: "127.0.0.1", getenv("RIVETCORE_TEST_DB_USER") ?: "root", getenv("RIVETCORE_TEST_DB_PASS") ?: "", getenv("RIVETCORE_TEST_DB_NAME"), (int) (getenv("RIVETCORE_TEST_DB_PORT") ?: 3306)); $r = $m->query($argv[1]); if ($r instanceof mysqli_result) { $row = $r->fetch_row(); echo $row[0] ?? ""; }' "$1"; }
 # the agent long-polls agent_jobs, so one php -S worker would starve the technician calls; the fixture's state file is only written by enrollment
+GOVER="$(sed -n 's/^go \([0-9.]*\).*/\1/p' "$ROOT/go.mod" | head -1)"
+mkdir -p "$WORK/gocache" "$WORK/meshmock"
+docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e CGO_ENABLED=0 -e GOCACHE=/w/gocache -e GOMODCACHE=/w/gomod -v "$ROOT":/src -v "$WORK":/w -w /src "${GO_IMAGE:-golang:$GOVER}" go build -trimpath -o /w/fakeserver ./e2e/fakeserver || { echo "cannot build the mock Mesh server"; exit 2; }
+"$WORK/fakeserver" -dir "$WORK/meshmock" -mesh-listen "0.0.0.0:$MESHPORT" -mesh-group "$MESHGROUP" -mesh-node "$MESHNODE_RAW" >"$WORK/meshmock.out" 2>&1 &
+MESHPID=$!
+wait_for 15 "[ -s $WORK/meshmock/mesh_pin ]" || { echo "mock Mesh server did not start"; cat "$WORK/meshmock.out"; exit 2; }
+MESHPIN="$(cat "$WORK/meshmock/mesh_pin")"
 PHP_CLI_SERVER_WORKERS=4 RMM_GOLDEN_STATE="$WORK/state" RMM_GOLDEN_ALLOW_LINUX=1 php -d display_errors=0 -d log_errors=1 -d "error_log=$WORK/php.log" -S "127.0.0.1:$PHPPORT" "$HERE/php_scratch/router.php" >/dev/null 2>&1 &
 PHPPID=$!
 wait_for 15 "curl -s -o /dev/null http://127.0.0.1:$PHPPORT/api/v1/nothing" || { bad "php -S did not start"; exit 1; }
@@ -76,7 +88,7 @@ A() { R="$(api "$@")"; CODE="$(cat "$WORK/code")"; }   # api in the current shel
 jget() { php -r '$d=json_decode(stream_get_contents(STDIN), true); $v=$d; foreach (explode(".", $argv[1]) as $k) { if (is_array($v) && array_key_exists($k, $v)) { $v=$v[$k]; } else { $v=null; break; } } echo is_bool($v) ? ($v ? "true" : "false") : (is_scalar($v) ? $v : json_encode($v));' "$1"; }
 
 echo "== real systemd container, agent installed with install-linux.sh"
-docker run -d --name "$NAME" --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw --tmpfs /tmp --tmpfs /run --tmpfs /run/lock "$IMG" >/dev/null
+docker run -d --name "$NAME" --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw -v "$WORK/meshmock":"$WORK/meshmock" --tmpfs /tmp --tmpfs /run --tmpfs /run/lock "$IMG" >/dev/null
 for _ in $(seq 1 60); do docker exec "$NAME" systemctl is-system-running 2>/dev/null | grep -Eq 'running|degraded' && break; sleep 0.5; done
 docker exec "$NAME" mkdir -p /w /srv/proof
 docker cp "$AGENT_BIN" "$NAME:/w/rivetit-agent"; docker cp "$ROOT/scripts/install-linux.sh" "$NAME:/w/install-linux.sh"; docker cp "$WORK/tls/ca.pem" "$NAME:/w/ca.pem"
@@ -181,6 +193,48 @@ q systemctl start rivetproof-noisy.service
 sleep 2
 ST="$(api GET "$DEV/logs/stats")"
 chk "storage figures are reported" 'printf "%s" "$ST" | grep -q device_max_rows'
+echo "== pushed MeshCentral agent (mesh_install) on an agent enrolled WITHOUT the Mesh option"
+MESHDIR=/usr/local/mesh_services/meshagent
+chk "the agent announced job:mesh_install and job:mesh_uninstall" 'dbq "SELECT capabilities_json FROM rmm_device_state WHERE device_id = $DEV" | grep -q job:mesh_install && dbq "SELECT capabilities_json FROM rmm_device_state WHERE device_id = $DEV" | grep -q job:mesh_uninstall'
+A POST "$DEV/mesh/install" '{}'
+chk "with no device group saved the install is refused up front (409 not_configured), nothing queued" '[ "$CODE" = 409 ] && [ "$(printf "%s" "$R" | jget code)" = not_configured ] && [ "$(dbq "SELECT COUNT(*) FROM endpoint_agent_jobs WHERE type = '\''mesh_install'\''")" = 0 ]'
+A PUT "remote/mesh" "{\"mesh_group_id\":\"$MESHGROUP\",\"mesh_server_cert_pin\":\"$(printf 'ab%.0s' $(seq 1 48))\"}"
+chk "Mesh settings saved through the REST API (a pasted-form group id and a pin)" '[ "$CODE" = 200 ] && [ "$(printf "%s" "$R" | jget install_ready)" = true ]'
+A POST "$DEV/mesh/install" '{"url":"https://evil.example"}'
+chk "a body with anything but force is refused (422): the job carries only the stored settings" '[ "$CODE" = 422 ]'
+meshjob() { # meshjob "<json body>" -> sets J and RES after the job is final
+  A POST "$DEV/mesh/install" "$1"; J="$(printf '%s' "$R" | jget job_id)"; MCODE="$CODE"; ST="$(job_done $J 120)"; RES="$(api GET "$DEV/remote/jobs/$J")"; }
+meshjob '{}'
+chk "wrong pin: queued (202), the job FAILED install_failed naming the pinned hash, no Mesh agent, the RivetIT agent still active" '[ "$MCODE" = 202 ] && [ "$ST" = failed ] && printf "%s" "$RES" | grep -q install_failed && printf "%s" "$RES" | grep -q "pinned hash" && ! q test -e $MESHDIR/meshagent && [ "$(q systemctl is-active rivetit-agent)" = active ]'
+chk "the job row holds the redacted placeholder, never the group id; the sealed value is wiped" '[ "$(dbq "SELECT COUNT(*) FROM endpoint_agent_jobs WHERE job_id = '\''$J'\'' AND params_json LIKE '\''%redacted:secret%'\''")" = 1 ] && ! dbq "SELECT params_json FROM endpoint_agent_jobs WHERE job_id = '\''$J'\''" | grep -qF -- "$MESHGROUP" && [ -z "$(dbq "SELECT secret_params_enc FROM rmm_job_extra WHERE job_id = '\''$J'\''")" ]'
+chk "the failure also reaches the device state through the check-in (mesh_agent.error)" 'wait_for 60 "[ \"\$(api GET \"$DEV\" | jget mesh_agent.installed)\" = false ] && api GET \"$DEV\" | grep -q pinned"'
+A PUT "remote/mesh" "{\"mesh_server_cert_pin\":\"$MESHPIN\",\"mesh_group_id\":\"$(printf 'B%.0s' $(seq 1 64))\"}"
+meshjob '{}'
+chk "unknown device group: HTTP 404 from the Mesh server, reported, agent unaffected" '[ "$ST" = failed ] && printf "%s" "$RES" | grep -q "HTTP 404" && ! q test -e $MESHDIR/meshagent && [ "$(q systemctl is-active rivetit-agent)" = active ]'
+A PUT "remote/mesh" "{\"mesh_group_id\":\"$MESHGROUP\",\"mesh_agent_ids\":{\"linux/amd64\":99}}"
+meshjob '{}'
+chk "a body over the 64 MiB cap (agent id 99) is refused, nothing runs" '[ "$ST" = failed ] && printf "%s" "$RES" | grep -q "larger than" && ! q test -e $MESHDIR/meshagent'
+A PUT "remote/mesh" '{"mesh_agent_ids":{}}'
+meshjob '{}'
+echo "   good case: code=$MCODE state=$ST result=$RES"
+chk "the good case: queued, SUCCEEDED, the fake meshagent installed, the node id in the job result" '[ "$MCODE" = 202 ] && [ "$ST" = succeeded ] && printf "%s" "$RES" | grep -qF "node//$MESHNODE_RAW" && q test -x $MESHDIR/meshagent'
+chk "the job result never carries the group id" '! printf "%s" "$RES" | grep -qF -- "$MESHGROUP"'
+chk "the check-in reported the Mesh agent and the server mapped the node id to the device by itself" 'wait_for 60 "[ \"\$(dbq \"SELECT installed FROM endpoint_agent_mesh_agents WHERE device_id = $DEV\")\" = 1 ] && [ \"\$(dbq \"SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id = $DEV\")\" = \"node//\$MESHNODE_RAW\" ]"'
+chk "the device detail shows mesh_agent installed, map_state mapped and mesh_install.installed" '[ "$(api GET "$DEV" | jget mesh_agent.map_state)" = mapped ] && [ "$(api GET "$DEV" | jget mesh_install.installed)" = true ]'
+A POST "$DEV/mesh/install" '{}'
+chk "idempotent: a device that already reports the agent is skipped (200 already_installed), no job" '[ "$CODE" = 200 ] && [ "$(printf "%s" "$R" | jget skipped)" = already_installed ]'
+A POST "mesh/install" '{"target":{"type":"all"}}'
+chk "the bulk call needs confirm (422) and tells how many devices it would reach" '[ "$CODE" = 422 ] && [ "$(printf "%s" "$R" | jget code)" = confirmation_required ] && [ "$(printf "%s" "$R" | jget device_count)" = 1 ]'
+A POST "mesh/install" '{"target":{"type":"all"},"confirm":true}'
+chk "bulk: the installed device is skipped and counted" '[ "$CODE" = 201 ] && [ "$(printf "%s" "$R" | jget created)" = 0 ] && [ "$(printf "%s" "$R" | jget skipped_installed)" = 1 ]'
+A POST "$DEV/mesh/install" '{"force":true}'; J="$(printf '%s' "$R" | jget job_id)"
+chk "force runs the installer again" '[ "$CODE" = 202 ] && [ "$(job_done $J 120)" = succeeded ]'
+A POST "$DEV/mesh/uninstall" '{}'
+chk "removal needs an explicit confirmation (422)" '[ "$CODE" = 422 ] && [ "$(printf "%s" "$R" | jget code)" = confirmation_required ]'
+A POST "$DEV/mesh/uninstall" '{"confirm":true}'; J="$(printf '%s' "$R" | jget job_id)"
+chk "mesh_uninstall succeeded: the Mesh agent is gone, the RivetIT agent stays" '[ "$(job_done $J 120)" = succeeded ] && ! q test -e $MESHDIR/meshagent && [ "$(q systemctl is-active rivetit-agent)" = active ]'
+chk "the server's record follows the next check-in (installed = 0)" 'wait_for 60 "[ \"\$(dbq \"SELECT installed FROM endpoint_agent_mesh_agents WHERE device_id = $DEV\")\" = 0 ]"'
+chk "the audit log has the queued, installed and failed rows" 'AUDX="$(RMM_GOLDEN_STATE="$WORK/state" php -r '"'"'require "'"$REPO"'/vendor/autoload.php"; $d = unserialize(file_get_contents($argv[1]."/edition.ser")); echo json_encode($d["audit"]->records());'"'"' "$WORK/state")"; for k in "Mesh Agent Installed" "Mesh Agent Install Failed" "Mesh Agent Bulk Install" "Mesh Node Mapped"; do printf "%s" "$AUDX" | grep -q "$k" || { echo "missing $k"; false; break; }; done'
 echo "== audit"
 AUD="$(RMM_GOLDEN_STATE="$WORK/state" php -r 'require "'"$REPO"'/vendor/autoload.php"; $d = unserialize(file_get_contents($argv[1]."/edition.ser")); echo json_encode($d["audit"]->records());' "$WORK/state")"
 chk "the audit log has the service, process and file actions (queued, completed, downloaded)" 'for k in "Remote Tool Queued" "File Download Requested" "File Transfer Completed" "File Downloaded" "File Upload Queued"; do printf "%s" "$AUD" | grep -q "$k" || { echo "missing $k"; false; break; }; done'

@@ -282,7 +282,7 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 		log.Info("setup start (MSI upgrade or repair without a payload: keeping the existing enrollment)", "version", version, "exe", self, "silent", o.silent)
 	} else {
 		log.Info("setup start", "version", version, "exe", self, "installer_id", pl.InstallerID, "server", pl.ServerURL,
-			"department", pl.Department, "token", pl.RedactedToken(), "expires_at", pl.ExpiresAt, "silent", o.silent, "no_service", o.noService, "from_msi", o.fromMSI)
+			"department", pl.Department, "token", pl.RedactedToken(), "expires_at", pl.ExpiresAt, "silent", o.silent, "no_service", o.noService, "from_msi", o.fromMSI, "payload_from", src)
 		f = enrollFlags{server: pl.ServerURL, department: pl.Department}
 		f.token = pl.EnrollmentToken
 		if pl.CAPEM != nil {

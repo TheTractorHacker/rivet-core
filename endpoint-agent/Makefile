@@ -59,7 +59,7 @@ msi-image:
 	@docker image inspect $(MSI_IMAGE) >/dev/null 2>&1 || docker build -t $(MSI_IMAGE) packaging/msi
 msi: windows msi-image
 	@set -e; for pass in 1 2; do 	  docker run --rm -u "$$(id -u):$$(id -g)" -v "$$PWD":/src -w /src $(MSI_IMAGE) 	    packaging/msi/build.sh build '$(VERSION)' $(DIST)/rivetit-agent-windows-amd64.exe $(DIST)/.msi-pass$$pass.msi | sed "s/^/[pass $$pass] /"; 	done; 	cmp $(DIST)/.msi-pass1.msi $(DIST)/.msi-pass2.msi && echo "reproducible: the two MSI builds are byte-identical"; 	mv $(DIST)/.msi-pass1.msi $(DIST)/rivetit-agent-windows-amd64.msi; rm -f $(DIST)/.msi-pass2.msi
-	RIVETIT_TEST_MSI="$$PWD/$(DIST)/rivetit-agent-windows-amd64.msi" $(GO) test -count=1 -run 'TestRealWixlMSIRoundTrip' -v ./internal/embed | grep -E '^(--- |ok|FAIL)'
+	RIVETIT_TEST_MSI="$$PWD/$(DIST)/rivetit-agent-windows-amd64.msi" $(GO) test -count=1 -run 'TestRealWixlMSIRoundTrip' ./internal/embed
 
 vet:
 	$(GO) vet ./...

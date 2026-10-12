@@ -186,7 +186,7 @@ paths:
             schema: {$ref: '#/components/schemas/InstallerRequest'}
       responses:
         '200':
-          description: The stamped installer (`RivetIT-Agent-Setup-<client>-<x64|arm64>.exe`)
+          description: The stamped installer (`RivetIT-Agent-Setup-<client>-<x64|arm64>.exe`, or `RivetIT-Agent-<client>-<x64|arm64>.msi` when `format` is `msi`)
           content:
             application/octet-stream:
               schema: {type: string, contentMediaType: application/octet-stream}
@@ -194,7 +194,7 @@ paths:
         '403': {description: 'Service disabled (baseline editions without the module gate)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
         '404': {description: 'Generic: the token is not usable', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
         '405': {$ref: '#/components/responses/MethodNotAllowed'}
-        '409': {description: 'No published binary for that architecture, or no https service URL (`unavailable`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {description: 'No published binary (or, for `format: msi`, no published MSI template) for that architecture, or no https service URL (`unavailable`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
         '413': {$ref: '#/components/responses/TooLarge'}
         '422': {$ref: '#/components/responses/Invalid'}
         '426': {$ref: '#/components/responses/TlsRequired'}
@@ -2449,6 +2449,99 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
         '422': {description: '`invalid` or `confirmation_required`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/{id}/mesh/install:
+    post:
+      tags: [Technician]
+      operationId: installMeshAgent
+      summary: Install the MeshCentral agent on an enrolled device (1.0.0-rc.16)
+      description: |
+        Queues a signed `mesh_install` job (PROTOCOL.md 3.2.6). Needs `rmm.remote.manage` and the `remote_tools` switch. The caller supplies NOTHING but `force`: the Mesh address, the device group id, the optional
+        pin and the agent-id and argument tables are taken from the stored Mesh settings at this moment, and the group id is kept out of the job row. Answers `409 not_configured` while MeshCentral is off, has no https
+        address or no device group, and `409 unsupported` when the agent never announced `job:mesh_install` (update it first). IDEMPOTENT: a device whose last report says the agent is installed answers
+        `200` with `skipped: already_installed` (unless `force` is true) and a second request while one is open answers `200` with `skipped: already_queued` and the open `job_id`. The result is read with
+        `GET /endpoint_devices/{id}/remote/jobs/{job_id}` and in the device detail (`mesh_agent`, and `mesh_install` while the install is available).
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, properties: {force: {type: boolean, default: false, description: 'Run the installer even when the agent already reports the Mesh agent installed'}}}
+      responses:
+        '200': {description: 'Nothing queued: `skipped` is `already_installed` or `already_queued`', content: {application/json: {schema: {type: object, properties: {skipped: {type: string, enum: [already_installed, already_queued]}, job_id: {type: string}, node_id: {type: [string, 'null']}}}}}}
+        '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/Queued'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/{id}/mesh/uninstall:
+    post:
+      tags: [Technician]
+      operationId: uninstallMeshAgent
+      summary: Remove the MeshCentral agent from a device (1.0.0-rc.16)
+      description: |
+        Queues a signed `mesh_uninstall` job: the Mesh agent's own uninstaller runs (never the RivetIT agent's). Needs `rmm.remote.manage`, the `remote_tools` switch and `confirm: true` (`422 confirmation_required`
+        without it). Destructive: offered at most once, never retried. Not tied to the Mesh settings, so an agent can be removed after MeshCentral was switched off.
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [confirm], additionalProperties: false, properties: {confirm: {type: boolean}}}
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/Queued'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/mesh/install:
+    post:
+      tags: [Technician]
+      operationId: installMeshAgentBulk
+      summary: Install the MeshCentral agent on every device of a target (1.0.0-rc.16)
+      description: |
+        The same rules as the single install, applied to every live linked Windows or Linux device of `target` (`device`, `tag`, `group`, `client`, `site`, `policy` or `all`) INSIDE the caller's clients (a device of
+        another client is never reached and never counted). Needs `rmm.remote.manage` (a client where the caller lacks it is skipped and counted in `skipped_denied`) and `confirm: true` (without it
+        `422 confirmation_required` answers with the `device_count` it would reach). At most `bulk_run_max` devices (`422 too_many`). When `approval_bulk_threshold` is set and the target is larger,
+        the request is REFUSED (`409 approval_required`): the two-person approval queue only knows script runs today, so install in batches. Devices that already report the agent (`skipped_installed`),
+        already have an install open (`skipped_queued`) or run an older agent (`skipped_unsupported`) are skipped, so the call can be repeated safely.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target, confirm]
+              additionalProperties: false
+              properties:
+                target: {type: object, required: [type], properties: {type: {type: string, enum: [device, tag, group, client, site, policy, all]}, id: {type: integer}}}
+                force: {type: boolean, default: false}
+                confirm: {type: boolean}
+      responses:
+        '201':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_count: {type: integer}
+                  created: {type: integer}
+                  skipped_denied: {type: integer}
+                  skipped_installed: {type: integer}
+                  skipped_queued: {type: integer}
+                  skipped_unsupported: {type: integer}
+                  skipped_error: {type: integer}
+                  errors: {type: array, items: {type: string}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /endpoint_devices/remote/mesh:
     get:
       tags: [Technician]
@@ -3094,6 +3187,7 @@ components:
       properties:
         token: {type: string, description: 'rvte1.<selector>.<secret>; may instead be sent as an Authorization bearer header'}
         arch: {type: string, enum: [amd64, arm64]}
+        format: {type: string, enum: [exe, msi], default: exe, description: 'The installer format (1.0.0-rc.16). `msi` returns a copy of the published MSI template for the architecture with the same payload trailer appended; `409 unavailable` when none is published.'}
     DeviceSummary:
       type: object
       required: [device_id, hostname, asset_id, client_id, link_state, status, last_checkin_at, offline_since, agent_version, ring, os_version, revoked, retired]

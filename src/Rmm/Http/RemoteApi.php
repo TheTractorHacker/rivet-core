@@ -56,9 +56,11 @@ use RivetCore\Rmm\Technician\TechnicianActions;
 final class RemoteApi
 {
     /** First path segments that are not a device id and belong here. */
-    public const FLEET = ['logs', 'remote', 'mesh'];
+    public const FLEET = ['logs', 'remote'];
+    /** First path segment of the bulk Mesh agent install (1.0.0-rc.16), kept apart from {@see FLEET} so that constant's value is unchanged. */
+    public const MESH = ['mesh'];
     /** Second path segments of a device route that belong here. */
-    public const DEVICE = ['services', 'processes', 'files', 'logs', 'mesh'];
+    public const DEVICE = ['services', 'processes', 'files', 'logs'];
 
     public function __construct(private readonly RemoteActions $remote, private readonly LogActions $logs, private readonly TechnicianActions $technician)
     {

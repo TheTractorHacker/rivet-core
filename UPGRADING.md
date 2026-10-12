@@ -250,6 +250,7 @@ forward-only, additive and idempotent; running the whole list on a current datab
 | `0022_rmm_remote_and_logs` | `Rmm\Migration\Migration0022RemoteAndLogs` | five new tables: `endpoint_agent_remote_settings`, `endpoint_agent_transfers`, `endpoint_agent_log_events`, `endpoint_agent_log_state`, `endpoint_agent_log_rules` (all `IF NOT EXISTS`, nothing existing altered; 0021 is reserved for the RMM scale work) | after 1.0.0-rc.10 |
 | `0023_rmm_mesh_agent` | `Rmm\Migration\Migration0023MeshAgent` | three new tables: `endpoint_agent_mesh_settings`, `endpoint_agent_mesh_agents`, `endpoint_agent_installer_options` (all `IF NOT EXISTS`, nothing existing altered; DDL in `Rmm\Migration\MeshAgentSchema::tables()`) | 1.0.0-rc.12 |
 | `0024_rmm_mesh_group_url` | `Rmm\Migration\Migration0024MeshGroupUrl` | one new column `endpoint_agent_mesh_settings.group_id_url varchar(64) NOT NULL DEFAULT ''` (added only when missing; nothing else altered) | 1.0.0-rc.15 |
+| `0025_rmm_msi_templates` | `Rmm\Migration\Migration0025MsiTemplates` | one new table `endpoint_agent_msi_templates` (`IF NOT EXISTS`, nothing existing altered; DDL in `Rmm\Migration\MsiTemplateSchema::tables()`) | 1.0.0-rc.16 |
 
 The authoritative list is `RivetCore\Migration\CoreMigrations::all()`; the exact ids (`$m->id()`) are what `rivet_core_migrations`
 stores. Print them with `php -r 'require "vendor/autoload.php"; foreach (RivetCore\Migration\CoreMigrations::all() as $m) echo $m->id(), "\n";'`.
@@ -305,6 +306,20 @@ Both editions already do this (`admin/database_updates.php` in each), advancing 
 10. Update on the target, check the health endpoint, sign in, and exercise one flow per module you use; watch logs for one cron cycle.
 
 The recurring version of this list for every later release is [docs/EDITION_CHECKLIST.md](docs/EDITION_CHECKLIST.md).
+
+## 1.0.0-rc.16: pushed Mesh agent install, MSI installer
+
+1. **Migration.** `CoreMigrations::all()` gains `0025_rmm_msi_templates`: one new table, `endpoint_agent_msi_templates` (`CREATE TABLE IF NOT EXISTS`, nothing existing altered; DDL in `Rmm\Migration\MsiTemplateSchema`). If your `db.sql` mirrors Core's tables, add it and the `rivet_core_migrations` row. Until it is applied everything works; only publishing an MSI template needs it (and `RmmReadModel::msiTemplates()` answers an empty list).
+2. **Constructor wiring** (only if you build the module pieces by hand instead of through `RmmModule`): `RemoteActions` takes an optional `TargetResolver` after `MeshAgentService`; `InstallerDownload` takes an optional `BinaryStore` after `MeshAgentService`. `RmmModule` passes both.
+3. **Agent.** Ship the rc.16 agent: a pushed Mesh install needs an agent that announces `job:mesh_install` (older agents answer `409 unsupported` with an "update the agent" text), and an MSI install needs the rc.16 `setup --from-msi`. Nothing changes for the exe installer or for older agents.
+4. **API (additive).** `POST endpoint_devices/{id}/mesh/install`, `.../mesh/uninstall`, `POST endpoint_devices/mesh/install`; `format` on `agent_installer`, on `InstallerService::issue/issueDownload` and on `RmmAdmin::downloadInstaller/deploymentCommands` (default `exe`; the exe answers are byte for byte unchanged); `Admin\RmmAdmin::uploadMsiTemplate/msiTemplateAction`; `RmmReadModel::msiTemplates`; device detail `mesh_install`. Nothing is removed or changed incompatibly (`docs/api-surface.md`).
+5. **Edition UI to build** (none is done in Core):
+   * Device page: an **Install MeshCentral agent** button (call `POST endpoint_devices/{id}/mesh/install`; show it when `mesh_install.available` is true and `mesh_agent.installed` is not; when `mesh_install.agent_supports` is false say "update the agent first"), a **Remove MeshCentral agent** action with a confirmation, and the job result (`GET endpoint_devices/{id}/remote/jobs/{job_id}`).
+   * Fleet list: a **bulk action** "Install MeshCentral agent" on a selection or a tag, group or client (`POST endpoint_devices/mesh/install` with `confirm: true`, showing the `device_count` the first, unconfirmed call returns), and the skip counts it answers.
+   * Add device: a **Format: exe | msi** selector (pass it as `format`), disabled with the reason when no MSI template is published for the architecture (and for arm64, which has none).
+   * Administration: **MSI templates** next to Agent binaries: upload (`uploadMsiTemplate`), make current, deactivate, the list from `msiTemplates()` with `arch_source`.
+   * Deployment commands: show the new `msi` block (`msiexec` for the stamped file, the PowerShell downloader, the property form, the uninstall command and the detection data).
+6. **Build and release.** `make msi` (Docker and Go) makes `dist/rivetit-agent-windows-amd64.msi`; the `agent-v*` release attaches it with `SHA256SUMS.msi`. Publish it as an MSI template in each edition. **Verify it on a Windows PC before relying on it**: `docs/rmm/MSI_VERIFY.md`.
 
 ## 1.0.0-rc.15: the Mesh device group id in MeshCentral's URL form
 

@@ -1,7 +1,7 @@
 {
   "module": "rmm",
   "repository": "https://github.com/TheTractorHacker/rivet-core",
-  "updated": "2026-10-11",
+  "updated": "2026-10-12",
   "issues": "https://github.com/TheTractorHacker/rivet-core/issues?q=label%3Armm",
   "documents": [
     {
@@ -87,12 +87,30 @@
     },
     {
       "id": "remote-and-logs",
-      "title": "Remote tools, log collection and the optional MeshCentral agent install",
-      "summary": "Operator guide: the service and process managers, file transfer, Mesh terminal and files, log collection and rules; the three sub-switches and their risk texts, limits, what is built and what remains; and (rc.12) installing the MeshCentral agent with the RivetIT agent: setup step by step (device group, meshid, certificate pin), node-id mapping rules, troubleshooting and what is unverified against a real MeshCentral",
+      "title": "Remote tools, log collection and the optional MeshCentral agent install (at install time, or pushed to an enrolled device)",
+      "summary": "Operator guide: the service and process managers, file transfer, Mesh terminal and files, log collection and rules; the three sub-switches and their risk texts, limits, what is built and what remains; and (rc.12) installing the MeshCentral agent with the RivetIT agent: setup step by step (device group, meshid, certificate pin), node-id mapping rules, troubleshooting and what is unverified against a real MeshCentral; and (rc.16) pushing the MeshCentral agent install to an already enrolled device, one or in bulk, and removing it",
       "path": "docs/rmm/REMOTE_AND_LOGS.md",
       "status": "draft",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/REMOTE_AND_LOGS.md",
       "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/REMOTE_AND_LOGS.md"
+    },
+    {
+      "id": "agent-build",
+      "title": "RMM endpoint agent: build, package, release and the Windows MSI template",
+      "summary": "How the Windows and Linux agent is built reproducibly, tested and released, the .deb and .rpm packages, and (rc.16) the MSI template built on Linux with msitools wixl: reproducibility, properties, upgrade, uninstall, architectures (amd64 only), and the honest limits",
+      "path": "docs/rmm/AGENT_BUILD.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/AGENT_BUILD.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/AGENT_BUILD.md"
+    },
+    {
+      "id": "msi-verify",
+      "title": "Verifying the Windows MSI on a real Windows PC",
+      "summary": "Checklist for the owner on a disposable Windows machine: exact msiexec commands, expected log lines, uninstall, and what was only parse-checked on Linux",
+      "path": "docs/rmm/MSI_VERIFY.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/MSI_VERIFY.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/MSI_VERIFY.md"
     },
     {
       "id": "protocol",

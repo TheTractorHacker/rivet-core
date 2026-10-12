@@ -23,7 +23,7 @@ Usage: rivetit-agent <command> [flags]
 
 Commands:
   run         run in the foreground (also the entry point of the Windows service)
-  setup       install from the configuration embedded in a RivetIT-downloaded installer   [--silent] [--no-service]
+  setup       install from the configuration embedded in a RivetIT-downloaded installer   [--silent] [--no-service] (the MSI uses --from-msi)
   install     enroll this endpoint and install + start the service (Windows service / Linux systemd unit; needs admin/root)
   uninstall   stop and remove the service and binaries   [--purge] [--remove-meshagent (Windows)]
   enroll      exchange an enrollment token for a device credential

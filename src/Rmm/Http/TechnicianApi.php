@@ -123,7 +123,7 @@ final class TechnicianApi
             if ($seg !== [] && $this->alerting !== null && in_array($seg[0], AlertingApi::FLEET, true)) {
                 return $this->alerting->fleet($req, $who, $seg);
             }
-            if ($seg !== [] && $this->remoteApi !== null && in_array($seg[0], RemoteApi::FLEET, true)) {
+            if ($seg !== [] && $this->remoteApi !== null && (in_array($seg[0], RemoteApi::FLEET, true) || in_array($seg[0], RemoteApi::MESH, true))) {
                 return $this->remoteApi->fleet($req, $who, $seg);
             }
             if ($seg !== [] && $this->starterApi !== null && in_array($seg[0], StarterApi::FLEET, true)) {
