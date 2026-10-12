@@ -85,27 +85,14 @@ func installMeshAgent(ctx context.Context, ops sysOps, install, specRaw json.Raw
 // (Windows -fulluninstall, Linux -uninstall) and was NOT run against a real agent.
 func removeMeshAgentIfPresent() {
 	p := meshProbe()
-	exe := p.Found()
-	if exe == "" {
-		fmt.Println("no MeshCentral agent found")
-		return
-	}
-	arg := "-uninstall"
-	if runtime.GOOS == "windows" {
-		arg = "-fulluninstall"
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	run := p.Run
-	if run == nil {
-		run = mesh.RunProgram
-	}
-	exit, out, err := run(ctx, "", exe, []string{arg})
+	r := mesh.Uninstall(ctx, p, runtime.GOOS)
 	switch {
-	case err != nil:
-		fmt.Fprintln(os.Stderr, "warning: MeshAgent uninstall:", err)
-	case exit != 0:
-		fmt.Fprintf(os.Stderr, "warning: MeshAgent uninstall exited with code %d: %s\n", exit, out)
+	case !r.Found:
+		fmt.Println("no MeshCentral agent found")
+	case r.Error != "":
+		fmt.Fprintf(os.Stderr, "warning: MeshAgent uninstall: %s %s\n", r.Error, r.Log)
 	default:
 		fmt.Println("MeshCentral agent uninstalled (as requested)")
 	}

@@ -78,6 +78,8 @@ type Options struct {
 	// Mesh reads the MeshCentral agent state and node id (nil = the real
 	// machine: the saved install outcome plus the platform's usual locations).
 	Mesh *mesh.Reporter
+	// MeshJobs holds the test hooks of the mesh_install / mesh_uninstall jobs (zero value = the real thing).
+	MeshJobs mesh.JobDeps
 }
 
 // Agent is the endpoint agent runtime.
@@ -272,6 +274,17 @@ func (a *Agent) newExecutor(ctx context.Context) {
 		},
 	}
 	e.Remote = remote.Deps{StateDir: a.o.Store.Dir, T: agentTransport{a}}.Handlers()
+	// The pushed MeshCentral agent install and removal (mesh_install, mesh_uninstall). Both run through the same
+	// pinned-download-and-install routine as the installer and refresh the Mesh state the next check-in reports.
+	md := a.o.MeshJobs
+	md.StateDir, md.Log = a.o.Store.Dir, a.log
+	if md.Probe == nil {
+		md.Probe = func() mesh.Probe { return a.meshRep.Probe }
+	}
+	md.OnChange = func() { a.meshRep.Invalidate() }
+	for typ, h := range md.Handlers() {
+		e.Remote[typ] = h
+	}
 	e.DisableRemote = cfg.DisableRemote
 	e.OnRevoked = func(err error) { a.goDormant(revokedMessage + " (" + err.Error() + ")") }
 	e.Recover()

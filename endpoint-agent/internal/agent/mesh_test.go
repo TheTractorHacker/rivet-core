@@ -130,3 +130,24 @@ func TestOperatorOverrideFileIsUsedWhenTheAgentCannotBeAsked(t *testing.T) {
 		t.Fatalf("%v", m)
 	}
 }
+
+func TestMeshJobCapabilitiesAreAnnouncedAndWithdrawnWithDisableRemote(t *testing.T) {
+	for _, c := range []string{"job:mesh_install", "job:mesh_uninstall"} {
+		if !slices.Contains(Capabilities(), c) {
+			t.Fatalf("%s must be announced by an agent that can run it", c)
+		}
+	}
+	if mesh.JobInstall != "mesh_install" || mesh.JobUninstall != "mesh_uninstall" {
+		t.Fatal("the wire names are part of the protocol")
+	}
+	exists, node := true, meshTestNode
+	r := meshRig(t, &exists, &node)
+	r.a.mu.Lock()
+	r.a.cfg.DisableRemote = true
+	r.a.mu.Unlock()
+	for _, c := range []string{"job:mesh_install", "job:mesh_uninstall"} {
+		if slices.Contains(r.a.capabilities(), c) {
+			t.Fatalf("disable_remote must withdraw %s", c)
+		}
+	}
+}

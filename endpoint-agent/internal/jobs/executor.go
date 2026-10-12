@@ -223,7 +223,7 @@ func (e *Executor) process(j api.Job) {
 	switch j.Type {
 	case TypePowerShell, TypeShell, TypePython:
 		state, reason, output, exit = e.runScript(ctx, j, timeout, maxOut)
-	case TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut:
+	case TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall:
 		state, reason, output, exit = e.runRemote(ctx, j, timeout, maxOut)
 	case "collect":
 		state, reason, output = StateSucceeded, "", ""

@@ -27,10 +27,15 @@ const (
 	TypeProcKill   = "proc_kill"
 	TypeFileGet    = "file_get"
 	TypeFilePut    = "file_put"
+
+	// The pushed MeshCentral agent install and removal (internal/mesh/job.go: same wire names). Handled like the
+	// remote tools: injected handlers, withdrawn by config.disable_remote.
+	TypeMeshInstall   = "mesh_install"
+	TypeMeshUninstall = "mesh_uninstall"
 )
 
 // RemoteTypes are the remote tool job types.
-var RemoteTypes = []string{TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut}
+var RemoteTypes = []string{TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall}
 
 // IsRemoteType reports whether typ is one of the remote tool job types.
 func IsRemoteType(typ string) bool {
@@ -49,7 +54,7 @@ const ReasonUnsupportedPlatform = "unsupported_platform"
 // supportedOn reports whether a job type can run on the given GOOS.
 func supportedOn(goos, typ string) bool {
 	switch typ {
-	case TypeCollect, TypeReboot, TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut:
+	case TypeCollect, TypeReboot, TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall:
 		return true
 	case TypePowerShell:
 		return goos == "windows"

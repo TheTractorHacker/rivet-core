@@ -62,6 +62,13 @@ type Reporter struct {
 	cached *Report
 }
 
+// Invalidate makes the next Current look at the machine again (after a pushed install or uninstall changed it).
+func (r *Reporter) Invalidate() {
+	r.mu.Lock()
+	r.at = time.Time{}
+	r.mu.Unlock()
+}
+
 // Current returns the report, or nil when there is nothing to say.
 func (r *Reporter) Current(ctx context.Context) *Report {
 	r.mu.Lock()

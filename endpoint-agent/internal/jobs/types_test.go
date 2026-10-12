@@ -37,3 +37,22 @@ func TestJobTypesAndScriptTypeAgree(t *testing.T) {
 		t.Fatalf("the foreign script type %q must not be listed or supported: %s", other, got)
 	}
 }
+
+func TestMeshJobTypesAreRemoteTypesOnEveryOS(t *testing.T) {
+	for _, typ := range []string{TypeMeshInstall, TypeMeshUninstall} {
+		if !IsRemoteType(typ) {
+			t.Errorf("%s must be withdrawn by disable_remote like the other remote tools", typ)
+		}
+		for _, goos := range []string{"windows", "linux"} {
+			if !supportedOn(goos, typ) {
+				t.Errorf("%s must run on %s", typ, goos)
+			}
+		}
+		if !strings.Contains(strings.Join(JobTypes(), ","), typ) {
+			t.Errorf("%s not announced", typ)
+		}
+	}
+	if TypeMeshInstall != "mesh_install" || TypeMeshUninstall != "mesh_uninstall" {
+		t.Fatal("the wire names are part of the protocol")
+	}
+}
