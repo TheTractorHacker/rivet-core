@@ -304,7 +304,9 @@ func (d JobDeps) uninstall(ctx context.Context, params json.RawMessage, maxOut i
 		if r.Log != "" {
 			extra["log"] = r.Log
 		}
-		return remote.Result{OK: false, Detail: "uninstall_failed", Output: fit(maxOut, doc(false, "uninstall_failed", extra), func() string { return doc(false, "uninstall_failed", map[string]any{"installed": true, "error": r.Error}) })}
+		return remote.Result{OK: false, Detail: "uninstall_failed", Output: fit(maxOut, doc(false, "uninstall_failed", extra), func() string {
+			return doc(false, "uninstall_failed", map[string]any{"installed": true, "error": r.Error})
+		})}
 	}
 	_ = SaveResult(d.StateDir, Result{AttemptedAt: now})
 	d.changed()

@@ -40,8 +40,9 @@
     </Feature>
 
     <!-- A running service holds its exe open: stop it before files are replaced (upgrade) or removed. net.exe waits until it has stopped; a missing service is not an error. -->
-    <CustomAction Id="RivetStopServiceInstall" Directory="SystemFolder" ExeCommand="&quot;[SystemFolder]net.exe&quot; stop RivetITAgent" Execute="deferred" Impersonate="no" Return="ignore"/>
-    <CustomAction Id="RivetStopServiceRemove" Directory="SystemFolder" ExeCommand="&quot;[SystemFolder]net.exe&quot; stop RivetITAgent" Execute="deferred" Impersonate="no" Return="ignore"/>
+    <CustomAction Id="RivetSetNetExe" Property="RIVET_NET_EXE" Value="[SystemFolder]net.exe"/>
+    <CustomAction Id="RivetStopServiceInstall" Property="RIVET_NET_EXE" ExeCommand="stop RivetITAgent" Execute="deferred" Impersonate="no" Return="ignore"/>
+    <CustomAction Id="RivetStopServiceRemove" Property="RIVET_NET_EXE" ExeCommand="stop RivetITAgent" Execute="deferred" Impersonate="no" Return="ignore"/>
 
     <!-- Register and start the service. Stamped: the payload is appended to this .msi. Properties: no payload, SERVER (and a token) given on the command line. -->
     <CustomAction Id="RivetSetupStamped" FileKey="AgentExeFile" ExeCommand="setup --silent --from-msi --payload-from &quot;[OriginalDatabase]&quot;" Execute="deferred" Impersonate="no" Return="check"/>
@@ -52,12 +53,13 @@
     <CustomAction Id="RivetUninstallMesh" FileKey="AgentExeFile" ExeCommand="uninstall --from-msi --remove-meshagent" Execute="deferred" Impersonate="no" Return="ignore"/>
 
     <InstallExecuteSequence>
-      <Custom Action="RivetStopServiceInstall" Before="InstallFiles">NOT REMOVE</Custom>
-      <Custom Action="RivetStopServiceRemove" Before="RemoveFiles">REMOVE</Custom>
-      <Custom Action="RivetSetupStamped" After="InstallFiles">NOT Installed AND NOT REMOVE AND NOT SERVER</Custom>
-      <Custom Action="RivetSetupProps" After="InstallFiles">NOT Installed AND NOT REMOVE AND SERVER</Custom>
-      <Custom Action="RivetUninstall" Before="RivetStopServiceRemove">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE AND NOT REMOVE_MESHAGENT="1"</Custom>
-      <Custom Action="RivetUninstallMesh" Before="RivetStopServiceRemove">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE AND REMOVE_MESHAGENT="1"</Custom>
+      <Custom Action="RivetSetNetExe" Sequence="1450"/>
+      <Custom Action="RivetStopServiceInstall" Sequence="3900">NOT REMOVE</Custom>
+      <Custom Action="RivetStopServiceRemove" Sequence="3200">REMOVE</Custom>
+      <Custom Action="RivetSetupStamped" Sequence="4100">NOT Installed AND NOT REMOVE AND NOT SERVER</Custom>
+      <Custom Action="RivetSetupProps" Sequence="4110">NOT Installed AND NOT REMOVE AND SERVER</Custom>
+      <Custom Action="RivetUninstall" Sequence="3300">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE AND NOT REMOVE_MESHAGENT="1"</Custom>
+      <Custom Action="RivetUninstallMesh" Sequence="3310">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE AND REMOVE_MESHAGENT="1"</Custom>
     </InstallExecuteSequence>
   </Product>
 </Wix>

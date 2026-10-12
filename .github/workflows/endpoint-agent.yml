@@ -58,7 +58,7 @@ jobs:
           go vet -tags 'devtools agenttest' ./...
 
       - name: shellcheck (install script, e2e scripts, package scripts)
-        run: shellcheck -S warning scripts/install-linux.sh e2e/*.sh packaging/*.sh
+        run: shellcheck -S warning scripts/install-linux.sh e2e/*.sh packaging/*.sh packaging/msi/*.sh
 
       - name: go test -race
         run: go test -race -count=1 ./...
@@ -127,10 +127,59 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  msi:
+    # The Windows Installer template (windows/amd64 only: msitools' wixl cannot build arm64). Built on Linux in a pinned image, twice, compared byte for byte,
+    # table-checked and read back by the Go trailer reader. Parse-checked only: it has never been run on Windows (docs/rmm/MSI_VERIFY.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: endpoint-agent/go.mod
+          cache-dependency-path: endpoint-agent/go.sum
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the MSI tool image (layers cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: endpoint-agent/packaging/msi
+          load: true
+          tags: rivetit-msitools:0.103-2
+          cache-from: type=gha,scope=rivetit-msitools
+          cache-to: type=gha,scope=rivetit-msitools,mode=max
+
+      - name: Compute version
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/agent-v* ]]; then
+            v="${GITHUB_REF#refs/tags/agent-v}"
+          else
+            v="0.0.0-dev.${GITHUB_SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "commit=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: MSI template (built twice and compared, tables checked, trailer round trip)
+        run: make msi VERSION='${{ steps.ver.outputs.version }}' COMMIT='${{ steps.ver.outputs.commit }}'
+
+      - name: Checksum
+        run: cd dist && sha256sum rivetit-agent-windows-amd64.msi > SHA256SUMS.msi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rivetit-agent-msi-${{ steps.ver.outputs.version }}
+          path: |
+            endpoint-agent/dist/rivetit-agent-windows-amd64.msi
+            endpoint-agent/dist/SHA256SUMS.msi
+          retention-days: 30
+          if-no-files-found: error
+
   release:
     # Only for agent-v* tags; the only job with write permission.
     if: startsWith(github.ref, 'refs/tags/agent-v')
-    needs: build
+    needs: [build, msi]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -155,12 +204,15 @@ jobs:
             release/packages/*
             release/install-linux.sh
             release/SHA256SUMS
+            release/rivetit-agent-windows-amd64.msi
+            release/SHA256SUMS.msi
           generate_release_notes: true
           fail_on_unmatched_files: true
           # A tag with a suffix (agent-v0.1.0-beta.1) is published as a pre-release.
           prerelease: ${{ contains(github.ref_name, '-') }}
           body: |
-            RMM endpoint agent for Windows (amd64, arm64) and Linux/systemd (amd64, arm64; tarballs, .deb, .rpm).
+            RMM endpoint agent for Windows (amd64, arm64) and Linux/systemd (amd64, arm64; tarballs, .deb, .rpm). The Windows amd64 MSI template
+            (`rivetit-agent-windows-amd64.msi`, checksum in SHA256SUMS.msi) is what an edition stamps per client; there is no arm64 MSI.
             Upload the binaries in your edition's administration area (Endpoint agent / RMM > Agent binaries), then
             download per-department installers from there. Linux: `install-linux.sh` verifies and installs a binary
             (see docs/rmm/AGENT_BUILD.md in the repository).

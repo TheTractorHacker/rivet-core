@@ -10,7 +10,7 @@ BUILDFLAGS:= -trimpath -buildvcs=false
 DIST      := dist
 export CGO_ENABLED := 0
 
-.PHONY: all build windows linux tarballs packages test vet lint fuzz e2e clean checksums dist clean-dist syso devtools sim
+.PHONY: all build windows linux tarballs packages msi msi-image test vet lint fuzz e2e clean checksums dist clean-dist syso devtools sim
 
 all: vet test build
 
@@ -50,6 +50,17 @@ packages: linux
 	    package --config packaging/nfpm.yaml --packager $$f --target $(DIST)/packages/; \
 	done; done
 
+# The Windows MSI TEMPLATE (windows/amd64 only: wixl cannot build arm64), built on Linux by msitools wixl in a pinned Docker image, built TWICE and compared
+# (byte-identical), table-checked by packaging/msi/build.sh and read back by the Go trailer reader. The server appends the per-client payload to a COPY of it.
+# Output: $(DIST)/rivetit-agent-windows-amd64.msi, which `make checksums` adds to SHA256SUMS when it exists. PARSE-CHECKED only, never run on Windows:
+# docs/rmm/MSI_VERIFY.md. Needs Docker and Go; part of neither `dist` nor `all`.
+MSI_IMAGE ?= rivetit-msitools:0.103-2
+msi-image:
+	@docker image inspect $(MSI_IMAGE) >/dev/null 2>&1 || docker build -t $(MSI_IMAGE) packaging/msi
+msi: windows msi-image
+	@set -e; for pass in 1 2; do 	  docker run --rm -u "$$(id -u):$$(id -g)" -v "$$PWD":/src -w /src $(MSI_IMAGE) 	    packaging/msi/build.sh build '$(VERSION)' $(DIST)/rivetit-agent-windows-amd64.exe $(DIST)/.msi-pass$$pass.msi | sed "s/^/[pass $$pass] /"; 	done; 	cmp $(DIST)/.msi-pass1.msi $(DIST)/.msi-pass2.msi && echo "reproducible: the two MSI builds are byte-identical"; 	mv $(DIST)/.msi-pass1.msi $(DIST)/rivetit-agent-windows-amd64.msi; rm -f $(DIST)/.msi-pass2.msi
+	RIVETIT_TEST_MSI="$$PWD/$(DIST)/rivetit-agent-windows-amd64.msi" $(GO) test -count=1 -run 'TestRealWixlMSIRoundTrip' -v ./internal/embed | grep -E '^(--- |ok|FAIL)'
+
 vet:
 	$(GO) vet ./...
 	GOOS=windows GOARCH=amd64 $(GO) vet ./...
@@ -87,7 +98,8 @@ e2e:
 # Checksums cover exactly the release artifacts (no dev tools, no stale files).
 checksums:
 	cd $(DIST) && sha256sum rivetit-agent-windows-amd64.exe rivetit-agent-windows-arm64.exe \
-	  rivetit-agent-linux-amd64 rivetit-agent-linux-arm64 rivetit-agent-linux-amd64.tar.gz rivetit-agent-linux-arm64.tar.gz install-linux.sh > SHA256SUMS
+	  rivetit-agent-linux-amd64 rivetit-agent-linux-arm64 rivetit-agent-linux-amd64.tar.gz rivetit-agent-linux-arm64.tar.gz install-linux.sh \
+	  $(notdir $(wildcard $(DIST)/rivetit-agent-windows-amd64.msi)) > SHA256SUMS
 
 # Clean, reproducible release set: the two Windows exes, the two Linux binaries, their tarballs, install-linux.sh and SHA256SUMS.
 dist: clean-dist build tarballs checksums
