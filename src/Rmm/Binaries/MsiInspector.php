@@ -70,6 +70,7 @@ final class MsiInspector
         if (!in_array($arch, ['amd64', 'arm64'], true)) {
             return 'The architecture must be amd64 or arm64.';
         }
+        clearstatcache(true, $path);   // a long-running worker must not trust a cached size or existence after the file was replaced
         if (!is_file($path) || !is_readable($path)) {
             return 'The file could not be read.';
         }

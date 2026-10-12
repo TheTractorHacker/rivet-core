@@ -251,6 +251,8 @@ alive() { # the RivetIT agent keeps checking in after the Mesh job
 dl() { grep -c MESH-DOWNLOAD "$OUT/events.log"; }
 
 echo "-- failures are job results and check-in state; the RivetIT agent is never affected"
+# PD, D2 and D3 are read inside the eval-ed check strings
+# shellcheck disable=SC2034
 PD="$(dl)"; ctl "mesh_push=badparams"; pushwait 1
 chk "a parameter the agent does not know is refused before anything is downloaded or run" 'pushout 1 | grep -q "state=failed" && pushout 1 | grep -q invalid_params && [ "$(dl)" = "$PD" ] && [ ! -e /tmp/e2e-should-not-run ] && alive'
 ctl "mesh_push=badpin"; pushwait 2
@@ -265,6 +267,7 @@ chk "the same without a Content-Length is cut at the cap" 'pushout 5 | grep -q "
 chk "no work directory is left behind by any failure" '[ -z "$(ls -d /var/lib/rivetit-agent/mesh-install-* 2>/dev/null)" ]'
 
 echo "-- the good case: the same pinned download and install as at install time"
+# shellcheck disable=SC2034
 D2="$(dl)"; ctl "mesh_push=ok"; pushwait 6
 chk "the job succeeded (installed) and the pinned download used the Linux id 6 and the URL-form group" 'pushout 6 | grep -q "state=succeeded" && pushout 6 | grep -q "installed" && [ "$(dl)" = "$((D2+1))" ] && grep -qF -- "MESH-DOWNLOAD id=6 meshid=$MESHGROUP installflags=0" "$OUT/events.log"'
 chk "the downloaded installer ran with -install and the fake meshagent is in place" 'grep -q "installed by: .* -install" "$OUT/mesh-installed.marker" && [ -x "$MESHDIR/meshagent" ]'
@@ -274,6 +277,7 @@ chk "the next check-in reports installed=true with the node id (the server maps 
 chk "the RivetIT agent was neither restarted nor re-enrolled by any Mesh job" '[ "$(grep -c "ENROLL install_id" "$OUT/events.log")" = "$E0" ] && ! grep -q "agent exited" "$OUT/agent.log" && alive'
 
 echo "-- idempotent: an installed agent is left alone unless forced"
+# shellcheck disable=SC2034
 D3="$(dl)"; ctl "mesh_push=ok"; pushwait 7
 chk "second push: succeeded as already_installed, no download" 'pushout 7 | grep -q "state=succeeded" && pushout 7 | grep -q already_installed && [ "$(dl)" = "$D3" ]'
 ctl "mesh_push=force"; pushwait 8
