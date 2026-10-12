@@ -29,6 +29,72 @@ final class RemoteJobTypes
         $r->register(new JobType(RemoteProtocol::JOB_PROCESS_KILL, $manage, true, $both, false, self::processKill(...), 60, true, RemoteProtocol::CAP_PROCESSES));
         $r->register(new JobType(RemoteProtocol::JOB_FILE_GET, $manage, false, $both, false, self::fileGet(...), 900, true, RemoteProtocol::CAP_FILES));
         $r->register(new JobType(RemoteProtocol::JOB_FILE_PUT, RmmAbility::ADMIN, true, $both, false, self::filePut(...), 900, true, RemoteProtocol::CAP_FILES));
+        // 1.0.0-rc.16: the pushed MeshCentral agent install and removal. Both need the device to have announced the matching `job:<type>` capability. The install job's parameters
+        // are exactly what a stamped installer's Mesh block carries (and nothing the caller typed); the removal takes none and is destructive (offered at most once).
+        $r->register(new JobType(RemoteProtocol::JOB_MESH_INSTALL, $manage, false, $both, false, self::meshInstall(...), 900, true, RemoteProtocol::CAP_MESH_INSTALL));
+        $r->register(new JobType(RemoteProtocol::JOB_MESH_UNINSTALL, $manage, true, $both, false, self::meshUninstall(...), 300, true, RemoteProtocol::CAP_MESH_UNINSTALL));
+    }
+
+    /**
+     * The parameters of a mesh_install job: the Mesh address, the device group id (the stored URL form, or the secret placeholder it is replaced by in the job row), the
+     * optional certificate pin, the two tables as JSON text and `force`. The caller of the API supplies none of these: they come from the stored Mesh settings.
+     *
+     * @param array<string,mixed> $p
+     * @return array{0:array<string,mixed>,1:?string}
+     */
+    public static function meshInstall(array $p): array
+    {
+        if (array_diff(array_keys($p), ['url', 'meshid', 'pin', 'agent_ids', 'install_args', 'force']) !== []) {
+            return [$p, 'Only the stored Mesh settings can be sent: url, meshid, pin, agent_ids, install_args and force.'];
+        }
+        $url = $p['url'] ?? null;
+        $u = is_string($url) && strlen($url) <= 500 && preg_match('/[\x00-\x20\x7f]/', $url) !== 1 ? parse_url($url) : false;
+        if (!is_array($u) || ($u['scheme'] ?? '') !== 'https' || ($u['host'] ?? '') === '' || isset($u['user']) || isset($u['pass']) || isset($u['query']) || isset($u['fragment']) || str_contains((string) $url, '?') || str_contains((string) $url, '#')) {
+            return [$p, 'The Mesh address must be a plain https:// address.'];
+        }
+        $meshid = $p['meshid'] ?? null;
+        if (!is_string($meshid) || ($meshid !== \RivetCore\Rmm\Job\JobExtras::SECRET_MARK && preg_match('/^(?:[A-Za-z0-9@$_-]{64}|(?:[0-9a-fA-F]{2}){16,64})\z/', $meshid) !== 1)) {
+            return [$p, 'The Mesh device group id is missing or not valid.'];
+        }
+        $pin = $p['pin'] ?? '';
+        if (!is_string($pin) || ($pin !== '' && preg_match('/^(?:[0-9a-f]{64}|[0-9a-f]{96})\z/', $pin) !== 1)) {
+            return [$p, 'The certificate pin must be 64 or 96 lower-case hex characters, or empty.'];
+        }
+        $tables = [];
+        foreach (['agent_ids', 'install_args'] as $k) {
+            $raw = $p[$k] ?? '';
+            $decoded = is_string($raw) && $raw !== '' ? json_decode($raw, true) : [];
+            $clean = $k === 'agent_ids' ? \RivetCore\Rmm\Mesh\MeshAgentCatalog::cleanAgentIds($decoded) : \RivetCore\Rmm\Mesh\MeshAgentCatalog::cleanInstallArgs($decoded);
+            if (!is_string($raw) || $clean === null) {
+                return [$p, "$k must be the JSON text of the stored table."];
+            }
+            $tables[$k] = $clean === [] ? '' : json_encode($clean, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        }
+        $force = $p['force'] ?? false;
+        if (!is_bool($force)) {
+            return [$p, 'force must be true or false.'];
+        }
+        $out = ['url' => $url, 'meshid' => $meshid];
+        if ($pin !== '') {
+            $out['pin'] = $pin;
+        }
+        foreach ($tables as $k => $v) {
+            if ($v !== '') {
+                $out[$k] = $v;
+            }
+        }
+        $out['force'] = $force;
+
+        return [$out, null];
+    }
+
+    /**
+     * @param array<string,mixed> $p
+     * @return array{0:array<string,mixed>,1:?string}
+     */
+    public static function meshUninstall(array $p): array
+    {
+        return $p === [] ? [[], null] : [$p, 'Removing the Mesh agent takes no parameters.'];
     }
 
     /**

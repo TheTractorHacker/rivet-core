@@ -22,6 +22,17 @@ final class RemoteProtocol
     public const JOB_FILE_PUT = 'file_put';
     public const JOB_TYPES = [self::JOB_SERVICE_LIST, self::JOB_SERVICE_CONTROL, self::JOB_PROCESS_LIST, self::JOB_PROCESS_KILL, self::JOB_FILE_GET, self::JOB_FILE_PUT];
 
+    /**
+     * The pushed MeshCentral agent install and removal (1.0.0-rc.16). They are NOT part of the frozen {@see JOB_TYPES} list, so nothing that list pins moves; {@see isToolJob()}
+     * is the question "is this one of the jobs only the remote-tools endpoints may queue and only `rmm.remote.manage` may read".
+     */
+    public const JOB_MESH_INSTALL = 'mesh_install';
+    public const JOB_MESH_UNINSTALL = 'mesh_uninstall';
+    public const MESH_JOB_TYPES = [self::JOB_MESH_INSTALL, self::JOB_MESH_UNINSTALL];
+    /** The capability an agent announces when it can run each Mesh job (the ordinary `job:<type>` flag, which a Mesh job requires: an agent that announced nothing is never assumed to have it). */
+    public const CAP_MESH_INSTALL = 'job:mesh_install';
+    public const CAP_MESH_UNINSTALL = 'job:mesh_uninstall';
+
     // ---- capability flags an agent announces (same list as `job:<type>`)
     public const CAP_SERVICES = 'remote:services';
     public const CAP_PROCESSES = 'remote:processes';
@@ -73,8 +84,16 @@ final class RemoteProtocol
             self::JOB_SERVICE_LIST, self::JOB_SERVICE_CONTROL => self::CAP_SERVICES,
             self::JOB_PROCESS_LIST, self::JOB_PROCESS_KILL => self::CAP_PROCESSES,
             self::JOB_FILE_GET, self::JOB_FILE_PUT => self::CAP_FILES,
+            self::JOB_MESH_INSTALL => self::CAP_MESH_INSTALL,
+            self::JOB_MESH_UNINSTALL => self::CAP_MESH_UNINSTALL,
             default => null,
         };
+    }
+
+    /** True for the remote tool jobs and the Mesh agent jobs: queued only through their own endpoints, output readable only with `rmm.remote.manage`. */
+    public static function isToolJob(mixed $type): bool
+    {
+        return is_string($type) && (in_array($type, self::JOB_TYPES, true) || in_array($type, self::MESH_JOB_TYPES, true));
     }
 
     public static function levelNumber(string $name): ?int

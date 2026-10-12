@@ -27,6 +27,10 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   GET    endpoint_devices/{id}/remote/mesh                           is Mesh set up, is the device mapped, which views may this caller open
  *   POST   endpoint_devices/{id}/remote                                {force?, view?: desktop|terminal|files} (handled by TechnicianApi)
  *   PUT    endpoint_devices/{id}/remote/node                           {node_id} map (or clear, with "") the MeshCentral node (administrators)
+ * Mesh agent (1.0.0-rc.16; needs `rmm.remote.manage` and the remote-tools switch; the install also needs MeshCentral enabled and configured and an agent that announced `job:mesh_install`):
+ *   POST   endpoint_devices/{id}/mesh/install                          {force?} -> 202 {job_id} | 200 {skipped: already_installed|already_queued} (idempotent); the job carries only the stored Mesh settings
+ *   POST   endpoint_devices/{id}/mesh/uninstall                        {confirm} (needed) -> 202 {job_id}; runs the Mesh agent's own uninstaller, never touches the RivetIT agent
+ *   POST   endpoint_devices/mesh/install                               {target:{type,id}, force?, confirm} (needed) -> 201 {device_count, created, skipped_*}; capped by bulk_run_max
  * File transfer (needs the `filetransfer` sub-switch):
  *   GET    endpoint_devices/{id}/files                                 the device's transfers
  *   POST   endpoint_devices/{id}/files/download                        {path} -> 202 {transfer_id, job_id}
@@ -52,9 +56,9 @@ use RivetCore\Rmm\Technician\TechnicianActions;
 final class RemoteApi
 {
     /** First path segments that are not a device id and belong here. */
-    public const FLEET = ['logs', 'remote'];
+    public const FLEET = ['logs', 'remote', 'mesh'];
     /** Second path segments of a device route that belong here. */
-    public const DEVICE = ['services', 'processes', 'files', 'logs'];
+    public const DEVICE = ['services', 'processes', 'files', 'logs', 'mesh'];
 
     public function __construct(private readonly RemoteActions $remote, private readonly LogActions $logs, private readonly TechnicianActions $technician)
     {
@@ -70,6 +74,17 @@ final class RemoteApi
         $m = strtoupper($req->method);
         $limit = max(1, min(500, (int) ($req->query['limit'] ?? 100)));
         $offset = max(0, (int) ($req->query['offset'] ?? 0));
+        if ($seg[0] === 'mesh') {
+            if (($seg[1] ?? null) !== 'install' || isset($seg[2])) {
+                return self::notFound();
+            }
+            if ($m !== 'POST') {
+                return self::method();
+            }
+            [$in, $bad] = $this->body($req);
+
+            return $bad ?? self::result($this->remote->installMeshAgentBulk($who, $in));
+        }
         if ($seg[0] === 'remote') {
             if (($seg[1] ?? null) === 'mesh' && !isset($seg[2])) {
                 if ($m === 'GET') {
@@ -215,6 +230,27 @@ final class RemoteApi
                 }
 
                 return self::notFound();
+            case 'mesh':
+                if (($a !== 'install' && $a !== 'uninstall') || $b !== null) {
+                    return self::notFound();
+                }
+                if ($m !== 'POST') {
+                    return self::method();
+                }
+                [$in, $bad] = $this->body($req);
+                if ($bad !== null) {
+                    return $bad;
+                }
+                foreach (['force', 'confirm'] as $k) {
+                    if (array_key_exists($k, $in) && !is_bool($in[$k])) {
+                        return self::json(422, ['error' => "$k must be true or false.", 'code' => 'invalid']);
+                    }
+                }
+                if (array_diff(array_keys($in), $a === 'install' ? ['force'] : ['confirm']) !== []) {
+                    return self::json(422, ['error' => 'Only ' . ($a === 'install' ? 'force' : 'confirm') . ' is accepted: the install carries the stored Mesh settings and nothing the caller sends.', 'code' => 'invalid']);
+                }
+
+                return self::result($a === 'install' ? $this->remote->installMeshAgent($who, $id, !empty($in['force'])) : $this->remote->uninstallMeshAgent($who, $id, !empty($in['confirm'])));
             case 'files':
                 return $this->files($req, $who, $id, $m, $seg);
             case 'logs':

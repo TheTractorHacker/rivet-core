@@ -198,7 +198,7 @@ final class TechnicianApi
             return self::notFound();
         }
 
-        if ($this->remoteApi !== null && ($what !== 'remote' || $method !== 'POST' || $job !== null) && in_array($what, ['services', 'processes', 'files', 'logs', 'remote'], true)
+        if ($this->remoteApi !== null && ($what !== 'remote' || $method !== 'POST' || $job !== null) && in_array($what, ['services', 'processes', 'files', 'logs', 'remote', 'mesh'], true)
             && ($routed = $this->remoteApi->device($req, $who, $id, $seg)) !== null) {
             return $routed;
         }

@@ -91,6 +91,30 @@ final class MeshAgentService
         return $block;
     }
 
+    /**
+     * The parameters of a pushed `mesh_install` job: the SAME source the stamped installer's Mesh block carries (address, device group id in MeshCentral's URL form, optional
+     * pin, the agent-id and install-argument tables), taken from the stored settings at the moment the job is created and from nowhere else, so a caller can add nothing.
+     * The two tables are JSON text because a job parameter is a scalar. Null when {@see installRefusal()} says no.
+     *
+     * @return array{url:string,meshid:string,pin?:string,agent_ids:string,install_args:string,force:bool}|null
+     */
+    public function jobParams(bool $force = false): ?array
+    {
+        $b = $this->installBlock();
+        if ($b === null) {
+            return null;
+        }
+        $out = ['url' => (string) $b['url'], 'meshid' => (string) $b['meshid']];
+        if (isset($b['pin'])) {
+            $out['pin'] = (string) $b['pin'];
+        }
+        $out['agent_ids'] = json_encode($b['agent_ids'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $out['install_args'] = json_encode($b['install_args'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $out['force'] = $force;
+
+        return $out;
+    }
+
     // ---------------------------------------------------------------- the device side
 
     /**

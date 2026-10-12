@@ -206,6 +206,14 @@ final class RmmReadModel
         if (($meshAgent = $this->meshAgents?->stateFor((int) $d['device_id'])) !== null) {
             $out['mesh_agent'] = $meshAgent;
         }
+        // Additive and only present while the MeshCentral agent install is available (Mesh enabled with an https address and a device group), so every other detail is byte
+        // for byte what it was: whether a pushed install can be offered for this device. `agent_supports` is whether its agent announced `job:mesh_install` (older agents
+        // must be updated first); `installed` is what the device last reported.
+        if ($this->meshAgents !== null && $this->meshAgents->installRefusal() === null) {
+            $caps = \RivetCore\Rmm\Device\DeviceState::capabilitiesOf($this->sql->one('SELECT capabilities_json FROM rmm_device_state WHERE device_id = ?', [$d['device_id']]));
+            $out['mesh_install'] = ['available' => true, 'agent_supports' => in_array(\RivetCore\Rmm\Remote\RemoteProtocol::CAP_MESH_INSTALL, $caps, true),
+                'installed' => ($out['mesh_agent']['installed'] ?? false) === true];
+        }
         $out['checks'] = array_map($richChecks ? self::richCheck(...) : self::shortCheck(...),
             $this->sql->all('SELECT * FROM endpoint_agent_checks WHERE device_id = ? ORDER BY check_key', [$d['device_id']]));
         $out['jobs'] = $this->jobs((int) $d['device_id'], $jobLimit, $showJobOutput);
@@ -281,7 +289,7 @@ final class RmmReadModel
             'finished_at' => Sql::iso($j['finished_at'] === null ? null : (string) $j['finished_at']), 'expires_at' => Sql::iso((string) $j['expires_at'])];
         // The output of a remote-tool job (service and process lists, file paths and checksums) is read through the remote endpoints, which need `rmm.remote.manage`;
         // a job list that only needs the saved-script grant never carries it.
-        if ($withOutput && !in_array($j['type'], \RivetCore\Rmm\Remote\RemoteProtocol::JOB_TYPES, true)) {
+        if ($withOutput && !\RivetCore\Rmm\Remote\RemoteProtocol::isToolJob($j['type'])) {
             $o['output'] = $j['output'];
             $o['output_truncated'] = (bool) $j['output_truncated'];
         }
@@ -320,7 +328,7 @@ final class RmmReadModel
         if (!$authz->allowed($who->userId, RmmAbility::JOB_RUN_SAVED, $client)) {
             return ActionResult::fail(403, 'forbidden', $authz->denial(RmmAbility::JOB_RUN_SAVED));
         }
-        $isRemote = in_array($row['type'], \RivetCore\Rmm\Remote\RemoteProtocol::JOB_TYPES, true);
+        $isRemote = \RivetCore\Rmm\Remote\RemoteProtocol::isToolJob($row['type']);
         if ($isRemote && !$authz->allowed($who->userId, RmmAbility::REMOTE_MANAGE, $client)) {
             return ActionResult::fail(403, 'forbidden', $authz->denial(RmmAbility::REMOTE_MANAGE));
         }

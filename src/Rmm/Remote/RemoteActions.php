@@ -44,6 +44,7 @@ final class RemoteActions
         private readonly RmmAuditInterface $audit,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentSettings $meshSettings = null,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
+        private readonly ?\RivetCore\Rmm\Scripts\TargetResolver $targets = null,
     ) {
     }
 
@@ -107,10 +108,11 @@ final class RemoteActions
     /**
      * @param array<string,mixed> $dev
      * @param array<string,mixed> $params
+     * @param array<string,mixed> $opts {@see JobService::create()} options (the Mesh install keeps the device group id out of the job row with `extra.secret`)
      */
-    private function queue(RmmPrincipal $who, array $dev, string $type, array $params, bool $destructive, string $audit): ActionResult
+    private function queue(RmmPrincipal $who, array $dev, string $type, array $params, bool $destructive, string $audit, array $opts = []): ActionResult
     {
-        $r = $this->jobs->create($dev, $type, null, $params, null, $destructive, $who->userId);
+        $r = $this->jobs->create($dev, $type, null, $params, null, $destructive, $who->userId, $opts);
         $client = (int) $dev['client_id'];
         $asset = (int) ($dev['asset_id'] ?? 0);
         if (!$r['ok']) {
@@ -264,7 +266,7 @@ final class RemoteActions
             return ActionResult::fail(403, 'forbidden', $denied);
         }
         $j = $this->sql->one('SELECT job_id, type, state, reason, exit_code, output, created_at, finished_at FROM endpoint_agent_jobs WHERE job_id = ? AND device_id = ?', [strtolower($jobId), $deviceId]);
-        if ($j === null || !in_array($j['type'], RemoteProtocol::JOB_TYPES, true)) {
+        if ($j === null || !RemoteProtocol::isToolJob($j['type'])) {
             return ActionResult::fail(404, 'not_found', 'Job not found.');
         }
         $data = json_decode((string) $j['output'], true);
@@ -454,6 +456,196 @@ final class RemoteActions
 
         return ActionResult::ok('ok', 200, 'ok', ['configured' => $configured, 'mapped' => $node !== null, 'node_id' => $views === [] ? null : $node, 'views' => $configured && $node !== null ? $views : [],
             'terminal_files_enabled' => $this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_TOOLS)]);
+    }
+
+    // ------------------------------------------------------------------ the Mesh agent: push an install or a removal
+
+    /** The reason a Mesh agent cannot be pushed right now, or null. */
+    private function meshInstallRefusal(): ?ActionResult
+    {
+        if ($this->meshAgents === null) {
+            return ActionResult::fail(409, 'not_configured', 'The MeshCentral agent install is not available.');
+        }
+        $why = $this->meshAgents->installRefusal();
+
+        return $why === null ? null : ActionResult::fail(409, 'not_configured', $why);
+    }
+
+    /**
+     * Install the MeshCentral agent on one enrolled device (a `mesh_install` job). The job carries NOTHING the caller typed: the address, the device group id,
+     * the optional pin and the agent-id and argument tables come from the stored Mesh settings at this moment, and the group id is kept out of the job row (it is sealed
+     * with the job's other secrets and put back only when the job is signed for the device). The device downloads the agent from the customer's own Mesh server over
+     * https with the same pinned routine the installer uses; a failure never touches the RivetIT agent.
+     *
+     * Order of decisions: device scope (404) -> `rmm.remote.manage` (403) -> the remote-tools switch (409 `feature_disabled`) -> linked device -> Mesh enabled and configured
+     * (409 `not_configured`) -> the device announced `job:mesh_install` (409 `unsupported`: update the agent). IDEMPOTENT: a device whose last report says the Mesh agent
+     * is installed answers 200 `already_installed` and queues nothing unless `$force`; a second request while one is still queued or running answers 200 with the
+     * same job (`already_queued`).
+     */
+    public function installMeshAgent(RmmPrincipal $who, int $deviceId, bool $force = false): ActionResult
+    {
+        [$dev, $err] = $this->gate($who, $deviceId, RmmAbility::REMOTE_MANAGE, RemoteProtocol::FEATURE_REMOTE_TOOLS, 'Mesh agent install');
+        if ($err !== null || $dev === null) {
+            return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
+        }
+        if (($refused = $this->meshInstallRefusal()) !== null) {
+            return $refused;
+        }
+
+        return $this->pushMeshInstall($who, $dev, $force);
+    }
+
+    /**
+     * @param array<string,mixed> $dev
+     */
+    private function pushMeshInstall(RmmPrincipal $who, array $dev, bool $force): ActionResult
+    {
+        $deviceId = (int) $dev['device_id'];
+        $state = $this->meshAgents?->stateFor($deviceId);
+        if (!$force && $state !== null && $state['installed']) {
+            return ActionResult::ok('The MeshCentral agent is already installed on this device. Nothing was queued.', 200, 'already_installed', ['skipped' => 'already_installed', 'node_id' => $state['node_id']]);
+        }
+        $open = $this->sql->one("SELECT job_id FROM endpoint_agent_jobs WHERE device_id = ? AND type = ? AND state IN ('queued','running') ORDER BY created_at DESC LIMIT 1", [$deviceId, RemoteProtocol::JOB_MESH_INSTALL]);
+        if ($open !== null) {
+            return ActionResult::ok('A Mesh agent install is already queued or running for this device.', 200, 'already_queued', ['skipped' => 'already_queued', 'job_id' => $open['job_id']]);
+        }
+        $params = $this->meshAgents?->jobParams($force);
+        if ($params === null) {
+            return ActionResult::fail(409, 'not_configured', (string) $this->meshAgents?->installRefusal());
+        }
+        // The stored settings are validated again by the job type's own validator before anything is queued.
+        [, $bad] = RemoteJobTypes::meshInstall($params);
+        if ($bad !== null) {
+            return ActionResult::fail(409, 'not_configured', 'The stored MeshCentral settings cannot be sent: ' . $bad);
+        }
+        $secretId = $params['meshid'];
+        $params['meshid'] = \RivetCore\Rmm\Job\JobExtras::SECRET_MARK;
+
+        return $this->queue($who, $dev, RemoteProtocol::JOB_MESH_INSTALL, $params, false, 'install the MeshCentral agent' . ($force ? ' (forced)' : ''), ['extra' => ['secret' => ['meshid' => $secretId]]]);
+    }
+
+    /**
+     * Ask the device to run the MeshCentral agent's own uninstaller (a `mesh_uninstall` job: destructive, offered at most once). Never touches the RivetIT agent. Needs `$confirm`.
+     * Not tied to the Mesh settings: an agent can be removed after Mesh was switched off.
+     */
+    public function uninstallMeshAgent(RmmPrincipal $who, int $deviceId, bool $confirm): ActionResult
+    {
+        [$dev, $err] = $this->gate($who, $deviceId, RmmAbility::REMOTE_MANAGE, RemoteProtocol::FEATURE_REMOTE_TOOLS, 'Mesh agent removal');
+        if ($err !== null || $dev === null) {
+            return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
+        }
+        if (!$confirm) {
+            return ActionResult::fail(422, 'confirmation_required', 'Removing the MeshCentral agent ends remote control through MeshCentral on this device. Confirm it explicitly.');
+        }
+
+        return $this->queue($who, $dev, RemoteProtocol::JOB_MESH_UNINSTALL, [], true, 'remove the MeshCentral agent');
+    }
+
+    /**
+     * Install the MeshCentral agent on every device of a target (`device`, `tag`, `group`, `client`, `site`, `policy` or `all`), inside the caller's clients. The same
+     * rules as the single install apply to each device, which is skipped (and counted) when it already reports the agent, already has an install queued, the caller lacks
+     * `rmm.remote.manage` for its client, or its agent is too old. The target may reach at most `bulk_run_max` devices; above `approval_bulk_threshold` (when it is set) the
+     * request is REFUSED (409 `approval_required`): the two-person approval queue only knows script runs today, so a larger fleet is installed in batches by tag or client.
+     * Needs `$confirm`.
+     *
+     * @param array<string,mixed> $in {target:{type,id}, force?, confirm?}
+     */
+    public function installMeshAgentBulk(RmmPrincipal $who, array $in): ActionResult
+    {
+        $role = $this->authz->check($who->userId, RmmAbility::DEVICE_VIEW, 0) ?? $this->authz->check($who->userId, RmmAbility::REMOTE_MANAGE, 0);
+        if ($role !== null) {
+            return ActionResult::fail(403, 'forbidden', $role);
+        }
+        if (array_diff(array_keys($in), ['target', 'force', 'confirm']) !== []) {
+            return ActionResult::fail(422, 'invalid', 'Only target, force and confirm are accepted.');
+        }
+        foreach (['force', 'confirm'] as $k) {
+            if (array_key_exists($k, $in) && !is_bool($in[$k])) {
+                return ActionResult::fail(422, 'invalid', "$k must be true or false.");
+            }
+        }
+        if ($this->targets === null) {
+            return ActionResult::fail(409, 'not_configured', 'Bulk installs are not available.');
+        }
+        [$target, $terr] = $this->targets->validate($in['target'] ?? null);
+        if ($target === null) {
+            return ActionResult::fail(422, 'invalid', $terr ?? 'Invalid target.');
+        }
+        if (!$this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_TOOLS)) {
+            return ActionResult::fail(409, 'feature_disabled', self::offText(RemoteProtocol::FEATURE_REMOTE_TOOLS));
+        }
+        if (($refused = $this->meshInstallRefusal()) !== null) {
+            return $refused;
+        }
+        $force = !empty($in['force']);
+        $visible = $this->authz->visibleClientIds($who->userId);
+        $limits = $this->settings->limits();
+        $max = $limits['bulk_run_max'];
+        // Count first (bounded by the cap), so a refusal queues nothing.
+        $count = 0;
+        $cursor = 0;
+        while ($count <= $max) {
+            $page = $this->targets->devices($target['type'], $target['id'], $visible, ['windows', 'linux'], $cursor, 500);
+            if ($page === []) {
+                break;
+            }
+            $count += count($page);
+            $cursor = (int) $page[count($page) - 1]['device_id'];
+        }
+        if ($count === 0) {
+            return ActionResult::fail(422, 'invalid', 'No linked device of this target can receive the install.');
+        }
+        if ($count > $max) {
+            return ActionResult::fail(422, 'too_many', "That reaches more than $max devices; one bulk install is limited to $max.");
+        }
+        $threshold = $limits['approval_bulk_threshold'];
+        if ($threshold > 0 && $count > $threshold) {
+            return ActionResult::fail(409, 'approval_required', "That reaches $count devices, above the approval threshold of $threshold. Bulk Mesh installs cannot be approved yet: install in batches of at most $threshold (by tag, group or client).");
+        }
+        if (empty($in['confirm'])) {
+            return ActionResult::fail(422, 'confirmation_required', "This installs the MeshCentral agent on up to $count device(s). Confirm it explicitly.", ['device_count' => $count]);
+        }
+        $out = ['device_count' => 0, 'created' => 0, 'skipped_denied' => 0, 'skipped_installed' => 0, 'skipped_queued' => 0, 'skipped_unsupported' => 0, 'skipped_error' => 0, 'errors' => []];
+        $allowed = [];
+        $cursor = 0;
+        while (true) {
+            $page = $this->targets->devices($target['type'], $target['id'], $visible, ['windows', 'linux'], $cursor, 500);
+            if ($page === []) {
+                break;
+            }
+            foreach ($page as $d) {
+                $cursor = (int) $d['device_id'];
+                ++$out['device_count'];
+                $client = (int) $d['client_id'];
+                $allowed[$client] ??= $this->authz->allowed($who->userId, RmmAbility::REMOTE_MANAGE, $client);
+                if (!$allowed[$client]) {
+                    ++$out['skipped_denied'];
+                    continue;
+                }
+                $r = $this->pushMeshInstall($who, $d, $force);
+                if ($r->ok && $r->code === 'queued') {
+                    ++$out['created'];
+                } elseif ($r->ok && $r->code === 'already_installed') {
+                    ++$out['skipped_installed'];
+                } elseif ($r->ok) {
+                    ++$out['skipped_queued'];
+                } elseif ($r->code === 'unsupported') {
+                    ++$out['skipped_unsupported'];
+                } else {
+                    ++$out['skipped_error'];
+                    if (count($out['errors']) < 5) {
+                        $out['errors'][] = ((string) ($d['hostname'] ?? 'device ' . $d['device_id'])) . ': ' . $r->message;
+                    }
+                }
+            }
+            if (count($page) < 500) {
+                break;
+            }
+        }
+        $this->audit->record('Mesh Agent Bulk Install', "{$who->userName} queued the MeshCentral agent install on target {$target['type']} {$target['id']}: {$out['created']} job(s) of {$out['device_count']} device(s)"
+            . ($force ? ' (forced)' : ''), 0, 0);
+
+        return ActionResult::ok("{$out['created']} job(s) queued.", 201, 'queued', $out);
     }
 
     // ------------------------------------------------------------------ settings (administrators)

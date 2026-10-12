@@ -369,7 +369,7 @@ final class JobsTest extends RmmTestCase
     public function testTheJobTypeRegistryIsSeededAndExtensible(): void
     {
         $r = JobTypeRegistry::withDefaults();
-        $this->assertSame(['powershell', 'shell', 'python', 'reboot', 'collect', 'svc_list', 'svc_control', 'proc_list', 'proc_kill', 'file_get', 'file_put'], $r->types());
+        $this->assertSame(['powershell', 'shell', 'python', 'reboot', 'collect', 'svc_list', 'svc_control', 'proc_list', 'proc_kill', 'file_get', 'file_put', 'mesh_install', 'mesh_uninstall'], $r->types());
         $this->assertTrue($r->get('reboot')?->destructive);
         $this->assertTrue($r->get('powershell')?->requiresScript);
         $this->assertSame('rmm.job.run_script', $r->get('powershell')?->ability);
