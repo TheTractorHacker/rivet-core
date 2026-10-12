@@ -12,6 +12,7 @@ use RivetCore\Rmm\Contracts\RmmModuleStateInterface;
 use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Enrollment\EnrollmentService;
 use RivetCore\Rmm\Installer\InstallerDownload;
+use RivetCore\Rmm\Installer\InstallerFormat;
 use RivetCore\Rmm\Installer\InstallerStamp;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Logs\LogService;
@@ -335,8 +336,8 @@ final class DeviceApi
     // ------------------------------------------------------------------ agent_installer
 
     /**
-     * POST {"token":"rvte1....","arch":"amd64|arm64"} (JSON or form; the token may instead be an Authorization: Bearer header):
-     * the stamped per-client installer, or a generic 404 for any token that is not currently usable. The token is NEVER read from the
+     * POST {"token":"rvte1....","arch":"amd64|arm64","format":"exe|msi"} (JSON or form; the token may instead be an Authorization: Bearer header; `format` is optional and
+     * defaults to exe, the only answer before 1.0.0-rc.16): the stamped per-client installer, or a generic 404 for any token that is not currently usable. The token is NEVER read from the
      * query string, so it stays out of access logs.
      */
     public function installer(RmmRequest $req): RmmResponse
@@ -377,11 +378,15 @@ final class DeviceApi
             if (!is_string($token) || $token === '' || strlen($token) > 200 || !is_string($arch) || !isset(RmmProtocol::ARCHS[$arch])) {
                 throw new ApiError(422, 'invalid', 'token and arch (amd64 or arm64) are required.');
             }
+            $format = InstallerFormat::normalize($body['format'] ?? null);
+            if ($format === null) {
+                throw new ApiError(422, 'invalid', 'format must be exe or msi.');
+            }
             $parts = explode('.', $token);
             $this->installer->checkRate($ip, count($parts) === 3 ? substr($parts[1], 0, 12) : '');
 
             $tok = $this->installer->authenticate($token, $ip);
-            $refusal = $this->installer->preflight($arch);
+            $refusal = $this->installer->preflight($arch, $format);
             if ($refusal !== null) {
                 throw new ApiError(409, 'unavailable', $refusal);
             }
@@ -390,12 +395,12 @@ final class DeviceApi
             if ($payload === null) {
                 throw new ApiError(409, 'unavailable', (string) $err);
             }
-            $bin = $this->updates->currentBinary($arch);
+            $bin = $format === InstallerFormat::MSI ? $this->installer->msiTemplate($arch) : $this->updates->currentBinary($arch);
             if ($bin === null) {
-                throw new ApiError(409, 'unavailable', 'No agent binary is published for ' . $arch . '.');
+                throw new ApiError(409, 'unavailable', ($format === InstallerFormat::MSI ? 'No MSI template is published for ' : 'No agent binary is published for ') . $arch . '.');
             }
-            $name = $this->installer->filename($this->installer->departmentName((int) $tok['client_id']), $arch);
-            $this->installer->recordSuccess($tok, $ip, $arch, $installerId);
+            $name = $this->installer->filename($this->installer->departmentName((int) $tok['client_id']), $arch, $format);
+            $this->installer->recordSuccess($tok, $ip, $arch . ($format === InstallerFormat::MSI ? ', msi' : ''), $installerId);
 
             return $this->download($bin, $name, InstallerStamp::trailer($payload));
         });

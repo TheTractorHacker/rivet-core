@@ -1028,6 +1028,24 @@ final class RmmReadModel
     }
 
     /**
+     * The published MSI templates, newest first (1.0.0-rc.16). `arch_source` says whether the architecture was read from the package (`summary`) or only declared by whoever uploaded it.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function msiTemplates(int $limit = 40): array
+    {
+        try {
+            $rows = $this->sql->all('SELECT * FROM endpoint_agent_msi_templates ORDER BY template_id DESC LIMIT ' . max(1, min(200, $limit)));
+        } catch (\Throwable) {
+            return [];   // migration 0025 not applied yet
+        }
+
+        return array_map(static fn (array $t): array => ['template_id' => (int) $t['template_id'], 'version' => $t['version'], 'arch' => $t['arch'], 'sha256' => $t['sha256'],
+            'size_bytes' => (int) $t['size_bytes'], 'arch_source' => $t['arch_source'], 'active' => (bool) $t['active'], 'is_current' => (bool) $t['is_current'], 'uploaded_by' => (int) $t['uploaded_by'],
+            'created_at' => Sql::iso((string) $t['created_at'])], $rows);
+    }
+
+    /**
      * The binary new installers are stamped from, per architecture.
      *
      * @return array{amd64:?array<string,mixed>,arm64:?array<string,mixed>}

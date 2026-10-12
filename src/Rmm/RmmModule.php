@@ -494,7 +494,7 @@ final class RmmModule
 
     public function installerDownload(): InstallerDownload
     {
-        return new InstallerDownload($this->sql(), $this->settings(), $this->updates(), $this->tenancy, $this->audit, $this->attempts(), $this->options['installer_prefix'] ?? RmmProtocol::INSTALLER_NAME_PREFIX, $this->clientLabel(), $this->meshAgents());
+        return new InstallerDownload($this->sql(), $this->settings(), $this->updates(), $this->tenancy, $this->audit, $this->attempts(), $this->options['installer_prefix'] ?? RmmProtocol::INSTALLER_NAME_PREFIX, $this->clientLabel(), $this->meshAgents(), $this->binaryStore());
     }
 
     public function housekeeping(): Housekeeping

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Installer;
 
+use RivetCore\Rmm\Binaries\BinaryStore;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Contracts\RmmTenancyInterface;
 use RivetCore\Rmm\Enrollment\AttemptLog;
@@ -34,6 +35,7 @@ final class InstallerDownload
         private readonly string $filenamePrefix = RmmProtocol::INSTALLER_NAME_PREFIX,
         private readonly string $clientLabel = 'client',
         private readonly ?MeshAgentService $meshAgents = null,
+        private readonly ?BinaryStore $binaries = null,
     ) {
     }
 
@@ -56,9 +58,22 @@ final class InstallerDownload
         return $s === '' ? 'department' : $s;
     }
 
-    public function filename(string $department, string $arch): string
+    public function filename(string $department, string $arch, string $format = InstallerFormat::EXE): string
     {
-        return $this->filenamePrefix . self::slug($department) . '-' . ($arch === 'arm64' ? 'arm64' : 'x64') . '.exe';
+        // An .msi is not a "Setup" program: RivetIT-Agent-Setup-<client>-x64.exe  <->  RivetIT-Agent-<client>-x64.msi (an edition's own prefix follows the same rule).
+        $prefix = $format === InstallerFormat::MSI ? (string) preg_replace('/Setup-$/', '', $this->filenamePrefix) : $this->filenamePrefix;
+
+        return $prefix . self::slug($department) . '-' . ($arch === 'arm64' ? 'arm64' : 'x64') . '.' . InstallerFormat::extension($format);
+    }
+
+    /**
+     * The published MSI template an MSI installer of this architecture is stamped from, or null.
+     *
+     * @return array<string,mixed>|null an endpoint_agent_msi_templates row
+     */
+    public function msiTemplate(string $arch): ?array
+    {
+        return $this->binaries?->currentMsi($arch);
     }
 
     /** CA certificate text to embed, or null when none is configured. */
@@ -129,8 +144,13 @@ final class InstallerDownload
         return $block;
     }
 
-    /** Preconditions shared by both download paths. @return string|null a refusal message */
-    public function preflight(string $arch): ?string
+    /**
+     * Preconditions shared by both download paths. @return string|null a refusal message
+     *
+     * With `msi` the installer needs a published (current) MSI template for the architecture instead of a published agent executable: the template carries its own
+     * copy of the agent.
+     */
+    public function preflight(string $arch, string $format = InstallerFormat::EXE): ?string
     {
         if (!$this->settings->enabled()) {
             return 'The endpoint agent service is switched off. Turn it on first.';
@@ -140,6 +160,16 @@ final class InstallerDownload
         }
         if ($this->updates->serviceBase() === null) {
             return 'Set the service URL to an https:// address first.';
+        }
+        if ($format === InstallerFormat::MSI) {
+            if ($this->binaries === null) {
+                return 'MSI installers are not available here.';
+            }
+            if ($this->msiTemplate($arch) === null) {
+                return "No MSI template is published for $arch. Upload one and make it current" . ($arch === 'arm64' ? ' (the agent build makes an amd64 template only; an ARM64 PC installs the exe installer)' : '') . '.';
+            }
+
+            return null;
         }
         if ($this->updates->currentBinary($arch) === null) {
             return "No agent binary is published for $arch. Upload one under Agent binaries and make it current.";

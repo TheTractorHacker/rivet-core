@@ -53,11 +53,17 @@ final class InstallerService
      * refused up front when the Mesh settings cannot support it (switched off, no https address, no device group id). The RivetIT agent never bundles a
      * Mesh binary and a failed Mesh install never fails the RivetIT install.
      *
+     * $format is `exe` (default) or `msi`: with `msi` the precondition is a published MSI template for the architecture instead of a published agent executable;
+     * the token and the payload are the same either way.
+     *
      * @return array{ok:bool,error?:string,token?:array<string,mixed>,token_plain?:string,payload?:string,installer_id?:string,department?:string}
      */
-    public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false): array
+    public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE): array
     {
-        $refusal = $this->installer->preflight($arch);
+        if (!InstallerFormat::valid($format)) {
+            return ['ok' => false, 'error' => 'Choose the installer format: exe or msi.'];
+        }
+        $refusal = $this->installer->preflight($arch, $format);
         if ($refusal !== null) {
             return ['ok' => false, 'error' => $refusal];
         }
@@ -89,7 +95,7 @@ final class InstallerService
             return ['ok' => false, 'error' => (string) $err];
         }
         $dept = $this->installer->departmentName($clientId);
-        $this->audit->record('Installer Created', "$actorName created installer $installerId ($arch) for {$this->clientLabel} \"$dept\" with enrollment token #{$t['token_id']} ({$row['token_selector']}), "
+        $this->audit->record('Installer Created', "$actorName created installer $installerId ($arch" . ($format === InstallerFormat::MSI ? ', msi' : '') . ") for {$this->clientLabel} \"$dept\" with enrollment token #{$t['token_id']} ({$row['token_selector']}), "
             . "{$row['max_uses']} uses, expires {$row['expires_at']} UTC" . ($installMeshAgent ? ', also installs the MeshCentral agent' : ''), $clientId, 0);
 
         return ['ok' => true, 'token' => $row, 'token_plain' => $t['token'], 'payload' => $payload, 'installer_id' => $installerId, 'department' => $dept];
@@ -101,15 +107,22 @@ final class InstallerService
      *
      * @return RmmResponse|string the download, or the refusal message
      */
-    public function issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false): RmmResponse|string
+    public function issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE): RmmResponse|string
     {
-        $r = $this->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, $label, $arch, $userId, $actorName, $installMeshAgent);
+        $r = $this->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, $label, $arch, $userId, $actorName, $installMeshAgent, $format);
         if (!$r['ok'] || !isset($r['token'], $r['payload'], $r['department'])) {
             return (string) ($r['error'] ?? 'The installer could not be created.');
         }
-        $bin = $this->updates->currentBinary($arch);
-        $out = $bin === null ? 'No agent binary is published for ' . $arch . '.'
-            : $this->binaries->download($bin, $this->installer->filename($r['department'], $arch), InstallerStamp::trailer($r['payload']));
+        $name = $this->installer->filename($r['department'], $arch, $format);
+        if ($format === InstallerFormat::MSI) {
+            // A COPY of the template with the payload appended: the stored file is only read.
+            $tpl = $this->installer->msiTemplate($arch);
+            $out = $tpl === null ? 'No MSI template is published for ' . $arch . '.' : $this->binaries->downloadMsi($tpl, $name, InstallerStamp::trailer($r['payload']));
+        } else {
+            $bin = $this->updates->currentBinary($arch);
+            $out = $bin === null ? 'No agent binary is published for ' . $arch . '.'
+                : $this->binaries->download($bin, $name, InstallerStamp::trailer($r['payload']));
+        }
         if (is_string($out)) {
             $this->enrollment->revokeToken((int) $r['token']['token_id'], $userId);
         }
@@ -123,22 +136,89 @@ final class InstallerService
      * Everything the "show deployment commands" panel needs for an issued installer, or null when no service URL is set.
      *
      * @param array{token:array<string,mixed>,token_plain:string,department:string} $issued the result of {@see issue()}
-     * @return array{server:string,filename:string,powershell:string,linux:string,detection:array{service:string,file:string}}|null
+     * @return array{server:string,filename:string,powershell:string,linux:string,detection:array{service:string,file:string},msi?:array{filename:string,powershell:string,msiexec:string,properties:string,uninstall:string,detection:array{product_name:string,upgrade_code:string}}}|null
+     *         the `msi` member is present only for `$format = msi`
      */
-    public function deploymentCommands(array $issued, string $arch, bool $installMeshAgent = false): ?array
+    public function deploymentCommands(array $issued, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE): ?array
     {
         $server = $this->updates->serviceBase();
         if ($server === null) {
             return null;
         }
-
-        return [
+        $out = [
             'server' => $server,
             'filename' => $this->installer->filename($issued['department'], $arch),
             'powershell' => self::powershellSnippet($server, $issued['token_plain'], $arch, $issued['department']),
             'linux' => self::linuxSnippet($server, $issued['token_plain'], $arch, $issued['department'], $this->installer->caPem(), $installMeshAgent ? $this->meshAgents?->installBlock() : null),
             'detection' => ['service' => self::WINDOWS_SERVICE, 'file' => self::WINDOWS_INSTALLED_FILE],
         ];
+        if ($format === InstallerFormat::MSI) {
+            $name = $this->installer->filename($issued['department'], $arch, InstallerFormat::MSI);
+            $out['msi'] = [
+                'filename' => $name,
+                'powershell' => self::powershellMsiSnippet($server, $issued['token_plain'], $arch, $issued['department']),
+                'msiexec' => self::msiexecCommand($name),
+                'properties' => self::msiPropertiesCommand($server, $issued['token_plain']),
+                'uninstall' => self::MSI_UNINSTALL_POWERSHELL,
+                'detection' => ['product_name' => 'RivetIT Agent', 'upgrade_code' => self::MSI_UPGRADE_CODE_AMD64],
+            ];
+        }
+
+        return $out;
+    }
+
+    /** The UpgradeCode of the MSI template the agent build makes (a constant of packaging/msi/build.sh; an Intune detection rule or a GPO can match on it). */
+    public const MSI_UPGRADE_CODE_AMD64 = '{364538BF-62D7-4685-84C5-43B83B318852}';
+    /** Remove the MSI product (the ProductCode changes with every version, so it is looked up by name; Add/Remove Programs does the same). The Mesh agent stays unless REMOVE_MESHAGENT=1 is appended to the msiexec arguments. */
+    public const MSI_UNINSTALL_POWERSHELL = "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' | Where-Object { \$_.DisplayName -eq 'RivetIT Agent' -and \$_.WindowsInstaller -eq 1 } | ForEach-Object { Start-Process msiexec.exe -ArgumentList '/x', \$_.PSChildName, '/qn', '/norestart' -Wait }";
+
+    /** msiexec for a stamped MSI (the payload is inside the file). Quiet, logged; the token is hidden from the log by the package itself. */
+    public static function msiexecCommand(string $filename): string
+    {
+        return 'msiexec /i "' . self::cmdSafe($filename) . '" /qn /norestart /l*v "%TEMP%\\rivetit-agent-msi.log"';
+    }
+
+    /**
+     * msiexec for the UNSTAMPED template with public properties: no payload in the file, the server and the enrollment token on the command line (use ENROLL_TOKEN_FILE
+     * when a file with restricted rights is available; the token is a one-shot secret either way and is shown once). CA_PEM_FILE is optional.
+     */
+    public static function msiPropertiesCommand(string $serverUrl, string $token): string
+    {
+        return 'msiexec /i "rivetit-agent-windows-amd64.msi" /qn /norestart /l*v "%TEMP%\\rivetit-agent-msi.log" SERVER="' . self::cmdSafe(rtrim($serverUrl, '/')) . '" ENROLL_TOKEN="' . self::cmdSafe($token) . '" CA_PEM_FILE="C:\\path\\ca.pem"';
+    }
+
+    /** Only the characters of a file name or URL reach a command line; anything else becomes `?`. */
+    private static function cmdSafe(string $v): string
+    {
+        return (string) preg_replace('/[^A-Za-z0-9 ._:\/-]+/', '?', $v);
+    }
+
+    /**
+     * Unattended MSI deployment for an RMM, an Intune platform script or a GPO startup script: download the stamped MSI from the token-gated endpoint (format msi), install it
+     * with msiexec, delete it. msiexec's exit code (0 or 3010) is the result.
+     */
+    public static function powershellMsiSnippet(string $serverUrl, string $token, string $arch, string $department): string
+    {
+        $arch = $arch === 'arm64' ? 'arm64' : 'amd64';
+        $comment = trim((string) preg_replace('/[^A-Za-z0-9 ._-]+/', '?', $department));
+
+        return "# RivetIT agent silent MSI install for client: $comment\n"
+            . "# Run as SYSTEM or an administrator (RMM, Intune platform script, GPO startup script). The token is a secret: do not paste it into tickets or chat.\n"
+            . "\$ErrorActionPreference = 'Stop'\n"
+            . '$Server = ' . self::psQuote(rtrim($serverUrl, '/')) . "\n"
+            . '$Token  = ' . self::psQuote($token) . "\n"
+            . '$Arch   = ' . self::psQuote($arch) . "\n"
+            . "\$Msi = Join-Path \$env:TEMP ('RivetIT-Agent-' + [guid]::NewGuid().ToString('N') + '.msi')\n"
+            . "try {\n"
+            . "    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n"
+            . "    \$body = @{ token = \$Token; arch = \$Arch; format = 'msi' } | ConvertTo-Json -Compress\n"
+            . "    Invoke-WebRequest -Uri (\$Server + '/api/v1/agent_installer') -Method Post -ContentType 'application/json' -Body \$body -OutFile \$Msi -UseBasicParsing\n"
+            . "    \$p = Start-Process -FilePath 'msiexec.exe' -ArgumentList '/i', ('\"' + \$Msi + '\"'), '/qn', '/norestart' -Wait -PassThru\n"
+            . "    if (\$p.ExitCode -ne 0 -and \$p.ExitCode -ne 3010) { throw \"RivetIT agent MSI install failed with exit code \$(\$p.ExitCode)\" }\n"
+            . "    Write-Output 'RivetIT agent installed.'\n"
+            . "} finally {\n"
+            . "    Remove-Item -LiteralPath \$Msi -Force -ErrorAction SilentlyContinue\n"
+            . "}\n";
     }
 
     /** A PowerShell single-quoted string literal. Control characters are refused outright. */

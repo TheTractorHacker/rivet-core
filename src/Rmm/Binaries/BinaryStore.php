@@ -309,6 +309,118 @@ final class BinaryStore
         return true;
     }
 
+    // ---------------------------------------------------------------- MSI templates (1.0.0-rc.16)
+
+    /**
+     * Validate a candidate MSI template on disk ({@see MsiInspector::inspect()} with this store's size cap).
+     *
+     * @return array{sha256:string,size:int,arch:string,arch_source:string,template:?string}|string a description on success, an error message otherwise
+     */
+    public function inspectMsi(string $path, string $arch, ?int $maxBytes = null): array|string
+    {
+        return MsiInspector::inspect($path, $arch, $maxBytes ?? $this->maxBytes());
+    }
+
+    /**
+     * Validate, copy into storage and register an MSI template: the same rules as {@see publish()} (the identical file again is a no-op, a different file for an existing
+     * (version, arch) is refused) in its own table, so a template never becomes an agent update. Templates share the storage directory and the random file names.
+     *
+     * @param array{activate?:bool} $opts
+     * @return array{ok:bool,error?:string,template?:array<string,mixed>,created?:bool}
+     */
+    public function publishMsi(string $path, string $version, string $arch, int $userId, array $opts = []): array
+    {
+        if (preg_match(RmmProtocol::BINARY_VERSION_RE, $version) !== 1) {
+            return ['ok' => false, 'error' => 'The version must look like 1.2.3 (optionally 1.2.3-rc1).'];
+        }
+        if ($this->storageDir() === null) {
+            return ['ok' => false, 'error' => 'No agent binary directory is configured for this installation.'];
+        }
+        $info = $this->inspectMsi($path, $arch);
+        if (is_string($info)) {
+            return ['ok' => false, 'error' => $info];
+        }
+        $existing = $this->sql->one('SELECT * FROM endpoint_agent_msi_templates WHERE version = ? AND arch = ?', [$version, $arch]);
+        $created = false;
+        if ($existing !== null) {
+            if (!hash_equals((string) $existing['sha256'], $info['sha256'])) {
+                return ['ok' => false, 'error' => "MSI template $version for $arch is already published with different contents. Use a new version number."];
+            }
+            $row = $existing;
+            if (!is_file($this->pathFor($row))) {
+                $this->copyIn($path, (string) $row['storage_name']);
+            }
+        } else {
+            $name = 'bin_' . bin2hex(random_bytes(16)) . '.bin';
+            $this->copyIn($path, $name);
+            $id = $this->sql->insert('INSERT INTO endpoint_agent_msi_templates (version, arch, sha256, size_bytes, storage_name, arch_source, uploaded_by, active, is_current, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?)',
+                [$version, $arch, $info['sha256'], $info['size'], $name, $info['arch_source'], $userId, $this->sql->utcNow()]);
+            $row = $this->sql->one('SELECT * FROM endpoint_agent_msi_templates WHERE template_id = ?', [$id]) ?? [];
+            $created = true;
+        }
+        if ((int) $row['active'] === 0) {
+            $this->sql->run('UPDATE endpoint_agent_msi_templates SET active = 1 WHERE template_id = ?', [$row['template_id']]);
+        }
+        if (!empty($opts['activate'])) {
+            $this->setCurrentMsi((int) $row['template_id']);
+        }
+
+        return ['ok' => true, 'template' => $this->sql->one('SELECT * FROM endpoint_agent_msi_templates WHERE template_id = ?', [$row['template_id']]) ?? [], 'created' => $created];
+    }
+
+    /** Make this template the one new MSI installers are stamped from for its architecture (and make sure it is active). */
+    public function setCurrentMsi(int $templateId): bool
+    {
+        $t = $this->sql->one('SELECT * FROM endpoint_agent_msi_templates WHERE template_id = ?', [$templateId]);
+        if ($t === null) {
+            return false;
+        }
+        $this->sql->transaction(function () use ($t, $templateId): void {
+            $this->sql->run('UPDATE endpoint_agent_msi_templates SET is_current = 0 WHERE arch = ?', [$t['arch']]);
+            $this->sql->run('UPDATE endpoint_agent_msi_templates SET is_current = 1, active = 1 WHERE template_id = ?', [$templateId]);
+        });
+
+        return true;
+    }
+
+    /**
+     * The template new MSI installers of this architecture are stamped from, or null.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function currentMsi(string $arch): ?array
+    {
+        return $this->sql->one('SELECT * FROM endpoint_agent_msi_templates WHERE arch = ? AND is_current = 1 AND active = 1 ORDER BY template_id DESC LIMIT 1', [$arch]);
+    }
+
+    /** "Delete": deactivate the template. The file stays. */
+    public function deactivateMsi(int $templateId): bool
+    {
+        return $this->sql->run('UPDATE endpoint_agent_msi_templates SET active = 0, is_current = 0 WHERE template_id = ?', [$templateId]) > 0;
+    }
+
+    public function activateMsi(int $templateId): bool
+    {
+        return $this->sql->run('UPDATE endpoint_agent_msi_templates SET active = 1 WHERE template_id = ?', [$templateId]) > 0;
+    }
+
+    /**
+     * A download response for a stored MSI template followed by an installer trailer: the stored file is only READ (streamed in 64 KiB chunks, the trailer after its last
+     * byte), never modified, and its size and SHA-256 are verified first like a binary's.
+     *
+     * @param array<string,mixed> $row an endpoint_agent_msi_templates row
+     * @return RmmResponse|string the response, or an error message (nothing to send)
+     */
+    public function downloadMsi(array $row, string $filename, string $trailer = ''): RmmResponse|string
+    {
+        [$file, $error] = $this->updates->openBinary($row, $trailer);
+        if ($file === null) {
+            return str_replace('agent binary', 'MSI template', (string) $error);
+        }
+
+        return FileDownload::response($file, $filename);
+    }
+
     // ---------------------------------------------------------------- serving
 
     /**

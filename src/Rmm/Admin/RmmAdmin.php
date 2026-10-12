@@ -13,6 +13,7 @@ use RivetCore\Rmm\Contracts\SecretBoxInterface;
 use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Http\RmmResponse;
 use RivetCore\Rmm\Technician\ActionResult;
+use RivetCore\Rmm\Installer\InstallerFormat;
 use RivetCore\Rmm\Installer\InstallerService;
 use RivetCore\Rmm\Mesh\MeshAgentSettings;
 use RivetCore\Rmm\Mesh\MeshService;
@@ -289,6 +290,68 @@ final class RmmAdmin
     }
 
     /**
+     * Publish an uploaded MSI template (the edition has already verified it is an uploaded file): a Windows Installer package the server stamps per client when an
+     * administrator picks `msi`. Validated by {@see \RivetCore\Rmm\Binaries\MsiInspector} (OLE compound file, size window, not already stamped, platform from the summary
+     * information when it can be read). Needs the same ability as publishing an agent executable.
+     *
+     * @param array{activate?:bool} $opts
+     * @return ActionResult data: `template` row on success
+     */
+    public function uploadMsiTemplate(RmmPrincipal $by, string $tmpPath, string $version, string $arch, array $opts = []): ActionResult
+    {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+            return $d;
+        }
+        try {
+            $res = $this->binaries->publishMsi($tmpPath, trim($version), $arch, $by->userId, $opts);
+        } catch (\RuntimeException $e) {
+            return ActionResult::fail(500, 'internal', $e->getMessage());
+        }
+        if (!$res['ok'] || !isset($res['template'])) {
+            return ActionResult::fail(422, 'invalid', (string) ($res['error'] ?? 'The MSI template could not be published.'));
+        }
+        $t = $res['template'];
+        $this->audit->record('MSI Template Uploaded', "{$by->userName} uploaded MSI template {$t['version']} ({$t['arch']}, architecture from the {$t['arch_source']}, sha256 {$t['sha256']}, {$t['size_bytes']} bytes)"
+            . ((int) $t['is_current'] === 1 ? ' and made it current' : ''), 0, 0);
+
+        return ActionResult::ok('MSI template ' . $t['version'] . ' (' . $t['arch'] . ') stored. SHA-256 ' . $t['sha256'] . '.', 200, 'stored', ['template' => $t, 'created' => (bool) ($res['created'] ?? false)]);
+    }
+
+    /**
+     * Change one stored MSI template.
+     *
+     * @param string $action make_current | deactivate | activate
+     */
+    public function msiTemplateAction(RmmPrincipal $by, int $templateId, string $action): ActionResult
+    {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+            return $d;
+        }
+        $t = $this->sql->one('SELECT * FROM endpoint_agent_msi_templates WHERE template_id = ?', [$templateId]);
+        if ($t === null) {
+            return ActionResult::fail(404, 'not_found', 'Nothing changed.');
+        }
+        if ($action === 'make_current' && (int) $t['active'] === 1) {
+            $done = $this->binaries->setCurrentMsi($templateId);
+            $msg = 'This template is now the one new MSI installers are built from.';
+        } elseif ($action === 'deactivate') {
+            $done = $this->binaries->deactivateMsi($templateId);
+            $msg = 'MSI template deactivated: it is no longer used for installers. The file is kept.';
+        } elseif ($action === 'activate') {
+            $done = $this->binaries->activateMsi($templateId);
+            $msg = 'MSI template reactivated.';
+        } else {
+            return ActionResult::fail(422, 'invalid', 'Nothing changed.');
+        }
+        if (!$done) {
+            return ActionResult::fail(409, 'conflict', $msg);
+        }
+        $this->audit->record('MSI Template Changed', "{$by->userName} ran '$action' on MSI template #$templateId ({$t['version']} {$t['arch']})", 0, 0);
+
+        return ActionResult::ok($msg);
+    }
+
+    /**
      * Change one stored binary.
      *
      * @param string $action make_current | deactivate | activate | offer_update (needs $ring and $pct)
@@ -358,12 +421,12 @@ final class RmmAdmin
      *
      * @return ActionResult data: `download` (an {@see RmmResponse}) on success; on a refusal the message says why and no token is left behind
      */
-    public function downloadInstaller(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false): ActionResult
+    public function downloadInstaller(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE): ActionResult
     {
         if (($d = $this->deny($by, RmmAbility::TOKEN_MANAGE, $clientId)) !== null) {
             return $d;
         }
-        $out = $this->installers->issueDownload($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent);
+        $out = $this->installers->issueDownload($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent, $format);
         if (is_string($out)) {
             return ActionResult::fail(422, 'invalid', $out);
         }
@@ -376,16 +439,16 @@ final class RmmAdmin
      *
      * @return ActionResult data: `token` (row), `token_plain`, `commands` (see {@see InstallerService::deploymentCommands()})
      */
-    public function deploymentCommands(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false): ActionResult
+    public function deploymentCommands(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE): ActionResult
     {
         if (($d = $this->deny($by, RmmAbility::TOKEN_MANAGE, $clientId)) !== null) {
             return $d;
         }
-        $r = $this->installers->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent);
+        $r = $this->installers->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent, $format);
         if (!$r['ok'] || !isset($r['token'], $r['token_plain'], $r['department'])) {
             return ActionResult::fail(422, 'invalid', (string) ($r['error'] ?? 'The installer could not be created.'));
         }
-        $commands = $this->installers->deploymentCommands(['token' => $r['token'], 'token_plain' => $r['token_plain'], 'department' => $r['department']], $arch, $installMeshAgent);
+        $commands = $this->installers->deploymentCommands(['token' => $r['token'], 'token_plain' => $r['token_plain'], 'department' => $r['department']], $arch, $installMeshAgent, $format);
 
         return ActionResult::ok('Enrollment token created. Copy the commands now: the token is shown only once.', 201, 'created',
             ['token' => $r['token'], 'token_plain' => $r['token_plain'], 'commands' => $commands, 'department' => $r['department']]);
