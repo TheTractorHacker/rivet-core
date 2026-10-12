@@ -235,6 +235,59 @@ $IS --binary "$BIN/rivetit-agent-1.0.0" --server "$SERVER" --token-file "$OUT/en
 chk "plain install with the Mesh flags exits 0 and installs Mesh" '[ $rc = 0 ] && [ -x "$MESHDIR/meshagent" ] && grep -q "MeshCentral agent: installed" "$OUT/mesh9.out"'
 $IS --uninstall --purge --remove-meshagent >/dev/null 2>&1
 
+echo "== pushed MeshCentral agent (mesh_install job) on an agent enrolled WITHOUT the Mesh option"
+rm -f "$OUT/mesh-installed.marker" "$OUT/mesh-uninstalled.marker" /tmp/e2e-should-not-run; : >"$OUT/agent.log"
+ctl "update=off" # the self-update offered earlier would restart the agent (exit 75) and muddy "the Mesh jobs never restart it"
+$IS --binary "$BIN/rivetit-agent-1.0.0" --server "$SERVER" --token-file "$OUT/enroll.token" --ca "$OUT/ca.pem" >"$OUT/push0.out" 2>&1; rc=$?
+chk "plain install (no Mesh option anywhere) exits 0" '[ $rc = 0 ] && [ ! -e /var/lib/rivetit-agent/mesh_agent.json ] && [ ! -e "$MESHDIR/meshagent" ]'
+# shellcheck disable=SC2034
+E0="$(grep -c "ENROLL install_id" "$OUT/events.log")"
+supervise_start
+chk "the agent announces job:mesh_install and job:mesh_uninstall" 'wait_for 30 "grep -q \"CHECKIN.*job:mesh_install\" \$OUT/events.log" && grep CHECKIN "$OUT/events.log" | tail -1 | grep -q "job:mesh_uninstall"'
+pushwait() { wait_for 90 "grep -Eq \"JOB-REPORT job=mesh-push-$1 state=(succeeded|failed)\" \$OUT/events.log"; }
+pushout() { grep "JOB-REPORT job=mesh-push-$1 state=" "$OUT/events.log" | grep -v "state=running" | tail -1; }
+alive() { # the RivetIT agent keeps checking in after the Mesh job
+  local n; n="$(grep -c "CHECKIN #" "$OUT/events.log")"; wait_for 30 "[ \$(grep -c \"CHECKIN #\" \$OUT/events.log) -gt $n ]" && /opt/rivetit-agent/rivetit-agent status | grep -q "enrolled and linked"; }
+dl() { grep -c MESH-DOWNLOAD "$OUT/events.log"; }
+
+echo "-- failures are job results and check-in state; the RivetIT agent is never affected"
+PD="$(dl)"; ctl "mesh_push=badparams"; pushwait 1
+chk "a parameter the agent does not know is refused before anything is downloaded or run" 'pushout 1 | grep -q "state=failed" && pushout 1 | grep -q invalid_params && [ "$(dl)" = "$PD" ] && [ ! -e /tmp/e2e-should-not-run ] && alive'
+ctl "mesh_push=badpin"; pushwait 2
+chk "a pin that does not match: failed install_failed (pinned hash), no HTTP request reached the Mesh server, no agent" 'pushout 2 | grep -q "state=failed" && pushout 2 | grep -q install_failed && pushout 2 | grep -q "pinned hash" && [ "$(dl)" = "$PD" ] && [ ! -e "$MESHDIR/meshagent" ] && alive'
+chk "the failure also arrives as the check-in mesh_agent state" 'wait_for 30 "grep MESH-REPORT \$OUT/events.log | grep -q \"installed=false.*pinned\""'
+ctl "mesh_push=notfound"; pushwait 3
+chk "an unknown device group is HTTP 404: failed, no agent, agent alive" 'pushout 3 | grep -q "state=failed" && pushout 3 | grep -q "HTTP 404" && [ ! -e "$MESHDIR/meshagent" ] && alive'
+ctl "mesh_push=oversize"; pushwait 4
+chk "an announced body over the 64 MiB cap is refused (larger than the limit), nothing runs" 'pushout 4 | grep -q "state=failed" && pushout 4 | grep -q "larger than" && [ ! -e "$MESHDIR/meshagent" ] && [ ! -e "$OUT/mesh-installed.marker" ] && alive'
+ctl "mesh_push=chunked"; pushwait 5
+chk "the same without a Content-Length is cut at the cap" 'pushout 5 | grep -q "state=failed" && pushout 5 | grep -q "larger than" && [ ! -e "$MESHDIR/meshagent" ] && alive'
+chk "no work directory is left behind by any failure" '[ -z "$(ls -d /var/lib/rivetit-agent/mesh-install-* 2>/dev/null)" ]'
+
+echo "-- the good case: the same pinned download and install as at install time"
+D2="$(dl)"; ctl "mesh_push=ok"; pushwait 6
+chk "the job succeeded (installed) and the pinned download used the Linux id 6 and the URL-form group" 'pushout 6 | grep -q "state=succeeded" && pushout 6 | grep -q "installed" && [ "$(dl)" = "$((D2+1))" ] && grep -qF -- "MESH-DOWNLOAD id=6 meshid=$MESHGROUP installflags=0" "$OUT/events.log"'
+chk "the downloaded installer ran with -install and the fake meshagent is in place" 'grep -q "installed by: .* -install" "$OUT/mesh-installed.marker" && [ -x "$MESHDIR/meshagent" ]'
+chk "the job result carries the node id and never the group id" 'pushout 6 | grep -qF "node//$MESHNODE_RAW" && ! pushout 6 | grep -qF -- "$MESHGROUP"'
+chk "the outcome is saved 0600 without the group id" '[ "$(stat -c %a /var/lib/rivetit-agent/mesh_agent.json)" = 600 ] && grep -q "\"installed\": true" /var/lib/rivetit-agent/mesh_agent.json && ! grep -rqaF -- "$MESHGROUP" /var/lib/rivetit-agent'
+chk "the next check-in reports installed=true with the node id (the server maps it)" 'wait_for 30 "grep -qF \"MESH-REPORT installed=true node_id=node//\$MESHNODE_RAW\" \$OUT/events.log"'
+chk "the RivetIT agent was neither restarted nor re-enrolled by any Mesh job" '[ "$(grep -c "ENROLL install_id" "$OUT/events.log")" = "$E0" ] && ! grep -q "agent exited" "$OUT/agent.log" && alive'
+
+echo "-- idempotent: an installed agent is left alone unless forced"
+D3="$(dl)"; ctl "mesh_push=ok"; pushwait 7
+chk "second push: succeeded as already_installed, no download" 'pushout 7 | grep -q "state=succeeded" && pushout 7 | grep -q already_installed && [ "$(dl)" = "$D3" ]'
+ctl "mesh_push=force"; pushwait 8
+chk "force runs the installer again" 'pushout 8 | grep -q "state=succeeded" && [ "$(dl)" = "$((D3+1))" ]'
+
+echo "-- mesh_uninstall removes only the Mesh agent"
+rm -f "$OUT/mesh-uninstalled.marker"
+# shellcheck disable=SC2034
+R2="$(grep -c "MESH-REPORT" "$OUT/events.log")"; ctl "mesh_push=uninstall"; pushwait 9
+chk "the Mesh agent's own uninstaller ran (-uninstall) and the RivetIT agent is untouched" 'pushout 9 | grep -q "state=succeeded" && [ -e "$OUT/mesh-uninstalled.marker" ] && [ ! -e "$MESHDIR/meshagent" ] && [ -x /opt/rivetit-agent/rivetit-agent ] && alive'
+chk "the check-in now reports installed=false (so the server clears its record)" 'wait_for 30 "[ \$(grep MESH-REPORT \$OUT/events.log | tail -n +$((R2+1)) | grep -c \"installed=false\") -ge 1 ]"'
+supervise_stop
+$IS --uninstall --purge >/dev/null 2>&1
+
 kill $FAKE 2>/dev/null
 rm -f /tmp/e2e-foreign-ran
 if [ $fail = 0 ]; then echo "SCENARIO PASS"; else echo "SCENARIO FAIL"; exit 1; fi

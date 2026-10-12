@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // startMockMesh serves a stand-in for a MeshCentral server's agent download: GET /meshagents?id=N&meshid=<64-character URL form>&installflags=F answers a tiny shell script that
@@ -47,12 +48,28 @@ exit 2
 			return
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
+		// agent ids 99 and 98 stand in for a hostile or broken Mesh server: a body over the agent's 64 MiB cap, announced (99) or streamed without a length (98)
+		if id := q.Get("id"); id == "99" || id == "98" {
+			if id == "99" {
+				w.Header().Set("Content-Length", fmt.Sprint(70<<20))
+			}
+			chunk := []byte("#!/bin/sh\n" + strings.Repeat("#", 1<<20))
+			for i := 0; i < 70; i++ {
+				if _, err := w.Write(chunk); err != nil {
+					return
+				}
+			}
+			return
+		}
 		w.Write([]byte(script))
 	})
 	ln, err := newTLSListener(addr, cert)
 	if err != nil {
 		log.Fatal(err)
 	}
+	s.mu.Lock()
+	s.meshURL, s.meshPin, s.meshGroup = "https://"+ln.Addr().String(), hex.EncodeToString(sum[:]), group
+	s.mu.Unlock()
 	os.WriteFile(filepath.Join(dir, "mesh_url"), []byte("https://"+ln.Addr().String()), 0o644)
 	os.WriteFile(filepath.Join(dir, "mesh_pin"), []byte(hex.EncodeToString(sum[:])), 0o644)
 	s.logf("MESH-LISTEN https://%s pin=%s", ln.Addr().String(), hex.EncodeToString(sum[:]))

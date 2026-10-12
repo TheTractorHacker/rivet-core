@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,6 +60,17 @@ type server struct {
 	noSoftware  bool // do not offer the software_inventory feature
 	swReports   int
 	outFile     *os.File
+
+	// The pushed MeshCentral agent install (mesh_install / mesh_uninstall jobs), queued by /_ctl?mesh_push=<scenario>. The mock Mesh server fills mesh*.
+	meshURL, meshPin, meshGroup string
+	pushes                      []*pushJob
+}
+
+// pushJob is one signed Mesh job the control channel queued. It is offered once per check-in until the agent reports a final state.
+type pushJob struct {
+	id, typ string
+	params  map[string]any
+	done    bool
 }
 
 func (s *server) logf(f string, a ...any) {
@@ -173,6 +185,9 @@ func (s *server) ctl(w http.ResponseWriter, r *http.Request) {
 	if ra := q.Get("retry_after"); ra != "" {
 		s.retryAfter = ra
 	}
+	if sc := q.Get("mesh_push"); sc != "" {
+		s.queueMeshPush(sc)
+	}
 	s.mu.Unlock()
 	s.mu.Lock()
 	m, uo := s.mode, s.updOffer
@@ -220,6 +235,11 @@ func (s *server) checkin(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.foreignJob && s.jobQueued && !s.foreignDone {
 		pending++
+	}
+	for _, p := range s.pushes {
+		if !p.done {
+			pending++
+		}
 	}
 	s.mu.Unlock()
 	if revoke {
@@ -271,10 +291,47 @@ func (s *server) checkin(w http.ResponseWriter, r *http.Request) {
 
 func asSlice(v any) []any { l, _ := v.([]any); return l }
 
+// queueMeshPush queues one signed Mesh job for the next check-in (s.mu is held). Scenarios: ok (the stored settings, as the server builds them from its Mesh
+// settings), force (the same with force=true), badpin, notfound (a device group the mock Mesh server does not know), oversize (agent id 99: the mock sends a
+// body over the 64 MiB cap with a Content-Length), chunked (agent id 98: the same without one), badparams (a member the agent must refuse), uninstall.
+func (s *server) queueMeshPush(scenario string) {
+	if scenario == "uninstall" {
+		s.pushes = append(s.pushes, &pushJob{id: fmt.Sprintf("mesh-push-%d", len(s.pushes)+1), typ: "mesh_uninstall", params: map[string]any{}})
+		s.logf("CTL mesh_push=uninstall queued")
+		return
+	}
+	p := map[string]any{"url": s.meshURL, "meshid": s.meshGroup, "pin": s.meshPin,
+		"agent_ids": `{"linux/amd64":6,"linux/arm64":26,"windows/amd64":4}`, "install_args": `{"linux":["-install"],"windows":["-fullinstall"]}`, "force": false}
+	switch scenario {
+	case "ok":
+	case "force":
+		p["force"] = true
+	case "badpin":
+		p["pin"] = strings.Repeat("ab", 48)
+	case "notfound":
+		p["meshid"] = strings.Repeat("A", 64)
+	case "oversize":
+		p["agent_ids"] = `{"linux/amd64":99,"linux/arm64":99}`
+	case "chunked":
+		p["agent_ids"] = `{"linux/amd64":98,"linux/arm64":98}`
+	case "badparams":
+		p["command"] = "touch /tmp/e2e-should-not-run"
+	default:
+		s.logf("CTL mesh_push=%s unknown", scenario)
+		return
+	}
+	s.pushes = append(s.pushes, &pushJob{id: fmt.Sprintf("mesh-push-%d", len(s.pushes)+1), typ: "mesh_install", params: p})
+	s.logf("CTL mesh_push=%s queued", scenario)
+}
+
 func (s *server) job(id, typ, script string) json.RawMessage {
+	return s.jobWith(id, typ, script, map[string]any{}, 30)
+}
+
+func (s *server) jobWith(id, typ, script string, params map[string]any, timeoutS int) json.RawMessage {
 	now := time.Now().UTC()
 	f := map[string]any{"job_id": id, "attempt": 1, "type": typ, "script": script,
-		"params": map[string]any{}, "timeout_s": 30, "max_output_bytes": 4096,
+		"params": params, "timeout_s": timeoutS, "max_output_bytes": 4096,
 		"issued_at": now.Format(time.RFC3339), "expires_at": now.Add(time.Hour).Format(time.RFC3339)}
 	raw, _ := json.Marshal(f)
 	canon, _ := jobs.Canonical(raw)
@@ -295,8 +352,17 @@ func (s *server) jobsH(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		q := s.jobQueued && !s.jobDone
 		f := s.foreignJob && s.jobQueued && !s.foreignDone
+		var pushes []*pushJob
+		for _, p := range s.pushes {
+			if !p.done {
+				pushes = append(pushes, p)
+			}
+		}
 		s.mu.Unlock()
 		list := []json.RawMessage{}
+		for _, p := range pushes {
+			list = append(list, s.jobWith(p.id, p.typ, "", p.params, 120))
+		}
 		if q {
 			list = append(list, s.job("e2e-job-1", s.jobType, s.jobScript))
 		}
@@ -316,9 +382,16 @@ func (s *server) jobsH(w http.ResponseWriter, r *http.Request) {
 	s.logf("JOB-REPORT job=%v state=%v exit=%v output=%q", rep["job_id"], rep["state"], rep["exit_code"], rep["output"])
 	if st, _ := rep["state"].(string); st != "running" {
 		s.mu.Lock()
-		if rep["job_id"] == "e2e-job-2" {
+		switch id, _ := rep["job_id"].(string); {
+		case id == "e2e-job-2":
 			s.foreignDone = true
-		} else {
+		case strings.HasPrefix(id, "mesh-push-"):
+			for _, p := range s.pushes {
+				if p.id == id {
+					p.done = true
+				}
+			}
+		default:
 			s.jobDone = true
 		}
 		s.mu.Unlock()
