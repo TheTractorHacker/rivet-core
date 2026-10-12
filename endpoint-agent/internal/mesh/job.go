@@ -188,8 +188,9 @@ func (d JobDeps) install(ctx context.Context, params json.RawMessage, maxOut int
 	if r.AgentID != 0 {
 		extra["agent_id"] = r.AgentID
 	}
-	if r.SHA256 != "" {
-		extra["sha256"] = r.SHA256
+	if len(r.SHA256) >= 32 {
+		// The first 32 hex characters of the installer's SHA-256 identify it; the full 64-character hash would be redacted as a secret by the server.
+		extra["sha256_head"] = r.SHA256[:32]
 	}
 	if r.ExitCode != 0 {
 		extra["exit_code"] = r.ExitCode
