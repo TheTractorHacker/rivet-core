@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RivetIT Agent MSI TEMPLATE (windows/amd64), built on Linux by msitools wixl (see packaging/msi/build.sh and docs/rmm/AGENT_BUILD.md).
+
+  What it is: an UNSTAMPED installer. The RivetIT server downloads a COPY of it with a per-client payload (enrollment token, server URL, CA) appended after the last byte
+  of the .msi, in the same trailer format as the stamped .exe (payload || footer, "RIVETIT-EMBED-v1"). The deferred custom action RivetSetupStamped runs
+  the agent setup command with the flags silent, from-msi and payload-from "[OriginalDatabase]", i.e. the SAME setup the exe installer runs, reading the payload from the .msi file itself.
+  Without a payload IT can pass public properties instead (SERVER with ENROLL_TOKEN or ENROLL_TOKEN_FILE, optional CA_PEM_FILE): RivetSetupProps.
+
+  Variables (wixl -D name=value): Version (a.b.c), ProductCode, PackageCode (derived from the version by build.sh, so a rebuild is byte-identical in these), UpgradeCode (constant per
+  architecture), ExePath, ComponentGuid (constant: MajorUpgrade reference-counts components, so it must NOT change between versions).
+
+  UNVERIFIED on a real Windows host: see docs/rmm/MSI_VERIFY.md. Parse-checked only: wixl builds it, msiinfo/msidump show the tables, build.sh asserts the key actions.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="$(var.ProductCode)" Name="RivetIT Agent" Language="1033" Version="$(var.Version)" Manufacturer="RivetIT" UpgradeCode="$(var.UpgradeCode)">
+    <Package Id="$(var.PackageCode)" InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Description="RivetIT endpoint agent" Manufacturer="RivetIT" Comments="RivetIT Agent $(var.Version)"/>
+    <MajorUpgrade DowngradeErrorMessage="A newer version of the RivetIT Agent is already installed."/>
+    <Media Id="1" Cabinet="rivetit.cab" EmbedCab="yes"/>
+
+    <!-- Public properties for managed deployment (msiexec /i ... SERVER=... ENROLL_TOKEN=...). The token is hidden from the verbose log. -->
+    <Property Id="MsiHiddenProperties" Value="ENROLL_TOKEN"/>
+    <Property Id="ARPCOMMENTS" Value="RivetIT endpoint agent"/>
+    <Property Id="ARPNOMODIFY" Value="1"/>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="$(var.ProgramFilesDir)" Name="PFiles">
+        <Directory Id="VendorDir" Name="RivetIT">
+          <Directory Id="INSTALLDIR" Name="Agent">
+            <Component Id="AgentExe" Guid="$(var.ComponentGuid)">
+              <File Id="AgentExeFile" Name="rivetit-agent.exe" Source="$(var.ExePath)" KeyPath="yes"/>
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="Agent" Title="RivetIT Agent" Level="1">
+      <ComponentRef Id="AgentExe"/>
+    </Feature>
+
+    <!-- A running service holds its exe open: stop it before files are replaced (upgrade) or removed. net.exe waits until it has stopped; a missing service is not an error. -->
+    <CustomAction Id="RivetStopServiceInstall" Directory="SystemFolder" ExeCommand="&quot;[SystemFolder]net.exe&quot; stop RivetITAgent" Execute="deferred" Impersonate="no" Return="ignore"/>
+    <CustomAction Id="RivetStopServiceRemove" Directory="SystemFolder" ExeCommand="&quot;[SystemFolder]net.exe&quot; stop RivetITAgent" Execute="deferred" Impersonate="no" Return="ignore"/>
+
+    <!-- Register and start the service. Stamped: the payload is appended to this .msi. Properties: no payload, SERVER (and a token) given on the command line. -->
+    <CustomAction Id="RivetSetupStamped" FileKey="AgentExeFile" ExeCommand="setup --silent --from-msi --payload-from &quot;[OriginalDatabase]&quot;" Execute="deferred" Impersonate="no" Return="check"/>
+    <CustomAction Id="RivetSetupProps" FileKey="AgentExeFile" ExeCommand="setup --silent --from-msi --server &quot;[SERVER]&quot; --token &quot;[ENROLL_TOKEN]&quot; --token-file &quot;[ENROLL_TOKEN_FILE]&quot; --ca-file &quot;[CA_PEM_FILE]&quot;" Execute="deferred" Impersonate="no" Return="check"/>
+
+    <!-- Uninstall: the standard MSI uninstall runs the agent's own uninstall (service and Add/Remove entry handled; files are the installer's). The Mesh agent is left alone unless REMOVE_MESHAGENT=1. Not during an upgrade. -->
+    <CustomAction Id="RivetUninstall" FileKey="AgentExeFile" ExeCommand="uninstall --from-msi" Execute="deferred" Impersonate="no" Return="ignore"/>
+    <CustomAction Id="RivetUninstallMesh" FileKey="AgentExeFile" ExeCommand="uninstall --from-msi --remove-meshagent" Execute="deferred" Impersonate="no" Return="ignore"/>
+
+    <InstallExecuteSequence>
+      <Custom Action="RivetStopServiceInstall" Before="InstallFiles">NOT REMOVE</Custom>
+      <Custom Action="RivetStopServiceRemove" Before="RemoveFiles">REMOVE</Custom>
+      <Custom Action="RivetSetupStamped" After="InstallFiles">NOT Installed AND NOT REMOVE AND NOT SERVER</Custom>
+      <Custom Action="RivetSetupProps" After="InstallFiles">NOT Installed AND NOT REMOVE AND SERVER</Custom>
+      <Custom Action="RivetUninstall" Before="RivetStopServiceRemove">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE AND NOT REMOVE_MESHAGENT="1"</Custom>
+      <Custom Action="RivetUninstallMesh" Before="RivetStopServiceRemove">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE AND REMOVE_MESHAGENT="1"</Custom>
+    </InstallExecuteSequence>
+  </Product>
+</Wix>

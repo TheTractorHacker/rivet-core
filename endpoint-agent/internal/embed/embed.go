@@ -309,6 +309,17 @@ func checkCA(s string) error {
 	return nil
 }
 
+// ValidateServerURL, ValidateToken and ValidateCAPEM apply the payload's own rules to values that did not come from a payload (the MSI's public
+// properties SERVER, ENROLL_TOKEN and CA_PEM_FILE): the same limits, so a property can never carry what a stamped installer could not. Errors never
+// echo the value.
+func ValidateServerURL(s string) error { return checkServerURL(s) }
+
+// ValidateToken checks the shape of an enrollment token.
+func ValidateToken(t string) error { return checkToken(t) }
+
+// ValidateCAPEM checks that s holds only well-formed PEM certificates and is not larger than a payload allows.
+func ValidateCAPEM(s string) error { return checkCA(s) }
+
 // Build returns exe || payload || footer for a payload that has already been
 // marshalled. It does not validate (tests build deliberately bad files).
 func Build(exe, payload []byte) []byte {

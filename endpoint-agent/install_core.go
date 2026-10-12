@@ -53,6 +53,7 @@ type installParams struct {
 	installDir   string
 	noService    bool
 	skipIfEnroll bool // setup: an already enrolled device on the same server keeps its identity, no new exchange
+	skipARP      bool // setup --from-msi: Windows Installer owns the Add/Remove Programs entry
 	self         string
 	version      string
 }
@@ -135,7 +136,9 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 			return installResult{Kind: instFail, Msg: "starting service: " + err.Error(), Dst: dst}
 		}
 		log.Info("service installed and started")
-		if err := ops.registerARP(p.installDir, dst); err != nil {
+		if p.skipARP {
+			log.Info("not registering an Add/Remove Programs entry: the MSI package owns it")
+		} else if err := ops.registerARP(p.installDir, dst); err != nil {
 			// cosmetic: the agent works without an uninstall entry
 			log.Warn("could not register the Add/Remove Programs entry", "err", err)
 		}

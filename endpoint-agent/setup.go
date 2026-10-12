@@ -94,6 +94,12 @@ type setupOpts struct {
 	noMesh                      bool // --no-mesh-agent: ignore a Mesh request in the installer payload
 	stateDir, installDir        string
 	explicit                    map[string]bool
+
+	// MSI package (packaging/msi): the installer is Windows Installer, which has already placed this program in the install directory.
+	fromMSI     bool   // --from-msi: no Add/Remove entry (the MSI owns it), enrollment pending is not a failure, an upgrade may reuse the existing enrollment
+	payloadFrom string // --payload-from FILE: read the appended installer payload from FILE (the .msi) instead of from this program
+	// Public properties of the MSI (msiexec SERVER=... ENROLL_TOKEN=...): the payload-less way to enroll. Only with --from-msi.
+	server, token, tokenFile, caFile string
 }
 
 // elevatedArgs rebuilds the child command line from the PARSED options only
@@ -120,6 +126,12 @@ func parseSetup(args []string) (setupOpts, int) {
 	fs.BoolVar(&o.noService, "no-service", false, "do not register or start the service (test mode)")
 	fs.BoolVar(&o.elevated, "elevated", false, "internal: this process was relaunched elevated")
 	fs.BoolVar(&o.noMesh, "no-mesh-agent", false, "do not install the MeshCentral agent even if this installer carries a request for it")
+	fs.BoolVar(&o.fromMSI, "from-msi", false, "run by the RivetIT MSI package (internal): this program is already installed")
+	fs.StringVar(&o.payloadFrom, "payload-from", "", "read the installer payload appended to this file (the .msi) instead of to this program; needs --from-msi")
+	fs.StringVar(&o.server, "server", "", "MSI property mode: RivetIT base URL (needs --from-msi and a token unless the device is already enrolled)")
+	fs.StringVar(&o.token, "token", "", "MSI property mode: enrollment token (prefer --token-file)")
+	fs.StringVar(&o.tokenFile, "token-file", "", "MSI property mode: file containing the enrollment token")
+	fs.StringVar(&o.caFile, "ca-file", "", "MSI property mode: extra CA certificate (PEM) for an internal CA")
 	installDir := fs.String("install-dir", defaultInstallDir(), "binary directory")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -129,6 +141,19 @@ func parseSetup(args []string) (setupOpts, int) {
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintln(os.Stderr, "setup takes no positional arguments")
+		return o, exitBadConfig
+	}
+	// The MSI-only options are refused anywhere else, and the two payload sources exclude each other.
+	if !o.fromMSI && (o.payloadFrom != "" || o.server != "" || o.token != "" || o.tokenFile != "" || o.caFile != "") {
+		fmt.Fprintln(os.Stderr, "--payload-from, --server, --token, --token-file and --ca-file belong to the MSI package and need --from-msi")
+		return o, exitBadConfig
+	}
+	if o.payloadFrom != "" && (o.server != "" || o.token != "" || o.tokenFile != "" || o.caFile != "") {
+		fmt.Fprintln(os.Stderr, "--payload-from cannot be combined with --server, --token, --token-file or --ca-file")
+		return o, exitBadConfig
+	}
+	if o.server == "" && (o.token != "" || o.tokenFile != "" || o.caFile != "") {
+		fmt.Fprintln(os.Stderr, "--token, --token-file and --ca-file need --server")
 		return o, exitBadConfig
 	}
 	o.explicit = map[string]bool{}
@@ -169,17 +194,37 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 		say("Cannot locate the installer: "+err.Error(), true)
 		return exitInstallFail
 	}
-	// Validate before any elevation prompt: a bad installer should fail early.
-	pl, err := embed.Read(self, now())
-	if err != nil {
-		code, msg := classifyEmbedErr(err)
-		if o.elevated {
-			// The user already saw this in the parent's relaunch; keep quiet UI-wise.
-			fmt.Fprintln(os.Stderr, msg)
-			return code
+	// Where the configuration comes from: the payload appended to this program (the exe installer), to the .msi named by --payload-from (the MSI
+	// package), or the MSI's public properties. Validate before any elevation prompt: a bad installer should fail early.
+	src := self
+	if o.payloadFrom != "" {
+		src = o.payloadFrom
+	}
+	var pl *embed.Payload
+	refresh := false // an MSI upgrade without a usable payload: keep the enrollment, only re-register the service
+	var embedErr error
+	if o.server != "" {
+		var perr error
+		if pl, perr = o.propertyPayload(now()); perr != nil {
+			say(perr.Error(), true)
+			return exitBadConfig
 		}
-		say(msg, true)
-		return code
+	} else {
+		pl, err = embed.Read(src, now())
+		if err != nil {
+			if o.fromMSI && (errors.Is(err, embed.ErrNotStamped) || errors.Is(err, embed.ErrExpired)) {
+				refresh, embedErr = true, err // decided after the elevation check, when the state directory can be read
+			} else {
+				code, msg := classifyEmbedErr(err)
+				if o.elevated {
+					// The user already saw this in the parent's relaunch; keep quiet UI-wise.
+					fmt.Fprintln(os.Stderr, msg)
+					return code
+				}
+				say(msg, true)
+				return code
+			}
+		}
 	}
 
 	if !ops.isElevated() {
@@ -189,6 +234,10 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 			if !o.silent {
 				ops.message(title, msg, true)
 			}
+			return exitNotElevated
+		}
+		if o.fromMSI {
+			say("The MSI setup step must run elevated (Windows Installer runs it as SYSTEM).", true)
 			return exitNotElevated
 		}
 		if o.explicit["state-dir"] || o.explicit["install-dir"] {
@@ -221,19 +270,35 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 		fmt.Fprintln(os.Stderr, "warning: cannot write", logPath+":", err)
 	}
 	log := slog.New(slog.NewTextHandler(&redactWriter{w: sink}, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	log.Info("setup start", "version", version, "exe", self, "installer_id", pl.InstallerID, "server", pl.ServerURL,
-		"department", pl.Department, "token", pl.RedactedToken(), "expires_at", pl.ExpiresAt, "silent", o.silent, "no_service", o.noService)
 
-	f := enrollFlags{server: pl.ServerURL, department: pl.Department}
-	f.token = pl.EnrollmentToken
-	if pl.CAPEM != nil {
-		f.caPEM = []byte(*pl.CAPEM)
+	f := enrollFlags{}
+	if refresh {
+		if existing, _ := st.LoadToken(); existing == "" {
+			// no payload and nothing to keep: the usual explanation
+			code, msg := classifyEmbedErr(embedErr)
+			say(msg, true)
+			return code
+		}
+		log.Info("setup start (MSI upgrade or repair without a payload: keeping the existing enrollment)", "version", version, "exe", self, "silent", o.silent)
+	} else {
+		log.Info("setup start", "version", version, "exe", self, "installer_id", pl.InstallerID, "server", pl.ServerURL,
+			"department", pl.Department, "token", pl.RedactedToken(), "expires_at", pl.ExpiresAt, "silent", o.silent, "no_service", o.noService, "from_msi", o.fromMSI)
+		f = enrollFlags{server: pl.ServerURL, department: pl.Department}
+		f.token = pl.EnrollmentToken
+		if pl.CAPEM != nil {
+			f.caPEM = []byte(*pl.CAPEM)
+		}
 	}
 	res := performInstall(installParams{flags: f, stateDir: o.stateDir, installDir: o.installDir, noService: o.noService,
-		skipIfEnroll: true, self: self, version: version}, ops, log)
+		skipIfEnroll: true, skipARP: o.fromMSI, self: self, version: version}, ops, log)
 	code, msg, isErr := setupOutcome(res, logPath)
+	if o.fromMSI && res.Kind == instDeferred {
+		// Windows Installer treats a non-zero exit as a failed install and rolls it back, which would defeat an image or GPO install made while the
+		// server is unreachable: the service is registered and keeps retrying with the stored one-shot token.
+		code, isErr = exitOK, false
+	}
 	// The optional MeshCentral agent comes AFTER the RivetIT agent is in place and can never change the outcome or the exit code.
-	if !o.noMesh && (res.Kind == instOK || res.Kind == instDeferred || res.Kind == instDeferredFail) {
+	if !o.noMesh && pl != nil && (res.Kind == instOK || res.Kind == instDeferred || res.Kind == instDeferredFail) {
 		if line := installMeshAgent(context.Background(), ops, pl.InstallMeshAgent, pl.Mesh, st.Dir, log); line != "" {
 			msg += "\n" + line
 		}
@@ -241,6 +306,36 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 	log.Info("setup finished", "exit", code, "result", res.Msg)
 	say(msg, isErr)
 	return code
+}
+
+// propertyPayload builds the installer configuration from the MSI's public properties (--server and friends) with the payload's own validation, so a
+// property can never carry what a stamped installer could not. The token may be empty (an already enrolled device being reinstalled).
+func (o setupOpts) propertyPayload(now time.Time) (*embed.Payload, error) {
+	if err := embed.ValidateServerURL(o.server); err != nil {
+		return nil, errors.New("the SERVER property is not usable: " + strings.TrimPrefix(err.Error(), embed.ErrInvalid.Error()+": "))
+	}
+	tok, err := readToken(o.token, o.tokenFile)
+	if err != nil {
+		return nil, errors.New("cannot read the enrollment token file")
+	}
+	if tok != "" {
+		if err := embed.ValidateToken(tok); err != nil {
+			return nil, errors.New("the enrollment token has the wrong shape")
+		}
+	}
+	p := &embed.Payload{Version: 1, ServerURL: o.server, EnrollmentToken: tok, Department: "", CreatedAt: now.UTC().Format(time.RFC3339), ExpiresAt: now.Add(time.Hour).UTC().Format(time.RFC3339)}
+	if o.caFile != "" {
+		b, err := os.ReadFile(o.caFile)
+		if err != nil {
+			return nil, errors.New("cannot read the CA_PEM_FILE")
+		}
+		pem := string(b)
+		if err := embed.ValidateCAPEM(pem); err != nil {
+			return nil, errors.New("the CA_PEM_FILE is not a PEM certificate bundle")
+		}
+		p.CAPEM = &pem
+	}
+	return p, nil
 }
 
 func classifyEmbedErr(err error) (int, string) {

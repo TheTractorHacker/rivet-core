@@ -67,6 +67,7 @@ func cmdUninstall(args []string) int {
 	meshAgent := fs.Bool("remove-meshagent", false, "ALSO uninstall a separately managed MeshCentral agent (default: leave it untouched)")
 	installDir := fs.String("install-dir", defaultInstallDir(), "binary directory")
 	elevated := fs.Bool("elevated", false, "internal: this process was relaunched elevated")
+	fromMSI := fs.Bool("from-msi", false, "run by the RivetIT MSI package (internal): Windows Installer removes the files and its own Add/Remove Programs entry")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -102,8 +103,10 @@ func cmdUninstall(args []string) int {
 		return 1
 	}
 	fmt.Println("service stopped and removed")
-	if err := removeARPEntry(); err != nil {
-		fmt.Fprintln(os.Stderr, "warning: removing the Add/Remove Programs entry:", err)
+	if !*fromMSI { // the MSI owns its entry and its files
+		if err := removeARPEntry(); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: removing the Add/Remove Programs entry:", err)
+		}
 	}
 	if *meshAgent {
 		removeMeshAgentIfPresent()
@@ -119,7 +122,9 @@ func cmdUninstall(args []string) int {
 	} else {
 		fmt.Println("local state kept in", *dir, "(use --purge to delete)")
 	}
-	removeInstallDir(*installDir)
+	if !*fromMSI {
+		removeInstallDir(*installDir)
+	}
 	return 0
 }
 
