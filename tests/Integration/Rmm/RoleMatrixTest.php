@@ -240,6 +240,7 @@ final class RoleMatrixTest extends RmmTestCase
     {
         $ms = $this->h->module->meshAgentSettings();
         $this->assertSame([31, null], [$ms->get()['hide'], $ms->get()['hide_tools']]);
+        $this->assertTrue($ms->hideAvailable());
         foreach ([-1, 256, '256', '-1', '1.5', 1.5, 'abc', '12abc', '', null, true, [31], '0x1f', '1e1', ' '] as $bad) {
             $err = $ms->update(['mesh_hide' => $bad, 'mesh_hide_tools' => 5], 1);
             $this->assertCount(1, $err, 'mesh_hide ' . json_encode($bad));
@@ -264,6 +265,7 @@ final class RoleMatrixTest extends RmmTestCase
         $this->h->db->execute('ALTER TABLE endpoint_agent_mesh_settings DROP COLUMN mesh_hide');
         $ms->refresh();
         $this->assertSame([31, null], [$ms->get()['hide'], $ms->get()['hide_tools']]);
+        $this->assertFalse($ms->hideAvailable());
         $this->assertCount(1, $ms->update(['mesh_hide' => 5], 1));
     }
 

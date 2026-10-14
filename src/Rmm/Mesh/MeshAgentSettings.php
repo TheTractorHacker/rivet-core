@@ -91,6 +91,12 @@ final class MeshAgentSettings
         return $view === 'desktop' ? $g['hide'] : ($g['hide_tools'] ?? $g['hide']);
     }
 
+    /** True when migration 0026 is applied (the two columns exist), i.e. when a save of the hide settings can work. */
+    public function hideAvailable(): bool
+    {
+        return array_key_exists('mesh_hide', $this->row());
+    }
+
     /** A whole number 0..255 from an int or a plain digit string; null for anything else (null, '', 1.5, '12abc', 256, -1). */
     public static function cleanHide(mixed $v): ?int
     {
@@ -199,7 +205,7 @@ final class MeshAgentSettings
         if (!array_key_exists('group_id_url', $existing)) {
             unset($set['group_id_url']);   // migration 0024 not applied yet: the URL form is derived from the hex
         }
-        if (!array_key_exists('mesh_hide', $existing) && (isset($set['mesh_hide']) || array_key_exists('mesh_hide_tools', $set))) {
+        if (!$this->hideAvailable() && (isset($set['mesh_hide']) || array_key_exists('mesh_hide_tools', $set))) {
             return ['The Mesh interface settings need database migration 0026_rmm_mesh_hide; run the migrations first.'];
         }
         $cols = [];
