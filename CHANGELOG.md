@@ -2,6 +2,21 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.19 (first run on a real Windows machine: eight defects fixed, agent 0.7.1)
+
+The Windows half of the agent, cross-compiled since the beginning, was run for the first time on a real Windows 11 Pro laptop (RivetIT beta site, device 1): [docs/rmm/WINDOWS_VERIFICATION.md](docs/rmm/WINDOWS_VERIFICATION.md) has every test, its result and the evidence. Agent versions **0.7.0** and **0.7.1** (published to the beta ring, self-updated on the laptop) carry the fixes; the server fix needs this release.
+
+- **Security (agent): junctions escaped the file-transfer path policy.** Since Go 1.23 `filepath.EvalSymlinks` does not follow Windows junctions but the operating system does, so `C:\allowed\jn\x` with `jn` a junction to `C:\Windows\System32\drivers\etc` passed the allow list and was read (verified: the hosts file came back) or written. The path is now resolved with `GetFinalPathNameByHandle`, a reparse point is refused when opening and the handle's own path must equal the checked one (`internal/remote/resolve_windows.go`). Anyone running agent 0.6.0 or older with `filetransfer` on should update the agent; the feature is off by default and needs an administrator-listed folder.
+- **Agent: job environment.** The PowerShell child had no `PATHEXT`, `COMPUTERNAME` or `ComSpec`, so `whoami`, `ping`, `w32tm`, `quser`, `powercfg`, `eventcreate` and others were not found or "could not run a document", and library scripts that catch errors **reported success with empty sections** (9 of the 29 read-only starter scripts). `buildWindowsEnv` gives a fixed machine `PATH`, defaulted `PATHEXT` and `ComSpec` and a 26-variable pass-through list.
+- **Agent: CLIXML.** Windows PowerShell's error and progress streams reached the job output as `#< CLIXML <Objs>` XML; `CleanCLIXML` converts them back to text and drops progress records. Exit codes unchanged.
+- **Agent: `proc_kill`** waits up to 3 s for the process to end before reporting `ok`.
+- **Agent: service checks** open the service with the two read rights (services with a restrictive descriptor, `Dnscache` and `mpssvc`, answered "Access is denied" to `SERVICE_ALL_ACCESS`).
+- **Agent: `av` check** accepts a third-party antivirus the Windows Security Center lists as on (client editions); servers keep the Defender verdict.
+- **Server: threshold endpoints for policy checks.** `GET`/`PUT endpoint_devices/{id}/checks/{key}/thresholds` returned `404` for every check delivered by a policy (the starter pack); `AlertingActions` now also searches the device's effective policy (new optional last constructor argument `EffectivePolicy`, wired by `RmmModule`).
+- **Starter pack 1.0.1.** `battery-report`, `defender-status`, `defender-update-signatures` and `disk-health` print `unknown` / `n/a` / a note instead of Windows' sentinel values (`71582788` minutes, `65535` days, a bare `/`). Install the pack's update from the edition to get them.
+- **Tests.** Go: `winenv_test.go`, `clixml_test.go` (two real captured documents), `TestParseSecurityCenterAV`, `TestAVCheckThirdParty`; PHP: `AlertingTest::testAPolicyCheckHasThresholdEndpointsAndTheOverrideApplies`. The Windows-only files (`resolve_windows.go`, the service and kill changes) are covered by the run on the laptop, not by CI.
+- **Editions.** Publish agent 0.7.1 (or build a newer one) and **rebuild the MSI template with it**: the template still embeds the agent it was built from. No migration.
+
 ## 1.0.0-rc.18 (the Remote button finds the device: MeshCentral node ids in their URL form)
 
 Owner bug report from a real MeshCentral address (`...?viewmode=11&gotonode=<64 characters>&=`): `gotonode` is the 48-byte id as 64 base64 characters (`@` and `$` for `+` and `/`) without the `node//` prefix, while our agent reports the same 48 bytes as 96 hex characters and the launch URL sent `gotonode=node%2F%2F<hex>`. MeshCentral did not find the node and showed its home page.

@@ -19,9 +19,10 @@ A single static Go binary (`rivetit-agent`, no CGO, no runtime) that runs as a W
 > `docs/rmm/AGENT_BUILD.md`), and the unit has run under a real systemd inside a privileged container; it has not yet run on a physical host. The Windows agent was built on Linux without any Windows host. The portable
 > core (enrollment, transport, check-in/seq/buffering, job verification and state machine, updater, checks logic,
 > redaction, CLI) is unit/integration-tested on Linux and exercised end-to-end against a fake server. The thin
-> Windows layers are **cross-compiled and `go vet`-clean for windows/amd64 and windows/arm64 but have never been
-> executed**: see [What is Windows-only and UNVERIFIED](#what-is-windows-only-and-unverified).
-> Do not roll this out fleet-wide before a pilot on real Windows machines.
+> Windows layers were first **run on a real Windows 11 Pro machine (amd64) on 2026-10-14**: service and self-update, PowerShell jobs, the service and process
+> tools, file transfer, the event-log reader and the checks all work there, and the run found and fixed eight defects (see [docs/rmm/WINDOWS_VERIFICATION.md](../docs/rmm/WINDOWS_VERIFICATION.md)).
+> Still never executed: Windows Server, Windows on ARM (arm64), the MSI, the exe installer on a clean machine and the `disruptive` library scripts: see
+> [What is Windows-only and UNVERIFIED](#what-is-windows-only-and-unverified). Pilot on a few real machines before a fleet rollout.
 
 ## Supported platforms
 
@@ -532,7 +533,9 @@ warning, the exit code is unchanged. An existing Mesh agent is left alone. The a
 
 (The Linux layers are covered by the Linux section above and its tests; they have not run under a real systemd on a physical host.)
 
-Everything below compiles and vets for windows/amd64 and windows/arm64 and has **never run**:
+Everything below compiles and vets for windows/amd64 and windows/arm64. **On 2026-10-14 the amd64 build ran on a real Windows 11 Pro machine** (service, self-update,
+jobs, remote tools, file transfer, event-log reader, checks; [WINDOWS_VERIFICATION.md](../docs/rmm/WINDOWS_VERIFICATION.md)); what has still never run is the **arm64** build, Windows Server,
+the installer paths (exe and MSI on a clean machine, Add/Remove Programs, elevation and the manifest), `reboot_windows.go` and the delayed self-delete. The list names every Windows-only file:
 
 - `internal/svc/service_windows.go` (service handler, create/update/start/stop/delete, recovery actions, non-crash failure actions)
 - `internal/collect/collector_windows.go` (registry reads: MachineGuid, OS version, CPU name, pending-reboot keys; GetSystemTimes, GlobalMemoryStatusEx,
@@ -541,7 +544,7 @@ Everything below compiles and vets for windows/amd64 and windows/arm64 and has *
 - `internal/jobs/exec_windows.go`, `shell_windows.go` (PowerShell `-EncodedCommand` execution, `taskkill /T /F` tree kill, minimal environment)
 - `internal/agent/reboot_windows.go` (`shutdown.exe /r /t`), `cmd_install_windows.go` (install/uninstall, self-copy, delayed self-delete, `MeshAgent.exe -fulluninstall`)
 - `scripts/install-windows.ps1`
-- `internal/remote/svc_windows.go`, `proc_windows.go`, `files_windows.go` and the Windows branches of the path policy (service manager, toolhelp and process APIs, file handling), and the `wevtutil` event-log reader in `internal/logs` (RMM Phases 6 and 8)
+- `internal/remote/svc_windows.go`, `proc_windows.go`, `resolve_windows.go` (file open and junction-safe path resolution, since 0.7.0) and the Windows branches of the path policy (service manager, toolhelp and process APIs, file handling), and the `wevtutil` event-log reader in `internal/logs` (RMM Phases 6 and 8)
 - The self-installing installer's elevation, MessageBox, Add/Remove Programs entry and manifest (see "Self-installing per-department installer")
 - The update rename/restart sequence on a real SCM, and the whole system under EDR/AV
 - Authenticode signing (not performed), MSI packaging (not built)

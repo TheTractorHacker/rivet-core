@@ -272,13 +272,20 @@ func (p *WinPlatform) ServiceState(ctx context.Context, name string) (ServiceInf
 		return ServiceInfo{}, err
 	}
 	defer m.Disconnect()
-	s, err := m.OpenService(name)
+	// Ask for the two read rights only. mgr.OpenService requests SERVICE_ALL_ACCESS, which services with a restrictive security descriptor (DNS Client,
+	// Windows Defender Firewall, ...) refuse even to SYSTEM: the check then said "Access is denied" for healthy services (real Windows 11).
+	namep, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return ServiceInfo{}, err
+	}
+	h, err := windows.OpenService(m.Handle, namep, windows.SERVICE_QUERY_STATUS|windows.SERVICE_QUERY_CONFIG)
 	if err != nil {
 		if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
 			return ServiceInfo{}, ErrNotFound
 		}
 		return ServiceInfo{}, err
 	}
+	s := &mgr.Service{Name: name, Handle: h}
 	defer s.Close()
 	st, err := s.Query()
 	if err != nil {

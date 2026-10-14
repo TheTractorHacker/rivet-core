@@ -12,10 +12,12 @@ foreach ($d in $disks) {
     $c = $null
     try { $c = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch { }
     if (-not $c) { Write-Output '  NOT AVAILABLE: no reliability counters for this disk'; continue }
-    Write-Output ("  Temperature (C): {0} (max {1})" -f $c.Temperature, $c.TemperatureMax)
-    Write-Output ("  Wear (percent used): {0}" -f $c.Wear)
-    Write-Output ("  Read errors total/uncorrected: {0}/{1}" -f $c.ReadErrorsTotal, $c.ReadErrorsUncorrected)
-    Write-Output ("  Write errors total/uncorrected: {0}/{1}" -f $c.WriteErrorsTotal, $c.WriteErrorsUncorrected)
-    Write-Output ("  Power-on hours: {0}" -f $c.PowerOnHours)
+    # drivers often leave counters empty (NVMe drives in particular): say so instead of printing a bare "/"
+    function V($x) { if ($null -eq $x -or "$x" -eq '') { 'n/a' } else { "$x" } }
+    Write-Output ("  Temperature (C): {0} (max {1})" -f (V $c.Temperature), (V $c.TemperatureMax))
+    Write-Output ("  Wear (percent used): {0}" -f (V $c.Wear))
+    Write-Output ("  Read errors total/uncorrected: {0}/{1}" -f (V $c.ReadErrorsTotal), (V $c.ReadErrorsUncorrected))
+    Write-Output ("  Write errors total/uncorrected: {0}/{1}" -f (V $c.WriteErrorsTotal), (V $c.WriteErrorsUncorrected))
+    Write-Output ("  Power-on hours: {0}" -f (V $c.PowerOnHours))
 }
 exit 0

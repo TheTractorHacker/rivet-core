@@ -5,7 +5,9 @@ if ($bat.Count -eq 0) { Write-Output 'No battery present'; exit 0 }
 $st = @{ 1 = 'Discharging'; 2 = 'AC power'; 3 = 'Fully charged'; 4 = 'Low'; 5 = 'Critical'; 6 = 'Charging'; 7 = 'Charging and high'; 8 = 'Charging and low'; 9 = 'Charging and critical'; 10 = 'Undefined'; 11 = 'Partially charged' }
 foreach ($b in $bat) {
     $s = [string]$b.BatteryStatus; if ($st.ContainsKey([int]$b.BatteryStatus)) { $s = $st[[int]$b.BatteryStatus] }
-    Write-Output ("Battery: {0} | status: {1} | charge: {2}% | est. runtime min: {3}" -f $b.Name, $s, $b.EstimatedChargeRemaining, $b.EstimatedRunTime)
+    # 71582788 (0x4444444) is Windows' "unknown" marker, reported while the charger is connected
+    $rt = [string]$b.EstimatedRunTime; if ($b.EstimatedRunTime -eq 71582788 -or $null -eq $b.EstimatedRunTime) { $rt = 'unknown (on AC power)' }
+    Write-Output ("Battery: {0} | status: {1} | charge: {2}% | est. runtime min: {3}" -f $b.Name, $s, $b.EstimatedChargeRemaining, $rt)
 }
 $tmp = Join-Path $env:TEMP ('batt-{0}.xml' -f [guid]::NewGuid().ToString('N'))
 try {

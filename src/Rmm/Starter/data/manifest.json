@@ -1,12 +1,12 @@
 {
     "format": 1,
     "pack": "rivet-core-starter",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "files": {
         "checks.json": "2ab7a6905a640a30b1ada9a43f58e0c7d87d53af412b8c780db3adbdc9dfb960",
         "checks/uptime-linux.sh": "d06ed5aae93bdac478edb08be87a94aa9caff96a5e26af78c326c87e7a0b8f5f",
         "checks/uptime-windows.ps1": "c20b1ca52651dce71383d574dc4827464e12d7ce30e879ad280178b401c55fac",
-        "pack.json": "828a36a7371c92c65e05880c1e6f8e2e1ece015a423aeeed6ee5a48013aeabc3",
+        "pack.json": "814ef18a00bae6efdec74fc22a9a7cdffd3554305338d0403753ee2a14994980",
         "policies.json": "be73302618cfb8556347ee68d11286d0948f82d74d10cd7f341e60b5b103821e",
         "scripts/linux/cert-expiry.json": "e721a62b06dc266a6e5651877ec8e1dde22df210e38c9d71031e12c509c80f15",
         "scripts/linux/cert-expiry.sh": "2e4ae03d325553497ffaf122eb561745b0a2f920583e4bf5b84111dbe7f81289",
@@ -73,7 +73,7 @@
         "scripts/linux/updates-available.json": "06de2b450d7355ebb19b64dfb949ab6fd295584d69623755b1cd91afd9597a20",
         "scripts/linux/updates-available.sh": "16eae7e442cbcfdec051d1dfedc96d7f703832b830b08de1dd1e730b3c7c8e7a",
         "scripts/windows/battery-report.json": "b21d298c48965f0d8490f9e9e17de7b2132695b452c2e770d9af004253c6b63f",
-        "scripts/windows/battery-report.ps1": "86ea33fd1304f5b37d6e61f00e6d32031fd4b3b86bd04e5e8e1c701001f48b1f",
+        "scripts/windows/battery-report.ps1": "186361d55c2d923f1c3f178b8206ffc9d79e93534a784ae1e512e01a18f1ecb0",
         "scripts/windows/bitlocker-status.json": "e0797c5e187ab9272827b4200ef27c0583f0a7084bbc5fec3692d1b5aca1a8d3",
         "scripts/windows/bitlocker-status.ps1": "be75e411ad999fe1fe38b3e7b4ac6c1cbd5e4bf97cb7df6928eba2b16dcf888b",
         "scripts/windows/browser-cache-clean.json": "810054638fa01128814b6ee050909c56a00940f8ebb1eb111b79e409f9b43d69",
@@ -85,11 +85,11 @@
         "scripts/windows/defender-quick-scan.json": "ca7ed4f64709095cc50a21257a854672783ccc2e2d8cb77ee4717b3d4c4f4749",
         "scripts/windows/defender-quick-scan.ps1": "54687e3703834402e4d96d6084d5cb5ec9dc4fb6c7d2671e4f9e031785eb8fcb",
         "scripts/windows/defender-status.json": "f4beb6cce591f4e960ae99c95fecd4585098efb5b3fdf0c229227f482d0eb0c6",
-        "scripts/windows/defender-status.ps1": "9e5a3f724998e3be21a644c2ed0d7a49bb70796d9bb464f02a6684fcc2a3d1ea",
+        "scripts/windows/defender-status.ps1": "32e229ac0a814a2839a4de7ffc8785399be9c005b73db4160e4aed33207bfdcf",
         "scripts/windows/defender-update-signatures.json": "c86e43290e7e011bb6867c5a32a5596549d096ae060c20626471e842d822d9b5",
-        "scripts/windows/defender-update-signatures.ps1": "d00a4b8226528a4c004deb7fc872b239d2a8c81b7e539e81ba7bb3cc938b33f4",
+        "scripts/windows/defender-update-signatures.ps1": "865def5efc8e9fbe55a764ef1837c7dd6aadff783d5ffd1914b09ee520e823e9",
         "scripts/windows/disk-health.json": "c01d9b3fe0e9f1653edd84f9c6b9b8a49beee4bfd574e127c338dd64d536c811",
-        "scripts/windows/disk-health.ps1": "b6a64af08f5e4248cabf66a8d620a8ab0f2311adf7b93b7812e4ffe5edbf14e6",
+        "scripts/windows/disk-health.ps1": "129ea06b9cf3edb8b382d7ab62354d5eda74e8c3dd2b0459fef862644ad1d79e",
         "scripts/windows/dotnet-vcredist-versions.json": "ce01a68f86607338e4d78055b0092644af13ab4fc2b0f6369d706fb2efa91a95",
         "scripts/windows/dotnet-vcredist-versions.ps1": "fcd2f233f4035f75223dbf1c5f0f5487e875e06af48ca7ce41e1f572e6a0c0be",
         "scripts/windows/eventlog-errors.json": "ba1914049214bdd896245de742a62bd3240e6d541ca394aaf48a06e0e562a160",
@@ -155,5 +155,5 @@
         "scripts/windows/winget-outdated.json": "df74b90f02a1b2a8dfa1fb6741defa78b1cd2d20040447af878ce1aeb44f5029",
         "scripts/windows/winget-outdated.ps1": "2a8f32d4308d969f66a34f10e5f12738904b811f373b47ad4269754d38f645c7"
     },
-    "pack_sha256": "587e930b0b03e0fd976d28da568f92a9d643098c66b41897c2e365724b9a404f"
+    "pack_sha256": "d4c2a630a25d158e85ef7733a86ab1f413a6e3380454cec1507225df4f98a3d4"
 }

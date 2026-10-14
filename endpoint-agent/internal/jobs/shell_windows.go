@@ -37,7 +37,7 @@ func BuildScriptCommand(script string, params []byte) (ScriptCmd, error) {
 		return ScriptCmd{}, errors.New("script too large for -EncodedCommand")
 	}
 	ps := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-	return ScriptCmd{Name: ps, Args: []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc}, Env: env}, nil
+	return ScriptCmd{Name: ps, Args: []string{"-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc}, Env: env}, nil
 }
 
 // BuildJobCommand is BuildScriptCommand on Windows: PowerShell is the only script runner.

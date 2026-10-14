@@ -889,3 +889,51 @@ func TestStoreAndPathAllowLists(t *testing.T) {
 		}
 	}
 }
+
+// The Security Center JSON below was captured on a real Windows 11 machine that runs Bitdefender: Defender is listed but off (0x060100), Bitdefender on and current (0x041000).
+const securityCenterReal = `[{"displayName":"Windows Defender","productState":393472},{"displayName":"Bitdefender Antivirus","productState":266240}]`
+
+func TestParseSecurityCenterAV(t *testing.T) {
+	name, current, ok := parseSecurityCenterAV(securityCenterReal)
+	if !ok || name != "Bitdefender Antivirus" || !current {
+		t.Fatalf("%q %v %v", name, current, ok)
+	}
+	// out of date signatures: (state>>4)&0xF == 1
+	name, current, ok = parseSecurityCenterAV(`{"displayName":"Other AV","productState":266256}`)
+	if !ok || name != "Other AV" || current {
+		t.Fatalf("single object, stale: %q %v %v", name, current, ok)
+	}
+	for _, s := range []string{"", "not json", `[]`, `[{"displayName":"Windows Defender","productState":266240}]`, `[{"displayName":"Off AV","productState":393472}]`, `{"displayName":"","productState":266240}`} {
+		if _, _, ok := parseSecurityCenterAV(s); ok {
+			t.Errorf("%q should report no third-party antivirus", s)
+		}
+	}
+}
+
+func TestAVCheckThirdParty(t *testing.T) {
+	w, _, x := extCol("windows")
+	defender, center, centerErr := cfixture(t, "defender_off.json"), securityCenterReal, error(nil)
+	x.Exec = func(_ context.Context, _ time.Duration, _ string, args ...string) (string, int, error) {
+		if strings.Contains(strings.Join(args, " "), "SecurityCenter2") {
+			return center, 0, centerErr
+		}
+		return defender, 0, nil
+	}
+	// Defender's real-time protection is off but Bitdefender is on: the machine is protected
+	assertRes(t, w.RunCheck(context.Background(), xspec("av", `{}`)), OK, f64(0), "Bitdefender Antivirus is on")
+	center = `[{"displayName":"Bitdefender Antivirus","productState":266256}]`
+	assertRes(t, w.RunCheck(context.Background(), xspec("av", `{}`)), Warn, f64(0), "out of date")
+	// no third-party product: the Defender verdict stands
+	center = `[{"displayName":"Windows Defender","productState":393472}]`
+	assertRes(t, w.RunCheck(context.Background(), xspec("av", `{}`)), Fail, f64(0), "real-time protection is turned off")
+	// a server has no Security Center: same
+	centerErr = errors.New("Invalid namespace")
+	assertRes(t, w.RunCheck(context.Background(), xspec("av", `{}`)), Fail, f64(0), "real-time protection is turned off")
+	// Defender unreadable AND no Security Center: unknown, as before
+	defender = ""
+	assertRes(t, w.RunCheck(context.Background(), xspec("av", `{}`)), Unknown, nil, "third-party")
+	// Defender healthy: the Security Center is not even asked for the verdict
+	defender, centerErr = cfixture(t, "defender_ok.json"), nil
+	center = `[{"displayName":"Bitdefender Antivirus","productState":266240}]`
+	assertRes(t, w.RunCheck(context.Background(), xspec("av", `{}`)), OK, f64(1), "Windows Defender on")
+}

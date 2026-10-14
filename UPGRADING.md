@@ -166,6 +166,15 @@ For an edition that already runs the RMM module. Everything is additive and dorm
 8. **Constructor arguments.** `RmmModule` builds everything (`meshAgentSettings()`, `meshAgents()`); an edition that constructs `CheckinService`, `InstallerDownload`, `InstallerService`, `RmmAdmin`, `RemoteActions` or `RmmReadModel` itself passes the new optional trailing arguments or switches to `RmmModule`.
 9. **The agent.** Ship the agent of this release (its installer understands the new payload members, `install-linux.sh` gains `--install-mesh-agent`, `--mesh-url`, `--mesh-group-id`, `--mesh-cert-pin`, `--no-mesh-agent` and `uninstall --remove-meshagent`). **Not verified against a real MeshCentral server**: the download address, the agent ids, the install arguments and the node-id locations are from the MeshCentral documentation as remembered and are exercised against mocks only; check them against your Mesh version before a fleet roll-out (the ids and arguments can be corrected from the server without a new agent).
 
+## Adopting 1.0.0-rc.19 (first Windows run; agent 0.7.1)
+
+No migration, no new setting, no signature change except an **optional trailing constructor argument** on `AlertingActions` (`?EffectivePolicy`; `RmmModule` passes it). What to do:
+
+1. **Publish the new agent** (`dist/rivetit-agent-windows-amd64.exe` built with `make dist VERSION=0.7.1` or later) and offer it to your rings. Agent 0.6.0 and older let a **junction** inside an allowed transfer folder reach files outside it (`filetransfer` is off by default and needs an administrator-listed folder); PowerShell scripts that call native programs (`ping`, `w32tm`, `whoami`, ...) misbehave there too.
+2. **Rebuild the MSI template** (`make msi VERSION=...`) with the new agent; the active template embeds the agent it was built from.
+3. **Install the starter pack's update** (Starter pack page, "updated" items) to get the four corrected Windows scripts (pack 1.0.1). Edited scripts are never overwritten.
+4. Nothing to change in the UI. The threshold override endpoints now answer for policy-delivered checks.
+
 ## Adopting 1.0.0-rc.18 (MeshCentral node ids; migration 0027)
 
 Run `Migration0027MeshNodeIds` with the rest (`CoreMigrations::all()` includes it; an edition with its own DB-step list adds a step for `0027_rmm_mesh_node_ids`). It is idempotent and optional for correctness (launch and conflict detection already handle the old spellings), but it makes the stored ids and the UI canonical. The edition's Mesh node field (Remote card, device page) should accept a pasted MeshCentral address or any spelling and show the stored `node//...` form; help text: "In MeshCentral open the device and copy the address bar, or paste the node id". The launch URL changes from `gotonode=node%2F%2F<id>` to `gotonode=<64 characters>`; nothing else in the wire formats changes.

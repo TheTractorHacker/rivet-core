@@ -11,6 +11,7 @@ use RivetCore\Rmm\Authz\RmmPrincipal;
 use RivetCore\Rmm\Checks\CheckCatalog;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Device\DeviceRepository;
+use RivetCore\Rmm\Policy\EffectivePolicy;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Technician\ActionResult;
@@ -40,6 +41,7 @@ final class AlertingActions
         private readonly CheckEvalStore $eval,
         private readonly RmmSettings $settings,
         private readonly RmmAuditInterface $audit,
+        private readonly ?EffectivePolicy $policy = null,
     ) {
     }
 
@@ -552,7 +554,7 @@ final class AlertingActions
         if ($dev === null) {
             return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
         }
-        $def = $this->definition($checkKey);
+        $def = $this->definition($checkKey, $dev);
         if ($def === null) {
             return ActionResult::fail(404, 'not_found', 'No such check is defined.');
         }
@@ -579,7 +581,7 @@ final class AlertingActions
         if ($dev === null) {
             return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
         }
-        $def = $this->definition($checkKey);
+        $def = $this->definition($checkKey, $dev);
         if ($def === null) {
             return ActionResult::fail(404, 'not_found', 'No such check is defined.');
         }
@@ -637,12 +639,26 @@ final class AlertingActions
         return is_array($t) ? $t : null;
     }
 
-    /** @return array<string,mixed>|null */
-    private function definition(string $key): ?array
+    /**
+     * The definition of a check: the global list's, or (for a device) one its policies deliver. A check that only a policy defines (the starter
+     * pack's, for example) has thresholds like any other; looking only at the global list made its override endpoints answer 404 (found on a
+     * real device that received the starter workstation policy).
+     *
+     * @param array<string,mixed>|null $dev
+     * @return array<string,mixed>|null
+     */
+    private function definition(string $key, ?array $dev = null): ?array
     {
         foreach ($this->settings->checks() as $c) {
             if (($c['key'] ?? null) === $key) {
                 return $c;
+            }
+        }
+        if ($dev !== null && $this->policy !== null) {
+            foreach ($this->policy->forDevice($dev)['checks'] as $c) {
+                if (($c['key'] ?? null) === $key) {
+                    return $c;
+                }
             }
         }
 

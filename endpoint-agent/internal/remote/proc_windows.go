@@ -152,7 +152,7 @@ func (w WinProcs) Lookup(ctx context.Context, pid int) (ProcSample, bool, error)
 
 // Kill implements ProcBackend: TerminateProcess with exit code 1 (force is moot).
 func (WinProcs) Kill(pid int, _ bool) (string, error) {
-	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid))
 	if err != nil {
 		switch {
 		case errors.Is(err, windows.ERROR_INVALID_PARAMETER):
@@ -169,6 +169,9 @@ func (WinProcs) Kill(pid int, _ bool) (string, error) {
 		}
 		return "terminate", err
 	}
+	// TerminateProcess only starts the end of the process; wait briefly so "ok" means it is gone (found on a real machine: a technician's next
+	// process list still showed the process for a moment).
+	_, _ = windows.WaitForSingleObject(h, 3000)
 	return "terminate", nil
 }
 

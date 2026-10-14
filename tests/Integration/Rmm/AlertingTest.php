@@ -372,6 +372,29 @@ final class AlertingTest extends RmmTestCase
         $this->assertSame('ok', $this->h->one("SELECT status FROM endpoint_agent_checks WHERE device_id = $b AND check_key = 'cpu_p'"));
     }
 
+    public function testAPolicyCheckHasThresholdEndpointsAndTheOverrideApplies(): void
+    {
+        // Found on a real Windows device: the starter policy's checks (defined only by the policy) answered 404 "No such check is defined".
+        $this->on(true);
+        $this->assertSame([], $this->h->module->settings()->update(['features_json' => ['monitoring' => true, 'metrics' => true, 'jobs' => true, 'updates' => true, 'policies' => true, 'alerting' => true]]));
+        $this->h->module->alertingEngine()->forget();
+        [$a, $ta] = $this->enrollDevice('POL-T');
+        $p = $this->h->module->policyStore()->create(['name' => 'Mem policy', 'settings' => ['check.mem_p' => ['type' => 'memory', 'params' => ['thresholds' => ['warn' => ['op' => 'gt', 'value' => 90]]], 'interval_s' => 60]]], 1);
+        $this->h->module->policyStore()->assign((int) $p['policy_id'], ['scope_type' => 'client', 'scope_id' => $this->h->clientA], 1);
+        $caps = ['capabilities' => ['check:memory', 'policies'], 'platform' => 'windows', 'arch' => 'amd64'];
+        [, , $r] = $this->h->checkin($ta, $caps);
+        $this->assertContains('mem_p', array_column($r['config']['checks'], 'key'));
+        [$c, $j] = $this->h->tech('GET', [(string) $a, 'checks', 'mem_p', 'thresholds'], $this->pt());
+        $this->assertSame(200, $c, json_encode($j));
+        $this->assertSame(90, $j['effective']['warn']['value']);
+        [$c] = $this->h->tech('GET', [(string) $a, 'checks', 'nope_p', 'thresholds'], $this->pt());
+        $this->assertSame(404, $c, 'a check nobody defines is still unknown');
+        [$c, $j] = $this->h->tech('PUT', [(string) $a, 'checks', 'mem_p', 'thresholds'], $this->pt(), ['warn' => ['op' => 'gt', 'value' => 10]]);
+        $this->assertSame(200, $c, json_encode($j));
+        $this->h->checkin($ta, $caps + ['checks' => [['key' => 'mem_p', 'status' => 'ok', 'detail' => '', 'value' => 50.0]]]);
+        $this->assertSame('warn', $this->h->one("SELECT status FROM endpoint_agent_checks WHERE device_id = $a AND check_key = 'mem_p'"), '50 is over this device\'s own 10');
+    }
+
     public function testScheduledScriptsWaitOutASuppressWindowButNotAMuteWindow(): void
     {
         $this->linked();

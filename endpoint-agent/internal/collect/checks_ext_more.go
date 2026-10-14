@@ -257,12 +257,26 @@ func (c *Collector) checkAV(ctx context.Context, key string, raw json.RawMessage
 	needRT := p.RequireRealtime == nil || *p.RequireRealtime
 	out, _, err := c.sys().Exec(ctx, 30*time.Second, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
 		"Get-MpComputerStatus | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureAge | ConvertTo-Json -Compress")
+	var d defenderStatus
+	var perr error
+	if err == nil {
+		d, perr = parseDefender(out)
+	}
+	if err != nil || perr != nil || !d.AVEnabled || !d.ServiceEnabled || (needRT && !d.RealTime) {
+		// Defender is off or absent. Windows hands Defender's job to a third-party antivirus when one is installed (found on a real Windows 11
+		// machine running Bitdefender: the check failed although the machine was protected), so ask the Security Center before calling it a failure.
+		if name, current, ok := c.thirdPartyAV(ctx); ok {
+			if !current {
+				return resv(key, Warn, name+" is on but its signatures are out of date", 0)
+			}
+			return resv(key, OK, name+" is on, signatures current", 0)
+		}
+	}
 	if err != nil {
 		return res(key, Unknown, "cannot read Defender status: "+firstLine(err.Error()))
 	}
-	d, err := parseDefender(out)
-	if err != nil {
-		return res(key, Unknown, err.Error())
+	if perr != nil {
+		return res(key, Unknown, perr.Error())
 	}
 	age := float64(d.SignatureAgeDays)
 	switch {
@@ -276,6 +290,17 @@ func (c *Collector) checkAV(ctx context.Context, key string, raw json.RawMessage
 		return resv(key, Warn, fmt.Sprintf("Defender signatures are %d days old", d.SignatureAgeDays), age)
 	}
 	return resv(key, OK, fmt.Sprintf("Windows Defender on, signatures %d days old", d.SignatureAgeDays), age)
+}
+
+// thirdPartyAV reports the first non-Microsoft antivirus product the Windows Security Center lists as turned on (client editions only; a server
+// has no Security Center and the call fails, which means "none").
+func (c *Collector) thirdPartyAV(ctx context.Context) (name string, current, ok bool) {
+	out, _, err := c.sys().Exec(ctx, 20*time.Second, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+		"Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | Select-Object displayName,productState | ConvertTo-Json -Compress")
+	if err != nil {
+		return "", false, false
+	}
+	return parseSecurityCenterAV(out)
 }
 
 // ---------------------------------------------------------------- systemd_failed (Linux)

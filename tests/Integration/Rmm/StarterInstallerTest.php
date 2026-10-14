@@ -101,7 +101,7 @@ final class StarterInstallerTest extends AutomationTestCase
             [$loaded, $err] = $svc->load((int) $row['script_id']);
             $this->assertNull($err, $row['name'] . ': ' . $err);
             $note = (string) $this->h->one("SELECT note FROM rmm_script_versions WHERE script_id = {$row['script_id']} AND version = 1");
-            $this->assertMatchesRegularExpression('/^starter\|rivet-core-starter\|[a-z0-9-]+\|1\.0\.0\|[0-9a-f]{64}$/', $note);
+            $this->assertMatchesRegularExpression('/^starter\|rivet-core-starter\|[a-z0-9-]+\|1\.0\.1\|[0-9a-f]{64}$/', $note);
             $item = $byId[explode('|', $note)[2]];
             $tags = json_decode((string) $row['tags_json'], true);
             $this->assertContains('starter', $tags);
@@ -127,7 +127,7 @@ final class StarterInstallerTest extends AutomationTestCase
         $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_policy_assignments'), 'and assigned to nothing');
         foreach ($this->h->module->policyStore()->all() as $p) {
             $this->assertStringStartsWith('Starter: ', $p['name']);
-            $this->assertMatchesRegularExpression('/ \[starter\|rivet-core-starter\|policy-[a-z-]+\|1\.0\.0\|[0-9a-f]{64}\]$/', $p['description']);
+            $this->assertMatchesRegularExpression('/ \[starter\|rivet-core-starter\|policy-[a-z-]+\|1\.0\.1\|[0-9a-f]{64}\]$/', $p['description']);
             $this->assertArrayHasKey('check.starter.disk_free', $p['settings']);
         }
 

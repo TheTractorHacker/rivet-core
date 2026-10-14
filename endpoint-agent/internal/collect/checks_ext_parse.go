@@ -365,6 +365,46 @@ func parseDefender(out string) (defenderStatus, error) {
 	return d, nil
 }
 
+// parseSecurityCenterAV reads `Get-CimInstance root/SecurityCenter2 AntiVirusProduct | Select displayName,productState | ConvertTo-Json`: one object or a list.
+// productState is a bit field: (state>>12)&0xF is 1 when the product is on, (state>>4)&0xF is 0 when its signatures are current. Microsoft's own
+// Defender entries are skipped (Defender is judged by Get-MpComputerStatus). It returns the first third-party product that is on.
+func parseSecurityCenterAV(out string) (name string, current, ok bool) {
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return "", false, false
+	}
+	type prod struct {
+		DisplayName  string `json:"displayName"`
+		ProductState int64  `json:"productState"`
+	}
+	var list []prod
+	if strings.HasPrefix(out, "[") {
+		if json.Unmarshal([]byte(out), &list) != nil {
+			return "", false, false
+		}
+	} else {
+		var one prod
+		if json.Unmarshal([]byte(out), &one) != nil {
+			return "", false, false
+		}
+		list = []prod{one}
+	}
+	for _, p := range list {
+		n := strings.TrimSpace(p.DisplayName)
+		low := strings.ToLower(n)
+		if n == "" || strings.Contains(low, "windows defender") || strings.Contains(low, "microsoft defender") {
+			continue
+		}
+		if (p.ProductState>>12)&0xF == 1 {
+			if r := []rune(n); len(r) > 80 {
+				n = string(r[:80])
+			}
+			return n, (p.ProductState>>4)&0xF == 0, true
+		}
+	}
+	return "", false, false
+}
+
 // parseFailedUnits reads `systemctl list-units --state=failed --no-legend --plain` into unit names.
 func parseFailedUnits(out string) []string {
 	var units []string

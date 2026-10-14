@@ -96,7 +96,7 @@ func RunBounded(ctx context.Context, s ExecSpec) ExecResult {
 	out := w.buf.String()
 	total := w.total
 	w.mu.Unlock()
-	out = Redact(out, s.Secrets...)
+	out = Redact(CleanCLIXML(out), s.Secrets...)
 	if len(out) > s.MaxOutput || total > int64(s.MaxOutput) {
 		res.Truncated = true
 		if len(out) > s.MaxOutput {

@@ -392,7 +392,7 @@ final class RmmModule
     public function alertingActions(): AlertingActions
     {
         return $this->alertingActions ??= new AlertingActions($this->sql(), $this->devices(), $this->authorizer(), $this->alerts(), $this->maintenance(), $this->escalation(), $this->dependencies(),
-            $this->storm(), $this->checkEval(), $this->settings(), $this->audit);
+            $this->storm(), $this->checkEval(), $this->settings(), $this->audit, $this->effectivePolicy());
     }
 
     public function linker(): RmmLinker

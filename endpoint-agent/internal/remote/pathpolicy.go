@@ -67,11 +67,11 @@ type PathPolicy struct {
 // NewHostPolicy is the policy of this machine: real symlink resolution, and the
 // agent's state directory (device token, enrollment secrets) always denied.
 func NewHostPolicy(stateDir string) PathPolicy {
-	p := PathPolicy{GOOS: runtime.GOOS, Resolve: filepath.EvalSymlinks}
+	p := PathPolicy{GOOS: runtime.GOOS, Resolve: hostResolve}
 	if stateDir != "" {
 		if abs, err := filepath.Abs(stateDir); err == nil {
 			p.ExtraDeny = append(p.ExtraDeny, abs)
-			if r, err := filepath.EvalSymlinks(abs); err == nil {
+			if r, err := hostResolve(abs); err == nil {
 				p.ExtraDeny = append(p.ExtraDeny, r)
 			}
 		}

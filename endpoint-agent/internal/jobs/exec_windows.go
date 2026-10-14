@@ -29,8 +29,5 @@ func configureProc(cmd *exec.Cmd) {
 }
 
 func minimalEnv() []string {
-	sr := os.Getenv("SystemRoot")
-	return []string{"SystemRoot=" + sr, "windir=" + sr, "SystemDrive=" + os.Getenv("SystemDrive"),
-		"ProgramData=" + os.Getenv("ProgramData"), "ProgramFiles=" + os.Getenv("ProgramFiles"),
-		"TEMP=" + os.Getenv("TEMP"), "TMP=" + os.Getenv("TMP"), "PATH=" + filepath.Join(sr, "System32") + ";" + sr}
+	return buildWindowsEnv(os.LookupEnv)
 }

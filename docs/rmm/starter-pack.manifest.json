@@ -2,9 +2,9 @@
     "pack": {
         "id": "rivet-core-starter",
         "name": "RivetCore RMM starter pack",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "description": "Ready-made scripts, check templates and policy drafts so a new RMM install is useful on day one.",
-        "pack_sha256": "587e930b0b03e0fd976d28da568f92a9d643098c66b41897c2e365724b9a404f"
+        "pack_sha256": "d4c2a630a25d158e85ef7733a86ab1f413a6e3380454cec1507225df4f98a3d4"
     },
     "counts": {
         "scripts": 73,
@@ -871,9 +871,9 @@
             "params": [],
             "output": "Battery lines and a Health percentage, or No battery present on desktops. Exit 0.",
             "file": "scripts/windows/battery-report.ps1",
-            "size_bytes": 1881,
-            "body_sha256": "86ea33fd1304f5b37d6e61f00e6d32031fd4b3b86bd04e5e8e1c701001f48b1f",
-            "content_hash": "a37033aba7ff2fbd6850389d1cf6b98be7fbad6f4673f8a456e68a94a48597dc"
+            "size_bytes": 2107,
+            "body_sha256": "186361d55c2d923f1c3f178b8206ffc9d79e93534a784ae1e512e01a18f1ecb0",
+            "content_hash": "03d808fb2dfd55105907f2c574c83de6cfb150b0a14b60e9cb5ce8b23bf66b3c"
         },
         {
             "id": "win-bitlocker-status",
@@ -1077,9 +1077,9 @@
             "params": [],
             "output": "Key/value Defender status lines. Exit 0; prints NOT AVAILABLE if Defender is absent.",
             "file": "scripts/windows/defender-status.ps1",
-            "size_bytes": 992,
-            "body_sha256": "9e5a3f724998e3be21a644c2ed0d7a49bb70796d9bb464f02a6684fcc2a3d1ea",
-            "content_hash": "9ca48a91b3d8a0e1198eab0b9605a66f9e55633d9d9416697912e7f96b559d7f"
+            "size_bytes": 1311,
+            "body_sha256": "32e229ac0a814a2839a4de7ffc8785399be9c005b73db4160e4aed33207bfdcf",
+            "content_hash": "bee17bfaf2bfeee2ec8f8cbe49ac72442120300fcdd1442319706ab834a08dd8"
         },
         {
             "id": "win-defender-update-signatures",
@@ -1108,9 +1108,9 @@
             ],
             "output": "[DRY-RUN] or [DONE]/[SKIP] lines with signature version before and after. Exit 0; exit 1 if the update failed.",
             "file": "scripts/windows/defender-update-signatures.ps1",
-            "size_bytes": 993,
-            "body_sha256": "d00a4b8226528a4c004deb7fc872b239d2a8c81b7e539e81ba7bb3cc938b33f4",
-            "content_hash": "069c74592fb50f8125b155ffd9ec74c66d0f747c549d008982da4816b86ba30d"
+            "size_bytes": 1185,
+            "body_sha256": "865def5efc8e9fbe55a764ef1837c7dd6aadff783d5ffd1914b09ee520e823e9",
+            "content_hash": "d34a4e6f070873c0b39ac243ef3173928d859782966dd3eedec4d20077d8c4e4"
         },
         {
             "id": "win-disk-health",
@@ -1130,9 +1130,9 @@
             "params": [],
             "output": "Disk table and per-disk reliability counters; NOT AVAILABLE where cmdlets are missing. Exit 0.",
             "file": "scripts/windows/disk-health.ps1",
-            "size_bytes": 1470,
-            "body_sha256": "b6a64af08f5e4248cabf66a8d620a8ab0f2311adf7b93b7812e4ffe5edbf14e6",
-            "content_hash": "17644c58e857d48eff6e3012637d02df822cd76eb931a1954c288427045ae2ff"
+            "size_bytes": 1691,
+            "body_sha256": "129ea06b9cf3edb8b382d7ab62354d5eda74e8c3dd2b0459fef862644ad1d79e",
+            "content_hash": "cdae4e330a02d219c7dd03b0970bbe76954cbfc0a09f8b6ddc65c4bd85dae78e"
         },
         {
             "id": "win-dotnet-vcredist-versions",
