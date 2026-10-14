@@ -228,7 +228,7 @@ final class TechnicianActions
         return $this->manage($who, $deviceId, function (array $dev) use ($who, $deviceId, $nodeId): ActionResult {
             $node = trim($nodeId);
             if (!$this->devices->setMeshNode($deviceId, $node, $who->userId)) {
-                return ActionResult::fail(422, 'invalid', 'That does not look like a MeshCentral node id (node//...).');
+                return ActionResult::fail(422, 'invalid', 'That does not look like a MeshCentral node id. In MeshCentral open the device and copy the address bar, or paste the node id (node//... or the 64 characters after gotonode=).');
             }
             $this->audit->record('Mesh Node Mapped', "{$who->userName} " . ($node === '' ? 'cleared' : 'set') . " the MeshCentral node for device $deviceId", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
 

@@ -265,6 +265,54 @@ final class RemoteToolsTest extends RemoteTestCase
 
     // ------------------------------------------------------------------ Mesh terminal and files
 
+    public function testTheLaunchUrlCarriesTheURLFormWhateverFormTheNodeWasStoredIn(): void
+    {
+        $mock = new \RivetCore\Tests\Support\MockMeshServer();
+        try {
+            $key = \RivetCore\Rmm\Mesh\MeshCookie::newLoginKey();
+            $this->assertTrue($this->h->module->admin()->saveMesh($this->admin, ['mesh_enabled' => 1, 'mesh_url' => $mock->url(), 'mesh_login_key' => $key, 'mesh_account_template' => 'rivetit-support'])->ok);
+            do {
+                $raw = random_bytes(48);
+                $url = strtr(rtrim(base64_encode($raw), '='), '+/', '@$');
+            } while (!str_contains($url, '@') || !str_contains($url, '$'));
+            $hex = bin2hex($raw);
+            $query = static function (string $u): array {
+                $q = (string) parse_url($u, PHP_URL_QUERY);
+                $out = [];
+                foreach (explode('&', $q) as $pair) {
+                    [$k, $v] = array_pad(explode('=', $pair, 2), 2, '');
+                    $out[$k] = $v;
+                }
+
+                return $out;
+            };
+            // a row written before ids were normalised: the hex the agent reported
+            $this->h->q("INSERT INTO endpoint_agent_mesh_nodes (device_id, mesh_node_id, source, updated_at, updated_by) VALUES ({$this->dev}, 'node//$hex', 'agent', NOW(), 0)");
+            [$c, $j] = $this->api('POST', [$this->d(), 'remote'], $this->tech, ['force' => true, 'view' => 'desktop']);
+            $this->assertSame(200, $c, json_encode($j));
+            $this->assertStringContainsString("&gotonode=$url&viewmode=11", $j['url']);
+            $this->assertSame(['login', 'gotonode', 'viewmode', 'hide'], array_keys($query($j['url'])));
+            $this->assertSame($url, $query($j['url'])['gotonode']);
+            [, $m] = $this->api('GET', [$this->d(), 'remote', 'mesh'], $this->tech);
+            $this->assertSame("node//$url", $m['node_id'], 'shown in the canonical form');
+            foreach (['terminal' => '12', 'files' => '13'] as $view => $vm) {
+                [$c, $j] = $this->api('POST', [$this->d(), 'remote'], $this->tech, ['force' => true, 'view' => $view]);
+                $this->assertSame($url, $query($j['url'])['gotonode']);
+                $this->assertSame($vm, $query($j['url'])['viewmode']);
+            }
+            // an administrator pastes the address from MeshCentral's address bar (with its trailing "&=")
+            $this->assertSame(200, $this->api('PUT', [$this->d(), 'remote', 'node'], $this->admin, ['node_id' => "https://desktop.example.test/?viewmode=11&gotonode=$url&="])[0]);
+            $this->assertSame("node//$url", $this->h->one("SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id={$this->dev}"));
+            $this->assertSame(200, $this->api('PUT', [$this->d(), 'remote', 'node'], $this->admin, ['node_id' => $hex])[0]);
+            $this->assertSame("node//$url", $this->h->one("SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id={$this->dev}"));
+            [$c, $j] = $this->api('PUT', [$this->d(), 'remote', 'node'], $this->admin, ['node_id' => "https://desktop.example.test/?viewmode=11&gotonode=short"]);
+            $this->assertSame(422, $c);
+            $this->assertSame("node//$url", $this->h->one("SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id={$this->dev}"), 'a refusal changes nothing');
+        } finally {
+            $mock->stop();
+        }
+    }
+
     public function testMeshTerminalAndFilesViews(): void
     {
         $mock = new \RivetCore\Tests\Support\MockMeshServer();
@@ -289,7 +337,7 @@ final class RemoteToolsTest extends RemoteTestCase
                 [$c, $j] = $this->api('POST', [$this->d(), 'remote'], $this->tech, ['force' => true, 'view' => $view]);
                 $this->assertSame(200, $c, json_encode($j));
                 $this->assertSame($want, $mode($j['url']), $view);
-                $this->assertStringContainsString('gotonode=' . rawurlencode($node), $j['url']);
+                $this->assertStringContainsString('&gotonode=' . str_repeat('A', 64) . '&viewmode=', $j['url']);
             }
             [$c, $j] = $this->api('POST', [$this->d(), 'remote'], $this->tech, ['force' => true]);
             $this->assertSame('11', $mode($j['url']), 'no view means the desktop, exactly as before');

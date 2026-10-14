@@ -81,7 +81,7 @@ final class MeshCookieTest extends TestCase
 
     public function testLaunchUrl(): void
     {
-        $this->assertSame('https://m.example.com/?login=a%40b%24c&gotonode=node%2F%2FABC&viewmode=11', M::launchUrl('https://m.example.com', '', 'a@b$c', 'node//ABC'));
+        $this->assertSame('https://m.example.com/?login=a%40b%24c&gotonode=ABC&viewmode=11', M::launchUrl('https://m.example.com', '', 'a@b$c', 'node//ABC'));
         $this->assertSame('https://m.example.com/my%20dom/?login=x&gotonode=n&viewmode=11', M::launchUrl('https://m.example.com', 'my dom', 'x', 'n'));
     }
 
@@ -109,5 +109,23 @@ final class MeshCookieTest extends TestCase
         parse_str((string) parse_url($u, PHP_URL_QUERY), $q);
         $this->assertSame(['login', 'gotonode', 'viewmode', 'hide'], array_keys($q));
         $this->assertSame('c&hide=0&login=evil', $q['login']);
+    }
+
+    public function testLaunchUrlCarriesTheURLFormOfEveryStoredSpellingExactly(): void
+    {
+        $raw = base64_decode('qq3fNZ+lJ8VQ/irRjMKB535hzB2i5mWVycToxyC+cF0WWDhnMwvhta9jvcrxaE+x', true);
+        $this->assertSame(48, strlen((string) $raw));
+        $url = 'qq3fNZ@lJ8VQ$irRjMKB535hzB2i5mWVycToxyC@cF0WWDhnMwvhta9jvcrxaE@x';
+        $hex = bin2hex((string) $raw);
+        $b = 'https://mesh.example.test';
+        foreach (['node//' . $url, 'node//' . $hex, 'node//' . strtoupper($hex), $url, $hex, 'https://mesh.example.test/?viewmode=11&gotonode=' . $url . '&='] as $stored) {
+            $this->assertSame($b . '/?login=TOK&gotonode=' . $url . '&viewmode=11&hide=31', M::launchUrl($b, '', 'TOK', $stored, 11, 31), $stored);
+            $this->assertSame($b . '/?login=TOK&gotonode=' . $url . '&viewmode=12', M::launchUrl($b, '', 'TOK', $stored, 12, 0), $stored);
+            $this->assertSame($b . '/dom/?login=TOK&gotonode=' . $url . '&viewmode=13&hide=15', M::launchUrl($b, 'dom', 'TOK', $stored, 13, 15), $stored);
+        }
+        // a stored id with a domain keeps only the bare id in gotonode (the domain is the path)
+        $this->assertSame($b . '/dom/?login=TOK&gotonode=' . $url . '&viewmode=11', M::launchUrl($b, 'dom', 'TOK', 'node/dom/' . $url));
+        // a legacy value that is not 48 bytes is sent as it was, minus the prefix, encoded outside [A-Za-z0-9@$_-]
+        $this->assertSame($b . '/?login=TOK&gotonode=AbCd%2Be%2Ff&viewmode=11', M::launchUrl($b, '', 'TOK', 'node//AbCd+e/f'));
     }
 }

@@ -447,6 +447,67 @@ final class MeshAgentTest extends RemoteTestCase
         $this->assertNotSame('', $t3 . $t4);
     }
 
+    /** @return array{0:string,1:string,2:string} hex, URL form, canonical */
+    private static function freshNode(): array
+    {
+        $raw = random_bytes(48);
+        $url = strtr(rtrim(base64_encode($raw), '='), '+/', '@$');
+
+        return [bin2hex($raw), $url, 'node//' . $url];
+    }
+
+    public function testAHexReportIsStoredInTheCanonicalForm(): void
+    {
+        $this->meshOn();
+        [$dev, $token] = $this->linked('H1');
+        [$hex, , $canon] = self::freshNode();
+        $this->meshReport($token, ['installed' => true, 'node_id' => 'node//' . $hex]);
+        $this->assertSame($canon, $this->nodeOf($dev));
+        $this->assertSame($canon, $this->h->one("SELECT node_id FROM endpoint_agent_mesh_agents WHERE device_id=$dev"));
+        $this->assertSame($canon, $this->h->module->meshAgents()->stateFor($dev)['node_id']);
+        $this->assertSame('mapped', $this->h->module->meshAgents()->stateFor($dev)['map_state']);
+        // the same node reported again in the URL form changes nothing
+        $this->meshReport($token, ['installed' => true, 'node_id' => $canon]);
+        $this->assertSame([1, $canon], [$this->audit('Mesh Node Mapped'), $this->nodeOf($dev)]);
+        // a pasted MeshCentral address in the report is understood too
+        [, $other] = $this->linked('H2');
+        [$hex2, $url2, $canon2] = self::freshNode();
+        $this->meshReport($other, ['installed' => true, 'node_id' => "https://mesh.example.com/?viewmode=11&gotonode=$url2&="]);
+        $this->assertNotNull($this->h->one("SELECT device_id FROM endpoint_agent_mesh_nodes WHERE mesh_node_id='$canon2'"));
+        $this->assertNotSame('', $hex2);
+        // the inventory path (mesh_node_id in a check-in inventory) is normalised the same way
+        [$d3, $t3] = $this->linked('H3');
+        [$hex3, , $canon3] = self::freshNode();
+        $inv = ['hostname' => 'H3', 'os' => 'windows', 'os_version' => 'Windows 11', 'serial' => 'SER-H3', 'mesh_node_id' => 'node//' . $hex3];
+        [$c] = $this->h->checkin($t3, ['inventory' => $inv]);
+        $this->assertSame(200, $c);
+        $this->assertSame($canon3, $this->nodeOf($d3));
+    }
+
+    public function testConflictDetectionComparesTheSameNodeAcrossSpellings(): void
+    {
+        $this->meshOn();
+        [$d1] = $this->linked('X1');
+        [$d2, $t2] = $this->linked('X2');
+        [$hex, , $canon] = self::freshNode();
+        // device 1 holds the node in the old hex spelling (a row from before ids were normalised), set by hand
+        $this->h->q("INSERT INTO endpoint_agent_mesh_nodes (device_id, mesh_node_id, source, updated_at, updated_by) VALUES ($d1, 'node//" . strtoupper($hex) . "', 'manual', NOW(), 1)");
+        $this->meshReport($t2, ['installed' => true, 'node_id' => $canon]);
+        $this->assertNull($this->nodeOf($d2), 'the same node in another spelling is the same node');
+        $s = $this->h->module->meshAgents()->stateFor($d2);
+        $this->assertSame(['conflict', $d1], [$s['map_state'], $s['conflict_device_id']]);
+        // and the other direction: a manual mapping typed as hex while the agent holds the canonical form
+        [$d3, $t3] = $this->linked('X3');
+        [$hex4, , $canon4] = self::freshNode();
+        $this->meshReport($t3, ['installed' => true, 'node_id' => $canon4]);
+        $this->assertSame($canon4, $this->nodeOf($d3));
+        $this->assertTrue($this->h->module->devices()->setMeshNode($d3, $hex4, 1));
+        $this->assertSame($canon4, $this->nodeOf($d3), 'a hand-typed hex id is stored canonical');
+        $this->assertSame('manual', $this->h->one("SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id=$d3"));
+        $this->meshReport($t3, ['installed' => true, 'node_id' => 'node//' . $hex4]);
+        $this->assertSame('mapped', $this->h->module->meshAgents()->stateFor($d3)['map_state'], 'the report is the same node as the manual mapping');
+    }
+
     public function testAConflictAcrossClientsIsStillRefusedButDoesNotNameTheOtherDevice(): void
     {
         $this->meshOn();

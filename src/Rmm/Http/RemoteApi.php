@@ -228,7 +228,7 @@ final class RemoteApi
                     }
                     $r = $this->technician->setMeshNode($who, $id, is_string($in['node_id'] ?? null) ? $in['node_id'] : '');
 
-                    return self::result($r->ok ? ActionResult::ok($r->message, 200, 'ok', ['node_id' => is_string($in['node_id'] ?? null) ? trim($in['node_id']) : '']) : $r);
+                    return self::result($r->ok ? ActionResult::ok($r->message, 200, 'ok', ['node_id' => is_string($in['node_id'] ?? null) ? (\RivetCore\Rmm\Mesh\MeshNodeId::canonical(trim($in['node_id'])) ?? '') : '']) : $r);
                 }
 
                 return self::notFound();

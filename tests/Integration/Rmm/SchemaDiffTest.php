@@ -460,6 +460,48 @@ final class SchemaDiffTest extends TestCase
         $this->assertSame([7, 3], array_map('intval', array_values($this->db('d')->fetchOne('SELECT mesh_hide, mesh_hide_tools FROM endpoint_agent_mesh_settings') ?? [])));
     }
 
+    public function testMigration0027RewritesNodeIdsToTheCanonicalFormKeepsManualOnesAndIsIdempotent(): void
+    {
+        $this->reference();
+        $this->build('d', 'rivetit-2.6.146-final.sql', true);
+        $this->seed('d');
+        $this->runner('d')->run();
+        $db = $this->db('d');
+        $db->execute('DELETE FROM endpoint_agent_mesh_nodes');
+        $db->execute('DELETE FROM endpoint_agent_mesh_agents');
+        $mk = static function (): array {
+            $raw = random_bytes(48);
+
+            return [bin2hex($raw), 'node//' . strtr(rtrim(base64_encode($raw), '='), '+/', '@$')];
+        };
+        [$hexA, $canA] = $mk();   // two devices, same node: device 2 manual, device 1 automatic: the manual one is kept
+        [$hexB, $canB] = $mk();   // a lone hex row
+        [$hexC, $canC] = $mk();   // two manual rows: both kept
+        $legacy = 'node//AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@$AbCdEfGhIjKlMnOpQrStUvWxYz01';
+        $ins = fn (int $dev, string $node, string $src) => $db->execute("INSERT INTO endpoint_agent_mesh_nodes (device_id, mesh_node_id, source, updated_at, updated_by) VALUES ($dev, ?, '$src', NOW(), 0)", [$node]);
+        $ins(1, 'node//' . $hexA, 'agent');
+        $ins(2, 'node//' . strtoupper($hexA), 'manual');
+        $ins(3, 'node//' . $hexB, 'agent');
+        $ins(4, 'node//' . $hexC, 'manual');
+        $ins(5, $canC, 'manual');
+        $ins(6, $legacy, 'agent');
+        $ins(7, 'node//' . str_repeat('!', 20) . 'zzzz', 'agent');   // unparseable: left alone
+        foreach ([1, 3] as $dev) {
+            $db->execute("INSERT INTO endpoint_agent_mesh_agents (device_id, installed, version, node_id, error, map_state, first_installed_at, reported_at, changed_at) VALUES ($dev, 1, '', ?, '', 'mapped', NOW(), NOW(), NOW())", ['node//' . ($dev === 1 ? $hexA : $hexB)]);
+        }
+        $m = new \RivetCore\Rmm\Migration\Migration0027MeshNodeIds();
+        $m->up($db);
+        $nodes = static fn (): array => array_column($db->fetchAll('SELECT device_id, mesh_node_id FROM endpoint_agent_mesh_nodes ORDER BY device_id'), 'mesh_node_id', 'device_id');
+        $this->assertSame([2 => $canA, 3 => $canB, 4 => $canC, 5 => $canC, 6 => $legacy, 7 => 'node//' . str_repeat('!', 20) . 'zzzz'], $nodes(), 'device 1 (automatic) lost the node to the manual mapping of device 2');
+        $one = $db->fetchOne('SELECT map_state, conflict_device_id, node_id FROM endpoint_agent_mesh_agents WHERE device_id = 1');
+        $this->assertSame(['conflict', 2, $canA], [$one['map_state'], (int) $one['conflict_device_id'], $one['node_id']]);
+        $this->assertSame($canB, $db->fetchOne('SELECT node_id FROM endpoint_agent_mesh_agents WHERE device_id = 3')['node_id']);
+        $before = [$nodes(), $db->fetchAll('SELECT * FROM endpoint_agent_mesh_agents ORDER BY device_id')];
+        $m->up($db);
+        $this->assertSame($before, [$nodes(), $db->fetchAll('SELECT * FROM endpoint_agent_mesh_agents ORDER BY device_id')], 'a second run changes nothing');
+        $this->assertSame([], $this->runner('d')->run());
+    }
+
     public function testFreshCoreInstallHasEveryPhase1Table(): void
     {
         $this->runner('b')->run();

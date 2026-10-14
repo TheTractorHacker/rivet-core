@@ -346,4 +346,12 @@ func TestMeshNodeIDOverrideAndFile(t *testing.T) {
 	if got := c.MeshNodeID(context.Background()); got != id {
 		t.Fatalf("file: %q", got)
 	}
+	// the same kind of id as 96 hex characters (what some Mesh agents print), with and without the prefix: reported as found, the server normalises
+	const hexID = "e10df2d66e829b53c567652d4d91add5c62f457fe0d70c32f9d2012df54eb7aad9e0cab782a7c99b0992317e235d849e"
+	for _, v := range []string{hexID, "node//" + hexID} {
+		c.Cfg = func() store.Config { return store.Config{MeshNodeID: v} }
+		if got := c.MeshNodeID(context.Background()); got != v {
+			t.Fatalf("hex form %q: got %q", v, got)
+		}
+	}
 }

@@ -586,7 +586,7 @@ final class RmmReadModel
             'token_expires_at' => Sql::iso($d['token_expires_at'] === null ? null : (string) $d['token_expires_at']),
             'agent_key' => RmmLinker::agentKey($deviceId),
             'integration_id' => (int) $this->settings->get()['integration_id'],
-            'mesh' => ['mapped' => $mesh !== null, 'node_id' => $mesh['mesh_node_id'] ?? null, 'source' => $mesh['source'] ?? null],
+            'mesh' => ['mapped' => $mesh !== null, 'node_id' => isset($mesh['mesh_node_id']) ? (\RivetCore\Rmm\Mesh\MeshNodeId::canonical((string) $mesh['mesh_node_id']) ?? (string) $mesh['mesh_node_id']) : null, 'source' => $mesh['source'] ?? null],
             'update_state' => $update,
             'offered_release' => $offered === null ? null : ['version' => $offered['version'], 'ring' => $offered['ring'], 'rollout_pct' => (int) $offered['rollout_pct'], 'arch' => $offered['arch']],
             'match_reason_text' => $this->matchReasonText((string) $d['match_reason']),

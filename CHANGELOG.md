@@ -2,6 +2,18 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.18 (the Remote button finds the device: MeshCentral node ids in their URL form)
+
+Owner bug report from a real MeshCentral address (`...?viewmode=11&gotonode=<64 characters>&=`): `gotonode` is the 48-byte id as 64 base64 characters (`@` and `$` for `+` and `/`) without the `node//` prefix, while our agent reports the same 48 bytes as 96 hex characters and the launch URL sent `gotonode=node%2F%2F<hex>`. MeshCentral did not find the node and showed its home page.
+
+- **`RivetCore\Rmm\Mesh\MeshNodeId` (@api, pure).** `normalize()` (a pasted MeshCentral address, `node/<domain>/<id>`, `node//<64>`, the bare 64 characters, `node//<96 hex>`, bare hex; returns the canonical `node/<domain>/<64 characters>`, `node//...` by default), `toUrlForm()`, `toHex()`, `domain()`, `canonical()` / `valid()` (also accepts the pre-rc.18 `node//` plus 16 to 100 characters), `spellings()`, `forLaunch()`. Strict: exactly 48 bytes, the alphabets, no whitespace or control characters, `\z`.
+- **`MeshCookie::launchUrl`** sends `&gotonode=<64 characters>` (no prefix, `@` and `$` literal, anything else outside `[A-Za-z0-9@$_-]` percent-encoded), converting any stored spelling at launch. The URL shape is `<base>/[domain/]?login=<token>&gotonode=<id>&viewmode=<11|12|13>[&hide=N]`. **Behaviour change:** the old `gotonode=node%2F%2F<id>` is gone.
+- **Normalised on the way in:** `DeviceRepository::setMeshNode` / `validMeshNodeId` (now accepts every spelling; new `canonicalMeshNodeId`), the agent report (`MeshAgentService`), the inventory `mesh_node_id`, the technician `PUT endpoint_devices/{id}/remote/node` (accepts a pasted address). Shown canonical in the read model, `GET .../remote/mesh` and the agent state. Conflict detection matches every spelling, rows from before included.
+- **Migration `0027_rmm_mesh_node_ids`** (idempotent) rewrites the stored ids to the canonical form; unparseable values are left alone; a duplicate keeps the manual mapping and flags the automatic one as conflict. Nothing depends on it running first (launch converts at read time).
+- **Agent:** no change needed (the server normalises). Go tests added for both spellings (written without a Go toolchain on the build host: run `go test ./...` in `endpoint-agent`).
+- **Tests.** `MeshNodeIdTest` (200 random 48-byte ids incl. `@` and `$`, URL extraction, domain, hostile values), `MeshCookieTest` (exact launch strings for all views, with and without `hide`), `MeshAgentTest` (hex report stored canonical, conflicts across spellings), `RemoteToolsTest` (a hex-stored device launches with the URL form; pasted address), `SchemaDiffTest` (migration 0027).
+- Editions: see UPGRADING.md; the edition needs migration 0027 in its DB steps and should accept a pasted address in its Mesh node field.
+
 ## 1.0.0-rc.17 (the Remote button opens the remote screen, not the MeshCentral interface)
 
 Owner request. The launch URL now carries MeshCentral's `hide` parameter so the new tab shows only the device view, as Tactical RMM's "Take control" does.

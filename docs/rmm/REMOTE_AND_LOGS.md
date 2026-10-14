@@ -53,15 +53,36 @@ A rule is a plain filter: severity or worse, a source substring, an optional eve
 The Remote button (desktop), and the Terminal and Files buttons, mint a MeshCentral login token at the click and open
 
 ```
-https://<mesh>[/<domain>]/?login=<token>&gotonode=<node id>&viewmode=<11|12|13>&hide=<mesh_hide>
+https://<mesh>[/<domain>]/?login=<token>&gotonode=<node id, 64 characters>&viewmode=<11|12|13>&hide=<mesh_hide>
 ```
+
+for example `https://desktop.example.test/?login=<token>&gotonode=qq3fNZ@lJ8VQ$irRjMKB535hzB2i5mWVycToxyC@cF0WWDhnMwvhta9jvcrxaE@x&viewmode=11&hide=31` (a random id of the right shape, not a real device). The same value is in the address bar when you open the device in MeshCentral: `https://<mesh>/?viewmode=11&gotonode=<the 64 characters>`.
 
 | Parameter | Meaning |
 |---|---|
 | `login` | the login token (AES-256-GCM, minted per click, never stored or logged) |
-| `gotonode` | the mapped MeshCentral node id (`node//...`) |
+| `gotonode` | the mapped node's id in MeshCentral's URL form: 64 characters, **without** the `node//` prefix, `@` and `$` literal (see the next section) |
 | `viewmode` | 11 = Desktop, 12 = Terminal, 13 = Files (10 = General, not offered) |
 | `hide` | MeshCentral's interface bitmask, below. Omitted when the setting is 0, which gives exactly the URL of rc.16 and earlier |
+
+## The node id: three spellings of one value (1.0.0-rc.18)
+
+A MeshCentral node id is 48 bytes (the SHA-384 of the agent's certificate key). It shows up in three spellings, and **only the first one makes `gotonode=` find the device**:
+
+| Spelling | Where you see it |
+|---|---|
+| 64 characters, base64 of the 48 bytes with `+` becoming `@` and `/` becoming `$`, no padding. MeshCentral's own database writes it `node/<domain>/<these 64 characters>`, `node//...` for the default domain | the address bar of the device page, `gotonode=`; MeshCentral's API |
+| 96 hex characters, the same 48 bytes | what some agents print and report (`meshagent -nodeid`) |
+| a whole MeshCentral address | what you copy from the browser |
+
+Before rc.18 a hex id was sent to MeshCentral as it was, which MeshCentral does not recognise, so it opened its home page instead of the device. `RivetCore\Rmm\Mesh\MeshNodeId` now converts every spelling: `normalize()` returns the canonical stored form `node/<domain>/<64 characters>` (`node//<64 characters>` on the default domain; a domain in the id is kept), `toUrlForm()` the 64 characters for `gotonode=`, `toHex()` the hex. Input is strict: exactly 48 bytes, the alphabets above (URL-safe base64 is tolerated), no whitespace or control characters inside, at most 2048 characters. A pasted address is only read for its `gotonode` (and never fetched); an address without one is refused.
+
+* **Everywhere an id enters** (the agent's `mesh_agent` report and inventory `mesh_node_id`, `PUT endpoint_devices/{id}/remote/node`, `DeviceRepository::setMeshNode`) it is stored canonical. Ids that only fit the pre-rc.18 rule (`node//` plus 16 to 100 characters of `A-Za-z0-9@$_-`, not 48 bytes) are still accepted and stored as they are.
+* **At launch** the stored id is converted again, so a row written before rc.18 works without waiting for the migration. Anything outside `[A-Za-z0-9@$_-]` is percent-encoded; `@` and `$` stay literal, as MeshCentral prints them.
+* **Conflicts** (one node claimed by two devices) compare the same node whatever the spelling, including rows still in the old hex form.
+* **Migration `0027_rmm_mesh_node_ids`** rewrites `endpoint_agent_mesh_nodes.mesh_node_id` and `endpoint_agent_mesh_agents.node_id` to the canonical form. Unparseable values are left alone; if two devices now resolve to one node the manual mapping is kept and the automatic one is removed and flagged `conflict`; two manual mappings are both kept. Idempotent.
+* **Finding the id in MeshCentral:** open the device and copy the address bar, or take the 64 characters after `gotonode=`. Paste either into the Mesh node field.
+* **Not verified against a live MeshCentral server** with this exact URL shape; the shape is the one MeshCentral itself shows in its address bar.
 
 **The `hide` bitmask.** Read from MeshCentral's own web page source (`views/default.handlebars`, `args.hide`, checked against the master branch in October 2026): 1 = the masthead (logo bar), 2 = the top bar, 4 = the footer, 8 = the page titles (the tab headings), 16 = the left bar and main menu (the device list), 32 = the back button. **31 = bits 1 to 16: only the device view is left.** That is the value Tactical RMM passes for "Take control", and the default here. Add 32 (63) to also hide the back button. `hide` is OR-ed with any server-wide `hide` of the MeshCentral domain.
 

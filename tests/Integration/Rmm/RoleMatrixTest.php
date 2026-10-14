@@ -278,7 +278,7 @@ final class RoleMatrixTest extends RmmTestCase
         $u = parse_url($r['url']);
         parse_str($u['query'], $qs);
         $this->assertStringStartsWith($this->mesh->url() . '/?login=', $r['url']);
-        $this->assertSame('node//' . str_repeat('A', 24) . $this->D1, $qs['gotonode']);
+        $this->assertSame(str_repeat('A', 24) . $this->D1, $qs['gotonode']);
         $this->assertSame('11', $qs['viewmode']);
         $this->assertSame('31', $qs['hide'], 'the default hides the MeshCentral chrome');
         $cookie = MeshCookie::decode($qs['login'], $this->key);

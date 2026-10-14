@@ -137,7 +137,7 @@ final class MeshAgentService
             $conflict = $theirs !== null && $mine !== null && (int) $theirs === (int) $mine ? (int) $r['conflict_device_id'] : null;
         }
 
-        return ['installed' => (int) $r['installed'] === 1, 'version' => (string) $r['version'] === '' ? null : (string) $r['version'], 'node_id' => (string) $r['node_id'] === '' ? null : (string) $r['node_id'],
+        return ['installed' => (int) $r['installed'] === 1, 'version' => (string) $r['version'] === '' ? null : (string) $r['version'], 'node_id' => (string) $r['node_id'] === '' ? null : (MeshNodeId::canonical((string) $r['node_id']) ?? (string) $r['node_id']),
             'error' => (string) $r['error'] === '' ? null : (string) $r['error'], 'map_state' => (string) $r['map_state'] === '' ? null : (string) $r['map_state'], 'conflict_device_id' => $conflict,
             'first_installed_at' => Sql::iso($r['first_installed_at'] === null ? null : (string) $r['first_installed_at']), 'reported_at' => Sql::iso((string) $r['reported_at'])];
     }
@@ -160,7 +160,7 @@ final class MeshAgentService
         $deviceId = (int) $dev['device_id'];
         $version = DeviceValidator::cleanText($raw['version'] ?? null, self::MAX_VERSION) ?? '';
         $error = $installed ? '' : (DeviceValidator::cleanText($raw['error'] ?? null, self::MAX_ERROR) ?? '');
-        $node = is_string($raw['node_id'] ?? null) && MeshService::validNodeId($raw['node_id']) ? $raw['node_id'] : '';
+        $node = is_string($raw['node_id'] ?? null) ? (MeshNodeId::canonical($raw['node_id']) ?? '') : '';   // hex and base64 spellings of one node are stored as the same canonical id
         if (!$installed) {
             $node = '';
         }
@@ -205,8 +205,9 @@ final class MeshAgentService
         $state = '';
         $conflictWith = null;
 
+        $spellings = MeshNodeId::spellings($node) ?: [$node];   // rows written before ids were normalised may still be in the hex spelling
         $other = $this->sql->one('SELECT m.device_id, d.revoked_at, d.retired_at FROM endpoint_agent_mesh_nodes m JOIN endpoint_agent_devices d ON d.device_id = m.device_id
-            WHERE m.mesh_node_id = ? AND m.device_id <> ? ORDER BY (d.revoked_at IS NULL AND d.retired_at IS NULL) DESC, m.device_id LIMIT 1', [$node, $deviceId]);
+            WHERE m.mesh_node_id IN (' . implode(',', array_fill(0, count($spellings), '?')) . ') AND m.device_id <> ? ORDER BY (d.revoked_at IS NULL AND d.retired_at IS NULL) DESC, m.device_id LIMIT 1', [...$spellings, $deviceId]);
         $otherLive = $other !== null && $other['revoked_at'] === null && $other['retired_at'] === null;
         $mine = $this->sql->one('SELECT mesh_node_id, source FROM endpoint_agent_mesh_nodes WHERE device_id = ?', [$deviceId]);
 
@@ -217,7 +218,7 @@ final class MeshAgentService
                 $this->audit->record('Mesh Node Conflict', "Device $deviceId reported MeshCentral node $node, which is already mapped to device $conflictWith. Not mapped: check which machine really owns the node.", $client, $asset);
                 $this->events?->emit(RmmEvent::MESH_NODE_CONFLICT, $dev, ['node_id' => $node, 'other_device_id' => $conflictWith]);
             }
-        } elseif ($mine !== null && (string) $mine['mesh_node_id'] === $node) {
+        } elseif ($mine !== null && (MeshNodeId::canonical((string) $mine['mesh_node_id']) ?? (string) $mine['mesh_node_id']) === $node) {
             $state = self::MAP_MAPPED;
         } elseif ($mine !== null && (string) $mine['source'] !== 'agent' && !$this->meshSettings->get()['auto_map_overwrite']) {
             $state = self::MAP_KEPT_MANUAL;

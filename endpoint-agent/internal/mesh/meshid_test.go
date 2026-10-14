@@ -103,3 +103,24 @@ func TestRedactRemovesEveryFormOfTheGroupID(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// The node id is reported in whatever form the agent finds it (96 hex characters or MeshCentral's 64-character URL form, with or without the node//
+// prefix); the SERVER turns every spelling into the canonical node//<URL form>. These two vectors are the same fresh random 48 bytes as vecHex/vecURL.
+func TestNodeIDIsReportedInBothFormsAndKeptAsFound(t *testing.T) {
+	for in, want := range map[string]string{
+		"node//" + vecURL: "node//" + vecURL,
+		vecURL:            "node//" + vecURL,
+		"node//" + vecHex: "node//" + vecHex,
+		vecHex:            "node//" + vecHex,
+	} {
+		if id, ok := NormalizeNodeID(in); !ok || id != want {
+			t.Errorf("NormalizeNodeID(%q) = %q %v, want %q", in, id, ok, want)
+		}
+		if id, ok := ParseNodeIDOutput("MeshCentral Agent\nNodeID: " + in + "\n"); !ok || id != want {
+			t.Errorf("ParseNodeIDOutput(%q) = %q %v, want %q", in, id, ok, want)
+		}
+		if m := ParseMSH("MeshServer=wss://mesh.example.com/agent.ashx\nNodeID=" + in + "\n"); m.NodeID != want {
+			t.Errorf("ParseMSH(%q) = %q, want %q", in, m.NodeID, want)
+		}
+	}
+}

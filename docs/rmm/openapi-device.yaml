@@ -2928,7 +2928,7 @@ components:
       properties:
         installed: {type: boolean}
         version: {type: string, maxLength: 60}
-        node_id: {type: string, description: '`node//` plus 16 to 100 characters of A-Za-z0-9@$_-; anything else is ignored'}
+        node_id: {type: string, description: 'A MeshCentral node id in any spelling: `node//` plus 64 characters (MeshCentral URL form) or 96 hex characters, with or without the prefix, or (legacy) `node//` plus 16 to 100 characters of A-Za-z0-9@$_-; the server stores `node//<64 characters>`; anything else is ignored'}
         error: {type: string, maxLength: 300, description: Why the install failed; read only while installed is false}
     LogEvent:
       type: object

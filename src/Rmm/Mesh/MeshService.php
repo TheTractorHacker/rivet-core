@@ -84,7 +84,7 @@ final class MeshService
     {
         $n = $this->sql->val('SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id = ?', [$deviceId]);
 
-        return $n === null ? null : (string) $n;
+        return $n === null ? null : (MeshNodeId::canonical((string) $n) ?? (string) $n);   // a row written before ids were normalised reads as canonical
     }
 
     /**

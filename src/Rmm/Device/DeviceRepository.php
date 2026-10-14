@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Device;
 
 use RivetCore\Rmm\Http\ApiError;
+use RivetCore\Rmm\Mesh\MeshNodeId;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Support\Sql;
@@ -91,9 +92,16 @@ final class DeviceRepository
         return (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_devices WHERE revoked_at IS NULL AND retired_at IS NULL');
     }
 
+    /** Accepts every spelling of a MeshCentral node id ({@see MeshNodeId}: a pasted address, `node/<domain>/<id>`, the 64-character id, 96 hex) and the legacy `node//<16..100 chars>`. */
     public static function validMeshNodeId(string $id): bool
     {
-        return preg_match('#^node//[A-Za-z0-9@$_-]{16,100}\z#', $id) === 1;   // \z, not $: a trailing newline is not part of an id
+        return MeshNodeId::valid($id);
+    }
+
+    /** What is stored for an id: the canonical `node/<domain>/<64-char id>`, the legacy value unchanged when it only passes the legacy rule, null when invalid. */
+    public static function canonicalMeshNodeId(string $id): ?string
+    {
+        return MeshNodeId::canonical($id);
     }
 
     /** Set (manual or agent) or clear the MeshCentral node association. Separate from the asset name by design. */
@@ -104,7 +112,8 @@ final class DeviceRepository
 
             return true;
         }
-        if (!self::validMeshNodeId($nodeId)) {
+        $nodeId = MeshNodeId::canonical($nodeId);
+        if ($nodeId === null) {
             return false;
         }
         $this->sql->run('INSERT INTO endpoint_agent_mesh_nodes (device_id, mesh_node_id, source, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)

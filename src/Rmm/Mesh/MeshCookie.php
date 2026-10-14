@@ -118,6 +118,6 @@ final class MeshCookie
         }
         $tail = $hide >= 1 && $hide <= self::HIDE_MAX ? '&hide=' . $hide : '';
 
-        return $base . $path . '?login=' . rawurlencode($cookie) . '&gotonode=' . rawurlencode($nodeId) . '&viewmode=' . $viewmode . $tail;
+        return $base . $path . '?login=' . rawurlencode($cookie) . '&gotonode=' . MeshNodeId::forLaunch($nodeId) . '&viewmode=' . $viewmode . $tail;
     }
 }
