@@ -46,6 +46,7 @@ final class MeshService
         private readonly SecretBoxInterface $box,
         private readonly UrlPolicy $urlPolicy,
         private readonly bool $allowInsecureHttp = false,
+        private readonly ?MeshAgentSettings $viewSettings = null,
     ) {
     }
 
@@ -130,7 +131,7 @@ final class MeshService
             return self::fail('not_configured', 'The MeshCentral login key is not usable.');
         }
 
-        return ['ok' => true, 'code' => 'ok', 'message' => 'Opening the remote session.', 'url' => MeshCookie::launchUrl($base, $domain, $cookie, $node, self::VIEWMODES[$view] ?? \RivetCore\Rmm\RmmProtocol::MESH_VIEWMODE), 'session_id' => bin2hex(random_bytes(8))];
+        return ['ok' => true, 'code' => 'ok', 'message' => 'Opening the remote session.', 'url' => MeshCookie::launchUrl($base, $domain, $cookie, $node, self::VIEWMODES[$view] ?? \RivetCore\Rmm\RmmProtocol::MESH_VIEWMODE, $this->viewSettings?->hideFor(isset(self::VIEWMODES[$view]) ? $view : 'desktop') ?? 0), 'session_id' => bin2hex(random_bytes(8))];
     }
 
     /**

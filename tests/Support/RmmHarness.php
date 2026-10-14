@@ -25,6 +25,7 @@ use RivetCore\Rmm\Migration\Migration0022RemoteAndLogs;
 use RivetCore\Rmm\Migration\Migration0023MeshAgent;
 use RivetCore\Rmm\Migration\Migration0024MeshGroupUrl;
 use RivetCore\Rmm\Migration\Migration0025MsiTemplates;
+use RivetCore\Rmm\Migration\Migration0026MeshHide;
 use RivetCore\Rmm\RmmModule;
 use RivetCore\Testing\InMemoryRmmAssets;
 use RivetCore\Testing\InMemoryRmmAudit;
@@ -102,7 +103,7 @@ final class RmmHarness
         $this->binaryDir = sys_get_temp_dir() . '/rmm_bin_' . bin2hex(random_bytes(4));
         mkdir($this->binaryDir, 0700);
 
-        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs(), new Migration0023MeshAgent(), new Migration0024MeshGroupUrl(), new Migration0025MsiTemplates()] as $mig) {
+        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs(), new Migration0023MeshAgent(), new Migration0024MeshGroupUrl(), new Migration0025MsiTemplates(), new Migration0026MeshHide()] as $mig) {
             $mig->up($this->db);
         }
         $this->wipe();

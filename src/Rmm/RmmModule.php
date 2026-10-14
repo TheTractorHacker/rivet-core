@@ -747,7 +747,7 @@ final class RmmModule
     /** MeshCentral remote access (URL checks, probe through the UrlPolicy, launch). */
     public function mesh(): MeshService
     {
-        return $this->mesh ??= new MeshService($this->sql(), $this->settings(), $this->devices(), $this->box, $this->urlPolicy ?? new UrlPolicy(false), $this->options['allow_insecure_http'] ?? false);
+        return $this->mesh ??= new MeshService($this->sql(), $this->settings(), $this->devices(), $this->box, $this->urlPolicy ?? new UrlPolicy(false), $this->options['allow_insecure_http'] ?? false, $this->meshAgentSettings());
     }
 
     /** The install settings of the optional MeshCentral agent (device group, certificate pin, overwrite switch, table corrections). */

@@ -213,6 +213,60 @@ final class RoleMatrixTest extends RmmTestCase
 
     // ------------------------------------------------------------------ MeshCentral launch
 
+    public function testLaunchAppliesTheConfiguredHideValuePerView(): void
+    {
+        $this->assertSame([], $this->h->module->settings()->update(['features_json' => ['monitoring' => true, 'metrics' => true, 'jobs' => true, 'updates' => true, 'remote' => true, 'remote_tools' => true]]));
+        $ms = $this->h->module->meshAgentSettings();
+        $q = function (string $view): array {
+            [$c, $r] = $this->api('admin', 'POST', [(string) $this->D1, 'remote'], ['view' => $view]);
+            $this->assertSame(200, $c, json_encode($r));
+            parse_str((string) parse_url($r['url'], PHP_URL_QUERY), $qs);
+
+            return $qs;
+        };
+        foreach (['desktop', 'terminal', 'files'] as $v) {
+            $this->assertSame('31', $q($v)['hide'], "$v: default");
+        }
+        $this->assertSame([], $ms->update(['mesh_hide' => 16, 'mesh_hide_tools' => 0], 1));
+        $this->assertSame(['16', null, null], [$q('desktop')['hide'], $q('terminal')['hide'] ?? null, $q('files')['hide'] ?? null]);
+        $this->assertSame([], $ms->update(['mesh_hide' => '0', 'mesh_hide_tools' => ''], 1));
+        $this->assertArrayNotHasKey('hide', $q('desktop'), 'hide=0 is the old URL');
+        $this->assertArrayNotHasKey('hide', $q('terminal'));
+        $this->assertSame([], $ms->update(['mesh_hide' => 31, 'mesh_hide_tools' => 7], 1));
+        $this->assertSame(['31', '7', '7'], [$q('desktop')['hide'], $q('terminal')['hide'], $q('files')['hide']]);
+    }
+
+    public function testMeshHideSettingValidation(): void
+    {
+        $ms = $this->h->module->meshAgentSettings();
+        $this->assertSame([31, null], [$ms->get()['hide'], $ms->get()['hide_tools']]);
+        foreach ([-1, 256, '256', '-1', '1.5', 1.5, 'abc', '12abc', '', null, true, [31], '0x1f', '1e1', ' '] as $bad) {
+            $err = $ms->update(['mesh_hide' => $bad, 'mesh_hide_tools' => 5], 1);
+            $this->assertCount(1, $err, 'mesh_hide ' . json_encode($bad));
+            $this->assertSame([31, null], [$ms->get()['hide'], $ms->get()['hide_tools']], 'nothing is written on error');
+        }
+        foreach ([300, 'x', -2, [1], 2.5] as $bad) {
+            $this->assertCount(1, $ms->update(['mesh_hide_tools' => $bad], 1), 'tools ' . json_encode($bad));
+        }
+        $this->assertSame([], $ms->update(['mesh_hide' => '255', 'mesh_hide_tools' => '0'], 1));
+        $this->assertSame([255, 0], [$ms->get()['hide'], $ms->get()['hide_tools']]);
+        $this->assertSame([], $ms->update(['mesh_hide_tools' => null], 1));
+        $this->assertNull($ms->get()['hide_tools']);
+        // saveMesh carries them and rejects a bad one without writing anything
+        $a = $this->h->module->admin();
+        $r = $a->saveMesh($this->h->principal(), ['mesh_enabled' => 1, 'mesh_url' => $this->mesh->url(), 'mesh_hide' => 999]);
+        $this->assertFalse($r->ok);
+        $this->assertSame(255, $ms->get()['hide']);
+        $this->assertTrue($a->saveMesh($this->h->principal(), ['mesh_enabled' => 1, 'mesh_url' => $this->mesh->url(), 'mesh_hide' => 8])->ok);
+        $this->assertSame(8, $ms->get()['hide']);
+        // a database without migration 0026: reads give the default, a write says why
+        $this->h->db->execute('ALTER TABLE endpoint_agent_mesh_settings DROP COLUMN mesh_hide_tools');
+        $this->h->db->execute('ALTER TABLE endpoint_agent_mesh_settings DROP COLUMN mesh_hide');
+        $ms->refresh();
+        $this->assertSame([31, null], [$ms->get()['hide'], $ms->get()['hide_tools']]);
+        $this->assertCount(1, $ms->update(['mesh_hide' => 5], 1));
+    }
+
     public function testLaunchReturnsALoginTokenUrlForTheLinkedDevicesNodeAndStoresNoToken(): void
     {
         [$c, $r] = $this->api('tech', 'POST', [(string) $this->D1, 'remote'], []);
@@ -224,6 +278,7 @@ final class RoleMatrixTest extends RmmTestCase
         $this->assertStringStartsWith($this->mesh->url() . '/?login=', $r['url']);
         $this->assertSame('node//' . str_repeat('A', 24) . $this->D1, $qs['gotonode']);
         $this->assertSame('11', $qs['viewmode']);
+        $this->assertSame('31', $qs['hide'], 'the default hides the MeshCentral chrome');
         $cookie = MeshCookie::decode($qs['login'], $this->key);
         $this->assertNotNull($cookie);
         $this->assertSame('user//rivetit-support', $cookie['u']);

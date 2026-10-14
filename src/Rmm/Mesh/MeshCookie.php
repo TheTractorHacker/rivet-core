@@ -22,6 +22,14 @@ final class MeshCookie
     /** The cookie's "time" is back-dated by this many seconds to tolerate clock skew between the two servers. */
     public const BACKDATE_S = 120;
 
+    /**
+     * MeshCentral's `hide` URL bitmask (read from MeshCentral's views/default.handlebars, `args.hide`): 1 masthead (logo bar), 2 top bar (the account and
+     * menu strip), 4 footer, 8 page titles (the tab headings), 16 left bar and main menu (the device list), 32 the back button. 31 = the first five bits:
+     * what Tactical RMM's "Take control" passes. Default for a launch; 0 = no `hide` parameter at all (the full MeshCentral interface).
+     */
+    public const HIDE_DEFAULT = 31;
+    public const HIDE_MAX = 255;
+
     /** A fresh login key (hex) for the edition to store encrypted: 80 random bytes, 160 hex characters. */
     public static function newLoginKey(): string
     {
@@ -97,14 +105,19 @@ final class MeshCookie
     /**
      * The launch URL: viewmode 11 = Desktop (the default and the only one before Phase 6), 12 = Terminal, 13 = Files. $base is a normalised https base URL without
      * trailing slash. `$viewmode` must be one of those three (anything else falls back to the desktop).
+     *
+     * `$hide` is MeshCentral's `hide` bitmask ({@see self::HIDE_DEFAULT}): 1 to 255 appends `&hide=N`, which makes MeshCentral hide its own header,
+     * top bar, footer, titles and device list so that only the device view is shown. 0 (the default of this method, so older callers get the
+     * unchanged URL), or any value outside 0..255, appends nothing. Note that MeshCentral does not connect by itself from the URL: see docs/rmm/REMOTE_AND_LOGS.md.
      */
-    public static function launchUrl(string $base, string $domain, string $cookie, string $nodeId, int $viewmode = RmmProtocol::MESH_VIEWMODE): string
+    public static function launchUrl(string $base, string $domain, string $cookie, string $nodeId, int $viewmode = RmmProtocol::MESH_VIEWMODE, int $hide = 0): string
     {
         $path = ($domain !== '' ? '/' . rawurlencode($domain) : '') . '/';
         if (!in_array($viewmode, [RmmProtocol::MESH_VIEWMODE, RmmProtocol::MESH_VIEWMODE + 1, RmmProtocol::MESH_VIEWMODE + 2], true)) {
             $viewmode = RmmProtocol::MESH_VIEWMODE;
         }
+        $tail = $hide >= 1 && $hide <= self::HIDE_MAX ? '&hide=' . $hide : '';
 
-        return $base . $path . '?login=' . rawurlencode($cookie) . '&gotonode=' . rawurlencode($nodeId) . '&viewmode=' . $viewmode;
+        return $base . $path . '?login=' . rawurlencode($cookie) . '&gotonode=' . rawurlencode($nodeId) . '&viewmode=' . $viewmode . $tail;
     }
 }

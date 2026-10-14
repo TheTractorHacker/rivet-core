@@ -43,7 +43,7 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   GET    endpoint_devices/remote/settings                            sub-switches, allowed folders, log sources, limits, the risk and storage texts
  *   PUT    endpoint_devices/remote/settings                            {features?, transfer_allow?, logs_collect?, limits?, accept_filetransfer_risk?, accept_logs_storage?}
  *   GET    endpoint_devices/remote/mesh                                the Mesh agent install settings (group id, certificate pin, overwrite switch, id and argument tables, whether an installer can ask for the agent)
- *   PUT    endpoint_devices/remote/mesh                                {mesh_group_id?, mesh_server_cert_pin?, mesh_auto_map_overwrite?, mesh_agent_ids?, mesh_install_args?, probe_pin?}; probe_pin answers a proposed pin without saving it
+ *   PUT    endpoint_devices/remote/mesh                                {mesh_group_id?, mesh_server_cert_pin?, mesh_auto_map_overwrite?, mesh_agent_ids?, mesh_install_args?, mesh_hide?, mesh_hide_tools?, probe_pin?}; probe_pin answers a proposed pin without saving it
  * Logs (Phase 8):
  *   GET    endpoint_devices/logs                                       search across the caller's clients (device_id, client_id, from, to, level, source, code, q, limit, offset)
  *   GET    endpoint_devices/logs/stats                                 fleet storage figures

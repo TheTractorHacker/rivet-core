@@ -251,6 +251,7 @@ forward-only, additive and idempotent; running the whole list on a current datab
 | `0023_rmm_mesh_agent` | `Rmm\Migration\Migration0023MeshAgent` | three new tables: `endpoint_agent_mesh_settings`, `endpoint_agent_mesh_agents`, `endpoint_agent_installer_options` (all `IF NOT EXISTS`, nothing existing altered; DDL in `Rmm\Migration\MeshAgentSchema::tables()`) | 1.0.0-rc.12 |
 | `0024_rmm_mesh_group_url` | `Rmm\Migration\Migration0024MeshGroupUrl` | one new column `endpoint_agent_mesh_settings.group_id_url varchar(64) NOT NULL DEFAULT ''` (added only when missing; nothing else altered) | 1.0.0-rc.15 |
 | `0025_rmm_msi_templates` | `Rmm\Migration\Migration0025MsiTemplates` | one new table `endpoint_agent_msi_templates` (`IF NOT EXISTS`, nothing existing altered; DDL in `Rmm\Migration\MsiTemplateSchema::tables()`) | 1.0.0-rc.16 |
+| `0026_rmm_mesh_hide` | `Rmm\Migration\Migration0026MeshHide` | two new columns on `endpoint_agent_mesh_settings`: `mesh_hide tinyint unsigned NOT NULL DEFAULT 31`, `mesh_hide_tools tinyint unsigned NULL` (added only when missing) | 1.0.0-rc.17 |
 
 The authoritative list is `RivetCore\Migration\CoreMigrations::all()`; the exact ids (`$m->id()`) are what `rivet_core_migrations`
 stores. Print them with `php -r 'require "vendor/autoload.php"; foreach (RivetCore\Migration\CoreMigrations::all() as $m) echo $m->id(), "\n";'`.
@@ -306,6 +307,12 @@ Both editions already do this (`admin/database_updates.php` in each), advancing 
 10. Update on the target, check the health endpoint, sign in, and exercise one flow per module you use; watch logs for one cron cycle.
 
 The recurring version of this list for every later release is [docs/EDITION_CHECKLIST.md](docs/EDITION_CHECKLIST.md).
+
+## 1.0.0-rc.17: the Remote button opens the remote screen
+
+1. **Migration.** `CoreMigrations::all()` gains `0026_rmm_mesh_hide`: two additive columns on `endpoint_agent_mesh_settings` (`mesh_hide` default 31, `mesh_hide_tools` NULL). Add them and the `rivet_core_migrations` row to your `db.sql`. Until it is applied launches work and use hide 31; saving the setting says to run the migration.
+2. **Behaviour.** Launch URLs gain `&hide=31` (MeshCentral shows only the device view). Set `mesh_hide` 0 for the previous URL. `MeshCookie::launchUrl()` has a new last parameter `$hide` (default 0: unchanged for existing callers). `MeshService` has a new optional last constructor argument (`?MeshAgentSettings`); `RmmModule` passes it.
+3. **Edition UI.** Open the tab synchronously in the click handler and navigate it after the launch answers (see REMOTE_AND_LOGS.md); add the `mesh_hide` (and optional `mesh_hide_tools`) field to the Mesh card and pass it to `RmmAdmin::saveMesh`.
 
 ## 1.0.0-rc.16: pushed Mesh agent install, MSI installer
 

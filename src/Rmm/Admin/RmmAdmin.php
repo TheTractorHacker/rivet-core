@@ -149,7 +149,7 @@ final class RmmAdmin
      * Save the MeshCentral settings (and optionally test the connection). `mesh_login_key` is write-only: empty keeps the stored key.
      *
      * The optional agent-install settings ride along when present: `mesh_group_id`, `mesh_server_cert_pin`, `mesh_auto_map_overwrite`, `mesh_agent_ids`,
-     * `mesh_install_args` (see {@see MeshAgentSettings}); they are validated first and nothing is written when any of them is invalid. `mesh_probe_pin`
+     * `mesh_install_args`, `mesh_hide`, `mesh_hide_tools` (see {@see MeshAgentSettings}); they are validated first and nothing is written when any of them is invalid. `mesh_probe_pin`
      * (true) reads the server's certificate and returns a proposed pin in `pin_probe` WITHOUT saving it.
      *
      * @param array<string,mixed> $in mesh_enabled, mesh_url, mesh_domain, mesh_account_template, mesh_policy, mesh_token_ttl_s, mesh_login_key, and the install settings above
@@ -194,7 +194,7 @@ final class RmmAdmin
         $install = [];
         $warnings = [];
         if ($this->meshSettings !== null) {
-            $install = array_intersect_key($in, array_flip(['mesh_group_id', 'mesh_server_cert_pin', 'mesh_auto_map_overwrite', 'mesh_agent_ids', 'mesh_install_args']));
+            $install = array_intersect_key($in, array_flip(['mesh_group_id', 'mesh_server_cert_pin', 'mesh_auto_map_overwrite', 'mesh_agent_ids', 'mesh_install_args', 'mesh_hide', 'mesh_hide_tools']));
             if ($install !== []) {
                 $errors = $this->meshSettings->update($install, $by->userId, $norm);
                 if ($errors !== []) {

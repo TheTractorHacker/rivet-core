@@ -48,6 +48,31 @@ File transfers are stored under the module option `transfer_dir`, or `<binary_di
 
 A rule is a plain filter: severity or worse, a source substring, an optional event id, a phrase, a count within a window, and a severity for the alert. **It is never a regular expression**, so a careless pattern cannot cost the server more than a substring search. A match reports the check `log.rule_<id>` through the existing check evaluator: debounce (a log match is reported enough times to pass it at once), the Phase 3 alerting engine (maintenance windows, dependency and storm control, escalation) and the edition's alert and ticket path all apply unchanged. When the rule has not matched on that device for `resolve_after_min` minutes (or the rule was disabled or deleted), housekeeping reports the check `ok` and the alert closes.
 
+## The Remote button: what the launch URL looks like (1.0.0-rc.17)
+
+The Remote button (desktop), and the Terminal and Files buttons, mint a MeshCentral login token at the click and open
+
+```
+https://<mesh>[/<domain>]/?login=<token>&gotonode=<node id>&viewmode=<11|12|13>&hide=<mesh_hide>
+```
+
+| Parameter | Meaning |
+|---|---|
+| `login` | the login token (AES-256-GCM, minted per click, never stored or logged) |
+| `gotonode` | the mapped MeshCentral node id (`node//...`) |
+| `viewmode` | 11 = Desktop, 12 = Terminal, 13 = Files (10 = General, not offered) |
+| `hide` | MeshCentral's interface bitmask, below. Omitted when the setting is 0, which gives exactly the URL of rc.16 and earlier |
+
+**The `hide` bitmask.** Read from MeshCentral's own web page source (`views/default.handlebars`, `args.hide`, checked against the master branch in October 2026): 1 = the masthead (logo bar), 2 = the top bar, 4 = the footer, 8 = the page titles (the tab headings), 16 = the left bar and main menu (the device list), 32 = the back button. **31 = bits 1 to 16: only the device view is left.** That is the value Tactical RMM passes for "Take control", and the default here. Add 32 (63) to also hide the back button. `hide` is OR-ed with any server-wide `hide` of the MeshCentral domain.
+
+**Settings.** Administration, RMM, MeshCentral card: *Hide MeshCentral interface elements* (`mesh_hide`, 0 to 255, default 31; 31 = show only the remote screen, 0 = full MeshCentral) and, optionally, the same for Terminal and Files (`mesh_hide_tools`; empty = same as the desktop; 0 allowed, for example to keep the file browser's surroundings). REST: `GET`/`PUT endpoint_devices/remote/mesh` carry both. Migration `0026_rmm_mesh_hide` adds the two columns; until it is applied the default 31 is used and a save says to run the migration. The launch response JSON is unchanged (`url`, `session_id`, ...); only the URL differs.
+
+**New tab, not blocked.** The edition's JavaScript must open the tab inside the click (a browser blocks `window.open` after an asynchronous request), then navigate it once the launch answers: open `about:blank` synchronously, request the launch, set the tab's location to `url`; on failure close the blank tab and show the error; if the browser refused the tab, show an *Open remote session* link instead.
+
+**Does MeshCentral connect by itself? No (from its source).** In `gotoStartViewPage` the page only selects the device and the view (`gotoDevice(node, viewmode)`); the `AutoConnect` buttons exist only in MeshCentral's debug mode and there is no URL parameter that connects. MeshCentral's own "open in a new tab" link uses the same `?node=...&viewmode=11&hide=16` and also lands on the Desktop tab with a **Connect** button. Expect to click **Connect** once in the new tab. Tactical RMM's "Take control" behaves the same on a plain MeshCentral.
+
+**How to test on a real MeshCentral (UNVERIFIED so far: only a mock server and MeshCentral's source were used).** Sign in to RivetIT, open a mapped online device, click Remote. Expected: a new tab opens at once, ends at the URL above, shows the Desktop view with no MeshCentral masthead, top bar, footer, tab titles or device list, with a Connect button (click it). Then set the hide value to 0 and repeat: the full MeshCentral appears (the old behaviour). If your MeshCentral version differs in what a bit hides, change the number in the setting; nothing else depends on it.
+
 ## Install the MeshCentral agent with the RivetIT agent
 
 Status: 1.0.0-rc.12, migration `0023_rmm_mesh_agent`; the group id in MeshCentral's own URL form and the pasted-address field came in 1.0.0-rc.15 (migration `0024_rmm_mesh_group_url`). **Optional and off by default.** Wire contract: [PROTOCOL.md](PROTOCOL.md) 3.2.5 and 6.

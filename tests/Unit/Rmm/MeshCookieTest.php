@@ -84,4 +84,30 @@ final class MeshCookieTest extends TestCase
         $this->assertSame('https://m.example.com/?login=a%40b%24c&gotonode=node%2F%2FABC&viewmode=11', M::launchUrl('https://m.example.com', '', 'a@b$c', 'node//ABC'));
         $this->assertSame('https://m.example.com/my%20dom/?login=x&gotonode=n&viewmode=11', M::launchUrl('https://m.example.com', 'my dom', 'x', 'n'));
     }
+
+    public function testLaunchUrlHideParameter(): void
+    {
+        $b = 'https://m.example.com';
+        $old = $b . '/?login=x&gotonode=n&viewmode=11';
+        $this->assertSame($old, M::launchUrl($b, '', 'x', 'n', 11, 0), 'hide=0 is the old URL, byte for byte');
+        $this->assertSame($old, M::launchUrl($b, '', 'x', 'n'), 'the default of the method is the old URL');
+        foreach ([11, 12, 13] as $view) {
+            foreach ([1, 16, 31, 63, 255] as $hide) {
+                $this->assertSame($b . '/?login=x&gotonode=n&viewmode=' . $view . '&hide=' . $hide, M::launchUrl($b, '', 'x', 'n', $view, $hide));
+            }
+            $this->assertSame($b . '/?login=x&gotonode=n&viewmode=' . $view, M::launchUrl($b, '', 'x', 'n', $view, 0));
+        }
+        foreach ([-1, -31, 256, 1000, PHP_INT_MAX, PHP_INT_MIN] as $bad) {
+            $this->assertSame($old, M::launchUrl($b, '', 'x', 'n', 11, $bad), "out of range $bad adds nothing");
+        }
+        $this->assertSame($b . '/d/?login=x&gotonode=n&viewmode=11&hide=31', M::launchUrl($b, 'd', 'x', 'n', 99, 31), 'an unknown view falls back to the desktop and keeps hide');
+        // hostile input stays encoded and cannot add a parameter; hide is an int and cannot carry text
+        $u = M::launchUrl($b, 'a/b?x=1#', 'c&hide=0&login=evil', "n&hide=0\r\nHost: x", 11, 31);
+        $this->assertSame(1, substr_count($u, '&hide='));
+        $this->assertSame(1, substr_count($u, '?'));
+        $this->assertStringEndsWith('&viewmode=11&hide=31', $u);
+        parse_str((string) parse_url($u, PHP_URL_QUERY), $q);
+        $this->assertSame(['login', 'gotonode', 'viewmode', 'hide'], array_keys($q));
+        $this->assertSame('c&hide=0&login=evil', $q['login']);
+    }
 }

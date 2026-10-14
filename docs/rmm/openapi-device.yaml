@@ -2569,7 +2569,7 @@ paths:
       security: [{userToken: []}]
       requestBody:
         required: true
-        content: {application/json: {schema: {type: object, properties: {mesh_group_id: {type: string}, mesh_server_cert_pin: {type: string}, mesh_auto_map_overwrite: {type: boolean}, mesh_agent_ids: {type: object, additionalProperties: {type: integer, minimum: 1, maximum: 255}}, mesh_install_args: {type: object, properties: {windows: {type: array, maxItems: 8, items: {type: string}}, linux: {type: array, maxItems: 8, items: {type: string}}}}, probe_pin: {type: boolean}}}}}
+        content: {application/json: {schema: {type: object, properties: {mesh_group_id: {type: string}, mesh_server_cert_pin: {type: string}, mesh_auto_map_overwrite: {type: boolean}, mesh_agent_ids: {type: object, additionalProperties: {type: integer, minimum: 1, maximum: 255}}, mesh_install_args: {type: object, properties: {windows: {type: array, maxItems: 8, items: {type: string}}, linux: {type: array, maxItems: 8, items: {type: string}}}}, mesh_hide: {type: integer, minimum: 0, maximum: 255, description: "MeshCentral hide bitmask for the desktop launch (31 = only the remote screen, 0 = no hide parameter)"}, mesh_hide_tools: {type: [integer, 'null'], minimum: 0, maximum: 255, description: 'Same for terminal and files; null or empty = the same as mesh_hide'}, probe_pin: {type: boolean}}}}}
       responses:
         '200': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/MeshAgentSettings'}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -2903,6 +2903,8 @@ components:
         mesh_auto_map_overwrite: {type: boolean}
         mesh_agent_ids: {type: object, additionalProperties: {type: integer}, description: The administrator's corrections only}
         mesh_install_args: {type: object, additionalProperties: {type: array, items: {type: string}}}
+        mesh_hide: {type: integer, minimum: 0, maximum: 255, default: 31, description: "MeshCentral 'hide' bitmask appended to the desktop launch URL (0 = none)"}
+        mesh_hide_tools: {type: [integer, 'null'], minimum: 0, maximum: 255, description: 'The same for terminal and files; null = same as mesh_hide'}
         effective_agent_ids: {type: object, additionalProperties: {type: integer}, description: 'Built-in plus corrections: what an installer carries'}
         effective_install_args: {type: object, additionalProperties: {type: array, items: {type: string}}}
         default_agent_ids: {type: object, additionalProperties: {type: integer}}

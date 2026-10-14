@@ -741,12 +741,13 @@ final class RemoteActions
     private function meshSettingsView(): array
     {
         $cfg = $this->settings->get();
-        $m = $this->meshSettings?->get() ?? ['group_id' => '', 'group_id_url' => '', 'server_cert_pin' => '', 'auto_map_overwrite' => false, 'agent_ids' => [], 'install_args' => []];
+        $m = $this->meshSettings?->get() ?? ['group_id' => '', 'group_id_url' => '', 'server_cert_pin' => '', 'auto_map_overwrite' => false, 'agent_ids' => [], 'install_args' => [], 'hide' => \RivetCore\Rmm\Mesh\MeshCookie::HIDE_DEFAULT, 'hide_tools' => null];
         $t = $this->meshSettings?->effectiveTables() ?? ['agent_ids' => [], 'install_args' => []];
         $refusal = $this->meshAgents?->installRefusal();
 
         return ['mesh_enabled' => (int) $cfg['mesh_enabled'] === 1, 'mesh_url' => (string) $cfg['mesh_url'], 'mesh_group_id' => $m['group_id'], 'mesh_group_id_url' => $m['group_id_url'], 'mesh_server_cert_pin' => $m['server_cert_pin'],
             'mesh_auto_map_overwrite' => $m['auto_map_overwrite'], 'mesh_agent_ids' => $m['agent_ids'], 'mesh_install_args' => $m['install_args'],
+            'mesh_hide' => $m['hide'], 'mesh_hide_tools' => $m['hide_tools'],
             'effective_agent_ids' => $t['agent_ids'], 'effective_install_args' => $t['install_args'], 'default_agent_ids' => \RivetCore\Rmm\Mesh\MeshAgentCatalog::DEFAULT_AGENT_IDS,
             'install_ready' => $refusal === null && $this->meshAgents !== null, 'install_refusal' => $this->meshAgents === null ? 'Not available.' : $refusal,
             'note' => 'The download address shape (agent id 4 for Windows x64, installflags=0, meshid in MeshCentral\'s 64-character URL form) was checked against a real MeshCentral. The Linux agent ids, the install arguments and the node-id locations were not: check them against your Mesh version.'];
@@ -763,7 +764,7 @@ final class RemoteActions
     }
 
     /**
-     * Change the Mesh agent install settings: `mesh_group_id`, `mesh_server_cert_pin`, `mesh_auto_map_overwrite`, `mesh_agent_ids`, `mesh_install_args`. Nothing is written when
+     * Change the Mesh agent install settings: `mesh_group_id`, `mesh_server_cert_pin`, `mesh_auto_map_overwrite`, `mesh_agent_ids`, `mesh_install_args`, `mesh_hide`, `mesh_hide_tools` (MeshCentral view parameters of a launch). Nothing is written when
      * any value is invalid. `probe_pin: true` reads the Mesh server's certificate and answers with a proposed pin (`pin_probe`) WITHOUT saving it.
      *
      * @param array<string,mixed> $in

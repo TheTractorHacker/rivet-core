@@ -2,6 +2,16 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.17 (the Remote button opens the remote screen, not the MeshCentral interface)
+
+Owner request. The launch URL now carries MeshCentral's `hide` parameter so the new tab shows only the device view, as Tactical RMM's "Take control" does.
+
+- **`hide` on the launch URL.** `MeshCookie::launchUrl(..., int $viewmode = 11, int $hide = 0)`: 1 to 255 appends `&hide=N`; 0 or anything out of range appends nothing (the old URL, byte for byte). Meaning of the bits, from MeshCentral's `views/default.handlebars`: 1 masthead, 2 top bar, 4 footer, 8 page titles, 16 left bar and menu, 32 back button; 31 = only the device view (`MeshCookie::HIDE_DEFAULT`).
+- **Settings (migration `0026_rmm_mesh_hide`).** `mesh_hide` (0 to 255, default 31) and `mesh_hide_tools` (null = same; terminal and files) on `endpoint_agent_mesh_settings`, in `MeshAgentSettings` (`get()` gains `hide`, `hide_tools`; `hideFor($view)`; `update()` validates, refuses non-integers and out-of-range values, writes nothing on error), `RmmAdmin::saveMesh`, and `GET`/`PUT endpoint_devices/remote/mesh`. `MeshService` takes an optional `MeshAgentSettings` as its last constructor argument (`RmmModule` wires it); without it the URL has no `hide`.
+- **Behaviour change.** After the migration every launch URL has `&hide=31` unless an administrator sets 0. The response JSON is otherwise unchanged.
+- **Honest limits.** MeshCentral does not auto-connect from a URL (source-checked): the new tab shows a Connect button. Not tried against a live MeshCentral; see REMOTE_AND_LOGS.md for the test.
+- **Tests.** `MeshCookieTest` (every view and hide value, bounds, hostile input), `RoleMatrixTest` (default, per-view values, hide 0 equals the old URL, validation, missing columns), `SchemaDiffTest` (migration 0026, idempotent), migration lists. Golden replay unchanged (`replay identical (10 files)`).
+
 ## 1.0.0-rc.16 (push the Mesh agent to an enrolled device; an MSI installer built on Linux)
 
 Two owner requests. **(A)** The Mesh options live only in the stamped installer payload, so an agent that enrolled without them, or one that updated itself, never installed a Mesh agent: a technician can now push the install. **(B)** The server could hand out only the stamped exe: it can now also hand out an `.msi`.

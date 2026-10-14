@@ -443,6 +443,23 @@ final class SchemaDiffTest extends TestCase
         $this->assertSame('abcd', (string) $this->db('d')->fetchOne('SELECT group_id c FROM endpoint_agent_mesh_settings')['c']);
     }
 
+    public function testMigration0026AddsTwoHideColumnsAndIsIdempotent(): void
+    {
+        $this->reference();
+        $this->build('d', 'rivetit-2.6.146-final.sql', true);
+        $this->seed('d');
+        $this->runner('d')->run();
+        $col = fn (string $c): ?array => $this->db('d')->fetchOne("SELECT COLUMN_TYPE t, COLUMN_DEFAULT d, IS_NULLABLE n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'endpoint_agent_mesh_settings' AND COLUMN_NAME = '$c'");
+        $this->assertSame(['31', 'NO'], [$col('mesh_hide')['d'] ?? null, $col('mesh_hide')['n'] ?? null]);
+        $this->assertSame('YES', $col('mesh_hide_tools')['n'] ?? null);
+        $this->db('d')->execute("INSERT INTO endpoint_agent_mesh_settings (id, group_id, mesh_hide, mesh_hide_tools) VALUES (1, 'abcd', 7, 3)");
+        $before = $this->describe('d');
+        (new \RivetCore\Rmm\Migration\Migration0026MeshHide())->up($this->db('d'));
+        $this->assertSame([], $this->runner('d')->run());
+        $this->assertSame($before, $this->describe('d'));
+        $this->assertSame([7, 3], array_map('intval', array_values($this->db('d')->fetchOne('SELECT mesh_hide, mesh_hide_tools FROM endpoint_agent_mesh_settings') ?? [])));
+    }
+
     public function testFreshCoreInstallHasEveryPhase1Table(): void
     {
         $this->runner('b')->run();
