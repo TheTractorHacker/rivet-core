@@ -27,6 +27,7 @@ type Config struct {
 	DisableJobs       bool     `json:"disable_jobs,omitempty"`          // local kill switch: never execute server jobs
 	DisableScriptChk  bool     `json:"disable_script_checks,omitempty"` // local kill switch for script checks
 	DisableRemote     bool     `json:"disable_remote,omitempty"`        // local kill switch: svc_*/proc_*/file_* jobs fail with disabled_locally
+	DisablePatching   bool     `json:"disable_patching,omitempty"`      // local kill switch: patch_scan/patch_install jobs fail with disabled_locally and patch:* is not announced
 	DisableLogs       bool     `json:"disable_logs,omitempty"`          // local kill switch: never collect or ship logs
 	UpdateHosts       []string `json:"update_hosts,omitempty"`          // extra hosts allowed to serve update binaries (default: server host)
 	BufferMaxSamples  int      `json:"buffer_max_samples,omitempty"`

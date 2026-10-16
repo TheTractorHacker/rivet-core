@@ -346,7 +346,7 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 Local kill switches (set in `config.json` by an administrator of the endpoint): `disable_jobs` (never execute server jobs) and
 `disable_script_checks`, plus (RMM Phases 6 and 8) `disable_remote` (the service, process and file tools fail with `disabled_locally`, and the agent stops announcing
-`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) and `disable_logs` (never collect or ship logs; `logs:collect` is not announced).
+`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_patching` (patch_scan and patch_install fail with `disabled_locally`; `patch:scan`, `patch:install` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` is not announced).
 
 ## Monitoring and checks
 

@@ -37,6 +37,26 @@ const (
 // RemoteTypes are the remote tool job types.
 var RemoteTypes = []string{TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall}
 
+// Patch management (RMM Phase 4): same injected-handler mechanism as the remote tools (internal/patch), but withdrawn by their own local switch,
+// config.disable_patching, not by disable_remote. They run on Windows (Windows Update Agent) and Linux (apt, dnf, yum, zypper).
+const (
+	TypePatchScan    = "patch_scan"
+	TypePatchInstall = "patch_install"
+)
+
+// PatchTypes are the patch management job types.
+var PatchTypes = []string{TypePatchScan, TypePatchInstall}
+
+// IsPatchType reports whether typ is a patch management job type.
+func IsPatchType(typ string) bool {
+	for _, t := range PatchTypes {
+		if t == typ {
+			return true
+		}
+	}
+	return false
+}
+
 // IsRemoteType reports whether typ is one of the remote tool job types.
 func IsRemoteType(typ string) bool {
 	for _, t := range RemoteTypes {
@@ -56,6 +76,8 @@ func supportedOn(goos, typ string) bool {
 	switch typ {
 	case TypeCollect, TypeReboot, TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall:
 		return true
+	case TypePatchScan, TypePatchInstall:
+		return goos == "windows" || goos == "linux"
 	case TypePowerShell:
 		return goos == "windows"
 	case TypeShell, TypePython:
@@ -78,7 +100,7 @@ func ScriptType() string {
 // JobTypes lists the job types this agent runs, sorted.
 func JobTypes() []string {
 	var out []string
-	for _, t := range append([]string{TypePowerShell, TypeShell, TypePython, TypeCollect, TypeReboot}, RemoteTypes...) {
+	for _, t := range append(append([]string{TypePowerShell, TypeShell, TypePython, TypeCollect, TypeReboot}, RemoteTypes...), PatchTypes...) {
 		if t == TypePython && !pythonAvailable() {
 			continue
 		}

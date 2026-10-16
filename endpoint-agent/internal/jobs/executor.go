@@ -44,6 +44,8 @@ type Executor struct {
 	// (config.disable_remote) makes every one of them fail with disabled_locally without running.
 	Remote        map[string]remote.Handler
 	DisableRemote bool
+	// DisablePatching (config.disable_patching) makes patch_scan and patch_install fail with disabled_locally without running (their handlers are in Remote).
+	DisablePatching bool
 
 	mu       sync.Mutex
 	active   map[string]bool
@@ -223,7 +225,7 @@ func (e *Executor) process(j api.Job) {
 	switch j.Type {
 	case TypePowerShell, TypeShell, TypePython:
 		state, reason, output, exit = e.runScript(ctx, j, timeout, maxOut)
-	case TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall:
+	case TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall, TypePatchScan, TypePatchInstall:
 		state, reason, output, exit = e.runRemote(ctx, j, timeout, maxOut)
 	case "collect":
 		state, reason, output = StateSucceeded, "", ""
@@ -290,7 +292,7 @@ func (e *Executor) runScript(ctx context.Context, j api.Job, timeout time.Durati
 // that never started (bad parameters, disabled locally) is a failure without an exit code, one that ran and
 // failed has exit code 1.
 func (e *Executor) runRemote(ctx context.Context, j api.Job, timeout time.Duration, maxOut int) (state, reason, output string, exit *int) {
-	if e.DisableRemote {
+	if (IsPatchType(j.Type) && e.DisablePatching) || (!IsPatchType(j.Type) && e.DisableRemote) {
 		return StateFailed, "disabled_locally", `{"v":1,"ok":false,"detail":"disabled_locally"}`, nil
 	}
 	h := e.Remote[j.Type]
