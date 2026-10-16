@@ -1,0 +1,7 @@
+Listing...
+held-tool/jammy-updates 1.2-3 amd64 [upgradable from: 1.2-2]
+libssl3/jammy-updates,jammy-security 3.0.2-0ubuntu1.18 amd64 [upgradable from: 3.0.2-0ubuntu1.12]
+linux-image-generic/jammy-updates,jammy-security 5.15.0.119.119 amd64 [upgradable from: 5.15.0.116.116]
+openssl/jammy-updates,jammy-security 3.0.2-0ubuntu1.18 amd64 [upgradable from: 3.0.2-0ubuntu1.12]
+tzdata/jammy-updates,jammy-security 2024a-0ubuntu0.22.04.1 all [upgradable from: 2023c-0ubuntu0.22.04.2]
+vim/jammy-updates 2:8.2.3995-1ubuntu2.19 amd64 [upgradable from: 2:8.2.3995-1ubuntu2.17]

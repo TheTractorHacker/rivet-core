@@ -12,9 +12,11 @@ import (
 var (
 	winIDRe   = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	linuxIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+._-]{0,99}(:[a-z0-9-]{1,20})?$`)
-	// zypperNameRe is the syntax of a patch name as zypper itself prints it (mixed case: openSUSE-SLE-15.5-2024-1234). It is only applied to text
-	// that came out of zypper, never to what the server sent (the server's ids are the lower-case forms).
-	zypperNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._-]{0,99}$`)
+	// mixedNameRe is the syntax of a name as the package manager itself prints it, where case matters (zypper patches such as
+	// openSUSE-SLE-15.5-2024-1234, rpm packages such as NetworkManager.x86_64). It is only applied to text that came out of the package manager,
+	// never to what the server sent: the contract's ids are lower-case, so such a name travels as its lower-case id and the agent maps it back
+	// from its own fresh scan.
+	mixedNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._-]{0,99}$`)
 )
 
 // ValidWindowsID reports whether s is a lower-case UpdateID GUID.
@@ -84,6 +86,9 @@ func paramInt(m map[string]json.RawMessage, k string, lo, hi, def int) (int, err
 	v, has := m[k]
 	if !has {
 		return def, nil
+	}
+	if t := bytes.TrimSpace(v); len(t) == 0 || (t[0] != '-' && (t[0] < '0' || t[0] > '9')) {
+		return 0, errParams // a string (json.Number would accept "5"), null, a boolean, an object
 	}
 	var n json.Number
 	dec := json.NewDecoder(bytes.NewReader(v))

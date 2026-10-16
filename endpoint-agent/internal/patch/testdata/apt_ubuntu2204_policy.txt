@@ -1,0 +1,45 @@
+libssl3:
+  Installed: 3.0.2-0ubuntu1.12
+  Candidate: 3.0.2-0ubuntu1.18
+  Version table:
+     3.0.2-0ubuntu1.18 500
+        500 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 Packages
+        500 http://security.ubuntu.com/ubuntu jammy-security/main amd64 Packages
+ *** 3.0.2-0ubuntu1.12 100
+        100 /var/lib/dpkg/status
+     3.0.2-0ubuntu1.10 500
+        500 http://archive.ubuntu.com/ubuntu jammy/main amd64 Packages
+linux-image-generic:
+  Installed: 5.15.0.116.116
+  Candidate: 5.15.0.119.119
+  Version table:
+     5.15.0.119.119 500
+        500 http://security.ubuntu.com/ubuntu jammy-security/main amd64 Packages
+ *** 5.15.0.116.116 100
+        100 /var/lib/dpkg/status
+openssl:
+  Installed: 3.0.2-0ubuntu1.12
+  Candidate: 3.0.2-0ubuntu1.18
+  Version table:
+     3.0.2-0ubuntu1.18 500
+        500 http://security.ubuntu.com/ubuntu jammy-security/main amd64 Packages
+ *** 3.0.2-0ubuntu1.12 100
+        100 /var/lib/dpkg/status
+tzdata:
+  Installed: 2023c-0ubuntu0.22.04.2
+  Candidate: 2024a-0ubuntu0.22.04.1
+  Version table:
+     2024a-0ubuntu0.22.04.1 500
+        500 http://security.ubuntu.com/ubuntu jammy-security/main all Packages
+ *** 2023c-0ubuntu0.22.04.2 100
+        100 /var/lib/dpkg/status
+vim:
+  Installed: 2:8.2.3995-1ubuntu2.17
+  Candidate: 2:8.2.3995-1ubuntu2.19
+  Version table:
+     2:8.2.3995-1ubuntu2.19 500
+        500 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 Packages
+ *** 2:8.2.3995-1ubuntu2.17 100
+        100 /var/lib/dpkg/status
+     2:8.2.3995-1ubuntu2.15 500
+        500 http://security.ubuntu.com/ubuntu jammy-security/main amd64 Packages

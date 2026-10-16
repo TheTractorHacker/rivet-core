@@ -45,7 +45,7 @@ func parseZypperPatches(out string) []zypperPatch {
 		if st := get("status"); st != "" && st != "needed" {
 			continue
 		}
-		if !zypperNameRe.MatchString(get("name")) {
+		if !mixedNameRe.MatchString(get("name")) {
 			continue
 		}
 		res = append(res, zypperPatch{Name: get("name"), Category: strings.ToLower(get("category")), Severity: strings.ToLower(get("severity")),

@@ -50,7 +50,7 @@ func parseCheckUpdate(out string) []rpmUpdate {
 			continue
 		}
 		name, arch, ok := splitNameArch(f[0])
-		if !ok || !ValidLinuxID(f[0]) {
+		if !ok || !mixedNameRe.MatchString(f[0]) {
 			continue
 		}
 		res = append(res, rpmUpdate{Name: name, Arch: arch, Version: f[1], Repo: f[2]})

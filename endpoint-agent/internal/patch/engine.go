@@ -47,11 +47,12 @@ func (osFS) ReadTail(p string, max int64) ([]byte, error) {
 
 // Engine implements the two jobs. The zero value is the production engine for the running OS.
 type Engine struct {
-	GOOS string           // "" = runtime.GOOS
-	R    remote.Runner    // nil = remote.ExecRunner{}
-	PS   PSRunner         // nil = the real PowerShell on Windows, none elsewhere
-	FS   FS               // nil = the real file system
-	Now  func() time.Time // nil = time.Now
+	GOOS  string           // "" = runtime.GOOS
+	R     remote.Runner    // nil = remote.ExecRunner{}
+	PS    PSRunner         // nil = the real PowerShell on Windows, none elsewhere
+	FS    FS               // nil = the real file system
+	Now   func() time.Time // nil = time.Now
+	Local *time.Location   // zone of the zone-less timestamps in the Linux logs; nil = time.Local
 }
 
 // installMu serialises patch_install on one machine (the executor may run several jobs at once): a second concurrent install fails fast with busy.

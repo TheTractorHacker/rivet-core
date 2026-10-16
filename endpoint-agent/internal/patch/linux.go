@@ -55,6 +55,9 @@ func (e Engine) findBin(name string) string {
 // detect picks the package manager by the binaries present, in the order apt, dnf, yum, zypper.
 func (e Engine) detect(ctx context.Context) (*lx, bool) {
 	x := &lx{e: e, ctx: ctx, bin: map[string]string{}, locs: time.Local}
+	if e.Local != nil {
+		x.locs = e.Local
+	}
 	need := func(names ...string) bool {
 		for _, n := range names {
 			p := e.findBin(n)
@@ -169,7 +172,8 @@ func wantKind(cats []string, kind string) bool {
 // scanned is a complete Linux scan: the output plus, per id, what the installer needs (the candidate version, or zypper's real patch name).
 type scanned struct {
 	out    ScanOut
-	target map[string]string
+	target map[string]string // id -> candidate version (apt, dnf, yum) or patch name (zypper)
+	arg    map[string]string // id -> the exact name handed to the package manager (differs from the id for mixed-case names)
 }
 
 func (e Engine) scanLinux(ctx context.Context, p ScanParams, maxOut int) remote.Result {
@@ -195,6 +199,7 @@ func failWith(detail, msg string) remote.Result {
 func (x *lx) scan(cats []string) (sc scanned, detail, msg string) {
 	sc.out = ScanOut{V: 1, OK: true, Manager: x.mgr, ScannedAt: rfc3339(x.e.now()), ScanState: "ok", WUState: "n/a", Updates: []Update{}}
 	sc.target = map[string]string{}
+	sc.arg = map[string]string{}
 	switch x.mgr {
 	case ManagerApt:
 		detail, msg = x.scanApt(&sc, cats)
@@ -349,7 +354,7 @@ func (x *lx) scanApt(sc *scanned, cats []string) (string, string) {
 		}
 		if wantKind(cats, u.Kind) {
 			sc.out.Updates = append(sc.out.Updates, u)
-			sc.target[id] = p.New
+			sc.target[id], sc.arg[id] = p.New, id
 		}
 	}
 	return "", ""
@@ -392,17 +397,17 @@ func (x *lx) scanRpm(sc *scanned, cats []string) (string, string) {
 	cur := x.rpmVersions(idsOfRows(rows))
 	seen := map[string]bool{}
 	for _, r := range rows {
-		id := r.ID()
-		if seen[id] {
+		id := strings.ToLower(r.ID()) // the contract's ids are lower case; the real name is kept in sc.arg
+		if seen[id] || !ValidLinuxID(id) {
 			continue
 		}
 		seen[id] = true
 		u := Update{ID: id, Title: clip(r.Name, maxTitle), Kind: "optional", Severity: "unspecified", EulaAccepted: true, Categories: []string{"Software Updates"},
 			Version: clip(strings.TrimPrefix(r.Version, "0:"), 100), RebootRequired: rebootNameRe.MatchString(r.Name)}
-		if vs := cur[id]; len(vs) > 0 {
+		if vs := cur[r.ID()]; len(vs) > 0 {
 			u.Current = clip(vs[len(vs)-1], 100)
 		}
-		if a, ok := adv[id]; ok {
+		if a, ok := adv[r.ID()]; ok {
 			u.Kind, u.Severity, u.Categories = "security", a.Severity, []string{"Security Updates"}
 			if a.Severity == "critical" {
 				u.Kind = "critical"
@@ -411,7 +416,7 @@ func (x *lx) scanRpm(sc *scanned, cats []string) (string, string) {
 		}
 		if wantKind(cats, u.Kind) {
 			sc.out.Updates = append(sc.out.Updates, u)
-			sc.target[id] = u.Version
+			sc.target[id], sc.arg[id] = u.Version, r.ID()
 		}
 	}
 	return "", ""
@@ -487,7 +492,7 @@ func (x *lx) scanZypper(sc *scanned, cats []string) (string, string) {
 		}
 		if wantKind(cats, u.Kind) {
 			sc.out.Updates = append(sc.out.Updates, u)
-			sc.target[id] = zp.Name // the real, mixed-case patch name zypper needs
+			sc.target[id], sc.arg[id] = zp.Name, zp.Name // the real, mixed-case patch name zypper needs
 		}
 	}
 	return "", ""
@@ -606,12 +611,12 @@ func (x *lx) process(p InstallParams, ids []string, sc scanned, titles map[strin
 		return
 	}
 	// Do not trust the exit code alone: compare the installed versions with the candidates.
-	after := x.versionsAfter(todo)
+	after := x.versionsAfter(x.pkgArgs(todo, sc))
 	for _, id := range todo {
 		r := ResultItem{ID: id, Title: titles[id], Code: strconv.Itoa(run.exit)}
-		if x.isInstalled(id, sc.target[id], after) {
+		if x.isInstalled(sc.arg[id], sc.target[id], after) {
 			r.Result, r.Code = "installed", "0"
-			r.RebootRequired = rebootNameRe.MatchString(baseName(id)) || run.reboot
+			r.RebootRequired = rebootNameRe.MatchString(baseName(sc.arg[id])) || run.reboot
 		} else {
 			r.Result, r.Detail = "failed", run.msg
 			if r.Detail == "" {
@@ -622,14 +627,12 @@ func (x *lx) process(p InstallParams, ids []string, sc scanned, titles map[strin
 	}
 }
 
-// pkgArgs are the names handed to the manager: the ids, or zypper's real patch names.
+// pkgArgs are the names handed to the manager: the ids, or the real (mixed-case) names the scan saw. They all came out of the manager itself
+// and passed a strict syntax check; the server's text is only ever compared with the ids.
 func (x *lx) pkgArgs(ids []string, sc scanned) []string {
-	if x.mgr != ManagerZypper {
-		return ids
-	}
 	var names []string
 	for _, id := range ids {
-		names = append(names, sc.target[id])
+		names = append(names, sc.arg[id])
 	}
 	return names
 }
@@ -736,11 +739,11 @@ func (x *lx) versionsAfter(ids []string) map[string][]string {
 	return x.rpmVersions(ids)
 }
 
-func (x *lx) isInstalled(id, target string, after map[string][]string) bool {
+func (x *lx) isInstalled(arg, target string, after map[string][]string) bool {
 	if x.mgr == ManagerZypper {
-		return x.patchApplied(target)
+		return x.patchApplied(arg)
 	}
-	for _, v := range after[id] {
+	for _, v := range after[arg] {
 		if v == strings.TrimPrefix(target, "0:") {
 			return true
 		}

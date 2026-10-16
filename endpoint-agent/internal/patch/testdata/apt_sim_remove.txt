@@ -1,0 +1,10 @@
+Reading package lists...
+Building dependency tree...
+The following packages will be REMOVED:
+  libfoo1
+The following packages will be upgraded:
+  openssl
+1 upgraded, 0 newly installed, 1 to remove and 0 not upgraded.
+Remv libfoo1 [1.0-1]
+Inst openssl [3.0.2-0ubuntu1.12] (3.0.2-0ubuntu1.18 Ubuntu:22.04/jammy-updates [amd64])
+Conf openssl (3.0.2-0ubuntu1.18 Ubuntu:22.04/jammy-updates [amd64])
