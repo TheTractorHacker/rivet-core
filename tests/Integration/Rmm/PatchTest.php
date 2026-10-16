@@ -178,7 +178,7 @@ final class PatchTest extends PatchTestCase
         $this->assertSame(403, $this->api('POST', [$d, 'patches', 'install'], $this->viewer, ['mode' => 'dry_run'])[0]);
         $this->assertSame(403, $this->api('POST', ['patches', 'approve'], $this->viewer, ['update_ids' => [self::WIN_KB]])[0]);
         // a technician who may manage may dry-run but never run a real install
-        $this->assertSame(202, $this->api('POST', [$d, 'patches', 'install'], $this->tech, ['mode' => 'dry_run'])[0]);
+        $this->assertSame([200, 'nothing_to_install'], [$this->api('POST', [$d, 'patches', 'install'], $this->tech, ['mode' => 'dry_run'])[0], $this->api('POST', [$d, 'patches', 'install'], $this->tech, ['mode' => 'dry_run'])[1]['skipped']], 'nothing is approved yet');
         $this->assertSame(403, $this->api('POST', [$d, 'patches', 'install'], $this->tech, ['mode' => 'install', 'confirm' => true])[0]);
         // fleet reads never include another client's rows for a restricted principal
         $this->assertSame([], $this->api('GET', ['patches'], $this->scoped)[1]['items']);
@@ -315,19 +315,22 @@ final class PatchTest extends PatchTestCase
         [$c, $j] = $this->api('POST', [$d, 'patches', 'install'], $this->tech, []);
         $this->assertSame(202, $c, json_encode($j));
         $this->assertSame('dry_run', $j['mode']);
-        $this->assertSame(2, $j['queued'], 'a dry run may list available updates too');
+        $this->assertSame(1, $j['queued'], 'by default a dry run rehearses exactly what a real install would do: the approved updates');
         $jobs = $this->offered($this->tok);
         $this->assertSame('patch_install', $jobs[0]['type']);
         $p = (array) $jobs[0]['params'];
         $this->assertSame('dry_run', $p['mode']);
-        $this->assertSame([self::WIN_KB, self::WIN_KB2], explode(',', (string) $p['ids']));
+        $this->assertSame([self::WIN_KB], explode(',', (string) $p['ids']));
         $this->assertSame(1, (int) $this->h->one("SELECT destructive FROM endpoint_agent_jobs WHERE type = 'patch_install'"), 'offered at most once');
         $this->assertSame(3600, (int) $this->h->one("SELECT timeout_s FROM endpoint_agent_jobs WHERE type = 'patch_install'"), 'the deadline is the install time plus a margin, capped at the job timeout');
         $this->report($this->tok, $jobs[0], 'succeeded', (string) json_encode(['v' => 1, 'ok' => true, 'mode' => 'dry_run', 'manager' => 'wua', 'reboot_required' => false, 'truncated' => false, 'results' => [
-            ['id' => self::WIN_KB, 'title' => 'A', 'result' => 'would_install', 'code' => '', 'detail' => '', 'reboot_required' => true], ['id' => self::WIN_KB2, 'title' => 'B', 'result' => 'would_install', 'code' => '', 'detail' => '', 'reboot_required' => false]]]));
+            ['id' => self::WIN_KB, 'title' => 'A', 'result' => 'would_install', 'code' => '', 'detail' => '', 'reboot_required' => true]]]));
+        $h0 = $this->api('POST', [$d, 'patches', 'install'], $this->tech, ['ids' => [self::WIN_KB2]]);
+        $this->assertSame([202, 1], [$h0[0], $h0[1]['queued']], 'a named update that is only available may be rehearsed');
+        $this->assertSame(404, $this->api('POST', [$d, 'patches', 'install'], $this->installer, ['mode' => 'install', 'confirm' => true, 'ids' => [self::WIN_KB2]])[0], 'a real install of an update nobody approved');
         $this->assertSame(['available', 'approved'], [$this->h->one("SELECT status FROM rmm_patch_available WHERE update_id = '" . self::WIN_KB2 . "'"), $this->h->one("SELECT status FROM rmm_patch_available WHERE update_id = '" . self::WIN_KB . "'")], 'a dry run changes no status');
         $h = $this->api('GET', [$d, 'patches', 'history'], $this->viewer)[1];
-        $this->assertSame(['dry_run', 'dry_run'], array_column($h['items'], 'action'));
+        $this->assertSame(['dry_run'], array_column($h['items'], 'action'));
         $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_jobs WHERE type = 'reboot'"));
     }
 

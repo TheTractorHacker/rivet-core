@@ -29,12 +29,17 @@ if ($m === null) {
     exit(2);
 }
 GoldenEdition::migrate($m);
+// the patch-management proof (run_patch_proof.sh): the Phase 4 tables and the `patching` switch; the golden replay (older agents) leaves both off
+$patching = getenv('RMM_PROOF_PATCHING') === '1';
+if ($patching) {
+    (new \RivetCore\Rmm\Migration\Migration0028Patching())->up(new \RivetCore\Tests\Support\MysqliDatabase($m));
+}
 $e = new GoldenEdition($state, false);
 $client = $e->tenancy->addClient('Proof Dept');
 $s = $e->module->settings();
 $s->enable();
 $errors = $s->update(['service_url' => $url, 'unmatched_policy' => 'auto_create',
-    'features_json' => ['monitoring' => true, 'metrics' => true, 'jobs' => true, 'updates' => true, 'alerting' => true, 'remote_tools' => true, 'filetransfer' => true, 'logs' => true]]);
+    'features_json' => ['monitoring' => true, 'metrics' => true, 'jobs' => true, 'updates' => true, 'alerting' => true, 'remote_tools' => true, 'filetransfer' => true, 'logs' => true] + ($patching ? ['patching' => true] : [])]);
 if ($errors !== []) {
     fwrite(STDERR, implode("\n", $errors) . "\n");
     exit(1);

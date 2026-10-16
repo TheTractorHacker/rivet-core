@@ -337,7 +337,7 @@ final class PatchScanService
     {
         $rows = $this->sql->all("SELECT j.* FROM rmm_patch_jobs p JOIN endpoint_agent_jobs j ON j.job_id = p.job_id
             WHERE p.applied_at IS NULL AND j.state IN ('succeeded','failed','timed_out','cancelled','expired')
-              AND NOT (j.reason IN ('result_lost','no_result_by_deadline') AND j.finished_at > ?) ORDER BY p.created_at LIMIT " . max(1, $limit), [$this->sql->utcAt(-3600)]);   // a lost result may still arrive late: give it an hour
+              AND NOT (COALESCE(j.reason, '') IN ('result_lost','no_result_by_deadline') AND j.finished_at > ?) ORDER BY p.created_at LIMIT " . max(1, $limit), [$this->sql->utcAt(-3600)]);   // a lost result may still arrive late: give it an hour
         $n = 0;
         foreach ($rows as $j) {
             $dev = $this->devices->find((int) $j['device_id']);

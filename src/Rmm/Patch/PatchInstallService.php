@@ -56,10 +56,9 @@ final class PatchInstallService
         }
         $deviceId = (int) $dev['device_id'];
         $source = $opts['source'] ?? 'manual';
-        if ($this->scans->pendingJob($deviceId, PatchProtocol::JOB_INSTALL) !== null) {
-            return ['ok' => true, 'skipped' => 'already_queued'];
-        }
-        $statuses = $mode === 'install' ? ['approved', 'failed'] : ['approved', 'available', 'failed'];
+        // A dry run is a rehearsal of the real thing: by default it takes exactly what a real install would. Named ids may also be ones that are only available (that is
+        // how a technician asks "what would happen if I approved this?").
+        $statuses = $mode === 'install' || $ids === null ? ['approved', 'failed'] : ['approved', 'available', 'failed'];
         $rows = $this->sql->all("SELECT update_id, kind, status, fail_count, last_attempt_at FROM rmm_patch_available WHERE device_id = ? AND status IN ('" . implode("','", $statuses) . "')
             ORDER BY FIELD(kind, 'critical', 'security', 'important', 'optional', 'driver', 'other'), update_id", [$deviceId]);
         $eligible = [];
@@ -86,6 +85,9 @@ final class PatchInstallService
         }
         if ($pick === []) {
             return ['ok' => true, 'skipped' => 'nothing_to_install', 'queued' => 0];
+        }
+        if ($this->scans->pendingJob($deviceId, PatchProtocol::JOB_INSTALL) !== null) {
+            return ['ok' => true, 'skipped' => 'already_queued'];   // one install at a time per device
         }
         // As many as one job may carry; the rest goes in a later job.
         $take = [];
