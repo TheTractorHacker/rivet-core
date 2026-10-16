@@ -73,12 +73,27 @@ final class RmmEvent
     /** A device reported a MeshCentral node id that is already mapped to another live device, so it was NOT mapped. Fields: node_id, other_device_id. */
     public const MESH_NODE_CONFLICT = 'rmm.mesh.node_conflict';
 
+    /**
+     * A device's patch scan was applied (Phase 4, `patching` switch). Fields: manager ("wua", "apt", "dnf", "yum" or "zypper"), scan_state ("ok" or "partial"), total, security (security and critical
+     * updates), reboot_pending, new (updates not seen before).
+     */
+    public const PATCH_SCAN_COMPLETED = 'rmm.patch.scan_completed';
+    /** Updates were approved for installation, by a person or an approval rule. Not about one device when it covers many (device_id 0). Fields: update_id, title, kind, source ("manual" or "rule:<id>"), devices (rows changed), approved_by (null for a rule). */
+    public const PATCH_APPROVED = 'rmm.patch.approved';
+    /** An install job (or its dry run) was queued for a device. Fields: job_id, mode ("dry_run" or "install"), update_count, source ("manual" or "scheduler"). */
+    public const PATCH_INSTALL_STARTED = 'rmm.patch.install_started';
+    /** An install job finished and every requested update ended installed, would be installed (dry run), skipped or not applicable. Fields: job_id, mode, installed, skipped, reboot_required. */
+    public const PATCH_INSTALL_FINISHED = 'rmm.patch.install_finished';
+    /** An install job failed in whole or in part. Fields: job_id, mode, failed (count), installed (count), reason (the first failing update's result code). */
+    public const PATCH_INSTALL_FAILED = 'rmm.patch.install_failed';
+
     /** @return list<string> */
     public static function all(): array
     {
         return [self::DEVICE_ENROLLED, self::DEVICE_OFFLINE, self::DEVICE_ONLINE, self::CHECK_FAILED, self::CHECK_RECOVERED,
             self::JOB_COMPLETED, self::JOB_FAILED, self::SOFTWARE_INSTALLED, self::SOFTWARE_REMOVED,
             self::ALERT_OPENED, self::ALERT_ESCALATED, self::ALERT_ACKNOWLEDGED, self::ALERT_RESOLVED, self::MAINTENANCE_STARTED, self::MAINTENANCE_ENDED,
-            self::POLICY_ASSIGNED, self::SCRIPT_RUN, self::APPROVAL_REQUESTED, self::APPROVAL_DECIDED, self::FILE_TRANSFERRED, self::LOG_RULE_MATCHED, self::MESH_AGENT_INSTALLED, self::MESH_NODE_CONFLICT, self::STARTER_INSTALLED];
+            self::POLICY_ASSIGNED, self::SCRIPT_RUN, self::APPROVAL_REQUESTED, self::APPROVAL_DECIDED, self::FILE_TRANSFERRED, self::LOG_RULE_MATCHED, self::MESH_AGENT_INSTALLED, self::MESH_NODE_CONFLICT, self::STARTER_INSTALLED,
+            self::PATCH_SCAN_COMPLETED, self::PATCH_APPROVED, self::PATCH_INSTALL_STARTED, self::PATCH_INSTALL_FINISHED, self::PATCH_INSTALL_FAILED];
     }
 }

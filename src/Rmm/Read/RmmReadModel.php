@@ -71,7 +71,34 @@ final class RmmReadModel
         private readonly ?\RivetCore\Rmm\Logs\LogService $logService = null,
         private readonly ?\RivetCore\Rmm\Remote\TransferService $transferService = null,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
+        private readonly ?\RivetCore\Rmm\Patch\PatchReader $patches = null,
     ) {
+    }
+
+    // ------------------------------------------------------------------ Phase 4: patch management (reads only; the caller has authorized the device or the scope)
+
+    /**
+     * The patch summary of one device: the last scan, counts by status and kind, the overdue figure and the effective patch policy.
+     *
+     * @param array<string,mixed> $dev the device row
+     * @return array<string,mixed>
+     */
+    public function patchSummary(array $dev): array
+    {
+        return $this->patches?->patchSummary($dev) ?? ['enabled' => false, 'scan' => ['state' => 'never', 'scanned_at' => null]];
+    }
+
+    /**
+     * Patch compliance figures for the clients a viewer may see: devices with a critical or security update missing for too long, never scanned, scan too old,
+     * restart pending, failed installs, by client, site or group, and the ring distribution.
+     *
+     * @param list<int>|null $visibleClientIds null = all clients
+     * @param array<string,mixed> $filters {client_id?, site_id?, group_id?, group_by?, overdue_days?, os?, limit?, offset?}
+     * @return array<string,mixed>
+     */
+    public function patchCompliance(?array $visibleClientIds, array $filters = []): array
+    {
+        return $this->patches?->patchCompliance($visibleClientIds, $filters) ?? [];
     }
 
     // ------------------------------------------------------------------ Phases 6 and 8: remote tools and logs (reads only; the caller has authorized the device)

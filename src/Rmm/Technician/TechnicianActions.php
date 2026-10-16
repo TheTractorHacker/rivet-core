@@ -119,6 +119,9 @@ final class TechnicianActions
             // The remote tools carry validated parameters, per-action confirmation, the feature switches and the file-transfer ledger: only their own endpoints may queue them.
             return ActionResult::fail(422, 'invalid', 'That job type is queued through the remote-tools endpoints (services, processes, files, Mesh agent).');
         }
+        if (\RivetCore\Rmm\Patch\PatchProtocol::isPatchJob($type)) {
+            return ActionResult::fail(422, 'invalid', 'That job type is queued through the patch endpoints (patches/scan, patches/install).');
+        }
         // A script from the saved library needs the lower grant than free-form script text.
         $ability = $def->requiresScript && $savedId > 0 ? RmmAbility::JOB_RUN_SAVED : $def->ability;
         $denied = $this->authz->check($who->userId, $ability, $client);

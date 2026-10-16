@@ -74,6 +74,7 @@ final class Housekeeping
         private readonly ?LogService $logs = null,
         private readonly ?LogRuleService $logRules = null,
         private readonly ?TransferService $transfers = null,
+        private readonly ?\RivetCore\Rmm\Patch\PatchScheduler $patches = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -136,6 +137,14 @@ final class Housekeeping
         // Phases 6 and 8: collected logs age out and are trimmed to their caps whatever the switch says (switching a feature off never keeps its data forever),
         // log rules recover their alerts, and transfer files past their expiry are deleted. A failure here never stops the rest of the run.
         $out += $this->remoteAndLogs((int) $cfg['job_retention_days']);
+        // Phase 4: scans, approvals, installs and the clean-up of patch data, only while the `patching` switch is on. A failure here never stops the rest of the run.
+        if ($this->patches !== null && $this->settings->featureOn('patching')) {
+            try {
+                $out += $this->patches->run();
+            } catch (\Throwable $e) {
+                error_log('rmm housekeeping (patching): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0028 not applied yet
+            }
+        }
         if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {
             $out['offline_events'] = $this->announceOffline((int) $cfg['offline_after_s'], (int) $cfg['stale_after_s']);
         }

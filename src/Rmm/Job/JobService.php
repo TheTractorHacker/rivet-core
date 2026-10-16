@@ -59,6 +59,20 @@ final class JobService
         return $this->registry;
     }
 
+    /** @var (\Closure(array<string,mixed>,string,string,string):void)|null */
+    private ?\Closure $finishedListener = null;
+
+    /**
+     * Phase 4: be told when a job reached a final state through an agent's report. The closure gets the device row, the job id, its type and its final state; it runs
+     * after the report was committed, and whatever it throws is logged and never fails the report (the work it did not do is picked up by the housekeeping pass).
+     *
+     * @param (\Closure(array<string,mixed>,string,string,string):void)|null $listener
+     */
+    public function onJobFinished(?\Closure $listener): void
+    {
+        $this->finishedListener = $listener;
+    }
+
     // ------------------------------------------------------------------ creation (a technician, after the caller's authorization)
 
     /**
@@ -239,9 +253,9 @@ final class JobService
      */
     public static function deviceCanRun(array $caps, string $type): bool
     {
-        $needs = \RivetCore\Rmm\Remote\RemoteProtocol::capabilityFor($type);
+        $needs = \RivetCore\Rmm\Remote\RemoteProtocol::capabilityFor($type) ?? \RivetCore\Rmm\Patch\PatchProtocol::capabilityFor($type);
         if ($needs !== null && !in_array($needs, $caps, true)) {
-            return false;   // a remote tool is never assumed: only an agent that announced the flag is offered it
+            return false;   // a remote tool or a patch job is never assumed: only an agent that announced the flag is offered it
         }
         $any = false;
         foreach ($caps as $c) {
@@ -314,7 +328,8 @@ final class JobService
         // Failures throw ApiError out of the transaction (rolled back, nothing to keep); the one outcome that must be KEPT and still
         // answer 409 (a queued job found past its expiry) is committed first and thrown afterwards.
         $emit = null;
-        $expired = $this->sql->transaction(function () use ($dev, $jobId, $attempt, $state, $exit, $output, $started, $finished, $cfg, &$emit): bool {
+        $finalType = null;
+        $expired = $this->sql->transaction(function () use ($dev, $jobId, $attempt, $state, $exit, $output, $started, $finished, $cfg, &$emit, &$finalType): bool {
             $j = $this->sql->one('SELECT * FROM endpoint_agent_jobs WHERE job_id = ? AND device_id = ? FOR UPDATE', [$jobId, $dev['device_id']]);
             if ($j === null) {
                 throw new ApiError(404, 'not_found', 'Unknown job.');
@@ -357,6 +372,7 @@ final class JobService
                 }
                 $this->sql->run('UPDATE endpoint_agent_jobs SET state = ?, reason = ?, exit_code = ?, output = ?, output_truncated = ?, started_at = COALESCE(started_at, ?), finished_at = ? WHERE job_id = ?',
                     [$state, $late ? 'late_result' : null, $exit, $text, $truncated ? 1 : 0, $started ?? $now, $finished ?? $now, $jobId]);
+                $finalType = (string) $j['type'];
                 if ($state === 'succeeded' || $state === 'failed' || $state === 'timed_out') {
                     $emit = [$state === 'succeeded' ? \RivetCore\Rmm\RmmEvent::JOB_COMPLETED : \RivetCore\Rmm\RmmEvent::JOB_FAILED, ['job_id' => $jobId, 'job_type' => (string) $j['type'], 'state' => $state, 'exit_code' => $exit]];
                 }
@@ -366,6 +382,13 @@ final class JobService
         });
         if ($expired) {
             throw new ApiError(409, 'conflict', 'Job has expired.');
+        }
+        if ($finalType !== null && $this->finishedListener !== null) {
+            try {
+                ($this->finishedListener)($dev, $jobId, $finalType, $state);
+            } catch (\Throwable $e) {
+                error_log('rmm job finished listener: ' . get_class($e) . ': ' . $e->getMessage());
+            }
         }
         if ($emit !== null && $this->events !== null) {
             $fields = $emit[1];

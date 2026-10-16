@@ -53,6 +53,14 @@ final class ScriptActions
     ) {
     }
 
+    private ?\RivetCore\Rmm\Patch\PatchActions $patchActions = null;
+
+    /** Phase 4: the second person's decision on a patch approval is made here, with the same approvals endpoint as every other request. */
+    public function setPatchActions(?\RivetCore\Rmm\Patch\PatchActions $patches): void
+    {
+        $this->patchActions = $patches;
+    }
+
     private function role(int $userId, string $ability): ?ActionResult
     {
         $why = $this->authz->check($userId, $ability, 0);
@@ -279,6 +287,18 @@ final class ScriptActions
         }
         if ((int) $a['requested_by'] === $who->userId) {
             return ActionResult::fail(403, 'own_request', 'A request must be approved by someone other than the person who made it.');
+        }
+        if ($a['kind'] === \RivetCore\Rmm\Patch\PatchApprovalService::KIND) {
+            if ($this->patchActions === null) {
+                return ActionResult::fail(409, 'conflict', 'Patch management is not available on this module.');
+            }
+            $state = $approve ? ApprovalService::APPROVED : ApprovalService::REJECTED;
+            $res = $this->patchActions->decideApproval($who, $a, $req, $approve, fn (): array => $this->approvals->decide($approvalId, $who->userId, $approve, $note));
+            if ($res->ok) {
+                $this->events?->emitScoped(RmmEvent::APPROVAL_DECIDED, 0, ['approval_id' => $approvalId, 'kind' => $a['kind'], 'state' => $state, 'decided_by' => $who->userId]);
+            }
+
+            return $res;
         }
         $target = is_array($req['target'] ?? null) ? $req['target'] : null;
         $loaded = null;

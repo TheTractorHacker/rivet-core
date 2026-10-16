@@ -32,7 +32,7 @@ final class ApprovalService
     }
 
     /**
-     * @param 'run'|'schedule' $kind
+     * @param 'run'|'schedule'|'patch' $kind
      * @param array<string,mixed> $request what will run; frozen
      * @return array<string,mixed>
      */

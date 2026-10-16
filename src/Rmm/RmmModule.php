@@ -67,6 +67,15 @@ use RivetCore\Rmm\Mesh\MeshService;
 use RivetCore\Rmm\Policy\EffectivePolicy;
 use RivetCore\Rmm\Policy\PolicyStore;
 use RivetCore\Rmm\Read\AutomationReader;
+use RivetCore\Rmm\Patch\PatchActions;
+use RivetCore\Rmm\Patch\PatchApprovalService;
+use RivetCore\Rmm\Patch\PatchComplianceService;
+use RivetCore\Rmm\Patch\PatchInstallService;
+use RivetCore\Rmm\Patch\PatchPolicyStore;
+use RivetCore\Rmm\Patch\PatchProtocol;
+use RivetCore\Rmm\Patch\PatchReader;
+use RivetCore\Rmm\Patch\PatchScanService;
+use RivetCore\Rmm\Patch\PatchScheduler;
 use RivetCore\Rmm\Remote\RemoteActions;
 use RivetCore\Rmm\Remote\RemoteSettings;
 use RivetCore\Rmm\Remote\TransferService;
@@ -197,6 +206,15 @@ final class RmmModule
     private ?RemoteActions $remoteActions = null;
     private ?LogActions $logActions = null;
     private ?\RivetCore\Rmm\Http\RemoteApi $remoteApi = null;
+    private ?PatchPolicyStore $patchPolicies = null;
+    private ?PatchScanService $patchScans = null;
+    private ?PatchInstallService $patchInstalls = null;
+    private ?PatchApprovalService $patchApprovals = null;
+    private ?PatchComplianceService $patchCompliance = null;
+    private ?PatchReader $patchReader = null;
+    private ?PatchActions $patchActions = null;
+    private ?\RivetCore\Rmm\Http\PatchApi $patchApi = null;
+    private ?PatchScheduler $patchScheduler = null;
 
     private readonly RmmAuditInterface $audit;
     private readonly RmmMetricSinkInterface $metrics;
@@ -281,7 +299,98 @@ final class RmmModule
 
     public function jobs(): JobService
     {
-        return $this->jobs ??= new JobService($this->sql(), $this->settings(), $this->registry ?? JobTypeRegistry::withDefaults(), $this->eventPublisher(), $this->jobExtras(), $this->deviceState());
+        if ($this->jobs === null) {
+            $this->jobs = new JobService($this->sql(), $this->settings(), $this->registry ?? JobTypeRegistry::withDefaults(), $this->eventPublisher(), $this->jobExtras(), $this->deviceState());
+            // Phase 4: a finished patch job is applied as soon as its report arrives (the patch services are only built when one does).
+            $this->jobs->onJobFinished(function (array $dev, string $jobId, string $type, string $state): void {
+                if (PatchProtocol::isPatchJob($type) && $this->settings()->featureOn(PatchProtocol::FEATURE)) {
+                    $this->patchJobFinished($dev, $jobId, $type);
+                }
+            });
+        }
+
+        return $this->jobs;
+    }
+
+    /**
+     * @param array<string,mixed> $dev
+     */
+    private function patchJobFinished(array $dev, string $jobId, string $type): void
+    {
+        if ((int) ($this->settings()->get()['shed_level'] ?? 0) >= 2) {
+            return;   // the housekeeping pass applies it when the load drops
+        }
+        $row = $this->sql()->one('SELECT * FROM endpoint_agent_jobs WHERE job_id = ?', [$jobId]);
+        if ($row === null) {
+            return;
+        }
+        if ($type === PatchProtocol::JOB_SCAN) {
+            $this->patchScans()->applyJob($dev, $row);
+        } else {
+            $this->patchInstalls()->applyJob($dev, $row);
+        }
+    }
+
+    // ------------------------------------------------------------------ Phase 4: patch management
+
+    /** Patch policies, their assignments and the rings. */
+    public function patchPolicies(): PatchPolicyStore
+    {
+        return $this->patchPolicies ??= new PatchPolicyStore($this->sql(), $this->tenancy);
+    }
+
+    /** Queue a patch scan and apply what a device reports. */
+    public function patchScans(): PatchScanService
+    {
+        return $this->patchScans ??= new PatchScanService($this->sql(), $this->jobs(), $this->devices(), $this->eventPublisher(), $this->patchApprovals(), $this->patchCompliance());
+    }
+
+    /** Queue a (gated) patch install and apply its result. */
+    public function patchInstalls(): PatchInstallService
+    {
+        return $this->patchInstalls ??= new PatchInstallService($this->sql(), $this->settings(), $this->jobs(), $this->patchScans(), $this->patchPolicies(), $this->eventPublisher(), $this->patchCompliance());
+    }
+
+    /** Approve, decline, approval rules and automatic approval. */
+    public function patchApprovals(): PatchApprovalService
+    {
+        return $this->patchApprovals ??= new PatchApprovalService($this->sql(), $this->patchPolicies(), $this->approvals(), $this->eventPublisher());
+    }
+
+    /** The `patch.compliance` and `patch.install_failed` checks. */
+    public function patchCompliance(): PatchComplianceService
+    {
+        return $this->patchCompliance ??= new PatchComplianceService($this->sql(), $this->settings(), $this->checks());
+    }
+
+    /** Patch reads: one device, the fleet's compliance. */
+    public function patchReader(): PatchReader
+    {
+        return $this->patchReader ??= new PatchReader($this->sql(), $this->settings(), $this->patchPolicies(), $this->tenancy);
+    }
+
+    /** What technicians do with patching (shared by the REST API and the edition's pages). */
+    public function patchActions(): PatchActions
+    {
+        if ($this->patchActions === null) {
+            $this->patchActions = new PatchActions($this->devices(), $this->authorizer(), $this->settings(), $this->patchScans(), $this->patchInstalls(), $this->patchApprovals(), $this->patchPolicies(), $this->patchReader(), $this->audit, $this->eventPublisher());
+            $this->scriptActions()->setPatchActions($this->patchActions);
+        }
+
+        return $this->patchActions;
+    }
+
+    /** The patch routes (mounted by {@see technicianApi()}). */
+    public function patchApi(): \RivetCore\Rmm\Http\PatchApi
+    {
+        return $this->patchApi ??= new \RivetCore\Rmm\Http\PatchApi($this->patchActions());
+    }
+
+    /** The patch work of the housekeeping pass. */
+    public function patchScheduler(): PatchScheduler
+    {
+        return $this->patchScheduler ??= new PatchScheduler($this->sql(), $this->settings(), $this->devices(), $this->patchScans(), $this->patchInstalls(), $this->patchApprovals(), $this->patchCompliance(), $this->patchPolicies(), $this->maintenance(),
+            $this->scheduleGate ?? new MaintenanceScheduleGate($this->maintenance(), $this->settings()));
     }
 
     public function checks(): CheckEvaluator
@@ -502,7 +611,7 @@ final class RmmModule
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
             $this->databaseSink(), $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->storage(), $this->cache(), $this->externalSink(),
-            $this->logService(), $this->logRules(), $this->transfers());
+            $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler());
     }
 
     /** The database metric sink, whether it was passed as the sink or inside a {@see CompositeMetricSink}. */
@@ -735,7 +844,7 @@ final class RmmModule
     {
         return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore(),
             $this->assets instanceof RmmAssetNamesInterface ? $this->assets : null, $this->clientLabel(),
-            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers(), $this->meshAgents());
+            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers(), $this->meshAgents(), $this->patchReader());
     }
 
     /** Hosted agent binaries: validate, store, publish, serve. */
@@ -785,7 +894,7 @@ final class RmmModule
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */
     public function technicianApi(): TechnicianApi
     {
-        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi());
+        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi(), $this->patchApi());
     }
 
     /** The alerts, maintenance windows, escalation policies and thresholds routes (mounted by {@see technicianApi()}). */

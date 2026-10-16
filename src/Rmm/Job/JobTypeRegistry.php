@@ -45,6 +45,8 @@ final class JobTypeRegistry
         $r->register(new JobType('collect', self::ABILITY_RUN_SAVED, false, ['windows', 'linux']));
         // Phase 6: the remote tools (service and process manager, file transfer). Each needs a capability flag the agent announced.
         \RivetCore\Rmm\Remote\RemoteJobTypes::register($r);
+        // Phase 4: patch scan (read only) and patch install (gated). Each needs a capability flag the agent announced.
+        \RivetCore\Rmm\Patch\PatchJobTypes::register($r);
 
         return $r;
     }

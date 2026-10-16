@@ -104,6 +104,16 @@ final class RmmSettings
         'warm_start_s' => [0, 7200],
         'warm_start_pct' => [1, 100],
         'warm_quiet_s' => [30, 86400],
+        // Phase 4 (patching, `patching` switch): seconds between two patch scans of a device (jittered), days a critical or security update may be missing before the
+        // compliance check warns (fails at twice that), most devices installing at once in the fleet and per client, whether the scheduler may do real installs
+        // (0: dry runs only, the safe default), days of install history kept, and devices one scheduler pass works on (halved/quartered by load shedding).
+        'patch_scan_interval_s' => [3600, 604800],
+        'patch_overdue_days' => [1, 365],
+        'patch_max_installs' => [1, 10000],
+        'patch_max_installs_per_client' => [1, 1000],
+        'patch_live_install' => [0, 1],
+        'patch_history_days' => [30, 3650],
+        'patch_batch' => [10, 5000],
     ];
     public const LIMIT_DEFAULTS = [
         'max_checkins_per_min' => 0,
@@ -140,6 +150,13 @@ final class RmmSettings
         'warm_start_s' => 0,
         'warm_start_pct' => 10,
         'warm_quiet_s' => 120,
+        'patch_scan_interval_s' => 86400,
+        'patch_overdue_days' => 14,
+        'patch_max_installs' => 25,
+        'patch_max_installs_per_client' => 5,
+        'patch_live_install' => 0,
+        'patch_history_days' => 365,
+        'patch_batch' => 100,
     ];
 
     /** @var array<string,mixed>|null */

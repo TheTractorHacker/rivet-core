@@ -64,6 +64,8 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  * Phase 6 and 8 additions (service and process managers, file transfer, the Mesh terminal and files views, collected logs and log rules) are routed to
  * {@see RemoteApi}, which lists them; `POST endpoint_devices/{id}/remote` also takes `view` (desktop, terminal or files).
  *
+ * Phase 4 additions (patch scan results, approvals, install, compliance, patch policies, rings and rules) are routed to {@see PatchApi}, which lists them.
+ *
  * Phase 3 additions (alerts, maintenance windows, escalation policies, device parents, thresholds, the check type catalog) are routed to
  * {@see AlertingApi}, which lists them.
  *
@@ -89,6 +91,7 @@ final class TechnicianApi
         private readonly ?AlertingApi $alerting = null,
         private readonly ?RemoteApi $remoteApi = null,
         private readonly ?StarterApi $starterApi = null,
+        private readonly ?PatchApi $patchApi = null,
     ) {
     }
 
@@ -125,6 +128,9 @@ final class TechnicianApi
             }
             if ($seg !== [] && $this->remoteApi !== null && (in_array($seg[0], RemoteApi::FLEET, true) || in_array($seg[0], RemoteApi::MESH, true))) {
                 return $this->remoteApi->fleet($req, $who, $seg);
+            }
+            if ($seg !== [] && $this->patchApi !== null && in_array($seg[0], PatchApi::FLEET, true)) {
+                return $this->patchApi->fleet($req, $who, $seg);
             }
             if ($seg !== [] && $this->starterApi !== null && in_array($seg[0], StarterApi::FLEET, true)) {
                 return $this->starterApi->fleet($req, $who, $seg);
@@ -216,6 +222,9 @@ final class TechnicianApi
             return $r->ok ? self::json(200, ['url' => $r->data['url'] ?? null, 'session_id' => $r->data['session_id'] ?? null]) : self::failure($r);
         }
 
+        if ($what === 'patches' && $this->patchApi !== null && ($routed = $this->patchApi->device($req, $who, $id, $seg)) !== null) {
+            return $routed;
+        }
         if ($this->alerting !== null && in_array($what, ['alerts', 'alerting', 'maintenance', 'parent', 'checks'], true) && ($routed = $this->alerting->device($req, $who, $id, $seg)) !== null) {
             return $routed;
         }
