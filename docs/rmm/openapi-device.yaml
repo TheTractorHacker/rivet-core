@@ -2791,6 +2791,375 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/{id}/patches:
+    get:
+      tags: [Technician]
+      operationId: getDevicePatches
+      summary: The patch state of a device and its updates (Phase 4)
+      description: |
+        Needs `rmm.patch.view`. `summary` holds the last scan (state, manager, Windows Update service state, restart pending, last install), counts by status and kind, the number of critical
+        or security updates missing longer than `patch_overdue_days`, and the device's effective patch policy with where each setting came from. `items` are the updates, worst kind first.
+        Readable while the `patching` switch is off (`summary.enabled` is then false).
+      security: [{userToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+        - {name: status, in: query, schema: {type: string, enum: [available, approved, declined, installed, failed, missing]}, description: '`missing` is everything not installed'}
+        - {name: kind, in: query, schema: {type: string, enum: [critical, security, important, optional, driver, other]}}
+        - {name: q, in: query, schema: {type: string}, description: 'Title, update id or KB number contains'}
+        - {name: limit, in: query, schema: {type: integer, maximum: 500}}
+        - {name: offset, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: The device's patch state, content: {application/json: {schema: {$ref: '#/components/schemas/DevicePatches'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/patches/history:
+    get:
+      tags: [Technician]
+      operationId: getDevicePatchHistory
+      summary: Install and dry-run history of a device (Phase 4)
+      description: Needs `rmm.patch.view`. One row per update per run, newest first, with the result code the device reported.
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}, {name: limit, in: query, schema: {type: integer, maximum: 500}}, {name: offset, in: query, schema: {type: integer}}]
+      responses:
+        '200': {description: History, content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/PatchHistoryRow'}}, total: {type: integer}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/patches/scan:
+    post:
+      tags: [Technician]
+      operationId: scanDevicePatches
+      summary: Ask a device for a patch scan (Phase 4, `patching` switch)
+      description: |
+        Needs `rmm.patch.manage`. Queues a signed, read-only `patch_scan` job. `200` with `skipped: already_queued` when one is already waiting; `409 feature_disabled` while the switch is off;
+        `409 unsupported` when the agent never announced `patch:scan`. The scheduler asks every device about once a day by itself (limit `patch_scan_interval_s`).
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/Queued'}}}}
+        '200': {description: A scan is already waiting, content: {application/json: {schema: {type: object, properties: {skipped: {type: string}, job_id: {type: string}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /endpoint_devices/{id}/patches/install:
+    post:
+      tags: [Technician]
+      operationId: installDevicePatches
+      summary: Install approved updates, or rehearse it (Phase 4, `patching` switch)
+      description: |
+        `mode` is `dry_run` unless the body says `install`. A dry run needs `rmm.patch.manage`, lists what a real install would do and changes nothing. A real install needs `rmm.patch.install`
+        and `confirm: true`, and takes only updates with status `approved` (or a failed one, by name). `ids` limits it (at most 40); without `ids` every eligible update is taken, at most one job's worth
+        (40 ids), the rest follows in a later job (`remaining`). One install job at a time per device (`200 skipped: already_queued`). The agent re-checks every id against a fresh scan, never accepts
+        an EULA, never removes a package and never restarts the device. `reboot_policy: if_required_now` queues a separate `reboot` job after a clean install and needs `confirm_reboot: true`
+        and `rmm.job.reboot`. `max_minutes` is cut to fit the instance's job timeout (an hour by default).
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids: {type: array, items: {type: string}, maxItems: 40}
+                mode: {type: string, enum: [dry_run, install], default: dry_run}
+                confirm: {type: boolean}
+                reboot_policy: {type: string, enum: [never, if_required_defer, if_required_now], default: never}
+                confirm_reboot: {type: boolean}
+                max_minutes: {type: integer, minimum: 1, maximum: 240, default: 60}
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {type: object, properties: {job_id: {type: string}, mode: {type: string}, queued: {type: integer}, remaining: {type: integer}, ids: {type: array, items: {type: string}}}}}}}
+        '200': {description: 'Nothing to do: `skipped` is `nothing_to_install` or `already_queued`', content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {description: '`invalid` or `confirmation_required`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/patches:
+    get:
+      tags: [Technician]
+      operationId: getFleetPatches
+      summary: Missing updates across the caller's devices, one row per update (Phase 4)
+      description: Needs `rmm.patch.view`. Only the caller's clients are counted. A `client_id` outside them is the same 404 as a missing one.
+      security: [{userToken: []}]
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [available, approved, declined, installed, failed], default: available}}
+        - {name: client_id, in: query, schema: {type: integer}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 500}}
+        - {name: offset, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: Updates, content: {application/json: {schema: {type: object, properties: {enabled: {type: boolean}, items: {type: array, items: {type: object}}, total: {type: integer}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/patches/compliance:
+    get:
+      tags: [Technician]
+      operationId: getPatchCompliance
+      summary: Patch compliance of the caller's devices (Phase 4)
+      description: |
+        Needs `rmm.patch.view`. A device is non-compliant when a critical or security update (not declined) has been missing longer than `overdue_days` (default: the `patch_overdue_days` limit, 14).
+        Also counted: never scanned, no good scan for three scan intervals, restart pending, failed installs, and the ring distribution (exact up to 1000 devices, a sample beyond).
+        `group_by` is `client` (default), `site` or `group`.
+      security: [{userToken: []}]
+      parameters:
+        - {name: client_id, in: query, schema: {type: integer}}
+        - {name: site_id, in: query, schema: {type: integer}}
+        - {name: group_id, in: query, schema: {type: integer}}
+        - {name: group_by, in: query, schema: {type: string, enum: [client, site, group]}}
+        - {name: overdue_days, in: query, schema: {type: integer, minimum: 0, maximum: 365}}
+        - {name: os, in: query, schema: {type: string, enum: [windows, linux]}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 500}}
+        - {name: offset, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: Figures, content: {application/json: {schema: {$ref: '#/components/schemas/PatchCompliance'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/patches/approve:
+    post:
+      tags: [Technician]
+      operationId: approvePatches
+      summary: Approve updates for installation (Phase 4, `patching` switch)
+      description: |
+        Needs `rmm.patch.manage`. Approves the named update ids on the caller's devices (narrow with `device_id` or `client_id`). Only available, declined or failed rows change. When the effective
+        policy of any device asks for a second person (`two_person`), nothing changes and `202 pending_approval` returns an `approval_id`; someone else with `rmm.job.approve` and `rmm.patch.manage`
+        decides it with the ordinary approvals endpoint. `404` when no such update is visible to the caller.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PatchDecision'}}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object, properties: {matched: {type: integer}, changed: {type: integer}}}}}}
+        '202': {description: Waiting for a second person, content: {application/json: {schema: {type: object, properties: {approval_id: {type: integer}, state: {type: string}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/patches/decline:
+    post:
+      tags: [Technician]
+      operationId: declinePatches
+      summary: Decline updates (Phase 4)
+      description: Needs `rmm.patch.manage`. A declined update is not installed and never approved by a policy or a rule. A person can approve it again.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PatchDecision'}}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object, properties: {matched: {type: integer}, changed: {type: integer}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/patches/rules:
+    get:
+      tags: [Technician]
+      operationId: listPatchRules
+      summary: Approval rules (Phase 4)
+      description: Needs `rmm.patch.view`. A restricted caller sees the rules of their own clients only.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Rules, content: {application/json: {schema: {type: object, properties: {rules: {type: array, items: {$ref: '#/components/schemas/PatchRule'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Technician]
+      operationId: createPatchRule
+      summary: Create an approval rule (Phase 4)
+      description: 'Needs `rmm.patch.manage`. For example: kinds critical and security, `after_days` 3, ring pilot. A caller restricted to some clients must give `client_id` of one of them.'
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PatchRule'}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {type: object, properties: {rule: {$ref: '#/components/schemas/PatchRule'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/patches/rules/{rule_id}:
+    put:
+      tags: [Technician]
+      operationId: updatePatchRule
+      summary: Change an approval rule (Phase 4)
+      security: [{userToken: []}]
+      parameters: [{name: rule_id, in: path, required: true, schema: {type: integer}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PatchRule'}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {type: object, properties: {rule: {$ref: '#/components/schemas/PatchRule'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    delete:
+      tags: [Technician]
+      operationId: deletePatchRule
+      summary: Delete an approval rule (Phase 4)
+      security: [{userToken: []}]
+      parameters: [{name: rule_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {description: Deleted, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/patches/rings:
+    get:
+      tags: [Technician]
+      operationId: listPatchRings
+      summary: Rings (Phase 4)
+      description: 'Needs `rmm.patch.view`. A ring is a named delay (days) added to every automatic approval of the devices in it. Defaults: pilot 0, broad 7, last 14.'
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Rings, content: {application/json: {schema: {type: object, properties: {rings: {type: array, items: {$ref: '#/components/schemas/PatchRing'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Technician]
+      operationId: createPatchRing
+      summary: Create a ring (Phase 4)
+      description: Needs `rmm.patch.manage` and a caller who sees every client (rings apply to all clients).
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PatchRing'}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {type: object, properties: {ring: {$ref: '#/components/schemas/PatchRing'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/patches/rings/{ring_id}:
+    put:
+      tags: [Technician]
+      operationId: updatePatchRing
+      summary: Change a ring (Phase 4)
+      description: A rename is followed by the policies that use the ring.
+      security: [{userToken: []}]
+      parameters: [{name: ring_id, in: path, required: true, schema: {type: integer}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PatchRing'}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {type: object, properties: {ring: {$ref: '#/components/schemas/PatchRing'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    delete:
+      tags: [Technician]
+      operationId: deletePatchRing
+      summary: Delete a ring (Phase 4)
+      description: '`409` while a policy or a rule still uses it.'
+      security: [{userToken: []}]
+      parameters: [{name: ring_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {description: Deleted, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /endpoint_devices/patch_policies:
+    get:
+      tags: [Technician]
+      operationId: listPatchPolicies
+      summary: Patch policies (Phase 4)
+      description: Needs `rmm.patch.view`. Each policy lists its assignments. `settings` names the keys a policy may hold.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Policies, content: {application/json: {schema: {type: object, properties: {data: {type: array, items: {$ref: '#/components/schemas/PatchPolicy'}}, rings: {type: array, items: {$ref: '#/components/schemas/PatchRing'}}, settings: {type: array, items: {type: string}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Technician]
+      operationId: createPatchPolicy
+      summary: Create a patch policy (Phase 4)
+      description: |
+        Needs `rmm.patch.manage` and a caller who sees every client. A policy holds only the settings it decides (ring, approval_mode, auto_days_<kind>, install_enabled, window_mode,
+        window_maintenance_id, window_days, window_start, window_minutes, window_tz, reboot_policy, reboot_confirm, max_minutes, two_person); the rest comes from a less specific policy or the
+        safe defaults (manual approval, nothing installed by the scheduler, no restart). `reboot_confirm: true` (a policy that may restart devices by itself) also needs `rmm.job.reboot` and is recorded
+        with the confirming user.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PatchPolicy'}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {type: object, properties: {policy: {$ref: '#/components/schemas/PatchPolicy'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/patch_policies/{policy_id}:
+    get:
+      tags: [Technician]
+      operationId: getPatchPolicy
+      summary: One patch policy (Phase 4)
+      security: [{userToken: []}]
+      parameters: [{name: policy_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {description: The policy, content: {application/json: {schema: {type: object, properties: {policy: {$ref: '#/components/schemas/PatchPolicy'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    put:
+      tags: [Technician]
+      operationId: updatePatchPolicy
+      summary: Change a patch policy (Phase 4)
+      description: '`PATCH` does the same.'
+      security: [{userToken: []}]
+      parameters: [{name: policy_id, in: path, required: true, schema: {type: integer}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PatchPolicy'}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {type: object, properties: {policy: {$ref: '#/components/schemas/PatchPolicy'}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    delete:
+      tags: [Technician]
+      operationId: deletePatchPolicy
+      summary: Delete a patch policy and its assignments (Phase 4)
+      security: [{userToken: []}]
+      parameters: [{name: policy_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {description: Deleted, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/patch_policies/{policy_id}/assignments:
+    post:
+      tags: [Technician]
+      operationId: assignPatchPolicy
+      summary: Assign a patch policy to a scope (Phase 4)
+      description: 'Scopes are the Phase 2 ones: global, client, site, group, tag, device. The most specific scope wins per setting; `enforce` locks a setting against more specific scopes; ties inside one scope go to the higher `priority`, then the newer assignment.'
+      security: [{userToken: []}]
+      parameters: [{name: policy_id, in: path, required: true, schema: {type: integer}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [scope_type], properties: {scope_type: {type: string, enum: [global, client, site, group, tag, device]}, scope_id: {type: integer}, priority: {type: integer}, enforce: {type: boolean}}}}}
+      responses:
+        '200': {description: Assigned, content: {application/json: {schema: {type: object, properties: {assignment: {type: object}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {description: '`invalid`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/patch_policies/{policy_id}/assignments/{assignment_id}:
+    delete:
+      tags: [Technician]
+      operationId: unassignPatchPolicy
+      summary: Remove an assignment (Phase 4)
+      security: [{userToken: []}]
+      parameters: [{name: policy_id, in: path, required: true, schema: {type: integer}}, {name: assignment_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {description: Removed, content: {application/json: {schema: {$ref: '#/components/schemas/Ok'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
 components:
   securitySchemes:
     deviceAuth:
@@ -2848,6 +3217,90 @@ components:
       headers: {Retry-After: {schema: {type: integer}}}
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
   schemas:
+    DevicePatches:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/PatchUpdate'}}
+        total: {type: integer}
+        summary:
+          type: object
+          description: 'enabled, scan{state, scanned_at, manager, wu_state, reboot_pending, last_install_at, truncated, error}, counts{by_status, missing_by_kind, missing, reboot_required}, overdue{days, critical_or_security}, compliant, policy{ring, ring_delay_days, approval_mode, auto_days, install_enabled, window, reboot_policy, max_minutes, two_person, sources, live_install}'
+    PatchUpdate:
+      type: object
+      properties:
+        update_id: {type: string, description: 'Windows: the Windows Update id (a GUID); Linux: the package name'}
+        kb: {type: string}
+        title: {type: string}
+        kind: {type: string, enum: [critical, security, important, optional, driver, other]}
+        severity: {type: string, enum: [critical, important, moderate, low, unspecified]}
+        size_bytes: {type: integer}
+        reboot_required: {type: boolean}
+        released_at: {type: [string, 'null']}
+        eula_accepted: {type: boolean}
+        version: {type: string}
+        current_version: {type: string}
+        status: {type: string, enum: [available, approved, declined, installed, failed]}
+        status_source: {type: string, description: 'scan, manual, policy, rule:<id>, install or not_applicable'}
+        first_seen_at: {type: string}
+        fail_count: {type: integer}
+    PatchHistoryRow:
+      type: object
+      properties:
+        update_id: {type: string}
+        title: {type: string}
+        action: {type: string, enum: [install, dry_run]}
+        result: {type: string, enum: [would_install, installed, needs_reboot, failed, skipped, not_applicable, eula_required, not_found, locked]}
+        code: {type: string}
+        detail: {type: string}
+        at: {type: string}
+        job_id: {type: [string, 'null']}
+        user_id: {type: [integer, 'null']}
+    PatchDecision:
+      type: object
+      required: [update_ids]
+      properties:
+        update_ids: {type: array, items: {type: string}, minItems: 1, maxItems: 200}
+        device_id: {type: integer}
+        client_id: {type: integer}
+        reason: {type: string, maxLength: 200}
+    PatchCompliance:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        overdue_days: {type: integer}
+        group_by: {type: string}
+        summary: {type: object, description: 'devices, compliant, noncompliant, never_scanned, stale, reboot_pending, failed_installs, missing_critical, missing_total, compliance_pct'}
+        groups: {type: array, items: {type: object}}
+        devices: {type: array, items: {type: object}, description: 'Non-compliant devices and devices with failed installs'}
+        rings: {type: object, description: '{counts: {ring: devices}, exact}'}
+    PatchRule:
+      type: object
+      properties:
+        rule_id: {type: integer}
+        name: {type: string}
+        enabled: {type: boolean}
+        ring: {type: [string, 'null']}
+        kinds: {type: array, items: {type: string}}
+        severities: {type: array, items: {type: string}}
+        after_days: {type: integer, minimum: 0, maximum: 365}
+        client_id: {type: integer}
+    PatchRing:
+      type: object
+      properties:
+        ring_id: {type: integer}
+        name: {type: string, pattern: '^[a-z][a-z0-9_-]{0,38}$'}
+        delay_days: {type: integer, minimum: 0, maximum: 365}
+        sort_order: {type: integer}
+        description: {type: string}
+    PatchPolicy:
+      type: object
+      properties:
+        policy_id: {type: integer}
+        name: {type: string}
+        description: {type: string}
+        enabled: {type: boolean}
+        settings: {type: object, additionalProperties: true}
+        assignments: {type: array, items: {type: object}}
     Queued:
       type: object
       properties:
