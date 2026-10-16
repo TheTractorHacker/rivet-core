@@ -95,6 +95,7 @@ final class CapacityReport
             'storage' => $this->storage($limits),
             'external_store' => $this->external === null ? null : ['pending_batches' => $this->external->pending(), 'dropped_points' => $this->external->droppedCount()],
             'herd' => ['warm_start' => $this->herd?->status(), 'client_bucket_burst' => $limits['client_bucket_burst'], 'client_bucket_per_min' => $limits['client_bucket_per_min']],
+            'patching' => $features['patching'] ? $this->patching($limits) : null,
             'tables' => $this->tables(),
             'settings' => $inputs + ['max_devices' => (int) $cfg['max_devices']],
             'projection' => $projection,
@@ -112,6 +113,26 @@ final class CapacityReport
     public function metricsText(?int $workers = null, float $perWorkerJobsPerSecond = AutoscaleHint::DEFAULT_PER_WORKER_JOBS_PER_S): string
     {
         return AutoscaleHint::exposition($this->queue->scaleHint($workers, $perWorkerJobsPerSecond), $this->queue->backlog()['dead_letter']);
+    }
+
+    /**
+     * Phase 4 (only while the `patching` switch is on): how many devices have a scan, how many installs are waiting or running now, and the limits that bound them.
+     *
+     * @param array<string,int> $limits
+     * @return array<string,mixed>
+     */
+    public function patching(array $limits): array
+    {
+        try {
+            $scanned = (int) $this->sql->val('SELECT COUNT(*) FROM rmm_patch_scans WHERE scanned_at IS NOT NULL');
+            $installing = (int) $this->sql->val("SELECT COUNT(*) FROM rmm_patch_jobs p JOIN endpoint_agent_jobs j ON j.job_id = p.job_id WHERE p.type = 'patch_install' AND p.mode = 'install' AND j.state IN ('queued','running')");
+            $missing = (int) $this->sql->val("SELECT COUNT(*) FROM rmm_patch_available WHERE status <> 'installed'");
+        } catch (\Throwable) {
+            return ['available' => false];   // migration 0028 is not applied yet
+        }
+
+        return ['available' => true, 'devices_scanned' => $scanned, 'installs_waiting_or_running' => $installing, 'missing_update_rows' => $missing,
+            'limits' => array_intersect_key($limits, array_flip(array_filter(array_keys($limits), static fn (string $k): bool => str_starts_with($k, 'patch_'))))];
     }
 
     /**
@@ -155,7 +176,7 @@ final class CapacityReport
         $out = [];
         $rows = $this->sql->all(
             "SELECT TABLE_NAME AS t, COALESCE(TABLE_ROWS, 0) AS r, COALESCE(DATA_LENGTH, 0) AS d, COALESCE(INDEX_LENGTH, 0) AS i FROM information_schema.TABLES
-             WHERE TABLE_SCHEMA = DATABASE() AND (TABLE_NAME LIKE 'endpoint\\_agent\\_%' OR TABLE_NAME IN ('integration_jobs', 'rmm_metric_hourly', 'rmm_metric_daily', 'rmm_metric_latest', 'rmm_cache', 'rmm_metric_outbox', 'rmm_token_buckets')) ORDER BY (DATA_LENGTH + INDEX_LENGTH) DESC"
+             WHERE TABLE_SCHEMA = DATABASE() AND (TABLE_NAME LIKE 'endpoint\\_agent\\_%' OR TABLE_NAME IN ('integration_jobs', 'rmm_metric_hourly', 'rmm_metric_daily', 'rmm_metric_latest', 'rmm_cache', 'rmm_metric_outbox', 'rmm_token_buckets', 'rmm_patch_scans', 'rmm_patch_available', 'rmm_patch_history')) ORDER BY (DATA_LENGTH + INDEX_LENGTH) DESC"
         );
         foreach ($rows as $r) {
             $d = (float) $r['d'] / 1048576;

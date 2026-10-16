@@ -165,6 +165,9 @@ func sortUpdates(us []Update) {
 		if rank(a) != rank(b) {
 			return rank(a) < rank(b)
 		}
+		if la, lb := strings.ToLower(a.Title), strings.ToLower(b.Title); la != lb { // case-insensitive, like the Windows script's Sort-Object
+			return la < lb
+		}
 		if a.Title != b.Title {
 			return a.Title < b.Title
 		}

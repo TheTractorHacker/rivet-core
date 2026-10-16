@@ -76,3 +76,35 @@ Nothing the run created is left except: the **event source `RivetITVerify`** reg
 6. `proc_kill` of a protected process with its correct name (only on a disposable VM).
 7. Stopping the agent's own service from a forged job (disposable VM).
 8. The Remote button against the live MeshCentral (the owner's own test).
+
+## Patch scan (RMM Phase 4), 2026-10-16
+
+Date: 2026-10-16 (UTC), the same owner laptop (RMM device 1, `Gaming-Laptop`, Windows 11 Pro), RivetIT beta site, **read only**. Authorised by the owner for this one purpose: run the Phase 4 patch scan on the laptop. Nothing else was run on it and **`patch_install` was never queued or run, nothing was downloaded or installed, the machine was not restarted**.
+
+| | |
+|---|---|
+| Agent | built from the Phase 4 branch with `make dist VERSION=0.8.0` (SHA-256 `99d7a2b66732dcc0e2cbd53c5cb1801d5f213a10a93e8954cc557ce1f14123b5`), published to the beta site's stable ring at 13:05:55 UTC (`--activate --release stable --rollout 100`), self-updated 0.7.1 to **0.8.0**; the laptop checked in on 0.8.0 at 13:13:24 UTC, 7.5 minutes after publication (the limit was 15). It announced 36 capabilities, including `patch:scan`, `patch:install`, `job:patch_scan`, `job:patch_install` |
+| Server | the beta site runs Core rc.19, which does not know the patch job types (`submitJob` of `patch_scan` answers `Unknown job type.`, no job created) and has no Phase 4 tables |
+| Method | so the scan was submitted as an ordinary `powershell` job whose script is **byte for byte the embedded `internal/patch/scripts/scan.ps1`** (5,395 bytes; the script is the unit under test), through a PHP runner on the server as the administrator principal, and its output was parsed offline with the server's parser (`PatchScanService::cleanReport`) and the agent's normaliser |
+| Result | job `afa8b96f-d05d-4f8f-8ca3-15011fe66e70`: queued 13:14:01, picked up at the 13:18:23 check-in, **`succeeded`, exit code 0, 11 seconds**, 1,447 bytes of output, one line of JSON, no CLIXML |
+
+What it reported (the document is kept as `endpoint-agent/internal/patch/testdata/win_scan_real_windows11.json` and tested in Go and PHP):
+
+* `manager` `wua`, `scan_state` `ok`, `wu_state` `running`, `reboot_pending` false, `last_install_at` `2026-10-15T23:17:55Z`, `truncated` false, `total` 4.
+* Four updates, all kind `driver` (category *Drivers*), severity `unspecified`, EULA accepted: *Acer Incorporated SoftwareComponent Driver Update (2.0.3042.0)* (17,438,174 bytes), *AOC International (Europe) GmbH - Display - AOC 1620Wb* (23,989), *Intel Corporation Bluetooth Driver Update (24.70.0.4)* twice (2,447,007 and 1,436,021 bytes, two different update ids), each with its Windows Update id (GUID), release date and `reboot_required` true.
+
+Comparison with what Windows Update should show:
+
+* **The older "Pending Windows updates" starter script** (the same `IUpdateSearcher` query, written differently) was run on this laptop on 2026-10-14 (jobs `5a030ae0...`, `972de9b7...`, `0909590d...`, still in the job history) and listed **the same four updates with the same sizes** (0, 2, 1 and 17 MB). Two days apart, same result: consistent with an optional-driver list that nobody installed.
+* In **Settings, Windows Update, Advanced options, Optional updates, Driver updates** the same four drivers (Acer SoftwareComponent, AOC display, two Intel Bluetooth) are what is expected; **the owner has not looked at that screen for this run**, so this part is an expectation, not an observation. No cumulative or security update was pending, which fits a machine that installed something at 18:17 local time the evening before (`last_install_at`) after Patch Tuesday (2026-10-13).
+* The script's own clock is the laptop's: its `scanned_at` (13:16:31) is about two minutes behind the server (the job finished at 13:18:34), the unsynchronised laptop clock already noted above (test 10).
+
+Findings (nothing needed a code fix to the scan itself):
+
+* **`reboot_required` is "may restart".** The scan reports true when `InstallationBehavior.RebootBehavior` is not "never reboots" (the drivers can request a restart); the starter script's `$u.RebootRequired` printed `reboot=False` for the same updates because that property only turns true after an install. Documented in [PATCHING.md](PATCHING.md).
+* **Sort order.** PowerShell sorts titles case-insensitively, the agent's normaliser sorted by bytes (*AOC* before *Acer*); the normaliser now sorts case-insensitively too. Found by this capture; covered by `TestWindowsScanRealWindows11Capture`.
+* The Windows Update search from a SYSTEM service process works (the starter script needed a background job for the same call, the scan does not).
+
+**What this does not prove:** only *Drivers* were exercised, so the mapping of *Security Updates*, *Critical Updates*, rollups and definition updates to kinds, the KB number, `MsrcSeverity` and the category filter are untested on Windows; `reboot_pending` was false (the true branches are untested); `wu_state` was `running` (stopped and disabled are untested); the machine is not WSUS-managed. **`install.ps1` and every Windows install behaviour (download, install, result codes, EULA refusal, `max_minutes`, restart reporting) have never been run on any real machine**: they were exercised only against a stubbed COM layer in PowerShell on Linux.
+
+Left on the laptop and the beta site: agent **0.8.0** (a test build from the Phase 4 branch; the beta site's stable release row for 0.8.0 stays active, the laptop is its only device; agents never downgrade, a later build supersedes it), one job row in the job history. The temporary files in `/var/tmp` were removed.

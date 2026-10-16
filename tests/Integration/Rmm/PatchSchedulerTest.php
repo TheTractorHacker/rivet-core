@@ -350,4 +350,15 @@ final class PatchSchedulerTest extends PatchTestCase
         $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_patch_available'));
         $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_patch_assignments'));
     }
+
+    public function testTheCapacityReportShowsPatchingOnlyWhileTheSwitchIsOn(): void
+    {
+        $this->scanWith($this->dev, $this->tok, self::winScan([self::WIN_KB => ['security', 'A']]));
+        $c = $this->h->module->capacity()->build();
+        $this->assertSame([true, 1, 0, 1], [$c['patching']['available'], $c['patching']['devices_scanned'], $c['patching']['installs_waiting_or_running'], $c['patching']['missing_update_rows']]);
+        $this->assertSame(86400, $c['patching']['limits']['patch_scan_interval_s']);
+        $this->assertContains('rmm_patch_available', array_column($c['tables'], 'table'));
+        $this->switchOn([]);
+        $this->assertNull($this->h->module->capacity()->build()['patching']);
+    }
 }

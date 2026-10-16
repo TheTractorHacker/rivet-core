@@ -14,7 +14,7 @@ Status: DRAFT for owner review, 2026-10-07; statuses updated for RivetCore v1.0.
 | **P1** | [#69](https://github.com/TheTractorHacker/rivet-core/issues/69) Foundation: Linux packaging, capability negotiation, software inventory with history, sites/groups/tags, `rmm.*` events, MSP metric sink. Built in Core in v1.0.0-rc.9: software inventory with history, tags and groups, nine `rmm.*` events, the database metric sink, per-check history, the live polling document and the capability announcement. Still to do: normalised hardware tables (3.3), site/group/tag at enrollment (2.8), `RmmSitesInterface`, the remaining events (6.5). Offers are now filtered by capability (1.6, built with Phase 2) |
 | **P2** | [#70](https://github.com/TheTractorHacker/rivet-core/issues/70) Policies, check templates, script library, scheduled scripts, approvals, custom fields. Built in Core in v1.0.0-rc.10: the policy engine and its delivery in the check-in, check templates, the signed script library with parameters and secrets, bulk runs, scheduled scripts, two-person approval, custom fields, the `shell` and `python` job types and the agent side. Verified on a real Windows 11 machine on 2026-10-14 ([WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md)). Still to do: every edition page, `zsh` and `cmd` interpreters, `run_as` options, per-client script visibility, the import of an edition's existing saved scripts, and notifying approvers |
 | **P3** | [#71](https://github.com/TheTractorHacker/rivet-core/issues/71) Alerting maturity: thresholds, maintenance windows, suppression, escalation, more check types |
-| **P4** | [#72](https://github.com/TheTractorHacker/rivet-core/issues/72) Patch management (needs real Windows test machines) |
+| **P4** | [#72](https://github.com/TheTractorHacker/rivet-core/issues/72) Patch management. Built in Core (migration 0028, 1.0.0-rc.20) behind the `patching` switch: `patch_scan` / `patch_install` job types, scan results, approvals (by hand, by rule, by policy and ring delay, optionally by two people), install windows and limits, history, compliance and two alert checks. Linux apt proven on a real container; the Windows scan was run on a real laptop, the Windows install never. See [PATCHING.md](PATCHING.md). |
 | **P5** | [#73](https://github.com/TheTractorHacker/rivet-core/issues/73) Software deployment and reporting |
 | **P6** | [#74](https://github.com/TheTractorHacker/rivet-core/issues/74) Remote tools: service/process manager, file transfer, embedded Mesh terminal and files. Built in Core after rc.10 (migration 0022): the six job types with capability flags, `rmm.remote.manage`, the `remote_tools` and `filetransfer` switches, chunked and checksum-verified file transfer with an allow list and a never-transfer list, the Mesh terminal and files launch, the REST routes, the agent side. The Windows code was run on a real Windows 11 machine on 2026-10-14 (services, processes, file transfer with its path policy; it found and fixed a junction escape, see [WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md)). Still to do: every edition page, a real MeshCentral to confirm the terminal and files views. Details: [REMOTE_AND_LOGS.md](REMOTE_AND_LOGS.md) |
 | **P7** | [#75](https://github.com/TheTractorHacker/rivet-core/issues/75) macOS agent, Authenticode-signed binaries, MSI (blocked: no test Mac, no signing certificates) |
@@ -155,11 +155,11 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 |---|---|---|---|---|---|---|
 | 9.1 | Pending-reboot detection and a reboot job | Shipped | Shipped | P0 | P7 | |
 | 9.2 | Patch status for devices managed by a vendor RMM (for example Tactical RMM) | Shipped | all | all | all | The existing "Patches" tab and the dashboard's compliance card read the vendor's data, not this agent. |
-| 9.3 | Windows Update scan, approve and install through the agent | P4 | P4 | - | - | |
-| 9.4 | Approval rings, deferrals, maintenance windows, reboot policy | P4 | P4 | P4 | - | |
-| 9.5 | Patch compliance per device and per client | P4 | P4 | P4 | - | |
-| 9.6 | Linux package updates (apt, dnf) | P4 | - | P4 | - | |
-| 9.7 | Third-party application patching through winget | P4 | P4 | - | - | |
+| 9.3 | Windows Update scan, approve and install through the agent | Core | Core | - | - | `patch_scan` (read only) and `patch_install` (gated), capabilities `patch:scan` and `patch:install`, behind the `patching` switch. **The Windows scan was run on a real Windows 11 laptop; the Windows install path has never been run.** [PATCHING.md](PATCHING.md). |
+| 9.4 | Approval rings, deferrals, maintenance windows, reboot policy | Core | Core | Core | - | Rings (pilot 0, broad 7, last 14 days, add your own), per-kind automatic approval after N days, approval rules, two-person approval, daily or Phase 3 maintenance install windows, restart `never` / `if_required_defer` / `if_required_now` (a separate confirmed reboot job). The scheduler queues dry runs only until `patch_live_install` is 1. |
+| 9.5 | Patch compliance per device and per client | Core | Core | Core | - | `patch.compliance` and `patch.install_failed` alert checks, `RmmReadModel::patchSummary()` / `patchCompliance()`, `GET endpoint_devices/patches/compliance` by client, site or group with the ring distribution. |
+| 9.6 | Linux package updates (apt, dnf) | Core | - | Core | - | apt proven end to end on a real systemd container with a real apt and a local repository; dnf, yum and zypper are parser-tested on fixtures only and have not been run on a real Rocky, Alma, Fedora or SUSE host. |
+| 9.7 | Third-party application patching through winget | P5 | P5 | - | - | Moved to Phase 5 (software deployment). Not part of the Phase 4 patch work. |
 | 9.8 | macOS software update | P7 | - | - | P7 | Follows the macOS agent. |
 
 ## 10. Software deployment
@@ -241,12 +241,11 @@ Counted from the Status column of the tables above (one row, one status). `Shipp
 | Status | Rows |
 |---|---|
 | Shipped | 49 |
-| Core | 32 |
+| Core | 36 |
 | P0 | 19 |
 | P1 | 3 |
 | P3 | 1 |
-| P4 | 5 |
-| P5 | 5 |
+| P5 | 6 |
 | P6 | 1 |
 | P7 | 3 |
 | Not planned | 10 |
@@ -268,14 +267,14 @@ Comparison for the headline capabilities only. Cells for other products reflect 
 | Checks and alerts | 4 check types, global schedule | Policy-assigned (P2), 16 check types, thresholds, windows, escalation (P3, built in Core) | Yes, policy-assigned | Yes, policy-assigned | Not verified |
 | Script library, scheduled scripts | Saved scripts, run now | Yes (P2) | Yes | Yes | Yes (not verified in detail) |
 | Remote desktop | MeshCentral launch (you host Mesh) | Plus Mesh terminal and files (P6, built in Core) | MeshCentral based | Built-in remote | Built-in remote (not verified in detail) |
-| Patch management | No (vendor-RMM status only) | Yes (P4) | Yes | Yes | Not verified |
+| Patch management | No (vendor-RMM status only) | Yes (P4, built in Core; Windows install unverified) | Yes | Yes | Not verified |
 | Software deployment | No | Yes (P5) | Yes (Chocolatey based) | Yes | Not verified |
 | Policies by client/site/group | Client only | Yes (P2) | Yes | Yes | Not verified |
 | Built-in PSA (tickets, docs, assets, billing) in the same product | Yes (RivetIT is the PSA) | Yes | No (separate PSA) | Ticketing is part of the product; scope differs | No (not verified) |
 | Self-hosted, source available | Yes | Yes | Yes (source-available license) | No (SaaS) | No (SaaS) |
 | Hosted agent infrastructure scale | Single PHP server; 500 devices gate for the release candidate, 5,000 before promotion | Same | Not verified | Cloud scale | Cloud scale |
 
-What the table does not say: RivetIT's RMM is built to sit inside a PSA, not to match a standalone RMM feature for feature. The honest gaps today are patching, software deployment, policies, macOS and mature alerting; those are P2 to P5 and P7, and each is a separate release behind its own switch.
+What the table does not say: RivetIT's RMM is built to sit inside a PSA, not to match a standalone RMM feature for feature. The honest gaps today are software deployment, macOS, a verified Windows patch install and the editions adopting what is built in Core; those are P5 and P7, and each is a separate release behind its own switch.
 
 ## Keeping this list honest
 

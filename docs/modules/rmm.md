@@ -213,6 +213,31 @@ Migration `0020_rmm_alerting_maturity` (eight new tables, nothing existing alter
 5. Switch on `alerting` (`RmmSettings::update(['features_json' => [..., 'alerting' => true]])`) once agents of this release are rolled out. Alerts that were open before are adopted by the next housekeeping run.
 6. Render the new read models; it should also stop honouring its own `rmm_maintenance_mode` flag for agent alerts if it wants windows to be the single source (Core's windows do not read that flag).
 
+## Phase 4: patch management
+
+Migration `0028_rmm_patching` (eight new tables, nothing existing altered, idempotent). It stays dormant until the **`patching` sub-switch** (`features_json`, in `RmmSettings::FEATURES` since Phase 0) is turned on: with it off no patch table is read, `Housekeeping` skips the patch step, a check-in costs the same number of statements, and an agent that does not announce `patch:scan` / `patch:install` is never offered a patch job (the golden transcripts replay identically). The operator guide, the safety defaults and what is not done: [PATCHING.md](../rmm/PATCHING.md).
+
+| Area | Behaviour | Core classes | Storage |
+|---|---|---|---|
+| Job types | `patch_scan` (read only; params `categories`, `max_items`) and `patch_install` (params `ids` of at most 40, `mode` = `dry_run` by default, `max_minutes`; destructive: offered at most once). Strict allow-list validators; each needs an announced capability (`patch:scan`, `patch:install`); the generic job endpoint refuses both | `Patch\PatchProtocol`, `PatchJobTypes` | `endpoint_agent_jobs` |
+| Scan | Queue (never twice while one waits), signed job, result applied from the job report (or by the next housekeeping pass: load shedding, a lost result that arrives late). The report is validated defensively: ids that are not valid for the platform are dropped, strings are cleaned, counts are recomputed, a truncated list never marks the rest installed | `PatchScanService` | `rmm_patch_scans`, `rmm_patch_available`, `rmm_patch_jobs` |
+| Approval | By hand (`update_ids`, narrowed by device or client, only the caller's clients), by rule, by policy (`auto_days_<kind>` plus the ring's delay), optionally by two people (a Phase 2 approval of kind `patch` freezing the (device, update) pairs). A declined update is never approved automatically | `PatchApprovalService` | `rmm_patch_available`, `rmm_patch_rules`, `rmm_approvals` |
+| Policies and rings | A patch policy holds only the settings it decides (ring, approval mode, per-kind days, install enabled, window, restart policy, max minutes, two person). The scope mechanism and the resolver are Phase 2's (`Policy\PolicyResolver`): client, site, group, tag, device, priority, enforce; no policy means the safe defaults | `PatchPolicyStore`, `PatchPolicyResolver`, `PatchPolicySettings` | `rmm_patch_policies`, `rmm_patch_assignments`, `rmm_patch_rings` |
+| Install | Only approved updates, a dry run by default, one install job per device, 40 ids per job, the agent re-checks every id, never accepts an EULA, never removes a package, never restarts. A restart is a separate confirmed `reboot` job. Results become history rows, statuses, `reboot_pending`, events, a follow-up scan | `PatchInstallService` | `rmm_patch_history`, `rmm_patch_available` |
+| Scheduler | In `Housekeeping::run()`: due scans (jittered by device), automatic approvals, installs for devices whose policy has `install_enabled`, window open (daily, or a Phase 3 maintenance window), not suppressed (schedule gate), online, under the fleet and per-client limits, shed level 0 or 1. Dry runs only until `patch_live_install` is 1 | `PatchScheduler` | the above |
+| Alerts | `patch.compliance` (warn after `patch_overdue_days`, fail at twice that, warn on a stale scan) and `patch.install_failed`, through the check evaluator so Phase 3 rules apply | `PatchComplianceService` | `endpoint_agent_checks` |
+| Reads | `RmmReadModel::patchSummary($device)`, `patchCompliance($visibleClientIds, $filters)` (by client, site, group; ring distribution), the updates and history of a device, one row per missing update across the fleet | `PatchReader` | none |
+| Events | `rmm.patch.scan_completed`, `.approved`, `.install_started`, `.install_finished`, `.install_failed` (the approval event is not about one device: `device_id` 0) | `RmmEvent` | none |
+
+**REST routes** (all additive, shapes in [openapi-device.yaml](../rmm/openapi-device.yaml)): per device `{id}/patches`, `{id}/patches/history`, `POST {id}/patches/scan`, `POST {id}/patches/install`; fleet `patches`, `patches/compliance`, `POST patches/approve`, `POST patches/decline`, `patches/rules`, `patches/rings`, and `patch_policies` with `{id}/assignments`. Grants: reads `rmm.patch.view`; scan, approve, decline, dry run, rules, rings and policies `rmm.patch.manage`; a real install `rmm.patch.install` (plus `rmm.job.reboot` when it asks for a restart); the second approver `rmm.job.approve` and `rmm.patch.manage`. Rings and patch policies change only for a caller whose scope is not limited to some clients.
+
+**What an edition does to adopt Phase 4**
+1. Run the Core migrations (0028).
+2. Map the abilities `rmm.patch.view`, `rmm.patch.manage` and `rmm.patch.install` in its `AccessPolicyInterface`.
+3. Roll out an agent of this release (0.8.0 or later), then switch on `patching`.
+4. Render the read models: a Patches tab on the asset page, a fleet compliance page, patch policy pages (policies, assignments, rings, rules, install window picker), and show `patch` approvals on the approvals page.
+5. Leave `patch_live_install` at 0 until a dry run has been seen on a pilot machine.
+
 ## Scale: the write path, storage, workers, read cache, herd control
 
 Migration `0021_rmm_scale_storage` (five new tables, nothing existing altered). All of it is on by default only where it changes no behaviour (the cheaper check-in, the cache of the dashboard counters); the rest is off until a limit or an option turns it on. Measurements and the model are in [CAPACITY.md](../rmm/CAPACITY.md) 13 to 16; [SCALING.md](../rmm/SCALING.md) says what is done and what is pending (the 24 hour / 10,000 device validation is NOT done).

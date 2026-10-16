@@ -89,7 +89,7 @@ api() { # api METHOD path [json-body] -> body on stdout; the status goes to $WOR
 }
 A() { R="$(api "$@")"; CODE="$(cat "$WORK/code")"; }
 jget() { php -r '$d=json_decode(stream_get_contents(STDIN), true); $v=$d; foreach (explode(".", $argv[1]) as $k) { if (is_array($v) && array_key_exists($k, $v)) { $v=$v[$k]; } else { $v=null; break; } } echo is_bool($v) ? ($v ? "true" : "false") : (is_scalar($v) ? $v : json_encode($v));' "$1"; }
-hk() { php -d display_errors=1 "$HERE/php_scratch/housekeeping.php" 2>&1; }
+hk() { RMM_GOLDEN_STATE="$WORK/state" php -d display_errors=1 "$HERE/php_scratch/housekeeping.php" 2>&1; }
 
 echo "== real systemd container, a LOCAL apt repository, agent installed with install-linux.sh"
 docker run -d --name "$NAME" --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw --tmpfs /tmp --tmpfs /run --tmpfs /run/lock "$IMG" >/dev/null
@@ -199,7 +199,7 @@ A POST "patches/approve" '{"update_ids":["rivetit-dummy"]}'
 repo rivetit-dummy=1.0 rivetit-dummy=1.1 rivetit-dummy=1.2 rivetit-dummy=1.3 rivetit-other=1.0 rivetit-other=1.1 rivetit-slow=1.0
 A POST "$DEV/patches/install" '{"mode":"install","confirm":true}'; J="$(printf '%s' "$R" | jget job_id)"
 chk "an approved update that vanished from the repository before the install is not_applicable (the agent re-checks), nothing installed" '[ "$(job_done $J 120)" = succeeded ] && [ "$(last_result rivetit-dummy)" = "not_applicable|" ] && [ "$(ver rivetit-dummy)" = 1.3 ]'
-dbq "INSERT INTO rmm_patch_available (device_id, client_id, update_id, title, kind, status, first_seen_at, last_seen_at) SELECT $DEV, client_id, 'nonexistent-pkg-xyz', 'unknown', 'security', 'approved', NOW(), NOW() FROM endpoint_agent_devices WHERE device_id = $DEV" >/dev/null
+dbq "INSERT INTO rmm_patch_available (device_id, client_id, update_id, title, kind, status, first_seen_at, last_seen_at) SELECT $DEV, client_id, 'nonexistent-pkg-xyz', 'unknown', 'security', 'approved', UTC_TIMESTAMP(), UTC_TIMESTAMP() FROM endpoint_agent_devices WHERE device_id = $DEV" >/dev/null
 A POST "$DEV/patches/install" '{"mode":"install","confirm":true,"ids":["nonexistent-pkg-xyz"]}'; J="$(printf '%s' "$R" | jget job_id)"
 chk "a package that exists nowhere is not_found, the job fails cleanly" '[ "$(job_done $J 120)" = failed ] && [ "$(last_result nonexistent-pkg-xyz | cut -d"|" -f1)" = not_found ]'
 for H in '-oAPT::Foo' 'a b' 'x;touch /w/pwned' '$(touch /w/pwned)'; do
@@ -209,7 +209,7 @@ done
 # jobs forged AROUND the server (rows written straight into the queue, so the server signs them as if it had made them): the agent validates again
 JID="$(php -r 'echo sprintf("%08x-%04x-4%03x-8%03x-%012x", random_int(0, 0xffffffff), random_int(0, 0xffff), random_int(0, 0xfff), random_int(0, 0xfff), random_int(0, 0xffffffffffff));')"
 dbq "INSERT INTO endpoint_agent_jobs (job_id, device_id, asset_id, client_id, type, params_json, timeout_s, max_output_bytes, destructive, run_as, state, attempt, issued_at, expires_at, created_by, created_at)
-     SELECT '$JID', device_id, asset_id, client_id, 'patch_install', '{\"ids\":\"-oAPT::Foo,rivetit-dummy\",\"mode\":\"install\",\"max_minutes\":5}', 300, 65536, 1, 'SYSTEM', 'queued', 1, NOW(), DATE_ADD(NOW(), INTERVAL 1 HOUR), 1, NOW() FROM endpoint_agent_devices WHERE device_id = $DEV" >/dev/null
+     SELECT '$JID', device_id, asset_id, client_id, 'patch_install', '{\"ids\":\"-oAPT::Foo,rivetit-dummy\",\"mode\":\"install\",\"max_minutes\":5}', 300, 65536, 1, 'SYSTEM', 'queued', 1, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 HOUR), 1, UTC_TIMESTAMP() FROM endpoint_agent_devices WHERE device_id = $DEV" >/dev/null
 chk "a forged install job with an option-looking id is refused by the AGENT (invalid_params), no command ran" '[ "$(job_done $JID 90)" = failed ] && jout $JID | grep -q invalid_params && [ "$(ver rivetit-dummy)" = 1.3 ]'
 chk "nothing in the container was touched by the hostile ids" '! q test -e /w/pwned'
 
@@ -220,18 +220,18 @@ A POST "patch_policies" '{"name":"proof policy","settings":{"install_enabled":tr
 A POST "patch_policies/$PID_/assignments" '{"scope_type":"global"}'
 chk "a patch policy that allows installing is assigned to everyone" '[ "$CODE" = 200 ]'
 repo rivetit-dummy=1.0 rivetit-dummy=1.1 rivetit-dummy=1.2 rivetit-dummy=1.3 rivetit-dummy=1.5 rivetit-other=1.0 rivetit-other=1.1 rivetit-slow=1.0
-dbq "UPDATE rmm_patch_scans SET scanned_at = DATE_SUB(NOW(), INTERVAL 3 DAY), requested_at = DATE_SUB(NOW(), INTERVAL 3 DAY)" >/dev/null
-HK="$(hk)"
+dbq "UPDATE rmm_patch_scans SET scanned_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY), requested_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY)" >/dev/null
+HK="$(hk)"; echo "   housekeeping pass: $HK"
 chk "a housekeeping pass queues the scan by itself (patch_scans_queued 1)" 'printf "%s" "$HK" | grep -q "\"patch_scans_queued\":1"'
 wait_for 90 "[ \"\$(dbq \"SELECT COUNT(*) FROM endpoint_agent_jobs WHERE type = 'patch_scan' AND state = 'succeeded'\")\" -ge 6 ]"
 dbq "UPDATE rmm_patch_scans SET evaluated_at = NULL" >/dev/null
-HK="$(hk)"
+HK="$(hk)"; echo "   housekeeping pass: $HK"
 chk "the rule approved the new security update by itself, a declined update stayed declined" '[ "$(status_of rivetit-dummy)" = approved ] && [ "$(status_of rivetit-other)" = declined ]'
 chk "the pass queued a DRY RUN only (live installs are off by default)" 'printf "%s" "$HK" | grep -q "\"patch_dry_runs_queued\":1" && printf "%s" "$HK" | grep -q "\"patch_installs_queued\":0"'
 wait_for 90 "[ \"\$(dbq \"SELECT COUNT(*) FROM rmm_patch_jobs p JOIN endpoint_agent_jobs j ON j.job_id = p.job_id WHERE p.source = 'scheduler' AND p.mode = 'dry_run' AND j.state = 'succeeded'\")\" = 1 ]"
 chk "...and nothing was installed (dummy still 1.3)" '[ "$(ver rivetit-dummy)" = 1.3 ]'
 dbq "UPDATE endpoint_agent_settings SET limits_json = '{\"patch_live_install\":1}'" >/dev/null
-HK="$(hk)"
+HK="$(hk)"; echo "   housekeeping pass: $HK"
 chk "with live installs switched on (limit patch_live_install = 1) the pass queues the real install" 'printf "%s" "$HK" | grep -q "\"patch_installs_queued\":1"'
 chk "the scheduled install ran on the device: dummy 1.5, nothing else upgraded" 'wait_for 180 "[ \"\$(ver rivetit-dummy)\" = 1.5 ]" && [ "$(ver rivetit-other)" = 1.0 ]'
 chk "the machine was still not restarted by any of this" '[ "$(q cat /proc/sys/kernel/random/boot_id)" = "$BOOT" ] && [ "$(dbq "SELECT COUNT(*) FROM endpoint_agent_jobs WHERE type = '\''reboot'\''")" = 0 ]'

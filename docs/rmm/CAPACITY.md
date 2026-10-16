@@ -559,3 +559,32 @@ Both are off by default and cost nothing while off: a check-in costs the same nu
 | File transfer | one ledger row, one stored file, and per chunk (at most 1 MiB) one row lock and an append; the SHA-256 of the whole file is computed once, when the last chunk arrives | `transfer_max_bytes` (50 MiB default, 512 MiB hard), `transfer_store_max_bytes` (1 GiB), 600 requests per 60 s per device, expiry `transfer_ttl_s` (24 h) after which housekeeping deletes the bytes |
 
 PHP-FPM note for file transfer: a chunk is read into memory (at most 1 MiB, the request body cap of the endpoint), so a worker holds a few MiB at most; the 50 MiB default file is 50 requests. Put the transfer folder on a disk that can absorb the budget. Not measured: log ingest and prune at fleet scale on PHP-FPM (the S9 validation is where that belongs).
+
+## 19. Phase 4 paths (patch management)
+
+Off by default (`patching` sub-switch) and free while off: no table is read, `Housekeeping` skips the patch step, a check-in costs the same statements as before. The patch jobs are ordinary jobs; nothing about patching rides on the check-in.
+
+### 19.1 Limits
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `patch_scan_interval_s` | 86,400 | 3,600 to 604,800 | seconds between two scans of a device; each device is offset by a stable hash of its id (up to a tenth of the interval) so a fleet never scans at the same moment |
+| `patch_overdue_days` | 14 | 1 to 365 | days a critical or security update may be missing before `patch.compliance` warns (it fails at twice that) |
+| `patch_max_installs` | 25 | 1 to 10,000 | devices installing at the same time, whole fleet |
+| `patch_max_installs_per_client` | 5 | 1 to 1,000 | devices installing at the same time in one client |
+| `patch_live_install` | 0 | 0 or 1 | 0: the scheduler queues dry runs only; 1: it may queue real installs for devices whose policy allows it |
+| `patch_history_days` | 365 | 30 to 3,650 | days of install history kept |
+| `patch_batch` | 100 | 10 to 5,000 | devices one step of the pass works on (scans to queue, devices to evaluate, devices to install on); level 1 of load shedding halves it (not below 10), level 2 and above queue nothing |
+
+### 19.2 Model
+
+| What | Cost | Bound |
+|---|---|---|
+| Scan, per device per interval | one job (queued, signed, offered at a check-in) and, when its result is applied, one transaction: a multi-row upsert of the updates in chunks of 100 (at most 1,000 per scan), one read of the device's known rows, one upsert of the scan row, a handful of statements for the approvals and the alert checks | a scan reports at most 1,000 updates (`max_items`); a larger list is cut and marked truncated |
+| Scan storage | `rmm_patch_available`: about 400 bytes per missing update per device with its indexes (a title is at most 300 characters); a fleet of 5,000 machines missing 30 updates each is 150,000 rows, about 60 MB. Rows of updates that were installed are removed after 14 days | |
+| Job output | the result of a scan is the job's `output` (at most `job_output_max_bytes`), kept for `job_retention_days`; the agent cuts the update list to fit and says so | the same cap as every job |
+| Scheduling pass | one query for the devices whose scan is due (`rmm_device_state` joined to `rmm_patch_scans`, an index on `scanned_at`), at most `patch_batch` jobs per pass; one query for devices to evaluate (approvals and compliance, about hourly per device); one for devices with approved updates, then a policy resolution per candidate (one assignment query) | `patch_batch` per step |
+| Compliance read | one aggregate over `rmm_patch_available` grouped by device, joined to the devices of the caller's clients; the ring distribution resolves the policy of up to 1,000 devices (a sample beyond) | 500 groups and `limit` non-compliant devices per call |
+| Shedding | level 2 and above: no new scan or install is queued and a scan result that arrives is left for the next pass (its job row keeps the output; `rmm_patch_jobs.applied_at` stays empty) | |
+
+Load: a daily scan of 5,000 devices is 5,000 jobs a day (about 0.06 a second on average, spread by the hash) and 5,000 result transactions; the Windows Update search itself runs on the device, a Linux scan costs a few process starts. Installs are bounded by `patch_max_installs`: with the default 25 at once and an hour per job a fleet of 5,000 patches in about 8 days of continuous work, so raise it deliberately and use rings to spread the risk. Not measured on the reference hardware: the figures above are a model from the statement counts.

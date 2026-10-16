@@ -32,7 +32,11 @@ GoldenEdition::migrate($m);
 // the patch-management proof (run_patch_proof.sh): the Phase 4 tables and the `patching` switch; the golden replay (older agents) leaves both off
 $patching = getenv('RMM_PROOF_PATCHING') === '1';
 if ($patching) {
-    (new \RivetCore\Rmm\Migration\Migration0028Patching())->up(new \RivetCore\Tests\Support\MysqliDatabase($m));
+    // a housekeeping pass (run_patch_proof.sh calls it) also touches the job queue of Core and the later RMM tables
+    $db = new \RivetCore\Tests\Support\MysqliDatabase($m);
+    foreach ([new \RivetCore\Jobs\Migration\Migration0002IntegrationJobs(), new \RivetCore\Jobs\Migration\Migration0012JobHeartbeat(), new \RivetCore\Rmm\Migration\Migration0028Patching()] as $mig) {
+        $mig->up($db);
+    }
 }
 $e = new GoldenEdition($state, false);
 $client = $e->tenancy->addClient('Proof Dept');

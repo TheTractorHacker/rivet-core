@@ -1,13 +1,13 @@
 {
   "module": "rmm",
   "repository": "https://github.com/TheTractorHacker/rivet-core",
-  "updated": "2026-10-12",
+  "updated": "2026-10-16",
   "issues": "https://github.com/TheTractorHacker/rivet-core/issues?q=label%3Armm",
   "documents": [
     {
       "id": "features",
       "title": "RMM feature list",
-      "summary": "What the RMM does and contains, by area, with the phase that delivers each feature (Phases 1, 2, 3, 6 and 8 are built in Core: statuses show Core)",
+      "summary": "What the RMM does and contains, by area, with the phase that delivers each feature (Phases 1, 2, 3, 4, 6 and 8 are built in Core: statuses show Core)",
       "path": "docs/rmm/FEATURES.md",
       "status": "draft",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/FEATURES.md",
@@ -138,6 +138,15 @@
       "status": "current",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/modules/rmm.md",
       "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/modules/rmm.md"
+    },
+    {
+      "id": "patching",
+      "title": "RMM patch management (Phase 4)",
+      "summary": "Detect first, install gated: the scan on Windows and Linux, approvals, rings, rules, install windows, the restart policy, compliance and alerts, abilities, limits, safety defaults, what is not done and exactly what is proven",
+      "path": "docs/rmm/PATCHING.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/PATCHING.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/PATCHING.md"
     },
     {
       "id": "starter-pack",

@@ -234,3 +234,24 @@ func TestJobTypeNamesMatchTheJobsPackage(t *testing.T) {
 		t.Fatal("handlers")
 	}
 }
+
+// TestWindowsScanRealWindows11Capture runs the output the real scan.ps1 printed on a real Windows 11 Pro laptop (2026-10-16, as a plain powershell job under
+// SYSTEM, agent 0.8.0; docs/rmm/WINDOWS_VERIFICATION.md) through the normaliser. The four updates are the ones the older "Pending Windows updates" starter
+// script listed on 2026-10-14 (same titles and sizes).
+func TestWindowsScanRealWindows11Capture(t *testing.T) {
+	o := scanOf(t, psEngine(ok(fixture(t, "win_scan_real_windows11.json")), nil).Scan(context.Background(), nil, 1<<20))
+	if o.Manager != "wua" || o.ScanState != "ok" || o.WUState != "running" || o.RebootPending || o.Truncated || o.Total != 4 || len(o.Updates) != 4 {
+		t.Fatalf("%+v", o)
+	}
+	if o.LastInstallAt == nil || *o.LastInstallAt != "2026-10-15T23:17:55Z" {
+		t.Errorf("last install %v", o.LastInstallAt)
+	}
+	for _, u := range o.Updates {
+		if u.Kind != "driver" || u.Severity != "unspecified" || !u.EulaAccepted || len(u.Categories) != 1 || u.Categories[0] != "Drivers" || u.ReleasedAt == nil {
+			t.Errorf("%+v", u)
+		}
+	}
+	if o.Updates[0].Title != "Acer Incorporated SoftwareComponent Driver Update (2.0.3042.0)" || o.Updates[0].Size != 17438174 {
+		t.Errorf("%+v", o.Updates[0])
+	}
+}

@@ -130,4 +130,18 @@ final class PatchPolicyResolverTest extends TestCase
             $this->assertFalse(PatchProtocol::validId($bad, 'linux'), json_encode($bad));
         }
     }
+
+    public function testTheRealWindows11ScanOutputPassesTheServerValidation(): void
+    {
+        $raw = (string) file_get_contents(dirname(__DIR__, 3) . '/endpoint-agent/internal/patch/testdata/win_scan_real_windows11.json');
+        $r = \RivetCore\Rmm\Patch\PatchScanService::cleanReport($raw, 'windows');
+        $this->assertTrue($r['ok']);
+        $this->assertSame(['wua', 'ok', 'running', false, false, 0], [$r['manager'], $r['scan_state'], $r['wu_state'], $r['reboot_pending'], $r['truncated'], $r['dropped']]);
+        $this->assertCount(4, $r['updates']);
+        $this->assertSame(['driver'], array_values(array_unique(array_column($r['updates'], 'kind'))));
+        $this->assertSame('2026-10-15 23:17:55', $r['last_install_at']);
+        $this->assertSame('5a4754d1-cdd9-4e9f-8f4f-ded41343a45d', $r['updates'][0]['update_id']);
+        // the same document is not a Linux report
+        $this->assertFalse(\RivetCore\Rmm\Patch\PatchScanService::cleanReport($raw, 'linux')['ok']);
+    }
 }

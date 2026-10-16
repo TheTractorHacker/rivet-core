@@ -57,12 +57,15 @@ final class PatchScanService
         $now = $this->sql->utcNow();
         $this->sql->run('UPDATE rmm_patch_scans SET requested_at = ?, client_id = ? WHERE device_id = ?', [$now, (int) $dev['client_id'], $deviceId]);
         $jobId = JobService::uuid();
-        $r = $this->jobs->create($dev, PatchProtocol::JOB_SCAN, null, ['categories' => '', 'max_items' => 500], null, false, $userId ?? 0, ['job_id' => $jobId]);
-        if (!$r['ok']) {
-            return ['ok' => false, 'error' => (string) ($r['error'] ?? 'The scan could not be queued.'), 'code' => (string) ($r['code'] ?? 'invalid')];
-        }
+        // The ledger row first: a result can never arrive for a job the ledger does not know.
         $this->sql->run('INSERT INTO rmm_patch_jobs (job_id, device_id, client_id, type, mode, source, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [$jobId, $deviceId, (int) $dev['client_id'], PatchProtocol::JOB_SCAN, '', $source, $userId, $now]);
+        $r = $this->jobs->create($dev, PatchProtocol::JOB_SCAN, null, ['categories' => '', 'max_items' => 500], null, false, $userId ?? 0, ['job_id' => $jobId]);
+        if (!$r['ok']) {
+            $this->sql->run('DELETE FROM rmm_patch_jobs WHERE job_id = ?', [$jobId]);
+
+            return ['ok' => false, 'error' => (string) ($r['error'] ?? 'The scan could not be queued.'), 'code' => (string) ($r['code'] ?? 'invalid')];
+        }
 
         return ['ok' => true, 'job_id' => $jobId];
     }
