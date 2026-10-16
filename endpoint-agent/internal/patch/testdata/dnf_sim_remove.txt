@@ -1,0 +1,15 @@
+Dependencies resolved.
+================================================================================
+ Package            Architecture  Version               Repository         Size
+================================================================================
+Upgrading:
+ foo                x86_64        2.0-1.el9             baseos            1.2 M
+Removing dependent packages:
+ foo-compat         x86_64        1.0-1.el9             @baseos           300 k
+
+Transaction Summary
+================================================================================
+Upgrade  1 Package
+Remove   1 Package
+
+Operation aborted.

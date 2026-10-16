@@ -56,3 +56,25 @@ func TestMeshJobTypesAreRemoteTypesOnEveryOS(t *testing.T) {
 		t.Fatal("the wire names are part of the protocol")
 	}
 }
+
+func TestPatchJobTypes(t *testing.T) {
+	if TypePatchScan != "patch_scan" || TypePatchInstall != "patch_install" {
+		t.Fatal("the wire names are part of the protocol")
+	}
+	for _, typ := range PatchTypes {
+		if !IsPatchType(typ) || IsRemoteType(typ) {
+			t.Errorf("%s is a patch type with its own switch, not a remote tool", typ)
+		}
+		for goos, want := range map[string]bool{"windows": true, "linux": true, "darwin": false} {
+			if supportedOn(goos, typ) != want {
+				t.Errorf("supportedOn(%s,%s)", goos, typ)
+			}
+		}
+		if !strings.Contains(strings.Join(JobTypes(), ","), typ) {
+			t.Errorf("%s not announced", typ)
+		}
+	}
+	if IsPatchType("svc_list") || IsPatchType("patch") {
+		t.Error("IsPatchType")
+	}
+}

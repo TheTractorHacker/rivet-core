@@ -346,7 +346,20 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 Local kill switches (set in `config.json` by an administrator of the endpoint): `disable_jobs` (never execute server jobs) and
 `disable_script_checks`, plus (RMM Phases 6 and 8) `disable_remote` (the service, process and file tools fail with `disabled_locally`, and the agent stops announcing
-`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) and `disable_logs` (never collect or ship logs; `logs:collect` is not announced).
+`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_patching` (patch_scan and patch_install fail with `disabled_locally`; `patch:scan`, `patch:install` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` is not announced).
+
+## Patch management (RMM Phase 4)
+
+Two job types, `patch_scan` and `patch_install`, announced as `patch:scan` / `patch:install` (and `job:patch_*`) on Windows and Linux; `disable_patching` in
+`config.json` withdraws both. The agent never reboots: it reports `reboot_required` and the server queues a separate, confirmed `reboot` job.
+
+- Windows runs the two fixed scripts `internal/patch/scripts/scan.ps1` (strictly read-only) and `install.ps1` through the same safe path as a `powershell` job
+  (`-EncodedCommand`, job environment). Filters travel as `RIVETIT_PATCH_*` environment variables, never in script text. `scan.ps1` also works standalone as a
+  plain `powershell` job. The Go side validates and re-encodes the one JSON line the script prints.
+- Linux finds apt, dnf, yum or zypper at a fixed absolute path and starts it from an argument list (`--` before every package name). A simulation always runs
+  first; a transaction that would remove packages is skipped. Locks are reported as `locked`, never broken.
+- Ids are re-validated agent-side: Windows UpdateID GUIDs (lower case) or Linux package ids; unknown parameters, duplicates, more than 40 ids or 1000 characters
+  are refused before any command runs.
 
 ## Monitoring and checks
 

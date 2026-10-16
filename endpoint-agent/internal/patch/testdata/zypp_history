@@ -1,0 +1,5 @@
+# 2024-05-01 10:00:00 zypper install started
+2024-05-01 10:00:01|install|nano|7.2-1.1|x86_64||repo-oss|abc|
+2024-05-03 07:30:00|command|root@host|'zypper' 'patch'|
+2024-05-03 07:30:09|install|openssl-1_1|1.1.1w-150500.17.25.1|x86_64||repo-update|def|
+2024-05-04 08:00:00|remove|foo|1.0|x86_64|root@host|

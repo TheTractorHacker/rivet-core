@@ -29,6 +29,7 @@ import (
 	"rivetit-agent/internal/jobs"
 	"rivetit-agent/internal/logs"
 	"rivetit-agent/internal/mesh"
+	"rivetit-agent/internal/patch"
 	"rivetit-agent/internal/remote"
 	"rivetit-agent/internal/store"
 	"rivetit-agent/internal/update"
@@ -286,6 +287,11 @@ func (a *Agent) newExecutor(ctx context.Context) {
 		e.Remote[typ] = h
 	}
 	e.DisableRemote = cfg.DisableRemote
+	// Patch management (patch_scan, patch_install): withdrawn by config.disable_patching only.
+	for typ, h := range (patch.Engine{}).Handlers() {
+		e.Remote[typ] = h
+	}
+	e.DisablePatching = cfg.DisablePatching
 	e.OnRevoked = func(err error) { a.goDormant(revokedMessage + " (" + err.Error() + ")") }
 	e.Recover()
 	e.Start(ctx)
@@ -476,6 +482,9 @@ func Capabilities() []string {
 	// RMM Phase 6 and 8: the remote tools (services, processes, files) and log collection. The server only queues a remote
 	// tool for, and only offers log collection to, an agent that announced the flag.
 	out = append(out, remote.CapServices, remote.CapProcesses, remote.CapFiles)
+	if jobs.SupportsType(jobs.TypePatchScan) {
+		out = append(out, patch.CapScan, patch.CapInstall) // RMM Phase 4: scan for and install updates (never reboots)
+	}
 	out = append(out, api.CapMeshNodeID) // can read and report the local MeshCentral node id (a no-op without a Mesh agent)
 	if logs.Supported() {
 		out = append(out, api.FeatureLogs)
@@ -484,20 +493,22 @@ func Capabilities() []string {
 	return out
 }
 
-// capabilities is Capabilities() minus what the local configuration switches off (disable_remote, disable_logs): an
+// capabilities is Capabilities() minus what the local configuration switches off (disable_remote, disable_patching, disable_logs): an
 // agent that cannot do a thing must not announce it.
 func (a *Agent) capabilities() []string {
 	a.mu.Lock()
 	cfg := a.cfg
 	a.mu.Unlock()
 	caps := Capabilities()
-	if !cfg.DisableRemote && !cfg.DisableLogs {
+	if !cfg.DisableRemote && !cfg.DisableLogs && !cfg.DisablePatching {
 		return caps
 	}
 	out := caps[:0:0]
 	for _, c := range caps {
 		switch {
 		case cfg.DisableRemote && (c == api.CapMeshNodeID || c == remote.CapServices || c == remote.CapProcesses || c == remote.CapFiles || (strings.HasPrefix(c, "job:") && jobs.IsRemoteType(strings.TrimPrefix(c, "job:")))):
+			continue
+		case cfg.DisablePatching && (c == patch.CapScan || c == patch.CapInstall || (strings.HasPrefix(c, "job:") && jobs.IsPatchType(strings.TrimPrefix(c, "job:")))):
 			continue
 		case cfg.DisableLogs && c == api.FeatureLogs:
 			continue

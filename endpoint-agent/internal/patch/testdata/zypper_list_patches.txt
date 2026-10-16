@@ -1,0 +1,6 @@
+Repository                          | Name                                        | Category    | Severity  | Interactive | Status     | Since      | Summary
+------------------------------------+---------------------------------------------+-------------+-----------+-------------+------------+------------+-------------------------------------
+SLE-Module-Basesystem15-SP5-Updates | SUSE-SLE-Module-Basesystem-15-SP5-2024-1234 | security    | important | ---         | needed     | 2024-05-02 | Security update for openssl-1_1
+SLE-Module-Basesystem15-SP5-Updates | SUSE-SLE-Module-Basesystem-15-SP5-2024-2222 | security    | critical  | reboot      | needed     | 2024-05-03 | Security update for the Linux Kernel
+SLE-Module-Basesystem15-SP5-Updates | openSUSE-SLE-15.5-2024-3333                 | recommended | moderate  | ---         | needed     | 2024-05-04 | Recommended update for vim
+SLE-Module-Basesystem15-SP5-Updates | openSUSE-SLE-15.5-2024-4444                 | optional    | low       | ---         | not needed | 2024-05-05 | Optional update for nothing

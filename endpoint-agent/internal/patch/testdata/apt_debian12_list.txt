@@ -1,0 +1,5 @@
+Listing... Done
+bash/stable-security 5.2.15-2+b7 amd64 [upgradable from: 5.2.15-2+b2]
+libc6/stable-security 2.36-9+deb12u7 amd64 [upgradable from: 2.36-9+deb12u4]
+libc6/stable-security 2.36-9+deb12u7 i386 [upgradable from: 2.36-9+deb12u4]
+nano/stable 7.2-1+deb12u1 amd64 [upgradable from: 7.2-1]

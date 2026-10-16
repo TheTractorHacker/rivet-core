@@ -1,0 +1,34 @@
+bash:
+  Installed: 5.2.15-2+b2
+  Candidate: 5.2.15-2+b7
+  Version table:
+     5.2.15-2+b7 500
+        500 http://security.debian.org/debian-security bookworm-security/main amd64 Packages
+ *** 5.2.15-2+b2 500
+        500 http://deb.debian.org/debian bookworm/main amd64 Packages
+        100 /var/lib/dpkg/status
+nano:
+  Installed: 7.2-1
+  Candidate: 7.2-1+deb12u1
+  Version table:
+     7.2-1+deb12u1 500
+        500 http://deb.debian.org/debian bookworm-updates/main amd64 Packages
+ *** 7.2-1 500
+        500 http://deb.debian.org/debian bookworm/main amd64 Packages
+        100 /var/lib/dpkg/status
+libc6:amd64:
+  Installed: 2.36-9+deb12u4
+  Candidate: 2.36-9+deb12u7
+  Version table:
+     2.36-9+deb12u7 500
+        500 http://security.debian.org/debian-security bookworm-security/main amd64 Packages
+ *** 2.36-9+deb12u4 500
+        100 /var/lib/dpkg/status
+libc6:i386:
+  Installed: 2.36-9+deb12u4
+  Candidate: 2.36-9+deb12u7
+  Version table:
+     2.36-9+deb12u7 500
+        500 http://security.debian.org/debian-security bookworm-security/main i386 Packages
+ *** 2.36-9+deb12u4 500
+        100 /var/lib/dpkg/status
