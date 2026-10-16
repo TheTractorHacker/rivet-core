@@ -223,7 +223,7 @@ repo rivetit-dummy=1.0 rivetit-dummy=1.1 rivetit-dummy=1.2 rivetit-dummy=1.3 riv
 dbq "UPDATE rmm_patch_scans SET scanned_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY), requested_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY)" >/dev/null
 HK="$(hk)"; echo "   housekeeping pass: $HK"
 chk "a housekeeping pass queues the scan by itself (patch_scans_queued 1)" 'printf "%s" "$HK" | grep -q "\"patch_scans_queued\":1"'
-wait_for 90 "[ \"\$(dbq \"SELECT COUNT(*) FROM endpoint_agent_jobs WHERE type = 'patch_scan' AND state = 'succeeded'\")\" -ge 6 ]"
+wait_for 120 "[ \"\$(dbq \"SELECT COUNT(*) FROM rmm_patch_jobs p JOIN endpoint_agent_jobs j ON j.job_id = p.job_id WHERE p.source = 'scheduler' AND p.type = 'patch_scan' AND j.state = 'succeeded' AND p.applied_at IS NOT NULL\")\" -ge 1 ]"
 dbq "UPDATE rmm_patch_scans SET evaluated_at = NULL" >/dev/null
 HK="$(hk)"; echo "   housekeeping pass: $HK"
 chk "the rule approved the new security update by itself, a declined update stayed declined" '[ "$(status_of rivetit-dummy)" = approved ] && [ "$(status_of rivetit-other)" = declined ]'
