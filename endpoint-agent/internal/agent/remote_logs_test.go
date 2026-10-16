@@ -229,3 +229,32 @@ func TestRemoteToolJobsRunThroughTheWholeAgent(t *testing.T) {
 	}
 	_ = store.StatusLinked
 }
+
+func TestPatchCapabilitiesAndTheirLocalSwitch(t *testing.T) {
+	caps := Capabilities()
+	for _, want := range []string{"patch:scan", "patch:install", "job:patch_scan", "job:patch_install"} {
+		if !slices.Contains(caps, want) {
+			t.Errorf("missing %s in %v", want, caps)
+		}
+	}
+	r := newRig(t)
+	cfg, _ := r.st.LoadConfig()
+	cfg.DisablePatching = true
+	r.st.SaveConfig(cfg)
+	a := r.newAgent()
+	got := a.capabilities()
+	for _, c := range got {
+		if strings.HasPrefix(c, "patch:") || c == "job:patch_scan" || c == "job:patch_install" {
+			t.Errorf("disable_patching still announces %s", c)
+		}
+	}
+	if !slices.Contains(got, "remote:files") || !slices.Contains(got, "job:svc_list") {
+		t.Errorf("the remote tools stay: %v", got)
+	}
+	cfg.DisablePatching, cfg.DisableRemote = false, true
+	r.st.SaveConfig(cfg)
+	a = r.newAgent()
+	if !slices.Contains(a.capabilities(), "patch:scan") || slices.Contains(a.capabilities(), "remote:files") {
+		t.Errorf("disable_remote leaves patching alone: %v", a.capabilities())
+	}
+}

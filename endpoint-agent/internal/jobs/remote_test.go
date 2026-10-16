@@ -163,3 +163,42 @@ func TestReasonCode(t *testing.T) {
 		t.Error("IsRemoteType")
 	}
 }
+
+func TestPatchJobsFollowTheirOwnLocalSwitch(t *testing.T) {
+	k := newKeys(t)
+	rep := &fakeReporter{}
+	e := newExec(t, k, OpenStore(""), rep)
+	ran := 0
+	h := func(_ context.Context, p json.RawMessage, _ int) remote.Result {
+		ran++
+		return remote.Result{OK: true, Output: `{"v":1,"ok":true,"updates":[]}`}
+	}
+	e.Remote = map[string]remote.Handler{TypePatchScan: h, TypePatchInstall: h, TypeSvcList: h}
+	e.DisablePatching = true
+	start(t, e)
+	e.Submit([]api.Job{k.signJob(t, remoteJob("p1", TypePatchScan, map[string]any{}))})
+	waitIdle(t, e)
+	if r := lastReport(rep); ran != 0 || r.State != "failed" || !strings.Contains(r.Output, "disabled_locally") || r.ExitCode != nil {
+		t.Fatalf("disable_patching must stop the job before it runs: ran=%d %+v", ran, r)
+	}
+	// disable_patching does not touch the remote tools, and disable_remote does not touch patching
+	e.Submit([]api.Job{k.signJob(t, remoteJob("p2", TypeSvcList, map[string]any{}))})
+	waitIdle(t, e)
+	if r := lastReport(rep); ran != 1 || r.State != "succeeded" {
+		t.Fatalf("%d %+v", ran, r)
+	}
+	e.DisablePatching, e.DisableRemote = false, true
+	e.Submit([]api.Job{k.signJob(t, remoteJob("p3", TypePatchInstall, map[string]any{"ids": "openssl"}))})
+	waitIdle(t, e)
+	if r := lastReport(rep); ran != 2 || r.State != "succeeded" || r.ExitCode == nil || *r.ExitCode != 0 {
+		t.Fatalf("%d %+v", ran, r)
+	}
+	// a patch job carries no script
+	j := remoteJob("p4", TypePatchScan, map[string]any{})
+	j["script"] = "echo hi"
+	e.Submit([]api.Job{k.signJob(t, j)})
+	waitIdle(t, e)
+	if ran != 2 {
+		t.Error("a signed patch job with a script must be rejected by the verifier")
+	}
+}

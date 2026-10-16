@@ -118,8 +118,8 @@ func (v *Verifier) Verify(j api.Job) error {
 			return fmt.Errorf("%w: script size", ErrInvalidJob)
 		}
 	case "reboot", "collect":
-	case TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall:
-		// remote tools carry no script; their params are validated by the handler (and signed with the job)
+	case TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall, TypePatchScan, TypePatchInstall:
+		// remote tools and patch jobs carry no script; their params are validated by the handler (and signed with the job)
 		if j.Script != "" {
 			return fmt.Errorf("%w: a remote tool job carries no script", ErrInvalidJob)
 		}
