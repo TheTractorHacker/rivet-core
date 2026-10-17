@@ -96,7 +96,11 @@ final class DeployService
                 } else {
                     $p['product_code'] = $v['product_code'];
                 }
-                $p += ['detect_kind' => $v['detect_kind'], 'detect_value' => $v['detect_value'], 'detect_min' => $v['detect_min']];
+                if ($v['fmt'] === 'exe') {
+                    $p += ['detect_kind' => $v['detect_kind'], 'detect_value' => $v['detect_value'], 'detect_min' => $v['detect_min']];
+                } else {
+                    $p['detect_min'] = $v['detect_min'];   // an msi is detected by its product code
+                }
             } else {
                 if ($v['fmt'] !== 'msi') {
                     return $fail('Only an msi can be removed this way.', 'unsupported');

@@ -151,7 +151,7 @@ final class DeployJobTypes
             if ($code === null) {
                 return $bad('Removing an msi needs its product_code.');
             }
-            foreach (['url', 'sha256', 'size', 'args'] as $k) {
+            foreach (['url', 'sha256', 'size', 'args', 'detect_kind', 'detect_value', 'detect_min'] as $k) {
                 if (array_key_exists($k, $p)) {
                     return $bad("$k does not apply to an uninstall.");
                 }
@@ -187,15 +187,24 @@ final class DeployJobTypes
         if ($code !== null) {
             $out['product_code'] = $code;
         }
-        // Detection: required for an exe, derived by the agent from the product code for an msi, and all three or none.
+        // Detection. An msi is detected by its product code (so it carries at most a minimum version and never a second rule); an exe needs a rule of its own: all of kind, value and min.
         $dk = $p['detect_kind'] ?? null;
-        if ($dk !== null || array_key_exists('detect_value', $p) || array_key_exists('detect_min', $p)) {
-            if (!is_string($dk) || !DeployProtocol::detectOk($dk, $p['detect_value'] ?? null, $p['detect_min'] ?? '', 'windows')) {
-                return $bad('The detection rule is not valid.');
+        if ($code !== null) {
+            if ($dk !== null || array_key_exists('detect_value', $p)) {
+                return $bad('An msi is detected by its product code; it carries no other detection rule.');
+            }
+            if (array_key_exists('detect_min', $p)) {
+                $dm = $p['detect_min'];
+                if (!is_string($dm) || ($dm !== '' && preg_match(DeployProtocol::MIN_RE, $dm) !== 1)) {
+                    return $bad('detect_min is not a valid version.');
+                }
+                $out['detect_min'] = $dm;
+            }
+        } else {
+            if (!is_string($dk) || !array_key_exists('detect_value', $p) || !DeployProtocol::detectOk($dk, $p['detect_value'], $p['detect_min'] ?? '', 'windows')) {
+                return $bad('An exe installer needs a valid detection rule.');
             }
             $out += ['detect_kind' => $dk, 'detect_value' => $p['detect_value'], 'detect_min' => $p['detect_min'] ?? ''];
-        } elseif ($fmt === 'exe' || $code === null) {
-            return $bad('An exe installer (or an msi without a product code) needs a detection rule.');
         }
         $out['max_minutes'] = $mins;
 

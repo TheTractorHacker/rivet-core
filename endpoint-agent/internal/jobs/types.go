@@ -57,6 +57,25 @@ func IsPatchType(typ string) bool {
 	return false
 }
 
+// Software deployment (RMM Phase 5): the same injected-handler mechanism (internal/deploy), withdrawn by its own local switch, config.disable_software.
+const (
+	TypeSoftwareDetect  = "software_detect"
+	TypeSoftwareInstall = "software_install"
+)
+
+// SoftwareTypes are the software deployment job types.
+var SoftwareTypes = []string{TypeSoftwareDetect, TypeSoftwareInstall}
+
+// IsSoftwareType reports whether typ is a software deployment job type.
+func IsSoftwareType(typ string) bool {
+	for _, t := range SoftwareTypes {
+		if t == typ {
+			return true
+		}
+	}
+	return false
+}
+
 // IsRemoteType reports whether typ is one of the remote tool job types.
 func IsRemoteType(typ string) bool {
 	for _, t := range RemoteTypes {
@@ -76,7 +95,7 @@ func supportedOn(goos, typ string) bool {
 	switch typ {
 	case TypeCollect, TypeReboot, TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall:
 		return true
-	case TypePatchScan, TypePatchInstall:
+	case TypePatchScan, TypePatchInstall, TypeSoftwareDetect, TypeSoftwareInstall:
 		return goos == "windows" || goos == "linux"
 	case TypePowerShell:
 		return goos == "windows"
@@ -100,7 +119,7 @@ func ScriptType() string {
 // JobTypes lists the job types this agent runs, sorted.
 func JobTypes() []string {
 	var out []string
-	for _, t := range append(append([]string{TypePowerShell, TypeShell, TypePython, TypeCollect, TypeReboot}, RemoteTypes...), PatchTypes...) {
+	for _, t := range append(append([]string{TypePowerShell, TypeShell, TypePython, TypeCollect, TypeReboot}, RemoteTypes...), append(append([]string{}, PatchTypes...), SoftwareTypes...)...) {
 		if t == TypePython && !pythonAvailable() {
 			continue
 		}

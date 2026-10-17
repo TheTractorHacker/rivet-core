@@ -12,8 +12,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -28,6 +26,20 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 10,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}"
+            },
+            "valid": true
+        },
+        {
+            "name": "msi install without a minimum version",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "max_minutes": 30
             },
             "valid": true
         },
@@ -145,8 +157,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -163,8 +173,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1"
             },
             "valid": true
@@ -179,8 +187,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -201,8 +207,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30,
                 "extra": 1
@@ -231,8 +235,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -248,8 +250,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -265,8 +265,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -282,8 +280,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -299,8 +295,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -316,8 +310,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -332,8 +324,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -349,8 +339,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30,
                 "pkg": "x"
@@ -366,8 +354,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -382,8 +368,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -398,8 +382,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -415,8 +397,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30,
                 "args": "/S"
@@ -545,8 +525,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -562,8 +540,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -579,8 +555,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -596,8 +570,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -613,8 +585,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -630,8 +600,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -647,8 +615,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -664,8 +630,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -681,8 +645,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -698,8 +660,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -715,8 +675,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -732,8 +690,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -749,8 +705,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -766,8 +720,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -783,8 +735,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -800,8 +750,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -817,8 +765,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -834,8 +780,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -851,8 +795,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -868,8 +810,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -885,8 +825,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -902,8 +840,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -919,8 +855,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -936,8 +870,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -953,8 +885,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -970,8 +900,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -987,8 +915,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1004,8 +930,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1021,8 +945,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1038,8 +960,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1055,8 +975,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1072,8 +990,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1089,8 +1005,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1106,8 +1020,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1123,8 +1035,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1140,8 +1050,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1397,8 +1305,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1414,8 +1320,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1431,8 +1335,6 @@
                 "url": "https://downloads.example.com/a/setup.msi",
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },
@@ -1449,9 +1351,37 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "msi with a second detection rule",
+            "params": {
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "msi uninstall with a minimum version",
+            "params": {
+                "action": "uninstall",
+                "mode": "run",
+                "fmt": "msi",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "max_minutes": 30,
+                "detect_min": "1.0"
             },
             "valid": false
         },
@@ -1466,8 +1396,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "max_minutes": 30
             },
             "valid": false
@@ -1483,8 +1411,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "max_minutes": 30
             },
             "valid": false
@@ -1500,8 +1426,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "max_minutes": 30
             },
             "valid": false
@@ -1551,8 +1475,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1"
             },
             "valid": false
@@ -1568,8 +1490,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1"
             },
             "valid": false
@@ -1585,8 +1505,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1"
             },
             "valid": false
@@ -1602,8 +1520,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1"
             },
             "valid": false
@@ -1901,8 +1817,6 @@
                 "sha256": "abababababababababababababababababababababababababababababababab",
                 "size": 1048576,
                 "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
-                "detect_kind": "product_code",
-                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
                 "detect_min": "2.4.1",
                 "max_minutes": 30
             },

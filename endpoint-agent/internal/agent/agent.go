@@ -26,6 +26,7 @@ import (
 	"rivetit-agent/internal/api"
 	"rivetit-agent/internal/buffer"
 	"rivetit-agent/internal/collect"
+	"rivetit-agent/internal/deploy"
 	"rivetit-agent/internal/jobs"
 	"rivetit-agent/internal/logs"
 	"rivetit-agent/internal/mesh"
@@ -292,6 +293,11 @@ func (a *Agent) newExecutor(ctx context.Context) {
 		e.Remote[typ] = h
 	}
 	e.DisablePatching = cfg.DisablePatching
+	// Software deployment (software_detect, software_install): withdrawn by config.disable_software only.
+	for typ, h := range (deploy.Engine{StateDir: a.o.Store.Dir}).Handlers() {
+		e.Remote[typ] = h
+	}
+	e.DisableSoftware = cfg.DisableSoftware
 	e.OnRevoked = func(err error) { a.goDormant(revokedMessage + " (" + err.Error() + ")") }
 	e.Recover()
 	e.Start(ctx)
@@ -485,6 +491,9 @@ func Capabilities() []string {
 	if jobs.SupportsType(jobs.TypePatchScan) {
 		out = append(out, patch.CapScan, patch.CapInstall) // RMM Phase 4: scan for and install updates (never reboots)
 	}
+	if jobs.SupportsType(jobs.TypeSoftwareDetect) {
+		out = append(out, deploy.CapDetect, deploy.CapInstall) // RMM Phase 5: detect and install software (never reboots)
+	}
 	out = append(out, api.CapMeshNodeID) // can read and report the local MeshCentral node id (a no-op without a Mesh agent)
 	if logs.Supported() {
 		out = append(out, api.FeatureLogs)
@@ -500,7 +509,7 @@ func (a *Agent) capabilities() []string {
 	cfg := a.cfg
 	a.mu.Unlock()
 	caps := Capabilities()
-	if !cfg.DisableRemote && !cfg.DisableLogs && !cfg.DisablePatching {
+	if !cfg.DisableRemote && !cfg.DisableLogs && !cfg.DisablePatching && !cfg.DisableSoftware {
 		return caps
 	}
 	out := caps[:0:0]
@@ -509,6 +518,8 @@ func (a *Agent) capabilities() []string {
 		case cfg.DisableRemote && (c == api.CapMeshNodeID || c == remote.CapServices || c == remote.CapProcesses || c == remote.CapFiles || (strings.HasPrefix(c, "job:") && jobs.IsRemoteType(strings.TrimPrefix(c, "job:")))):
 			continue
 		case cfg.DisablePatching && (c == patch.CapScan || c == patch.CapInstall || (strings.HasPrefix(c, "job:") && jobs.IsPatchType(strings.TrimPrefix(c, "job:")))):
+			continue
+		case cfg.DisableSoftware && (c == deploy.CapDetect || c == deploy.CapInstall || (strings.HasPrefix(c, "job:") && jobs.IsSoftwareType(strings.TrimPrefix(c, "job:")))):
 			continue
 		case cfg.DisableLogs && c == api.FeatureLogs:
 			continue

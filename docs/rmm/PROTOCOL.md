@@ -914,7 +914,7 @@ Both files live in `endpoint-agent/testdata/vectors/` and are read by the Go age
 | `agent_job_signing_vectors.json` | `9850daf57252afbfc7eee7f9531239b9f8e0e68fb491b56bff5682e94f85deb6` |
 | `agent_installer_trailer_vectors.json` | `8a89e10349425d6370fcb9b56dbd25426b7116f24de5bb34f8b8d25055059304` |
 | `agent_installer_mesh_vectors.json` | `39fb641e12abb3d10eac10132fc640991014c5dc994d8e8ca5f6e31ba2af61ea` |
-| `agent_software_deploy_vectors.json` | `cbb00f02c2d4367770950d67b4385a0be86d10a15d0232dfe88c010e7ce11bfb` |
+| `agent_software_deploy_vectors.json` | `f52af62a9163a63b869d378e513bde81490c598aec7caae469ed58e2a3554ef2` |
 
 **Job signing** (`agent_job_signing_vectors.json`). Test key: SHA-256 of the ASCII string RivetIT-agent-TEST-seed (raw 32 bytes); public key `iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=`.
 
@@ -952,5 +952,5 @@ Negative cases, every one of which must be rejected (14):
 
 **Optional Mesh members** (`agent_installer_mesh_vectors.json`, added in 1.0.0-rc.12; the two files above are unchanged): payloads with `install_mesh_agent` and `mesh`, which every reader must parse and an agent that predates them must still decode. Vectors (11): mesh_pinned_sha384; mesh_system_roots; mesh_table_override; mesh_not_requested; mesh_requested_without_source; mesh_wrong_types; mesh_bad_source; mesh_url_form_meshid; mesh_hex_meshid_derives_url_form; mesh_bad_meshid_forms; unknown_future_members.
 
-**Software job parameters** (`agent_software_deploy_vectors.json`, added in 1.0.0-rc.21; the files above are unchanged): accept/reject vectors for the parameters of `software_install` (123 cases, 13 accepted) and `software_detect` (28 cases, 5 accepted). The agent must refuse every rejected one as `invalid_params` before it runs or downloads anything; the server builds only accepted ones. The PHP validators are checked against the labels by the generator and the Go agent replays the file in `internal/deploy`.
+**Software job parameters** (`agent_software_deploy_vectors.json`, added in 1.0.0-rc.21; the files above are unchanged): accept/reject vectors for the parameters of `software_install` (126 cases, 14 accepted) and `software_detect` (28 cases, 5 accepted). The agent must refuse every rejected one as `invalid_params` before it runs or downloads anything; the server builds only accepted ones. The PHP validators are checked against the labels by the generator and the Go agent replays the file in `internal/deploy`.
 <!-- END GENERATED: vectors -->

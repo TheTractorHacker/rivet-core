@@ -172,7 +172,7 @@ final class DeployTest extends DeployTestCase
         $job = $this->offeredOne($this->tok, 'software_install');
         $p = (array) $job['params'];
         $this->assertSame(['action' => 'install', 'mode' => 'dry_run', 'fmt' => 'msi', 'url' => 'https://' . self::HOST . '/acme/2.4.1/acme.msi', 'sha256' => self::SHA, 'size' => 1048576,
-            'product_code' => strtoupper(self::CODE), 'detect_kind' => 'product_code', 'detect_value' => strtoupper(self::CODE), 'detect_min' => '2.4.1', 'max_minutes' => 30], $p);
+            'product_code' => strtoupper(self::CODE), 'detect_min' => '2.4.1', 'max_minutes' => 30], $p);
         $this->assertNotEmpty($job['signature'] ?? null, 'the job is signed');
         $this->report($this->tok, $job, 'succeeded', self::installOut('would_install', ['mode' => 'dry_run', 'detail' => 'not_downloaded']));
         // a dry run changes no state

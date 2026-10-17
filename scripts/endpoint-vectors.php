@@ -261,7 +261,7 @@ function softwareDeployVectors(): string
     $sha = str_repeat('ab', 32);
     $code = '{12345678-ABCD-1234-ABCD-1234567890AB}';
     $msi = ['action' => 'install', 'mode' => 'run', 'fmt' => 'msi', 'url' => 'https://downloads.example.com/a/setup.msi', 'sha256' => $sha, 'size' => 1048576, 'product_code' => $code,
-        'detect_kind' => 'product_code', 'detect_value' => $code, 'detect_min' => '2.4.1', 'max_minutes' => 30];
+        'detect_min' => '2.4.1', 'max_minutes' => 30];
     $exe = ['action' => 'install', 'mode' => 'dry_run', 'fmt' => 'exe', 'url' => 'https://downloads.example.com/s.exe', 'sha256' => $sha, 'size' => 5000, 'args' => '/S /norestart',
         'detect_kind' => 'uninstall_name', 'detect_value' => 'Acme Agent', 'detect_min' => '', 'max_minutes' => 10];
     $apt = ['action' => 'install', 'mode' => 'run', 'fmt' => 'apt', 'pkg' => 'rivetit-dummy', 'version' => '1.5-1', 'max_minutes' => 30];
@@ -272,6 +272,7 @@ function softwareDeployVectors(): string
     };
     $install('msi install', $msi, true);
     $install('msi install, defaults only', ['action' => 'install', 'fmt' => 'msi', 'url' => $msi['url'], 'sha256' => $sha, 'size' => 10, 'product_code' => $code], true);
+    $install('msi install without a minimum version', array_diff_key($msi, ['detect_min' => 1]), true);
     $install('msi uninstall', $rm, true);
     $install('exe install', $exe, true);
     $install('exe install without args', array_diff_key($exe, ['args' => 1]), true);
@@ -361,6 +362,8 @@ function softwareDeployVectors(): string
         'product code with a bad digit' => ['product_code' => '{1234567G-ABCD-1234-ABCD-1234567890AB}'] + $msi,
         'product code with a newline' => ['product_code' => $code . "\n"] + $msi,
         'detect_kind unknown' => ['detect_kind' => 'file'] + $msi,
+        'msi with a second detection rule' => ['detect_kind' => 'product_code', 'detect_value' => $code] + $msi,
+        'msi uninstall with a minimum version' => $rm + ['detect_min' => '1.0'],
         'detect_min with a leading letter' => ['detect_min' => 'v2.4'] + $msi,
         'detect_min with a space' => ['detect_min' => '2.4 1'] + $msi,
         'detect_min too long' => ['detect_min' => '1' . str_repeat('0', 64)] + $msi,

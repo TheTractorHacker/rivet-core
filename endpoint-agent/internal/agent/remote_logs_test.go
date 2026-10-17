@@ -258,3 +258,29 @@ func TestPatchCapabilitiesAndTheirLocalSwitch(t *testing.T) {
 		t.Errorf("disable_remote leaves patching alone: %v", a.capabilities())
 	}
 }
+
+// disable_software withdraws the software capabilities (and their job: entries) and touches nothing else (RMM Phase 5).
+func TestDisableSoftwareWithdrawsOnlySoftware(t *testing.T) {
+	if !jobs.SupportsType(jobs.TypeSoftwareDetect) {
+		t.Skip("software jobs not supported on this platform")
+	}
+	r := newRig(t)
+	a := r.newAgent()
+	for _, c := range []string{"software:detect", "software:install", "job:software_detect", "job:software_install", "patch:scan"} {
+		if !slices.Contains(a.capabilities(), c) {
+			t.Errorf("a default agent announces %s: %v", c, a.capabilities())
+		}
+	}
+	cfg, _ := r.st.LoadConfig()
+	cfg.DisableSoftware = true
+	r.st.SaveConfig(cfg)
+	a = r.newAgent()
+	for _, c := range a.capabilities() {
+		if strings.HasPrefix(c, "software:") || c == "job:software_detect" || c == "job:software_install" {
+			t.Errorf("disable_software still announces %s", c)
+		}
+	}
+	if !slices.Contains(a.capabilities(), "patch:scan") || !slices.Contains(a.capabilities(), "remote:files") {
+		t.Errorf("disable_software leaves patching and the remote tools alone: %v", a.capabilities())
+	}
+}

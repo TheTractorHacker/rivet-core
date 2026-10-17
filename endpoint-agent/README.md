@@ -346,7 +346,7 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 Local kill switches (set in `config.json` by an administrator of the endpoint): `disable_jobs` (never execute server jobs) and
 `disable_script_checks`, plus (RMM Phases 6 and 8) `disable_remote` (the service, process and file tools fail with `disabled_locally`, and the agent stops announcing
-`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_patching` (patch_scan and patch_install fail with `disabled_locally`; `patch:scan`, `patch:install` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` is not announced).
+`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_software` (software_detect and software_install fail with `disabled_locally`; `software:detect`, `software:install` and `job:software_*` are not announced), `disable_patching` (patch_scan and patch_install fail with `disabled_locally`; `patch:scan`, `patch:install` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` is not announced).
 
 ## Patch management (RMM Phase 4)
 
@@ -360,6 +360,20 @@ Two job types, `patch_scan` and `patch_install`, announced as `patch:scan` / `pa
   first; a transaction that would remove packages is skipped. Locks are reported as `locked`, never broken.
 - Ids are re-validated agent-side: Windows UpdateID GUIDs (lower case) or Linux package ids; unknown parameters, duplicates, more than 40 ids or 1000 characters
   are refused before any command runs.
+
+## Software deployment (RMM Phase 5)
+
+Two job types, `software_detect` (read only) and `software_install` (install or remove one package), announced as `software:detect` / `software:install` (and `job:software_*`) on Windows and Linux; `disable_software` in
+`config.json` withdraws both. Code: `internal/deploy`. The parameters are strict allow-lists, checked again here, and replayed against the shared vectors
+`testdata/vectors/agent_software_deploy_vectors.json` (the agent must be exactly as strict as the file). The agent never reboots: it reports `reboot_required`.
+
+- Linux drives apt or dnf/yum from the machine's own configured repositories only: a fixed absolute path, an argument list, `--` before the package name, a simulation first (a
+  transaction that would remove another package is refused), never `--allow-unauthenticated`, `--force-yes`, `--nogpgcheck`, a URL, a file path, purge or autoremove (a test asserts it over every command built). Locks are reported as `locked`, never broken. zypper is not supported.
+- Windows (MSI and EXE): downloads over https only from the host the signed job names (a redirect to another host or to http is refused), reads at most `size` bytes, stages into a fresh private
+  directory under the agent's state folder (0700, file 0600, fixed name, removed afterwards whatever happens), runs the file only if its SHA-256 equals the pin (checked again just before it runs),
+  starts `msiexec /i|/x ... /qn /norestart` or the exe from an argument list (no shell), maps exit codes 3010 and 1641 to `needs_reboot` and 1618 to `locked`, and verifies by detection afterwards.
+- Detection: Linux `dpkg-query` or `rpm -q`; Windows the Uninstall registry keys (64 and 32 bit views) by MSI product code or exact display name; a minimum version compares dotted numbers with epoch, `~` and release suffixes.
+- **Windows has never been run on a real machine.** The Windows flow is unit-tested on Linux with a fake registry, a fake runner and a local TLS server. Linux apt is proven end to end by `e2e/run_software_proof.sh`.
 
 ## Monitoring and checks
 
