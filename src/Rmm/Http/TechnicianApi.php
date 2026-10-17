@@ -92,6 +92,7 @@ final class TechnicianApi
         private readonly ?RemoteApi $remoteApi = null,
         private readonly ?StarterApi $starterApi = null,
         private readonly ?PatchApi $patchApi = null,
+        private readonly ?DeployApi $deployApi = null,
     ) {
     }
 
@@ -131,6 +132,9 @@ final class TechnicianApi
             }
             if ($seg !== [] && $this->patchApi !== null && in_array($seg[0], PatchApi::FLEET, true)) {
                 return $this->patchApi->fleet($req, $who, $seg);
+            }
+            if ($seg !== [] && $this->deployApi !== null && in_array($seg[0], DeployApi::FLEET, true)) {
+                return $this->deployApi->fleet($req, $who, $seg);
             }
             if ($seg !== [] && $this->starterApi !== null && in_array($seg[0], StarterApi::FLEET, true)) {
                 return $this->starterApi->fleet($req, $who, $seg);
@@ -223,6 +227,9 @@ final class TechnicianApi
         }
 
         if ($what === 'patches' && $this->patchApi !== null && ($routed = $this->patchApi->device($req, $who, $id, $seg)) !== null) {
+            return $routed;
+        }
+        if ($what === 'deployments' && $this->deployApi !== null && ($routed = $this->deployApi->device($req, $who, $id, $seg)) !== null) {
             return $routed;
         }
         if ($this->alerting !== null && in_array($what, ['alerts', 'alerting', 'maintenance', 'parent', 'checks'], true) && ($routed = $this->alerting->device($req, $who, $id, $seg)) !== null) {

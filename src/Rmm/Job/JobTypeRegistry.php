@@ -47,6 +47,8 @@ final class JobTypeRegistry
         \RivetCore\Rmm\Remote\RemoteJobTypes::register($r);
         // Phase 4: patch scan (read only) and patch install (gated). Each needs a capability flag the agent announced.
         \RivetCore\Rmm\Patch\PatchJobTypes::register($r);
+        // Phase 5: software detection (read only) and software install/removal (gated). Each needs a capability flag the agent announced.
+        \RivetCore\Rmm\Deploy\DeployJobTypes::register($r);
 
         return $r;
     }

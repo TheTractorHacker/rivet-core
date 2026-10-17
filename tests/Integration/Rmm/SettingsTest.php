@@ -140,7 +140,8 @@ final class SettingsTest extends RmmTestCase
         $scale = ['check_touch_s', 'metric_hourly_days', 'metric_daily_days', 'partitioning', 'partition_span_days', 'partition_ahead', 'ingest_batch', 'ingest_max_running', 'cache_fresh_s',
             'cache_stale_s', 'client_bucket_burst', 'client_bucket_per_min', 'warm_start_s', 'warm_start_pct', 'warm_quiet_s'];
         $scale = [...$scale, 'patch_scan_interval_s', 'patch_overdue_days', 'patch_max_installs', 'patch_max_installs_per_client', 'patch_live_install', 'patch_history_days', 'patch_batch'];
-        $this->assertSame([0, 14, 400, 0, 1, 7, 50, 0, 15, 300, 0, 0, 0, 10, 120, 86400, 14, 25, 5, 0, 365, 100], array_values(array_intersect_key($this->s()->limits(), array_flip($scale))), 'the scale limits and their defaults');
+        $scale = [...$scale, 'software_detect_interval_s', 'software_max_installs', 'software_max_installs_per_client', 'software_live_install', 'software_deploy_history_days', 'software_batch'];
+        $this->assertSame([0, 14, 400, 0, 1, 7, 50, 0, 15, 300, 0, 0, 0, 10, 120, 86400, 14, 25, 5, 0, 365, 100, 86400, 25, 5, 0, 365, 100], array_values(array_intersect_key($this->s()->limits(), array_flip($scale))), 'the scale limits and their defaults');
         $this->assertSame(['max_checkins_per_min' => 0, 'retry_after_min_s' => 30, 'retry_after_max_s' => 120, 'shed_retry_min_s' => 60, 'shed_retry_max_s' => 300,
             'shed_backlog_l1' => 500, 'shed_backlog_l2' => 2000, 'shed_backlog_l3' => 8000, 'shed_db_ms_l1' => 100, 'shed_db_ms_l2' => 300, 'shed_db_ms_l3' => 1000, 'shed_rate_per_min' => 0,
             'check_history_days' => 7, 'check_history_gap_s' => 3600, 'software_history_days' => 365,

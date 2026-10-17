@@ -238,6 +238,29 @@ Migration `0028_rmm_patching` (eight new tables, nothing existing altered, idemp
 4. Render the read models: a Patches tab on the asset page, a fleet compliance page, patch policy pages (policies, assignments, rings, rules, install window picker), and show `patch` approvals on the approvals page.
 5. Leave `patch_live_install` at 0 until a dry run has been seen on a pilot machine.
 
+## Phase 5: software deployment and reporting
+
+Migration `0029_rmm_software_deploy` (eight new tables, nothing existing altered, idempotent). It stays dormant until the **`software_deploy` sub-switch** (`features_json`; new in `RmmSettings::FEATURES`) is turned on: with it off no software table is read, `Housekeeping` skips the software step, a check-in costs the same number of statements, and an agent that does not announce `software:detect` / `software:install` is never offered a software job (the golden transcripts replay identically). The operator guide, the safety defaults and what is not done: [SOFTWARE_DEPLOY.md](../rmm/SOFTWARE_DEPLOY.md).
+
+| Area | Behaviour | Core classes | Storage |
+|---|---|---|---|
+| Job types | `software_detect` (read only; one parameter `rules`, a JSON text of up to 25 `{key, kind, value, min}`) and `software_install` (`action`, `mode` = `dry_run` by default, `fmt`, then the package name or the pinned download; destructive: offered at most once). Strict allow-list validators, mirrored by the Go agent and by shared accept/reject vectors; each needs an announced capability (`software:detect`, `software:install`); the generic job endpoint refuses both | `Deploy\DeployProtocol`, `DeployJobTypes` | `endpoint_agent_jobs` |
+| Catalog | Packages and **immutable** versions (apt, dnf: a package name; msi: address, SHA-256, size, product code; exe: address, SHA-256, size, silent arguments, detection rule). Everything an agent will run is validated when saved and again when a job is built | `Deploy\PackageCatalog` | `rmm_packages`, `rmm_package_versions` |
+| Package source | An address must be https on an allowed host, a DNS name, no user information, only the default port, no fragment or query; the hash and size are required. The decision is `PackageSourcePolicyInterface` (default `AllowedHostsPolicy` over `rmm_software_hosts`); an edition may replace it (`RmmModule::setPackageSourcePolicy()`) and runs the conformance kit | `Contracts\PackageSourcePolicyInterface`, `Deploy\AllowedHostsPolicy`, `Deploy\SourceUrl`, `Testing\PackageSourcePolicyConformanceTestCase` | `rmm_software_hosts` |
+| Assignments | A package to global / client / site / group / tag / device, install or uninstall, optional version; the most specific scope wins; the patch ring's delay is added to the activation time; a `two_person` package waits for a second user | `Deploy\DeployExpectations`, `DeployApprovalService` | `rmm_package_assignments`, `rmm_package_installs`, `rmm_approvals` (kind `software`) |
+| Detection and install | Detection every `software_detect_interval_s` (jittered); a dry run for anything missing; the real install only when `software_live_install` is 1, one per device, under the fleet and per-client limits, outside "leave this device alone" windows, retried at most three times 12 hours apart; the agent verifies by detection and never restarts | `Deploy\DeployService`, `DeployScheduler` | `rmm_package_installs`, `rmm_package_history`, `rmm_package_jobs`, `rmm_deploy_state` |
+| Reads | `RmmReadModel::deploymentStatus($device)`, `deploymentReport($visibleClientIds, $filters)` (by package, client, ring or device), history of a device, a formula-safe CSV | `Deploy\DeployReader` | none |
+| Events | `rmm.deploy.started`, `rmm.deploy.finished`, `rmm.deploy.failed` (job id, package name, action, mode, result; never an address, hash or output) | `RmmEvent` | none |
+
+**REST routes** (all additive, shapes in [openapi-device.yaml](../rmm/openapi-device.yaml)): per device `{id}/deployments`, `{id}/deployments/history`, `POST {id}/deployments/detect`, `POST {id}/deployments/run`; fleet `software_packages` (+ `{id}`, `{id}/versions`, `{id}/versions/{version_id}`), `software_assignments`, `software_hosts`, `software_report` and `software_report/csv`. Grants: reads `rmm.software.view`; catalog, detection and dry run `rmm.software.manage`; assignments and a real install or removal `rmm.software.deploy`; the host list `rmm.admin`; the second approver `rmm.job.approve` and `rmm.software.deploy`. The catalog, the host list and fleet-wide assignments change only for a caller whose scope is not limited to some clients.
+
+**What an edition does to adopt Phase 5**
+1. Run the Core migrations (0028 and 0029).
+2. Map the abilities `rmm.software.view`, `rmm.software.manage` and `rmm.software.deploy` in its `AccessPolicyInterface`.
+3. Roll out an agent of this release, then switch on `software_deploy`.
+4. Render the read models: a Software tab on the asset page, a catalog page (with the allowed hosts), an assignments page, a deployment report page with a CSV button, and show `software` approvals on the approvals page.
+5. Leave `software_live_install` at 0 until a dry run has been seen on a pilot machine.
+
 ## Scale: the write path, storage, workers, read cache, herd control
 
 Migration `0021_rmm_scale_storage` (five new tables, nothing existing altered). All of it is on by default only where it changes no behaviour (the cheaper check-in, the cache of the dashboard counters); the rest is off until a limit or an option turns it on. Measurements and the model are in [CAPACITY.md](../rmm/CAPACITY.md) 13 to 16; [SCALING.md](../rmm/SCALING.md) says what is done and what is pending (the 24 hour / 10,000 device validation is NOT done).

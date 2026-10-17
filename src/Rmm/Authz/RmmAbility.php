@@ -55,6 +55,12 @@ final class RmmAbility
     public const PATCH_MANAGE = 'rmm.patch.manage';
     /** Run a real installation of approved updates on a device. A stronger grant than `rmm.patch.manage`: give it to fewer people. Needs `rmm.patch.view` too (Phase 4). */
     public const PATCH_INSTALL = 'rmm.patch.install';
+    /** See the software catalog, the assignments and the deployment state of devices. Needs `rmm.device.view` too (Phase 5). */
+    public const SOFTWARE_VIEW = 'rmm.software.view';
+    /** Manage the package catalog and its assignments, ask for a detection, run an install as a dry run. Needs `rmm.software.view` too (Phase 5). */
+    public const SOFTWARE_MANAGE = 'rmm.software.manage';
+    /** Run a real installation or removal on a device. A stronger grant than `rmm.software.manage`: give it to fewer people. Needs `rmm.software.view` too (Phase 5). */
+    public const SOFTWARE_DEPLOY = 'rmm.software.deploy';
     /** Module settings, switches, signing key, MeshCentral settings. */
     public const ADMIN = 'rmm.admin';
 
@@ -62,7 +68,7 @@ final class RmmAbility
     public static function all(): array
     {
         return [self::DEVICE_VIEW, self::DEVICE_MANAGE, self::JOB_RUN_SAVED, self::JOB_REBOOT, self::JOB_RUN_SCRIPT, self::JOB_APPROVE, self::REMOTE_LAUNCH,
-            self::TOKEN_MANAGE, self::BINARY_PUBLISH, self::ALERT_MANAGE, self::REMOTE_MANAGE, self::PATCH_VIEW, self::PATCH_MANAGE, self::PATCH_INSTALL, self::ADMIN];
+            self::TOKEN_MANAGE, self::BINARY_PUBLISH, self::ALERT_MANAGE, self::REMOTE_MANAGE, self::PATCH_VIEW, self::PATCH_MANAGE, self::PATCH_INSTALL, self::SOFTWARE_VIEW, self::SOFTWARE_MANAGE, self::SOFTWARE_DEPLOY, self::ADMIN];
     }
 
     /** Abilities of the administration side: they do not need the technician's `device.view` grant. */
@@ -85,6 +91,9 @@ final class RmmAbility
             self::PATCH_VIEW => 'Your role cannot view patch status.',
             self::PATCH_MANAGE => 'Your role cannot approve or manage patches.',
             self::PATCH_INSTALL => 'Your role cannot install patches on devices.',
+            self::SOFTWARE_VIEW => 'Your role cannot view software deployment.',
+            self::SOFTWARE_MANAGE => 'Your role cannot manage the software catalog.',
+            self::SOFTWARE_DEPLOY => 'Your role cannot install or remove software on devices.',
             self::ADMIN, self::DEVICE_MANAGE, self::TOKEN_MANAGE, self::BINARY_PUBLISH => 'Administrator access is required.',
             default => 'Unknown action.',
         };

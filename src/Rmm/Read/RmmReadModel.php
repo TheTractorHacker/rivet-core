@@ -72,6 +72,7 @@ final class RmmReadModel
         private readonly ?\RivetCore\Rmm\Remote\TransferService $transferService = null,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
         private readonly ?\RivetCore\Rmm\Patch\PatchReader $patches = null,
+        private readonly ?\RivetCore\Rmm\Deploy\DeployReader $deploy = null,
     ) {
     }
 
@@ -99,6 +100,31 @@ final class RmmReadModel
     public function patchCompliance(?array $visibleClientIds, array $filters = []): array
     {
         return $this->patches?->patchCompliance($visibleClientIds, $filters) ?? [];
+    }
+
+    // ------------------------------------------------------------------ Phase 5: software deployment (reads only; the caller has authorized the device or the scope)
+
+    /**
+     * What one device should have and has: counts by state and one entry per package.
+     *
+     * @param array<string,mixed> $dev the device row
+     * @return array<string,mixed>
+     */
+    public function deploymentStatus(array $dev): array
+    {
+        return $this->deploy?->deviceStatus($dev) ?? ['enabled' => false, 'counts' => [], 'packages' => []];
+    }
+
+    /**
+     * Deployed versus expected for the clients a viewer may see, grouped by package, client, ring or device.
+     *
+     * @param list<int>|null $visibleClientIds null = all clients
+     * @param array<string,mixed> $filters {client_id?, package_id?, ring?, state?, group_by?, limit?, offset?}
+     * @return array<string,mixed>
+     */
+    public function deploymentReport(?array $visibleClientIds, array $filters = []): array
+    {
+        return $this->deploy?->report($visibleClientIds, $filters) ?? [];
     }
 
     // ------------------------------------------------------------------ Phases 6 and 8: remote tools and logs (reads only; the caller has authorized the device)

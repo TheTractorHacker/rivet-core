@@ -11,6 +11,7 @@ declare(strict_types=1);
  *
  * Files: agent_job_signing_vectors.json (canonical JSON rule, job/check/manifest Ed25519 signatures),
  * agent_installer_trailer_vectors.json (the stamped-installer footer format; FROZEN, never regenerate it with different bytes) and
+ * agent_software_deploy_vectors.json (ADDED in 1.0.0-rc.21: accept/reject vectors for the parameters of the software jobs, replayed by the Go agent), and
  * agent_installer_mesh_vectors.json (ADDED in 1.0.0-rc.12: payloads that carry the optional `install_mesh_agent` / `mesh` members, plus the
  * Mesh agent-id and install-argument tables both sides must agree on; an additive file so the frozen one keeps its bytes). Ed25519 signatures are deterministic, so
  * regenerating changes nothing. The key derives from a fixed seed; never use it anywhere real. The trailer vectors are written
@@ -250,10 +251,218 @@ function installerMeshVectors(): string
         'default_agent_ids' => $ids, 'default_install_args' => $args, 'group_forms' => $forms, 'vectors' => $vec], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
 }
 
+/**
+ * ADDED in 1.0.0-rc.21: the parameter contract of the software jobs (`software_install`, `software_detect`) and the download-address rule, as accept/reject
+ * vectors both sides must agree on. Each case is labelled by hand (`valid`) and the generator refuses to write when the PHP validators disagree with a label, so
+ * the file states the contract, not whatever the code happens to do. The Go agent replays the same file against its own parsers (internal/deploy).
+ */
+function softwareDeployVectors(): string
+{
+    $sha = str_repeat('ab', 32);
+    $code = '{12345678-ABCD-1234-ABCD-1234567890AB}';
+    $msi = ['action' => 'install', 'mode' => 'run', 'fmt' => 'msi', 'url' => 'https://downloads.example.com/a/setup.msi', 'sha256' => $sha, 'size' => 1048576, 'product_code' => $code,
+        'detect_kind' => 'product_code', 'detect_value' => $code, 'detect_min' => '2.4.1', 'max_minutes' => 30];
+    $exe = ['action' => 'install', 'mode' => 'dry_run', 'fmt' => 'exe', 'url' => 'https://downloads.example.com/s.exe', 'sha256' => $sha, 'size' => 5000, 'args' => '/S /norestart',
+        'detect_kind' => 'uninstall_name', 'detect_value' => 'Acme Agent', 'detect_min' => '', 'max_minutes' => 10];
+    $apt = ['action' => 'install', 'mode' => 'run', 'fmt' => 'apt', 'pkg' => 'rivetit-dummy', 'version' => '1.5-1', 'max_minutes' => 30];
+    $rm = ['action' => 'uninstall', 'mode' => 'run', 'fmt' => 'msi', 'product_code' => $code, 'max_minutes' => 30];
+    $cases = [];
+    $install = static function (string $name, array $params, bool $valid) use (&$cases): void {
+        $cases[] = ['name' => $name, 'params' => $params, 'valid' => $valid];
+    };
+    $install('msi install', $msi, true);
+    $install('msi install, defaults only', ['action' => 'install', 'fmt' => 'msi', 'url' => $msi['url'], 'sha256' => $sha, 'size' => 10, 'product_code' => $code], true);
+    $install('msi uninstall', $rm, true);
+    $install('exe install', $exe, true);
+    $install('exe install without args', array_diff_key($exe, ['args' => 1]), true);
+    $install('exe install, detection by product code', ['detect_kind' => 'product_code', 'detect_value' => $code] + $exe, true);
+    $install('apt install', $apt, true);
+    $install('apt uninstall', ['action' => 'uninstall', 'mode' => 'run', 'fmt' => 'apt', 'pkg' => 'rivetit-dummy'], true);
+    $install('dnf install, dry run', ['action' => 'install', 'fmt' => 'dnf', 'pkg' => 'rivetit-dummy'], true);
+    $install('apt install, pinned epoch version', ['version' => '1:2.0~rc1+dfsg-1'] + $apt, true);
+    $install('url with a query string and port 443', ['url' => 'https://downloads.example.com:443/a/setup.msi?token=A1_b-2.c~d%20e'] + $msi, true);
+    $install('max_minutes at the top of its range', ['max_minutes' => 120] + $msi, true);
+    $install('size at the cap', ['size' => 1073741824] + $msi, true);
+    $bad = [
+        'empty params' => [],
+        'unknown key' => $msi + ['extra' => 1],
+        'unknown key on apt' => $apt + ['cmd' => 'id'],
+        'action missing' => array_diff_key($msi, ['action' => 1]),
+        'action unknown' => ['action' => 'upgrade'] + $msi,
+        'action upper case' => ['action' => 'Install'] + $msi,
+        'mode unknown' => ['mode' => 'install'] + $msi,
+        'mode as a boolean' => ['mode' => true] + $msi,
+        'fmt unknown' => ['fmt' => 'deb'] + $msi,
+        'fmt missing' => array_diff_key($msi, ['fmt' => 1]),
+        'msi with a package name' => $msi + ['pkg' => 'x'],
+        'msi without a url' => array_diff_key($msi, ['url' => 1]),
+        'msi without a hash' => array_diff_key($msi, ['sha256' => 1]),
+        'msi without a size' => array_diff_key($msi, ['size' => 1]),
+        'msi with exe arguments' => $msi + ['args' => '/S'],
+        'msi uninstall with a url' => $rm + ['url' => $msi['url']],
+        'msi uninstall with a hash' => $rm + ['sha256' => $sha],
+        'msi uninstall without a product code' => array_diff_key($rm, ['product_code' => 1]),
+        'exe uninstall' => ['action' => 'uninstall'] + array_diff_key($exe, ['url' => 1, 'sha256' => 1, 'size' => 1, 'args' => 1]),
+        'exe with a product code' => $exe + ['product_code' => $code],
+        'exe without a detection rule' => array_diff_key($exe, ['detect_kind' => 1, 'detect_value' => 1, 'detect_min' => 1]),
+        'exe with a half detection rule' => array_diff_key($exe, ['detect_value' => 1]),
+        'exe detection by package' => ['detect_kind' => 'package', 'detect_value' => 'x'] + $exe,
+        'url http' => ['url' => 'http://downloads.example.com/a.msi'] + $msi,
+        'url ftp' => ['url' => 'ftp://downloads.example.com/a.msi'] + $msi,
+        'url file' => ['url' => 'file:///etc/passwd'] + $msi,
+        'url with user information' => ['url' => 'https://user@downloads.example.com/a.msi'] + $msi,
+        'url with user and password' => ['url' => 'https://user:pw@downloads.example.com/a.msi'] + $msi,
+        'url host after at sign' => ['url' => 'https://downloads.example.com@evil.example/a.msi'] + $msi,
+        'url with a backslash' => ['url' => 'https://evil.example\\@downloads.example.com/a.msi'] + $msi,
+        'url with a fragment' => ['url' => 'https://downloads.example.com/a.msi#x'] + $msi,
+        'url with another port' => ['url' => 'https://downloads.example.com:8443/a.msi'] + $msi,
+        'url with an empty port' => ['url' => 'https://downloads.example.com:/a.msi'] + $msi,
+        'url with an IPv4 host' => ['url' => 'https://127.0.0.1/a.msi'] + $msi,
+        'url with a decimal host' => ['url' => 'https://2130706433/a.msi'] + $msi,
+        'url with a hex host' => ['url' => 'https://0x7f.0.0.1/a.msi'] + $msi,
+        'url with an IPv6 host' => ['url' => 'https://[::1]/a.msi'] + $msi,
+        'url with a single label host' => ['url' => 'https://localhost/a.msi'] + $msi,
+        'url with a trailing dot' => ['url' => 'https://downloads.example.com./a.msi'] + $msi,
+        'url with a space' => ['url' => 'https://downloads.example.com/a b.msi'] + $msi,
+        'url with a newline' => ['url' => "https://downloads.example.com/a.msi\n"] + $msi,
+        'url with a tab' => ['url' => "https://downloads.example.com/a\t.msi"] + $msi,
+        'url with a NUL' => ['url' => "https://downloads.example.com/a\0.msi"] + $msi,
+        'url with upper case in the host' => ['url' => 'https://Downloads.Example.com/a.msi'] + $msi,
+        'url with a non-ASCII host' => ['url' => "https://d\u{f6}wnloads.example.com/a.msi"] + $msi,
+        'url too long' => ['url' => 'https://downloads.example.com/' . str_repeat('a', 600)] + $msi,
+        'url empty' => ['url' => ''] + $msi,
+        'url as a number' => ['url' => 5] + $msi,
+        'hash upper case' => ['sha256' => strtoupper($sha)] + $msi,
+        'hash too short' => ['sha256' => substr($sha, 1)] + $msi,
+        'hash too long' => ['sha256' => $sha . 'a'] + $msi,
+        'hash not hex' => ['sha256' => str_repeat('g', 64)] + $msi,
+        'hash with a newline' => ['sha256' => $sha . "\n"] + $msi,
+        'size zero' => ['size' => 0] + $msi,
+        'size negative' => ['size' => -1] + $msi,
+        'size over the cap' => ['size' => 1073741825] + $msi,
+        'size as a string' => ['size' => '100'] + $msi,
+        'size as a float' => ['size' => 100.5] + $msi,
+        'size as a boolean' => ['size' => true] + $msi,
+        'args with a quote' => ['args' => '/S "x"'] + $exe,
+        'args with an ampersand' => ['args' => '/S & calc'] + $exe,
+        'args with a semicolon' => ['args' => '/S;calc'] + $exe,
+        'args with a pipe' => ['args' => '/S|x'] + $exe,
+        'args with a dollar' => ['args' => '/S $(id)'] + $exe,
+        'args with a backtick' => ['args' => '/S `id`'] + $exe,
+        'args with a percent' => ['args' => '/S %TEMP%'] + $exe,
+        'args with a newline' => ['args' => "/S\n/x"] + $exe,
+        'args with a double space' => ['args' => '/S  /x'] + $exe,
+        'args with a leading space' => ['args' => ' /S'] + $exe,
+        'args with 13 words' => ['args' => implode(' ', array_fill(0, 13, '/x'))] + $exe,
+        'args with a long word' => ['args' => str_repeat('a', 81)] + $exe,
+        'args over 200 characters' => ['args' => implode(' ', array_fill(0, 60, 'abcd'))] + $exe,
+        'args as an array' => ['args' => ['/S']] + $exe,
+        'product code without braces' => ['product_code' => '12345678-ABCD-1234-ABCD-1234567890AB'] + $msi,
+        'product code with a bad digit' => ['product_code' => '{1234567G-ABCD-1234-ABCD-1234567890AB}'] + $msi,
+        'product code with a newline' => ['product_code' => $code . "\n"] + $msi,
+        'detect_kind unknown' => ['detect_kind' => 'file'] + $msi,
+        'detect_min with a leading letter' => ['detect_min' => 'v2.4'] + $msi,
+        'detect_min with a space' => ['detect_min' => '2.4 1'] + $msi,
+        'detect_min too long' => ['detect_min' => '1' . str_repeat('0', 64)] + $msi,
+        'detect_value with a control character' => ['detect_kind' => 'uninstall_name', 'detect_value' => "Acme\x01"] + $exe,
+        'detect_value empty' => ['detect_kind' => 'uninstall_name', 'detect_value' => ''] + $exe,
+        'max_minutes zero' => ['max_minutes' => 0] + $msi,
+        'max_minutes over the cap' => ['max_minutes' => 121] + $msi,
+        'max_minutes as a string' => ['max_minutes' => '30'] + $msi,
+        'max_minutes as a float' => ['max_minutes' => 30.5] + $msi,
+        'apt without a package' => array_diff_key($apt, ['pkg' => 1]),
+        'apt with an option as the package' => ['pkg' => '-oAPT::Foo'] + $apt,
+        'apt with a space in the package' => ['pkg' => 'a b'] + $apt,
+        'apt with a command in the package' => ['pkg' => 'x;touch /w/pwned'] + $apt,
+        'apt with a substitution in the package' => ['pkg' => '$(touch /w/pwned)'] + $apt,
+        'apt with a newline after the package' => ['pkg' => "pkg\n"] + $apt,
+        'apt with an upper case package' => ['pkg' => 'Pkg'] + $apt,
+        'apt with a package starting with a dot' => ['pkg' => '.hidden'] + $apt,
+        'apt with a package starting with a plus' => ['pkg' => '+x'] + $apt,
+        'apt with a 101 character package' => ['pkg' => str_repeat('a', 101)] + $apt,
+        'apt with an arch suffix' => ['pkg' => 'libc6:amd64'] + $apt,
+        'apt with a url' => $apt + ['url' => $msi['url']],
+        'apt with a hash' => $apt + ['sha256' => $sha],
+        'apt with arguments' => $apt + ['args' => '/S'],
+        'apt with a product code' => $apt + ['product_code' => $code],
+        'apt with a detection rule' => $apt + ['detect_kind' => 'package', 'detect_value' => 'rivetit-dummy', 'detect_min' => ''],
+        'apt uninstall with a version' => ['action' => 'uninstall'] + $apt,
+        'apt version with a space' => ['version' => '1 2'] + $apt,
+        'apt version starting with a symbol' => ['version' => '~1'] + $apt,
+        'apt version with an equals sign' => ['version' => '1=2'] + $apt,
+        'apt version with a semicolon' => ['version' => '1;id'] + $apt,
+        'apt version too long' => ['version' => 'a' . str_repeat('1', 64)] + $apt,
+        'apt version as a number' => ['version' => 1.5] + $apt,
+        'msi install with a version' => ['version' => '1.0'] + $msi,
+    ];
+    foreach ($bad as $name => $params) {
+        $install($name, $params, false);
+    }
+    $rules = static fn (array $list): array => ['rules' => json_encode($list, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)];
+    $pkgRule = ['key' => 'p1', 'kind' => 'package', 'value' => 'openssl', 'min' => '3.0'];
+    $winRule = ['key' => 'p2', 'kind' => 'product_code', 'value' => $code, 'min' => ''];
+    $nameRule = ['key' => 'p3', 'kind' => 'uninstall_name', 'value' => 'Acme Agent (x64)', 'min' => '2.4.1'];
+    $detect = [];
+    $d = static function (string $name, array $params, bool $valid) use (&$detect): void {
+        $detect[] = ['name' => $name, 'params' => $params, 'valid' => $valid];
+    };
+    $d('one package rule', $rules([$pkgRule]), true);
+    $d('a product code rule', $rules([$winRule]), true);
+    $d('an uninstall name rule with unicode', $rules([['value' => "Caf\u{e9} Agent"] + $nameRule]), true);
+    $d('three rules', $rules([$pkgRule, $winRule, $nameRule]), true);
+    $d('no minimum', $rules([['min' => ''] + $pkgRule]), true);
+    foreach ([
+        'no rules key' => [],
+        'rules as an array, not text' => ['rules' => [$pkgRule]],
+        'rules text is not JSON' => ['rules' => 'not json'],
+        'rules text is an object' => ['rules' => json_encode($pkgRule)],
+        'rules text is an empty list' => ['rules' => '[]'],
+        'rules with an unknown member' => $rules([$pkgRule + ['cmd' => 'id']]),
+        'rules missing a member' => $rules([array_diff_key($pkgRule, ['min' => 1])]),
+        'rules with a duplicate key' => $rules([$pkgRule, ['value' => 'zlib'] + $pkgRule]),
+        'rules key with upper case' => $rules([['key' => 'P1'] + $pkgRule]),
+        'rules key starting with a symbol' => $rules([['key' => '-p1'] + $pkgRule]),
+        'rules key too long' => $rules([['key' => 'a' . str_repeat('1', 40)] + $pkgRule]),
+        'rules kind unknown' => $rules([['kind' => 'file'] + $pkgRule]),
+        'package rule with an option as the name' => $rules([['value' => '-oAPT::Foo'] + $pkgRule]),
+        'package rule with an upper case name' => $rules([['value' => 'OpenSSL'] + $pkgRule]),
+        'product code rule with a bad code' => $rules([['value' => 'nope'] + $winRule]),
+        'uninstall name rule with a control character' => $rules([['value' => "A\x01"] + $nameRule]),
+        'uninstall name rule empty' => $rules([['value' => ''] + $nameRule]),
+        'uninstall name rule too long' => $rules([['value' => str_repeat('a', 121)] + $nameRule]),
+        'minimum with a letter first' => $rules([['min' => 'v1'] + $pkgRule]),
+        'member as a number' => $rules([['value' => 5] + $pkgRule]),
+        'an unknown parameter next to rules' => $rules([$pkgRule]) + ['extra' => 1],
+        'rules text over 1000 characters' => ['rules' => json_encode(array_map(static fn (int $i): array => ['key' => "p$i", 'kind' => 'uninstall_name', 'value' => str_repeat('a', 100), 'min' => ''], range(1, 12)))],
+        'more than 25 rules' => $rules(array_map(static fn (int $i): array => ['key' => "p$i", 'kind' => 'package', 'value' => 'a', 'min' => ''], range(1, 26))),
+    ] as $name => $params) {
+        $d($name, $params, false);
+    }
+    // The PHP validators must agree with every label, or the file would record a wrong contract.
+    foreach ($cases as $c) {
+        [, $err] = \RivetCore\Rmm\Deploy\DeployJobTypes::install($c['params']);
+        if (($err === null) !== $c['valid']) {
+            fwrite(STDERR, "software deploy vector '{$c['name']}': the label says " . ($c['valid'] ? 'valid' : 'invalid') . ', the PHP validator says ' . ($err ?? 'valid') . "\n");
+            exit(1);
+        }
+    }
+    foreach ($detect as $c) {
+        [, $err] = \RivetCore\Rmm\Deploy\DeployJobTypes::detect($c['params']);
+        if (($err === null) !== $c['valid']) {
+            fwrite(STDERR, "software detect vector '{$c['name']}': the label says " . ($c['valid'] ? 'valid' : 'invalid') . ', the PHP validator says ' . ($err ?? 'valid') . "\n");
+            exit(1);
+        }
+    }
+
+    return json_encode(['format' => 'RIVETIT-SOFTWARE-DEPLOY-v1', 'description' => 'Accept/reject vectors for the parameters of the software_install and software_detect jobs (RMM Phase 5). install: the params object of a software_install job; detect: the params object of a software_detect job (rules is a JSON text). valid=true means a server builds it and an agent must accept it; valid=false means the server never sends it and an agent must refuse it (invalid_params) before it runs or downloads anything. The Go agent replays this file against internal/deploy; the PHP validators are checked against it by the generator.',
+        'install' => $cases, 'detect' => $detect], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
+}
+
 $files = [
     'agent_installer_trailer_vectors.json' => installerTrailerVectors(),
     'agent_job_signing_vectors.json' => jobSigningVectors(),
     'agent_installer_mesh_vectors.json' => installerMeshVectors(),   // appended last: the two frozen lines of SHA256SUMS keep their place
+    'agent_software_deploy_vectors.json' => softwareDeployVectors(),   // rc.21: additive again
 ];
 $sums = '';
 foreach ($files as $name => $bytes) {

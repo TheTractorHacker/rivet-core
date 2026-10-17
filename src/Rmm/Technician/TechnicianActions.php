@@ -122,6 +122,9 @@ final class TechnicianActions
         if (\RivetCore\Rmm\Patch\PatchProtocol::isPatchJob($type)) {
             return ActionResult::fail(422, 'invalid', 'That job type is queued through the patch endpoints (patches/scan, patches/install).');
         }
+        if (\RivetCore\Rmm\Deploy\DeployProtocol::isDeployJob($type)) {
+            return ActionResult::fail(422, 'invalid', 'That job type is queued through the software endpoints (deployments/detect, deployments/run).');
+        }
         // A script from the saved library needs the lower grant than free-form script text.
         $ability = $def->requiresScript && $savedId > 0 ? RmmAbility::JOB_RUN_SAVED : $def->ability;
         $denied = $this->authz->check($who->userId, $ability, $client);

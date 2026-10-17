@@ -87,6 +87,13 @@ final class RmmEvent
     /** An install job failed in whole or in part. Fields: job_id, mode, failed (count), installed (count), reason (the first failing update's result code). */
     public const PATCH_INSTALL_FAILED = 'rmm.patch.install_failed';
 
+    /** A software install, removal or dry run was queued for a device (Phase 5, `software_deploy` switch). Fields: job_id, package, action ("install" or "uninstall"), mode ("dry_run" or "run"), source ("manual" or "scheduler"). */
+    public const DEPLOY_STARTED = 'rmm.deploy.started';
+    /** A software job finished and ended well (installed, removed, already in the wanted state, or would be done in a dry run). Fields: job_id, package, action, mode, result, version (detected, may be empty), reboot_required. */
+    public const DEPLOY_FINISHED = 'rmm.deploy.finished';
+    /** A software job failed. Fields: job_id, package, action, mode, result (hash_mismatch, download_failed, not_found, locked, verify_failed or failed), code. */
+    public const DEPLOY_FAILED = 'rmm.deploy.failed';
+
     /** @return list<string> */
     public static function all(): array
     {
@@ -94,6 +101,7 @@ final class RmmEvent
             self::JOB_COMPLETED, self::JOB_FAILED, self::SOFTWARE_INSTALLED, self::SOFTWARE_REMOVED,
             self::ALERT_OPENED, self::ALERT_ESCALATED, self::ALERT_ACKNOWLEDGED, self::ALERT_RESOLVED, self::MAINTENANCE_STARTED, self::MAINTENANCE_ENDED,
             self::POLICY_ASSIGNED, self::SCRIPT_RUN, self::APPROVAL_REQUESTED, self::APPROVAL_DECIDED, self::FILE_TRANSFERRED, self::LOG_RULE_MATCHED, self::MESH_AGENT_INSTALLED, self::MESH_NODE_CONFLICT, self::STARTER_INSTALLED,
-            self::PATCH_SCAN_COMPLETED, self::PATCH_APPROVED, self::PATCH_INSTALL_STARTED, self::PATCH_INSTALL_FINISHED, self::PATCH_INSTALL_FAILED];
+            self::PATCH_SCAN_COMPLETED, self::PATCH_APPROVED, self::PATCH_INSTALL_STARTED, self::PATCH_INSTALL_FINISHED, self::PATCH_INSTALL_FAILED,
+            self::DEPLOY_STARTED, self::DEPLOY_FINISHED, self::DEPLOY_FAILED];
     }
 }

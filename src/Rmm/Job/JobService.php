@@ -253,7 +253,7 @@ final class JobService
      */
     public static function deviceCanRun(array $caps, string $type): bool
     {
-        $needs = \RivetCore\Rmm\Remote\RemoteProtocol::capabilityFor($type) ?? \RivetCore\Rmm\Patch\PatchProtocol::capabilityFor($type);
+        $needs = \RivetCore\Rmm\Remote\RemoteProtocol::capabilityFor($type) ?? \RivetCore\Rmm\Patch\PatchProtocol::capabilityFor($type) ?? \RivetCore\Rmm\Deploy\DeployProtocol::capabilityFor($type);
         if ($needs !== null && !in_array($needs, $caps, true)) {
             return false;   // a remote tool or a patch job is never assumed: only an agent that announced the flag is offered it
         }

@@ -61,6 +61,14 @@ final class ScriptActions
         $this->patchActions = $patches;
     }
 
+    private ?\RivetCore\Rmm\Deploy\DeployActions $deployActions = null;
+
+    /** Phase 5: the second person's decision on a software approval is made here, with the same approvals endpoint as every other request. */
+    public function setDeployActions(?\RivetCore\Rmm\Deploy\DeployActions $deploy): void
+    {
+        $this->deployActions = $deploy;
+    }
+
     private function role(int $userId, string $ability): ?ActionResult
     {
         $why = $this->authz->check($userId, $ability, 0);
@@ -294,6 +302,18 @@ final class ScriptActions
             }
             $state = $approve ? ApprovalService::APPROVED : ApprovalService::REJECTED;
             $res = $this->patchActions->decideApproval($who, $a, $req, $approve, fn (): array => $this->approvals->decide($approvalId, $who->userId, $approve, $note));
+            if ($res->ok) {
+                $this->events?->emitScoped(RmmEvent::APPROVAL_DECIDED, 0, ['approval_id' => $approvalId, 'kind' => $a['kind'], 'state' => $state, 'decided_by' => $who->userId]);
+            }
+
+            return $res;
+        }
+        if ($a['kind'] === \RivetCore\Rmm\Deploy\DeployApprovalService::KIND) {
+            if ($this->deployActions === null) {
+                return ActionResult::fail(409, 'conflict', 'Software deployment is not available on this module.');
+            }
+            $state = $approve ? ApprovalService::APPROVED : ApprovalService::REJECTED;
+            $res = $this->deployActions->decideApproval($who, $a, $req, $approve, fn (): array => $this->approvals->decide($approvalId, $who->userId, $approve, $note));
             if ($res->ok) {
                 $this->events?->emitScoped(RmmEvent::APPROVAL_DECIDED, 0, ['approval_id' => $approvalId, 'kind' => $a['kind'], 'state' => $state, 'decided_by' => $who->userId]);
             }

@@ -95,6 +95,9 @@ final class EventCatalog
         'rmm.patch.install_started' => [['job_id', 'string', 'Install job id'], ['mode', 'string', 'dry_run or install'], ['update_count', 'integer', 'Updates in the job'], ['source', 'string', 'manual or scheduler']],
         'rmm.patch.install_finished' => [['job_id', 'string', 'Install job id'], ['mode', 'string', 'dry_run or install'], ['installed', 'integer', 'Updates installed (or that would be, in a dry run)'], ['skipped', 'integer', 'Updates skipped or no longer applicable'], ['reboot_required', 'boolean', 'A restart is needed to finish']],
         'rmm.patch.install_failed' => [['job_id', 'string', 'Install job id'], ['mode', 'string', 'dry_run or install'], ['failed', 'integer', 'Updates that failed'], ['installed', 'integer', 'Updates that did install'], ['reason', 'string', 'Result code of the first failure']],
+        'rmm.deploy.started' => [['job_id', 'string', 'Job id'], ['package', 'string', 'Package name'], ['action', 'string', 'install or uninstall'], ['mode', 'string', 'dry_run or run'], ['source', 'string', 'manual or scheduler']],
+        'rmm.deploy.finished' => [['job_id', 'string', 'Job id'], ['package', 'string', 'Package name'], ['action', 'string', 'install or uninstall'], ['mode', 'string', 'dry_run or run'], ['result', 'string', 'installed, uninstalled, already_installed, not_installed, needs_reboot, would_install or would_uninstall'], ['version', 'string', 'Version found on the device after the job (may be empty)'], ['reboot_required', 'boolean', 'A restart is needed to finish']],
+        'rmm.deploy.failed' => [['job_id', 'string', 'Job id'], ['package', 'string', 'Package name'], ['action', 'string', 'install or uninstall'], ['mode', 'string', 'dry_run or run'], ['result', 'string', 'failed, hash_mismatch, download_failed, not_found, locked or verify_failed'], ['code', 'string', 'Short reason code']],
         'rmm.approval.decided' => [['approval_id', 'integer', 'Approval id'], ['kind', 'string', 'run or schedule'], ['state', 'string', 'approved, rejected, cancelled or expired'], ['decided_by', 'integer', 'User who decided (null when it lapsed)']],
     ];
 
@@ -385,6 +388,9 @@ final class EventCatalog
             ['rmm', 'rmm.patch.install_started', 'Patch install queued', 'An installation (or a dry run) of approved updates was queued for a device.', 'info', 'rmm', 'agent,endpoint,rmm,patch,update,install', null],
             ['rmm', 'rmm.patch.install_finished', 'Patch install finished', 'An installation of updates finished on a device.', 'info', 'rmm', 'agent,endpoint,rmm,patch,update,install', null],
             ['rmm', 'rmm.patch.install_failed', 'Patch install failed', 'An installation of updates failed on a device, in whole or in part.', 'warning', 'rmm', 'agent,endpoint,rmm,patch,update,install,failed', null],
+            ['rmm', 'rmm.deploy.started', 'Software job queued', 'An installation or removal of a package (or a dry run) was queued for a device.', 'info', 'rmm', 'agent,endpoint,rmm,software,deploy,package,install,uninstall', null],
+            ['rmm', 'rmm.deploy.finished', 'Software job finished', 'A software installation or removal finished on a device.', 'info', 'rmm', 'agent,endpoint,rmm,software,deploy,package,install,uninstall', null],
+            ['rmm', 'rmm.deploy.failed', 'Software job failed', 'A software installation or removal failed on a device.', 'warning', 'rmm', 'agent,endpoint,rmm,software,deploy,package,install,uninstall,failed', null],
             ['rmm', 'rmm.software.removed', 'Software removed', 'Software disappeared from a device.', 'info', 'rmm', 'agent,endpoint,rmm,inventory,application,uninstall,package', null],
 
             ['clients', 'client.created', 'Client created', 'A new client was added.', 'info', 'audit', 'customer,organization,company', $p],

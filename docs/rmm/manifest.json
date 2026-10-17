@@ -1,13 +1,13 @@
 {
   "module": "rmm",
   "repository": "https://github.com/TheTractorHacker/rivet-core",
-  "updated": "2026-10-16",
+  "updated": "2026-10-17",
   "issues": "https://github.com/TheTractorHacker/rivet-core/issues?q=label%3Armm",
   "documents": [
     {
       "id": "features",
       "title": "RMM feature list",
-      "summary": "What the RMM does and contains, by area, with the phase that delivers each feature (Phases 1, 2, 3, 4, 6 and 8 are built in Core: statuses show Core)",
+      "summary": "What the RMM does and contains, by area, with the phase that delivers each feature (Phases 1, 2, 3, 4, 5, 6 and 8 are built in Core: statuses show Core)",
       "path": "docs/rmm/FEATURES.md",
       "status": "draft",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/FEATURES.md",
@@ -147,6 +147,15 @@
       "status": "current",
       "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/PATCHING.md",
       "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/PATCHING.md"
+    },
+    {
+      "id": "software-deploy",
+      "title": "RMM software deployment and reporting (Phase 5)",
+      "summary": "The package catalog with immutable hash-pinned versions, the allowed download hosts, assignments with ring delays and two-person approval, detection, the scheduler and its safety defaults, the deployed-versus-expected report and CSV, abilities, limits, what is not done (winget, Chocolatey, scheduled and PDF reports) and exactly what is proven",
+      "path": "docs/rmm/SOFTWARE_DEPLOY.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/SOFTWARE_DEPLOY.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/SOFTWARE_DEPLOY.md"
     },
     {
       "id": "starter-pack",

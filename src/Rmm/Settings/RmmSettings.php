@@ -47,7 +47,7 @@ final class RmmSettings
     public const MESH_TOKEN_TTL_DEFAULT_S = 300;
 
     /** Every feature a sub-switch may name (the first five are live in Phase 0; the rest are reserved for later phases). */
-    public const FEATURES = ['monitoring', 'metrics', 'jobs', 'remote', 'updates', 'inventory_software', 'policies', 'scripts', 'patching', 'software', 'logs', 'reports', 'alerting', 'remote_tools', 'filetransfer'];
+    public const FEATURES = ['monitoring', 'metrics', 'jobs', 'remote', 'updates', 'inventory_software', 'policies', 'scripts', 'patching', 'software', 'software_deploy', 'logs', 'reports', 'alerting', 'remote_tools', 'filetransfer'];
     /** What a NULL features_json means: today's behaviour. `remote` follows mesh_enabled. */
     public const LEGACY_FEATURES = ['monitoring', 'metrics', 'jobs', 'updates'];
 
@@ -114,6 +114,15 @@ final class RmmSettings
         'patch_live_install' => [0, 1],
         'patch_history_days' => [30, 3650],
         'patch_batch' => [10, 5000],
+        // Phase 5 (software deployment, `software_deploy` switch): seconds between two detections of a device (jittered), most devices installing or removing at once in
+        // the fleet and per client, whether the scheduler may do real installs (0: dry runs only, the safe default), days of deployment history kept, and devices one
+        // scheduler pass works on (halved/quartered by load shedding).
+        'software_detect_interval_s' => [3600, 604800],
+        'software_max_installs' => [1, 10000],
+        'software_max_installs_per_client' => [1, 1000],
+        'software_live_install' => [0, 1],
+        'software_deploy_history_days' => [30, 3650],
+        'software_batch' => [10, 5000],
     ];
     public const LIMIT_DEFAULTS = [
         'max_checkins_per_min' => 0,
@@ -157,6 +166,12 @@ final class RmmSettings
         'patch_live_install' => 0,
         'patch_history_days' => 365,
         'patch_batch' => 100,
+        'software_detect_interval_s' => 86400,
+        'software_max_installs' => 25,
+        'software_max_installs_per_client' => 5,
+        'software_live_install' => 0,
+        'software_deploy_history_days' => 365,
+        'software_batch' => 100,
     ];
 
     /** @var array<string,mixed>|null */

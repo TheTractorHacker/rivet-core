@@ -73,6 +73,8 @@ use RivetCore\Rmm\Patch\PatchComplianceService;
 use RivetCore\Rmm\Patch\PatchInstallService;
 use RivetCore\Rmm\Patch\PatchPolicyStore;
 use RivetCore\Rmm\Patch\PatchProtocol;
+use RivetCore\Rmm\Deploy\DeployProtocol;
+use RivetCore\Rmm\Contracts\PackageSourcePolicyInterface;
 use RivetCore\Rmm\Patch\PatchReader;
 use RivetCore\Rmm\Patch\PatchScanService;
 use RivetCore\Rmm\Patch\PatchScheduler;
@@ -215,6 +217,15 @@ final class RmmModule
     private ?PatchActions $patchActions = null;
     private ?\RivetCore\Rmm\Http\PatchApi $patchApi = null;
     private ?PatchScheduler $patchScheduler = null;
+    private ?PackageSourcePolicyInterface $packageSources = null;
+    private ?\RivetCore\Rmm\Deploy\PackageCatalog $packageCatalog = null;
+    private ?\RivetCore\Rmm\Deploy\DeployExpectations $deployExpectations = null;
+    private ?\RivetCore\Rmm\Deploy\DeployService $deployService = null;
+    private ?\RivetCore\Rmm\Deploy\DeployApprovalService $deployApprovals = null;
+    private ?\RivetCore\Rmm\Deploy\DeployReader $deployReader = null;
+    private ?\RivetCore\Rmm\Deploy\DeployActions $deployActions = null;
+    private ?\RivetCore\Rmm\Http\DeployApi $deployApi = null;
+    private ?\RivetCore\Rmm\Deploy\DeployScheduler $deployScheduler = null;
 
     private readonly RmmAuditInterface $audit;
     private readonly RmmMetricSinkInterface $metrics;
@@ -306,6 +317,13 @@ final class RmmModule
                 if (PatchProtocol::isPatchJob($type) && $this->settings()->featureOn(PatchProtocol::FEATURE)) {
                     $this->patchJobFinished($dev, $jobId, $type);
                 }
+                // Phase 5: the same for a finished software job.
+                if (DeployProtocol::isDeployJob($type) && $this->settings()->featureOn(DeployProtocol::FEATURE) && (int) ($this->settings()->get()['shed_level'] ?? 0) < 2) {
+                    $row = $this->sql()->one('SELECT * FROM endpoint_agent_jobs WHERE job_id = ?', [$jobId]);
+                    if ($row !== null) {
+                        $this->deployService()->applyJob($dev, $row);
+                    }
+                }
             });
         }
 
@@ -384,6 +402,83 @@ final class RmmModule
     public function patchApi(): \RivetCore\Rmm\Http\PatchApi
     {
         return $this->patchApi ??= new \RivetCore\Rmm\Http\PatchApi($this->patchActions());
+    }
+
+    // ------------------------------------------------------------------ Phase 5: software deployment
+
+    /**
+     * Replace the policy that decides where an installer may be downloaded from (an edition may want its own rule). The default is the administrator's list of host
+     * names ({@see \RivetCore\Rmm\Deploy\AllowedHostsPolicy}); set it before the first use of the module's deployment services.
+     */
+    public function setPackageSourcePolicy(PackageSourcePolicyInterface $policy): void
+    {
+        $this->packageSources = $policy;
+        $this->packageCatalog = null;
+        $this->deployService = null;
+        $this->deployActions = null;
+    }
+
+    /** The package catalog, its versions and the allowed download hosts. */
+    public function packageCatalog(): \RivetCore\Rmm\Deploy\PackageCatalog
+    {
+        if ($this->packageCatalog === null) {
+            $sql = $this->sql();
+            $this->packageSources ??= new \RivetCore\Rmm\Deploy\AllowedHostsPolicy(static function () use ($sql): array {
+                return array_map(static fn (array $r): string => (string) $r['host'], $sql->all('SELECT host FROM rmm_software_hosts'));
+            });
+            $this->packageCatalog = new \RivetCore\Rmm\Deploy\PackageCatalog($sql, $this->packageSources);
+        }
+
+        return $this->packageCatalog;
+    }
+
+    /** What the assignments say each device should have. */
+    public function deployExpectations(): \RivetCore\Rmm\Deploy\DeployExpectations
+    {
+        return $this->deployExpectations ??= new \RivetCore\Rmm\Deploy\DeployExpectations($this->sql(), $this->packageCatalog(), $this->patchPolicies());
+    }
+
+    /** Queue software jobs and apply their results. */
+    public function deployService(): \RivetCore\Rmm\Deploy\DeployService
+    {
+        return $this->deployService ??= new \RivetCore\Rmm\Deploy\DeployService($this->sql(), $this->settings(), $this->jobs(), $this->packageCatalog(), $this->deployExpectations(), $this->eventPublisher());
+    }
+
+    /** Two-person approval of software runs and assignments. */
+    public function deployApprovals(): \RivetCore\Rmm\Deploy\DeployApprovalService
+    {
+        return $this->deployApprovals ??= new \RivetCore\Rmm\Deploy\DeployApprovalService($this->sql(), $this->approvals(), $this->deployService(), $this->deployExpectations(), $this->devices(), $this->packageCatalog());
+    }
+
+    /** Deployment reads: one device, the fleet report. */
+    public function deployReader(): \RivetCore\Rmm\Deploy\DeployReader
+    {
+        return $this->deployReader ??= new \RivetCore\Rmm\Deploy\DeployReader($this->sql(), $this->settings());
+    }
+
+    /** What technicians do with software deployment (shared by the REST API and the edition's pages). */
+    public function deployActions(): \RivetCore\Rmm\Deploy\DeployActions
+    {
+        if ($this->deployActions === null) {
+            $this->deployActions = new \RivetCore\Rmm\Deploy\DeployActions($this->devices(), $this->authorizer(), $this->settings(), $this->sql(), $this->packageCatalog(), $this->deployService(), $this->deployExpectations(),
+                $this->deployApprovals(), $this->deployReader(), $this->audit, $this->tenancy);
+            $this->scriptActions()->setDeployActions($this->deployActions);
+        }
+
+        return $this->deployActions;
+    }
+
+    /** The software routes (mounted by {@see technicianApi()}). */
+    public function deployApi(): \RivetCore\Rmm\Http\DeployApi
+    {
+        return $this->deployApi ??= new \RivetCore\Rmm\Http\DeployApi($this->deployActions());
+    }
+
+    /** The software work of the housekeeping pass. */
+    public function deployScheduler(): \RivetCore\Rmm\Deploy\DeployScheduler
+    {
+        return $this->deployScheduler ??= new \RivetCore\Rmm\Deploy\DeployScheduler($this->sql(), $this->settings(), $this->devices(), $this->deployService(), $this->deployExpectations(),
+            $this->scheduleGate ?? new MaintenanceScheduleGate($this->maintenance(), $this->settings()));
     }
 
     /** The patch work of the housekeeping pass. */
@@ -611,7 +706,7 @@ final class RmmModule
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
             $this->databaseSink(), $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->storage(), $this->cache(), $this->externalSink(),
-            $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler());
+            $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler());
     }
 
     /** The database metric sink, whether it was passed as the sink or inside a {@see CompositeMetricSink}. */
@@ -844,7 +939,7 @@ final class RmmModule
     {
         return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore(),
             $this->assets instanceof RmmAssetNamesInterface ? $this->assets : null, $this->clientLabel(),
-            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers(), $this->meshAgents(), $this->patchReader());
+            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers(), $this->meshAgents(), $this->patchReader(), $this->deployReader());
     }
 
     /** Hosted agent binaries: validate, store, publish, serve. */
@@ -894,7 +989,7 @@ final class RmmModule
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */
     public function technicianApi(): TechnicianApi
     {
-        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi(), $this->patchApi());
+        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi(), $this->patchApi(), $this->deployApi());
     }
 
     /** The alerts, maintenance windows, escalation policies and thresholds routes (mounted by {@see technicianApi()}). */

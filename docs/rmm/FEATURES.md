@@ -15,7 +15,7 @@ Status: DRAFT for owner review, 2026-10-07; statuses updated for RivetCore v1.0.
 | **P2** | [#70](https://github.com/TheTractorHacker/rivet-core/issues/70) Policies, check templates, script library, scheduled scripts, approvals, custom fields. Built in Core in v1.0.0-rc.10: the policy engine and its delivery in the check-in, check templates, the signed script library with parameters and secrets, bulk runs, scheduled scripts, two-person approval, custom fields, the `shell` and `python` job types and the agent side. Verified on a real Windows 11 machine on 2026-10-14 ([WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md)). Still to do: every edition page, `zsh` and `cmd` interpreters, `run_as` options, per-client script visibility, the import of an edition's existing saved scripts, and notifying approvers |
 | **P3** | [#71](https://github.com/TheTractorHacker/rivet-core/issues/71) Alerting maturity: thresholds, maintenance windows, suppression, escalation, more check types |
 | **P4** | [#72](https://github.com/TheTractorHacker/rivet-core/issues/72) Patch management. Built in Core (migration 0028, 1.0.0-rc.20) behind the `patching` switch: `patch_scan` / `patch_install` job types, scan results, approvals (by hand, by rule, by policy and ring delay, optionally by two people), install windows and limits, history, compliance and two alert checks. Linux apt proven on a real container; the Windows scan was run on a real laptop, the Windows install never. See [PATCHING.md](PATCHING.md). |
-| **P5** | [#73](https://github.com/TheTractorHacker/rivet-core/issues/73) Software deployment and reporting |
+| **P5** | [#73](https://github.com/TheTractorHacker/rivet-core/issues/73) Software deployment and reporting. Built in Core (migration 0029, 1.0.0-rc.21) behind the `software_deploy` switch: package catalog with immutable hash-pinned versions and an allowed host list, assignments with ring delays and optional two-person approval, `software_detect` / `software_install` job types, a scheduler that rehearses with dry runs until `software_live_install` is 1, the deployed-vs-expected report and CSV. **Not built:** winget and Chocolatey, scheduled/PDF/client reports. [SOFTWARE_DEPLOY.md](SOFTWARE_DEPLOY.md) |
 | **P6** | [#74](https://github.com/TheTractorHacker/rivet-core/issues/74) Remote tools: service/process manager, file transfer, embedded Mesh terminal and files. Built in Core after rc.10 (migration 0022): the six job types with capability flags, `rmm.remote.manage`, the `remote_tools` and `filetransfer` switches, chunked and checksum-verified file transfer with an allow list and a never-transfer list, the Mesh terminal and files launch, the REST routes, the agent side. The Windows code was run on a real Windows 11 machine on 2026-10-14 (services, processes, file transfer with its path policy; it found and fixed a junction escape, see [WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md)). Still to do: every edition page, a real MeshCentral to confirm the terminal and files views. Details: [REMOTE_AND_LOGS.md](REMOTE_AND_LOGS.md) |
 | **P7** | [#75](https://github.com/TheTractorHacker/rivet-core/issues/75) macOS agent, Authenticode-signed binaries, MSI (blocked: no test Mac, no signing certificates) |
 | **P8** | [#76](https://github.com/TheTractorHacker/rivet-core/issues/76) Event-log and syslog collection (optional, off by default). Built in Core after rc.10 (migration 0022) behind the `logs` switch: Windows event-log and Linux journald collectors with bookmarks, bounded batches and a rate cap, retention and per-device and per-fleet caps, search, pattern rules that raise alerts through the alerting engine. The Windows event-log reader was run on a real Windows 11 machine on 2026-10-14 (collector, rule and alert verified: [WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md)). Still to do: per-policy log sources, the edition pages, regular-expression rules (deliberately not offered). Details: [REMOTE_AND_LOGS.md](REMOTE_AND_LOGS.md) |
@@ -159,16 +159,16 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 9.4 | Approval rings, deferrals, maintenance windows, reboot policy | Core | Core | Core | - | Rings (pilot 0, broad 7, last 14 days, add your own), per-kind automatic approval after N days, approval rules, two-person approval, daily or Phase 3 maintenance install windows, restart `never` / `if_required_defer` / `if_required_now` (a separate confirmed reboot job). The scheduler queues dry runs only until `patch_live_install` is 1. |
 | 9.5 | Patch compliance per device and per client | Core | Core | Core | - | `patch.compliance` and `patch.install_failed` alert checks, `RmmReadModel::patchSummary()` / `patchCompliance()`, `GET endpoint_devices/patches/compliance` by client, site or group with the ring distribution. |
 | 9.6 | Linux package updates (apt, dnf) | Core | - | Core | - | apt proven end to end on a real systemd container with a real apt and a local repository; dnf, yum and zypper are parser-tested on fixtures only and have not been run on a real Rocky, Alma, Fedora or SUSE host. |
-| 9.7 | Third-party application patching through winget | P5 | P5 | - | - | Moved to Phase 5 (software deployment). Not part of the Phase 4 patch work. |
+| 9.7 | Third-party application patching through winget | Not planned | - | - | - | Phase 5 delivers hash-pinned MSI/EXE and apt/dnf deployment (10.1 to 10.3) instead: winget resolves a package through an online source at install time, which the agent would have to trust without a pin. See [SOFTWARE_DEPLOY.md](SOFTWARE_DEPLOY.md) section 11. |
 | 9.8 | macOS software update | P7 | - | - | P7 | Follows the macOS agent. |
 
 ## 10. Software deployment
 
 | # | Feature | Status | Windows | Linux | macOS | Notes |
 |---|---|---|---|---|---|---|
-| 10.1 | Package catalog: winget, Chocolatey, MSI and EXE with silent arguments and detection rules; apt and dnf packages | P5 | P5 | P5 | P7 | |
-| 10.2 | Install, uninstall and update, assigned through policies | P5 | P5 | P5 | P7 | |
-| 10.3 | Per-device install status verified by detection rules | P5 | P5 | P5 | P7 | |
+| 10.1 | Package catalog: MSI and EXE with a pinned hash, silent arguments and detection rules; apt and dnf packages | Core | Core | Core | P7 | Versions are immutable; installers come only from an allowed host list over https with a required SHA-256 and size; Linux uses only the machine's own repositories. **winget and Chocolatey are not built** (they cannot be pinned). Behind the `software_deploy` switch. [SOFTWARE_DEPLOY.md](SOFTWARE_DEPLOY.md). **Windows install paths have never been run on a real machine.** |
+| 10.2 | Install and uninstall, assigned to a scope (everyone, client, site, group, tag, device) with ring delays, a dry run first, optional two-person approval | Core | Core | Core | P7 | `software_install` (gated, destructive: offered at most once) and `software_detect`, capabilities `software:install` and `software:detect`. The scheduler queues dry runs only until `software_live_install` is 1. EXE uninstall is not supported; there is no automatic "update everywhere". Linux (apt) proven end to end on a real systemd container; dnf on fixtures. |
+| 10.3 | Per-device install status verified by detection rules | Core | Core | Core | P7 | Detection by package (Linux), MSI product code or uninstall entry name (Windows) with an optional minimum version, run daily and after every install (`verify_failed` when an install did not do what was asked). |
 | 10.4 | Bandwidth control for large packages | Not planned | - | - | - | |
 
 ## 11. Policies and scopes
@@ -189,8 +189,8 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 12.1 | RMM dashboard: online, offline, managed, new alerts, open tickets, script runs, fleet health (CPU, memory, disk, needs reboot), alert volume, alerts by severity, noisiest assets and clients | Shipped | all | all | all | Edition UI, built on the vendor-RMM link rows plus agent link-health. |
 | 12.2 | RMM assets list with status filter | Shipped | all | all | all | |
 | 12.3 | Capacity report (enrolled, online, check-ins per minute, queue, table sizes, projection) | P0 | all | all | all | Administration panel; see area 15. |
-| 12.4 | Health summary, patch compliance, inventory and software reports, uptime and SLA, alert history | P5 | all | all | all | |
-| 12.5 | Scheduled CSV and PDF exports; client-facing reports | P5 | all | all | all | |
+| 12.4 | Software deployment report (deployed vs. expected by package, client, ring or device); health summary, patch compliance (9.5), inventory and software reports, uptime and SLA, alert history | Core | all | all | all | The deployment report is built (`GET endpoint_devices/software_report`, `RmmReadModel::deploymentReport()`). Patch compliance and the software inventory have their own read models. A combined health, uptime and SLA report set is not built. |
+| 12.5 | Scheduled CSV and PDF exports; client-facing reports | P5 | all | all | all | CSV export of the deployment report is built (`software_report/csv`, formula-safe). Scheduled delivery, PDF and client-facing reports are not built (no `rmm_reports` table). |
 
 ## 13. Security
 
@@ -214,7 +214,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 |---|---|---|---|---|---|---|
 | 14.1 | Administration page: settings, enrollment tokens, agent binaries and releases, rings, approval queue, MeshCentral, signing key, device list | Shipped | all | all | all | RivetIT. |
 | 14.2 | Master switch "Enable RMM module"; existing installs keep their current value, new installs start OFF | P0 | all | all | all | |
-| 14.3 | Sub-switches: monitoring, metrics, jobs, remote, updates (later: inventory, policies, patching, software, logs, reports) with Light and Standard presets | P0 | all | all | all | Phase 6 and 8 add `remote_tools`, `filetransfer` and `logs`, all off by default. |
+| 14.3 | Sub-switches: monitoring, metrics, jobs, remote, updates (later: inventory, policies, patching, software, logs, reports) with Light and Standard presets | P0 | all | all | all | Phase 6 and 8 add `remote_tools`, `filetransfer` and `logs`, all off by default; Phase 4 adds `patching` and Phase 5 `software_deploy` (off by default). |
 | 14.4 | Module off costs nothing: device endpoints answer `503 module_disabled` with `Retry-After: 3600` and no database work; no navigation, cron work or search entries | P0 | all | all | all | The only intentional wire-visible change in Phase 0. Data is kept; re-enabling resumes. |
 | 14.5 | Device status frozen with a banner while the module is off (no false offline alerts) | P0 | all | all | all | |
 | 14.6 | RMM in RivetMSP (administration, asset page, device page, jobs, remote) | P0 | all | all | all | RivetMSP gets its own kill switch `config_core_rmm_enabled`. |
@@ -241,14 +241,14 @@ Counted from the Status column of the tables above (one row, one status). `Shipp
 | Status | Rows |
 |---|---|
 | Shipped | 49 |
-| Core | 36 |
+| Core | 40 |
 | P0 | 19 |
 | P1 | 3 |
 | P3 | 1 |
-| P5 | 6 |
+| P5 | 1 |
 | P6 | 1 |
 | P7 | 3 |
-| Not planned | 10 |
+| Not planned | 11 |
 
 (Counts are regenerated by the command in the "Keeping this list honest" section; if the tables change, rerun it.)
 

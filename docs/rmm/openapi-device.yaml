@@ -3160,6 +3160,330 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/deployments:
+    get:
+      tags: [Technician]
+      operationId: getDeviceDeployments
+      summary: What a device should have and has, software-wise (Phase 5)
+      description: |
+        Needs `rmm.software.view`. `counts` by state (`compliant`, `scheduled`, `pending`, `failed`, `missing`, `present`, `unknown`) and one entry per package: the expected action and version,
+        the state, the installed version, the ring, the last result. Readable while the `software_deploy` switch is off (`enabled` is then false).
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      responses:
+        '200': {description: The device's deployment state, content: {application/json: {schema: {type: object, properties: {enabled: {type: boolean}, counts: {type: object}, packages: {type: array, items: {type: object}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/deployments/history:
+    get:
+      tags: [Technician]
+      operationId: getDeviceDeploymentHistory
+      summary: Software install and removal history of a device (Phase 5)
+      description: Needs `rmm.software.view`. One row per job result, newest first.
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}, {name: limit, in: query, schema: {type: integer, maximum: 500}}, {name: offset, in: query, schema: {type: integer}}]
+      responses:
+        '200': {description: History, content: {application/json: {schema: {type: object, properties: {rows: {type: array, items: {type: object}}, total: {type: integer}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/deployments/detect:
+    post:
+      tags: [Technician]
+      operationId: detectDeviceDeployments
+      summary: Ask a device which of its assigned packages it has (Phase 5, `software_deploy` switch)
+      description: |
+        Needs `rmm.software.manage`. Queues a signed, read-only `software_detect` job. `200` with `skipped` `already_queued` or `nothing_to_detect`; `409 feature_disabled` while the switch is off;
+        `409 unsupported` when the agent never announced `software:detect`. The scheduler asks every device about once a day by itself (limit `software_detect_interval_s`).
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/Queued'}}}}
+        '200': {description: Nothing queued, content: {application/json: {schema: {type: object, properties: {skipped: {type: string}, job_id: {type: string}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /endpoint_devices/{id}/deployments/run:
+    post:
+      tags: [Technician]
+      operationId: runDeviceDeployment
+      summary: Install or remove a catalog package on a device, or rehearse it (Phase 5, `software_deploy` switch)
+      description: |
+        `mode` is `dry_run` unless the body says `run`. A dry run needs `rmm.software.manage` and changes nothing. A real run needs `rmm.software.deploy` and `confirm: true`. The job is built
+        from the catalog version only: no other body field is a parameter. `version_id` picks a version (default: the newest that is not retired and fits the device). A package marked `two_person`
+        answers `202` with `state: pending_approval` and an `approval_id`; the job is queued when someone else approves it. One software install at a time per device (`200 skipped: already_queued`).
+        The agent never restarts the device. `409 unsupported` when the agent never announced `software:install`.
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package_id]
+              properties:
+                package_id: {type: integer}
+                action: {type: string, enum: [install, uninstall], default: install}
+                version_id: {type: integer}
+                mode: {type: string, enum: [dry_run, run], default: dry_run}
+                confirm: {type: boolean}
+                max_minutes: {type: integer, minimum: 1, maximum: 120, default: 30}
+      responses:
+        '202': {description: Queued, or waiting for a second person, content: {application/json: {schema: {type: object, properties: {job_id: {type: string}, mode: {type: string}, action: {type: string}, version_id: {type: integer}, approval_id: {type: integer}, state: {type: string}}}}}}
+        '200': {description: 'Nothing queued: `skipped` is `already_queued`', content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {description: '`invalid`, `confirmation_required` or the catalog entry no longer passes the checks', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/software_packages:
+    get:
+      tags: [Technician]
+      operationId: listSoftwarePackages
+      summary: The package catalog (Phase 5)
+      description: Needs `rmm.software.view`. Readable while the `software_deploy` switch is off.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Packages, content: {application/json: {schema: {type: object, properties: {enabled: {type: boolean}, packages: {type: array, items: {type: object}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    post:
+      tags: [Technician]
+      operationId: createSoftwarePackage
+      summary: Add a package to the catalog (Phase 5)
+      description: Needs `rmm.software.manage` and a scope that sees every client. `two_person` makes every assignment and every real run of this package wait for a second user.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, maxLength: 100}
+                publisher: {type: string, maxLength: 100}
+                description: {type: string, maxLength: 300}
+                enabled: {type: boolean, default: true}
+                two_person: {type: boolean, default: false}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/software_packages/{package_id}:
+    get:
+      tags: [Technician]
+      operationId: getSoftwarePackage
+      summary: One package with its versions (Phase 5)
+      description: Needs `rmm.software.view`. A reader without `rmm.software.manage`, or limited to some clients, sees the host of an installer address but not its path.
+      security: [{userToken: []}]
+      parameters: [{name: package_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {description: The package, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    put:
+      tags: [Technician]
+      operationId: updateSoftwarePackage
+      summary: Change a package's name, text, switch or two-person flag (Phase 5)
+      description: Needs `rmm.software.manage` and a scope that sees every client. `PATCH` is the same. Versions are not changed here and are never edited.
+      security: [{userToken: []}]
+      parameters: [{name: package_id, in: path, required: true, schema: {type: integer}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Technician]
+      operationId: deleteSoftwarePackage
+      summary: Delete a package nothing is assigned to (Phase 5)
+      description: Needs `rmm.software.manage` and a scope that sees every client. `409` while an assignment refers to it. Its versions and per-device rows are deleted with it.
+      security: [{userToken: []}]
+      parameters: [{name: package_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {description: Deleted, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /endpoint_devices/software_packages/{package_id}/versions:
+    post:
+      tags: [Technician]
+      operationId: addSoftwareVersion
+      summary: Add a version to a package; it can never be edited afterwards (Phase 5)
+      description: |
+        Needs `rmm.software.manage` and a scope that sees every client. Linux (`apt`, `dnf`): `pkg_name`, optional `pin_version`. Windows `msi`: `url`, `sha256`, `size_bytes`, `product_code`, optional `detect_min`.
+        Windows `exe`: `url`, `sha256`, `size_bytes`, `silent_args`, `detect_kind` (`product_code` or `uninstall_name`), `detect_value`, optional `detect_min`. The address must be https, on a host from the
+        allowed list, without user information, port, fragment or query string. Anything else is `422` with the reason.
+      security: [{userToken: []}]
+      parameters: [{name: package_id, in: path, required: true, schema: {type: integer}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [version, os, fmt]}}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/software_packages/{package_id}/versions/{version_id}:
+    patch:
+      tags: [Technician]
+      operationId: retireSoftwareVersion
+      summary: Retire or restore a version (the only change a version allows) (Phase 5)
+      description: 'Needs `rmm.software.manage`. The body is exactly `{"retired": true}` or `{"retired": false}`. A retired version is never installed again but can still be removed.'
+      security: [{userToken: []}]
+      parameters: [{name: package_id, in: path, required: true, schema: {type: integer}}, {name: version_id, in: path, required: true, schema: {type: integer}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [retired], properties: {retired: {type: boolean}}}}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/software_assignments:
+    get:
+      tags: [Technician]
+      operationId: listSoftwareAssignments
+      summary: Assignments of packages to scopes (Phase 5)
+      description: Needs `rmm.software.view`. A client-restricted caller sees only the assignments to their own clients and devices.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Assignments, content: {application/json: {schema: {type: object, properties: {assignments: {type: array, items: {type: object}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    post:
+      tags: [Technician]
+      operationId: assignSoftware
+      summary: Assign a package to a scope (Phase 5, `software_deploy` switch)
+      description: |
+        Needs `rmm.software.deploy`. Devices in the scope are looked at by the next housekeeping pass; the scheduler dry-runs until `software_live_install` is 1. A restricted caller may assign only to
+        their own clients and devices; global, site, group and tag scopes need an unrestricted caller. A package with `two_person` answers `202` `pending_approval`: the assignment is saved switched off.
+        Removing an assignment uninstalls nothing.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package_id, scope_type]
+              properties:
+                package_id: {type: integer}
+                scope_type: {type: string, enum: [global, client, site, group, tag, device]}
+                scope_id: {type: integer}
+                action: {type: string, enum: [install, uninstall], default: install}
+                version_id: {type: integer}
+      responses:
+        '201': {description: Assigned, content: {application/json: {schema: {type: object}}}}
+        '202': {description: Waiting for a second person, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/software_assignments/{assignment_id}:
+    delete:
+      tags: [Technician]
+      operationId: unassignSoftware
+      summary: Remove an assignment; nothing is uninstalled (Phase 5)
+      description: Needs `rmm.software.deploy`. Another client's assignment is the same 404 as a missing one.
+      security: [{userToken: []}]
+      parameters: [{name: assignment_id, in: path, required: true, schema: {type: integer}}]
+      responses:
+        '200': {description: Removed, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/software_hosts:
+    get:
+      tags: [Technician]
+      operationId: listSoftwareHosts
+      summary: The host names installers may be downloaded from (Phase 5)
+      description: Needs `rmm.software.view`.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Hosts, content: {application/json: {schema: {type: object, properties: {hosts: {type: array, items: {type: object}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    post:
+      tags: [Technician]
+      operationId: allowSoftwareHost
+      summary: Allow downloads from a host (Phase 5, `software_deploy` switch)
+      description: Needs `rmm.admin` and a scope that sees every client. A plain DNS host name; no scheme, port, path, wildcard or IP address.
+      security: [{userToken: []}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [host], properties: {host: {type: string}, note: {type: string, maxLength: 120}}}}}}
+      responses:
+        '201': {description: Allowed, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/software_hosts/{host}:
+    delete:
+      tags: [Technician]
+      operationId: removeSoftwareHost
+      summary: Stop allowing downloads from a host (Phase 5)
+      description: Needs `rmm.admin` and a scope that sees every client. Versions that download from it are refused when a job is next built.
+      security: [{userToken: []}]
+      parameters: [{name: host, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Removed, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/software_report:
+    get:
+      tags: [Technician]
+      operationId: getSoftwareReport
+      summary: Deployed versus expected (Phase 5)
+      description: |
+        Needs `rmm.software.view`. `group_by` is `package` (default), `client`, `ring` or `device`. The first three give `expected`, a count per state and `percent_compliant` per row and in `totals`;
+        `device` gives one row per device and package (`state` filters it). Only the caller's clients are counted; a `client_id` outside them is the same 404 as a missing one.
+      security: [{userToken: []}]
+      parameters:
+        - {name: group_by, in: query, schema: {type: string, enum: [package, client, ring, device]}}
+        - {name: client_id, in: query, schema: {type: integer}}
+        - {name: package_id, in: query, schema: {type: integer}}
+        - {name: ring, in: query, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string, enum: [compliant, scheduled, pending, failed, missing, present, unknown]}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 1000}}
+        - {name: offset, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: Figures, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/software_report/csv:
+    get:
+      tags: [Technician]
+      operationId: getSoftwareReportCsv
+      summary: The same report as CSV (Phase 5)
+      description: Needs `rmm.software.view`. `text/csv`, CRLF; a cell that starts with `=`, `+`, `-`, `@`, a tab or a CR gets a leading apostrophe. Same parameters as the JSON report.
+      security: [{userToken: []}]
+      parameters:
+        - {name: group_by, in: query, schema: {type: string, enum: [package, client, ring, device]}}
+        - {name: client_id, in: query, schema: {type: integer}}
+        - {name: package_id, in: query, schema: {type: integer}}
+        - {name: ring, in: query, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string}}
+      responses:
+        '200': {description: The report, content: {text/csv: {schema: {type: string}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
 components:
   securitySchemes:
     deviceAuth:

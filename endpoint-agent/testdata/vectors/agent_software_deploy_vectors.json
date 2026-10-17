@@ -1,0 +1,2116 @@
+{
+    "format": "RIVETIT-SOFTWARE-DEPLOY-v1",
+    "description": "Accept/reject vectors for the parameters of the software_install and software_detect jobs (RMM Phase 5). install: the params object of a software_install job; detect: the params object of a software_detect job (rules is a JSON text). valid=true means a server builds it and an agent must accept it; valid=false means the server never sends it and an agent must refuse it (invalid_params) before it runs or downloads anything. The Go agent replays this file against internal/deploy; the PHP validators are checked against it by the generator.",
+    "install": [
+        {
+            "name": "msi install",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": true
+        },
+        {
+            "name": "msi install, defaults only",
+            "params": {
+                "action": "install",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 10,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}"
+            },
+            "valid": true
+        },
+        {
+            "name": "msi uninstall",
+            "params": {
+                "action": "uninstall",
+                "mode": "run",
+                "fmt": "msi",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "max_minutes": 30
+            },
+            "valid": true
+        },
+        {
+            "name": "exe install",
+            "params": {
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "args": "/S /norestart",
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": true
+        },
+        {
+            "name": "exe install without args",
+            "params": {
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": true
+        },
+        {
+            "name": "exe install, detection by product code",
+            "params": {
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "args": "/S /norestart",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": true
+        },
+        {
+            "name": "apt install",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": true
+        },
+        {
+            "name": "apt uninstall",
+            "params": {
+                "action": "uninstall",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy"
+            },
+            "valid": true
+        },
+        {
+            "name": "dnf install, dry run",
+            "params": {
+                "action": "install",
+                "fmt": "dnf",
+                "pkg": "rivetit-dummy"
+            },
+            "valid": true
+        },
+        {
+            "name": "apt install, pinned epoch version",
+            "params": {
+                "version": "1:2.0~rc1+dfsg-1",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "max_minutes": 30
+            },
+            "valid": true
+        },
+        {
+            "name": "url with a query string and port 443",
+            "params": {
+                "url": "https://downloads.example.com:443/a/setup.msi?token=A1_b-2.c~d%20e",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": true
+        },
+        {
+            "name": "max_minutes at the top of its range",
+            "params": {
+                "max_minutes": 120,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1"
+            },
+            "valid": true
+        },
+        {
+            "name": "size at the cap",
+            "params": {
+                "size": 1073741824,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": true
+        },
+        {
+            "name": "empty params",
+            "params": [],
+            "valid": false
+        },
+        {
+            "name": "unknown key",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30,
+                "extra": 1
+            },
+            "valid": false
+        },
+        {
+            "name": "unknown key on apt",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "version": "1.5-1",
+                "max_minutes": 30,
+                "cmd": "id"
+            },
+            "valid": false
+        },
+        {
+            "name": "action missing",
+            "params": {
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "action unknown",
+            "params": {
+                "action": "upgrade",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "action upper case",
+            "params": {
+                "action": "Install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "mode unknown",
+            "params": {
+                "mode": "install",
+                "action": "install",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "mode as a boolean",
+            "params": {
+                "mode": true,
+                "action": "install",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "fmt unknown",
+            "params": {
+                "fmt": "deb",
+                "action": "install",
+                "mode": "run",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "fmt missing",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "msi with a package name",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30,
+                "pkg": "x"
+            },
+            "valid": false
+        },
+        {
+            "name": "msi without a url",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "msi without a hash",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "msi without a size",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "msi with exe arguments",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30,
+                "args": "/S"
+            },
+            "valid": false
+        },
+        {
+            "name": "msi uninstall with a url",
+            "params": {
+                "action": "uninstall",
+                "mode": "run",
+                "fmt": "msi",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "max_minutes": 30,
+                "url": "https://downloads.example.com/a/setup.msi"
+            },
+            "valid": false
+        },
+        {
+            "name": "msi uninstall with a hash",
+            "params": {
+                "action": "uninstall",
+                "mode": "run",
+                "fmt": "msi",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "max_minutes": 30,
+                "sha256": "abababababababababababababababababababababababababababababababab"
+            },
+            "valid": false
+        },
+        {
+            "name": "msi uninstall without a product code",
+            "params": {
+                "action": "uninstall",
+                "mode": "run",
+                "fmt": "msi",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "exe uninstall",
+            "params": {
+                "action": "uninstall",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "exe with a product code",
+            "params": {
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "args": "/S /norestart",
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}"
+            },
+            "valid": false
+        },
+        {
+            "name": "exe without a detection rule",
+            "params": {
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "args": "/S /norestart",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "exe with a half detection rule",
+            "params": {
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "args": "/S /norestart",
+                "detect_kind": "uninstall_name",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "exe detection by package",
+            "params": {
+                "detect_kind": "package",
+                "detect_value": "x",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "args": "/S /norestart",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "url http",
+            "params": {
+                "url": "http://downloads.example.com/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url ftp",
+            "params": {
+                "url": "ftp://downloads.example.com/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url file",
+            "params": {
+                "url": "file:///etc/passwd",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with user information",
+            "params": {
+                "url": "https://user@downloads.example.com/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with user and password",
+            "params": {
+                "url": "https://user:pw@downloads.example.com/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url host after at sign",
+            "params": {
+                "url": "https://downloads.example.com@evil.example/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a backslash",
+            "params": {
+                "url": "https://evil.example\\@downloads.example.com/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a fragment",
+            "params": {
+                "url": "https://downloads.example.com/a.msi#x",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with another port",
+            "params": {
+                "url": "https://downloads.example.com:8443/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with an empty port",
+            "params": {
+                "url": "https://downloads.example.com:/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with an IPv4 host",
+            "params": {
+                "url": "https://127.0.0.1/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a decimal host",
+            "params": {
+                "url": "https://2130706433/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a hex host",
+            "params": {
+                "url": "https://0x7f.0.0.1/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with an IPv6 host",
+            "params": {
+                "url": "https://[::1]/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a single label host",
+            "params": {
+                "url": "https://localhost/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a trailing dot",
+            "params": {
+                "url": "https://downloads.example.com./a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a space",
+            "params": {
+                "url": "https://downloads.example.com/a b.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a newline",
+            "params": {
+                "url": "https://downloads.example.com/a.msi\n",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a tab",
+            "params": {
+                "url": "https://downloads.example.com/a\t.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a NUL",
+            "params": {
+                "url": "https://downloads.example.com/a\u0000.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with upper case in the host",
+            "params": {
+                "url": "https://Downloads.Example.com/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url with a non-ASCII host",
+            "params": {
+                "url": "https://döwnloads.example.com/a.msi",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url too long",
+            "params": {
+                "url": "https://downloads.example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url empty",
+            "params": {
+                "url": "",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "url as a number",
+            "params": {
+                "url": 5,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "hash upper case",
+            "params": {
+                "sha256": "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "hash too short",
+            "params": {
+                "sha256": "bababababababababababababababababababababababababababababababab",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "hash too long",
+            "params": {
+                "sha256": "ababababababababababababababababababababababababababababababababa",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "hash not hex",
+            "params": {
+                "sha256": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "hash with a newline",
+            "params": {
+                "sha256": "abababababababababababababababababababababababababababababababab\n",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "size zero",
+            "params": {
+                "size": 0,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "size negative",
+            "params": {
+                "size": -1,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "size over the cap",
+            "params": {
+                "size": 1073741825,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "size as a string",
+            "params": {
+                "size": "100",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "size as a float",
+            "params": {
+                "size": 100.5,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "size as a boolean",
+            "params": {
+                "size": true,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "args with a quote",
+            "params": {
+                "args": "/S \"x\"",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with an ampersand",
+            "params": {
+                "args": "/S & calc",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with a semicolon",
+            "params": {
+                "args": "/S;calc",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with a pipe",
+            "params": {
+                "args": "/S|x",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with a dollar",
+            "params": {
+                "args": "/S $(id)",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with a backtick",
+            "params": {
+                "args": "/S `id`",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with a percent",
+            "params": {
+                "args": "/S %TEMP%",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with a newline",
+            "params": {
+                "args": "/S\n/x",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with a double space",
+            "params": {
+                "args": "/S  /x",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with a leading space",
+            "params": {
+                "args": " /S",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with 13 words",
+            "params": {
+                "args": "/x /x /x /x /x /x /x /x /x /x /x /x /x",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args with a long word",
+            "params": {
+                "args": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args over 200 characters",
+            "params": {
+                "args": "abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "args as an array",
+            "params": {
+                "args": [
+                    "/S"
+                ],
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme Agent",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "product code without braces",
+            "params": {
+                "product_code": "12345678-ABCD-1234-ABCD-1234567890AB",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "product code with a bad digit",
+            "params": {
+                "product_code": "{1234567G-ABCD-1234-ABCD-1234567890AB}",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "product code with a newline",
+            "params": {
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}\n",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "detect_kind unknown",
+            "params": {
+                "detect_kind": "file",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "detect_min with a leading letter",
+            "params": {
+                "detect_min": "v2.4",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "detect_min with a space",
+            "params": {
+                "detect_min": "2.4 1",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "detect_min too long",
+            "params": {
+                "detect_min": "10000000000000000000000000000000000000000000000000000000000000000",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "detect_value with a control character",
+            "params": {
+                "detect_kind": "uninstall_name",
+                "detect_value": "Acme\u0001",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "args": "/S /norestart",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "detect_value empty",
+            "params": {
+                "detect_kind": "uninstall_name",
+                "detect_value": "",
+                "action": "install",
+                "mode": "dry_run",
+                "fmt": "exe",
+                "url": "https://downloads.example.com/s.exe",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 5000,
+                "args": "/S /norestart",
+                "detect_min": "",
+                "max_minutes": 10
+            },
+            "valid": false
+        },
+        {
+            "name": "max_minutes zero",
+            "params": {
+                "max_minutes": 0,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1"
+            },
+            "valid": false
+        },
+        {
+            "name": "max_minutes over the cap",
+            "params": {
+                "max_minutes": 121,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1"
+            },
+            "valid": false
+        },
+        {
+            "name": "max_minutes as a string",
+            "params": {
+                "max_minutes": "30",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1"
+            },
+            "valid": false
+        },
+        {
+            "name": "max_minutes as a float",
+            "params": {
+                "max_minutes": 30.5,
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1"
+            },
+            "valid": false
+        },
+        {
+            "name": "apt without a package",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with an option as the package",
+            "params": {
+                "pkg": "-oAPT::Foo",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a space in the package",
+            "params": {
+                "pkg": "a b",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a command in the package",
+            "params": {
+                "pkg": "x;touch /w/pwned",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a substitution in the package",
+            "params": {
+                "pkg": "$(touch /w/pwned)",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a newline after the package",
+            "params": {
+                "pkg": "pkg\n",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with an upper case package",
+            "params": {
+                "pkg": "Pkg",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a package starting with a dot",
+            "params": {
+                "pkg": ".hidden",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a package starting with a plus",
+            "params": {
+                "pkg": "+x",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a 101 character package",
+            "params": {
+                "pkg": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with an arch suffix",
+            "params": {
+                "pkg": "libc6:amd64",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a url",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "version": "1.5-1",
+                "max_minutes": 30,
+                "url": "https://downloads.example.com/a/setup.msi"
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a hash",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "version": "1.5-1",
+                "max_minutes": 30,
+                "sha256": "abababababababababababababababababababababababababababababababab"
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with arguments",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "version": "1.5-1",
+                "max_minutes": 30,
+                "args": "/S"
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a product code",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "version": "1.5-1",
+                "max_minutes": 30,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}"
+            },
+            "valid": false
+        },
+        {
+            "name": "apt with a detection rule",
+            "params": {
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "version": "1.5-1",
+                "max_minutes": 30,
+                "detect_kind": "package",
+                "detect_value": "rivetit-dummy",
+                "detect_min": ""
+            },
+            "valid": false
+        },
+        {
+            "name": "apt uninstall with a version",
+            "params": {
+                "action": "uninstall",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "version": "1.5-1",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt version with a space",
+            "params": {
+                "version": "1 2",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt version starting with a symbol",
+            "params": {
+                "version": "~1",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt version with an equals sign",
+            "params": {
+                "version": "1=2",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt version with a semicolon",
+            "params": {
+                "version": "1;id",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt version too long",
+            "params": {
+                "version": "a1111111111111111111111111111111111111111111111111111111111111111",
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "apt version as a number",
+            "params": {
+                "version": 1.5,
+                "action": "install",
+                "mode": "run",
+                "fmt": "apt",
+                "pkg": "rivetit-dummy",
+                "max_minutes": 30
+            },
+            "valid": false
+        },
+        {
+            "name": "msi install with a version",
+            "params": {
+                "version": "1.0",
+                "action": "install",
+                "mode": "run",
+                "fmt": "msi",
+                "url": "https://downloads.example.com/a/setup.msi",
+                "sha256": "abababababababababababababababababababababababababababababababab",
+                "size": 1048576,
+                "product_code": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_kind": "product_code",
+                "detect_value": "{12345678-ABCD-1234-ABCD-1234567890AB}",
+                "detect_min": "2.4.1",
+                "max_minutes": 30
+            },
+            "valid": false
+        }
+    ],
+    "detect": [
+        {
+            "name": "one package rule",
+            "params": {
+                "rules": "[{\"key\":\"p1\",\"kind\":\"package\",\"value\":\"openssl\",\"min\":\"3.0\"}]"
+            },
+            "valid": true
+        },
+        {
+            "name": "a product code rule",
+            "params": {
+                "rules": "[{\"key\":\"p2\",\"kind\":\"product_code\",\"value\":\"{12345678-ABCD-1234-ABCD-1234567890AB}\",\"min\":\"\"}]"
+            },
+            "valid": true
+        },
+        {
+            "name": "an uninstall name rule with unicode",
+            "params": {
+                "rules": "[{\"value\":\"Café Agent\",\"key\":\"p3\",\"kind\":\"uninstall_name\",\"min\":\"2.4.1\"}]"
+            },
+            "valid": true
+        },
+        {
+            "name": "three rules",
+            "params": {
+                "rules": "[{\"key\":\"p1\",\"kind\":\"package\",\"value\":\"openssl\",\"min\":\"3.0\"},{\"key\":\"p2\",\"kind\":\"product_code\",\"value\":\"{12345678-ABCD-1234-ABCD-1234567890AB}\",\"min\":\"\"},{\"key\":\"p3\",\"kind\":\"uninstall_name\",\"value\":\"Acme Agent (x64)\",\"min\":\"2.4.1\"}]"
+            },
+            "valid": true
+        },
+        {
+            "name": "no minimum",
+            "params": {
+                "rules": "[{\"min\":\"\",\"key\":\"p1\",\"kind\":\"package\",\"value\":\"openssl\"}]"
+            },
+            "valid": true
+        },
+        {
+            "name": "no rules key",
+            "params": [],
+            "valid": false
+        },
+        {
+            "name": "rules as an array, not text",
+            "params": {
+                "rules": [
+                    {
+                        "key": "p1",
+                        "kind": "package",
+                        "value": "openssl",
+                        "min": "3.0"
+                    }
+                ]
+            },
+            "valid": false
+        },
+        {
+            "name": "rules text is not JSON",
+            "params": {
+                "rules": "not json"
+            },
+            "valid": false
+        },
+        {
+            "name": "rules text is an object",
+            "params": {
+                "rules": "{\"key\":\"p1\",\"kind\":\"package\",\"value\":\"openssl\",\"min\":\"3.0\"}"
+            },
+            "valid": false
+        },
+        {
+            "name": "rules text is an empty list",
+            "params": {
+                "rules": "[]"
+            },
+            "valid": false
+        },
+        {
+            "name": "rules with an unknown member",
+            "params": {
+                "rules": "[{\"key\":\"p1\",\"kind\":\"package\",\"value\":\"openssl\",\"min\":\"3.0\",\"cmd\":\"id\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "rules missing a member",
+            "params": {
+                "rules": "[{\"key\":\"p1\",\"kind\":\"package\",\"value\":\"openssl\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "rules with a duplicate key",
+            "params": {
+                "rules": "[{\"key\":\"p1\",\"kind\":\"package\",\"value\":\"openssl\",\"min\":\"3.0\"},{\"value\":\"zlib\",\"key\":\"p1\",\"kind\":\"package\",\"min\":\"3.0\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "rules key with upper case",
+            "params": {
+                "rules": "[{\"key\":\"P1\",\"kind\":\"package\",\"value\":\"openssl\",\"min\":\"3.0\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "rules key starting with a symbol",
+            "params": {
+                "rules": "[{\"key\":\"-p1\",\"kind\":\"package\",\"value\":\"openssl\",\"min\":\"3.0\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "rules key too long",
+            "params": {
+                "rules": "[{\"key\":\"a1111111111111111111111111111111111111111\",\"kind\":\"package\",\"value\":\"openssl\",\"min\":\"3.0\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "rules kind unknown",
+            "params": {
+                "rules": "[{\"kind\":\"file\",\"key\":\"p1\",\"value\":\"openssl\",\"min\":\"3.0\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "package rule with an option as the name",
+            "params": {
+                "rules": "[{\"value\":\"-oAPT::Foo\",\"key\":\"p1\",\"kind\":\"package\",\"min\":\"3.0\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "package rule with an upper case name",
+            "params": {
+                "rules": "[{\"value\":\"OpenSSL\",\"key\":\"p1\",\"kind\":\"package\",\"min\":\"3.0\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "product code rule with a bad code",
+            "params": {
+                "rules": "[{\"value\":\"nope\",\"key\":\"p2\",\"kind\":\"product_code\",\"min\":\"\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "uninstall name rule with a control character",
+            "params": {
+                "rules": "[{\"value\":\"A\\u0001\",\"key\":\"p3\",\"kind\":\"uninstall_name\",\"min\":\"2.4.1\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "uninstall name rule empty",
+            "params": {
+                "rules": "[{\"value\":\"\",\"key\":\"p3\",\"kind\":\"uninstall_name\",\"min\":\"2.4.1\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "uninstall name rule too long",
+            "params": {
+                "rules": "[{\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"key\":\"p3\",\"kind\":\"uninstall_name\",\"min\":\"2.4.1\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "minimum with a letter first",
+            "params": {
+                "rules": "[{\"min\":\"v1\",\"key\":\"p1\",\"kind\":\"package\",\"value\":\"openssl\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "member as a number",
+            "params": {
+                "rules": "[{\"value\":5,\"key\":\"p1\",\"kind\":\"package\",\"min\":\"3.0\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "an unknown parameter next to rules",
+            "params": {
+                "rules": "[{\"key\":\"p1\",\"kind\":\"package\",\"value\":\"openssl\",\"min\":\"3.0\"}]",
+                "extra": 1
+            },
+            "valid": false
+        },
+        {
+            "name": "rules text over 1000 characters",
+            "params": {
+                "rules": "[{\"key\":\"p1\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p2\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p3\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p4\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p5\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p6\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p7\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p8\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p9\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p10\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p11\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"},{\"key\":\"p12\",\"kind\":\"uninstall_name\",\"value\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"min\":\"\"}]"
+            },
+            "valid": false
+        },
+        {
+            "name": "more than 25 rules",
+            "params": {
+                "rules": "[{\"key\":\"p1\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p2\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p3\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p4\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p5\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p6\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p7\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p8\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p9\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p10\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p11\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p12\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p13\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p14\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p15\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p16\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p17\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p18\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p19\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p20\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p21\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p22\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p23\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p24\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p25\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"},{\"key\":\"p26\",\"kind\":\"package\",\"value\":\"a\",\"min\":\"\"}]"
+            },
+            "valid": false
+        }
+    ]
+}

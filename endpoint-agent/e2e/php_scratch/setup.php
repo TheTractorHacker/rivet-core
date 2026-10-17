@@ -31,6 +31,14 @@ if ($m === null) {
 GoldenEdition::migrate($m);
 // the patch-management proof (run_patch_proof.sh): the Phase 4 tables and the `patching` switch; the golden replay (older agents) leaves both off
 $patching = getenv('RMM_PROOF_PATCHING') === '1';
+// the software-deployment proof (run_software_proof.sh): the Phase 5 tables (and the Phase 4 ones its ring lookup reads) and the `software_deploy` switch
+$software = getenv('RMM_PROOF_SOFTWARE') === '1';
+if ($software) {
+    $db = new \RivetCore\Tests\Support\MysqliDatabase($m);
+    foreach ([new \RivetCore\Jobs\Migration\Migration0002IntegrationJobs(), new \RivetCore\Jobs\Migration\Migration0012JobHeartbeat(), new \RivetCore\Rmm\Migration\Migration0028Patching(), new \RivetCore\Rmm\Migration\Migration0029SoftwareDeploy()] as $mig) {
+        $mig->up($db);
+    }
+}
 if ($patching) {
     // a housekeeping pass (run_patch_proof.sh calls it) also touches the job queue of Core and the later RMM tables
     $db = new \RivetCore\Tests\Support\MysqliDatabase($m);
@@ -43,7 +51,7 @@ $client = $e->tenancy->addClient('Proof Dept');
 $s = $e->module->settings();
 $s->enable();
 $errors = $s->update(['service_url' => $url, 'unmatched_policy' => 'auto_create',
-    'features_json' => ['monitoring' => true, 'metrics' => true, 'jobs' => true, 'updates' => true, 'alerting' => true, 'remote_tools' => true, 'filetransfer' => true, 'logs' => true] + ($patching ? ['patching' => true] : [])]);
+    'features_json' => ['monitoring' => true, 'metrics' => true, 'jobs' => true, 'updates' => true, 'alerting' => true, 'remote_tools' => true, 'filetransfer' => true, 'logs' => true] + ($patching ? ['patching' => true] : []) + ($software ? ['software_deploy' => true] : [])]);
 if ($errors !== []) {
     fwrite(STDERR, implode("\n", $errors) . "\n");
     exit(1);

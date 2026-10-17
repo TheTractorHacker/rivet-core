@@ -75,6 +75,7 @@ final class Housekeeping
         private readonly ?LogRuleService $logRules = null,
         private readonly ?TransferService $transfers = null,
         private readonly ?\RivetCore\Rmm\Patch\PatchScheduler $patches = null,
+        private readonly ?\RivetCore\Rmm\Deploy\DeployScheduler $deploy = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -143,6 +144,14 @@ final class Housekeeping
                 $out += $this->patches->run();
             } catch (\Throwable $e) {
                 error_log('rmm housekeeping (patching): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0028 not applied yet
+            }
+        }
+        // Phase 5: software detection, deployment and the clean-up of its data, only while the `software_deploy` switch is on. A failure here never stops the rest of the run.
+        if ($this->deploy !== null && $this->settings->featureOn('software_deploy')) {
+            try {
+                $out += $this->deploy->run();
+            } catch (\Throwable $e) {
+                error_log('rmm housekeeping (software deploy): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0029 not applied yet
             }
         }
         if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {

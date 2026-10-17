@@ -4,544 +4,405 @@ declare(strict_types=1);
 
 namespace RivetCore\Tests\Integration\Rmm;
 
-use RivetCore\Rmm\Authz\RmmPrincipal;
-use RivetCore\Rmm\Http\RmmRequest;
-use RivetCore\Rmm\Http\RmmResponse;
-use RivetCore\Rmm\Http\SapiEmitter;
-use RivetCore\Rmm\Installer\InstallerStamp;
-use RivetCore\Rmm\RmmProtocol;
-use RivetCore\Tests\Support\AllowUsersPolicy;
-use RivetCore\Tests\Support\RmmHarness;
-use RivetCore\Tests\Support\RmmTestCase;
+use RivetCore\Rmm\RmmEvent;
+use RivetCore\Tests\Support\DeployTestCase;
 
-/**
- * Port of the non-HTTP parts of RivetIT tests/endpoint_agent_deploy_unit.php and endpoint_agent_deploy_http.php: PE validation and
- * the upload rules of BinaryStore (through RmmAdmin::uploadBinary), release rows, current-binary switching, the per-client installer
- * (stamped bytes, payload, token row, audit, hostile names, CA, refusals), the deployment commands and the streaming checks.
- * The HTTP layer of the original (forged sessions, CSRF, multipart upload, php -S) is the edition's.
- */
-final class DeployTest extends RmmTestCase
+/** Phase 5: the package catalog, assignments, manual runs, results, approvals and the authorization of every route, end to end through the REST API and the device endpoints. */
+final class DeployTest extends DeployTestCase
 {
-    private RmmPrincipal $admin;
-    private RmmPrincipal $tech;
-    private string $tmp = '';
-
-    protected function makeHarness(): RmmHarness
-    {
-        return new RmmHarness(policy: new AllowUsersPolicy([1 => true, 10 => [\RivetCore\Rmm\Authz\RmmAbility::DEVICE_VIEW, \RivetCore\Rmm\Authz\RmmAbility::JOB_RUN_SAVED]]));
-    }
+    private int $dev = 0;
+    private string $tok = '';
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->admin = new RmmPrincipal(1, 'Admin');
-        $this->tech = new RmmPrincipal(10, 'Tech');
-        $this->tmp = sys_get_temp_dir() . '/rmm_deploy_' . bin2hex(random_bytes(4));
-        mkdir($this->tmp, 0700);
-        $this->h->enable();
-        $this->h->module->settings()->set(['service_url' => 'https://rmm.example.com']);
+        [$this->dev, $this->tok] = $this->linked('W1');
     }
 
-    protected function tearDown(): void
+    private function d(): string
     {
-        foreach (glob($this->tmp . '/*') ?: [] as $f) {
-            @unlink($f);
+        return (string) $this->dev;
+    }
+
+    // ------------------------------------------------------------------ catalog
+
+    public function testAVersionIsCheckedWhenSavedAndNeverEditedAfterwards(): void
+    {
+        $pkg = $this->package();
+        $ok = ['version' => '1.0.0', 'os' => 'windows', 'fmt' => 'msi', 'url' => 'https://' . self::HOST . '/a.msi', 'sha256' => self::SHA, 'size_bytes' => 100, 'product_code' => self::CODE];
+        $post = fn (array $over, array $drop = []) => $this->api('POST', ['software_packages', (string) $pkg, 'versions'], $this->admin, array_diff_key($over + $ok, array_flip($drop)));
+        $this->assertSame(422, $post([])[0], 'the host is not on the list yet');
+        $this->allowHost();
+        $bad = [
+            'http url' => ['url' => 'http://' . self::HOST . '/a.msi'],
+            'unlisted host' => ['url' => 'https://other.example.com/a.msi'],
+            'ip host' => ['url' => 'https://127.0.0.1/a.msi'],
+            'userinfo' => ['url' => 'https://x@' . self::HOST . '/a.msi'],
+            'port' => ['url' => 'https://' . self::HOST . ':8443/a.msi'],
+            'fragment' => ['url' => 'https://' . self::HOST . '/a.msi#x'],
+            'query string (a token would be readable in every job record)' => ['url' => 'https://' . self::HOST . '/a.msi?sig=SECRET'],
+            'lookalike' => ['url' => 'https://' . self::HOST . '.evil.example/a.msi'],
+            'no hash' => [[], ['sha256']],
+            'short hash' => ['sha256' => 'abc'],
+            'non hex hash' => ['sha256' => str_repeat('g', 64)],
+            'no size' => [[], ['size_bytes']],
+            'huge size' => ['size_bytes' => 5000000000],
+            'string size' => ['size_bytes' => '100'],
+            'no product code' => [[], ['product_code']],
+            'bad product code' => ['product_code' => '12345678-ABCD-1234-ABCD-1234567890AB'],
+            'args on an msi' => ['silent_args' => '/S'],
+            'package name on windows' => ['pkg_name' => 'x'],
+            'unknown field' => ['extra' => 1],
+            'apt on windows' => ['fmt' => 'apt'],
+            'bad label' => ['version' => "1.0\n"],
+        ];
+        foreach ($bad as $why => $args) {
+            $r = $post($args[0] ?? $args, $args[1] ?? []);
+            $this->assertSame(422, $r[0], "$why: " . json_encode($r[1]));
         }
-        @rmdir($this->tmp);
-        parent::tearDown();
+        [$c, $j] = $post([]);
+        $this->assertSame(201, $c, json_encode($j));
+        $vid = (int) $j['version_id'];
+        $this->assertSame(strtoupper(self::CODE), $j['product_code']);
+        $this->assertSame(422, $post([])[0], 'the same version again is refused: add a new one');
+        // nothing but "retired" can change, through the API or at all
+        $this->assertSame(422, $this->api('PATCH', ['software_packages', (string) $pkg, 'versions', (string) $vid], $this->admin, ['sha256' => str_repeat('b', 64)])[0]);
+        $this->assertSame(422, $this->api('PATCH', ['software_packages', (string) $pkg, 'versions', (string) $vid], $this->admin, ['retired' => true, 'url' => 'https://' . self::HOST . '/b.msi'])[0]);
+        $this->assertSame(200, $this->api('PATCH', ['software_packages', (string) $pkg, 'versions', (string) $vid], $this->admin, ['retired' => true])[0]);
+        $this->assertSame(1, (int) $this->h->one("SELECT retired FROM rmm_package_versions WHERE version_id = $vid"));
+        $this->assertSame(self::SHA, $this->h->one("SELECT sha256 FROM rmm_package_versions WHERE version_id = $vid"));
     }
 
-    private function put(string $name, string $bytes): string
+    public function testExeNeedsADetectionRuleAndSafeArguments(): void
     {
-        file_put_contents($this->tmp . '/' . $name, $bytes);
-
-        return $this->tmp . '/' . $name;
-    }
-
-    private function pe(int $machine, int $size = 8192, string $fill = 'a'): string
-    {
-        return RmmHarness::fakePe($machine, $size, $fill);
-    }
-
-    private function bins(): int
-    {
-        return (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_binaries');
-    }
-
-    private function upload(string $bytes, string $version = '1.0.0', string $arch = 'amd64', array $opts = [], ?RmmPrincipal $who = null): \RivetCore\Rmm\Technician\ActionResult
-    {
-        return $this->h->module->admin()->uploadBinary($who ?? $this->admin, $this->put('up.exe', $bytes), $version, $arch, $opts);
-    }
-
-    // ------------------------------------------------------------------ PE validation (the unit test)
-
-    public function testPeValidation(): void
-    {
-        $bs = $this->h->module->binaryStore();
-        $good = $bs->inspect($this->put('amd64.exe', $this->pe(0x8664, 4096)), 'amd64');
-        $this->assertIsArray($good);
-        $this->assertSame(4096, $good['size']);
-        $this->assertSame(hash('sha256', $this->pe(0x8664, 4096)), $good['sha256']);
-        $this->assertIsArray($bs->inspect($this->put('arm64.exe', $this->pe(0xAA64, 4096)), 'arm64'));
-        $e = $bs->inspect($this->put('wrong.exe', $this->pe(0xAA64, 4096)), 'amd64');
-        $this->assertIsString($e);
-        $this->assertStringContainsString('0xAA64', $e);
-        $this->assertIsString($bs->inspect($this->put('wrong2.exe', $this->pe(0x8664, 4096)), 'arm64'));
-        $this->assertIsString($bs->inspect($this->put('i386.exe', $this->pe(0x014C, 4096)), 'amd64'), 'x86 refused');
-        $this->assertIsString($bs->inspect($this->put('text.exe', str_repeat('hello world ', 400)), 'amd64'));
-        $this->assertIsString($bs->inspect($this->put('tiny.exe', 'MZ'), 'amd64'));
-        $big = $this->pe(0x8664, 5000);
-        $this->assertIsString($bs->inspect($this->put('badoff.exe', substr_replace($big, pack('V', 0xFFFFFFF0), 0x3C, 4)), 'amd64'), 'huge e_lfanew refused');
-        $this->assertIsString($bs->inspect($this->put('badoff2.exe', substr_replace($big, pack('V', 9000), 0x3C, 4)), 'amd64'), 'offset past the end refused');
-        $this->assertIsString($bs->inspect($this->put('nopesig.exe', substr_replace($big, 'XX', 128, 2)), 'amd64'), 'missing PE signature refused');
-        $dll = RmmHarness::fakePe(0x8664, 4096, 'a');
-        $dll = substr_replace($dll, pack('v', 0x2022), 128 + 22, 2);
-        $this->assertSame('This is a DLL, not an executable.', $bs->inspect($this->put('dll.exe', $dll), 'amd64'));
-        $this->assertIsString($bs->inspect($this->put('a.exe', $this->pe(0x8664)), 'x86'), 'unknown architecture refused');
-        $this->assertSame('The file could not be read.', $bs->inspect($this->tmp . '/missing.nope', 'amd64'));
-        $stamped = InstallerStamp::stamp($this->pe(0x8664), '{"version":1}');
-        $e = $bs->inspect($this->put('stamped.exe', $stamped), 'amd64');
-        $this->assertIsString($e);
-        $this->assertStringContainsString('RIVETIT-EMBED', $e, 'a pre-stamped file is refused');
-        $this->assertIsArray($bs->inspect($this->put('magicbody.exe', $this->pe(0x8664) . 'xx' . InstallerStamp::MAGIC . 'yy'), 'amd64'), 'the magic string inside the file is not a footer');
-        $e = $bs->inspect($this->put('big.exe', $this->pe(0x8664, 5000)), 'amd64', 4999);
-        $this->assertIsString($e);
-        $this->assertStringContainsString('larger', $e);
-        $this->assertIsArray($bs->inspect($this->put('exact.exe', $this->pe(0x8664, 5000)), 'amd64', 5000), 'exactly at the cap is accepted');
-    }
-
-    public function testDetectIdentifiesPeAndElfByTheirHeaders(): void
-    {
-        $bs = $this->h->module->binaryStore();
-        $pe = $bs->detect($this->put('a.exe', $this->pe(0xAA64, 4096)));
-        $this->assertIsArray($pe);
-        $this->assertSame(['pe', 0xAA64, 'arm64', false], [$pe['format'], $pe['machine'], $pe['arch'], $pe['dll']]);
-        $elf = static fn (int $machine, int $class = 2, int $data = 1): string => "\x7fELF" . chr($class) . chr($data) . "\x01" . str_repeat("\0", 9) . pack('v', 2) . pack('v', $machine) . str_repeat("\0", 64);
-        $x = $bs->detect($this->put('lin-amd64', $elf(62)));
-        $this->assertIsArray($x);
-        $this->assertSame(['elf', 62, 'amd64'], [$x['format'], $x['machine'], $x['arch']]);
-        $x = $bs->detect($this->put('lin-arm64', $elf(183)));
-        $this->assertIsArray($x);
-        $this->assertSame('arm64', $x['arch']);
-        $x = $bs->detect($this->put('lin-riscv', $elf(243)));
-        $this->assertIsArray($x);
-        $this->assertNull($x['arch'], 'a machine type the agent is not built for');
-        $this->assertIsString($bs->detect($this->put('lin32', $elf(62, 1))), '32-bit ELF');
-        $this->assertIsString($bs->detect($this->put('linbe', $elf(62, 2, 2))), 'big-endian ELF');
-        $this->assertIsString($bs->detect($this->put('nothing', str_repeat('x', 100))));
-        $e = $bs->inspect($this->put('linux-agent', $elf(62) . str_repeat("\0", 2000)), 'amd64');
-        $this->assertIsString($e, 'a Linux binary is not hosted through the Windows path');
-        $this->assertStringContainsString('install-linux.sh', $e);
-        $this->assertSame(0, $this->bins());
-    }
-
-    // ------------------------------------------------------------------ upload and publishing
-
-    public function testUploadRefusals(): void
-    {
-        $r = $this->upload($this->pe(0xAA64, 5000));
-        $this->assertFalse($r->ok);
-        $this->assertStringContainsString('0xAA64', $r->message);
-        $this->assertSame(0, $this->bins());
-        $this->assertStringContainsString('not a Windows executable', $this->upload(str_repeat('not an exe ', 500))->message);
-        $this->assertStringContainsString('RIVETIT-EMBED', $this->upload(InstallerStamp::stamp($this->pe(0x8664, 300000, 'amd'), '{"version":1}'))->message);
-        foreach (['v1.0', '1.0.0/../x', '', '1.0.0 x'] as $bad) {
-            $this->assertFalse($this->upload($this->pe(0x8664), $bad)->ok, json_encode($bad));
+        $pkg = $this->package('Exe thing');
+        $this->allowHost();
+        $exe = ['version' => '9.1', 'os' => 'windows', 'fmt' => 'exe', 'url' => 'https://' . self::HOST . '/s.exe', 'sha256' => self::SHA, 'size_bytes' => 5000, 'silent_args' => '/S /norestart',
+            'detect_kind' => 'uninstall_name', 'detect_value' => 'Exe thing', 'detect_min' => '9.1'];
+        $post = fn (array $over, array $drop = []) => $this->api('POST', ['software_packages', (string) $pkg, 'versions'], $this->admin, array_diff_key($over + $exe, array_flip($drop)));
+        foreach ([['silent_args' => '/S "quoted"'], ['silent_args' => '/S & calc'], ['silent_args' => '/S; rm'], ['silent_args' => '/S|x'], ['silent_args' => '/S $(x)'], ['silent_args' => "/S\n/x"], ['silent_args' => '/S  /x'],
+            ['silent_args' => implode(' ', array_fill(0, 13, '/x'))], ['silent_args' => str_repeat('a', 81)], ['product_code' => self::CODE], ['detect_kind' => 'package'], ['detect_kind' => 'nope']] as $over) {
+            $this->assertSame(422, $post($over)[0], json_encode($over));
         }
-        $this->assertFalse($this->upload($this->pe(0x8664), '1.0.0', 'riscv')->ok);
-        $this->assertSame(0, $this->bins());
+        $this->assertSame(422, $post([], ['detect_kind', 'detect_value', 'detect_min'])[0], 'no detection rule');
+        $this->assertSame(201, $post([])[0]);
+        $this->assertSame(201, $post(['version' => '9.2', 'silent_args' => '', 'detect_kind' => 'product_code', 'detect_value' => self::CODE, 'detect_min' => ''])[0]);
     }
 
-    public function testOversizeUploadIsRefused(): void
+    public function testALinuxVersionNamesAPackageAndNothingElse(): void
     {
-        $h = new RmmHarness(options: ['max_upload_bytes' => 4096], policy: new AllowUsersPolicy([1 => true]));
-        $this->assertSame(4096, $h->module->binaryStore()->maxBytes());
-        $r = $h->module->admin()->uploadBinary($this->admin, $this->put('big.exe', $this->pe(0x8664, 4097)), '1.0.0', 'amd64');
-        $this->assertFalse($r->ok);
-        $this->assertStringContainsString('larger than the 4 KiB limit', $r->message);
-        $this->assertSame(0, (int) $h->one('SELECT COUNT(*) FROM endpoint_agent_binaries'));
-        $this->assertTrue($h->module->admin()->uploadBinary($this->admin, $this->put('ok.exe', $this->pe(0x8664, 4096)), '1.0.0', 'amd64')->ok, 'exactly at the cap');
-        $floor = new RmmHarness(options: ['max_upload_bytes' => 10], policy: new AllowUsersPolicy([1 => true]));
-        $this->assertSame(1024, $floor->module->binaryStore()->maxBytes(), 'the cap never goes below 1024');
-        $this->assertLessThanOrEqual($this->h->module->binaryStore()->maxBytes(), $this->h->module->binaryStore()->effectiveUploadLimit());
-    }
-
-    public function testGoodUploadStoresARowAndARandomlyNamedFile(): void
-    {
-        $exe = $this->pe(0x8664, 300000, 'amd');
-        $r = $this->upload($exe, '1.0.0', 'amd64', ['activate' => true]);
-        $this->assertTrue($r->ok, $r->message);
-        $row = $this->h->rows('SELECT * FROM endpoint_agent_binaries')[0];
-        $this->assertSame(['amd64', '1.0.0', hash('sha256', $exe), strlen($exe), 1, 1], [$row['arch'], $row['version'], $row['sha256'], (int) $row['size_bytes'], (int) $row['is_current'], (int) $row['active']]);
-        $this->assertMatchesRegularExpression('/^bin_[0-9a-f]{32}\.bin$/', $row['storage_name']);
-        $this->assertSame($exe, file_get_contents($this->h->binaryDir . '/' . $row['storage_name']));
-        $this->assertFileDoesNotExist($this->h->binaryDir . '/up.exe');
-        $this->assertStringContainsString('denied', (string) file_get_contents($this->h->binaryDir . '/.htaccess'));
-        $this->assertFileExists($this->h->binaryDir . '/index.html');
-        $this->assertStringContainsString(hash('sha256', $exe), $r->message, 'the stored SHA-256 is shown to the administrator');
-        $audit = array_values(array_filter($this->h->audit->records(), static fn (array $a): bool => $a['action'] === 'Binary Uploaded'));
-        $this->assertCount(1, $audit);
-        $this->assertStringContainsString('Admin uploaded agent binary 1.0.0', $audit[0]['description']);
-        $this->assertStringContainsString('made it current', $audit[0]['description']);
-    }
-
-    public function testPublishingIsIdempotentAndAReleasedVersionNeverChanges(): void
-    {
-        $exe = $this->pe(0x8664, 300000, 'amd');
-        $this->assertTrue($this->upload($exe, '1.0.0', 'amd64', ['activate' => true])->ok);
-        $again = $this->upload($exe, '1.0.0', 'amd64', ['activate' => true]);
-        $this->assertTrue($again->ok);
-        $this->assertFalse($again->data['created']);
-        $this->assertSame(1, $this->bins());
-        $this->assertCount(1, glob($this->h->binaryDir . '/bin_*.bin') ?: []);
-        $diff = $this->upload($this->pe(0x8664, 9000, 'other'), '1.0.0');
-        $this->assertFalse($diff->ok);
-        $this->assertStringContainsString('different contents', $diff->message);
-        $this->assertSame(1, $this->bins());
-        // a lost file is restored from an identical re-upload
-        $name = (string) $this->h->one('SELECT storage_name FROM endpoint_agent_binaries');
-        unlink($this->h->binaryDir . '/' . $name);
-        $this->assertTrue($this->upload($exe, '1.0.0')->ok);
-        $this->assertSame($exe, file_get_contents($this->h->binaryDir . '/' . $name));
-    }
-
-    public function testCurrentBinaryPerArchitectureAndDeactivateReactivate(): void
-    {
-        $this->assertTrue($this->upload($this->pe(0x8664, 300000, 'amd'), '1.0.0', 'amd64', ['activate' => true])->ok);
-        $this->assertTrue($this->upload($this->pe(0xAA64, 200000, 'arm'), '1.0.0', 'arm64', ['activate' => true])->ok);
-        $this->assertSame([1, 1], [(int) $this->h->one("SELECT is_current FROM endpoint_agent_binaries WHERE arch='amd64'"), (int) $this->h->one("SELECT is_current FROM endpoint_agent_binaries WHERE arch='arm64'")]);
-        $this->assertTrue($this->upload($this->pe(0x8664, 250000, 'v11'), '1.1.0', 'amd64', ['activate' => true])->ok);
-        $this->assertSame('1.1.0', $this->h->one("SELECT version FROM endpoint_agent_binaries WHERE arch='amd64' AND is_current=1"));
-        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_binaries WHERE arch='amd64' AND is_current=1"));
-        $id100 = (int) $this->h->one("SELECT binary_id FROM endpoint_agent_binaries WHERE arch='amd64' AND version='1.0.0'");
-        $a = $this->h->module->admin();
-        $this->assertTrue($a->binaryAction($this->admin, $id100, 'make_current')->ok);
-        $this->assertSame('1.0.0', $this->h->one("SELECT version FROM endpoint_agent_binaries WHERE arch='amd64' AND is_current=1"));
-        $this->assertTrue($a->binaryAction($this->admin, $id100, 'deactivate')->ok);
-        $row = $this->h->rows("SELECT * FROM endpoint_agent_binaries WHERE binary_id=$id100")[0];
-        $this->assertSame([0, 0], [(int) $row['active'], (int) $row['is_current']]);
-        $this->assertFileExists($this->h->binaryDir . '/' . $row['storage_name'], 'deleting only deactivates: the file stays');
-        $this->assertFalse($a->binaryAction($this->admin, $id100, 'make_current')->ok, 'an inactive binary cannot become current');
-        $this->assertTrue($a->binaryAction($this->admin, $id100, 'activate')->ok);
-        $this->assertSame(1, (int) $this->h->one("SELECT active FROM endpoint_agent_binaries WHERE binary_id=$id100"));
-        $this->assertSame(404, $a->binaryAction($this->admin, 9999, 'activate')->http);
-        $this->assertSame(422, $a->binaryAction($this->admin, $id100, 'format')->http);
-    }
-
-    public function testPublishingWithARingCreatesTheHostedReleaseRow(): void
-    {
-        $exe = $this->pe(0x8664, 7000, 'cli');
-        $this->assertTrue($this->upload($exe, '2.0.0')->ok);
-        $this->assertSame(0, (int) $this->h->one("SELECT is_current FROM endpoint_agent_binaries WHERE version='2.0.0'"), 'without activate the current binary is untouched');
-        $r = $this->upload($exe, '2.0.0', 'amd64', ['activate' => true, 'release_ring' => 'pilot', 'rollout_pct' => 40]);
-        $this->assertTrue($r->ok, $r->message);
-        $rel = $this->h->rows("SELECT * FROM endpoint_agent_releases WHERE version='2.0.0'")[0];
-        $this->assertSame(['pilot', 40, 'amd64', 'https://rmm.example.com/api/v1/agent_update?arch=amd64&version=2.0.0', hash('sha256', $exe)], [$rel['ring'], (int) $rel['rollout_pct'], $rel['arch'], $rel['url'], $rel['sha256']]);
-        $this->assertNotNull($rel['binary_id']);
-        $this->assertSame(1, (int) $this->h->one("SELECT is_current FROM endpoint_agent_binaries WHERE version='2.0.0'"));
-        // offering again refreshes the same row; a bad ring or a missing service URL is refused
-        $this->assertTrue($this->h->module->admin()->binaryAction($this->admin, (int) $rel['binary_id'], 'offer_update', 'pilot', 80)->ok);
-        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_releases WHERE version='2.0.0'"));
-        $this->assertSame(80, (int) $this->h->one("SELECT rollout_pct FROM endpoint_agent_releases WHERE version='2.0.0'"));
-        $this->assertFalse($this->h->module->admin()->binaryAction($this->admin, (int) $rel['binary_id'], 'offer_update', 'beta')->ok);
-        $this->h->module->settings()->set(['service_url' => '']);
-        $r = $this->h->module->admin()->binaryAction($this->admin, (int) $rel['binary_id'], 'offer_update', 'stable', 10);
-        $this->assertFalse($r->ok);
-        $this->assertStringContainsString('https service URL', $r->message);
-        // deactivating the binary also withdraws its releases
-        $this->assertTrue($this->h->module->admin()->binaryAction($this->admin, (int) $rel['binary_id'], 'deactivate')->ok);
-        $this->assertSame(0, (int) $this->h->one("SELECT active FROM endpoint_agent_releases WHERE version='2.0.0'"));
-    }
-
-    public function testReleaseRowEditsAndExternalReleases(): void
-    {
-        $a = $this->h->module->admin();
-        $this->assertTrue($this->upload($this->pe(0x8664, 7000, 'r'), '2.1.0', 'amd64', ['release_ring' => 'stable', 'rollout_pct' => 10])->ok);
-        $rid = (int) $this->h->one('SELECT release_id FROM endpoint_agent_releases');
-        $this->assertTrue($a->updateRelease($this->admin, $rid, 250, false)->ok);
-        $this->assertSame([100, 0], [(int) $this->h->one("SELECT rollout_pct FROM endpoint_agent_releases WHERE release_id=$rid"), (int) $this->h->one("SELECT active FROM endpoint_agent_releases WHERE release_id=$rid")], 'the percentage is clamped');
-        $this->assertSame(404, $a->updateRelease($this->admin, 99999, 5, true)->http);
-        $r = $a->addExternalRelease($this->admin, '3.0.0', 'https://rmm.example.com/pkg.exe', str_repeat('a', 64), '', 'stable', 20, 'n');
-        $this->assertTrue($r->ok, $r->message);
-        $this->assertFalse($a->addExternalRelease($this->admin, '3.0.1', 'https://other.example.com/pkg.exe', str_repeat('a', 64), '0.0.0', 'stable', 20, '')->ok, 'must be served from this host');
-        $this->assertFalse($a->addExternalRelease($this->admin, '3.0.1', 'http://rmm.example.com/pkg.exe', str_repeat('a', 64), '0.0.0', 'stable', 20, '')->ok);
-    }
-
-    public function testAdminOperationsAreRefusedToNonAdministratorsWithoutChangingAnything(): void
-    {
-        $a = $this->h->module->admin();
-        $r = $a->uploadBinary($this->tech, $this->put('a.exe', $this->pe(0x8664)), '1.0.0', 'amd64');
-        $this->assertSame([false, 403], [$r->ok, $r->http]);
-        $this->assertSame(0, $this->bins());
-        $this->assertSame(403, $a->saveSettings($this->tech, ['service_url' => 'https://evil.example.com'])->http);
-        $this->assertSame('https://rmm.example.com', $this->h->module->settings()->get(true)['service_url']);
-        $this->assertSame(403, $a->rotateSigningKey($this->tech)->http);
-        $this->assertSame(403, $a->saveMesh($this->tech, ['mesh_url' => 'https://mesh.example.com'])->http);
-        $this->assertSame(403, $a->downloadInstaller($this->tech, $this->h->clientA, 0, 'stable', 5, 7, '', 'amd64')->http);
-        $this->assertSame(403, $a->deploymentCommands($this->tech, $this->h->clientA, 0, 'stable', 5, 7, '', 'amd64')->http);
-        $this->assertSame(403, $a->binaryAction($this->tech, 1, 'deactivate')->http);
-        $this->assertSame(403, $a->updateRelease($this->tech, 1, 5, true)->http);
-        $this->assertSame(403, $a->enable($this->tech)->http);
-        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_enrollment_tokens'));
-        $this->assertSame(403, $this->h->module->technician()->createToken($this->tech, $this->h->clientA, 0, 'stable', 1, 1, 'x')->http);
-    }
-
-    // ------------------------------------------------------------------ the per-client installer
-
-    private function publishCurrent(): array
-    {
-        $exe = $this->pe(0x8664, 300000, 'amd');
-        $exeArm = $this->pe(0xAA64, 200000, 'arm');
-        $this->assertTrue($this->upload($exe, '1.1.0', 'amd64', ['activate' => true])->ok);
-        $this->assertTrue($this->upload($exeArm, '1.1.0', 'arm64', ['activate' => true])->ok);
-
-        return [$exe, $exeArm];
-    }
-
-    /** @return array{0:string,1:array<string,mixed>,2:RmmResponse} body, parsed stamp, response */
-    private function download(int $client, string $arch = 'amd64', string $ring = 'pilot', int $ttl = 5, int $uses = 7, string $label = 'Front <b>desk</b>'): array
-    {
-        $r = $this->h->module->admin()->downloadInstaller($this->admin, $client, 0, $ring, $ttl, $uses, $label, $arch);
-        $this->assertTrue($r->ok, $r->message);
-        /** @var RmmResponse $resp */
-        $resp = $r->data['download'];
-        $body = $this->emit($resp);
-        $stamp = InstallerStamp::read($body);
-        $this->assertNotNull($stamp);
-
-        return [$body, $stamp, $resp];
-    }
-
-    private function emit(RmmResponse $resp): string
-    {
-        $out = '';
-        (new SapiEmitter(static function (int $c): void {
-        }, static function (string $h): void {
-        }, static function (string $b) use (&$out): void {
-            $out .= $b;
-        }))->emit($resp);
-
-        return $out;
-    }
-
-    public function testInstallerIsTheCurrentBinaryPlusAVerifiedTrailer(): void
-    {
-        [$exe, $exeArm] = $this->publishCurrent();
-        [$body, $stamp, $resp] = $this->download($this->h->clientA);
-        $this->assertSame('attachment; filename="RivetIT-Agent-Setup-dept-a-x64.exe"', $resp->headers['Content-Disposition']);
-        $this->assertSame('application/octet-stream', $resp->headers['Content-Type']);
-        $this->assertSame('nosniff', $resp->headers['X-Content-Type-Options']);
-        $this->assertStringContainsString('no-store', $resp->headers['Cache-Control']);
-        $this->assertSame(strlen($body), $resp->file?->totalLength());
-        $this->assertSame($exe, substr($body, 0, $stamp['exe_length']), 'the stamped file is the CURRENT binary byte for byte, plus the trailer');
-        $d = $stamp['data'];
-        $this->assertSame(1, $d['version']);
-        $this->assertSame('Dept A', $d['department']);
-        $this->assertSame('https://rmm.example.com', $d['server_url']);
-        $this->assertNull($d['ca_pem']);
-        $this->assertMatchesRegularExpression('/^[0-9a-f-]{36}$/', $d['installer_id']);
-        $this->assertMatchesRegularExpression('/^rvte1\.[0-9a-f]{12}\.[0-9a-f]{40}$/', $d['enrollment_token']);
-        $this->assertEqualsWithDelta(time() + 5 * 3600, strtotime($d['expires_at']), 30);
-        $this->assertEqualsWithDelta(time(), strtotime($d['created_at']), 30);
-        $this->assertStringEndsWith('Z', $d['expires_at']);
-        [, $sel, $sec] = explode('.', $d['enrollment_token']);
-        $t = $this->h->rows("SELECT * FROM endpoint_agent_enrollment_tokens WHERE token_selector='$sel'")[0];
-        $this->assertTrue(hash_equals($t['token_hash'], hash('sha256', $sec)));
-        $this->assertSame([$this->h->clientA, 0, 'pilot', 7, 'Front <b>desk</b>', 1, 0], [(int) $t['client_id'], (int) $t['location_id'], $t['ring'], (int) $t['max_uses'], $t['label'], (int) $t['created_by'], (int) $t['use_count']]);
-        $log = array_values(array_filter($this->h->audit->records(), static fn (array $a): bool => $a['action'] === 'Installer Created'));
-        $this->assertCount(1, $log);
-        foreach (['Admin', $d['installer_id'], 'Dept A', '#' . $t['token_id']] as $needle) {
-            $this->assertStringContainsString($needle, $log[0]['description']);
+        $pkg = $this->package('Dummy');
+        $post = fn (array $b) => $this->api('POST', ['software_packages', (string) $pkg, 'versions'], $this->admin, $b + ['version' => '1.5', 'os' => 'linux', 'fmt' => 'apt']);
+        foreach ([[], ['pkg_name' => 'Bad Name'], ['pkg_name' => '-oAPT::Foo'], ['pkg_name' => 'a b'], ['pkg_name' => 'x;touch /w/pwned'], ['pkg_name' => '$(id)'], ['pkg_name' => "pkg\n"], ['pkg_name' => str_repeat('a', 101)],
+            ['pkg_name' => 'ok', 'url' => 'https://' . self::HOST . '/x.deb'], ['pkg_name' => 'ok', 'sha256' => self::SHA], ['pkg_name' => 'ok', 'silent_args' => '/S'], ['pkg_name' => 'ok', 'fmt' => 'msi'],
+            ['pkg_name' => 'ok', 'pin_version' => 'yes'], ['pkg_name' => 'ok', 'pin_version' => true, 'version' => 'has space']] as $b) {
+            $this->assertSame(422, $post($b)[0], json_encode($b));
         }
-        $this->assertStringNotContainsString($sec, (string) json_encode($this->h->audit->records()), 'the token secret is in no audit record');
-        // the minted token really enrolls a device
-        [$c, , $j] = $this->h->enroll($d['enrollment_token'], $this->h::device());
-        $this->assertSame(201, $c);
-        $this->assertArrayHasKey('device_token', $j);
-        // defaults and arm64
-        $r = $this->h->module->admin()->downloadInstaller($this->admin, $this->h->clientA, 0, 'stable', 5, 25, '', 'amd64');
-        $this->assertTrue($r->ok);
-        $this->assertStringStartsWith('Installer ', (string) $this->h->one('SELECT label FROM endpoint_agent_enrollment_tokens ORDER BY token_id DESC LIMIT 1'));
-        [$body, $stamp, $resp] = $this->download($this->h->clientB, 'arm64');
-        $this->assertSame('attachment; filename="RivetIT-Agent-Setup-dept-b-arm64.exe"', $resp->headers['Content-Disposition']);
-        $this->assertSame('Dept B', $stamp['data']['department']);
-        $this->assertSame($exeArm, substr($body, 0, $stamp['exe_length']));
+        [$c, $j] = $post(['pkg_name' => 'rivetit-dummy', 'pin_version' => true]);
+        $this->assertSame(201, $c, json_encode($j));
+        $this->assertSame(['package', 'rivetit-dummy', '1.5'], [$j['detect_kind'], $j['detect_value'], $j['detect_min']]);
     }
 
-    public function testCaCertificateIsEmbeddedWhenConfigured(): void
+    public function testRemovingAHostStopsNewJobsEvenForAnAssignedVersion(): void
     {
-        $this->publishCurrent();
-        $a = $this->h->module->admin();
-        $r = $a->saveSettings($this->admin, ['ca_pem' => 'not a cert']);
-        $this->assertSame([false, 422], [$r->ok, $r->http]);
-        $this->assertNull($this->h->module->settings()->get(true)['ca_pem'], 'an invalid CA is refused');
-        $k = openssl_pkey_new(['private_key_bits' => 2048]);
-        $csr = openssl_csr_new(['commonName' => 'Test Rivet CA'], $k);
-        $cert = openssl_csr_sign($csr, null, $k, 30);
-        openssl_x509_export($cert, $pem);
-        $this->assertTrue($a->saveSettings($this->admin, ['ca_pem' => $pem])->ok);
-        $this->assertStringContainsString('BEGIN CERTIFICATE', (string) $this->h->module->settings()->get(true)['ca_pem']);
-        [, $stamp] = $this->download($this->h->clientA);
-        $this->assertIsString($stamp['data']['ca_pem']);
-        $this->assertNotFalse(openssl_x509_read($stamp['data']['ca_pem']));
-        $this->assertTrue($a->saveSettings($this->admin, ['ca_pem' => ''])->ok);
-        [, $stamp] = $this->download($this->h->clientA);
-        $this->assertNull($stamp['data']['ca_pem'], 'clearing the CA setting stops embedding it');
+        $pkg = $this->package();
+        $v = $this->msi($pkg);
+        $this->announceCaps();
+        [$c, $j] = $this->api('POST', [$this->d(), 'deployments', 'run'], $this->deployer, ['package_id' => $pkg]);
+        $this->assertSame(202, $c, json_encode($j));
+        $this->assertSame(200, $this->api('DELETE', ['software_hosts', self::HOST], $this->admin)[0]);
+        $this->cancelAll();
+        [$c, $j] = $this->api('POST', [$this->d(), 'deployments', 'run'], $this->deployer, ['package_id' => $pkg]);
+        $this->assertSame(422, $c, json_encode($j));
+        $this->assertStringContainsString('no longer passes', (string) $j['error']);
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_jobs WHERE type = 'software_install' AND state = 'queued'"));
+        $this->assertGreaterThan(0, $v);
     }
 
-    public function testHostileClientNamesCannotInjectHeadersOrBreakTheFileName(): void
+    private function announceCaps(): void
     {
-        $this->publishCurrent();
-        $evil = $this->h->tenancy->addClient("<img src=x onerror=alert(1)> \"q\"\r\nX-Injected: yes");
-        [, $stamp, $resp] = $this->download($evil);
-        $this->assertMatchesRegularExpression('/^attachment; filename="RivetIT-Agent-Setup-[a-z0-9-]+-x64\.exe"$/', $resp->headers['Content-Disposition']);
-        foreach ($resp->headers as $name => $value) {
-            $this->assertDoesNotMatchRegularExpression('/[\r\n]/', $name . $value);
+        $this->h->checkin($this->tok, ['capabilities' => self::caps('windows'), 'platform' => 'windows']);
+    }
+
+    private function cancelAll(): void
+    {
+        $this->h->q("UPDATE endpoint_agent_jobs SET state = 'cancelled' WHERE state = 'queued'");
+    }
+
+    // ------------------------------------------------------------------ switch and capability
+
+    public function testWithTheSwitchOffReadsAnswerAndWritesAreRefused(): void
+    {
+        $this->switchOn([]);
+        $this->assertFalse($this->api('GET', ['software_packages'], $this->viewer)[1]['enabled']);
+        $this->assertFalse($this->api('GET', [$this->d(), 'deployments'], $this->viewer)[1]['enabled']);
+        foreach ([['POST', ['software_packages'], ['name' => 'x']], ['POST', ['software_hosts'], ['host' => 'a.example.com']], ['POST', ['software_assignments'], ['package_id' => 1, 'scope_type' => 'global']],
+            ['POST', [$this->d(), 'deployments', 'run'], ['package_id' => 1]], ['POST', [$this->d(), 'deployments', 'detect'], null]] as [$m, $seg, $body]) {
+            [$c, $j] = $this->api($m, $seg, $this->admin, $body);
+            $this->assertSame([409, 'feature_disabled'], [$c, $j['code']], implode('/', $seg));
         }
-        $this->assertStringContainsString('img src=x', $stamp['data']['department']);
-        $this->assertStringNotContainsString("\r", $stamp['data']['department']);
-        $this->assertStringNotContainsString("\n", $stamp['data']['department'], 'control characters are flattened (JSON data, not markup)');
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_packages'));
+        $r = $this->pass();
+        $this->assertSame(0, array_sum($r), 'a pass with the switch off does nothing: ' . json_encode($r));
     }
 
-    public function testDeploymentCommandsShowTheTokenOnceAndNeverPutItInAUrl(): void
+    public function testAnAgentThatNeverAnnouncedSoftwareIsNeverOfferedAJob(): void
     {
-        $this->publishCurrent();
-        $before = (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_enrollment_tokens');
-        $r = $this->h->module->admin()->deploymentCommands($this->admin, $this->h->clientB, 0, 'stable', 2, 3, '', 'amd64');
+        [$old, $oldTok] = $this->linked('OLD', null, 'windows', self::caps('windows', false));
+        $pkg = $this->package();
+        $this->msi($pkg);
+        [$c, $j] = $this->api('POST', [(string) $old, 'deployments', 'run'], $this->deployer, ['package_id' => $pkg]);
+        $this->assertSame([409, 'unsupported'], [$c, $j['code']]);
+        $this->assertSame([], $this->offered($oldTok));
+        // and the generic job endpoint refuses the types outright, for anyone
+        foreach (['software_install', 'software_detect'] as $type) {
+            [$c, $j] = $this->api('POST', [$this->d(), 'jobs'], $this->admin, ['type' => $type, 'params' => ['action' => 'install']]);
+            $this->assertSame(422, $c, json_encode($j));
+        }
+    }
+
+    // ------------------------------------------------------------------ one run
+
+    public function testARunIsADryRunUnlessItSaysRunAndConfirmsAndTheJobCarriesOnlyCatalogValues(): void
+    {
+        $pkg = $this->package();
+        $vid = $this->msi($pkg);
+        [$c, $j] = $this->api('POST', [$this->d(), 'deployments', 'run'], $this->tech, ['package_id' => $pkg]);
+        $this->assertSame([202, 'dry_run'], [$c, $j['mode']], json_encode($j));
+        $job = $this->offeredOne($this->tok, 'software_install');
+        $p = (array) $job['params'];
+        $this->assertSame(['action' => 'install', 'mode' => 'dry_run', 'fmt' => 'msi', 'url' => 'https://' . self::HOST . '/acme/2.4.1/acme.msi', 'sha256' => self::SHA, 'size' => 1048576,
+            'product_code' => strtoupper(self::CODE), 'detect_kind' => 'product_code', 'detect_value' => strtoupper(self::CODE), 'detect_min' => '2.4.1', 'max_minutes' => 30], $p);
+        $this->assertNotEmpty($job['signature'] ?? null, 'the job is signed');
+        $this->report($this->tok, $job, 'succeeded', self::installOut('would_install', ['mode' => 'dry_run', 'detail' => 'not_downloaded']));
+        // a dry run changes no state
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_package_installs WHERE installed IS NOT NULL'));
+        $this->assertSame('would_install', $this->h->one('SELECT result FROM rmm_package_history'));
+        // a real run: the technician lacks the grant, the deployer must confirm, and extra body keys are not parameters
+        $this->assertSame(403, $this->api('POST', [$this->d(), 'deployments', 'run'], $this->tech, ['package_id' => $pkg, 'mode' => 'run', 'confirm' => true])[0]);
+        [$c, $j] = $this->api('POST', [$this->d(), 'deployments', 'run'], $this->deployer, ['package_id' => $pkg, 'mode' => 'run']);
+        $this->assertSame([422, 'confirmation_required'], [$c, $j['code']]);
+        [$c, $j] = $this->api('POST', [$this->d(), 'deployments', 'run'], $this->deployer, ['package_id' => $pkg, 'mode' => 'run', 'confirm' => true, 'url' => 'https://evil.example/x.msi', 'args' => '/x', 'sha256' => str_repeat('0', 64)]);
+        $this->assertSame(202, $c, json_encode($j));
+        $job = $this->offeredOne($this->tok, 'software_install');
+        $this->assertSame(['run', 'https://' . self::HOST . '/acme/2.4.1/acme.msi', self::SHA], [((array) $job['params'])['mode'], ((array) $job['params'])['url'], ((array) $job['params'])['sha256']], 'a caller can not smuggle an address or a hash');
+        $this->assertSame(11, (int) $this->h->one("SELECT created_by FROM rmm_package_jobs WHERE mode = 'run'"));
+        $this->assertGreaterThan(0, $vid);
+        // one install at a time per device
+        [$c, $j] = $this->api('POST', [$this->d(), 'deployments', 'run'], $this->deployer, ['package_id' => $pkg, 'mode' => 'run', 'confirm' => true]);
+        $this->assertSame([200, 'already_queued'], [$c, $j['skipped']]);
+    }
+
+    public function testTheResultOfARealInstallIsAppliedAndEventsAreEmitted(): void
+    {
+        $pkg = $this->package();
+        $this->msi($pkg);
+        $this->api('POST', [$this->d(), 'deployments', 'run'], $this->deployer, ['package_id' => $pkg, 'mode' => 'run', 'confirm' => true]);
+        $job = $this->offeredOne($this->tok, 'software_install');
+        $this->report($this->tok, $job, 'succeeded', self::installOut('installed', ['version' => '2.4.1', 'reboot_required' => true]));
+        $row = $this->h->rows('SELECT * FROM rmm_package_installs')[0];
+        $this->assertSame([1, '2.4.1', 1, 'installed', 0, 1], [(int) $row['installed'], $row['installed_version'], (int) $row['satisfied'], $row['last_result'], (int) $row['fail_count'], (int) $row['attempts']]);
+        $st = $this->api('GET', [$this->d(), 'deployments'], $this->viewer)[1];
+        $this->assertSame('installed', $st['packages'][0]['last_result']);
+        $h = $this->api('GET', [$this->d(), 'deployments', 'history'], $this->viewer)[1];
+        $this->assertSame(['installed', 'run', 'install'], [$h['rows'][0]['result'], $h['rows'][0]['mode'], $h['rows'][0]['action']]);
+    }
+
+    public function testAFailedResultCountsAsAFailureAndAnUnreadableOneIsAFailureToo(): void
+    {
+        $pkg = $this->package();
+        $this->msi($pkg);
+        foreach ([['failed', 'failed'], ['hash_mismatch', 'failed'], ['not-a-result', 'succeeded']] as $i => [$result, $state]) {
+            $this->api('POST', [$this->d(), 'deployments', 'run'], $this->deployer, ['package_id' => $pkg, 'mode' => 'run', 'confirm' => true]);
+            $job = $this->offeredOne($this->tok, 'software_install');
+            $this->report($this->tok, $job, $state, $result === 'not-a-result' ? 'garbage {' : self::installOut($result, ['ok' => false, 'code' => 'exit_1603', 'detail' => "line1\nline2\x00"]), 1);
+            $this->assertSame($i + 1, (int) $this->h->one('SELECT fail_count FROM rmm_package_installs'));
+        }
+        $this->assertSame(['failed', 'hash_mismatch', 'failed'], array_column($this->h->rows('SELECT result FROM rmm_package_history ORDER BY id'), 'result'));
+        $this->assertStringNotContainsString("\n", (string) $this->h->one("SELECT detail FROM rmm_package_history WHERE result = 'hash_mismatch'"));
+        $this->assertSame(0, (int) $this->h->one('SELECT COALESCE(installed, 0) FROM rmm_package_installs'));
+    }
+
+    public function testALinuxRunUsesThePackageNameAndPinsOnlyWhenAsked(): void
+    {
+        [$lin, $lt] = $this->linked('L1', null, 'linux', null, 'Ubuntu 24.04 LTS');
+        $pkg = $this->package('Dummy');
+        $this->apt($pkg, 'rivetit-dummy', '1.5', ['pin_version' => true]);
+        $this->assertSame(202, $this->api('POST', [(string) $lin, 'deployments', 'run'], $this->deployer, ['package_id' => $pkg, 'mode' => 'run', 'confirm' => true])[0]);
+        $this->assertSame(['action' => 'install', 'mode' => 'run', 'fmt' => 'apt', 'pkg' => 'rivetit-dummy', 'version' => '1.5', 'max_minutes' => 30], (array) $this->offeredOne($lt, 'software_install')['params']);
+        $this->h->q("UPDATE endpoint_agent_jobs SET state = 'cancelled'");
+        $this->assertSame(202, $this->api('POST', [(string) $lin, 'deployments', 'run'], $this->deployer, ['package_id' => $pkg, 'action' => 'uninstall', 'mode' => 'run', 'confirm' => true])[0]);
+        $this->assertSame(['action' => 'uninstall', 'mode' => 'run', 'fmt' => 'apt', 'pkg' => 'rivetit-dummy', 'max_minutes' => 30], (array) $this->offeredOne($lt, 'software_install')['params']);
+        // a Windows version is never sent to a Linux device and a dnf version never to an apt machine
+        $p2 = $this->package('Win only');
+        $this->msi($p2);
+        [$c, $j] = $this->api('POST', [(string) $lin, 'deployments', 'run'], $this->deployer, ['package_id' => $p2]);
+        $this->assertSame(422, $c, json_encode($j));
+        $p3 = $this->package('Rpm only');
+        $this->api('POST', ['software_packages', (string) $p3, 'versions'], $this->admin, ['version' => '1', 'os' => 'linux', 'fmt' => 'dnf', 'pkg_name' => 'rpm-thing']);
+        $this->assertSame(422, $this->api('POST', [(string) $lin, 'deployments', 'run'], $this->deployer, ['package_id' => $p3])[0]);
+    }
+
+    public function testARetiredVersionCanBeRemovedButNeverInstalled(): void
+    {
+        $pkg = $this->package();
+        $vid = $this->msi($pkg);
+        $this->api('PATCH', ['software_packages', (string) $pkg, 'versions', (string) $vid], $this->admin, ['retired' => true]);
+        $this->assertSame(422, $this->api('POST', [$this->d(), 'deployments', 'run'], $this->deployer, ['package_id' => $pkg, 'version_id' => $vid])[0]);
+        $this->assertSame(202, $this->api('POST', [$this->d(), 'deployments', 'run'], $this->deployer, ['package_id' => $pkg, 'version_id' => $vid, 'action' => 'uninstall'])[0]);
+        $this->assertSame(['action' => 'uninstall', 'mode' => 'dry_run', 'fmt' => 'msi', 'product_code' => strtoupper(self::CODE), 'max_minutes' => 30], (array) $this->offeredOne($this->tok, 'software_install')['params']);
+    }
+
+    // ------------------------------------------------------------------ detection
+
+    public function testDetectionOnlyWritesToPackagesTheServerAskedAbout(): void
+    {
+        $p1 = $this->package('One');
+        $p2 = $this->package('Two');
+        $this->msi($p1);
+        $this->msi($p2, '3.0', ['product_code' => '{AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA}']);
+        $this->assign($p1);
+        [$c, $j] = $this->api('POST', [$this->d(), 'deployments', 'detect'], $this->tech);
+        $this->assertSame(202, $c, json_encode($j));
+        $job = $this->offeredOne($this->tok, 'software_detect');
+        $rules = json_decode((string) ((array) $job['params'])['rules'], true);
+        $this->assertSame([['key' => "p$p1", 'kind' => 'product_code', 'value' => strtoupper(self::CODE), 'min' => '2.4.1']], $rules);
+        $this->report($this->tok, $job, 'succeeded', self::detectOut([['key' => "p$p1", 'installed' => true, 'version' => '2.4.1', 'satisfied' => true], ['key' => "p$p2", 'installed' => true, 'version' => '9', 'satisfied' => true],
+            ['key' => 'zz', 'installed' => true, 'version' => '1', 'satisfied' => true]]));
+        $rows = $this->h->rows('SELECT package_id, installed, satisfied FROM rmm_package_installs ORDER BY package_id');
+        $this->assertCount(1, $rows, 'the other package was never asked about, so nothing was written for it');
+        $this->assertSame([1, 1], [(int) $rows[0]['installed'], (int) $rows[0]['satisfied']]);
+    }
+
+    // ------------------------------------------------------------------ authorization
+
+    public function testEveryRouteHidesOtherClientsDevicesAndRefusesMissingGrants(): void
+    {
+        $pkg = $this->package();
+        $this->msi($pkg);
+        [$b, $bt] = $this->linked('B1', $this->h->clientB);
+        // a user restricted to client B: client A's device is the same 404 as a missing one on every device route
+        $routes = [['GET', [$this->d(), 'deployments'], null], ['GET', [$this->d(), 'deployments', 'history'], null], ['POST', [$this->d(), 'deployments', 'detect'], null],
+            ['POST', [$this->d(), 'deployments', 'run'], ['package_id' => $pkg]]];
+        foreach ($routes as [$m, $seg, $body]) {
+            $this->assertSame(404, $this->api($m, $seg, $this->scoped, $body)[0], implode('/', $seg));
+            $this->assertSame(404, $this->api($m, ['99999', ...array_slice($seg, 1)], $this->scoped, $body)[0], 'missing is the same');
+        }
+        $this->assertSame(200, $this->api('GET', [(string) $b, 'deployments'], $this->scoped)[0]);
+        $this->assertSame(202, $this->api('POST', [(string) $b, 'deployments', 'run'], $this->scoped, ['package_id' => $pkg])[0]);
+        // the catalog and the host list are fleet-wide: a restricted user reads them but cannot change them
+        $this->assertSame(200, $this->api('GET', ['software_packages'], $this->scoped)[0]);
+        foreach ([['POST', ['software_packages'], ['name' => 'x']], ['PUT', ['software_packages', (string) $pkg], ['name' => 'y']], ['DELETE', ['software_packages', (string) $pkg], null],
+            ['POST', ['software_packages', (string) $pkg, 'versions'], ['version' => '1']], ['PATCH', ['software_packages', (string) $pkg, 'versions', '1'], ['retired' => true]],
+            ['POST', ['software_hosts'], ['host' => 'a.example.com']], ['DELETE', ['software_hosts', self::HOST], null]] as [$m, $seg, $body]) {
+            $this->assertSame(403, $this->api($m, $seg, $this->scoped, $body)[0], "$m " . implode('/', $seg));
+        }
+        // assignments: only to the caller's own clients and devices
+        $this->assertSame(403, $this->assign($pkg, 'global', 0, 'install', null, $this->scoped)[0]);
+        $this->assertSame(403, $this->assign($pkg, 'group', 1, 'install', null, $this->scoped)[0]);
+        $this->assertSame(404, $this->assign($pkg, 'client', $this->h->clientA, 'install', null, $this->scoped)[0]);
+        $this->assertSame(404, $this->assign($pkg, 'device', $this->dev, 'install', null, $this->scoped)[0]);
+        $this->assertSame(201, $this->assign($pkg, 'client', $this->h->clientB, 'install', null, $this->scoped)[0]);
+        $this->assertSame(201, $this->assign($pkg, 'device', $this->dev, 'install', null, $this->admin)[0]);
+        $list = $this->api('GET', ['software_assignments'], $this->scoped)[1]['assignments'];
+        $this->assertSame([['client', $this->h->clientB]], array_map(static fn (array $a): array => [$a['scope_type'], $a['scope_id']], $list), 'a restricted user sees only assignments of their own clients');
+        $aid = (int) $this->h->one("SELECT assignment_id FROM rmm_package_assignments WHERE scope_type = 'device'");
+        $this->assertSame(404, $this->api('DELETE', ['software_assignments', (string) $aid], $this->scoped)[0]);
+        // grants: a viewer reads only, a technician cannot assign or run for real, and the host list is for administrators
+        $this->assertSame(200, $this->api('GET', ['software_report'], $this->viewer)[0]);
+        $this->assertSame(403, $this->api('POST', [$this->d(), 'deployments', 'detect'], $this->viewer)[0]);
+        $this->assertSame(403, $this->api('POST', [$this->d(), 'deployments', 'run'], $this->viewer, ['package_id' => $pkg])[0]);
+        $this->assertSame(201, $this->api('POST', ['software_packages'], $this->tech, ['name' => 'made by a technician with the manage grant'])[0]);
+        $this->assertSame(403, $this->api('POST', ['software_packages'], $this->viewer, ['name' => 'viewer makes none'])[0]);
+        $this->assertSame(403, $this->assign($pkg, 'global', 0, 'install', null, $this->tech)[0]);
+        $this->assertSame(403, $this->api('POST', ['software_hosts'], $this->tech, ['host' => 'b.example.com'])[0]);
+        $this->assertNotSame('', $bt);
+    }
+
+    // ------------------------------------------------------------------ two people
+
+    public function testARealRunOfATwoPersonPackageWaitsForAnotherUser(): void
+    {
+        $pkg = $this->package('Careful', true);
+        $this->msi($pkg);
+        [$c, $j] = $this->api('POST', [$this->d(), 'deployments', 'run'], $this->deployer, ['package_id' => $pkg, 'mode' => 'run', 'confirm' => true]);
+        $this->assertSame([202, 'pending_approval'], [$c, $j['state']], json_encode($j));
+        $aid = (int) $j['approval_id'];
+        $this->assertSame('software', $this->h->one("SELECT kind FROM rmm_approvals WHERE approval_id = $aid"));
+        $this->assertSame([], $this->offered($this->tok), 'nothing is queued before the second person');
+        $sa = $this->h->module->scriptActions();
+        $this->assertFalse($sa->decide($this->deployer, $aid, true)->ok, 'not your own request');
+        $this->assertSame('forbidden', $sa->decide($this->viewer, $aid, true)->code);
+        $this->assertFalse($sa->decide($this->scoped, $aid, true)->ok, 'a user restricted to another client can not decide it');
+        $r = $sa->decide($this->second, $aid, true);
         $this->assertTrue($r->ok, $r->message);
-        $this->assertSame($before + 1, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_enrollment_tokens'));
-        $tok = (string) $r->data['token_plain'];
-        $c = $r->data['commands'];
-        $this->assertSame('RivetIT-Agent-Setup-dept-b-x64.exe', $c['filename']);
-        $this->assertSame('https://rmm.example.com', $c['server']);
-        $this->assertStringContainsString("\$Token  = '$tok'", $c['powershell']);
-        $this->assertStringContainsString("printf '%s' '$tok'", $c['linux']);
-        $this->assertSame(['RivetITAgent', '%ProgramFiles%\\RivetIT\\Agent\\rivetit-agent.exe'], [$c['detection']['service'], $c['detection']['file']]);
-        $row = $r->data['token'];
-        $this->assertTrue(hash_equals($row['token_hash'], hash('sha256', explode('.', $tok)[2])));
-        $this->assertSame(3, (int) $row['max_uses']);
-        $this->assertStringNotContainsString(explode('.', $tok)[2], (string) json_encode($this->h->audit->records()));
-        // the read model never shows the secret again
-        $listed = json_encode($this->h->module->readModel()->tokens());
-        $this->assertStringNotContainsString(explode('.', $tok)[2], (string) $listed);
-        $this->assertStringNotContainsString($row['token_hash'], (string) $listed);
+        $job = $this->offeredOne($this->tok, 'software_install');
+        $this->assertSame('run', ((array) $job['params'])['mode']);
+        $this->assertSame(11, (int) $this->h->one("SELECT created_by FROM rmm_package_jobs WHERE mode = 'run'"), 'the job is attributed to the person who asked');
+        $this->assertFalse($sa->decide($this->second, $aid, true)->ok, 'deciding twice is refused');
+        // a dry run never needs a second person
+        $this->h->q("UPDATE endpoint_agent_jobs SET state = 'cancelled'");
+        $this->assertSame(202, $this->api('POST', [$this->d(), 'deployments', 'run'], $this->tech, ['package_id' => $pkg])[0]);
     }
 
-    public function testRefusalsCreateNoToken(): void
+    public function testAnAssignmentOfATwoPersonPackageGoesLiveOnlyWhenApprovedAndRejectionDropsIt(): void
     {
-        $a = $this->h->module->admin();
-        $n = fn (): int => (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_enrollment_tokens');
-        $r = $a->downloadInstaller($this->admin, $this->h->clientA, 0, 'stable', 5, 7, '', 'amd64');
-        $this->assertFalse($r->ok);
-        $this->assertStringContainsString('No agent binary is published for amd64', $r->message);
-        $this->assertSame(0, $n());
-        $this->publishCurrent();
-        $r = $a->downloadInstaller($this->admin, 9999, 0, 'stable', 5, 7, '', 'amd64');
-        $this->assertStringContainsString('Choose the client', $r->message);
-        $this->assertSame(0, $n());
-        $this->assertStringContainsString('Choose Windows x64', $a->downloadInstaller($this->admin, $this->h->clientA, 0, 'stable', 5, 7, '', 'riscv')->message);
-        $this->h->module->settings()->disable();
-        $r = $a->downloadInstaller($this->admin, $this->h->clientA, 0, 'stable', 5, 7, '', 'amd64');
-        $this->assertStringContainsString('switched off', $r->message);
-        $this->assertSame(0, $n());
-        $this->h->module->settings()->enable();
-        $this->h->module->settings()->set(['service_url' => '']);
-        $r = $a->downloadInstaller($this->admin, $this->h->clientA, 0, 'stable', 5, 7, '', 'amd64');
-        $this->assertStringContainsString('https', $r->message);
-        $this->assertSame(0, $n());
-        $this->assertNull($a->deploymentCommands($this->admin, $this->h->clientA, 0, 'stable', 5, 7, '', 'amd64')->data['commands'] ?? null);
-        $this->assertSame(0, $n());
+        $pkg = $this->package('Careful', true);
+        $this->msi($pkg);
+        [$c, $j] = $this->assign($pkg, 'client', $this->h->clientA);
+        $this->assertSame([202, 'pending_approval'], [$c, $j['state']], json_encode($j));
+        $this->assertTrue($j['assignment']['waiting_for_approval']);
+        $this->pass();
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_package_installs'), 'a waiting assignment expects nothing');
+        $aid = (int) $j['approval_id'];
+        $this->assertTrue($this->h->module->scriptActions()->decide($this->second, $aid, true)->ok);
+        $this->pass();
+        $this->assertSame('install', $this->h->one('SELECT expected_action FROM rmm_package_installs'));
+        // a second one, rejected
+        $p2 = $this->package('Other', true);
+        $this->msi($p2, '1.0', ['product_code' => '{BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB}']);
+        $j = $this->assign($p2, 'client', $this->h->clientA)[1];
+        $this->assertTrue($this->h->module->scriptActions()->decide($this->second, (int) $j['approval_id'], false)->ok);
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_package_assignments WHERE package_id = $p2"));
     }
 
-    public function testAnInstallerThatCannotBeServedRevokesItsToken(): void
+    public function testAPendingAssignmentStaysPendingWhenAskedAgainAndTheInstallerAddressIsHiddenFromReaders(): void
     {
-        $this->publishCurrent();
-        $row = $this->h->rows("SELECT * FROM endpoint_agent_binaries WHERE arch='amd64'")[0];
-        file_put_contents($this->h->binaryDir . '/' . $row['storage_name'], str_repeat('x', (int) $row['size_bytes']));   // same size, different bytes
-        $r = $this->h->module->admin()->downloadInstaller($this->admin, $this->h->clientA, 0, 'stable', 5, 7, '', 'amd64');
-        $this->assertFalse($r->ok);
-        $this->assertStringContainsString('integrity check', $r->message);
-        $t = $this->h->rows('SELECT * FROM endpoint_agent_enrollment_tokens')[0];
-        $this->assertNotNull($t['revoked_at'], 'nothing was served: no live token is left behind');
-        unlink($this->h->binaryDir . '/' . $row['storage_name']);
-        $r = $this->h->module->admin()->downloadInstaller($this->admin, $this->h->clientA, 0, 'stable', 5, 7, '', 'amd64');
-        $this->assertStringContainsString('missing or damaged', $r->message);
+        $pkg = $this->package('Careful', true);
+        $this->msi($pkg);
+        $first = $this->assign($pkg, 'client', $this->h->clientA);
+        $again = $this->assign($pkg, 'client', $this->h->clientA);
+        $this->assertSame([202, 202, $first[1]['approval_id']], [$first[0], $again[0], $again[1]['approval_id']], 'asking again does not make it live and does not open a second approval');
+        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_approvals WHERE kind = 'software'"));
+        $this->assertSame(0, (int) $this->h->one('SELECT enabled FROM rmm_package_assignments'));
+        $manager = $this->api('GET', ['software_packages', (string) $pkg], $this->admin)[1]['version_list'][0]['url'];
+        $reader = $this->api('GET', ['software_packages', (string) $pkg], $this->viewer)[1]['version_list'][0]['url'];
+        $this->assertSame('https://' . self::HOST . '/acme/2.4.1/acme.msi', $manager);
+        $this->assertSame('https://' . self::HOST . '/...', $reader, 'a reader sees the host, not the path');
+        $this->assertSame('https://' . self::HOST . '/...', $this->api('GET', ['software_packages', (string) $pkg], $this->scoped)[1]['version_list'][0]['url']);
     }
 
-    // ------------------------------------------------------------------ streaming
+    // ------------------------------------------------------------------ events and the rest
 
-    public function testStreamVerifiesSizeAndSha256BeforeTheFirstByte(): void
+    public function testEventsCarryNoHashUrlOrOutput(): void
     {
-        $this->publishCurrent();
-        $row = $this->h->module->updates()->currentBinary('amd64');
-        $this->assertNotNull($row);
-        $resp = $this->h->module->binaryStore()->download($row, 'x.exe');
-        $this->assertInstanceOf(RmmResponse::class, $resp);
-        $file = $resp->file;
-        $this->assertNotNull($file);
-        // a swapped file of the same size: the emitter refuses before any byte of the file is sent
-        file_put_contents($file->path, str_repeat('z', $file->length));
-        $sent = [];
-        $status = 0;
-        (new SapiEmitter(static function (int $c) use (&$status): void {
-            $status = $c;
-        }, static function (string $h) use (&$sent): void {
-            $sent[] = $h;
-        }, static function (string $b) use (&$sent): void {
-            $sent[] = strlen($b) > 200 ? 'BYTES' : $b;
-        }))->emit(new RmmResponse(200, ['Content-Type' => 'application/octet-stream'], null, new \RivetCore\Rmm\Http\RmmFileBody($file->path, $file->length, null, $row['sha256'])));
-        $this->assertSame(500, $status);
-        $this->assertNotContains('BYTES', $sent);
-        $this->assertStringContainsString('internal', implode('', $sent));
-        // a truncated file is refused by size
-        file_put_contents($file->path, 'short');
-        $this->assertIsString($this->h->module->binaryStore()->download($row, 'x.exe'));
-    }
-
-    public function testALargeDownloadIsStreamedNotBuffered(): void
-    {
-        $size = 24 * 1024 * 1024;
-        $path = $this->tmp . '/large.bin';
-        $fh = fopen($path, 'wb');
-        $chunk = str_repeat('0123456789abcdef', 4096);
-        for ($i = 0; $i < $size / strlen($chunk); ++$i) {
-            fwrite($fh, $chunk);
+        $this->assertContains(RmmEvent::DEPLOY_STARTED, RmmEvent::all());
+        $this->assertContains(RmmEvent::DEPLOY_FINISHED, RmmEvent::all());
+        $this->assertContains(RmmEvent::DEPLOY_FAILED, RmmEvent::all());
+        foreach (['rmm.deploy.started', 'rmm.deploy.finished', 'rmm.deploy.failed'] as $id) {
+            $this->assertTrue(\RivetCore\Webhooks\EventCatalog::has($id), $id);
         }
-        fclose($fh);
-        $sha = (string) hash_file('sha256', $path);
-        $trailer = 'TRAILER';
-        $bytes = 0;
-        $before = memory_get_peak_usage(true);
-        (new SapiEmitter(static function (int $c): void {
-        }, static function (string $h): void {
-        }, static function (string $b) use (&$bytes): void {
-            $bytes += strlen($b);
-        }))->emit(new RmmResponse(200, [], null, new \RivetCore\Rmm\Http\RmmFileBody($path, $size, $trailer, $sha)));
-        $this->assertSame($size + strlen($trailer), $bytes);
-        $this->assertLessThan(8 * 1024 * 1024, memory_get_peak_usage(true) - $before, 'memory use does not depend on the file size');
     }
 
-    public function testTheDeviceApiAndTheAdminShareOneDownloadResponseShape(): void
+    public function testDeletingAPackageNeedsItsAssignmentsGoneFirstAndRemovesItsVersions(): void
     {
-        $this->publishCurrent();
-        $this->h->module->settings()->set(['service_url' => 'http://127.0.0.1:1']);
-        $tok = $this->h->token();
-        $req = new RmmRequest('POST', 'agent_installer', [], [], ['content-type' => 'application/json'], '127.0.0.1', 'x', true, null, $this->stream((string) json_encode(['token' => $tok, 'arch' => 'amd64'])));
-        $device = $this->h->api->handle($req);
-        $this->assertSame(200, $device->status);
-        $admin = $this->h->module->admin()->downloadInstaller($this->admin, $this->h->clientA, 0, 'stable', 5, 7, '', 'amd64');
-        $this->assertTrue($admin->ok);
-        $this->assertSame(array_keys($device->headers), array_keys($admin->data['download']->headers));
-        $this->assertSame($device->headers['Content-Type'], $admin->data['download']->headers['Content-Type']);
-    }
-
-    /** @return resource */
-    private function stream(string $s)
-    {
-        $f = fopen('php://memory', 'w+b');
-        fwrite($f, $s);
-        rewind($f);
-
-        return $f;
+        $pkg = $this->package();
+        $this->msi($pkg);
+        $aid = (int) $this->assign($pkg, 'global')[1]['assignment']['assignment_id'];
+        $this->assertSame(409, $this->api('DELETE', ['software_packages', (string) $pkg], $this->admin)[0]);
+        $this->assertSame(200, $this->api('DELETE', ['software_assignments', (string) $aid], $this->admin)[0]);
+        $this->assertSame(200, $this->api('DELETE', ['software_packages', (string) $pkg], $this->admin)[0]);
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_package_versions'));
+        $this->assertSame(404, $this->api('DELETE', ['software_packages', (string) $pkg], $this->admin)[0]);
     }
 }

@@ -588,3 +588,31 @@ Off by default (`patching` sub-switch) and free while off: no table is read, `Ho
 | Shedding | level 2 and above: no new scan or install is queued and a scan result that arrives is left for the next pass (its job row keeps the output; `rmm_patch_jobs.applied_at` stays empty) | |
 
 Load: a daily scan of 5,000 devices is 5,000 jobs a day (about 0.06 a second on average, spread by the hash) and 5,000 result transactions; the Windows Update search itself runs on the device, a Linux scan costs a few process starts. Installs are bounded by `patch_max_installs`: with the default 25 at once and an hour per job a fleet of 5,000 patches in about 8 days of continuous work, so raise it deliberately and use rings to spread the risk. Not measured on the reference hardware: the figures above are a model from the statement counts.
+
+## 20. Phase 5 paths (software deployment)
+
+Off by default (`software_deploy` sub-switch) and free while off: no table is read, `Housekeeping` skips the software step, a check-in costs the same statements as before. The software jobs are ordinary jobs; nothing about deployment rides on the check-in. With the switch on and **no assignment**, a housekeeping pass costs one indexed lookup.
+
+### 20.1 Limits
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `software_detect_interval_s` | 86,400 | 3,600 to 604,800 | seconds between two detections of a device that has an assignment; each device is offset by a stable hash of its id (up to a tenth of the interval) |
+| `software_max_installs` | 25 | 1 to 10,000 | devices installing or removing at the same time, whole fleet |
+| `software_max_installs_per_client` | 5 | 1 to 1,000 | the same, in one client |
+| `software_live_install` | 0 | 0 or 1 | 0: the scheduler queues dry runs only (one a day per device and package); 1: it may queue real installs |
+| `software_deploy_history_days` | 365 | 30 to 3,650 | days of deployment history kept |
+| `software_batch` | 100 | 10 to 5,000 | devices one step of the pass works on (devices to evaluate, detections to queue, installs to queue); level 1 of load shedding halves it (not below 10), level 2 and above queue nothing |
+
+### 20.2 Model
+
+| What | Cost | Bound |
+|---|---|---|
+| Evaluating a device | about hourly per device that is linked: one assignment query (scopes joined to tags and groups), at most one patch-policy resolution (for the ring), one upsert per expected package and one statement that clears expectations no longer wanted | `software_batch` devices per pass |
+| Detection, per device per interval | one job with up to 25 rules in one parameter (at most 1,000 characters, so about 8 to 15 packages per job), one transaction of one `UPDATE` per package when its result is applied | one detection waiting per device |
+| Storage | `rmm_package_installs`: one row per (device, package) with an expectation, about 250 bytes with indexes (5,000 devices x 10 packages is 50,000 rows, about 12 MB); `rmm_package_history`: one row per job result, 365 days by default | the history is pruned in batches of 5,000 |
+| Install | one job per device at a time; the agent downloads the installer itself (a Windows MSI/EXE comes from the customer's own host, not through this server) | `software_max_installs`, `software_max_installs_per_client` |
+| Report | one aggregate over `rmm_package_installs` joined to packages and the one waiting job, filtered by the caller's clients (indexes on `(client_id, package_id, expected_action)` and `(package_id, expected_action, satisfied)`); `device` grouping pages 200 rows at a time (at most 1,000) | `limit` |
+| Shedding | level 2 and above: nothing is queued and a result that arrives is left for the next pass (`rmm_package_jobs.applied_at` stays empty) | |
+
+Load: a daily detection of 5,000 devices is 5,000 small jobs a day (about 0.06 a second on average, spread by the hash). Installs are bounded by `software_max_installs`; with the default 25 at once and a download of a few minutes a fleet of 5,000 takes a few days, so raise it deliberately and use rings to spread the risk. Not measured on the reference hardware: the figures above are a model from the statement counts.

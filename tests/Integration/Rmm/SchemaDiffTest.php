@@ -420,6 +420,34 @@ final class SchemaDiffTest extends TestCase
         $this->assertSame($before, $this->describe('d'));
     }
 
+    public function testMigration0029AddsOnlyNewTablesInsertsNoRowAndIsIdempotent(): void
+    {
+        $this->reference();
+        $this->build('d', 'rivetit-2.6.146-final.sql', true);
+        $this->seed('d');
+        $before = $this->describe('d');
+        $rows = $this->checksums('d');
+
+        $applied = $this->runner('d')->run();
+        $this->assertContains('0029_rmm_software_deploy', $applied);
+        $this->assertSame($before, $this->describe('d'), 'the ten original tables are not altered');
+        $this->assertSame($rows, $this->checksums('d'));
+        $names = array_keys(\RivetCore\Rmm\Migration\DeploySchema::tables());
+        $this->assertSame(['rmm_software_hosts', 'rmm_packages', 'rmm_package_versions', 'rmm_package_assignments', 'rmm_deploy_state', 'rmm_package_installs', 'rmm_package_history', 'rmm_package_jobs'], $names);
+        foreach ($names as $name) {
+            $this->assertSame(1, (int) $this->db('d')->fetchOne('SELECT COUNT(*) c FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND TABLE_COLLATION = ? AND ENGINE = ?', [$name, 'utf8mb4_general_ci', 'InnoDB'])['c'], $name);
+            $this->assertSame(0, (int) $this->db('d')->fetchOne('SELECT COUNT(*) c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLLATION_NAME IS NOT NULL AND COLLATION_NAME <> ?', [$name, 'utf8mb4_general_ci'])['c'], "$name columns");
+            $this->assertSame(0, (int) $this->db('d')->fetchOne("SELECT COUNT(*) c FROM `$name`")['c'], "$name starts empty: the migration inserts nothing");
+        }
+        $this->db('d')->execute("INSERT INTO rmm_software_hosts (host, created_at) VALUES ('downloads.example.com', '2026-10-17 00:00:00')");
+        $this->db('d')->execute("INSERT INTO rmm_packages (name, created_at, updated_at) VALUES ('Acme', '2026-10-17 00:00:00', '2026-10-17 00:00:00')");
+        (new \RivetCore\Rmm\Migration\Migration0029SoftwareDeploy())->up($this->db('d'));
+        $this->assertSame([], $this->runner('d')->run());
+        $this->assertSame('downloads.example.com', (string) $this->db('d')->fetchOne('SELECT host c FROM rmm_software_hosts')['c']);
+        $this->assertSame('Acme', (string) $this->db('d')->fetchOne('SELECT name c FROM rmm_packages')['c']);
+        $this->assertSame($before, $this->describe('d'));
+    }
+
     public function testMigration0024AddsOneColumnAndIsIdempotent(): void
     {
         $this->reference();

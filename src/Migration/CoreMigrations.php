@@ -30,6 +30,7 @@ use RivetCore\Rmm\Migration\Migration0025MsiTemplates;
 use RivetCore\Rmm\Migration\Migration0026MeshHide;
 use RivetCore\Rmm\Migration\Migration0027MeshNodeIds;
 use RivetCore\Rmm\Migration\Migration0028Patching;
+use RivetCore\Rmm\Migration\Migration0029SoftwareDeploy;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
 
@@ -71,6 +72,7 @@ final class CoreMigrations
             new Migration0026MeshHide(),
             new Migration0027MeshNodeIds(),
             new Migration0028Patching(),
+            new Migration0029SoftwareDeploy(),
         ];
     }
 }

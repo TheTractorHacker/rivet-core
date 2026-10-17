@@ -211,6 +211,25 @@ final class KitMutationTest extends TestCase
             [ExternalMetricStoreKitTest::class, 'newest_first', ['testWrittenPointsReadBackAsSeries']],
             [ExternalMetricStoreKitTest::class, 'no_window', ['testSeriesIsBoundedByTheWindow']],
             [ExternalMetricStoreKitTest::class, 'no_peak_window', ['testPeakExcludesDataBeforeTheWindow']],
+            // Package source policy (Phase 5)
+            [PackageSourcePolicyKitTest::class, 'allows_http', ['testOnlyHttpsIsAllowed']],
+            [PackageSourcePolicyKitTest::class, 'allows_userinfo', ['testUserInformationIsNeverAllowed']],
+            [PackageSourcePolicyKitTest::class, 'suffix_match', ['testOnlyTheWholeHostMatches', 'testUserInformationIsNeverAllowed']],
+            [PackageSourcePolicyKitTest::class, 'prefix_match', ['testOnlyTheWholeHostMatches']],
+            [PackageSourcePolicyKitTest::class, 'substring', ['testOnlyTheWholeHostMatches', 'testNothingThatConfusesAParserIsAllowed']],
+            [PackageSourcePolicyKitTest::class, 'allows_ip', ['testNoIpAddressIsAllowedInAnyNotation']],
+            [PackageSourcePolicyKitTest::class, 'allows_numeric_host', ['testNoIpAddressIsAllowedInAnyNotation']],
+            [PackageSourcePolicyKitTest::class, 'case_sensitive', ['testTheHostIsComparedWithoutRegardToCase']],
+            [PackageSourcePolicyKitTest::class, 'allows_port', ['testOnlyTheDefaultPortIsAllowed']],
+            [PackageSourcePolicyKitTest::class, 'trims_input', ['testWhitespaceAndControlCharactersAreRefused']],
+            [PackageSourcePolicyKitTest::class, 'strips_controls', ['testWhitespaceAndControlCharactersAreRefused']],
+            [PackageSourcePolicyKitTest::class, 'allows_fragment', ['testNothingThatConfusesAParserIsAllowed']],
+            [PackageSourcePolicyKitTest::class, 'backslash_as_slash', ['testNothingThatConfusesAParserIsAllowed']],
+            [PackageSourcePolicyKitTest::class, 'throws_on_garbage', ['testGarbageIsAnsweredWithABoolAndNeverThrows']],
+            [PackageSourcePolicyKitTest::class, 'flips', ['testTheSameQuestionGetsTheSameAnswer']],
+            [PackageSourcePolicyKitTest::class, 'client_elevates', ['testTheClientIdNeverLoosensTheRules']],
+            [PackageSourcePolicyKitTest::class, 'allows_unlisted_nonascii', ['testOnlyTheWholeHostMatches', 'testGarbageIsAnsweredWithABoolAndNeverThrows']],
+            [PackageSourcePolicyKitTest::class, 'returns_int', ['testTheConfiguredAddressIsAllowed']],
         ];
         $out = [];
         foreach ($rows as [$class, $flaw, $tests]) {
