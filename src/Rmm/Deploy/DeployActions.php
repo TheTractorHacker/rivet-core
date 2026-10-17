@@ -162,8 +162,18 @@ final class DeployActions
         if (($e = $this->fleetRole($who, RmmAbility::SOFTWARE_MANAGE) ?? $this->unrestricted($who) ?? $this->featureOff()) !== null) {
             return $e;
         }
-        if ($packageId !== null && $this->catalog->package($packageId) === null) {
+        $current = $packageId === null ? null : $this->catalog->package($packageId);
+        if ($packageId !== null && $current === null) {
             return ActionResult::fail(404, 'not_found', 'Package not found.');
+        }
+        // Lowering the two-person flag would defeat the control for everyone who relies on it: only an administrator may (raising it is open to the catalog manager).
+        if ($current !== null && $current['two_person'] && array_key_exists('two_person', $in) && !($in['two_person'] === true || $in['two_person'] === 1)) {
+            $denied = $this->authz->check($who->userId, RmmAbility::ADMIN, 0);
+            if ($denied !== null) {
+                $this->audit->record('Software Denied', "User {$who->userId} denied lowering two_person on package #$packageId: $denied", 0, 0);
+
+                return ActionResult::fail(403, 'forbidden', $denied);
+            }
         }
 
         return $this->guard(function () use ($who, $packageId, $in): ActionResult {

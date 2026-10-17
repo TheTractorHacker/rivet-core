@@ -382,6 +382,20 @@ final class DeployTest extends DeployTestCase
         $this->assertSame('https://' . self::HOST . '/...', $this->api('GET', ['software_packages', (string) $pkg], $this->scoped)[1]['version_list'][0]['url']);
     }
 
+    public function testOnlyAnAdministratorCanLowerTheTwoPersonFlag(): void
+    {
+        $pkg = $this->package('Careful', true);
+        $seg = ['software_packages', (string) $pkg];
+        $this->assertSame(403, $this->api('PATCH', $seg, $this->tech, ['two_person' => false])[0]);
+        $this->assertSame(1, (int) $this->h->one("SELECT two_person FROM rmm_packages WHERE package_id = $pkg"));
+        $this->assertSame(200, $this->api('PATCH', $seg, $this->tech, ['description' => 'edited, flag untouched'])[0]);
+        $this->assertSame(200, $this->api('PATCH', $seg, $this->tech, ['two_person' => true])[0]);
+        $this->assertSame(200, $this->api('PATCH', $seg, $this->admin, ['two_person' => false])[0]);
+        $this->assertSame(0, (int) $this->h->one("SELECT two_person FROM rmm_packages WHERE package_id = $pkg"));
+        $this->assertSame(200, $this->api('PATCH', $seg, $this->tech, ['two_person' => true])[0], 'raising it is open to the catalog manager');
+        $this->assertSame(1, (int) $this->h->one("SELECT two_person FROM rmm_packages WHERE package_id = $pkg"));
+    }
+
     // ------------------------------------------------------------------ events and the rest
 
     public function testEventsCarryNoHashUrlOrOutput(): void
