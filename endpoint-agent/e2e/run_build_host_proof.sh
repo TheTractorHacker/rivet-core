@@ -61,7 +61,7 @@ echo "source commit $SHA, version $VERSION"
 echo "== A. happy path (with two injected 503s on upload)"
 start_mock --job-id job-A --version "$VERSION" --ref main --msi --out-dir "$ROOT/uploaded" --fail-uploads 2
 T0=$SECONDS
-if run_host --once >"$ROOT/runA.out" 2>&1; then ok "build-host exited 0 ($((SECONDS-T0)) s)"; else bad "build-host exited non-zero"; tail -20 "$ROOT/runA.out"; fi
+if run_host --once --progress >"$ROOT/runA.out" 2>&1; then ok "build-host exited 0 ($((SECONDS-T0)) s)"; else bad "build-host exited non-zero"; tail -20 "$ROOT/runA.out"; fi
 check "job built on the server" test "$(sj state)" = built
 check "no server-side validation errors" test "$(sj errors)" = "[]"
 for f in rivetit-agent-windows-amd64.exe rivetit-agent-windows-arm64.exe rivetit-agent-windows-amd64.msi SHA256SUMS; do
@@ -73,6 +73,23 @@ check "SHA256SUMS hashes match the reassembled files" bash -c "cd '$ROOT/uploade
 check "manifest commit is the source commit" test "$(sj manifest/commit)" = "$SHA"
 check "token is not in the script output" bash -c "! grep -q '$TOKEN' '$ROOT/runA.out'"
 check "no leftover temp dirs, containers or worktrees" leftovers
+progress_ok() { # all seven stages in order, pct never decreases, ends at 100, elapsed never decreases, no secret
+  state | python3 -I -c '
+import json, sys
+d = json.load(sys.stdin); p = d["progress"]; tok = sys.argv[1]
+want = ["prepare", "clone", "build_windows_amd64", "build_windows_arm64", "msi", "verify", "upload"]
+seq = [x["stage"] for i, x in enumerate(p) if i == 0 or p[i - 1]["stage"] != x["stage"]]
+pcts = [x["pct"] for x in p]; el = [x["elapsed_s"] for x in p]
+assert seq == want, seq
+assert pcts == sorted(pcts) and pcts[0] == 0 and pcts[-1] == 100, pcts
+assert el == sorted(el), el
+assert tok not in json.dumps(d), "token leaked"
+print("%d reports, %d..%d%%" % (len(p), pcts[0], pcts[-1]), file=sys.stderr)' "$TOKEN"
+}
+check "progress: 7 stages in order, pct non-decreasing 0 to 100, elapsed non-decreasing" progress_ok
+check "progress: upload reports move per chunk (more reports than files)" test "$(state | python3 -I -c 'import json,sys; print(sum(1 for x in json.load(sys.stdin)["progress"] if x["stage"]=="upload"))')" -gt "$((CH + 3))"
+check "operator sees progress lines on stderr (--progress)" grep -Eq 'progress: upload +100%' "$ROOT/runA.out"
+check "progress detail is short and printable" bash -c "state() { curl -s http://127.0.0.1:$PORT/_state; }; state | python3 -I -c 'import json,sys; assert all(len(x[\"detail\"])<=120 and x[\"detail\"].isprintable() for x in json.load(sys.stdin)[\"progress\"])'"
 # the same commit built directly
 git clone -q "$ROOT/origin.git" "$ROOT/direct"; git -C "$ROOT/direct" checkout -q "$SHA"; mkdir -p "$ROOT/gomod"
 GOIMG="golang:$(awk '/^go /{print $2; exit}' "$ROOT/direct/endpoint-agent/go.mod")"
@@ -116,6 +133,7 @@ docker ps -q --filter name=rbh- | xargs -r docker kill >/dev/null
 if wait "$BG_PID"; then bad "killed build should exit non-zero"; else ok "killed build: exit non-zero"; fi; BG_PID=""
 check "server told: failed" test "$(sj state)" = failed
 check "failure log tail was sent" bash -c "state() { curl -s http://127.0.0.1:$PORT/_state; }; [ \"\$(state | python3 -c 'import json,sys; print(len(json.load(sys.stdin)[\"failed_log_tail\"] or \"\"))')\" -gt 0 ] || state | grep -q 'make dist failed'"
+check "progress before the kill stayed monotonic and stages in order" bash -c "curl -s http://127.0.0.1:$PORT/_state | python3 -I -c 'import json,sys; p=json.load(sys.stdin)[\"progress\"]; v=[x[\"pct\"] for x in p]; assert p and v==sorted(v) and v[-1]<100, v'"
 check "only one claim happened" test "$(sj events)" = "['claimed', 'failed']"
 check "no leftover temp dirs, containers or worktrees" leftovers
 check "token never in the failure output" bash -c "! grep -q '$TOKEN' '$ROOT/runC.out' '$ROOT/runC2.out'"

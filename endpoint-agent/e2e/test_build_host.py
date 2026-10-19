@@ -100,6 +100,28 @@ class MockServer(unittest.TestCase):
         self.assertEqual(post(self.base, "status", {"job_id": "zz", "state": "building", "note": "a"})[0], 404)
         self.assertEqual(post(self.base, "status", {"job_id": "j1", "state": "failed", "note": "a", "log_tail": "t"})[0], 200)
 
+    def test_progress_fields(self):
+        post(self.base, "poll", POLL)
+        st = lambda **k: post(self.base, "status", dict({"job_id": "j1", "state": "building", "note": "n"}, **k))[0]
+        self.assertEqual(st(stage="prepare", pct=0, detail="job claimed", elapsed_s=0), 200)
+        self.assertEqual(st(stage="clone", pct=7, detail="chunk 7 of 23", elapsed_s=3), 200)
+        self.assertEqual(st(stage="bogus", pct=8), 400)
+        self.assertEqual(st(stage="clone", pct=101), 400)
+        self.assertEqual(st(stage="clone", pct=-1), 400)
+        self.assertEqual(st(stage="clone", pct=True), 400)
+        self.assertEqual(st(stage="clone", pct="9"), 400)
+        self.assertEqual(st(stage="clone", pct=9, detail="x" * 121), 400)
+        self.assertEqual(st(stage="clone", pct=9, detail="line\nbreak"), 400)
+        self.assertEqual(st(stage="clone", pct=9, elapsed_s=-1), 400)
+        self.assertEqual(st(stage="clone", pct=6), 400)          # pct never decreases
+        self.assertEqual(st(stage="prepare", pct=8), 400)        # stages never go back
+        self.assertEqual(st(stage="clone"), 400)                 # stage and pct go together
+        self.assertEqual(st(pct=9), 400)
+        self.assertEqual(st(stage="clone", pct=7, detail="x" * 120), 200)
+        self.assertEqual(st(), 200)                              # old-style status still fine
+        self.assertEqual([p["pct"] for p in self.mock.progress], [0, 7, 7])
+        self.assertEqual(post(self.base, "status", {"job_id": "j1", "state": "failed", "note": "a", "stage": "clone", "pct": 7, "elapsed_s": 5})[0], 200)
+
 
 class ScriptNoDocker(unittest.TestCase):
     def setUp(self):
