@@ -7,6 +7,7 @@
 #   build-host.sh --register            check this machine and the token against the server; never builds
 #   build-host.sh --dry-run [--ref R] [--version V]
 #                                       build locally, talk to NO server, upload nothing (output: $WORKDIR/dry-run-out)
+#   --progress                          print 'stage, pct, elapsed' lines to stderr (default when stderr is a terminal)
 #   --config FILE                       config file (default /etc/rivetit/build-host.conf, or $BUILD_HOST_CONF)
 set -Eeuo pipefail
 umask 077
@@ -16,6 +17,8 @@ CHUNK_BYTES=1048576
 MODE=once
 CONF="${BUILD_HOST_CONF:-/etc/rivetit/build-host.conf}"
 DRY_REF="" DRY_VERSION="0.0.0-dryrun"
+PROGRESS_PRINT=0; [ -t 2 ] && PROGRESS_PRINT=1
+PSTAGE="" PPCT=0 JOB_T0=0 CREEP_BASE=0 CREEP_TO=0 CREEP_S=0 CREEP_T0=0 UP_TOTAL=1 UP_DONE=0
 
 log() { printf '%s build-host: %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 die() { FAIL_NOTE="$*"; log "ERROR: $*"; exit 1; }
@@ -24,11 +27,12 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --once) MODE=once ;;
     --register) MODE=register ;;
+    --progress) PROGRESS_PRINT=1 ;;
     --dry-run) MODE=dry ;;
     --config) CONF="${2:?--config needs a file}"; shift ;;
     --ref) DRY_REF="${2:?--ref needs a value}"; shift ;;
     --version) DRY_VERSION="${2:?--version needs a value}"; shift ;;
-    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
   shift
@@ -103,16 +107,17 @@ json.dump(out, open(sys.argv[1], "w"))' "$@"
 # ---------- server calls ----------
 api() { # endpoint bodyfile outfile -> 0 on success; retries 5xx/network with backoff, never 4xx
   local ep=$1 body=$2 out=$3 attempt=1 code rc delay="${BUILD_HOST_RETRY_DELAY:-2}" proto='=https'
+  local maxtime="${API_MAXTIME:-$HTTP_TIMEOUT}" maxtries="${API_ATTEMPTS:-5}" quiet="${API_QUIET:-0}"
   [ "${BUILD_HOST_ALLOW_HTTP:-0}" = 1 ] && proto='=http,https'
   while :; do
     rc=0
-    code=$(curl -sS --fail --max-time "$HTTP_TIMEOUT" --connect-timeout 20 --proto "$proto" --proto-redir =https \
+    code=$(curl -sS --fail --max-time "$maxtime" --connect-timeout 20 --proto "$proto" --proto-redir =https \
       -K "$TMP/curl.cfg" -X POST -H 'Content-Type: application/json' -H 'Accept: application/json' \
       --data-binary "@$body" -o "$out" -w '%{http_code}' "$SERVER_URL/$ep" 2>"$TMP/curl.err") || rc=$?
     [ "$rc" -eq 0 ] && return 0
-    log "$ep: attempt $attempt failed (curl $rc, http ${code:-0}): $(tr '\n' ' ' <"$TMP/curl.err" | cut -c1-200)"
+    [ "$quiet" = 1 ] || log "$ep: attempt $attempt failed (curl $rc, http ${code:-0}): $(tr '\n' ' ' <"$TMP/curl.err" | cut -c1-200)"
     case "${code:-0}" in 4[0-9][0-9]) [ "$code" = 408 ] || [ "$code" = 429 ] || return 1 ;; esac
-    [ "$attempt" -ge 5 ] && return 1
+    [ "$attempt" -ge "$maxtries" ] && return 1
     sleep "$delay"; delay=$(( delay * 2 > 30 ? 30 : delay * 2 )); attempt=$(( attempt + 1 ))
   done
 }
@@ -120,8 +125,19 @@ status() { # state note [logtailfile]
   [ -n "$JOB_ID" ] || return 0
   local args=("job_id:s:$JOB_ID" "state:s:$1" "note:s:${2:0:500}")
   [ -n "${3:-}" ] && args+=("log_tail:f:$3")
+  if [ -n "$PSTAGE" ]; then args+=("stage:s:$PSTAGE" "pct:i:$PPCT" "detail:s:$PDETAIL" "elapsed_s:i:$(( SECONDS - JOB_T0 ))"); fi
   jmk "$TMP/status.json" "${args[@]}" && api status "$TMP/status.json" "$TMP/status.out" || return 1
 }
+progress() { # stage pct detail : monotonic; prints for an operator; tells the server quietly; never fails the build
+  local pct=$2 d
+  d=$(printf '%s' "$3" | LC_ALL=C tr -cd '[:print:]' | cut -c1-120)
+  [ "$pct" -ge "$PPCT" ] || pct=$PPCT
+  [ "$pct" -le 100 ] || pct=100
+  PSTAGE=$1 PPCT=$pct PDETAIL=$d
+  [ "$PROGRESS_PRINT" != 1 ] || printf '%s build-host: progress: %-20s %3d%%  elapsed %ss  %s\n' "$(date -u +%FT%TZ)" "$PSTAGE" "$PPCT" "$(( SECONDS - JOB_T0 ))" "$PDETAIL" >&2
+  API_QUIET=1 API_ATTEMPTS=3 API_MAXTIME=15 BUILD_HOST_RETRY_DELAY=1 status "$([ "$PSTAGE" = upload ] && echo uploading || echo building)" "$PSTAGE: $PDETAIL" || true
+}
+creep() { CREEP_BASE=$PPCT CREEP_TO=$1 CREEP_S=$2 CREEP_T0=$SECONDS; } # heartbeats move pct from here toward $1 over about $2 s, never reaching it
 mask() { # stdin -> stdout, secrets removed
   local s; s=$(cat)
   [ -n "${TOKEN:-}" ] && s=${s//"$TOKEN"/'***'}
@@ -184,14 +200,19 @@ docker_base() { # name -> DOCKER_ARGS
     -e GOFLAGS=-mod=readonly -v "$SRC/endpoint-agent:/src" -w /src)
 }
 run_limited() { # note cmd... : runs in background, heartbeats, enforces the overall deadline
-  local note=$1 pid last=0 now; shift
+  local note=$1 pid last=$SECONDS now t p; shift
   "$@" >>"$LOG" 2>&1 & pid=$!
   while kill -0 "$pid" 2>/dev/null; do
     now=$SECONDS
     if [ "$now" -ge "$DEADLINE" ]; then log "build timed out"; kill "$pid" 2>/dev/null || true
       for c in "${CONTAINERS[@]}"; do docker rm -f "$c" >/dev/null 2>&1 || true; done
       wait "$pid" 2>/dev/null || true; die "build timed out after $(( BUILD_TIMEOUT_S / 60 )) minutes"; fi
-    if [ $(( now - last )) -ge 120 ]; then status building "$note" || true; last=$now; fi
+    [ -z "${STAGE_WATCH:-}" ] || "$STAGE_WATCH"
+    if [ $(( now - last )) -ge 15 ]; then
+      t=$(( now - CREEP_T0 )); p=$PPCT
+      if [ "$CREEP_S" -gt 0 ]; then [ "$t" -le "$CREEP_S" ] || t=$CREEP_S; p=$(( CREEP_BASE + (CREEP_TO - 1 - CREEP_BASE) * t / CREEP_S )); fi
+      progress "$PSTAGE" "$p" "$note, $(( now - JOB_T0 ))s into the job"; last=$now
+    fi
     sleep 2
   done
   wait "$pid" || die "$note failed (see the log tail)"
@@ -205,10 +226,18 @@ pe_check() { # file expected-machine-hex-LE-bytes e.g. "64 86"
   mach=$(od -An -t x1 -j $(( off + 4 )) -N 2 "$f" | tr -s ' ' | sed 's/^ //')
   [ "$mach" = "$want" ] || die "$(basename "$f") has the wrong machine type ($mach, expected $want)"
 }
+dist_watch() { # make dist builds amd64 first: its file appearing marks the start of the arm64 build
+  if [ "$PSTAGE" = build_windows_amd64 ] && [ -s "$OUT/rivetit-agent-windows-amd64.exe" ]; then
+    progress build_windows_arm64 40 "windows amd64 built, building arm64"; creep 60 150
+  fi
+}
 build_job() { # version ref targets msi(true|false) -> files in $OUT, SHA256SUMS written
   local version=$1 ref=$2 targets=$3 want_msi=$4 gov n f
   DEADLINE=$(( SECONDS + BUILD_TIMEOUT_S ))
+  progress prepare 5 "job accepted, fetching source"
+  progress clone 5 "fetching and checking out $ref"
   sync_source "$ref"
+  progress clone 10 "source ready"
   local short=${COMMIT_FULL:0:7}
   if [ -z "$GO_IMAGE" ]; then
     gov=$(awk '/^go /{print $2; exit}' "$SRC/endpoint-agent/go.mod"); [ -n "$gov" ] || die "cannot read the Go version from go.mod"
@@ -219,26 +248,32 @@ build_job() { # version ref targets msi(true|false) -> files in $OUT, SHA256SUMS
   else BUILD_UID=$(id -u) BUILD_GID=$(id -g); fi
   OUT="$SRC/endpoint-agent/dist"
   log "building $version from $ref ($short) with $GO_IMAGE"
-  status building "make dist $version from $ref ($short)" || true
+  progress build_windows_amd64 10 "make dist $version from $ref ($short)"; creep 40 180
 
   docker_base "rbh-$$-dist"
-  run_limited "make dist" docker "${DOCKER_ARGS[@]}" -v "$WORKDIR/gomod:/gomod" "$GO_IMAGE" make dist "VERSION=$version" "COMMIT=$short"
+  STAGE_WATCH=dist_watch run_limited "make dist" docker "${DOCKER_ARGS[@]}" -v "$WORKDIR/gomod:/gomod" "$GO_IMAGE" make dist "VERSION=$version" "COMMIT=$short"
+  [ "$PSTAGE" != build_windows_amd64 ] || progress build_windows_arm64 40 "windows amd64 built, building arm64"
+  progress build_windows_arm64 60 "windows executables built"
   if [ "$want_msi" = true ]; then
-    status building "MSI template" || true
+    progress msi 60 "preparing the MSI image"; creep 64 300
     docker image inspect "$MSI_IMAGE" >/dev/null 2>&1 || run_limited "docker build of $MSI_IMAGE" docker build -t "$MSI_IMAGE" "$SRC/endpoint-agent/packaging/msi"
     for n in 1 2; do
+      progress msi $(( 60 + n * 4 )) "MSI build pass $n of 2"; creep $(( 64 + n * 4 )) 60
       docker_base "rbh-$$-msi$n"
       run_limited "MSI build pass $n" docker "${DOCKER_ARGS[@]}" --network none "$MSI_IMAGE" \
         packaging/msi/build.sh build "$version" dist/rivetit-agent-windows-amd64.exe "dist/.msi-pass$n.msi"
     done
     cmp -s "$OUT/.msi-pass1.msi" "$OUT/.msi-pass2.msi" || die "the two MSI builds differ (not reproducible)"
     mv "$OUT/.msi-pass1.msi" "$OUT/rivetit-agent-windows-amd64.msi"; rm -f "$OUT/.msi-pass2.msi"
+    progress msi 73 "MSI round-trip test"; creep 80 120
     docker_base "rbh-$$-msitest"
     run_limited "MSI round-trip test" docker "${DOCKER_ARGS[@]}" -v "$WORKDIR/gomod:/gomod" -e RIVETIT_TEST_MSI=/src/dist/rivetit-agent-windows-amd64.msi \
       "$GO_IMAGE" go test -count=1 -run TestRealWixlMSIRoundTrip ./internal/embed
   fi
 
+  [ "$want_msi" != true ] || progress msi 80 "MSI built and tested"
   # ----- self-verification of the outputs -----
+  progress verify 80 "checking the outputs"
   UPLOAD=()
   case " $targets " in *" windows-amd64 "*) UPLOAD+=(rivetit-agent-windows-amd64.exe) ;; esac
   case " $targets " in *" windows-arm64 "*) UPLOAD+=(rivetit-agent-windows-arm64.exe) ;; esac
@@ -261,6 +296,7 @@ build_job() { # version ref targets msi(true|false) -> files in $OUT, SHA256SUMS
   fi
   ( cd "$OUT" && sha256sum "${UPLOAD[@]}" >SHA256SUMS )
   UPLOAD+=(SHA256SUMS)
+  progress verify 85 "outputs verified"
   GO_VERSION_BUILT=$(docker run --rm --network none "$GO_IMAGE" go env GOVERSION 2>/dev/null || echo unknown)
 }
 
@@ -276,14 +312,18 @@ upload_file() { # name
     base64 -w0 "$chunk" >"$TMP/chunk.b64"
     jmk "$TMP/up.json" "job_id:s:$JOB_ID" "name:s:$name" "index:i:$i" "total:i:$total" "sha256_chunk:s:$sha" "data_b64:f:$TMP/chunk.b64"
     api upload "$TMP/up.json" "$TMP/up.out" || die "upload of $name chunk $i/$total failed"
-    i=$(( i + 1 ))
+    i=$(( i + 1 )); UP_DONE=$(( UP_DONE + 1 ))
+    progress upload $(( 85 + 15 * UP_DONE / UP_TOTAL )) "chunk $UP_DONE of $UP_TOTAL ($name)"
   done
   log "uploaded $name ($size bytes, $total chunk(s))"
 }
 upload_all() {
-  local f specs=()
-  status uploading "uploading ${#UPLOAD[@]} files" || true
-  for f in "${UPLOAD[@]}"; do upload_file "$f"; status uploading "uploaded $f" || true; done
+  local f specs=() sz
+  UP_TOTAL=0 UP_DONE=0
+  for f in "${UPLOAD[@]}"; do sz=$(stat -c %s "$OUT/$f"); UP_TOTAL=$(( UP_TOTAL + (sz + CHUNK_BYTES - 1) / CHUNK_BYTES )); done
+  [ "$UP_TOTAL" -gt 0 ] || UP_TOTAL=1
+  progress upload 85 "uploading ${#UPLOAD[@]} files in $UP_TOTAL chunks"
+  for f in "${UPLOAD[@]}"; do upload_file "$f"; done
   for f in "${UPLOAD[@]}"; do [ "$f" = SHA256SUMS ] || specs+=("manifest/files/$f:s:$(sha256sum "$OUT/$f" | cut -d' ' -f1)"); done
   jmk "$TMP/complete.json" "job_id:s:$JOB_ID" "${specs[@]}" "manifest/commit:s:$COMMIT_FULL" "manifest/go_version:s:$GO_VERSION_BUILT" \
     "manifest/built_at:s:$(date -u +%FT%TZ)"
@@ -299,6 +339,7 @@ start() {
   chmod 700 "$WORKDIR" 2>/dev/null || true
   exec 9>"$WORKDIR/build-host.lock"
   flock -n 9 || { log "another run holds the lock: nothing to do"; exit 0; }
+  JOB_T0=$SECONDS
   TMP=$(mktemp -d "$WORKDIR/tmp/run.XXXXXX")
   LOG="$TMP/build.log"; : >"$LOG"
   if [ "$MODE" != dry ]; then
@@ -334,7 +375,7 @@ case "$MODE" in
     api poll "$TMP/poll.json" "$TMP/poll.out" || die "poll failed"
     id=$(jget "$TMP/poll.out" job.id)
     if [ -z "$id" ]; then log "no job"; exit 0; fi
-    JOB_ID=$id
+    JOB_ID=$id; JOB_T0=$SECONDS
     [[ $JOB_ID =~ ^[A-Za-z0-9_-]{1,64}$ ]] || { JOB_ID=""; die "the server sent an invalid job id"; }
     version=$(jget "$TMP/poll.out" job.version); ref=$(jget "$TMP/poll.out" job.source_ref)
     targets=$(jget "$TMP/poll.out" job.targets); want_msi=$(jget "$TMP/poll.out" job.msi)
@@ -343,6 +384,7 @@ case "$MODE" in
     [[ $targets =~ ^[a-z0-9\ -]*$ ]] || die "refused: invalid targets"
     ref_allowed "$ref" || die "refused: source ref '${ref:0:80}' is not in this build host's ALLOWED_REFS"
     [ "$want_msi" = true ] || want_msi=false
+    progress prepare 0 "job claimed and checked"
     build_job "$version" "$ref" "$targets" "$want_msi"
     upload_all ;;
 esac
