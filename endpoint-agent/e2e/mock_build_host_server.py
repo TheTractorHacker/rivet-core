@@ -10,6 +10,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 NAMES = ["rivetit-agent-windows-amd64.exe", "rivetit-agent-windows-arm64.exe",
          "rivetit-agent-windows-amd64.msi", "SHA256SUMS"]
 STATES = {"building", "uploading", "failed"}
+STAGES = ["prepare", "clone", "build_windows_amd64", "build_windows_arm64", "msi", "verify", "upload"]
+PROGRESS_KEYS = {"stage", "pct", "detail", "elapsed_s"}
 MAX_BODY = 2 * 1024 * 1024          # PHP default post_max_size is small; the protocol must fit
 MAX_CHUNK = 1024 * 1024
 MAX_FILE = 64 * 1024 * 1024
@@ -31,6 +33,7 @@ class Mock:
         self.state = "queued" if self.job else "none"
         self.chunks, self.totals, self.files = {}, {}, {}
         self.events, self.errors, self.statuses = [], [], []
+        self.progress = []          # accepted progress reports: {stage, pct, detail, elapsed_s}
         self.upload_calls = 0
         self.failed_log_tail = None
         self.manifest = None
@@ -39,7 +42,7 @@ class Mock:
         return {"state": self.state, "events": self.events, "errors": self.errors, "statuses": self.statuses,
                 "uploaded": {n: {"size": len(d), "sha256": hashlib.sha256(d).hexdigest(), "chunks": self.totals.get(n)}
                              for n, d in self.files.items()},
-                "failed_log_tail": self.failed_log_tail, "manifest": self.manifest,
+                "progress": self.progress, "failed_log_tail": self.failed_log_tail, "manifest": self.manifest,
                 "upload_calls": self.upload_calls}
 
     # ---- helpers
@@ -62,14 +65,31 @@ class Mock:
         return {"job": None}
 
     def status(self, b):
-        self.need(set(b) <= {"job_id", "state", "note", "log_tail"} and {"job_id", "state", "note"} <= set(b), "status: members")
+        self.need(set(b) <= {"job_id", "state", "note", "log_tail"} | PROGRESS_KEYS and {"job_id", "state", "note"} <= set(b), "status: members")
         self.check_job(b)
         self.need(b["state"] in STATES, "status: bad state")
         self.need(isinstance(b["note"], str) and len(b["note"]) <= 500, "status: note too long")
         if "log_tail" in b:
             self.need(b["state"] == "failed", "log_tail only with failed")
             self.need(isinstance(b["log_tail"], str) and len(b["log_tail"].encode()) <= 4096, "log_tail too long")
+        prog = None
+        if PROGRESS_KEYS & set(b):
+            self.need("stage" in b and "pct" in b, "status: stage and pct go together")
+            self.need(b["stage"] in STAGES, "status: bad stage")
+            self.need(type(b["pct"]) is int and 0 <= b["pct"] <= 100, "status: pct out of range")
+            if "detail" in b:
+                d = b["detail"]
+                self.need(isinstance(d, str) and len(d) <= 120 and d.isprintable(), "status: detail")
+            if "elapsed_s" in b:
+                self.need(type(b["elapsed_s"]) is int and 0 <= b["elapsed_s"] <= 10 ** 7, "status: elapsed_s")
+            if self.progress:
+                last = self.progress[-1]
+                self.need(b["pct"] >= last["pct"], "status: pct went backwards")
+                self.need(STAGES.index(b["stage"]) >= STAGES.index(last["stage"]), "status: stage went backwards")
+            prog = {k: b.get(k) for k in ("stage", "pct", "detail", "elapsed_s")}
         self.statuses.append({"state": b["state"], "note": b["note"]})
+        if prog:
+            self.progress.append(prog)
         if b["state"] == "failed":
             self.state = "failed"; self.failed_log_tail = b.get("log_tail"); self.events.append("failed")
         else:
