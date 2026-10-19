@@ -3,6 +3,7 @@
 package change
 
 import (
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -63,6 +64,9 @@ func watchKey(r NotifyRoot, stopEvt windows.Handle, wake func()) {
 		return
 	}
 	defer windows.CloseHandle(evt)
+	// RegNotifyChangeKeyValue with an event signals as long as the thread that called it lives: keep this goroutine on one OS thread
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	for {
 		if err := windows.RegNotifyChangeKeyValue(windows.Handle(k), r.Subtree, notifyFilterAll, evt, true); err != nil {
 			return

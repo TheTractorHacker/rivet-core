@@ -60,12 +60,21 @@ func (winRegistry) SubKeys(path string) ([]string, error) {
 	}
 	defer k.Close()
 	names, err := k.ReadSubKeyNames(-1)
+	if len(names) > maxNamesPerKey {
+		names = names[:maxNamesPerKey] // a key with more subkeys than this is cut: the watch is partial, never unbounded
+	}
 	return names, mapErr(err)
 }
 
 // maxBigValue is the largest value whose data is read in full (to hash the first
 // RegReadCap bytes); anything bigger is described by its size.
 const maxBigValue = 64 << 10
+
+// maxNamesPerKey bounds the names read from one key (a user-owned Run key can be filled with millions of values) and, with maxValuesPerKey, the memory one poll can take.
+const (
+	maxNamesPerKey  = 20000
+	maxValuesPerKey = 5000
+)
 
 func (winRegistry) Values(path string, want func(string) bool) ([]RegValue, error) {
 	k, err := openKey(path)
@@ -77,10 +86,17 @@ func (winRegistry) Values(path string, want func(string) bool) ([]RegValue, erro
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	if len(names) > maxNamesPerKey {
+		names = names[:maxNamesPerKey]
+	}
+	var scratch [RegReadCap]byte
 	var out []RegValue
 	for _, name := range names {
 		if !want(name) {
 			continue
+		}
+		if len(out) >= maxValuesPerKey {
+			break // the engine's item limit would cut the watch anyway; stop before allocating more
 		}
 		if SecretName(name) {
 			// size and type only: the data of a value that looks like a secret is never read
@@ -91,11 +107,11 @@ func (winRegistry) Values(path string, want func(string) bool) ([]RegValue, erro
 			out = append(out, RegValue{Name: name, Type: typ, Size: n, Secret: true})
 			continue
 		}
-		buf := make([]byte, RegReadCap)
+		buf := scratch[:]
 		n, typ, err := k.GetValue(name, buf)
 		switch {
 		case err == nil:
-			out = append(out, RegValue{Name: name, Type: typ, Raw: buf[:n], Size: n})
+			out = append(out, RegValue{Name: name, Type: typ, Raw: append([]byte(nil), buf[:n]...), Size: n}) // an exact-size copy: the scratch buffer is reused
 		case errors.Is(err, registry.ErrShortBuffer):
 			if n > maxBigValue {
 				out = append(out, RegValue{Name: name, Type: typ, Size: n})
@@ -106,7 +122,7 @@ func (winRegistry) Values(path string, want func(string) bool) ([]RegValue, erro
 			if err2 != nil || n2 > len(big) {
 				continue
 			}
-			out = append(out, RegValue{Name: name, Type: typ2, Raw: big[:min(n2, RegReadCap)], Size: n2})
+			out = append(out, RegValue{Name: name, Type: typ2, Raw: append([]byte(nil), big[:min(n2, RegReadCap)]...), Size: n2})
 		default:
 			// a value that vanished or cannot be read is simply not listed this round
 		}

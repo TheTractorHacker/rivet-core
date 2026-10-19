@@ -157,7 +157,7 @@ func (f *fileReader) fileItem(logical, op string, lfi os.FileInfo) (Item, bool) 
 		f.notes = append(f.notes, why)
 		return it, false // the caller keeps what it knew about this file
 	}
-	file, err := os.Open(op)
+	file, err := openNoFollow(op)
 	if err != nil {
 		return unreadable("could not open a file: " + Truncate(Clean(err.Error()), 120))
 	}
