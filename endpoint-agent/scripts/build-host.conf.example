@@ -1,0 +1,29 @@
+# RivetCore build host configuration. Copy to /etc/rivetit/build-host.conf, then:
+#   sudo install -o rivetit-build -g rivetit-build -m 600 build-host.conf.example /etc/rivetit/build-host.conf
+# The script refuses a file that group/others can read: keep mode 600, owned by the user that runs it (or root).
+# This file is sourced by bash: no spaces around "=", quote values that contain spaces.
+
+# The build API of your server, WITHOUT the endpoint name. https only.
+# Shown in the server under Administration > Endpoint agent > Agent updates > Local build.
+SERVER_URL=https://rmm.example.com/api/build-host
+
+# The build host token (shown ONCE when you add the build host in the server). Never share it.
+TOKEN=
+
+# Where the source lives: a git URL or a path to an existing clone. The script only reads it.
+CORE_REPO=https://github.com/rivet/rivet-core.git
+
+# Source refs this machine is willing to build (shell patterns, space separated). The server can only pick from these.
+ALLOWED_REFS="main v* agent-v*"
+
+# Working area (cache, temp worktrees, lock). Needs about 5 GB free. Owned by the service user.
+WORKDIR=/var/lib/rivetit-build-host
+
+# Docker images. GO_IMAGE empty = golang:<version from go.mod>. MSI_IMAGE is built from packaging/msi on first use if missing.
+#GO_IMAGE=golang:1.27
+#MSI_IMAGE=rivetit-msitools:0.103-2
+
+# Limits for each build container, and the whole job (seconds; default 1500 = 25 minutes).
+#BUILD_CPUS=2
+#BUILD_MEMORY=4g
+#BUILD_TIMEOUT_S=1500

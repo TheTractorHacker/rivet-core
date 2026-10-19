@@ -1,0 +1,11 @@
+[Unit]
+Description=Ask the RivetCore server for a build job every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+AccuracySec=5s
+Unit=build-host.service
+
+[Install]
+WantedBy=timers.target
