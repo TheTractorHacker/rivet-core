@@ -2,6 +2,8 @@ package change
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -16,7 +18,9 @@ import (
 const (
 	// MaxFileBytes is how much of one file is read and hashed; a bigger file is
 	// hashed on its first MaxFileBytes plus its size and flagged truncated.
-	MaxFileBytes    = 1 << 20
+	MaxFileBytes = 1 << 20
+	// pollByteBudget is how many bytes of files bigger than MaxFileBytes one read of a watch may stream through the hash; past it a big file is hashed on its first MiB plus its size.
+	pollByteBudget  = 256 << 20
 	maxDirEntries   = 500
 	maxFilesPerRead = 2000
 )
@@ -25,7 +29,7 @@ const (
 // paths it could not look into; notes carry anything worth showing the operator.
 func (e *engine) readFiles(w Watch) (Snapshot, []string, []string) {
 	// a CUSTOM watch is hash-only: the lines of an arbitrary file an administrator picked are not captured (only the presets name files whose lines are worth keeping)
-	fr := &fileReader{e: e, snap: Snapshot{}, keepLines: !strings.HasPrefix(w.ID, "custom.")}
+	fr := &fileReader{e: e, snap: Snapshot{}, keepLines: !strings.HasPrefix(w.ID, "custom."), budget: e.byteBudget()}
 	for _, p := range w.Paths {
 		fr.walk(p.Path, p, max(p.Depth, 0), true)
 	}
@@ -40,6 +44,7 @@ type fileReader struct {
 	files      int
 	skipped    int
 	keepLines  bool
+	budget     int64 // bytes of big files that may still be streamed in this read
 	full       bool
 }
 
@@ -174,11 +179,24 @@ func (f *fileReader) fileItem(logical, op string, lfi os.FileInfo) (Item, bool) 
 	it.Size = size
 	it.Meta = fileMeta(lfi)
 	if len(data) > MaxFileBytes {
-		data = data[:MaxFileBytes]
-		it.Flags |= FlagTruncated
-		it.Meta += fmt.Sprintf(" size=%d", size)
-		it.Hash = f.e.hasher.Plain(append(data, []byte(fmt.Sprintf("\x00%d", size))...))
-		it.Value = fmt.Sprintf("%d bytes (only the first %d read)", size, MaxFileBytes)
+		// bigger than the in-memory part: the WHOLE file is hashed by streaming, within a byte budget per read of the watch; no lines are kept
+		h := sha256.New()
+		h.Write(data)
+		want := size - int64(len(data))
+		if want < 0 || want > f.budget {
+			it.Flags |= FlagTruncated // over budget: the first MiB plus the size stand in for the content
+			it.Meta += fmt.Sprintf(" size=%d", size)
+			it.Hash = f.e.hasher.Plain(append(data[:MaxFileBytes:MaxFileBytes], []byte(fmt.Sprintf("\x00%d", size))...))
+			it.Value = fmt.Sprintf("%d bytes (over this poll's byte budget: only the first %d hashed)", size, MaxFileBytes)
+			return it, true
+		}
+		n, err := io.Copy(h, io.LimitReader(file, want+1))
+		f.budget -= n
+		if err != nil || n != want {
+			return unreadable("a big file changed while it was being hashed")
+		}
+		it.Hash = hex.EncodeToString(h.Sum(nil))
+		it.Value = fmt.Sprintf("%d bytes", size)
 		return it, true
 	}
 	it.Hash = f.e.hasher.Plain(data)
@@ -275,4 +293,11 @@ func sortedKeys(m Snapshot) []string {
 	}
 	sort.Strings(k)
 	return k
+}
+
+func (e *engine) byteBudget() int64 {
+	if e.budgetOverride > 0 {
+		return e.budgetOverride
+	}
+	return pollByteBudget
 }

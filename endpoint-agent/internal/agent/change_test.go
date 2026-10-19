@@ -108,7 +108,7 @@ func TestChangeMonitoringFollowsTheLatestSignedOfferAndShipsWhatChanged(t *testi
 		shipped = append(shipped, string(body))
 		return 200, map[string]any{"ok": true, "accepted": 1}
 	}
-	signed := signChange(t, r.s.key, changeCfg("a1a1a1a1a1a1a1a1", map[string]any{"id": "custom.app", "kind": "file", "paths": []any{map[string]any{"path": f}}}))
+	signed := signChange(t, r.s.key, changeCfg("a1a1a1a1a1a1a1a1", map[string]any{"id": "lnx.app", "kind": "file", "paths": []any{map[string]any{"path": f}}}))
 	o := &changeOffer{}
 	o.serve(r)
 	ctx := context.Background()
@@ -144,7 +144,7 @@ func TestChangeMonitoringFollowsTheLatestSignedOfferAndShipsWhatChanged(t *testi
 		t.Fatalf("%v %s", err, shipped[1])
 	}
 	c := body.Changes[0]
-	if c.Kind != "file" || c.Watch != "custom.app" || c.Change != "modified" || c.Target != f || c.Summary != "+1 -1 lines" || body.ConfigVersion != "a1a1a1a1a1a1a1a1" {
+	if c.Kind != "file" || c.Watch != "lnx.app" || c.Change != "modified" || c.Target != f || c.Summary != "+1 -1 lines" || body.ConfigVersion != "a1a1a1a1a1a1a1a1" {
 		t.Errorf("%+v", c)
 	}
 	if strings.Contains(shipped[1], "hunter") {
@@ -158,7 +158,7 @@ func TestChangeMonitoringFollowsTheLatestSignedOfferAndShipsWhatChanged(t *testi
 	}
 	// a configuration signed by another key is refused, and the last good one stays
 	_, otherKey, _ := ed25519.GenerateKey(nil)
-	o.cfg = signChange(t, otherKey, changeCfg("b2b2b2b2b2b2b2b2", map[string]any{"id": "custom.app", "kind": "file", "paths": []any{map[string]any{"path": f}}}))
+	o.cfg = signChange(t, otherKey, changeCfg("b2b2b2b2b2b2b2b2", map[string]any{"id": "lnx.app", "kind": "file", "paths": []any{map[string]any{"path": f}}}))
 	check("a forged configuration", true)
 	// the offer withdrawn
 	o.features = nil

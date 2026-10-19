@@ -378,3 +378,30 @@ func TestCommandLineSecretsAreMasked(t *testing.T) {
 		}
 	}
 }
+
+func TestABigFileIsHashedWholeByStreamingAndAChangeBeyondTheFirstMiBIsSeen(t *testing.T) {
+	r, root := fileRig(t)
+	f := filepath.Join(root, "big.log")
+	base := strings.Repeat("x", MaxFileBytes+500)
+	write(t, f, base, 0o644)
+	r.configure("e1e1e1e1e1e1e1e1", fileWatch("lnx.big", map[string]any{"path": f}))
+	r.tick()
+	write(t, f, base[:MaxFileBytes+100]+"Y"+base[MaxFileBytes+101:], 0o644) // same size, one byte changed beyond the first MiB
+	r.next()
+	recs := r.records()
+	if len(recs) != 1 || recs[0].OldHash == recs[0].NewHash || recs[0].Truncated {
+		t.Fatalf("%+v", recs)
+	}
+	// over the byte budget the first MiB plus the size stand in, flagged truncated
+	r2, root2 := fileRig(t)
+	g := filepath.Join(root2, "huge.log")
+	write(t, g, base, 0o644)
+	r2.configure("e1e1e1e1e1e1e1e2", fileWatch("lnx.big", map[string]any{"path": g}))
+	r2.m.engine.budgetOverride = 10
+	r2.tick()
+	for _, it := range r2.m.state.Watches["lnx.big"].Snap {
+		if it.Flags&FlagTruncated == 0 {
+			t.Errorf("not flagged: %+v", it)
+		}
+	}
+}

@@ -67,23 +67,24 @@ type engine struct {
 	maxItems int
 	maxValue int
 
-	lastPoll      time.Time
-	forcePoll     bool
-	notifyWake    chan struct{}
-	notifyStop    func()
-	winStart      time.Time
-	winSent       int
-	pauseTill     time.Time
-	fail          int
-	statusJSON    string
-	statusSentAt  time.Time
-	statusPending bool
-	actorOffUntil time.Time
-	warned        map[string]bool
-	baselineAt    string
-	highSeq       int64 // the highest configuration seq accepted (mu); a lower one is a replay
-	withdrawn     bool  // Configure(nil) was called since the last Tick
-	wipeReq       bool  // Wipe was called since the last Tick
+	lastPoll       time.Time
+	forcePoll      bool
+	notifyWake     chan struct{}
+	notifyStop     func()
+	winStart       time.Time
+	winSent        int
+	pauseTill      time.Time
+	fail           int
+	statusJSON     string
+	statusSentAt   time.Time
+	statusPending  bool
+	actorOffUntil  time.Time
+	warned         map[string]bool
+	baselineAt     string
+	highSeq        int64 // the highest configuration seq accepted (mu); a lower one is a replay
+	withdrawn      bool  // Configure(nil) was called since the last Tick
+	budgetOverride int64 // tests only
+	wipeReq        bool  // Wipe was called since the last Tick
 }
 
 // Manager owns the change-monitoring loop. Configure is the only method other
