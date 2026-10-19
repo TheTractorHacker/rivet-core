@@ -71,6 +71,9 @@ func (f *fileReader) walk(logical string, p PathSpec, levels int, top bool) {
 	}
 	if !FileAllowed(logical, f.e.extraRoots()) {
 		f.skipped++
+		if len(f.notes) < 200 {
+			f.notes = append(f.notes, "a path was skipped by this agent's policy")
+		}
 		return
 	}
 	op := f.osPath(logical)

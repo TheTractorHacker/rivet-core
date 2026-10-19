@@ -225,6 +225,14 @@ final class ChangeMonitorTest extends RemoteTestCase
         $this->assertStringContainsString('[REDACTED]', ChangeProtocol::redact('xPASSWD: abc', true), 'a word boundary, not a substring');
     }
 
+    public function testTheAgentsSkippedCountIsStoredAndShown(): void
+    {
+        $this->enable();
+        $this->ship([], null, 0, ['status' => ['watches' => [['id' => 'win.startup', 'state' => 'partial', 'items' => 3, 'error' => 'a key was skipped by this agent\'s policy', 'skipped' => 4]]]]);
+        $s = $this->api('GET', [(string) $this->dev, 'changes', 'status'], $this->tech)[1];
+        $this->assertSame([4, 'partial'], [$s['device']['monitor']['watches'][0]['skipped'], $s['device']['monitor']['watches'][0]['state']]);
+    }
+
     public function testLongValuesAreCutAndFlagged(): void
     {
         $this->enable(limits: ['change_max_value_bytes' => 64]);

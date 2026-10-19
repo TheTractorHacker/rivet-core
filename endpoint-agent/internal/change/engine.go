@@ -373,7 +373,7 @@ func (e *engine) poll(ctx context.Context, cfg *Config) {
 			return
 		}
 		snap, unreadable, notes, ok := e.read(ctx, w)
-		st := watchStatus{ID: w.ID, State: "ok", Items: len(snap), Error: firstNote(notes)}
+		st := watchStatus{ID: w.ID, State: "ok", Items: len(snap), Error: firstNote(notes), Skipped: countSkipped(notes)}
 		if !ok {
 			st.State = "error"
 			statuses = append(statuses, st)
@@ -518,6 +518,20 @@ type watchStatus struct {
 	State string `json:"state"`
 	Items int    `json:"items"`
 	Error string `json:"error,omitempty"`
+	// Skipped is how many keys or files the agent's own policy refused to look at (a name with a slash, padding, a trailing dot, a credential key): an operator sees it.
+	Skipped int `json:"skipped,omitempty"`
+}
+
+const skippedNote = "a key was skipped by this agent's policy"
+
+func countSkipped(notes []string) int {
+	n := 0
+	for _, x := range notes {
+		if strings.HasPrefix(x, skippedNote) || strings.HasPrefix(x, "a path was skipped") {
+			n++
+		}
+	}
+	return n
 }
 
 func firstNote(notes []string) string {

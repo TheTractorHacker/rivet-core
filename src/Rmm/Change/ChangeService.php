@@ -165,7 +165,8 @@ final class ChangeService
             }
             $state = in_array($w['state'] ?? '', ['ok', 'baseline', 'error', 'partial'], true) ? $w['state'] : 'ok';
             $watches[] = ['id' => $w['id'], 'state' => $state, 'items' => is_int($w['items'] ?? null) ? max(0, min(1000000, $w['items'])) : 0,
-                'error' => is_string($w['error'] ?? null) ? ChangeProtocol::text(Redactor::redact($w['error']), 160) : ''];
+                'error' => is_string($w['error'] ?? null) ? ChangeProtocol::text(Redactor::redact($w['error']), 160) : '',
+                'skipped' => is_int($w['skipped'] ?? null) ? max(0, min(1000000, $w['skipped'])) : 0];
         }
         $out = ['watches' => $watches, 'baseline_at' => is_string($s['baseline_at'] ?? null) && preg_match(self::TIME_RE, $s['baseline_at']) === 1 ? $s['baseline_at'] : null];
         $json = (string) json_encode($out, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);

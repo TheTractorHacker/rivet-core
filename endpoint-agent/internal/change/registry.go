@@ -172,7 +172,9 @@ func (r *regReader) walk(path string, p PathSpec, depth int) {
 	}
 	// every key visited is checked again: recursion must never step into a credential key
 	if !RegistryKeyAllowed(path) {
-		r.notes = append(r.notes, "a key was skipped by this agent's policy")
+		if len(r.notes) < 200 {
+			r.notes = append(r.notes, skippedNote)
+		}
 		return
 	}
 	r.keys++

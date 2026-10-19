@@ -345,3 +345,18 @@ func TestMassChangeIsCappedPerPollAndCounted(t *testing.T) {
 		t.Fatalf("the snapshot moved on: the next poll is quiet, not a re-report of the rest: %d", len(r.records()))
 	}
 }
+
+func TestAKeyThePolicyRefusesIsCountedInTheStatus(t *testing.T) {
+	r := newRig(t, "windows")
+	base := `HKLM\SOFTWARE\Acme`
+	r.reg.set(base, []string{"ok", "bad.", " padded", "with/slash"}, szVal("Top", "1"))
+	r.reg.set(base+`\ok`, nil, szVal("A", "1"))
+	r.configure("f0f0f0f0f0f0f0f0", regWatch("custom.acme", map[string]any{"key": base, "depth": 1}))
+	r.tick()
+	if st := string(r.batches()[0].Status); !strings.Contains(st, `"skipped":3`) {
+		t.Errorf("%s", st)
+	}
+	if r.reg.openedPath(base + `\bad.`) {
+		t.Error("a refused key must not be opened")
+	}
+}

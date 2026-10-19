@@ -44,13 +44,55 @@ func mapErr(err error) error {
 	return err
 }
 
+// regOptionOpenLink is REG_OPTION_OPEN_LINK (winnt.h): RegOpenKeyEx opens a symbolic-link key itself instead of following it.
+const regOptionOpenLink = 0x00000008
+
+func openLink(root registry.Key, rest string) (registry.Key, error) {
+	sub, err := windows.UTF16PtrFromString(rest)
+	if err != nil {
+		return 0, ErrAccess
+	}
+	var h windows.Handle
+	err = windows.RegOpenKeyEx(windows.Handle(root), sub, regOptionOpenLink, registry.QUERY_VALUE|registry.ENUMERATE_SUB_KEYS|registry.WOW64_64KEY, &h)
+	return registry.Key(h), mapErr(err)
+}
+
+// isLinkKey reports whether an open key is a registry symbolic link (it holds a REG_LINK value SymbolicLinkValue).
+func isLinkKey(k registry.Key) bool {
+	_, typ, err := k.GetValue("SymbolicLinkValue", nil)
+	return (err == nil || errors.Is(err, registry.ErrShortBuffer)) && typ == regLink
+}
+
+// openKey opens a key without ever following a symbolic link: the last component is opened with REG_OPTION_OPEN_LINK, and under HKU (a user hive is writable by
+// that user, and the agent runs as SYSTEM) every component on the way is opened that way too and refused if it is a link. A link key is refused (ErrAccess), not read.
 func openKey(path string) (registry.Key, error) {
 	root, rest, ok := splitRoot(path)
 	if !ok || !RegistryKeyAllowed(path) {
 		return 0, ErrAccess // the policy is applied again at the last moment
 	}
-	k, err := registry.OpenKey(root, rest, registry.QUERY_VALUE|registry.ENUMERATE_SUB_KEYS|registry.WOW64_64KEY)
-	return k, mapErr(err)
+	if strings.HasPrefix(strings.ToUpper(path), `HKU\`) || strings.HasPrefix(strings.ToUpper(path), `HKEY_USERS\`) {
+		segs := strings.Split(rest, `\`)
+		for i := 1; i < len(segs); i++ {
+			pk, err := openLink(root, strings.Join(segs[:i], `\`))
+			if err != nil {
+				return 0, err
+			}
+			link := isLinkKey(pk)
+			pk.Close()
+			if link {
+				return 0, ErrAccess
+			}
+		}
+	}
+	k, err := openLink(root, rest)
+	if err != nil {
+		return 0, err
+	}
+	if isLinkKey(k) {
+		k.Close()
+		return 0, ErrAccess
+	}
+	return k, nil
 }
 
 func (winRegistry) SubKeys(path string) ([]string, error) {
