@@ -140,7 +140,7 @@ func TestSecretsInFileLinesAreRedactedBeforeTheyAreKept(t *testing.T) {
 	r, root := fileRig(t)
 	f := filepath.Join(root, "app.conf")
 	write(t, f, "host = db1\npassword = hunter2\n", 0o644)
-	r.configure("4f4f4f4f4f4f4f4f", fileWatch("custom.app", map[string]any{"path": f}))
+	r.configure("4f4f4f4f4f4f4f4f", fileWatch("lnx.app", map[string]any{"path": f}))
 	r.tick()
 	if strings.Contains(r.stateText(), "hunter2") {
 		t.Fatal("the snapshot kept a secret")
@@ -321,12 +321,60 @@ func TestSudoersTagsAreNotSecrets(t *testing.T) {
 	// the exception is for sudoers files only
 	other := filepath.Join(root, "app.conf")
 	write(t, other, "x\n", 0o644)
-	r.configure("c1c1c1c1c1c1c1c2", fileWatch("lnx.sudo", map[string]any{"path": d, "depth": 1}), fileWatch("custom.app", map[string]any{"path": other}))
+	r.configure("c1c1c1c1c1c1c1c2", fileWatch("lnx.sudo", map[string]any{"path": d, "depth": 1}), fileWatch("lnx.app", map[string]any{"path": other}))
 	r.tick()
 	r.reset()
 	write(t, other, "NOPASSWD: ALL\n", 0o644)
 	r.next()
 	if recs := r.records(); len(recs) != 1 || strings.Contains(recs[0].New, "NOPASSWD: ALL") || !strings.Contains(strings.ToUpper(recs[0].New), "[REDACTED]") {
 		t.Errorf("%+v", recs)
+	}
+}
+
+func TestAPEMBlockAndBase64LinesAreMaskedWholeAndCustomWatchesAreHashOnly(t *testing.T) {
+	r, root := fileRig(t)
+	f := filepath.Join(root, "app.conf")
+	pem := "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\nSECRETKEYBODYLINE2\n-----END PRIVATE KEY-----\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5YWJj\nafter\n"
+	write(t, f, "a\n", 0o644)
+	r.configure("d1d1d1d1d1d1d1d1", fileWatch("lnx.app", map[string]any{"path": f}))
+	r.tick()
+	write(t, f, pem, 0o644)
+	r.next()
+	all := r.stateText()
+	for _, b := range r.bodies {
+		all += string(b)
+	}
+	for _, leak := range []string{"MIIEvQ", "SECRETKEYBODY", "QUJDREVG"} {
+		if strings.Contains(all, leak) {
+			t.Errorf("%s leaked", leak)
+		}
+	}
+	// a custom watch keeps no lines at all
+	r2, root2 := fileRig(t)
+	g := filepath.Join(root2, "c.conf")
+	write(t, g, "x=1\n", 0o644)
+	r2.configure("d1d1d1d1d1d1d1d2", fileWatch("custom.c", map[string]any{"path": g}))
+	r2.tick()
+	write(t, g, "x=2\n", 0o644)
+	r2.next()
+	rec := r2.records()
+	if len(rec) != 1 || rec[0].Old != "2 bytes" && !strings.Contains(rec[0].Summary, "no line detail") || strings.Contains(r2.stateText(), "x=1") {
+		t.Errorf("%+v", rec)
+	}
+}
+
+func TestCommandLineSecretsAreMasked(t *testing.T) {
+	for in, leak := range map[string]string{
+		"curl -u bob:s3cr3t http://x":                   "s3cr3t",
+		"mysql -h db -u root -pS3CRET1 -e 'x'":          "S3CRET1",
+		"net use Z: \\\\srv\\share /user:bob hunter9":   "hunter9",
+		"schtasks /create /RU bob /RP topsecret9 /TN x": "topsecret9",
+		"app /p:pw1234 /q":                              "pw1234",
+		"git clone https://bob:tok3n123@host/r.git":     "tok3n123",
+	} {
+		out, red, _ := Display(in, 300, nil)
+		if strings.Contains(out, leak) || !red {
+			t.Errorf("%q -> %q", in, out)
+		}
 	}
 }

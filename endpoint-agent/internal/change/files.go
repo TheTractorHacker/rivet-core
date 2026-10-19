@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -23,7 +24,8 @@ const (
 // readFiles reads one file watch into a snapshot. unreadable lists the logical
 // paths it could not look into; notes carry anything worth showing the operator.
 func (e *engine) readFiles(w Watch) (Snapshot, []string, []string) {
-	fr := &fileReader{e: e, snap: Snapshot{}}
+	// a CUSTOM watch is hash-only: the lines of an arbitrary file an administrator picked are not captured (only the presets name files whose lines are worth keeping)
+	fr := &fileReader{e: e, snap: Snapshot{}, keepLines: !strings.HasPrefix(w.ID, "custom.")}
 	for _, p := range w.Paths {
 		fr.walk(p.Path, p, max(p.Depth, 0), true)
 	}
@@ -37,6 +39,7 @@ type fileReader struct {
 	notes      []string
 	files      int
 	skipped    int
+	keepLines  bool
 	full       bool
 }
 
@@ -179,7 +182,7 @@ func (f *fileReader) fileItem(logical, op string, lfi os.FileInfo) (Item, bool) 
 		return it, true
 	}
 	it.Hash = f.e.hasher.Plain(data)
-	if lines, red, ok := f.e.snapshotLines(op, data); ok {
+	if lines, red, ok := f.e.snapshotLines(op, data); ok && f.keepLines {
 		it.Lines = lines
 		if red {
 			it.Flags |= FlagRedacted
@@ -208,8 +211,27 @@ func (e *engine) snapshotLines(path string, data []byte) (lines []string, redact
 	}
 	sudoers := base == "sudoers" || strings.EqualFold(filepath.Base(filepath.Dir(path)), "sudoers.d")
 	out := make([]string, 0, len(raw))
+	inPEM := false
 	for _, l := range raw {
 		l = Clean(l)
+		// a PEM block is masked from BEGIN to END (not only its first line), and a long run of base64 on a line of its own is never kept
+		if inPEM {
+			if strings.Contains(l, "-----END ") {
+				inPEM = false
+			}
+			redacted = true
+			continue
+		}
+		if strings.Contains(l, "-----BEGIN ") && strings.Contains(l, "PRIVATE KEY") && !strings.Contains(l, "-----END ") {
+			inPEM, redacted = true, true
+			out = append(out, Mask)
+			continue
+		}
+		if reBase64Line.MatchString(l) {
+			redacted = true
+			out = append(out, Mask)
+			continue
+		}
 		if base == "passwd" || base == "group" {
 			l = maskPasswdField(l)
 		}
@@ -226,6 +248,8 @@ func (e *engine) snapshotLines(path string, data []byte) (lines []string, redact
 	}
 	return out, redacted, true
 }
+
+var reBase64Line = regexp.MustCompile(`^[A-Za-z0-9+/=]{40,}$`)
 
 var sudoTags = strings.NewReplacer("NOPASSWD:", "NOPASSWD\uE000", "PASSWD:", "PASSWD\uE000")
 

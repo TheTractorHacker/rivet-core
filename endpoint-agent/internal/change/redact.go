@@ -68,6 +68,18 @@ func Truncate(s string, max int) string {
 // masked on the device BEFORE it is stored in a snapshot, not only when the server sees it.
 var reKeySecret = regexp.MustCompile(`(?i)\b([A-Za-z0-9_.-]*(?:password|passwd|pwd|passphrase|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|client[_-]?secret|credential)[A-Za-z0-9_.-]*)(["']?\s*[:=]\s*["']?)[^\s"',;]+`)
 
+// reCmdSecrets are command-line shapes that carry a password after a switch: curl -u user:pw, mysql -pSECRET, net use /user:x pw, schtasks /RP pw, /p:pw, sshpass -p pw.
+// Best effort by nature (see CHANGE_MONITOR.md section 7): a secret in free text with no marker stays visible.
+var reCmdSecrets = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)(\s-u\s+[^\s:]+:)\S+`),
+	regexp.MustCompile(`(?i)(\bmysql\w*\b[^\n]*?\s-p)[^\s=]\S*`),
+	regexp.MustCompile(`(?i)(/user:\S+\s+)\S+`),
+	regexp.MustCompile(`(?i)(\s/RP\s+)\S+`),
+	regexp.MustCompile(`(?i)(\s/p(?:assword)?:)\S+`),
+	regexp.MustCompile(`(?i)(\bsshpass\b[^\n]*?\s-p\s*)\S+`),
+	regexp.MustCompile(`(?i)(://[^/\s:@]+:)[^/\s@]+(@)`),
+}
+
 // Display turns a raw text value into what may be kept and shown: cleaned,
 // redacted with the agent's redactor (patterns for keys, tokens and passwords)
 // and cut to max bytes. redacted reports a pattern hit, truncated a cut.
@@ -80,6 +92,15 @@ func Display(raw string, max int, redact func(string) string) (text string, reda
 	}
 	if r := reKeySecret.ReplaceAllString(c, "${1}${2}"+Mask); r != c {
 		c, redacted = r, true
+	}
+	for i, re := range reCmdSecrets {
+		repl := "${1}" + Mask
+		if i == len(reCmdSecrets)-1 {
+			repl = "${1}" + Mask + "${2}"
+		}
+		if r := re.ReplaceAllString(c, repl); r != c {
+			c, redacted = r, true
+		}
 	}
 	if len(c) > max {
 		c, truncated = Truncate(c, max), true
