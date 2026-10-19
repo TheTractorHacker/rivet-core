@@ -5,6 +5,13 @@ name: Endpoint agent
 # The unsigned path needs NO secrets. Authenticode signing is a disabled, secret-gated step below.
 
 on:
+  # Run workflow from the GitHub Actions tab (or an edition's Agent updates page) with a version number: builds from main and publishes agent-vX.Y.Z.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Agent version to build and release, for example 0.9.2 or 1.0.0-rc.1 (no leading v)'
+        required: true
+        type: string
   push:
     branches: ['**']
     tags: ['agent-v*']
@@ -30,6 +37,8 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,8 +49,13 @@ jobs:
 
       - name: Compute version
         id: ver
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/agent-v* ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
+            v="${VERSION_INPUT}"
+            if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then echo "bad version: $v" >&2; exit 1; fi
+          elif [[ "${GITHUB_REF}" == refs/tags/agent-v* ]]; then
             v="${GITHUB_REF#refs/tags/agent-v}"
           else
             v="0.0.0-dev.${GITHUB_SHA::7}"
@@ -152,8 +166,13 @@ jobs:
 
       - name: Compute version
         id: ver
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/agent-v* ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
+            v="${VERSION_INPUT}"
+            if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then echo "bad version: $v" >&2; exit 1; fi
+          elif [[ "${GITHUB_REF}" == refs/tags/agent-v* ]]; then
             v="${GITHUB_REF#refs/tags/agent-v}"
           else
             v="0.0.0-dev.${GITHUB_SHA::7}"
@@ -177,8 +196,8 @@ jobs:
           if-no-files-found: error
 
   release:
-    # Only for agent-v* tags; the only job with write permission.
-    if: startsWith(github.ref, 'refs/tags/agent-v')
+    # Only for agent-v* tags, or a manual run from main (workflow_dispatch, which creates the tag); the only job with write permission.
+    if: startsWith(github.ref, 'refs/tags/agent-v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     needs: [build, msi]
     runs-on: ubuntu-latest
     permissions:
@@ -195,6 +214,8 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: agent-v${{ needs.build.outputs.version }}
+          target_commitish: ${{ github.sha }}
           files: |
             release/rivetit-agent-windows-amd64.exe
             release/rivetit-agent-windows-arm64.exe
@@ -210,7 +231,7 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           # A tag with a suffix (agent-v0.1.0-beta.1) is published as a pre-release.
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(needs.build.outputs.version, '-') }}
           body: |
             RMM endpoint agent for Windows (amd64, arm64) and Linux/systemd (amd64, arm64; tarballs, .deb, .rpm). The Windows amd64 MSI template
             (`rivetit-agent-windows-amd64.msi`, checksum in SHA256SUMS.msi) is what an edition stamps per client; there is no arm64 MSI.
