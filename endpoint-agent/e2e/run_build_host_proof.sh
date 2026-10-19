@@ -120,4 +120,4 @@ stop_mock
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed (artifacts in $ROOT)"
-[ "$FAIL" -eq 0 ] && { [ -n "${PROOF_DIR:-}" ] || rm -rf "$ROOT"; exit 0; } || exit 1
+[ "$FAIL" -eq 0 ] && { [ -n "${PROOF_DIR:-}" ] || { chmod -R u+w "$ROOT"; rm -rf "$ROOT"; }; exit 0; } || exit 1

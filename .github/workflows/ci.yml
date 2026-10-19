@@ -80,6 +80,15 @@ jobs:
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
 
+  build-host:
+    name: build host script (shellcheck and mock-server tests, no Docker build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: shellcheck -x endpoint-agent/scripts/build-host.sh endpoint-agent/e2e/run_build_host_proof.sh
+      - run: python3 endpoint-agent/e2e/test_build_host.py -v
+      # The real Docker build proof (endpoint-agent/e2e/run_build_host_proof.sh) is a documented manual/optional run: it takes minutes.
+
   static:
     name: static analysis and dependency audit
     runs-on: ubuntu-latest

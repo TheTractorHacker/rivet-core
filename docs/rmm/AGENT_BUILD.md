@@ -58,6 +58,11 @@ gor make dist VERSION=0.1.0-beta.2 COMMIT=abc1234          # dist/ (twice: byte-
 
 `e2e/run_linux_container_e2e.sh` drives Docker itself (it builds in `golang:<go.mod version>` and runs the scenario as root in `ubuntu:24.04`; set `GO_IMAGE`/`UBUNTU_IMAGE` to override).
 
+## Building on your own build host (BUILD_HOST)
+
+Besides the GitHub Actions workflow, a server can ask a machine you control to build a version: `endpoint-agent/scripts/build-host.sh` polls the server (outbound https only), builds the requested allowlisted ref with the same `make dist VERSION= COMMIT=` and the MSI steps in the pinned Docker images, verifies the outputs and uploads them in 1 MiB chunks. Protocol: [BUILD_HOST_PROTOCOL.md](BUILD_HOST_PROTOCOL.md); setup: [BUILD_HOST.md](BUILD_HOST.md). The script runs `make dist` inside the Go container and the MSI steps (which start their own container) directly on the host, because `make msi` needs Docker and cannot run inside the Go container.
+Proven so far (build host script only; the server side is a separate work item): `endpoint-agent/e2e/run_build_host_proof.sh` runs the real script against `e2e/mock_build_host_server.py` with a real Docker build of the committed HEAD (manual, minutes; results in the CHANGELOG), and `e2e/test_build_host.py` (CI job `build-host`, no Docker build) covers the mock's validation and the script's refusals and lock.
+
 ## Reproducible release build (CI and local)
 
 `make dist VERSION=X.Y.Z COMMIT=<sha7>` (CI: `.github/workflows/endpoint-agent.yml`, tag `agent-vX.Y.Z` **in this repository**) produces in `dist/`:
