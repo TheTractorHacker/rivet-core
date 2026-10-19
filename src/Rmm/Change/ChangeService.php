@@ -118,9 +118,10 @@ final class ChangeService
                     $status, $status, $status, $nowSql, $deviceId]);
         });
         if ($inserted > 0) {   // a resent batch the server already holds raises nothing twice
-            $this->rules?->evaluate($dev, $kept);
+            $fresh = $inserted === count($kept) ? $kept : $this->onlyNew($deviceId, $kept, gmdate('Y-m-d H:i:s', $now));
+            $this->rules?->evaluate($dev, $fresh);
             if ($this->events !== null) {
-                foreach (array_slice($kept, 0, self::EVENT_CAP) as $r) {
+                foreach (array_slice($fresh, 0, self::EVENT_CAP) as $r) {
                     $this->events->emit(RmmEvent::CHANGE_DETECTED, $dev, ['kind' => $r['kind'], 'watch' => $r['watch'], 'change' => ChangeProtocol::changeName($r['change']), 'target' => $r['target'],
                         'item' => $r['item'], 'old_value' => $r['old'], 'new_value' => $r['new'], 'summary' => $r['summary'], 'actor' => $r['actor'], 'process' => $r['process']]);
                 }
@@ -128,6 +129,20 @@ final class ChangeService
         }
 
         return ['ok' => true, 'accepted' => $inserted, 'dropped' => $dropped, 'duplicates' => count($kept) - $inserted];
+    }
+
+    /**
+     * Of the records of a batch, those this request just stored (a batch that is partly a resend): the ones whose dedupe key was received at this very second.
+     *
+     * @param list<array<string,mixed>> $kept
+     * @return list<array<string,mixed>>
+     */
+    private function onlyNew(int $deviceId, array $kept, string $nowSql): array
+    {
+        $rows = $this->sql->all('SELECT HEX(dedupe) h FROM endpoint_agent_change_records WHERE device_id = ? AND received_at = ? ORDER BY change_id DESC LIMIT 500', [$deviceId, $nowSql]);
+        $new = array_flip(array_map(static fn (array $r): string => strtolower((string) $r['h']), $rows));
+
+        return array_values(array_filter($kept, static fn (array $r): bool => isset($new[$r['dedupe']])));
     }
 
     private function fleetRows(): int
@@ -371,12 +386,17 @@ final class ChangeService
     /**
      * Storage figures for the fleet and, when a device is given, for it (including what the agent last said about its watches).
      *
+     * @param list<int>|null $visibleClientIds the caller's clients (null = all): the fleet figures are then theirs only
      * @return array<string,mixed>
      */
-    public function stats(?int $deviceId = null): array
+    public function stats(?int $deviceId = null, ?array $visibleClientIds = null): array
     {
         $l = $this->settings->limits();
-        $out = ['fleet_rows' => $this->fleetRows(), 'fleet_max_rows' => $l['change_fleet_max_rows'], 'device_max_rows' => $l['change_device_max_rows'], 'retention_days' => $l['change_retention_days'],
+        if ($visibleClientIds !== null) {
+            $in = $visibleClientIds === [] ? 'NULL' : implode(',', array_map('intval', $visibleClientIds));
+            $rows = (int) $this->sql->val("SELECT COALESCE(SUM(s.row_count), 0) FROM endpoint_agent_change_state s JOIN endpoint_agent_devices d ON d.device_id = s.device_id WHERE d.client_id IN ($in)");
+        }
+        $out = ['fleet_rows' => $visibleClientIds === null ? $this->fleetRows() : $rows, 'fleet_max_rows' => $l['change_fleet_max_rows'], 'device_max_rows' => $l['change_device_max_rows'], 'retention_days' => $l['change_retention_days'],
             'rate_per_min' => $l['change_rate_per_min'], 'interval_s' => $l['change_interval_s']];
         if ($deviceId !== null) {
             $s = $this->sql->one('SELECT * FROM endpoint_agent_change_state WHERE device_id = ?', [$deviceId]);
@@ -386,7 +406,9 @@ final class ChangeService
                 'config_version' => (string) ($s['config_version'] ?? ''), 'monitor' => is_array($monitor) ? $monitor : null, 'monitor_at' => Sql::iso(isset($s['monitor_at']) ? (string) $s['monitor_at'] : null)];
         } else {
             $out['last_24h_by_watch'] = array_map(static fn (array $r): array => ['watch' => (string) $r['watch'], 'count' => (int) $r['c']],
-                $this->sql->all('SELECT watch, COUNT(*) c FROM endpoint_agent_change_records WHERE occurred_at >= ? GROUP BY watch ORDER BY c DESC LIMIT 30', [$this->sql->utcAt(-86400)]));
+                $this->sql->all('SELECT e.watch, COUNT(*) c FROM endpoint_agent_change_records e' . ($visibleClientIds === null ? '' : ' JOIN endpoint_agent_devices d ON d.device_id = e.device_id')
+                    . ' WHERE e.occurred_at >= ?' . ($visibleClientIds === null ? '' : ' AND d.client_id IN (' . ($visibleClientIds === [] ? 'NULL' : implode(',', array_map('intval', $visibleClientIds))) . ')')
+                    . ' GROUP BY e.watch ORDER BY c DESC LIMIT 30', [$this->sql->utcAt(-86400)]));
         }
 
         return $out;

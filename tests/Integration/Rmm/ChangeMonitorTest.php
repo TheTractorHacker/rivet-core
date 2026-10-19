@@ -426,6 +426,8 @@ final class ChangeMonitorTest extends RemoteTestCase
                 $this->assertSame(403, $this->api('GET', $path, $who)[0], $who->userName . ' ' . implode('/', $path));
             }
         }
+        $this->assertSame(1, $this->api('GET', ['changes', 'stats'], $this->scoped)[1]['fleet_rows'], 'the fleet figure of a restricted caller is theirs only');
+        $this->assertSame(['win.startup' => 1], array_column($this->api('GET', ['changes', 'stats'], $this->scoped)[1]['last_24h_by_watch'], 'count', 'watch'));
         // read only: nothing else is accepted on a read route, and unknown paths are 404
         $this->assertSame(405, $this->api('POST', [(string) $this->dev, 'changes'], $this->admin, [])[0]);
         $this->assertSame(405, $this->api('DELETE', ['changes'], $this->admin)[0]);
@@ -597,6 +599,17 @@ final class ChangeMonitorTest extends RemoteTestCase
     }
 
     // ------------------------------------------------------------------ settings
+
+    public function testAPartlyResentBatchRaisesEventsOnlyForTheNewRecords(): void
+    {
+        $this->enable();
+        $a = self::ch(['item' => 'A']);
+        $this->ship([$a]);
+        $before = count($this->bus->of(RmmEvent::CHANGE_DETECTED));
+        $this->ship([$a, self::ch(['item' => 'B'])]);
+        $new = array_slice($this->bus->of(RmmEvent::CHANGE_DETECTED), $before);
+        $this->assertSame(['B'], array_column($new, 'item'));
+    }
 
     public function testSettingsNeedTheRightGrantAndTheStorageAcknowledgement(): void
     {

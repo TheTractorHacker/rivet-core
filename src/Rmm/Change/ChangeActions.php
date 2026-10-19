@@ -125,7 +125,7 @@ final class ChangeActions
             return $e;
         }
 
-        return ActionResult::ok('ok', 200, 'ok', $this->service->stats(null));
+        return ActionResult::ok('ok', 200, 'ok', $this->service->stats(null, $this->authz->visibleClientIds($who->userId)));
     }
 
     // ------------------------------------------------------------------ settings
