@@ -114,7 +114,7 @@ final class ChangeService
             $last = $kept === [] ? null : gmdate('Y-m-d H:i:s', max(array_column($kept, 'ts')));
             $this->sql->run('UPDATE endpoint_agent_change_state SET row_count = row_count + ?, dropped_total = dropped_total + ?, last_change_at = IF(? IS NULL, last_change_at, GREATEST(COALESCE(last_change_at, ?), ?)),
                 last_batch_at = ?, window_start = ?, window_count = ?, config_version = IF(? = \'\', config_version, ?), monitor_json = IF(? IS NULL, monitor_json, ?), monitor_at = IF(? IS NULL, monitor_at, ?) WHERE device_id = ?',
-                [$inserted, $dropped + $agentDropped, $last, $last, $last, $nowSql, gmdate('Y-m-d H:i:s', $winStart), $winCount + $inserted, $version, $version,
+                [$inserted, $dropped + $agentDropped, $last, $last, $last, $nowSql, gmdate('Y-m-d H:i:s', $winStart), $winCount + count($kept), $version, $version,
                     $status, $status, $status, $nowSql, $deviceId]);
         });
         if ($inserted > 0) {   // a resent batch the server already holds raises nothing twice
