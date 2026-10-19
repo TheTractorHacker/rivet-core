@@ -199,11 +199,12 @@ FORGED='{"changes":[
  {"ts":"'$NOW'","kind":"file","watch":"lnx.sudo","change":"added","target":"/etc/sudoers.d/../shadow","item":"","old":"","new":"x"},
  {"ts":"'$NOW'","kind":"file","watch":"lnx.sudo","change":"added","target":"/etc/ssh/sshd_config","item":"","old":"","new":"x"},
  {"ts":"'$NOW'","kind":"file","watch":"lnx.sudo","change":"added","target":"/etc/sudoers.d/99-forged","item":"","old":"","new":"x password=zzzsecret"}]}'
-OUT="$(post "$FORGED")"
+OUT="$(post "$FORGED")"; echo "   forged batch answer: ${OUT:0:200}"
 chk "only the record that lies inside the watch is accepted (1 of 6), five are dropped" '[ "$(printf "%s" "$OUT" | jget accepted)" = 1 ] && [ "$(printf "%s" "$OUT" | jget dropped)" = 5 ]'
 chk "the secret in the accepted forged record was redacted before it was stored" '[ "$(dbq "SELECT COUNT(*) FROM endpoint_agent_change_records WHERE new_value LIKE '\''%zzzsecret%'\''")" = 0 ] && [ "$(dbq "SELECT COUNT(*) FROM endpoint_agent_change_records")" = $((BEFORE+1)) ]'
 chk "a forged batch with another device id in it still lands on this device only" 'post "{\"changes\":[{\"ts\":\"$NOW\",\"kind\":\"file\",\"watch\":\"lnx.sudo\",\"change\":\"added\",\"target\":\"/etc/sudoers.d/98-other\",\"item\":\"\",\"old\":\"\",\"new\":\"y\",\"device_id\":99999}]}" >/dev/null; [ "$(dbq "SELECT COUNT(*) FROM endpoint_agent_change_records WHERE device_id = 99999")" = 0 ]'
 CODE2="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$WORK/tls/ca.pem" -X POST -H 'Content-Type: application/json' --data '{"changes":[]}' "https://$GATEWAY:$TLSPORT/api/v1/agent_changes")"
+echo "   unauthenticated answer: $CODE2"
 chk "without the device token the endpoint answers 401" '[ "$CODE2" = 401 ]'
 
 echo "== retention and caps"
