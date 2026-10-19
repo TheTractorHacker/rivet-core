@@ -76,12 +76,24 @@ final class ChangeProtocol
      */
     public static function redact(string $s, bool $sudoers = false): string
     {
-        if (!$sudoers) {
-            return \RivetCore\Rmm\Crypto\Redactor::redact($s);
+        if ($sudoers) {
+            $s = preg_replace('/\b(NOPASSWD|PASSWD):/', "$1\u{E000}", $s) ?? $s;   // word boundary: "NOPASSWD:" and "PASSWD:" only, not "xPASSWD:"
         }
-        $marked = str_replace(['NOPASSWD:', 'PASSWD:'], ["NOPASSWD\u{E000}", "PASSWD\u{E000}"], $s);
+        $s = \RivetCore\Rmm\Crypto\Redactor::redact($s);
+        // command-line shapes that carry a password after a switch (best effort: a secret in free text with no marker stays visible)
+        foreach ([
+            '/(\s-u\s+[^\s:]+:)\S+/i' => '$1' . self::MASK,
+            '/(\bmysql\w*\b[^\n]*?\s-p)[^\s=]\S*/i' => '$1' . self::MASK,
+            '/(\/user:\S+\s+)\S+/i' => '$1' . self::MASK,
+            '/(\s\/RP\s+)\S+/i' => '$1' . self::MASK,
+            '/(\s\/p(?:assword)?:)\S+/i' => '$1' . self::MASK,
+            '/(\bsshpass\b[^\n]*?\s-p\s*)\S+/i' => '$1' . self::MASK,
+            '#(://[^/\s:@]+:)[^/\s@]+(@)#' => '$1' . self::MASK . '$2',
+        ] as $re => $to) {
+            $s = preg_replace($re, $to, $s) ?? $s;
+        }
 
-        return str_replace("\u{E000}", ':', \RivetCore\Rmm\Crypto\Redactor::redact($marked));
+        return $sudoers ? str_replace("\u{E000}", ':', $s) : $s;
     }
 
     /** Control characters become a space, invalid UTF-8 is dropped, the text is trimmed and cut to a character budget. */

@@ -209,6 +209,16 @@ final class ChangeMonitorTest extends RemoteTestCase
         $this->assertSame('NOPASSWD: [REDACTED] token: [REDACTED]', $this->h->one("SELECT new_value FROM endpoint_agent_change_records WHERE target = '/etc/ssh/sshd_config'"), 'the exception is for sudoers files only');
     }
 
+    public function testCommandLineSecretsAreMaskedOnTheServerToo(): void
+    {
+        foreach (['curl -u bob:s3cr3t http://x' => 's3cr3t', 'mysql -h db -u root -pS3CRET1 -e x' => 'S3CRET1', 'schtasks /create /RP topsecret9 /TN x' => 'topsecret9',
+            'app /p:pw1234 /q' => 'pw1234', 'git clone https://bob:tok3n123@host/r.git' => 'tok3n123', 'net use Z: \\\\s\\x /user:bob hunter9' => 'hunter9'] as $in => $leak) {
+            $this->assertStringNotContainsString($leak, ChangeProtocol::redact($in), $in);
+        }
+        $this->assertSame('x PASSWD: /bin/ls', ChangeProtocol::redact('x PASSWD: /bin/ls', true));
+        $this->assertStringContainsString('[REDACTED]', ChangeProtocol::redact('xPASSWD: abc', true), 'a word boundary, not a substring');
+    }
+
     public function testLongValuesAreCutAndFlagged(): void
     {
         $this->enable(limits: ['change_max_value_bytes' => 64]);
