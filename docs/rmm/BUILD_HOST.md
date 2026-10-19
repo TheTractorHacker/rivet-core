@@ -57,7 +57,7 @@ The script is `endpoint-agent/scripts/build-host.sh`. It runs from a systemd tim
 
 What a job does: the script checks that the version and the source ref are acceptable (the ref must match `ALLOWED_REFS`, otherwise the job is reported as failed and nothing is built), makes a clean temporary checkout of exactly that commit, runs `make dist VERSION=... COMMIT=...` and the MSI build in the pinned Docker images (unprivileged user, read-only container, all capabilities dropped, CPU and memory limits, 25 minute total timeout), checks its own results (Windows executable headers for the right CPU, the version string inside, the MSI file type, the agent's own `version` output), writes `SHA256SUMS`, uploads each file in pieces of at most 1 MiB with a checksum per piece (retrying with backoff), and finally tells the server the hashes. The server checks everything again before publishing. Files built: Windows amd64 and arm64 executables and the Windows amd64 MSI template; Linux targets are built by `make dist` too but the protocol uploads only the Windows files and `SHA256SUMS`.
 
-Temporary files, containers and checkouts are removed however the run ends. Builds that are byte-reproducible (the executables and the MSI) produce the same files as GitHub Actions with the same Go version, version and commit.
+Temporary files, containers and checkouts are removed however the run ends. Builds that are byte-reproducible (the executables and the MSI) are byte-identical to a direct `make dist` of the same commit, version and Go image (tested); a GitHub-hosted comparison has not been done.
 
 ## Troubleshooting
 
