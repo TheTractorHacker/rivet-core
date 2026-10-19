@@ -50,7 +50,8 @@ final class RmmHarness
         'rmm_alerting_settings', 'rmm_check_eval', 'rmm_alert_meta', 'rmm_storm_summaries', 'rmm_maintenance_windows', 'rmm_device_parents',
         'rmm_escalation_policies', 'rmm_escalation_steps', 'rmm_metric_daily', 'rmm_storage_state', 'rmm_cache', 'rmm_metric_outbox', 'rmm_token_buckets', 'endpoint_agent_remote_settings', 'endpoint_agent_transfers', 'endpoint_agent_log_events', 'endpoint_agent_log_state', 'endpoint_agent_log_rules', 'endpoint_agent_mesh_settings', 'endpoint_agent_mesh_agents', 'endpoint_agent_installer_options', 'endpoint_agent_msi_templates',
         'rmm_patch_scans', 'rmm_patch_available', 'rmm_patch_history', 'rmm_patch_rings', 'rmm_patch_policies', 'rmm_patch_assignments', 'rmm_patch_rules', 'rmm_patch_jobs',
-        'rmm_software_hosts', 'rmm_packages', 'rmm_package_versions', 'rmm_package_assignments', 'rmm_deploy_state', 'rmm_package_installs', 'rmm_package_history', 'rmm_package_jobs'];
+        'rmm_software_hosts', 'rmm_packages', 'rmm_package_versions', 'rmm_package_assignments', 'rmm_deploy_state', 'rmm_package_installs', 'rmm_package_history', 'rmm_package_jobs',
+        'endpoint_agent_change_settings', 'endpoint_agent_change_records', 'endpoint_agent_change_state', 'endpoint_agent_change_rules'];
 
     public \mysqli $mysqli;
     public MysqliDatabase $db;

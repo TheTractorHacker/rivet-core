@@ -128,6 +128,10 @@ type srv struct {
 	hits       map[string]int
 	// transferFn answers agent_transfer (RMM Phase 6); nil = 404
 	transferFn func(r *http.Request, body []byte) (int, any)
+	// changeFn answers agent_changes (change monitoring); nil = 404. changeBodies/changeAuth record what arrived.
+	changeFn     func(body []byte) (int, any)
+	changeBodies [][]byte
+	changeAuth   []string
 }
 
 func newSrv(t *testing.T) *srv {
@@ -216,6 +220,18 @@ func (s *srv) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.writeJSON(w, 200, map[string]any{"ok": true}, nil)
+	case r.URL.Path == "/api/v1/agent_changes":
+		s.mu.Lock()
+		fn := s.changeFn
+		s.changeBodies = append(s.changeBodies, body)
+		s.changeAuth = append(s.changeAuth, r.Header.Get("Authorization"))
+		s.mu.Unlock()
+		if fn == nil {
+			http.NotFound(w, r)
+			return
+		}
+		code, v := fn(body)
+		s.writeJSON(w, code, v, nil)
 	case r.URL.Path == "/api/v1/agent_transfer":
 		s.mu.Lock()
 		fn := s.transferFn

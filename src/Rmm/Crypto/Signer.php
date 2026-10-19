@@ -122,6 +122,19 @@ final class Signer
         return CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($check), false)));
     }
 
+    /**
+     * The signed content of a change-monitoring configuration (`config.change`): the domain line, a line feed, then the canonical form of the object without "signature".
+     * The domain line keeps a job or a check definition from ever being accepted as a configuration, and the reverse.
+     *
+     * @param array<string,mixed> $config
+     */
+    public static function changeConfigMessage(array $config): string
+    {
+        unset($config['signature']);
+
+        return \RivetCore\Rmm\Change\ChangeProtocol::SIGN_DOMAIN . "\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($config), false)));
+    }
+
     /** An update manifest is signed over the lowercase hex SHA-256 TEXT of the package. */
     public static function signManifest(string $sha256Hex, string $secretKeyB64): string
     {

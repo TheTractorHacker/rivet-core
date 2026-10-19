@@ -333,7 +333,7 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 | File | Contents |
 |---|---|
-| `config.json` | operator config: `server_url`, `ca_file`, `pin_spki_sha256`, `department`, `mesh_node_id` (override), `max_concurrent_jobs` (default 1), `disable_jobs`, `disable_script_checks`, `update_hosts`, `buffer_max_samples` (100), `buffer_max_bytes` (1 MiB), `software_store_apps` (Windows: also list Microsoft Store apps in the software inventory; default off) |
+| `config.json` | operator config (also `disable_change`, `change_extra_roots`): `server_url`, `ca_file`, `pin_spki_sha256`, `department`, `mesh_node_id` (override), `max_concurrent_jobs` (default 1), `disable_jobs`, `disable_script_checks`, `update_hosts`, `buffer_max_samples` (100), `buffer_max_bytes` (1 MiB), `software_store_apps` (Windows: also list Microsoft Store apps in the software inventory; default off) |
 | `state.json` | `install_id`, `device_id`, status, `seq`, pinned `signing_public_key`, server config (checks/intervals), last check-in/error, update failure |
 | `device.token` | the device credential: `v1:dpapi:<base64>` on Windows (`CryptProtectData`, machine scope + entropy), `v1:plain:<token>` `0600` on Linux |
 | `enroll.token` | one-shot enrollment token, only between an offline install and the first successful enrollment |
@@ -346,7 +346,7 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 Local kill switches (set in `config.json` by an administrator of the endpoint): `disable_jobs` (never execute server jobs) and
 `disable_script_checks`, plus (RMM Phases 6 and 8) `disable_remote` (the service, process and file tools fail with `disabled_locally`, and the agent stops announcing
-`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_software` (software_detect and software_install fail with `disabled_locally`; `software:detect`, `software:install` and `job:software_*` are not announced), `disable_patching` (patch_scan and patch_install fail with `disabled_locally`; `patch:scan`, `patch:install` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` is not announced).
+`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_software` (software_detect and software_install fail with `disabled_locally`; `software:detect`, `software:install` and `job:software_*` are not announced), `disable_patching` (patch_scan and patch_install fail with `disabled_locally`; `patch:scan`, `patch:install` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` and `logs:presets` are not announced) and `disable_change` (never watch the registry, files, groups or tasks, and forget what was kept; `change:monitor` is not announced). `change_extra_roots` (a list of absolute folders) adds file roots a signed change-monitoring file watch may read; the server can never widen that list and an extra root never unlocks a credential file.
 
 ## Patch management (RMM Phase 4)
 
@@ -591,3 +591,9 @@ calls (with a recording `systemctl`), the whole install/uninstall path against t
 `unsupported_platform`, reboot scheduling, `module_disabled` back-off, jitter bounds and the platform/capabilities block.
 
 End-to-end: `e2e/run_linux_container_e2e.sh` (Linux as root in a container, see above) and `e2e/run_e2e.sh` (self-contained against `e2e/fakeserver`, or against a real scratch server with `RIVETIT_E2E_SERVER_URL`/`RIVETIT_E2E_TOKEN`/`RIVETIT_E2E_CA`).
+
+## Change monitoring (RivetCore 1.0.0-rc.22)
+
+Announced as `change:monitor` (and `logs:presets`); code in `internal/change`. Only runs while a check-in response offers the feature with a `config.change` whose Ed25519 signature (domain line `rivetit-change-config-v1`) verifies against the key pinned at enrolment; a configuration that does not verify is refused and the last good one stays. The agent then applies its own copy of the watch policy (never the SAM/SECURITY hives or the LSA boot-key parts, never shadow files, private keys or other credential stores; `internal/change/policy.go`, kept in step with the server by `testdata/vectors/agent_change_monitor_vectors.json`) and clamps every number. It keeps one redacted snapshot per watch in `change_state.json` (0600), the first reading is a silent baseline, and it reports only the difference to `agent_changes`: registry values (Windows), the local Administrators group (`net localgroup`), the scheduled task definitions (Windows), and files and folders (hash, lines added and removed, permission changes; symlinks are never followed). Values whose name looks like a secret are never read. Bounds: 5,000 items per watch, 500 changes per poll per watch, 2,000 records waiting, 1 MiB hashed per file, polling no faster than every 60 seconds. `disable_change` in `config.json` withdraws the capability and wipes the state.
+
+**Never run on a Windows host:** `registry_windows.go`, `notify_windows.go` (registry change notification: it only makes a poll run sooner), the `net.exe` and `wevtutil.exe` calls and the task reader are cross-compiled and vetted (`GOOS=windows go vet ./...`) and unit-tested with fakes and fixtures. The Linux file half is proven by `e2e/run_change_proof.sh`.

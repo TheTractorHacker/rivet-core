@@ -17,22 +17,26 @@ import (
 
 // Config is operator-supplied configuration (config.json).
 type Config struct {
-	ServerURL         string   `json:"server_url"`
-	CAFile            string   `json:"ca_file,omitempty"`         // extra CA PEM (internal CAs), added to the system pool
-	PinSPKISHA256     string   `json:"pin_spki_sha256,omitempty"` // optional hex SHA-256 of the server leaf SubjectPublicKeyInfo
-	Department        string   `json:"department,omitempty"`      // informational; the enrollment token is the authority
-	MeshNodeID        string   `json:"mesh_node_id,omitempty"`    // explicit override for the MeshCentral node id
-	MeshMSHPath       string   `json:"mesh_msh_path,omitempty"`   // override path of meshagent.msh
-	MaxConcurrentJobs int      `json:"max_concurrent_jobs,omitempty"`
-	DisableJobs       bool     `json:"disable_jobs,omitempty"`          // local kill switch: never execute server jobs
-	DisableScriptChk  bool     `json:"disable_script_checks,omitempty"` // local kill switch for script checks
-	DisableRemote     bool     `json:"disable_remote,omitempty"`        // local kill switch: svc_*/proc_*/file_* jobs fail with disabled_locally
-	DisablePatching   bool     `json:"disable_patching,omitempty"`      // local kill switch: patch_scan/patch_install jobs fail with disabled_locally and patch:* is not announced
-	DisableSoftware   bool     `json:"disable_software,omitempty"`      // local kill switch: software_detect/software_install jobs fail with disabled_locally and software:* is not announced
-	DisableLogs       bool     `json:"disable_logs,omitempty"`          // local kill switch: never collect or ship logs
-	UpdateHosts       []string `json:"update_hosts,omitempty"`          // extra hosts allowed to serve update binaries (default: server host)
-	BufferMaxSamples  int      `json:"buffer_max_samples,omitempty"`
-	BufferMaxBytes    int      `json:"buffer_max_bytes,omitempty"`
+	ServerURL         string `json:"server_url"`
+	CAFile            string `json:"ca_file,omitempty"`         // extra CA PEM (internal CAs), added to the system pool
+	PinSPKISHA256     string `json:"pin_spki_sha256,omitempty"` // optional hex SHA-256 of the server leaf SubjectPublicKeyInfo
+	Department        string `json:"department,omitempty"`      // informational; the enrollment token is the authority
+	MeshNodeID        string `json:"mesh_node_id,omitempty"`    // explicit override for the MeshCentral node id
+	MeshMSHPath       string `json:"mesh_msh_path,omitempty"`   // override path of meshagent.msh
+	MaxConcurrentJobs int    `json:"max_concurrent_jobs,omitempty"`
+	DisableJobs       bool   `json:"disable_jobs,omitempty"`          // local kill switch: never execute server jobs
+	DisableScriptChk  bool   `json:"disable_script_checks,omitempty"` // local kill switch for script checks
+	DisableRemote     bool   `json:"disable_remote,omitempty"`        // local kill switch: svc_*/proc_*/file_* jobs fail with disabled_locally
+	DisablePatching   bool   `json:"disable_patching,omitempty"`      // local kill switch: patch_scan/patch_install jobs fail with disabled_locally and patch:* is not announced
+	DisableSoftware   bool   `json:"disable_software,omitempty"`      // local kill switch: software_detect/software_install jobs fail with disabled_locally and software:* is not announced
+	DisableLogs       bool   `json:"disable_logs,omitempty"`          // local kill switch: never collect or ship logs
+	DisableChange     bool   `json:"disable_change,omitempty"`        // local kill switch: never watch the registry, files, groups or tasks; change:monitor is not announced
+	// ChangeExtraRoots adds absolute folders a signed change-monitoring file watch may read
+	// (a local administrator's decision; the server can never widen the agent's own list).
+	ChangeExtraRoots []string `json:"change_extra_roots,omitempty"`
+	UpdateHosts      []string `json:"update_hosts,omitempty"` // extra hosts allowed to serve update binaries (default: server host)
+	BufferMaxSamples int      `json:"buffer_max_samples,omitempty"`
+	BufferMaxBytes   int      `json:"buffer_max_bytes,omitempty"`
 	// SoftwareStoreApps adds the Microsoft Store (appx) packages to the Windows
 	// software inventory. Off by default; ignored on Linux.
 	SoftwareStoreApps bool `json:"software_store_apps,omitempty"`
@@ -185,6 +189,7 @@ func (s *Store) UpdatePath() string      { return s.path("update.json") }
 func (s *Store) SoftwarePath() string    { return s.path("software.json") }
 func (s *Store) LogPath() string         { return s.path("agent.log") }
 func (s *Store) LogsStatePath() string   { return s.path("logs_state.json") }
+func (s *Store) ChangeStatePath() string { return s.path("change_state.json") }
 
 func readJSON(path string, v any) (bool, error) {
 	b, err := os.ReadFile(path)

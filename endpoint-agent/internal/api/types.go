@@ -72,6 +72,10 @@ type ServerConfig struct {
 	// reads it leniently and the agent only acts on it when the response also
 	// offered the "logs:collect" feature.
 	Logs json.RawMessage `json:"logs,omitempty"`
+	// Change is the signed change-monitoring configuration. It is kept raw for
+	// the same reason, and because its signature covers the exact object: the
+	// agent verifies it before it reads a single registry value or file.
+	Change json.RawMessage `json:"change,omitempty"`
 }
 
 type EnrollResponse struct {

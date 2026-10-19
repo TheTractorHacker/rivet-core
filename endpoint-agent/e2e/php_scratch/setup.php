@@ -39,6 +39,14 @@ if ($software) {
         $mig->up($db);
     }
 }
+// the change-monitoring proof (run_change_proof.sh): the change tables (and the job tables a housekeeping pass touches) and the `change_monitor` switch
+$change = getenv('RMM_PROOF_CHANGE') === '1';
+if ($change) {
+    $db = new \RivetCore\Tests\Support\MysqliDatabase($m);
+    foreach ([new \RivetCore\Jobs\Migration\Migration0002IntegrationJobs(), new \RivetCore\Jobs\Migration\Migration0012JobHeartbeat(), new \RivetCore\Rmm\Migration\Migration0030ChangeMonitor()] as $mig) {
+        $mig->up($db);
+    }
+}
 if ($patching) {
     // a housekeeping pass (run_patch_proof.sh calls it) also touches the job queue of Core and the later RMM tables
     $db = new \RivetCore\Tests\Support\MysqliDatabase($m);
@@ -51,7 +59,7 @@ $client = $e->tenancy->addClient('Proof Dept');
 $s = $e->module->settings();
 $s->enable();
 $errors = $s->update(['service_url' => $url, 'unmatched_policy' => 'auto_create',
-    'features_json' => ['monitoring' => true, 'metrics' => true, 'jobs' => true, 'updates' => true, 'alerting' => true, 'remote_tools' => true, 'filetransfer' => true, 'logs' => true] + ($patching ? ['patching' => true] : []) + ($software ? ['software_deploy' => true] : [])]);
+    'features_json' => ['monitoring' => true, 'metrics' => true, 'jobs' => true, 'updates' => true, 'alerting' => true, 'remote_tools' => true, 'filetransfer' => true, 'logs' => true] + ($patching ? ['patching' => true] : []) + ($software ? ['software_deploy' => true] : []) + ($change ? ['change_monitor' => true] : [])]);
 if ($errors !== []) {
     fwrite(STDERR, implode("\n", $errors) . "\n");
     exit(1);
@@ -75,6 +83,16 @@ if ($errors !== []) {
 if ($rid === null) {
     fwrite(STDERR, implode("\n", $rerr) . "\n");
     exit(1);
+}
+if ($change) {
+    // the real presets of Linux (Core's default watch policy: /etc and friends) and one custom watch; the proof changes files in the throwaway container
+    $errors = $e->module->changeSettings()->update(['presets' => ['linux' => ['lnx.ssh', 'lnx.sudo', 'lnx.accounts', 'lnx.cron', 'lnx.systemd', 'lnx.hosts']],
+        'custom' => [['id' => 'proof', 'platform' => 'linux', 'kind' => 'file', 'title' => 'Proof folder', 'paths' => [['path' => '/etc/proof.d', 'depth' => 1]]]],
+        'limits' => ['change_interval_s' => 60]], 1);   // 60 seconds is the floor of the server setting and of the agent
+    if ($errors !== []) {
+        fwrite(STDERR, implode("\n", $errors) . "\n");
+        exit(1);
+    }
 }
 $tok = $e->module->enrollment()->createToken($client, 0, 'stable', 24, 5, 'real agent proof', 1);
 $e->save();

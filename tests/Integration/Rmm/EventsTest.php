@@ -47,7 +47,8 @@ final class EventsTest extends RmmTestCase
             }
             $this->assertGreaterThan(5, count($paths), "$id documents its own fields");
         }
-        $this->assertCount(32, EventCatalog::matchPattern('rmm.*'));
+        $this->assertCount(34, EventCatalog::matchPattern('rmm.*'));
+        $this->assertCount(2, EventCatalog::matchPattern('rmm.change.*'));
         $this->assertCount(4, EventCatalog::matchPattern('rmm.alert.*'));
         $this->assertCount(2, EventCatalog::matchPattern('rmm.maintenance.*'));
         $this->assertCount(2, EventCatalog::matchPattern('rmm.software.*'));

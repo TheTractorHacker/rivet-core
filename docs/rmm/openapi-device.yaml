@@ -292,6 +292,44 @@ paths:
         '426': {$ref: '#/components/responses/TlsRequired'}
         '429': {$ref: '#/components/responses/RateLimited'}
         '503': {$ref: '#/components/responses/ModuleDisabled'}
+  /agent_changes:
+    post:
+      tags: [Device]
+      operationId: agentChangesShip
+      summary: Ship a batch of detected changes (change monitoring, `change_monitor` switch)
+      description: |
+        Sent only after a check-in response offered the feature `change:monitor` (the agent announced the capability of the same name) with a signed `config.change`. At most 100 records
+        and 262144 bytes per request. The device id always comes from the credential. The server drops a record it cannot understand, one for a watch the device was not told to read
+        (or of another kind), one whose target is outside that watch's paths or refused by the watch policy (credential hives and files are never recorded), and everything beyond the
+        device's per-minute budget, the device's row cap or the fleet cap, and says so in `dropped`. A record stored before is counted in `duplicates`, never stored twice, so resending
+        a batch whose answer was lost is safe. `status` is the agent's own report on its watches (an empty `changes` list with a `status` is the heartbeat). Under load shedding (level 2
+        and up) the answer is `503 unavailable` with a jittered `Retry-After`. At most 30 per 60 s per device.
+      security: [{deviceAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                changes: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/ChangeRecord'}}
+                dropped: {type: integer, minimum: 0, description: 'Records the agent itself dropped since its last request (queue full, a mass change, a rejected batch)'}
+                config_version: {type: string, description: 'The version of the configuration the records were detected under'}
+                status:
+                  type: object
+                  properties:
+                    watches: {type: array, maxItems: 60, items: {type: object, properties: {id: {type: string}, state: {type: string, enum: [ok, baseline, partial, error]}, items: {type: integer}, error: {type: string, maxLength: 160}}}}
+                    baseline_at: {type: [string, 'null'], format: date-time}
+      responses:
+        '200':
+          description: Processed
+          content: {application/json: {schema: {type: object, required: [ok, accepted, dropped, duplicates], properties: {ok: {type: boolean}, accepted: {type: integer}, dropped: {type: integer}, duplicates: {type: integer}}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
   /endpoint_devices:
     get:
       tags: [Technician]
@@ -3484,6 +3522,182 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/changes:
+    get:
+      tags: [Technician]
+      operationId: searchChanges
+      summary: Search the recorded changes of the caller's clients (change monitoring)
+      description: |
+        Needs `rmm.change.view`. A window of at most 30 days, newest first. `device_id` and `client_id` narrow it; a device or client outside the caller's clients is the same 404 as a missing one.
+      security: [{userToken: []}]
+      parameters:
+        - {name: device_id, in: query, schema: {type: integer}}
+        - {name: client_id, in: query, schema: {type: integer}}
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+        - {name: kind, in: query, schema: {type: string, enum: [registry, file, group, task]}}
+        - {name: watch, in: query, schema: {type: string}}
+        - {name: change, in: query, schema: {type: string, enum: [added, modified, removed]}}
+        - {name: target, in: query, description: 'Part of the key, file path or group (case-insensitive)', schema: {type: string}}
+        - {name: item, in: query, description: 'Part of the value name, member or task path', schema: {type: string}}
+        - {name: actor, in: query, schema: {type: string}}
+        - {name: q, in: query, description: 'Part of the target, item, either value or the summary', schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 500}}
+        - {name: offset, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/changes/stats:
+    get:
+      tags: [Technician]
+      operationId: getChangeStats
+      summary: Change storage figures
+      description: |
+        Needs `rmm.change.view`. Rows stored against the fleet cap, the caps and the last day's changes by watch.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/changes/settings:
+    put:
+      tags: [Technician]
+      operationId: updateChangeSettings
+      summary: Change the change-monitoring settings
+      description: |
+        `presets` and `custom` need `rmm.change.manage` (and access to every client: a watch applies to all); `features` (the `change_monitor` switch) and `limits` need `rmm.admin`.
+        Turning the switch on needs `accept_change_storage: true`, else `422 confirmation_required` with the plain-language text. Custom watches pass the watch policy; a refusal changes nothing.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: false, properties: {features: {type: object, properties: {change_monitor: {type: boolean}}}, presets: {type: object, properties: {windows: {type: array, items: {type: string}}, linux: {type: array, items: {type: string}}}}, custom: {type: array, maxItems: 30, items: {type: object}}, limits: {type: object, additionalProperties: {type: integer}}, accept_change_storage: {type: boolean}}}}}
+      responses:
+        '200': {description: Saved, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    get:
+      tags: [Technician]
+      operationId: getChangeSettings
+      summary: The change-monitoring settings
+      description: |
+        Needs `rmm.change.view`. The preset catalog with what is on (`enabled`), custom watches, the limits, the plain-language storage warning and the worst-case sizes those limits allow.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/changes/rules:
+    post:
+      tags: [Technician]
+      operationId: createChangeRule
+      summary: Create a change rule
+      description: |
+        Needs `rmm.change.manage`; a rule for all clients (`client_id` 0) needs access to all clients. Fields: `name`, `enabled`, `client_id`, `watch`, `kind`, `target_contains`, `item_contains`,
+        `change` (any, added, modified, removed), `threshold`, `window_min`, `severity` (warn, fail), `resolve_after_min`. Never a regular expression.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: true}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    get:
+      tags: [Technician]
+      operationId: listChangeRules
+      summary: List the change rules
+      description: |
+        Needs `rmm.change.view`. A caller limited to some clients sees only the rules of those clients. A rule drives the check `change.rule_<id>` through the alert engine.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/changes/rules/recommended:
+    post:
+      tags: [Technician]
+      operationId: installRecommendedChangeRules
+      summary: Create the recommended change rules
+      description: |
+        Needs `rmm.change.manage`. One rule per preset that suggests one (any change to the startup entries, the Defender exclusions, Remote Desktop, sshd, sudo and the account files; an added local administrator). Created once each, never duplicated. Body: `{client_id?}`.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: true}}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '201': {description: Created, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /endpoint_devices/{id}/changes:
+    get:
+      tags: [Technician]
+      operationId: getDeviceChanges
+      summary: Search the recorded changes of one device
+      description: |
+        Needs `rmm.change.view`. Up to 365 days, newest first.
+      security: [{userToken: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+        - {name: kind, in: query, schema: {type: string, enum: [registry, file, group, task]}}
+        - {name: watch, in: query, schema: {type: string}}
+        - {name: change, in: query, schema: {type: string, enum: [added, modified, removed]}}
+        - {name: target, in: query, description: 'Part of the key, file path or group (case-insensitive)', schema: {type: string}}
+        - {name: item, in: query, description: 'Part of the value name, member or task path', schema: {type: string}}
+        - {name: actor, in: query, schema: {type: string}}
+        - {name: q, in: query, description: 'Part of the target, item, either value or the summary', schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 500}}
+        - {name: offset, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/changes/timeline:
+    get:
+      tags: [Technician]
+      operationId: getDeviceChangeTimeline
+      summary: Who changed what on one device
+      description: |
+        Needs `rmm.change.view`. The device's recorded changes and, when the software inventory is collected, its installs, removals and version changes (`source` is `agent` or `inventory`), newest first, with the people Windows recorded (`actors`; the empty actor is "unknown") and a count per day.
+      security: [{userToken: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+        - {name: limit, in: query, schema: {type: integer, maximum: 500}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/changes/status:
+    get:
+      tags: [Technician]
+      operationId: getDeviceChangeStatus
+      summary: What a device is told to watch and what it reported
+      description: |
+        Needs `rmm.change.view`. The watch ids of the device's platform, its row counters, the configuration version it runs and the status its agent last sent.
+      security: [{userToken: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
 components:
   securitySchemes:
     deviceAuth:
@@ -3707,6 +3921,25 @@ components:
         version: {type: string, maxLength: 60}
         node_id: {type: string, description: 'A MeshCentral node id in any spelling: `node//` plus 64 characters (MeshCentral URL form) or 96 hex characters, with or without the prefix, or (legacy) `node//` plus 16 to 100 characters of A-Za-z0-9@$_-; the server stores `node//<64 characters>`; anything else is ignored'}
         error: {type: string, maxLength: 300, description: Why the install failed; read only while installed is false}
+    ChangeRecord:
+      type: object
+      required: [ts, kind, watch, change, target]
+      properties:
+        ts: {type: string, format: date-time, description: 'When the agent detected the change'}
+        kind: {type: string, enum: [registry, file, group, task]}
+        watch: {type: string, description: 'The id of a watch in the device''s current configuration', pattern: '^(win|lnx|custom)\.[a-z0-9_]{1,40}$'}
+        change: {type: string, enum: [added, modified, removed]}
+        target: {type: string, maxLength: 300, description: 'Registry key, file path, group:<name> or scheduled-tasks'}
+        item: {type: string, maxLength: 200}
+        old: {type: string, maxLength: 512}
+        new: {type: string, maxLength: 512}
+        summary: {type: string, maxLength: 200}
+        old_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        new_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        actor: {type: string, maxLength: 120}
+        process: {type: string, maxLength: 200}
+        redacted: {type: boolean}
+        truncated: {type: boolean}
     LogEvent:
       type: object
       required: [ts, level, message]

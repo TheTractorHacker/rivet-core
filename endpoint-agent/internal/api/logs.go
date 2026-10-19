@@ -11,6 +11,21 @@ import (
 // string (offered by the server) of log collection.
 const FeatureLogs = "logs:collect"
 
+// FeatureLogPresets is announced by an agent that understands the security-log
+// presets of a log source: the level "always" semantics (an empty level list
+// reads every level) and the "aggregate" member. A server never offers an
+// aggregated source to an agent that did not announce it.
+const FeatureLogPresets = "logs:presets"
+
+// LogAggregate asks the agent to sum up the events of a source on the device:
+// one summary entry per window and per combination of the By fields, only when
+// the count reaches Min (repeated failed logons, for example).
+type LogAggregate struct {
+	WindowS int      `json:"window_s"`
+	Min     int      `json:"min"`
+	By      []string `json:"by,omitempty"`
+}
+
 // LogSource is one entry of config.logs.sources. Windows sources have Kind
 // "eventlog" (Channel, Levels, EventIDs, Contains), Linux sources "journal"
 // (Units, Identifiers, MinLevel, Contains).
@@ -23,6 +38,9 @@ type LogSource struct {
 	Identifiers []string `json:"identifiers,omitempty"`
 	MinLevel    string   `json:"min_level,omitempty"`
 	Contains    []string `json:"contains,omitempty"`
+	// Aggregate (security presets) is honoured only by an agent that announced
+	// logs:presets; the server never offers it to any other.
+	Aggregate *LogAggregate `json:"aggregate,omitempty"`
 }
 
 // LogsConfig is the config.logs object of a check-in response.

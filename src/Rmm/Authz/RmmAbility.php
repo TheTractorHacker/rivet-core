@@ -18,7 +18,7 @@ namespace RivetCore\Rmm\Authz;
  * device and the Mesh terminal and files views: it is a stronger grant than `remote.launch` (RivetIT's matrix may map it to `module_rmm_remote_connect >= 2` or to
  * `module_rmm_scripts >= 3`); sending a file to a device is `rmm.admin`. The patch abilities (Phase 4): `patch.view` maps like `device.view` (read only), `patch.manage` (approve,
  * decline, scan, dry run, rules, rings and patch policies) like `job.run_saved` and `patch.install` (a real installation) like `job.reboot` or stronger: give it to fewer
- * people. A policy that enforces anything must deny an ability it does not know.
+ * people. The change abilities (change monitoring): `change.view` maps like `job.run_saved` (read only, a change record can hold configuration text), `change.manage` (presets, custom watches, rules) like `alert.manage`. A policy that enforces anything must deny an ability it does not know.
  *
  * @api
  */
@@ -61,6 +61,10 @@ final class RmmAbility
     public const SOFTWARE_MANAGE = 'rmm.software.manage';
     /** Run a real installation or removal on a device. A stronger grant than `rmm.software.manage`: give it to fewer people. Needs `rmm.software.view` too (Phase 5). */
     public const SOFTWARE_DEPLOY = 'rmm.software.deploy';
+    /** See the recorded changes of devices (registry, files, groups, tasks), the "who changed what" timeline and the change rules. Needs `rmm.device.view` too (change monitoring). Map it like `rmm.job.run_saved`: a change record can hold configuration text. */
+    public const CHANGE_VIEW = 'rmm.change.view';
+    /** Turn change-monitoring presets on and off, add custom watches and manage change rules. Needs `rmm.change.view` too. The switch and the storage caps need `rmm.admin`. */
+    public const CHANGE_MANAGE = 'rmm.change.manage';
     /** Module settings, switches, signing key, MeshCentral settings. */
     public const ADMIN = 'rmm.admin';
 
@@ -68,7 +72,7 @@ final class RmmAbility
     public static function all(): array
     {
         return [self::DEVICE_VIEW, self::DEVICE_MANAGE, self::JOB_RUN_SAVED, self::JOB_REBOOT, self::JOB_RUN_SCRIPT, self::JOB_APPROVE, self::REMOTE_LAUNCH,
-            self::TOKEN_MANAGE, self::BINARY_PUBLISH, self::ALERT_MANAGE, self::REMOTE_MANAGE, self::PATCH_VIEW, self::PATCH_MANAGE, self::PATCH_INSTALL, self::SOFTWARE_VIEW, self::SOFTWARE_MANAGE, self::SOFTWARE_DEPLOY, self::ADMIN];
+            self::TOKEN_MANAGE, self::BINARY_PUBLISH, self::ALERT_MANAGE, self::REMOTE_MANAGE, self::PATCH_VIEW, self::PATCH_MANAGE, self::PATCH_INSTALL, self::SOFTWARE_VIEW, self::SOFTWARE_MANAGE, self::SOFTWARE_DEPLOY, self::CHANGE_VIEW, self::CHANGE_MANAGE, self::ADMIN];
     }
 
     /** Abilities of the administration side: they do not need the technician's `device.view` grant. */
@@ -94,6 +98,8 @@ final class RmmAbility
             self::SOFTWARE_VIEW => 'Your role cannot view software deployment.',
             self::SOFTWARE_MANAGE => 'Your role cannot manage the software catalog.',
             self::SOFTWARE_DEPLOY => 'Your role cannot install or remove software on devices.',
+            self::CHANGE_VIEW => 'Your role cannot view recorded changes.',
+            self::CHANGE_MANAGE => 'Your role cannot manage change monitoring.',
             self::ADMIN, self::DEVICE_MANAGE, self::TOKEN_MANAGE, self::BINARY_PUBLISH => 'Administrator access is required.',
             default => 'Unknown action.',
         };

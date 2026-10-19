@@ -65,6 +65,7 @@ final class CheckinService
         private readonly ?EffectivePolicy $policies = null,
         private readonly ?RemoteSettings $remote = null,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
+        private readonly ?\RivetCore\Rmm\Change\ChangeSettings $change = null,
     ) {
     }
 
@@ -190,10 +191,19 @@ final class CheckinService
         // Phase 8, additive: only an agent that announced `logs:collect`, while the `logs` sub-switch is on, no load is being shed (log ingest goes first) and at
         // least one source is configured for its platform. Every other response is byte-identical to before.
         if ($features['logs'] && $this->remote !== null && (int) ($cfg['shed_level'] ?? 0) === 0 && in_array(RemoteProtocol::CAP_LOGS, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
-            $logConfig = $this->remote->agentLogConfig((string) ($dev['os'] ?? 'windows'));
+            $logConfig = $this->remote->agentLogConfig((string) ($dev['os'] ?? 'windows'), $this->capsOf($dev, $announce['caps']));
             if ($logConfig !== null) {
                 $offered[] = RemoteProtocol::CAP_LOGS;
                 $out['config']['logs'] = $logConfig;
+            }
+        }
+        // Change monitoring, additive: only an agent that announced `change:monitor`, while the `change_monitor` sub-switch is on, below load shedding level 2 and with at
+        // least one watch for its platform. The configuration is signed; an unsigned one is never offered. Every other response is byte-identical to before.
+        if (($features['change_monitor'] ?? false) && $this->change !== null && (int) ($cfg['shed_level'] ?? 0) < 2 && in_array(\RivetCore\Rmm\Change\ChangeProtocol::CAP, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
+            $changeConfig = $this->change->agentConfig((string) ($dev['os'] ?? 'windows'));
+            if ($changeConfig !== null) {
+                $offered[] = \RivetCore\Rmm\Change\ChangeProtocol::CAP;
+                $out['config']['change'] = $changeConfig;
             }
         }
         if ($offered !== []) {

@@ -11,6 +11,7 @@ RivetIT and RivetMSP, and the roadmap to a complete RMM. Status: **Phase 0 in pr
 | [openapi-device.yaml](openapi-device.yaml) | OpenAPI 3.1 of the device endpoints and the technician REST API |
 | [../modules/rmm.md](../modules/rmm.md) | The module page: what it owns, the contracts and abilities, key classes, runnable examples, failure modes |
 | [REMOTE_AND_LOGS.md](REMOTE_AND_LOGS.md) | Operator guide for the remote tools (service and process managers, file transfer, Mesh terminal and files) and log collection: the switches and their risk texts, limits, what is built and what remains |
+| [CHANGE_MONITOR.md](CHANGE_MONITOR.md) | Operator guide for change monitoring: registry, configuration file, local group and scheduled-task changes, the Security log presets, the signed configuration, privacy and redaction, rules and the timeline, scale numbers, the security review |
 | [SCALING.md](SCALING.md) | How the RMM goes from 5,000 supported devices to 10,000 proven before it leaves beta: targets, load model, work items, validation gate |
 | [mockups/asset-page.html](mockups/asset-page.html) | Interactive mockup of the redesigned asset page (self-contained HTML; download and open it) |
 | [mockups/asset-page-app-style.html](mockups/asset-page-app-style.html) | The same mockup rendered with the real RivetIT CSS and shell markup (light and dark, red accent); self-contained, about 1.7 MB |

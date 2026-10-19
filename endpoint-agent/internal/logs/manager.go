@@ -59,6 +59,7 @@ type Manager struct {
 	fail      int
 	srcFail   map[string]int
 	warned    map[string]bool
+	agg       map[string]*aggregator // aggregated sources (security presets), by source key
 }
 
 // New builds a Manager and loads the persisted bookmarks.
@@ -88,6 +89,7 @@ func (m *Manager) resetRun() {
 	m.winStart, m.winSent = time.Time{}, 0
 	m.srcFail = map[string]int{}
 	m.warned = map[string]bool{}
+	m.agg = map[string]*aggregator{}
 }
 
 // Configure sets (or with nil clears) the collection config. It is called after
@@ -156,6 +158,7 @@ func (m *Manager) Tick(ctx context.Context) time.Duration {
 		return m.pauseTill.Sub(now)
 	}
 	m.readAll(ctx, cfg)
+	m.flushAggregates(cfg)
 	m.settle()
 	wait := cfg.Interval
 	if d, failed := m.ship(ctx, cfg); failed {
@@ -163,6 +166,23 @@ func (m *Manager) Tick(ctx context.Context) time.Duration {
 	}
 	m.settle()
 	return wait
+}
+
+// flushAggregates moves the summary entries of finished windows into the backlog
+// (they carry no reader position: the source's own position was advanced as its
+// events were counted).
+func (m *Manager) flushAggregates(cfg *Config) {
+	now := m.o.Now()
+	for key, ag := range m.agg {
+		for _, ev := range ag.flush(now, m.o.Redact) {
+			if len(m.backlog) >= backlogCap {
+				m.dropped++
+				continue
+			}
+			ev.Message = TruncateUTF8(ev.Message, cfg.MaxMessageBytes)
+			m.backlog = append(m.backlog, pendingItem{key: key, ev: ev})
+		}
+	}
 }
 
 func (m *Manager) backlogFor(key string) bool {
@@ -188,6 +208,19 @@ func (m *Manager) readAll(ctx context.Context, cfg *Config) {
 			}
 			continue
 		}
+		var ag *aggregator
+		if src.Aggregate != nil {
+			if ag = m.agg[key]; ag == nil {
+				if ag = newAggregator(src.Aggregate); ag == nil {
+					if !m.warned[key] {
+						m.warned[key] = true
+						m.o.Log.Warn("log source asks for an aggregation this agent cannot honour; skipped", "kind", src.Kind)
+					}
+					continue // never fall back to reading it raw
+				}
+				m.agg[key] = ag
+			}
+		}
 		from := m.read[key]
 		if from == "" {
 			from = m.committed[key]
@@ -210,6 +243,10 @@ func (m *Manager) readAll(ctx context.Context, cfg *Config) {
 		}
 		m.srcFail[key], m.warned[key] = 0, false
 		for _, it := range res.Items {
+			if ag != nil {
+				ag.add(it, m.o.Now())
+				continue
+			}
 			ev := it.Event
 			ev.Message = TruncateUTF8(m.o.Redact(ev.Message), cfg.MaxMessageBytes)
 			ev.Source = TruncateUTF8(m.o.Redact(ev.Source), 200)

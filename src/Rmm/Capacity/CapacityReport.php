@@ -97,6 +97,7 @@ final class CapacityReport
             'herd' => ['warm_start' => $this->herd?->status(), 'client_bucket_burst' => $limits['client_bucket_burst'], 'client_bucket_per_min' => $limits['client_bucket_per_min']],
             'patching' => $features['patching'] ? $this->patching($limits) : null,
             'software_deploy' => $features['software_deploy'] ? $this->softwareDeploy($limits) : null,
+            'change_monitor' => ($features['change_monitor'] ?? false) ? $this->changeMonitor() : null,
             'tables' => $this->tables(),
             'settings' => $inputs + ['max_devices' => (int) $cfg['max_devices']],
             'projection' => $projection,
@@ -114,6 +115,36 @@ final class CapacityReport
     public function metricsText(?int $workers = null, float $perWorkerJobsPerSecond = AutoscaleHint::DEFAULT_PER_WORKER_JOBS_PER_S): string
     {
         return AutoscaleHint::exposition($this->queue->scaleHint($workers, $perWorkerJobsPerSecond), $this->queue->backlog()['dead_letter']);
+    }
+
+    /**
+     * Change monitoring (only while the `change_monitor` switch is on): how many change records are stored against their caps, how many devices have reported, and the
+     * worst-case size those caps allow.
+     *
+     * @return array<string,mixed>
+     */
+    public function changeMonitor(): array
+    {
+        try {
+            $rows = (int) $this->sql->val('SELECT COALESCE(SUM(row_count), 0) FROM endpoint_agent_change_state');
+            $devices = (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_change_state WHERE last_batch_at IS NOT NULL');
+            $raw = $this->sql->val('SELECT limits_json FROM endpoint_agent_change_settings WHERE id = 1');
+        } catch (\Throwable) {
+            return ['available' => false];   // migration 0030 is not applied yet
+        }
+        $limits = array_map(static fn (array $l): int => $l[2], \RivetCore\Rmm\Change\ChangeSettings::LIMITS);
+        $stored = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+        foreach (is_array($stored) ? $stored : [] as $k => $v) {
+            if (isset($limits[$k]) && is_int($v)) {
+                $limits[$k] = $v;
+            }
+        }
+        $per = \RivetCore\Rmm\Change\ChangeSettings::BYTES_PER_ROW;
+        $worst = \RivetCore\Rmm\Change\ChangeSettings::BYTES_PER_ROW_WORST;
+
+        return ['available' => true, 'rows' => $rows, 'devices_reporting' => $devices, 'limits' => $limits, 'fleet_cap_bytes' => $limits['change_fleet_max_rows'] * $per,
+            'stored_bytes_estimate' => $rows * \RivetCore\Rmm\Change\ChangeSettings::BYTES_PER_ROW_TYPICAL, 'worst_case_bytes_per_device' => $limits['change_device_max_rows'] * $worst,
+            'fleet_worst_case_bytes' => $limits['change_fleet_max_rows'] * $worst];
     }
 
     /**

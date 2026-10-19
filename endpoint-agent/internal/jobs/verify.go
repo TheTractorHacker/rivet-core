@@ -72,6 +72,30 @@ func (v *Verifier) VerifyObject(raw []byte, sigB64 string) error {
 	return nil
 }
 
+// VerifyDomain checks a signature over domain + "\n" + the canonical form of raw (minus
+// its "signature" member). The domain line separates a change-monitoring
+// configuration from a job or a check: neither can ever verify as the other.
+func (v *Verifier) VerifyDomain(domain string, raw []byte, sigB64 string) error {
+	if len(v.PublicKey) != ed25519.PublicKeySize {
+		return fmt.Errorf("%w: no pinned signing key", ErrBadSignature)
+	}
+	if len(raw) == 0 || sigB64 == "" {
+		return fmt.Errorf("%w: missing signature", ErrBadSignature)
+	}
+	sig, err := decodeB64(sigB64)
+	if err != nil || len(sig) != ed25519.SignatureSize {
+		return fmt.Errorf("%w: undecodable signature", ErrBadSignature)
+	}
+	canon, err := Canonical(raw)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidJob, err)
+	}
+	if !ed25519.Verify(v.PublicKey, append([]byte(domain+"\n"), canon...), sig) {
+		return ErrBadSignature
+	}
+	return nil
+}
+
 // Verify order: key sanity, signature over canonical JSON, then expiry,
 // device scope, type and bounds. All must pass.
 func (v *Verifier) Verify(j api.Job) error {

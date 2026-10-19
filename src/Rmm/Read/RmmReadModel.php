@@ -73,6 +73,7 @@ final class RmmReadModel
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
         private readonly ?\RivetCore\Rmm\Patch\PatchReader $patches = null,
         private readonly ?\RivetCore\Rmm\Deploy\DeployReader $deploy = null,
+        private readonly ?\RivetCore\Rmm\Change\ChangeService $changeService = null,
     ) {
     }
 
@@ -178,6 +179,39 @@ final class RmmReadModel
     public function logStats(?int $deviceId = null): array
     {
         return $this->logService === null ? [] : $this->logService->stats($deviceId);
+    }
+
+    /**
+     * Search the recorded changes (see {@see \RivetCore\Rmm\Change\ChangeService::search()}). `$visibleClientIds` is the caller's client scope (null = all).
+     *
+     * @param array<string,mixed> $filters
+     * @param list<int>|null $visibleClientIds
+     * @return array{items:list<array<string,mixed>>,total:int,from:string,to:string}
+     */
+    public function changeSearch(array $filters, ?array $visibleClientIds, int $limit = 100, int $offset = 0): array
+    {
+        return $this->changeService === null ? ['items' => [], 'total' => 0, 'from' => '', 'to' => ''] : $this->changeService->search($filters, $visibleClientIds, $limit, $offset);
+    }
+
+    /**
+     * The "who changed what" timeline of one device (the caller has authorized the device).
+     *
+     * @param array<string,mixed> $filters from, to
+     * @return array<string,mixed>
+     */
+    public function changeTimeline(int $deviceId, array $filters = [], int $limit = 200): array
+    {
+        return $this->changeService === null ? ['items' => [], 'actors' => [], 'days' => []] : $this->changeService->timeline($deviceId, $filters, $limit);
+    }
+
+    /**
+     * Change storage figures for the fleet (and one device).
+     *
+     * @return array<string,mixed>
+     */
+    public function changeStats(?int $deviceId = null): array
+    {
+        return $this->changeService === null ? [] : $this->changeService->stats($deviceId);
     }
 
     /** The Phase 2 reads (policies, script library, approvals, schedules, custom fields), or null when the module was built without them. */

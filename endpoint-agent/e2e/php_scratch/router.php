@@ -29,7 +29,7 @@ if (preg_match('#^/api/v1/([a-z_]+)(?:/(.*))?$#', $path, $m) !== 1) {
 }
 $resource = $m[1];
 $rest = $m[2] ?? '';
-$deviceEndpoints = ['agent_enroll', 'agent_checkin', 'agent_jobs', 'agent_update', 'agent_installer', 'agent_transfer', 'agent_logs'];
+$deviceEndpoints = ['agent_enroll', 'agent_checkin', 'agent_jobs', 'agent_update', 'agent_installer', 'agent_transfer', 'agent_logs', 'agent_changes'];
 
 mysqli_report(MYSQLI_REPORT_OFF);
 $edition = new GoldenEdition((string) getenv('RMM_GOLDEN_STATE'), false);

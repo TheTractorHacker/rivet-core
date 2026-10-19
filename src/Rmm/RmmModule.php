@@ -74,6 +74,7 @@ use RivetCore\Rmm\Patch\PatchInstallService;
 use RivetCore\Rmm\Patch\PatchPolicyStore;
 use RivetCore\Rmm\Patch\PatchProtocol;
 use RivetCore\Rmm\Deploy\DeployProtocol;
+use RivetCore\Rmm\Contracts\ChangeWatchPolicyInterface;
 use RivetCore\Rmm\Contracts\PackageSourcePolicyInterface;
 use RivetCore\Rmm\Patch\PatchReader;
 use RivetCore\Rmm\Patch\PatchScanService;
@@ -226,6 +227,12 @@ final class RmmModule
     private ?\RivetCore\Rmm\Deploy\DeployActions $deployActions = null;
     private ?\RivetCore\Rmm\Http\DeployApi $deployApi = null;
     private ?\RivetCore\Rmm\Deploy\DeployScheduler $deployScheduler = null;
+    private ?ChangeWatchPolicyInterface $changeWatchPolicy = null;
+    private ?\RivetCore\Rmm\Change\ChangeSettings $changeSettings = null;
+    private ?\RivetCore\Rmm\Change\ChangeRuleService $changeRules = null;
+    private ?\RivetCore\Rmm\Change\ChangeService $changeService = null;
+    private ?\RivetCore\Rmm\Change\ChangeActions $changeActions = null;
+    private ?\RivetCore\Rmm\Http\ChangeApi $changeApi = null;
 
     private readonly RmmAuditInterface $audit;
     private readonly RmmMetricSinkInterface $metrics;
@@ -402,6 +409,50 @@ final class RmmModule
     public function patchApi(): \RivetCore\Rmm\Http\PatchApi
     {
         return $this->patchApi ??= new \RivetCore\Rmm\Http\PatchApi($this->patchActions());
+    }
+
+    // ------------------------------------------------------------------ change monitoring
+
+    /**
+     * Replace the policy that decides what a custom watch (and a reported change) may point at (an edition may want its own rule). The default is
+     * {@see \RivetCore\Rmm\Change\ChangeWatchPolicy}; set it before the first use of the module's change-monitoring services.
+     */
+    public function setChangeWatchPolicy(ChangeWatchPolicyInterface $policy): void
+    {
+        $this->changeWatchPolicy = $policy;
+        $this->changeSettings = null;
+        $this->changeService = null;
+        $this->changeActions = null;
+    }
+
+    /** The change-monitoring settings and the signed configuration an agent receives. */
+    public function changeSettings(): \RivetCore\Rmm\Change\ChangeSettings
+    {
+        return $this->changeSettings ??= new \RivetCore\Rmm\Change\ChangeSettings($this->sql(), $this->settings(), $this->changeWatchPolicy ??= new \RivetCore\Rmm\Change\ChangeWatchPolicy());
+    }
+
+    /** Change rules: a matching change raises an alert through the check evaluator. */
+    public function changeRules(): \RivetCore\Rmm\Change\ChangeRuleService
+    {
+        return $this->changeRules ??= new \RivetCore\Rmm\Change\ChangeRuleService($this->sql(), $this->settings(), $this->checks(), $this->devices(), $this->eventPublisher());
+    }
+
+    /** Recorded changes: ingest, search, the timeline, retention. */
+    public function changeService(): \RivetCore\Rmm\Change\ChangeService
+    {
+        return $this->changeService ??= new \RivetCore\Rmm\Change\ChangeService($this->sql(), $this->changeSettings(), $this->changeRules(), $this->eventPublisher());
+    }
+
+    /** Reading changes and managing change monitoring (shared by the REST API and the edition's pages). */
+    public function changeActions(): \RivetCore\Rmm\Change\ChangeActions
+    {
+        return $this->changeActions ??= new \RivetCore\Rmm\Change\ChangeActions($this->devices(), $this->authorizer(), $this->settings(), $this->changeSettings(), $this->changeService(), $this->changeRules(), $this->audit);
+    }
+
+    /** The change-monitoring routes (mounted by {@see technicianApi()}). */
+    public function changeApi(): \RivetCore\Rmm\Http\ChangeApi
+    {
+        return $this->changeApi ??= new \RivetCore\Rmm\Http\ChangeApi($this->changeActions());
     }
 
     // ------------------------------------------------------------------ Phase 5: software deployment
@@ -629,7 +680,7 @@ final class RmmModule
         return new CheckinService($this->sql(), $this->settings(), $this->devices(), $this->checks(), $this->jobs(), $this->updates(), $this->linker(), $this->assets, $this->metrics,
             function (array $work): void {
                 $this->ingestQueue()->enqueue($work);
-            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy(), $this->remoteSettings(), $this->meshAgents());
+            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy(), $this->remoteSettings(), $this->meshAgents(), $this->changeSettings());
     }
 
     /** Capabilities, presence and software bookkeeping of a device (table rmm_device_state). */
@@ -706,7 +757,7 @@ final class RmmModule
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
             $this->databaseSink(), $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->storage(), $this->cache(), $this->externalSink(),
-            $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler());
+            $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules());
     }
 
     /** The database metric sink, whether it was passed as the sink or inside a {@see CompositeMetricSink}. */
@@ -939,7 +990,7 @@ final class RmmModule
     {
         return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore(),
             $this->assets instanceof RmmAssetNamesInterface ? $this->assets : null, $this->clientLabel(),
-            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers(), $this->meshAgents(), $this->patchReader(), $this->deployReader());
+            $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers(), $this->meshAgents(), $this->patchReader(), $this->deployReader(), $this->changeService());
     }
 
     /** Hosted agent binaries: validate, store, publish, serve. */
@@ -989,7 +1040,7 @@ final class RmmModule
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */
     public function technicianApi(): TechnicianApi
     {
-        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi(), $this->patchApi(), $this->deployApi());
+        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi(), $this->patchApi(), $this->deployApi(), $this->changeApi());
     }
 
     /** The alerts, maintenance windows, escalation policies and thresholds routes (mounted by {@see technicianApi()}). */
@@ -1013,7 +1064,7 @@ final class RmmModule
             $this->settings(), $this->devices(), $this->enrollment(), $this->checkin(), $this->jobs(), $this->updates(),
             $this->installerDownload(), $this->audit, $rateLimit, $this->options['allow_insecure_http'] ?? false,
             $this->state, $sleep, $now, $this->shedder(),
-            $disabledAnswer ?? ($withModuleState ? DeviceApi::DISABLED_UNIFORM : DeviceApi::DISABLED_COMPAT), $this->state(), $this->herd(), $this->transfers(), $this->logService(),
+            $disabledAnswer ?? ($withModuleState ? DeviceApi::DISABLED_UNIFORM : DeviceApi::DISABLED_COMPAT), $this->state(), $this->herd(), $this->transfers(), $this->logService(), $this->changeService(),
         );
     }
 

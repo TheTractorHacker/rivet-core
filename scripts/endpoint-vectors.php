@@ -11,7 +11,8 @@ declare(strict_types=1);
  *
  * Files: agent_job_signing_vectors.json (canonical JSON rule, job/check/manifest Ed25519 signatures),
  * agent_installer_trailer_vectors.json (the stamped-installer footer format; FROZEN, never regenerate it with different bytes) and
- * agent_software_deploy_vectors.json (ADDED in 1.0.0-rc.21: accept/reject vectors for the parameters of the software jobs, replayed by the Go agent), and
+ * agent_software_deploy_vectors.json (ADDED in 1.0.0-rc.21: accept/reject vectors for the parameters of the software jobs, replayed by the Go agent),
+ * agent_change_monitor_vectors.json (ADDED in 1.0.0-rc.22: the watch policy decisions, the secret-name rule and one complete signed change configuration, replayed by the Go agent), and
  * agent_installer_mesh_vectors.json (ADDED in 1.0.0-rc.12: payloads that carry the optional `install_mesh_agent` / `mesh` members, plus the
  * Mesh agent-id and install-argument tables both sides must agree on; an additive file so the frozen one keeps its bytes). Ed25519 signatures are deterministic, so
  * regenerating changes nothing. The key derives from a fixed seed; never use it anywhere real. The trailer vectors are written
@@ -461,11 +462,76 @@ function softwareDeployVectors(): string
         'install' => $cases, 'detect' => $detect], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
 }
 
+/**
+ * Change monitoring (1.0.0-rc.22): the watch policy decisions both sides must agree on, the secret-name rule, and one complete SIGNED configuration (domain line, canonical
+ * JSON, Ed25519 by the test key) that the Go agent must accept and that a one-character change must break.
+ */
+function changeMonitorVectors(): string
+{
+    $seed = hash('sha256', 'RivetIT-agent-TEST-seed', true);
+    [$pub, $sec] = Signer::keypairFromSeed($seed);
+    $policy = new \RivetCore\Rmm\Change\ChangeWatchPolicy();
+    $withRoot = new \RivetCore\Rmm\Change\ChangeWatchPolicy(['/srv/app']);
+    $run = 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run';
+    $registry = [
+        $run, $run . '\\Sub', 'hklm\\software\\microsoft\\windows\\currentversion\\run', 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run', 'HKU\\*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
+        'HKU\\S-1-5-21-1-2-3-1001\\Software\\Microsoft\\Windows\\CurrentVersion\\Run', 'HKU\\.DEFAULT\\Software\\Acme', 'HKLM\\SYSTEM\\CurrentControlSet\\Services', 'HKLM\\SYSTEM\\ControlSet001\\Services\\Tcpip',
+        'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server', 'HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths',
+        'HKLM\\SAM', 'HKLM\\SAM\\SAM\\Domains', 'hklm\\sam\\sam', 'HKEY_LOCAL_MACHINE\\SAM\\SAM', 'HKLM\\SECURITY', 'HKLM\\SECURITY\\Policy\\Secrets', 'HKEY_LOCAL_MACHINE\\security\\policy',
+        'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\JD', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\Skew1', 'HKLM\\SYSTEM\\ControlSet001\\Control\\Lsa\\GBG', 'HKLM\\system\\currentcontrolset\\control\\lsa\\data',
+        'HKLM\\BCD00000000\\Objects', 'HKLM\\SOFTWARE\\Acme\\Secrets', 'HKLM\\SOFTWARE\\Acme\\SAM\\x', 'HKLM', 'HKLM\\', 'HKLM\\SOFTWARE', 'HKLM\\SYSTEM', 'HKU', 'HKU\\S-1-5-18', 'HKCU\\Software\\Acme\\Agent',
+        'HKCR\\Acme\\Shell', '\\Registry\\Machine\\SAM', 'HKLM\\\\SOFTWARE\\Acme\\Agent', $run . '\\', ' ' . $run, $run . ' ', 'HKLM/SOFTWARE/Acme/Agent', 'HKLM\\SOFTWARE\\Acme\\..\\..\\SAM', 'HKLM\\SOFTWARE\\.\\Acme\\Agent',
+        'HKU\\notasid\\Software\\Acme', "HKLM\\SOFTWARE\\Acme\\Ag\nent", "HKLM\\SOFTWARE\\Acme\0\\x", "HKLM\\SOFTWARE\\Acme\u{200b}\\Agent", '',
+    ];
+    $files = [
+        '/etc/ssh/sshd_config', '/etc/ssh/sshd_config.d', '/etc/sudoers', '/etc/sudoers.d/10-ops', '/etc/passwd', '/etc/group', '/etc/crontab', '/etc/cron.d', '/var/spool/cron', '/var/spool/cron/crontabs/root',
+        '/etc/systemd/system', '/etc/systemd/system/multi-user.target.wants/x.service', '/usr/local/lib/systemd/system', '/root/.ssh/authorized_keys', '/home/bob/.ssh/authorized_keys', '/etc/hosts', '/etc/ld.so.preload',
+        '/etc/shadow', '/etc/shadow-', '/etc/gshadow', '/etc/security/opasswd', '/etc/ssh/ssh_host_rsa_key', '/etc/ssh/ssh_host_ed25519_key.pub', '/etc/ssl/private/site.key', '/etc/ssl/private', '/root/.ssh/id_rsa',
+        '/home/bob/.ssh/id_ed25519', '/etc/letsencrypt/live/x/privkey.pem', '/etc/wireguard/wg0.conf', '/etc/openvpn/client.key', '/etc/NetworkManager/system-connections/Home.nmconnection', '/etc/krb5.keytab',
+        '/etc/ppp/chap-secrets', '/etc/mysql/debian.cnf', '/etc/nginx/.htpasswd', '/etc/nginx/server.key', '/etc/apt/auth.conf', '/etc', '/', '/root', '/home', '/home/bob', '/home/bob/.bash_history', '/proc/1/environ', '/var/log/auth.log',
+        'etc/hosts', './etc/hosts', '/etc/./hosts', '/etc//hosts', '/etc/hosts/', '/etc/../root/.ssh/id_rsa', '/etc\\hosts', '~root/.ssh', 'file:///etc/hosts', " /etc/hosts", '/etc/hosts ', "/etc/ho\0sts", "/etc/ho\nsts", "/etc/ho\u{200b}sts", '',
+        '/srv/app/app.conf', '/srv/app/id_rsa', '/srv/app/site.key', '/srv/app', '/srv', '/srv/application/x.conf',
+        'C:\\Windows\\System32\\drivers\\etc\\hosts', 'c:\\windows\\system32\\drivers\\etc\\hosts', 'D:\\Windows\\System32\\GroupPolicy\\Machine\\Registry.pol', 'C:\\Windows\\System32\\config\\SAM', 'C:\\Windows\\System32\\config\\SECURITY',
+        'C:\\Windows\\System32\\config\\RegBack\\SAM', 'C:\\Windows\\NTDS\\ntds.dit', 'C:\\Users\\bob\\NTUSER.DAT', 'C:\\Windows\\System32\\drivers\\etc\\..\\..\\config\\SAM', 'C:/Windows/System32/config/SAM', 'C:\\', 'C:\\Windows', '\\\\server\\share\\x',
+        'C:\\Windows\\System32\\drivers\\etc\\key.pfx',
+    ];
+    $decide = static fn (\RivetCore\Rmm\Change\ChangeWatchPolicy $p, string $kind, array $targets): array => array_map(static fn (string $t): array => ['target' => $t, 'allowed' => $p->allows($kind, $t, 7)], $targets);
+    $names = ['Password', 'DbPassword', 'user_pwd', 'ApiToken', 'api-key', 'ApiKey', 'PrivateKey', 'ClientSecret', 'SharedKey', 'ConnectionString', 'AccessKey', 'SasToken', 'Cookie', 'passphrase', 'Credentials',
+        'Start', 'ImagePath', 'ObjectName', 'DisplayName', 'Shell', 'Userinit', 'EnableLUA', 'fDenyTSConnections', 'PortNumber', '(Default)', 'Server', 'KeyboardLayout', 'Monkey', 'Tokenizer', 'Compass'];
+    $secret = array_map(static fn (string $n): array => ['name' => $n, 'secret' => \RivetCore\Rmm\Change\ChangeProtocol::secretName($n)], $names);
+
+    $config = ['v' => 1, 'kind' => 'change_config', 'platform' => 'windows', 'interval_s' => 300, 'batch_max' => 100, 'rate_per_min' => 120, 'max_value_bytes' => 256,
+        'watches' => [
+            ['id' => 'win.startup', 'kind' => 'registry', 'paths' => [['key' => $run, 'depth' => 0], ['key' => 'HKU\\*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run', 'depth' => 0],
+                ['key' => 'HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon', 'depth' => 0, 'values' => ['Shell', 'Userinit']]]],
+            ['id' => 'win.local_admins', 'kind' => 'group', 'name' => 'Administrators'],
+            ['id' => 'win.hosts', 'kind' => 'file', 'paths' => [['path' => 'C:\\Windows\\System32\\drivers\\etc\\hosts']]],
+            ['id' => 'win.tasks', 'kind' => 'task'],
+            ['id' => 'custom.acme', 'kind' => 'registry', 'paths' => [['key' => 'HKLM\\SOFTWARE\\Acme\\Caf' . "\u{e9}", 'depth' => 2]]],
+        ]];
+    $config['version'] = substr(hash('sha256', Signer::changeConfigMessage($config)), 0, 16);
+    $message = Signer::changeConfigMessage($config);
+    $config['signature'] = Signer::sign($message, $sec);
+
+    $out = [
+        'format' => 'RIVETIT-CHANGE-MONITOR-v1',
+        'description' => 'Change monitoring vectors (1.0.0-rc.22). policy: what ChangeWatchPolicy::allows() answers (the Go agent\'s RegistryKeyAllowed and FileAllowed must give the same answer for every row; extra_root rows are for a policy with /srv/app added, which the agent takes from config.json). secret_names: ChangeProtocol::secretName(). signed_config: a complete config.change object; the signed message is the domain line, a line feed, then the canonical JSON of the object without its signature; the agent must accept it with the test public key, and must refuse it after any change.',
+        'test_key' => ['public_key_base64' => $pub],
+        'policy' => ['registry' => $decide($policy, 'registry', $registry), 'file' => $decide($policy, 'file', $files),
+            'file_extra_root' => ['root' => '/srv/app', 'rows' => $decide($withRoot, 'file', ['/srv/app/app.conf', '/srv/app/id_rsa', '/srv/app/site.key', '/srv/app', '/srv', '/srv/application/x.conf', '/etc/shadow', '/srv/app/../../etc/shadow'])]],
+        'secret_names' => $secret,
+        'signed_config' => ['sign_domain' => \RivetCore\Rmm\Change\ChangeProtocol::SIGN_DOMAIN, 'signed_message' => $message, 'config' => $config, 'expected_watch_ids' => array_column($config['watches'], 'id')],
+    ];
+
+    return json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
+}
+
 $files = [
     'agent_installer_trailer_vectors.json' => installerTrailerVectors(),
     'agent_job_signing_vectors.json' => jobSigningVectors(),
     'agent_installer_mesh_vectors.json' => installerMeshVectors(),   // appended last: the two frozen lines of SHA256SUMS keep their place
     'agent_software_deploy_vectors.json' => softwareDeployVectors(),   // rc.21: additive again
+    'agent_change_monitor_vectors.json' => changeMonitorVectors(),   // rc.22: additive again
 ];
 $sums = '';
 foreach ($files as $name => $bytes) {

@@ -167,10 +167,13 @@ func userDataText(inner string) []string {
 	return out
 }
 
-// EventLogRecord is one parsed event.
+// EventLogRecord is one parsed event. Fields holds the named EventData values
+// (never sent as such: the aggregation of the security presets and the Windows
+// actor lookup of change monitoring read them).
 type EventLogRecord struct {
 	RecordID int64
 	Event    api.LogEvent
+	Fields   map[string]string
 }
 
 func eventLevelName(n int) string {
@@ -230,9 +233,13 @@ func ParseEventLogXML(out []byte) ([]EventLogRecord, error) {
 			eid = &n
 		}
 		var vals []string
+		fields := map[string]string{}
 		for _, d := range e.EventData.Data {
 			if v := CleanMessage(d.Value); v != "" {
 				vals = append(vals, v)
+				if d.Name != "" && len(fields) < 64 && len(d.Name) <= 64 {
+					fields[d.Name] = TruncateUTF8(v, 512)
+				}
 			}
 		}
 		for _, v := range userDataText(e.UserData.Inner) {
@@ -250,7 +257,7 @@ func ParseEventLogXML(out []byte) ([]EventLogRecord, error) {
 		}
 		recs = append(recs, EventLogRecord{RecordID: id, Event: api.LogEvent{
 			TS: ts.UTC().Format(time.RFC3339), Level: eventLevelName(lv), Source: src, EventID: eid, Message: msg,
-		}})
+		}, Fields: fields})
 	}
 	return recs, nil
 }
@@ -331,7 +338,7 @@ func (r EventLogReader) Read(ctx context.Context, req ReadRequest) (ReadResult, 
 		if !MatchesContains(rec.Event.Message, req.Src.Contains) {
 			continue
 		}
-		res.Items = append(res.Items, Item{Event: rec.Event, Pos: res.LastPos})
+		res.Items = append(res.Items, Item{Event: rec.Event, Pos: res.LastPos, Fields: rec.Fields})
 	}
 	return res, nil
 }

@@ -307,7 +307,7 @@ final class ModuleSwitchTest extends RmmTestCase
         return ['connections' => $out['Connections'], 'selects' => $out['Com_select']];
     }
 
-    private const DEVICE_ENDPOINTS = ['agent_enroll', 'agent_checkin', 'agent_jobs', 'agent_update', 'agent_installer', 'agent_transfer', 'agent_logs'];
+    private const DEVICE_ENDPOINTS = ['agent_enroll', 'agent_checkin', 'agent_jobs', 'agent_update', 'agent_installer', 'agent_transfer', 'agent_logs', 'agent_changes'];
 
     public function testTheGateAnswersTheDisabledModuleWithTheExact503AndZeroDatabaseWork(): void
     {

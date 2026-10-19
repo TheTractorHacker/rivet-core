@@ -38,7 +38,7 @@ const (
 	MaxInterval        = time.Hour
 	DefaultInterval    = 60 * time.Second
 	MaxBatch           = 200
-	MaxSources         = 16
+	MaxSources         = 24
 	DefaultMaxMessage  = 1024
 	MinMaxMessage      = 64
 	MaxMaxMessage      = 8192
@@ -152,6 +152,8 @@ func MatchesContains(msg string, contains []string) bool {
 type Item struct {
 	Event api.LogEvent
 	Pos   string
+	// Fields are the named EventData values of a Windows event (not sent).
+	Fields map[string]string
 }
 
 // ReadRequest asks a Reader for the events after From ("" = first run).

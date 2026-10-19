@@ -15,6 +15,8 @@ use RivetCore\Rmm\Installer\InstallerDownload;
 use RivetCore\Rmm\Installer\InstallerFormat;
 use RivetCore\Rmm\Installer\InstallerStamp;
 use RivetCore\Rmm\Job\JobService;
+use RivetCore\Rmm\Change\ChangeProtocol;
+use RivetCore\Rmm\Change\ChangeService;
 use RivetCore\Rmm\Logs\LogService;
 use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Remote\TransferService;
@@ -94,6 +96,7 @@ final class DeviceApi
         private readonly ?HerdControl $herd = null,
         private readonly ?TransferService $transfers = null,
         private readonly ?LogService $logs = null,
+        private readonly ?ChangeService $changes = null,
     ) {
         if ($disabledAnswer !== self::DISABLED_UNIFORM && $disabledAnswer !== self::DISABLED_COMPAT) {
             throw new \InvalidArgumentException('disabledAnswer must be "uniform" or "compat".');
@@ -116,6 +119,7 @@ final class DeviceApi
             'agent_installer' => $this->installer($req),
             'agent_transfer' => $this->transfer($req),
             'agent_logs' => $this->logs($req),
+            'agent_changes' => $this->changes($req),
             default => RmmResponse::error(new ApiError(404, 'not_found', 'Not found.')),
         };
     }
@@ -292,6 +296,38 @@ final class DeviceApi
             $body = $this->body($req, RemoteProtocol::LOG_BODY_MAX);
 
             return RmmResponse::json(200, $this->logs->ingest($dev, $body));
+        });
+    }
+
+    // ------------------------------------------------------------------ agent_changes (change monitoring, additive)
+
+    /**
+     * POST (device auth, body cap 262144 bytes): a batch of detected changes `{changes: [{ts, kind, watch, change, target, item, old, new, summary, old_hash, new_hash, actor, process}], dropped, config_version, status}`
+     * -> 200 `{ok, accepted, dropped, duplicates}`. 503 `feature_disabled` while the `change_monitor` sub-switch is off, 503 `unavailable` with a jittered Retry-After under load shedding
+     * (level 2 and up), 429 above 30 requests per 60 s per device. The device id always comes from the credential; every record is checked against what that device was told to watch.
+     */
+    public function changes(RmmRequest $req): RmmResponse
+    {
+        return $this->guard(function () use ($req): RmmResponse {
+            if (($off = $this->moduleOff()) !== null) {
+                return $off;
+            }
+            $this->requireTls($req);
+            if (strtoupper($req->method) !== 'POST') {
+                throw new ApiError(405, 'method_not_allowed', 'Use POST.', ['Allow' => 'POST']);
+            }
+            if ($this->changes === null || ($off = $this->featureOff(ChangeProtocol::FEATURE)) !== null) {
+                return $off ?? RmmResponse::error(new ApiError(404, 'not_found', 'Not found.'));
+            }
+            $this->shedder?->tick();
+            if ((int) ($this->settings->get()['shed_level'] ?? 0) >= 2) {
+                throw LoadShedder::refusal($this->settings->limits());   // level 2 and up: change records wait, the agent keeps them
+            }
+            $dev = $this->devices->authenticate($req->header('authorization'));
+            $this->deviceRateLimit((int) $dev['device_id'], 'changes', ...ChangeProtocol::RATE);
+            $body = $this->body($req, ChangeProtocol::BODY_MAX);
+
+            return RmmResponse::json(200, $this->changes->ingest($dev, $body));
         });
     }
 

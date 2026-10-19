@@ -44,6 +44,10 @@ Load shedding: log ingest is the first thing given up. At shed level 1 and above
 
 File transfers are stored under the module option `transfer_dir`, or `<binary_dir>/transfers` when only `binary_dir` is set. With neither, transfers answer `409 not_configured` and nothing is stored. The folder should be private to the web user, outside the web root, and on a disk with room for `transfer_store_max_bytes`. Stored files are named `xfer_<random>.bin`; the original name only reaches a response header after it is reduced to `[A-Za-z0-9._-]`.
 
+## Security log presets (1.0.0-rc.22)
+
+For Windows, `logs_collect.presets` names ready-made event selections (account changes 4720/4722/4724/4725/4726, group membership 4728/4729/4732/4733/4756/4757, repeated failed logons 4625, log cleared 1102 and System 104, scheduled task 4698/4702, new service System 7045 and Security 4697, audit policy 4719, new device 6416). They expand into ordinary sources (three, merged per channel), so the caps, retention, rate budget, redaction, rules and the `logs` switch above apply unchanged. Failed logons are aggregated on the device (one entry per five minutes and account or address, from five failures) and that source is offered only to an agent that announced `logs:presets`. The Windows audit policy must be on. Details and the list: [CHANGE_MONITOR.md](CHANGE_MONITOR.md) section 6.
+
 ## Log rules
 
 A rule is a plain filter: severity or worse, a source substring, an optional event id, a phrase, a count within a window, and a severity for the alert. **It is never a regular expression**, so a careless pattern cannot cost the server more than a substring search. A match reports the check `log.rule_<id>` through the existing check evaluator: debounce (a log match is reported enough times to pass it at once), the Phase 3 alerting engine (maintenance windows, dependency and storm control, escalation) and the edition's alert and ticket path all apply unchanged. When the rule has not matched on that device for `resolve_after_min` minutes (or the rule was disabled or deleted), housekeeping reports the check `ok` and the alert closes.

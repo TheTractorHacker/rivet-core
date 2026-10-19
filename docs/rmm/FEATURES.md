@@ -234,6 +234,18 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 15.7 | Administration "Performance and capacity" panel with projections, warnings and one-click "reduce load" presets | P0 | all | all | all | |
 | 15.8 | Load simulator and published gates: 500 devices (release candidate), 5,000 devices (before promotion); zero database work when disabled | P0 | all | all | all | |
 
+## 16. Change monitoring
+
+| # | Feature | Status | Windows | Linux | macOS | Notes |
+|---|---|---|---|---|---|---|
+| 16.1 | Registry watch: signed list of keys and values (presets and custom), snapshot and compare at a safe interval, change records with old and new value, redaction of secret-looking values, never the credential hives | Core | Core | - | - | Presets: startup (Run, RunOnce, Winlogon, AppInit, IFEO), services, Defender exclusions and policy, firewall, Remote Desktop, UAC, Windows Update policy. Behind the `change_monitor` switch. `RegNotifyChangeKeyValue` only makes a poll run sooner. **Windows code never run on a Windows host.** [CHANGE_MONITOR.md](CHANGE_MONITOR.md) |
+| 16.2 | Local administrators group membership, scheduled tasks, hosts file | Core | Core | - | - | `net localgroup` (not the registry), the task definition files, a file hash with the lines added and removed. **Never run on Windows.** |
+| 16.3 | Configuration file watch with hash and diff summary (sshd, sudoers, passwd and group, cron, systemd units, hosts, PAM, shell hooks) | Core | Core | Core | - | Lines are redacted and cut before they are stored; a `passwd` password field is never kept; credential files are refused by the watch policy. Proven end to end on a real systemd container. |
+| 16.4 | Security log presets for the event-log collector: account changes, group membership, repeated failed logons (aggregated on the device), log cleared, task created, new service, audit policy, new device | Core | Core | - | - | Named presets that become three ordinary sources; the aggregated one only for an agent that announced `logs:presets`. The `logs` switch and its caps apply. |
+| 16.5 | Change records in the same database with retention, a per-device and a fleet cap, search, and a "who changed what" timeline that also merges the software inventory | Core | all | all | - | Best-effort actor and process from audit event 4657 on Windows (blank when Windows did not record them, never guessed). Measured row size 470 bytes. |
+| 16.6 | Alert rules on changes (any change to a Run key or a Defender exclusion, a new local administrator), recommended set, `rmm.change.*` events | Core | all | all | - | Through the check evaluator and the Phase 3 alerting engine. |
+| 16.7 | Signed watch configuration, local kill switch, agent-side policy | Core | all | all | - | Ed25519 with a domain line; `disable_change` in `config.json`. |
+
 ## Headline counts
 
 Counted from the Status column of the tables above (one row, one status). `Shipped` rows are what the owner can use today in RivetIT beta.
@@ -241,7 +253,7 @@ Counted from the Status column of the tables above (one row, one status). `Shipp
 | Status | Rows |
 |---|---|
 | Shipped | 49 |
-| Core | 40 |
+| Core | 47 |
 | P0 | 19 |
 | P1 | 3 |
 | P3 | 1 |

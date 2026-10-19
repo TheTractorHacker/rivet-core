@@ -261,6 +261,31 @@ Migration `0029_rmm_software_deploy` (eight new tables, nothing existing altered
 4. Render the read models: a Software tab on the asset page, a catalog page (with the allowed hosts), an assignments page, a deployment report page with a CSV button, and show `software` approvals on the approvals page.
 5. Leave `software_live_install` at 0 until a dry run has been seen on a pilot machine.
 
+## Change monitoring (registry, configuration files, groups, tasks, Security log presets)
+
+Migration `0030_rmm_change_monitor` (four new tables, nothing existing altered, idempotent). Dormant until the **`change_monitor` sub-switch** is on (`RmmSettings::FEATURES`): with it off no change table is read by a check-in, `agent_changes` answers `503 feature_disabled`, the offer is not made and an agent that does not announce `change:monitor` is answered exactly as before. Operator guide, privacy rules, scale numbers and the security review: [CHANGE_MONITOR.md](../rmm/CHANGE_MONITOR.md). Wire contract: [PROTOCOL.md](../rmm/PROTOCOL.md) 3.2.7 and 3.9.
+
+| Area | Behaviour | Core classes | Storage |
+|---|---|---|---|
+| Offer | Only to an agent that announced `change:monitor`, switch on, shed level below 2, a watch for its platform, a usable signing key: `features: ["change:monitor"]` and `config.change`, an Ed25519-signed object (domain line `rivetit-change-config-v1`, canonical JSON) | `Change\ChangeSettings::agentConfig()`, `Crypto\Signer::changeConfigMessage()`, `Checkin\CheckinService` | `endpoint_agent_change_settings` |
+| Presets | Code constants: Windows startup, services, Defender, firewall, RDP, UAC, Update policy, local administrators, scheduled tasks, hosts; Linux ssh, sudo, accounts, cron, systemd, startup, hosts, PAM; two inventory entries that are merged, not read | `Change\ChangePresets` | none |
+| Watch policy | `ChangeWatchPolicyInterface::allows($kind, $target, $clientId)`: never the credential hives, shadow files, private keys, certificate stores; never a whole hive or system folder; no control or invisible character. Asked on save, on building a device's configuration and for every record; the agent has a copy of the rules. Default `ChangeWatchPolicy`; replace with `RmmModule::setChangeWatchPolicy()` and run the conformance kit | `Contracts\ChangeWatchPolicyInterface`, `Change\ChangeWatchPolicy`, `Testing\ChangeWatchPolicyConformanceTestCase` | none |
+| Ingest | `agent_changes`: bounded batch, per-minute budget, device and fleet caps, duplicates stored once, every record validated against the device's own watches, texts cleaned and redacted again | `Change\ChangeService`, `Http\DeviceApi::changes()` | `endpoint_agent_change_records`, `endpoint_agent_change_state` |
+| Search and timeline | search by device, client, time, kind, watch, change, target, item, actor, text; a per-device timeline that merges the software inventory, with actors and a count per day | `Change\ChangeService`, `Change\ChangeActions`, `Read\RmmReadModel::changeSearch()`, `changeTimeline()`, `changeStats()` | none |
+| Rules | A plain filter (no regular expression) plus a count in a window drives the check `change.rule_<id>` through the check evaluator; a recommended set; recovery by housekeeping | `Change\ChangeRuleService` | `endpoint_agent_change_rules` |
+| Events | `rmm.change.detected` (at most 20 per batch), `rmm.change.rule_matched` | `RmmEvent` | none |
+| Security log presets | Eight named presets expand into three ordinary `eventlog` sources of the Windows log configuration; the aggregated failed-logon source only for an agent that announced `logs:presets` | `Logs\SecurityLogPresets`, `Remote\RemoteSettings` | `endpoint_agent_remote_settings.logs_collect_json` |
+
+**REST routes** (additive, [openapi-device.yaml](../rmm/openapi-device.yaml)): `GET endpoint_devices/changes`, `changes/stats`, `GET|PUT changes/settings`, `changes/rules` (+ `{id}`, `recommended`), `{id}/changes`, `{id}/changes/timeline`, `{id}/changes/status`; device endpoint `agent_changes`. Abilities: `rmm.change.view` (read; map like `rmm.job.run_saved`), `rmm.change.manage` (presets, custom watches, rules; needs all-client access for the global parts); the switch and the caps need `rmm.admin`. Audit rows for every settings change, rule change and denial.
+
+**What an edition does to adopt change monitoring**
+1. Run the Core migrations (through 0030).
+2. Map `rmm.change.view` and `rmm.change.manage` in its `AccessPolicyInterface`.
+3. Route the new device endpoint `agent_changes` to `DeviceApi::handle()` like `agent_logs` (a flat per-resource file in RivetIT's `api/v1`).
+4. Roll out an agent of this release, then switch on `change_monitor` (with the storage acknowledgement).
+5. Render the read models: a Changes tab on the asset page (search and timeline), a settings page (presets, custom watches, caps, the storage text and sizes), a rules page with the recommended set, and HTML-escape every record text.
+6. If it replaces the watch policy, run `ChangeWatchPolicyConformanceTestCase`.
+
 ## Scale: the write path, storage, workers, read cache, herd control
 
 Migration `0021_rmm_scale_storage` (five new tables, nothing existing altered). All of it is on by default only where it changes no behaviour (the cheaper check-in, the cache of the dashboard counters); the rest is off until a limit or an option turns it on. Measurements and the model are in [CAPACITY.md](../rmm/CAPACITY.md) 13 to 16; [SCALING.md](../rmm/SCALING.md) says what is done and what is pending (the 24 hour / 10,000 device validation is NOT done).

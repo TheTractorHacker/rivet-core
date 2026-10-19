@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Remote;
 
+use RivetCore\Rmm\Change\ChangeProtocol;
+use RivetCore\Rmm\Logs\SecurityLogPresets;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -125,13 +127,36 @@ final class RemoteSettings
     }
 
     /**
+     * The named security presets switched on for the Windows event-log collector ({@see \RivetCore\Rmm\Logs\SecurityLogPresets}).
+     *
+     * @return list<string>
+     */
+    public function logPresets(): array
+    {
+        $raw = $this->row()['logs_collect_json'] ?? null;
+        $d = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+        $out = [];
+        foreach (is_array($d) && is_array($d['presets'] ?? null) ? $d['presets'] : [] as $id) {
+            if (is_string($id) && isset(SecurityLogPresets::catalog()[$id]) && !in_array($id, $out, true)) {
+                $out[] = $id;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * The `config.logs` object for a platform. The version changes exactly when something the agent is told changes.
      *
+     * @param list<string>|null $caps what the device announced: the aggregated security presets are added only for an agent that announced `logs:presets`
      * @return array<string,mixed>|null null when no source is configured for the platform
      */
-    public function agentLogConfig(string $os): ?array
+    public function agentLogConfig(string $os, ?array $caps = null): ?array
     {
         $sources = $this->logSources($os);
+        if ($os === 'windows' && ($presets = $this->logPresets()) !== []) {
+            $sources = [...$sources, ...SecurityLogPresets::sourcesFor($presets, in_array(ChangeProtocol::CAP_LOG_PRESETS, $caps ?? [], true))];
+        }
         if ($sources === []) {
             return null;
         }
@@ -154,7 +179,9 @@ final class RemoteSettings
 
         return [
             'transfer_allow' => $this->allowRoots(),
-            'logs_collect' => ['linux' => $this->logSources('linux'), 'windows' => $this->logSources('windows')],
+            'logs_collect' => ['linux' => $this->logSources('linux'), 'windows' => $this->logSources('windows'), 'presets' => $this->logPresets()],
+            'log_presets' => array_map(fn (string $id, array $p): array => ['id' => $id, 'title' => $p['title'], 'description' => $p['description'], 'platform' => $p['platform'],
+                'aggregated' => $p['aggregate'], 'enabled' => in_array($id, $this->logPresets(), true)], array_keys(SecurityLogPresets::catalog()), SecurityLogPresets::catalog()),
             'limits' => $l,
             'file_transfer_risk' => self::FILE_TRANSFER_RISK,
             'logs_storage_warning' => self::LOGS_STORAGE_WARNING,
@@ -263,6 +290,27 @@ final class RemoteSettings
         if (!is_array($d)) {
             return ['', ['logs_collect must be an object with linux and windows source lists.']];
         }
+        // Only the presets sent: keep the sources that are stored. The presets absent from a request keep their stored value too.
+        if (array_keys($d) === ['presets']) {
+            $out = ['linux' => $this->logSources('linux'), 'windows' => $this->logSources('windows')];
+        }
+        $presets = array_key_exists('presets', $d) ? [] : $this->logPresets();
+        if (array_key_exists('presets', $d)) {
+            if (!is_array($d['presets']) || !array_is_list($d['presets']) || count($d['presets']) > 20) {
+                $err[] = 'logs_collect presets is a list of preset ids.';
+            } else {
+                foreach ($d['presets'] as $id) {
+                    if (!is_string($id) || !isset(SecurityLogPresets::catalog()[$id])) {
+                        $err[] = 'Unknown log preset ' . (is_string($id) ? mb_substr($id, 0, 60) : 'value') . '.';
+                        continue;
+                    }
+                    if (!in_array($id, $presets, true)) {
+                        $presets[] = $id;
+                    }
+                }
+            }
+            unset($d['presets']);
+        }
         foreach ($d as $os => $list) {
             if (!in_array($os, ['linux', 'windows'], true) || !is_array($list) || !array_is_list($list) || count($list) > 20) {
                 $err[] = 'logs_collect takes linux and windows, each a list of at most 20 sources.';
@@ -278,6 +326,9 @@ final class RemoteSettings
                     $out[$os][] = $clean;
                 }
             }
+        }
+        if ($presets !== []) {
+            $out['presets'] = $presets;
         }
 
         return [(string) json_encode($out), $err];

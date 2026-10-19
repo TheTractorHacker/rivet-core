@@ -616,3 +616,32 @@ Off by default (`software_deploy` sub-switch) and free while off: no table is re
 | Shedding | level 2 and above: nothing is queued and a result that arrives is left for the next pass (`rmm_package_jobs.applied_at` stays empty) | |
 
 Load: a daily detection of 5,000 devices is 5,000 small jobs a day (about 0.06 a second on average, spread by the hash). Installs are bounded by `software_max_installs`; with the default 25 at once and a download of a few minutes a fleet of 5,000 takes a few days, so raise it deliberately and use rings to spread the risk. Not measured on the reference hardware: the figures above are a model from the statement counts.
+
+## 21. Change monitoring paths
+
+Off by default (`change_monitor` sub-switch) and free while off: no change table is read by a check-in, `Housekeeping` skips pruning and the rule sweep unless a change table has rows, `agent_changes` answers `503 feature_disabled`, and the offer costs nothing because it is not made. With the switch on, a check-in from an agent that announced `change:monitor` costs the settings row (read once per request) and one Ed25519 signature; the test counts at most three more statements than a check-in without the offer.
+
+### 21.1 Limits (the change settings row, `endpoint_agent_change_settings.limits_json`)
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `change_retention_days` | 90 | 1 to 730 | records older than this are pruned in batches of 2,000 (at most 100,000 per housekeeping pass) |
+| `change_device_max_rows` | 5,000 | 100 to 200,000 | per device; 20 % above it tolerated between passes, then refused and counted |
+| `change_fleet_max_rows` | 500,000 | 1,000 to 50,000,000 | the same for the fleet (10 % tolerance) |
+| `change_rate_per_min` | 120 | 10 to 2,000 | records one device may add per minute |
+| `change_interval_s` | 300 | 60 to 86,400 | the polling interval the agent is told |
+| `change_max_value_bytes` | 256 | 64 to 512 | how much of a value is kept |
+
+### 21.2 Model
+
+| What | Cost | Bound |
+|---|---|---|
+| Storage | **470 bytes per typical record with both indexes (measured, MariaDB 11.8, 200,000 rows); about 2,900 bytes with every text at its maximum (measured, 50,000 rows).** The settings view budgets 900 and shows 3,000 as the worst case | the row caps above: 500,000 records are 235 MB typical, 450 MB budgeted, 1.45 GB worst |
+| Ingest | one accepted batch of 100 records: 11 statements (device authentication, settings, the counter row locked `FOR UPDATE`, the fleet figure, two multi-row `INSERT IGNORE`, the counter update); ten rules add no statement (matching is in memory; only a rule with a threshold above one counts rows) | 100 records and 256 KiB per request, 30 requests per minute per device, `change_rate_per_min` per device |
+| Fleet figure | `SUM(row_count)` over `endpoint_agent_change_state` (one row per device) | one row per reporting device |
+| Search | a window of 365 days for one device (its cap bounds the rows) or 30 days for the fleet; text filters are substring matches inside that window; `LIMIT 500` | `idx_device_time`, `idx_occurred` |
+| Pruning | batches of 2,000 with a pause, a counter update in the same transaction | 100,000 per pass |
+| Shedding | level 2 and above: the check-in stops offering `change:monitor` and `agent_changes` answers `503 unavailable` with the jittered shed `Retry-After`; agents keep up to 2,000 records and send later. Level 1 does not stop it | job reports and file transfer are never shed |
+
+Load: 1,000 devices at 20 records a day is 0.23 records a second on average (about 850 MB in 90 days at 470 bytes); a patch Tuesday sends a few hundred records per device within minutes, which the per-device budget spreads over several minutes per device. The capacity report gains a `change_monitor` block (records, devices reporting, the limits, the cap and worst-case sizes) while the switch is on. Estimates of how many records a Windows device really produces are in [CHANGE_MONITOR.md](CHANGE_MONITOR.md) section 10 and are **not measured on Windows**.
+

@@ -25,6 +25,7 @@ import (
 
 	"rivetit-agent/internal/api"
 	"rivetit-agent/internal/buffer"
+	"rivetit-agent/internal/change"
 	"rivetit-agent/internal/collect"
 	"rivetit-agent/internal/deploy"
 	"rivetit-agent/internal/jobs"
@@ -99,7 +100,8 @@ type Agent struct {
 	verifier *jobs.Verifier
 	upd      *update.Manager
 	meshRep  *mesh.Reporter
-	logs     *logs.Manager // RMM Phase 8 log collection; idle until a check-in offers logs:collect
+	logs     *logs.Manager   // RMM Phase 8 log collection; idle until a check-in offers logs:collect
+	chg      *change.Manager // change monitoring; idle until a check-in offers change:monitor with a signed configuration
 	skew     time.Duration
 
 	tokCache struct {
@@ -164,6 +166,30 @@ func New(o Options) (*Agent, error) {
 		Redact:    func(s string) string { return jobs.Redact(s, a.token()) },
 		Log:       a.log,
 		OnRevoked: func(err error) { a.goDormant(revokedMessage + " (" + err.Error() + ")") },
+	})
+	a.chg = change.New(change.Options{
+		Registry:  change.SystemRegistry(),
+		Runner:    remote.ExecRunner{},
+		Send:      a.sendChanges,
+		StatePath: o.Store.ChangeStatePath(),
+		Now:       a.now,
+		Redact:    func(s string) string { return jobs.Redact(s, a.token()) },
+		Log:       a.log,
+		OnRevoked: func(err error) { a.goDormant(revokedMessage + " (" + err.Error() + ")") },
+		GOOS:      change.Platform(),
+		ExtraRoots: func() []string {
+			a.mu.Lock()
+			defer a.mu.Unlock()
+			return a.cfg.ChangeExtraRoots
+		},
+		MapPath:  change.MapPath,
+		TaskRoot: change.TaskRoot(),
+		Verify: func(domain string, raw []byte, sig string) error {
+			a.mu.Lock()
+			v := &jobs.Verifier{PublicKey: a.verifier.PublicKey}
+			a.mu.Unlock()
+			return v.VerifyDomain(domain, raw, sig)
+		},
 	})
 	if o.Updater != nil {
 		a.upd = o.Updater
@@ -319,6 +345,7 @@ func (a *Agent) goDormant(reason string) {
 		e.Halt()
 	}
 	a.logs.Configure(nil) // a revoked device ships nothing
+	_ = a.chg.Configure(nil)
 	if err := a.o.Store.WipeToken(); err != nil {
 		a.log.Error("could not wipe device token", "err", err)
 	}
@@ -496,7 +523,10 @@ func Capabilities() []string {
 	}
 	out = append(out, api.CapMeshNodeID) // can read and report the local MeshCentral node id (a no-op without a Mesh agent)
 	if logs.Supported() {
-		out = append(out, api.FeatureLogs)
+		out = append(out, api.FeatureLogs, api.FeatureLogPresets) // security presets: the empty level list and the aggregated sources
+	}
+	if change.Supported() {
+		out = append(out, api.FeatureChange) // registry, file, group and scheduled-task change monitoring
 	}
 	sort.Strings(out)
 	return out
@@ -509,7 +539,7 @@ func (a *Agent) capabilities() []string {
 	cfg := a.cfg
 	a.mu.Unlock()
 	caps := Capabilities()
-	if !cfg.DisableRemote && !cfg.DisableLogs && !cfg.DisablePatching && !cfg.DisableSoftware {
+	if !cfg.DisableRemote && !cfg.DisableLogs && !cfg.DisablePatching && !cfg.DisableSoftware && !cfg.DisableChange {
 		return caps
 	}
 	out := caps[:0:0]
@@ -521,7 +551,9 @@ func (a *Agent) capabilities() []string {
 			continue
 		case cfg.DisableSoftware && (c == deploy.CapDetect || c == deploy.CapInstall || (strings.HasPrefix(c, "job:") && jobs.IsSoftwareType(strings.TrimPrefix(c, "job:")))):
 			continue
-		case cfg.DisableLogs && c == api.FeatureLogs:
+		case cfg.DisableLogs && (c == api.FeatureLogs || c == api.FeatureLogPresets):
+			continue
+		case cfg.DisableChange && c == api.FeatureChange:
 			continue
 		}
 		out = append(out, c)
@@ -538,6 +570,15 @@ func (t agentTransport) Transfer(ctx context.Context, tr api.TransferRequest) (*
 		return nil, errors.New("no api client")
 	}
 	return c.Transfer(ctx, tr)
+}
+
+// sendChanges ships one agent_changes body for the change monitor.
+func (a *Agent) sendChanges(ctx context.Context, body []byte) (*api.ChangeAck, error) {
+	c := a.api()
+	if c == nil {
+		return nil, errors.New("no api client")
+	}
+	return c.SendChanges(ctx, body)
 }
 
 // sendLogs ships one agent_logs body for the log manager.
@@ -858,6 +899,7 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 	}
 	a.sw.resync = hasFeature(resp.Features, featureSoftware) && hasFeature(resp.Resync, resyncSoftware)
 	a.configureLogs(resp)
+	a.configureChange(resp)
 	st, _ := a.o.Store.LoadState()
 
 	// jobs: immediately when pending, otherwise a periodic safety poll
@@ -895,6 +937,27 @@ func (a *Agent) configureLogs(resp *api.CheckinResponse) {
 		return
 	}
 	a.logs.Configure(logs.Normalize(api.ParseLogsConfig(resp.Config.Logs)))
+}
+
+// configureChange applies the change-monitoring config of a check-in response.
+// Monitoring runs only while the LATEST response offered the feature and carried a
+// config.change; any response that does not (an old server, the switch turned off,
+// load being shed) stops it, and the local switch disable_change overrides
+// everything. A configuration whose signature does not verify is refused (and
+// logged): the last good one stays in force.
+func (a *Agent) configureChange(resp *api.CheckinResponse) {
+	a.mu.Lock()
+	off := a.cfg.DisableChange
+	a.mu.Unlock()
+	if off {
+		a.chg.Wipe() // the local switch: nothing stays on disk
+		return
+	}
+	if !change.Supported() || !hasFeature(resp.Features, api.FeatureChange) || resp.Config == nil || len(resp.Config.Change) == 0 {
+		_ = a.chg.Configure(nil)
+		return
+	}
+	_ = a.chg.Configure(resp.Config.Change)
 }
 
 func (a *Agent) pollJobs(ctx context.Context) {
@@ -1006,7 +1069,15 @@ func (a *Agent) Run(ctx context.Context) error {
 		defer close(logsDone)
 		a.logs.Run(logsCtx)
 	}()
+	chgCtx, stopChg := context.WithCancel(ctx)
+	chgDone := make(chan struct{})
+	go func() {
+		defer close(chgDone)
+		a.chg.Run(chgCtx)
+	}()
 	defer func() {
+		stopChg()
+		<-chgDone
 		stopLogs() // Run also returns when the loop ends for a restart, with ctx still alive
 		<-logsDone
 		if e := a.executor(); e != nil {

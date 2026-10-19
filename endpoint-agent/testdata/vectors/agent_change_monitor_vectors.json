@@ -1,0 +1,754 @@
+{
+    "format": "RIVETIT-CHANGE-MONITOR-v1",
+    "description": "Change monitoring vectors (1.0.0-rc.22). policy: what ChangeWatchPolicy::allows() answers (the Go agent's RegistryKeyAllowed and FileAllowed must give the same answer for every row; extra_root rows are for a policy with /srv/app added, which the agent takes from config.json). secret_names: ChangeProtocol::secretName(). signed_config: a complete config.change object; the signed message is the domain line, a line feed, then the canonical JSON of the object without its signature; the agent must accept it with the test public key, and must refuse it after any change.",
+    "test_key": {
+        "public_key_base64": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE="
+    },
+    "policy": {
+        "registry": [
+            {
+                "target": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "allowed": true
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\Sub",
+                "allowed": true
+            },
+            {
+                "target": "hklm\\software\\microsoft\\windows\\currentversion\\run",
+                "allowed": true
+            },
+            {
+                "target": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "allowed": true
+            },
+            {
+                "target": "HKU\\*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "allowed": true
+            },
+            {
+                "target": "HKU\\S-1-5-21-1-2-3-1001\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "allowed": true
+            },
+            {
+                "target": "HKU\\.DEFAULT\\Software\\Acme",
+                "allowed": true
+            },
+            {
+                "target": "HKLM\\SYSTEM\\CurrentControlSet\\Services",
+                "allowed": true
+            },
+            {
+                "target": "HKLM\\SYSTEM\\ControlSet001\\Services\\Tcpip",
+                "allowed": true
+            },
+            {
+                "target": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa",
+                "allowed": true
+            },
+            {
+                "target": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server",
+                "allowed": true
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths",
+                "allowed": true
+            },
+            {
+                "target": "HKLM\\SAM",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SAM\\SAM\\Domains",
+                "allowed": false
+            },
+            {
+                "target": "hklm\\sam\\sam",
+                "allowed": false
+            },
+            {
+                "target": "HKEY_LOCAL_MACHINE\\SAM\\SAM",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SECURITY",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SECURITY\\Policy\\Secrets",
+                "allowed": false
+            },
+            {
+                "target": "HKEY_LOCAL_MACHINE\\security\\policy",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\JD",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\Skew1",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SYSTEM\\ControlSet001\\Control\\Lsa\\GBG",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\system\\currentcontrolset\\control\\lsa\\data",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\BCD00000000\\Objects",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\Acme\\Secrets",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\Acme\\SAM\\x",
+                "allowed": false
+            },
+            {
+                "target": "HKLM",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SOFTWARE",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SYSTEM",
+                "allowed": false
+            },
+            {
+                "target": "HKU",
+                "allowed": false
+            },
+            {
+                "target": "HKU\\S-1-5-18",
+                "allowed": false
+            },
+            {
+                "target": "HKCU\\Software\\Acme\\Agent",
+                "allowed": false
+            },
+            {
+                "target": "HKCR\\Acme\\Shell",
+                "allowed": false
+            },
+            {
+                "target": "\\Registry\\Machine\\SAM",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\\\SOFTWARE\\Acme\\Agent",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\",
+                "allowed": false
+            },
+            {
+                "target": " HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run ",
+                "allowed": false
+            },
+            {
+                "target": "HKLM/SOFTWARE/Acme/Agent",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\Acme\\..\\..\\SAM",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\.\\Acme\\Agent",
+                "allowed": false
+            },
+            {
+                "target": "HKU\\notasid\\Software\\Acme",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\Acme\\Ag\nent",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\Acme\u0000\\x",
+                "allowed": false
+            },
+            {
+                "target": "HKLM\\SOFTWARE\\Acme​\\Agent",
+                "allowed": false
+            },
+            {
+                "target": "",
+                "allowed": false
+            }
+        ],
+        "file": [
+            {
+                "target": "/etc/ssh/sshd_config",
+                "allowed": true
+            },
+            {
+                "target": "/etc/ssh/sshd_config.d",
+                "allowed": true
+            },
+            {
+                "target": "/etc/sudoers",
+                "allowed": true
+            },
+            {
+                "target": "/etc/sudoers.d/10-ops",
+                "allowed": true
+            },
+            {
+                "target": "/etc/passwd",
+                "allowed": true
+            },
+            {
+                "target": "/etc/group",
+                "allowed": true
+            },
+            {
+                "target": "/etc/crontab",
+                "allowed": true
+            },
+            {
+                "target": "/etc/cron.d",
+                "allowed": true
+            },
+            {
+                "target": "/var/spool/cron",
+                "allowed": true
+            },
+            {
+                "target": "/var/spool/cron/crontabs/root",
+                "allowed": true
+            },
+            {
+                "target": "/etc/systemd/system",
+                "allowed": true
+            },
+            {
+                "target": "/etc/systemd/system/multi-user.target.wants/x.service",
+                "allowed": true
+            },
+            {
+                "target": "/usr/local/lib/systemd/system",
+                "allowed": true
+            },
+            {
+                "target": "/root/.ssh/authorized_keys",
+                "allowed": true
+            },
+            {
+                "target": "/home/bob/.ssh/authorized_keys",
+                "allowed": true
+            },
+            {
+                "target": "/etc/hosts",
+                "allowed": true
+            },
+            {
+                "target": "/etc/ld.so.preload",
+                "allowed": true
+            },
+            {
+                "target": "/etc/shadow",
+                "allowed": false
+            },
+            {
+                "target": "/etc/shadow-",
+                "allowed": false
+            },
+            {
+                "target": "/etc/gshadow",
+                "allowed": false
+            },
+            {
+                "target": "/etc/security/opasswd",
+                "allowed": false
+            },
+            {
+                "target": "/etc/ssh/ssh_host_rsa_key",
+                "allowed": false
+            },
+            {
+                "target": "/etc/ssh/ssh_host_ed25519_key.pub",
+                "allowed": true
+            },
+            {
+                "target": "/etc/ssl/private/site.key",
+                "allowed": false
+            },
+            {
+                "target": "/etc/ssl/private",
+                "allowed": false
+            },
+            {
+                "target": "/root/.ssh/id_rsa",
+                "allowed": false
+            },
+            {
+                "target": "/home/bob/.ssh/id_ed25519",
+                "allowed": false
+            },
+            {
+                "target": "/etc/letsencrypt/live/x/privkey.pem",
+                "allowed": false
+            },
+            {
+                "target": "/etc/wireguard/wg0.conf",
+                "allowed": false
+            },
+            {
+                "target": "/etc/openvpn/client.key",
+                "allowed": false
+            },
+            {
+                "target": "/etc/NetworkManager/system-connections/Home.nmconnection",
+                "allowed": false
+            },
+            {
+                "target": "/etc/krb5.keytab",
+                "allowed": false
+            },
+            {
+                "target": "/etc/ppp/chap-secrets",
+                "allowed": false
+            },
+            {
+                "target": "/etc/mysql/debian.cnf",
+                "allowed": false
+            },
+            {
+                "target": "/etc/nginx/.htpasswd",
+                "allowed": false
+            },
+            {
+                "target": "/etc/nginx/server.key",
+                "allowed": false
+            },
+            {
+                "target": "/etc/apt/auth.conf",
+                "allowed": false
+            },
+            {
+                "target": "/etc",
+                "allowed": false
+            },
+            {
+                "target": "/",
+                "allowed": false
+            },
+            {
+                "target": "/root",
+                "allowed": false
+            },
+            {
+                "target": "/home",
+                "allowed": false
+            },
+            {
+                "target": "/home/bob",
+                "allowed": false
+            },
+            {
+                "target": "/home/bob/.bash_history",
+                "allowed": false
+            },
+            {
+                "target": "/proc/1/environ",
+                "allowed": false
+            },
+            {
+                "target": "/var/log/auth.log",
+                "allowed": false
+            },
+            {
+                "target": "etc/hosts",
+                "allowed": false
+            },
+            {
+                "target": "./etc/hosts",
+                "allowed": false
+            },
+            {
+                "target": "/etc/./hosts",
+                "allowed": false
+            },
+            {
+                "target": "/etc//hosts",
+                "allowed": false
+            },
+            {
+                "target": "/etc/hosts/",
+                "allowed": false
+            },
+            {
+                "target": "/etc/../root/.ssh/id_rsa",
+                "allowed": false
+            },
+            {
+                "target": "/etc\\hosts",
+                "allowed": false
+            },
+            {
+                "target": "~root/.ssh",
+                "allowed": false
+            },
+            {
+                "target": "file:///etc/hosts",
+                "allowed": false
+            },
+            {
+                "target": " /etc/hosts",
+                "allowed": false
+            },
+            {
+                "target": "/etc/hosts ",
+                "allowed": false
+            },
+            {
+                "target": "/etc/ho\u0000sts",
+                "allowed": false
+            },
+            {
+                "target": "/etc/ho\nsts",
+                "allowed": false
+            },
+            {
+                "target": "/etc/ho​sts",
+                "allowed": false
+            },
+            {
+                "target": "",
+                "allowed": false
+            },
+            {
+                "target": "/srv/app/app.conf",
+                "allowed": false
+            },
+            {
+                "target": "/srv/app/id_rsa",
+                "allowed": false
+            },
+            {
+                "target": "/srv/app/site.key",
+                "allowed": false
+            },
+            {
+                "target": "/srv/app",
+                "allowed": false
+            },
+            {
+                "target": "/srv",
+                "allowed": false
+            },
+            {
+                "target": "/srv/application/x.conf",
+                "allowed": false
+            },
+            {
+                "target": "C:\\Windows\\System32\\drivers\\etc\\hosts",
+                "allowed": true
+            },
+            {
+                "target": "c:\\windows\\system32\\drivers\\etc\\hosts",
+                "allowed": true
+            },
+            {
+                "target": "D:\\Windows\\System32\\GroupPolicy\\Machine\\Registry.pol",
+                "allowed": true
+            },
+            {
+                "target": "C:\\Windows\\System32\\config\\SAM",
+                "allowed": false
+            },
+            {
+                "target": "C:\\Windows\\System32\\config\\SECURITY",
+                "allowed": false
+            },
+            {
+                "target": "C:\\Windows\\System32\\config\\RegBack\\SAM",
+                "allowed": false
+            },
+            {
+                "target": "C:\\Windows\\NTDS\\ntds.dit",
+                "allowed": false
+            },
+            {
+                "target": "C:\\Users\\bob\\NTUSER.DAT",
+                "allowed": false
+            },
+            {
+                "target": "C:\\Windows\\System32\\drivers\\etc\\..\\..\\config\\SAM",
+                "allowed": false
+            },
+            {
+                "target": "C:/Windows/System32/config/SAM",
+                "allowed": false
+            },
+            {
+                "target": "C:\\",
+                "allowed": false
+            },
+            {
+                "target": "C:\\Windows",
+                "allowed": false
+            },
+            {
+                "target": "\\\\server\\share\\x",
+                "allowed": false
+            },
+            {
+                "target": "C:\\Windows\\System32\\drivers\\etc\\key.pfx",
+                "allowed": false
+            }
+        ],
+        "file_extra_root": {
+            "root": "/srv/app",
+            "rows": [
+                {
+                    "target": "/srv/app/app.conf",
+                    "allowed": true
+                },
+                {
+                    "target": "/srv/app/id_rsa",
+                    "allowed": false
+                },
+                {
+                    "target": "/srv/app/site.key",
+                    "allowed": false
+                },
+                {
+                    "target": "/srv/app",
+                    "allowed": true
+                },
+                {
+                    "target": "/srv",
+                    "allowed": false
+                },
+                {
+                    "target": "/srv/application/x.conf",
+                    "allowed": false
+                },
+                {
+                    "target": "/etc/shadow",
+                    "allowed": false
+                },
+                {
+                    "target": "/srv/app/../../etc/shadow",
+                    "allowed": false
+                }
+            ]
+        }
+    },
+    "secret_names": [
+        {
+            "name": "Password",
+            "secret": true
+        },
+        {
+            "name": "DbPassword",
+            "secret": true
+        },
+        {
+            "name": "user_pwd",
+            "secret": true
+        },
+        {
+            "name": "ApiToken",
+            "secret": true
+        },
+        {
+            "name": "api-key",
+            "secret": true
+        },
+        {
+            "name": "ApiKey",
+            "secret": true
+        },
+        {
+            "name": "PrivateKey",
+            "secret": true
+        },
+        {
+            "name": "ClientSecret",
+            "secret": true
+        },
+        {
+            "name": "SharedKey",
+            "secret": true
+        },
+        {
+            "name": "ConnectionString",
+            "secret": true
+        },
+        {
+            "name": "AccessKey",
+            "secret": true
+        },
+        {
+            "name": "SasToken",
+            "secret": true
+        },
+        {
+            "name": "Cookie",
+            "secret": true
+        },
+        {
+            "name": "passphrase",
+            "secret": true
+        },
+        {
+            "name": "Credentials",
+            "secret": true
+        },
+        {
+            "name": "Start",
+            "secret": false
+        },
+        {
+            "name": "ImagePath",
+            "secret": false
+        },
+        {
+            "name": "ObjectName",
+            "secret": false
+        },
+        {
+            "name": "DisplayName",
+            "secret": false
+        },
+        {
+            "name": "Shell",
+            "secret": false
+        },
+        {
+            "name": "Userinit",
+            "secret": false
+        },
+        {
+            "name": "EnableLUA",
+            "secret": false
+        },
+        {
+            "name": "fDenyTSConnections",
+            "secret": false
+        },
+        {
+            "name": "PortNumber",
+            "secret": false
+        },
+        {
+            "name": "(Default)",
+            "secret": false
+        },
+        {
+            "name": "Server",
+            "secret": false
+        },
+        {
+            "name": "KeyboardLayout",
+            "secret": false
+        },
+        {
+            "name": "Monkey",
+            "secret": false
+        },
+        {
+            "name": "Tokenizer",
+            "secret": true
+        },
+        {
+            "name": "Compass",
+            "secret": true
+        }
+    ],
+    "signed_config": {
+        "sign_domain": "rivetit-change-config-v1",
+        "signed_message": "rivetit-change-config-v1\n{\"batch_max\":100,\"interval_s\":300,\"kind\":\"change_config\",\"max_value_bytes\":256,\"platform\":\"windows\",\"rate_per_min\":120,\"v\":1,\"version\":\"7f1b5a6f4c4af200\",\"watches\":[{\"id\":\"win.startup\",\"kind\":\"registry\",\"paths\":[{\"depth\":0,\"key\":\"HKLM\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\"},{\"depth\":0,\"key\":\"HKU\\\\*\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\"},{\"depth\":0,\"key\":\"HKLM\\\\SOFTWARE\\\\Microsoft\\\\Windows NT\\\\CurrentVersion\\\\Winlogon\",\"values\":[\"Shell\",\"Userinit\"]}]},{\"id\":\"win.local_admins\",\"kind\":\"group\",\"name\":\"Administrators\"},{\"id\":\"win.hosts\",\"kind\":\"file\",\"paths\":[{\"path\":\"C:\\\\Windows\\\\System32\\\\drivers\\\\etc\\\\hosts\"}]},{\"id\":\"win.tasks\",\"kind\":\"task\"},{\"id\":\"custom.acme\",\"kind\":\"registry\",\"paths\":[{\"depth\":2,\"key\":\"HKLM\\\\SOFTWARE\\\\Acme\\\\Café\"}]}]}",
+        "config": {
+            "v": 1,
+            "kind": "change_config",
+            "platform": "windows",
+            "interval_s": 300,
+            "batch_max": 100,
+            "rate_per_min": 120,
+            "max_value_bytes": 256,
+            "watches": [
+                {
+                    "id": "win.startup",
+                    "kind": "registry",
+                    "paths": [
+                        {
+                            "key": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+                            "depth": 0
+                        },
+                        {
+                            "key": "HKU\\*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                            "depth": 0
+                        },
+                        {
+                            "key": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
+                            "depth": 0,
+                            "values": [
+                                "Shell",
+                                "Userinit"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "id": "win.local_admins",
+                    "kind": "group",
+                    "name": "Administrators"
+                },
+                {
+                    "id": "win.hosts",
+                    "kind": "file",
+                    "paths": [
+                        {
+                            "path": "C:\\Windows\\System32\\drivers\\etc\\hosts"
+                        }
+                    ]
+                },
+                {
+                    "id": "win.tasks",
+                    "kind": "task"
+                },
+                {
+                    "id": "custom.acme",
+                    "kind": "registry",
+                    "paths": [
+                        {
+                            "key": "HKLM\\SOFTWARE\\Acme\\Café",
+                            "depth": 2
+                        }
+                    ]
+                }
+            ],
+            "version": "7f1b5a6f4c4af200",
+            "signature": "qHuepjyqLEmatVuEZ6REraRtHX+iyndNtunZn+kvhNYVvbtNE7jQz5QwVdJ9hhJRwFUoeYgUSE+umOnjdHHyDg=="
+        },
+        "expected_watch_ids": [
+            "win.startup",
+            "win.local_admins",
+            "win.hosts",
+            "win.tasks",
+            "custom.acme"
+        ]
+    }
+}

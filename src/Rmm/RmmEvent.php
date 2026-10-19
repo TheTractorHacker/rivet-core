@@ -94,6 +94,16 @@ final class RmmEvent
     /** A software job failed. Fields: job_id, package, action, mode, result (hash_mismatch, download_failed, not_found, locked, verify_failed or failed), code. */
     public const DEPLOY_FAILED = 'rmm.deploy.failed';
 
+    /**
+     * A change was recorded on a device (change monitoring, `change_monitor` switch): a registry value, a configuration file, a local group member or a scheduled task. At most 20 events per
+     * reported batch, so a mass change is one burst and not a webhook storm; every change is in the records. Fields: kind ("registry", "file", "group" or "task"), watch (the preset or custom
+     * watch id), change ("added", "modified" or "removed"), target (key path, file path, "group:<name>" or "scheduled-tasks"), item (value name, group member or task path), old_value,
+     * new_value (cut to 512 characters, secrets masked, empty when none), summary (for a file: "+N -M lines"), actor and process (best effort, empty when Windows did not record them).
+     */
+    public const CHANGE_DETECTED = 'rmm.change.detected';
+    /** A change rule matched on a device and raised or kept its alert. Fields: rule_id, rule_name, match_count, watch, target, item, change, sample (at most 200 characters), alert_check_key. */
+    public const CHANGE_RULE_MATCHED = 'rmm.change.rule_matched';
+
     /** @return list<string> */
     public static function all(): array
     {
@@ -102,6 +112,7 @@ final class RmmEvent
             self::ALERT_OPENED, self::ALERT_ESCALATED, self::ALERT_ACKNOWLEDGED, self::ALERT_RESOLVED, self::MAINTENANCE_STARTED, self::MAINTENANCE_ENDED,
             self::POLICY_ASSIGNED, self::SCRIPT_RUN, self::APPROVAL_REQUESTED, self::APPROVAL_DECIDED, self::FILE_TRANSFERRED, self::LOG_RULE_MATCHED, self::MESH_AGENT_INSTALLED, self::MESH_NODE_CONFLICT, self::STARTER_INSTALLED,
             self::PATCH_SCAN_COMPLETED, self::PATCH_APPROVED, self::PATCH_INSTALL_STARTED, self::PATCH_INSTALL_FINISHED, self::PATCH_INSTALL_FAILED,
-            self::DEPLOY_STARTED, self::DEPLOY_FINISHED, self::DEPLOY_FAILED];
+            self::DEPLOY_STARTED, self::DEPLOY_FINISHED, self::DEPLOY_FAILED,
+            self::CHANGE_DETECTED, self::CHANGE_RULE_MATCHED];
     }
 }

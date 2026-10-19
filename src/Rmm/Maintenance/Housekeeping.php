@@ -76,6 +76,8 @@ final class Housekeeping
         private readonly ?TransferService $transfers = null,
         private readonly ?\RivetCore\Rmm\Patch\PatchScheduler $patches = null,
         private readonly ?\RivetCore\Rmm\Deploy\DeployScheduler $deploy = null,
+        private readonly ?\RivetCore\Rmm\Change\ChangeService $changes = null,
+        private readonly ?\RivetCore\Rmm\Change\ChangeRuleService $changeRules = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -152,6 +154,21 @@ final class Housekeeping
                 $out += $this->deploy->run();
             } catch (\Throwable $e) {
                 error_log('rmm housekeeping (software deploy): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0029 not applied yet
+            }
+        }
+        // Change monitoring: retention and caps, and the recovery of change-rule alerts. Runs while the switch is on or records / rules still exist (so turning it off still cleans up).
+        if ($this->changes !== null) {
+            try {
+                if ($this->settings->featureOn('change_monitor') || (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_change_state') > 0) {
+                    foreach ($this->changes->prune($this->pause) as $k => $v) {
+                        $out['pruned_changes_' . $k] = $v;
+                    }
+                }
+                if ($this->changeRules !== null && ($this->settings->featureOn('change_monitor') || (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_change_rules') > 0)) {
+                    $out['change_rule_alerts_recovered'] = $this->changeRules->sweep();
+                }
+            } catch (\Throwable $e) {
+                error_log('rmm housekeeping (change monitor): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0030 not applied yet
             }
         }
         if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {
