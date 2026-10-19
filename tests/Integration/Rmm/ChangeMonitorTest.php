@@ -96,8 +96,14 @@ final class ChangeMonitorTest extends RemoteTestCase
         $r = $this->announce($this->devToken, self::caps());
         $this->assertSame(['change:monitor'], $r['features']);
         $cfg = $r['config']['change'];
-        $this->assertSame(['v', 'kind', 'platform', 'interval_s', 'batch_max', 'rate_per_min', 'max_value_bytes', 'watches', 'version', 'signature'], array_keys($cfg));
+        $this->assertSame(['v', 'kind', 'platform', 'interval_s', 'batch_max', 'rate_per_min', 'max_value_bytes', 'watches', 'seq', 'version', 'signature'], array_keys($cfg));
         $this->assertSame([1, 'change_config', 'windows', 300, 100, 120, 256], [$cfg['v'], $cfg['kind'], $cfg['platform'], $cfg['interval_s'], $cfg['batch_max'], $cfg['rate_per_min'], $cfg['max_value_bytes']]);
+        $this->assertGreaterThan(0, $cfg['seq']);
+        $this->h->clock->advance(10);
+        $this->h->module->changeSettings()->update(['limits' => ['change_rate_per_min' => 121]], 1);
+        $this->assertGreaterThan($cfg['seq'], $this->announce($this->devToken, self::caps())['config']['change']['seq'], 'a settings change raises seq: an older signed configuration is a replay');
+        $this->h->module->changeSettings()->update(['limits' => ['change_rate_per_min' => 120]], 1);
+        $cfg = $this->announce($this->devToken, self::caps())['config']['change'];
         $this->assertSame(['win.startup', 'win.defender', 'win.local_admins', 'win.hosts'], array_column($cfg['watches'], 'id'));
         $this->assertSame(['registry', 'registry', 'group', 'file'], array_column($cfg['watches'], 'kind'));
         // the signature: Ed25519 over the domain line and the canonical object, by the module's key

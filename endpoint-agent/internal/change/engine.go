@@ -81,8 +81,9 @@ type engine struct {
 	actorOffUntil time.Time
 	warned        map[string]bool
 	baselineAt    string
-	withdrawn     bool // Configure(nil) was called since the last Tick
-	wipeReq       bool // Wipe was called since the last Tick
+	highSeq       int64 // the highest configuration seq accepted (mu); a lower one is a replay
+	withdrawn     bool  // Configure(nil) was called since the last Tick
+	wipeReq       bool  // Wipe was called since the last Tick
 }
 
 // Manager owns the change-monitoring loop. Configure is the only method other
@@ -105,6 +106,7 @@ func New(o Options) *Manager {
 	}
 	e := &engine{o: o, wake: make(chan struct{}, 1), notifyWake: make(chan struct{}, 1), maxItems: defaultMaxItems, maxValue: MaxValueBytes, warned: map[string]bool{}}
 	e.state = loadState(o.StatePath)
+	e.highSeq = e.state.Seq
 	if k, err := hex.DecodeString(e.state.Key); err == nil {
 		e.hasher = Hasher{Key: k}
 	}
@@ -136,6 +138,18 @@ func (e *engine) Configure(raw json.RawMessage) error {
 		}
 		return err
 	}
+	e.mu.Lock()
+	if cfg.Seq < e.highSeq {
+		e.mu.Unlock()
+		err := fmt.Errorf("change configuration seq %d is older than %d already accepted (a replay)", cfg.Seq, e.highSeq)
+		if !e.warned[err.Error()] {
+			e.warned[err.Error()] = true
+			e.o.Log.Error("change-monitoring configuration refused; keeping the last good one", "err", err)
+		}
+		return err
+	}
+	e.highSeq = cfg.Seq
+	e.mu.Unlock()
 	e.set(cfg)
 	return nil
 }
@@ -302,6 +316,9 @@ func (e *engine) activate(cfg *Config) {
 }
 
 func (e *engine) save() {
+	e.mu.Lock()
+	e.state.Seq = e.highSeq
+	e.mu.Unlock()
 	if err := e.state.save(e.o.StatePath); err != nil {
 		e.o.Log.Warn("cannot persist change-monitoring state", "err", err)
 	}

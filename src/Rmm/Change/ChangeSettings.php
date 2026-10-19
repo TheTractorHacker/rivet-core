@@ -253,7 +253,9 @@ final class ChangeSettings
         }
         $l = $this->limits();
         $cfg = ['v' => ChangeProtocol::CONFIG_VERSION, 'kind' => 'change_config', 'platform' => $os, 'interval_s' => $l['change_interval_s'], 'batch_max' => ChangeProtocol::BATCH_MAX,
-            'rate_per_min' => $l['change_rate_per_min'], 'max_value_bytes' => $l['change_max_value_bytes'], 'watches' => $watches];
+            'rate_per_min' => $l['change_rate_per_min'], 'max_value_bytes' => $l['change_max_value_bytes'], 'watches' => $watches,
+            // monotonic: the time of the last settings change. The agent keeps the highest it has seen and refuses a lower one, so an old signed configuration cannot be replayed to undo a narrowing
+            'seq' => max(1, Sql::ts((string) ($this->row()['updated_at'] ?? '')))];
         $cfg['version'] = substr(hash('sha256', Signer::changeConfigMessage($cfg)), 0, 16);
         try {
             [$sec] = $this->settings->signingKey();

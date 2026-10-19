@@ -72,12 +72,14 @@ type wireConfig struct {
 	RatePerMin    int     `json:"rate_per_min"`
 	MaxValueBytes int     `json:"max_value_bytes"`
 	Watches       []Watch `json:"watches"`
+	Seq           int64   `json:"seq"`
 	Version       string  `json:"version"`
 	Signature     string  `json:"signature"`
 }
 
 // Config is a verified, normalised change-monitoring configuration.
 type Config struct {
+	Seq           int64
 	Version       string
 	Platform      string
 	Interval      time.Duration
@@ -124,7 +126,7 @@ func Parse(raw json.RawMessage, o ParseOptions) (*Config, error) {
 	if w.V != 1 || w.Kind != "change_config" || w.Platform != o.Platform || !reVersion.MatchString(w.Version) {
 		return nil, errors.New("change configuration is not for this agent")
 	}
-	c := &Config{Version: w.Version, Platform: w.Platform, BatchMax: w.BatchMax, RatePerMin: w.RatePerMin, MaxValueBytes: w.MaxValueBytes}
+	c := &Config{Seq: w.Seq, Version: w.Version, Platform: w.Platform, BatchMax: w.BatchMax, RatePerMin: w.RatePerMin, MaxValueBytes: w.MaxValueBytes}
 	c.Interval = min(max(time.Duration(w.IntervalS)*time.Second, MinInterval), MaxInterval)
 	if c.BatchMax <= 0 || c.BatchMax > MaxBatch {
 		c.BatchMax = MaxBatch

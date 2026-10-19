@@ -502,7 +502,7 @@ function changeMonitorVectors(): string
         'Start', 'ImagePath', 'ObjectName', 'DisplayName', 'Shell', 'Userinit', 'EnableLUA', 'fDenyTSConnections', 'PortNumber', '(Default)', 'Server', 'KeyboardLayout', 'Monkey', 'Tokenizer', 'Compass'];
     $secret = array_map(static fn (string $n): array => ['name' => $n, 'secret' => \RivetCore\Rmm\Change\ChangeProtocol::secretName($n)], $names);
 
-    $config = ['v' => 1, 'kind' => 'change_config', 'platform' => 'windows', 'interval_s' => 300, 'batch_max' => 100, 'rate_per_min' => 120, 'max_value_bytes' => 256,
+    $config = ['v' => 1, 'kind' => 'change_config', 'platform' => 'windows', 'interval_s' => 300, 'batch_max' => 100, 'rate_per_min' => 120, 'max_value_bytes' => 256, 'seq' => 1760000000,
         'watches' => [
             ['id' => 'win.startup', 'kind' => 'registry', 'paths' => [['key' => $run, 'depth' => 0], ['key' => 'HKU\\*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run', 'depth' => 0],
                 ['key' => 'HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon', 'depth' => 0, 'values' => ['Shell', 'Userinit']]]],

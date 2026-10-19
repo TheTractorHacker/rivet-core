@@ -2,6 +2,7 @@ package change
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -342,3 +343,29 @@ type panicRegistry struct{}
 func (panicRegistry) SubKeys(string) ([]string, error)                     { panic("boom") }
 func (panicRegistry) Values(string, func(string) bool) ([]RegValue, error) { panic("boom") }
 func (panicRegistry) Users() ([]string, error)                             { return nil, nil }
+
+func TestAnOlderSignedConfigurationIsAReplayAndIsRefused(t *testing.T) {
+	r := newRig(t, "windows")
+	mk := func(seq int, key string) json.RawMessage {
+		c := baseConfig("windows", "4040404040404040", regWatch("win.startup", map[string]any{"key": key}))
+		c["seq"] = seq
+		return r.sg.sign(t, c)
+	}
+	if err := r.m.Configure(mk(200, runKey)); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.m.Configure(mk(100, `HKLM\SOFTWARE\Evil\Wide`)); err == nil {
+		t.Fatal("an older configuration was accepted")
+	}
+	if err := r.m.Configure(mk(200, runKey)); err != nil {
+		t.Fatal("the same seq is fine (the same configuration again)")
+	}
+	r.tick()
+	r.build() // a restart keeps the highest seq
+	if err := r.m.Configure(mk(150, runKey)); err == nil {
+		t.Fatal("the highest seq must survive a restart")
+	}
+	if err := r.m.Configure(mk(300, runKey)); err != nil {
+		t.Fatal(err)
+	}
+}

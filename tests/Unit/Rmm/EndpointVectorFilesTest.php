@@ -19,7 +19,7 @@ final class EndpointVectorFilesTest extends TestCase
     private const ADDED = [
         'agent_installer_mesh_vectors.json' => '39fb641e12abb3d10eac10132fc640991014c5dc994d8e8ca5f6e31ba2af61ea',   // 1.0.0-rc.12: the optional MeshCentral agent members
         'agent_software_deploy_vectors.json' => 'f52af62a9163a63b869d378e513bde81490c598aec7caae469ed58e2a3554ef2',   // 1.0.0-rc.21: accept/reject vectors of the software job parameters
-        'agent_change_monitor_vectors.json' => 'aed3ea552d7e63fd993e593057dd20a8f07c4b11ba4b5d79924ff393502c1529',   // 1.0.0-rc.22: the change-monitoring watch policy, secret names and a signed configuration
+        'agent_change_monitor_vectors.json' => 'aa20e416e88f667681f169d26b38ea6dd53a94397a4d1d6012d6bc173df6a50e',   // 1.0.0-rc.22: the change-monitoring watch policy, secret names and a signed configuration
     ];
 
     public function testFilesMatchTheRivetItBaseline(): void

@@ -24,6 +24,7 @@ type stateFile struct {
 	Pending []Record               `json:"pending"`
 	Dropped int                    `json:"dropped"`
 	// WithdrawnAt is when the server stopped offering monitoring (RFC 3339); what is kept is deleted a day later.
+	Seq         int64  `json:"seq,omitempty"` // the highest configuration seq accepted
 	WithdrawnAt string `json:"withdrawn_at,omitempty"`
 }
 

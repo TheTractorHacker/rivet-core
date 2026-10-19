@@ -743,7 +743,7 @@
     ],
     "signed_config": {
         "sign_domain": "rivetit-change-config-v1",
-        "signed_message": "rivetit-change-config-v1\n{\"batch_max\":100,\"interval_s\":300,\"kind\":\"change_config\",\"max_value_bytes\":256,\"platform\":\"windows\",\"rate_per_min\":120,\"v\":1,\"version\":\"7f1b5a6f4c4af200\",\"watches\":[{\"id\":\"win.startup\",\"kind\":\"registry\",\"paths\":[{\"depth\":0,\"key\":\"HKLM\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\"},{\"depth\":0,\"key\":\"HKU\\\\*\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\"},{\"depth\":0,\"key\":\"HKLM\\\\SOFTWARE\\\\Microsoft\\\\Windows NT\\\\CurrentVersion\\\\Winlogon\",\"values\":[\"Shell\",\"Userinit\"]}]},{\"id\":\"win.local_admins\",\"kind\":\"group\",\"name\":\"Administrators\"},{\"id\":\"win.hosts\",\"kind\":\"file\",\"paths\":[{\"path\":\"C:\\\\Windows\\\\System32\\\\drivers\\\\etc\\\\hosts\"}]},{\"id\":\"win.tasks\",\"kind\":\"task\"},{\"id\":\"custom.acme\",\"kind\":\"registry\",\"paths\":[{\"depth\":2,\"key\":\"HKLM\\\\SOFTWARE\\\\Acme\\\\Café\"}]}]}",
+        "signed_message": "rivetit-change-config-v1\n{\"batch_max\":100,\"interval_s\":300,\"kind\":\"change_config\",\"max_value_bytes\":256,\"platform\":\"windows\",\"rate_per_min\":120,\"seq\":1760000000,\"v\":1,\"version\":\"003e40e0934250b3\",\"watches\":[{\"id\":\"win.startup\",\"kind\":\"registry\",\"paths\":[{\"depth\":0,\"key\":\"HKLM\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\"},{\"depth\":0,\"key\":\"HKU\\\\*\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\"},{\"depth\":0,\"key\":\"HKLM\\\\SOFTWARE\\\\Microsoft\\\\Windows NT\\\\CurrentVersion\\\\Winlogon\",\"values\":[\"Shell\",\"Userinit\"]}]},{\"id\":\"win.local_admins\",\"kind\":\"group\",\"name\":\"Administrators\"},{\"id\":\"win.hosts\",\"kind\":\"file\",\"paths\":[{\"path\":\"C:\\\\Windows\\\\System32\\\\drivers\\\\etc\\\\hosts\"}]},{\"id\":\"win.tasks\",\"kind\":\"task\"},{\"id\":\"custom.acme\",\"kind\":\"registry\",\"paths\":[{\"depth\":2,\"key\":\"HKLM\\\\SOFTWARE\\\\Acme\\\\Café\"}]}]}",
         "config": {
             "v": 1,
             "kind": "change_config",
@@ -752,6 +752,7 @@
             "batch_max": 100,
             "rate_per_min": 120,
             "max_value_bytes": 256,
+            "seq": 1760000000,
             "watches": [
                 {
                     "id": "win.startup",
@@ -804,8 +805,8 @@
                     ]
                 }
             ],
-            "version": "7f1b5a6f4c4af200",
-            "signature": "qHuepjyqLEmatVuEZ6REraRtHX+iyndNtunZn+kvhNYVvbtNE7jQz5QwVdJ9hhJRwFUoeYgUSE+umOnjdHHyDg=="
+            "version": "003e40e0934250b3",
+            "signature": "i6hJ9CuCkamC1JyrWXTRIjzyV2Asc8kk12t7/SnRyS2XZgJSTzCGJSFAXWq4LNZFp8DFxlB1CrP5HaZKQVsoAA=="
         },
         "expected_watch_ids": [
             "win.startup",
