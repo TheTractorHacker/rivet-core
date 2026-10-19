@@ -22,6 +22,7 @@ freeport() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0
 start_mock() { # name args... -> sets PORT, MOCK_PID
   PORT=$(freeport)
   python3 "$HERE/mock_build_host_server.py" --port "$PORT" --token "$TOKEN" "$@" >"$ROOT/mock-$$.log" 2>&1 & MOCK_PID=$!
+  write_conf "$ROOT/host.conf" "main v* agent-v*"
   for _ in $(seq 50); do curl -s "http://127.0.0.1:$PORT/_state" >/dev/null 2>&1 && return 0; sleep 0.1; done; echo "mock did not start"; exit 1
 }
 stop_mock() { kill "$MOCK_PID" 2>/dev/null || true; wait "$MOCK_PID" 2>/dev/null || true; MOCK_PID=""; }
@@ -56,7 +57,6 @@ echo "source commit $SHA, version $VERSION"
 
 echo "== A. happy path (with two injected 503s on upload)"
 start_mock --job-id job-A --version "$VERSION" --ref main --msi --out-dir "$ROOT/uploaded" --fail-uploads 2
-write_conf "$ROOT/host.conf" "main v* agent-v*"
 T0=$SECONDS
 if run_host --once >"$ROOT/runA.out" 2>&1; then ok "build-host exited 0 ($((SECONDS-T0)) s)"; else bad "build-host exited non-zero"; tail -20 "$ROOT/runA.out"; fi
 check "job built on the server" test "$(sj state)" = built
