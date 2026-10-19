@@ -27,7 +27,7 @@ start_mock() { # name args... -> sets PORT, MOCK_PID
 stop_mock() { kill "$MOCK_PID" 2>/dev/null || true; wait "$MOCK_PID" 2>/dev/null || true; MOCK_PID=""; }
 state() { curl -s "http://127.0.0.1:$PORT/_state"; }
 sj() { state | python3 -I -c 'import json,sys; d=json.load(sys.stdin)
-for k in sys.argv[1].split("."):
+for k in sys.argv[1].split("/"):
     d=d[k] if isinstance(d,dict) else d[int(k)]
 print(d)' "$1"; }
 write_conf() { # file refs
@@ -63,11 +63,11 @@ check "job built on the server" test "$(sj state)" = built
 check "no server-side validation errors" test "$(sj errors)" = "[]"
 for f in rivetit-agent-windows-amd64.exe rivetit-agent-windows-arm64.exe rivetit-agent-windows-amd64.msi SHA256SUMS; do
   check "uploaded $f" test -s "$ROOT/uploaded/$f"; done
-CH=$(sj uploaded.rivetit-agent-windows-amd64.exe.chunks)
+CH=$(sj uploaded/rivetit-agent-windows-amd64.exe/chunks)
 check "exe was uploaded in several chunks ($CH)" test "$CH" -gt 1
 check "upload retried after the injected 503s" test "$(sj upload_calls)" -gt 2
 check "SHA256SUMS hashes match the reassembled files" bash -c "cd '$ROOT/uploaded' && sha256sum -c SHA256SUMS >/dev/null"
-check "manifest commit is the source commit" test "$(sj manifest.commit)" = "$SHA"
+check "manifest commit is the source commit" test "$(sj manifest/commit)" = "$SHA"
 check "token is not in the script output" bash -c "! grep -q '$TOKEN' '$ROOT/runA.out'"
 check "no leftover temp dirs, containers or worktrees" leftovers
 # the same commit built directly
