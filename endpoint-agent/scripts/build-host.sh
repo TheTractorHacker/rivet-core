@@ -312,8 +312,8 @@ case "$MODE" in
   register)
     start
     need_ok=true; docker info >/dev/null 2>&1 || { log "docker is not usable by this user"; need_ok=false; }
-    caps_json "$TMP/poll.json" "$need_ok"
-    # Reports no capabilities when docker is unusable so the server hands out nothing; with them it must still not hand out a job here.
+    # Always announces NO capabilities, so the server has nothing to hand out: --register must never claim a real job.
+    caps_json "$TMP/poll.json" false
     api poll "$TMP/poll.json" "$TMP/poll.out" || die "the server did not accept the token or is unreachable"
     [ -z "$(jget "$TMP/poll.out" job.id)" ] || die "the server handed out a job during --register; it will expire unclaimed"
     printf 'OK build host %s: token accepted by %s, docker %s, allowed refs: %s\n' "$HOST_VERSION" "$SERVER_URL" \
