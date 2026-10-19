@@ -130,3 +130,17 @@ func TestAnEmptyLevelListReadsEveryLevelOfASecurityChannel(t *testing.T) {
 		t.Errorf("%q %v", q, err)
 	}
 }
+
+func TestAnImplausibleAccountNameIsNeverKept(t *testing.T) {
+	g := newAggregator(&api.LogAggregate{WindowS: 300, Min: 1, By: []string{"TargetUserName", "IpAddress"}})
+	for _, n := range []string{"bob", "Hunter2 is my pass!", "averyveryveryverylongusername", "a b"} {
+		g.add(failedLogon(1, t0, n, "1.2.3.4"), t0)
+	}
+	var all string
+	for _, e := range g.flush(t0.Add(time.Hour), nil) {
+		all += e.Message + "\n"
+	}
+	if strings.Contains(all, "Hunter2") || strings.Contains(all, "averyvery") || !strings.Contains(all, "TargetUserName=bob") || !strings.Contains(all, "(not an account name)") {
+		t.Errorf("%s", all)
+	}
+}

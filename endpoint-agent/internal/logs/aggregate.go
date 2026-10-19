@@ -23,6 +23,8 @@ const (
 	maxBucketsKept = 8
 )
 
+var rePlausibleAccount = regexp.MustCompile(`^[A-Za-z0-9._$@-]{1,20}$`)
+
 var reAggField = regexp.MustCompile(`^[A-Za-z0-9]{1,40}$`)
 
 type aggGroup struct {
@@ -79,6 +81,9 @@ func (g *aggregator) add(it Item, now time.Time) {
 		vals[i] = CleanMessage(it.Fields[f])
 		if vals[i] == "" || vals[i] == "-" {
 			vals[i] = "?"
+		} else if strings.HasSuffix(f, "UserName") && !rePlausibleAccount.MatchString(vals[i]) {
+			// people type their password into the user name box: a name that is not plausibly an account name is never kept
+			vals[i] = "(not an account name)"
 		}
 	}
 	key := strings.Join(vals, "\x00")
