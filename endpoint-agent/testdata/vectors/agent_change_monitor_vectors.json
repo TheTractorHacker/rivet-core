@@ -437,6 +437,70 @@
                 "allowed": false
             },
             {
+                "target": "/etc/shadow.bak",
+                "allowed": false
+            },
+            {
+                "target": "/etc/shadow~",
+                "allowed": false
+            },
+            {
+                "target": "/etc/shadow.old",
+                "allowed": false
+            },
+            {
+                "target": "/etc/gshadow.bak",
+                "allowed": false
+            },
+            {
+                "target": "/etc/postfix/sasl_passwd",
+                "allowed": false
+            },
+            {
+                "target": "/etc/samba/smbpasswd",
+                "allowed": false
+            },
+            {
+                "target": "/etc/ppp/passwd.client",
+                "allowed": false
+            },
+            {
+                "target": "/etc/wpa_supplicant/wpa_supplicant.conf",
+                "allowed": false
+            },
+            {
+                "target": "/etc/sssd/sssd.conf",
+                "allowed": false
+            },
+            {
+                "target": "/etc/ssh/ssh_host_ed25519_key",
+                "allowed": false
+            },
+            {
+                "target": "/etc/ssl/foo_key",
+                "allowed": false
+            },
+            {
+                "target": "/etc/foo/id_ed25519",
+                "allowed": false
+            },
+            {
+                "target": "/etc/x./y",
+                "allowed": false
+            },
+            {
+                "target": "/etc/x/y.",
+                "allowed": false
+            },
+            {
+                "target": "/etc/passwd-",
+                "allowed": false
+            },
+            {
+                "target": "/etc/sudoers.d/10-ops.",
+                "allowed": false
+            },
+            {
                 "target": "/srv/app/app.conf",
                 "allowed": false
             },

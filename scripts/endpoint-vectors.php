@@ -490,6 +490,8 @@ function changeMonitorVectors(): string
         '/home/bob/.ssh/id_ed25519', '/etc/letsencrypt/live/x/privkey.pem', '/etc/wireguard/wg0.conf', '/etc/openvpn/client.key', '/etc/NetworkManager/system-connections/Home.nmconnection', '/etc/krb5.keytab',
         '/etc/ppp/chap-secrets', '/etc/mysql/debian.cnf', '/etc/nginx/.htpasswd', '/etc/nginx/server.key', '/etc/apt/auth.conf', '/etc', '/', '/root', '/home', '/home/bob', '/home/bob/.bash_history', '/proc/1/environ', '/var/log/auth.log',
         'etc/hosts', './etc/hosts', '/etc/./hosts', '/etc//hosts', '/etc/hosts/', '/etc/../root/.ssh/id_rsa', '/etc\\hosts', '~root/.ssh', 'file:///etc/hosts', " /etc/hosts", '/etc/hosts ', "/etc/ho\0sts", "/etc/ho\nsts", "/etc/ho\u{200b}sts", '',
+        '/etc/shadow.bak', '/etc/shadow~', '/etc/shadow.old', '/etc/gshadow.bak', '/etc/postfix/sasl_passwd', '/etc/samba/smbpasswd', '/etc/ppp/passwd.client', '/etc/wpa_supplicant/wpa_supplicant.conf', '/etc/sssd/sssd.conf',
+        '/etc/ssh/ssh_host_ed25519_key', '/etc/ssl/foo_key', '/etc/foo/id_ed25519', '/etc/x./y', '/etc/x/y.', '/etc/passwd-', '/etc/sudoers.d/10-ops.',
         '/srv/app/app.conf', '/srv/app/id_rsa', '/srv/app/site.key', '/srv/app', '/srv', '/srv/application/x.conf',
         'C:\\Windows\\System32\\drivers\\etc\\hosts', 'c:\\windows\\system32\\drivers\\etc\\hosts', 'D:\\Windows\\System32\\GroupPolicy\\Machine\\Registry.pol', 'C:\\Windows\\System32\\config\\SAM', 'C:\\Windows\\System32\\config\\SECURITY',
         'C:\\Windows\\System32\\config\\RegBack\\SAM', 'C:\\Windows\\NTDS\\ntds.dit', 'C:\\Users\\bob\\NTUSER.DAT', 'C:\\Windows\\System32\\drivers\\etc\\..\\..\\config\\SAM', 'C:/Windows/System32/config/SAM', 'C:\\', 'C:\\Windows', '\\\\server\\share\\x',

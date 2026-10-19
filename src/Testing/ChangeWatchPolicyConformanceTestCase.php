@@ -84,7 +84,7 @@ abstract class ChangeWatchPolicyConformanceTestCase extends TestCase
         $this->assertAllRefused('registry', [
             'HKCU\\Software\\Acme\\Agent', 'HKEY_CURRENT_USER\\Software\\Acme\\Agent', 'HKCR\\Acme\\Agent\\Shell', 'HKCC\\Software\\Acme\\Agent', 'HKEY_CLASSES_ROOT\\Acme\\Shell\\Open',
             '\\Registry\\Machine\\SAM', '\\Registry\\Machine\\SOFTWARE\\Acme\\Agent', '\\\\?\\HKLM\\SOFTWARE\\Acme\\Agent', 'Computer\\HKEY_LOCAL_MACHINE\\SOFTWARE\\Acme\\Agent', 'SOFTWARE\\Acme\\Agent\\Run',
-            str_replace('\\', '\\\\', $k), $k . '\\', '\\' . $k, ' ' . $k, $k . ' ', str_replace('\\', '/', $k), 'HKLM\\SOFTWARE\\Acme\\..\\..\\SAM', 'HKLM\\SOFTWARE\\Acme\\..\\Agent', 'HKLM\\SOFTWARE\\.\\Acme\\Agent',
+            str_replace('\\', '\\\\', $k), $k . '\\', '\\' . $k, ' ' . $k, $k . ' ', str_replace('\\', '/', $k), 'HKLM\\SOFTWARE\\Acme\\..\\..\\SAM', 'HKLM\\SOFTWARE\\Acme\\..\\Agent', 'HKLM\\SOFTWARE\\.\\Acme\\Agent', 'HKLM\\SOFTWARE\\Acme.\\Agent', 'HKLM\\SOFTWARE\\' . str_repeat('A', 300) . '\\Agent',
             'HKLM\\SOFTWARE\\Acme\\ \\Agent', 'HKU\\notasid\\Software\\Acme', 'HKU\\..\\Software\\Acme\\X',
         ], 'a hive that is not supported, or a malformed key');
     }
@@ -96,7 +96,7 @@ abstract class ChangeWatchPolicyConformanceTestCase extends TestCase
             '/etc/ssl/private/site.key', '/etc/ssl/private', '/etc/ssl/private/', '/root/.ssh/id_rsa', '/root/.ssh/id_ed25519', '/home/bob/.ssh/id_rsa', '/home/bob/.ssh/id_ed25519',
             '/etc/letsencrypt/live/example.com/privkey.pem', '/etc/letsencrypt/archive/example.com/privkey1.pem', '/etc/wireguard/wg0.conf', '/etc/openvpn/client/client.key',
             '/etc/NetworkManager/system-connections/Home.nmconnection', '/etc/krb5.keytab', '/etc/ppp/chap-secrets', '/etc/mysql/debian.cnf', '/etc/samba/private/passdb.tdb',
-            '/etc/apt/auth.conf', '/etc/apt/auth.conf.d/private.conf', '/etc/nginx/server.key', '/etc/pki/tls/private/host.key', '/etc/nginx/.htpasswd', '/root/.netrc', '/etc/ipsec.secrets',
+            '/etc/apt/auth.conf', '/etc/apt/auth.conf.d/private.conf', '/etc/shadow.bak', '/etc/shadow~', '/etc/gshadow.old', '/etc/postfix/sasl_passwd', '/etc/samba/smbpasswd', '/etc/ppp/passwd.client', '/etc/wpa_supplicant/wpa_supplicant.conf', '/etc/sssd/sssd.conf', '/etc/ssl/foo_key', '/etc/foo/id_ed25519', '/etc/passwd-', '/etc/nginx/server.key', '/etc/pki/tls/private/host.key', '/etc/nginx/.htpasswd', '/root/.netrc', '/etc/ipsec.secrets',
         ], 'a credential file');
     }
 

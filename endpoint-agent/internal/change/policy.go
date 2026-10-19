@@ -23,7 +23,7 @@ import (
 )
 
 // maxTargetLen mirrors the server policy.
-const maxTargetLen = 600
+const maxTargetLen = 300
 
 // LinuxRoots are the folders a file watch may sit strictly below (the same list as the server's default policy).
 var LinuxRoots = []string{"/etc", "/usr/lib/systemd", "/usr/local/lib/systemd", "/lib/systemd", "/var/spool/cron", "/root/.ssh"}
@@ -87,7 +87,7 @@ func RegistryKeyAllowed(key string) bool {
 		return false
 	}
 	for _, s := range seg {
-		if s == "" || s == "." || s == ".." || s != strings.TrimSpace(s) {
+		if s == "" || s == "." || s == ".." || strings.HasSuffix(s, ".") || s != strings.TrimSpace(s) {
 			return false
 		}
 	}
@@ -153,7 +153,7 @@ func linuxFileAllowed(path string, extra []string) bool {
 		return false
 	}
 	for _, s := range strings.Split(path[1:], "/") {
-		if s == "" || s == "." || s == ".." {
+		if s == "" || s == "." || s == ".." || strings.HasSuffix(s, ".") {
 			return false
 		}
 	}
@@ -197,7 +197,15 @@ func LinuxDenied(path string) bool {
 	if reSecretExt.MatchString(base) && !strings.HasSuffix(base, ".pub") {
 		return true
 	}
-	return strings.HasSuffix(base, "_history") || strings.Contains(base, "password")
+	if strings.HasSuffix(base, "_history") || strings.Contains(base, "password") || strings.Contains(base, "secret") {
+		return true
+	}
+	// shadow, shadow-, shadow.bak, gshadow~; sasl_passwd, smbpasswd, passwd.client (only /etc/passwd itself is a passwd file); keys by name; Wi-Fi and SSSD secrets
+	if strings.HasPrefix(base, "shadow") || strings.HasPrefix(base, "gshadow") || strings.HasPrefix(base, "id_") || strings.HasSuffix(base, "_key") ||
+		strings.Contains(base, "wpa_supplicant") || strings.Contains(base, "sssd.conf") || strings.Contains(base, "krb5.conf.d") {
+		return true
+	}
+	return strings.Contains(base, "passwd") && base != "passwd"
 }
 
 func windowsFileAllowed(path string) bool {
@@ -207,7 +215,7 @@ func windowsFileAllowed(path string) bool {
 	rest := path[2:] // starts with a backslash
 	seg := strings.Split(rest[1:], `\`)
 	for _, s := range seg {
-		if s == "" || s == "." || s == ".." || s != strings.TrimSpace(s) || strings.Contains(s, ":") {
+		if s == "" || s == "." || s == ".." || strings.HasSuffix(s, ".") || s != strings.TrimSpace(s) || strings.Contains(s, ":") {
 			return false
 		}
 	}

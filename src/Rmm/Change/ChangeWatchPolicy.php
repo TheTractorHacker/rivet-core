@@ -23,7 +23,7 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
     public const LINUX_ROOTS = ['/etc', '/usr/lib/systemd', '/usr/local/lib/systemd', '/lib/systemd', '/var/spool/cron', '/root/.ssh'];
     /** Windows roots, compared without regard to case; `X:` is any drive letter. */
     public const WINDOWS_ROOTS = ['\\Windows\\System32\\drivers\\etc', '\\Windows\\System32\\GroupPolicy', '\\Windows\\System32\\GroupPolicyUsers'];
-    private const MAX_LEN = 600;
+    private const MAX_LEN = 300;
 
     /** @param list<string> $extraFileRoots absolute folders to allow in addition (a code decision of the edition or a test); each must itself be safe, see the kit */
     public function __construct(private readonly array $extraFileRoots = [])
@@ -65,7 +65,7 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
             return false;   // a whole hive, or its first level
         }
         foreach ($seg as $s) {
-            if ($s === '' || $s === '.' || $s === '..' || self::padded($s)) {
+            if ($s === '' || $s === '.' || $s === '..' || str_ends_with($s, '.') || self::padded($s)) {
                 return false;
             }
         }
@@ -140,7 +140,7 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
         }
         $seg = explode('/', substr($path, 1));
         foreach ($seg as $s) {
-            if ($s === '' || $s === '.' || $s === '..') {
+            if ($s === '' || $s === '.' || $s === '..' || str_ends_with($s, '.')) {
                 return false;
             }
         }
@@ -180,11 +180,16 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
         if (preg_match('/\.(?:key|pem|p12|pfx|jks|keystore|keytab|kdbx|gpg|asc|secret|secrets)$/', $base) === 1 && !str_ends_with($base, '.pub')) {
             return true;
         }
-        if (str_ends_with($base, '_history') || str_contains($base, 'password')) {
+        if (str_ends_with($base, '_history') || str_contains($base, 'password') || str_contains($base, 'secret')) {
+            return true;
+        }
+        // shadow, shadow-, shadow.bak, gshadow~; sasl_passwd, smbpasswd, passwd.client (only /etc/passwd itself is a passwd file); keys by name; Wi-Fi and SSSD secrets
+        if (str_starts_with($base, 'shadow') || str_starts_with($base, 'gshadow') || str_starts_with($base, 'id_') || str_ends_with($base, '_key')
+            || str_contains($base, 'wpa_supplicant') || str_contains($base, 'sssd.conf') || str_contains($base, 'krb5.conf.d')) {
             return true;
         }
 
-        return false;
+        return str_contains($base, 'passwd') && $base !== 'passwd';
     }
 
     private static function windowsFileAllowed(string $path): bool
@@ -195,7 +200,7 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
         $rest = substr($path, 2);   // starts with a backslash
         $seg = explode('\\', substr($rest, 1));
         foreach ($seg as $s) {
-            if ($s === '' || $s === '.' || $s === '..' || self::padded($s) || str_contains($s, ':')) {
+            if ($s === '' || $s === '.' || $s === '..' || str_ends_with($s, '.') || self::padded($s) || str_contains($s, ':')) {
                 return false;
             }
         }
