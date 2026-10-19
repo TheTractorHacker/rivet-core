@@ -169,6 +169,9 @@ func TestAWithdrawnOfferKeepsTheSnapshotsForADayThenForgetsEverything(t *testing
 	if x := find(r.records(), "Gap"); x == nil || x.Change != "added" || r.m.state.WithdrawnAt != "" {
 		t.Fatalf("%+v", r.records())
 	}
+	if bs := r.batches(); !strings.Contains(string(bs[len(bs)-1].Status), `"resumed_after_s":7`) {
+		t.Errorf("the operator is told the offer was gone for a while: %s", bs[len(bs)-1].Status)
+	}
 	// withdrawn and not back within a day: nothing of what was read stays on disk
 	r.m.Configure(nil)
 	r.tick()

@@ -168,7 +168,7 @@ final class ChangeService
                 'error' => is_string($w['error'] ?? null) ? ChangeProtocol::text(Redactor::redact($w['error']), 160) : '',
                 'skipped' => is_int($w['skipped'] ?? null) ? max(0, min(1000000, $w['skipped'])) : 0];
         }
-        $out = ['watches' => $watches, 'baseline_at' => is_string($s['baseline_at'] ?? null) && preg_match(self::TIME_RE, $s['baseline_at']) === 1 ? $s['baseline_at'] : null];
+        $out = ['watches' => $watches, 'resumed_after_s' => is_int($s['resumed_after_s'] ?? null) ? max(0, min(31536000, $s['resumed_after_s'])) : 0, 'baseline_at' => is_string($s['baseline_at'] ?? null) && preg_match(self::TIME_RE, $s['baseline_at']) === 1 ? $s['baseline_at'] : null];
         $json = (string) json_encode($out, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
         return strlen($json) <= self::STATUS_MAX_BYTES ? $json : null;

@@ -84,6 +84,7 @@ type engine struct {
 	highSeq        int64 // the highest configuration seq accepted (mu); a lower one is a replay
 	withdrawn      bool  // Configure(nil) was called since the last Tick
 	budgetOverride int64 // tests only
+	resumedAfter   int   // seconds the offer was gone before it came back (reported in the status)
 	wipeReq        bool  // Wipe was called since the last Tick
 }
 
@@ -331,7 +332,13 @@ func (e *engine) Tick(ctx context.Context) time.Duration {
 	if cfg == nil {
 		return e.idle()
 	}
-	e.state.WithdrawnAt = ""
+	if e.state.WithdrawnAt != "" {
+		if t, err := time.Parse(time.RFC3339, e.state.WithdrawnAt); err == nil {
+			e.resumedAfter = int(e.now().Sub(t) / time.Second)
+			e.o.Log.Warn("change monitoring is offered again after it was withdrawn", "gap_s", e.resumedAfter)
+		}
+		e.state.WithdrawnAt = ""
+	}
 	if !e.active || cfg.Version != e.version {
 		e.activate(cfg)
 	}
@@ -416,7 +423,7 @@ func (e *engine) poll(ctx context.Context, cfg *Config) {
 			e.state.Pending = append(e.state.Pending, r)
 		}
 	}
-	sj := statusBody(statuses, e.baselineAt)
+	sj := statusBody(statuses, e.baselineAt, e.resumedAfter)
 	if sj != e.statusJSON {
 		e.statusJSON, e.statusPending = sj, true
 	}
@@ -541,12 +548,13 @@ func firstNote(notes []string) string {
 	return Truncate(Clean(notes[0]), 160)
 }
 
-func statusBody(st []watchStatus, baselineAt string) string {
+func statusBody(st []watchStatus, baselineAt string, resumedAfter int) string {
 	sort.Slice(st, func(i, j int) bool { return st[i].ID < st[j].ID })
 	b, _ := json.Marshal(struct {
 		Watches    []watchStatus `json:"watches"`
 		BaselineAt string        `json:"baseline_at,omitempty"`
-	}{st, baselineAt})
+		Resumed    int           `json:"resumed_after_s,omitempty"`
+	}{st, baselineAt, resumedAfter})
 	return string(b)
 }
 

@@ -228,9 +228,20 @@ final class ChangeMonitorTest extends RemoteTestCase
     public function testTheAgentsSkippedCountIsStoredAndShown(): void
     {
         $this->enable();
-        $this->ship([], null, 0, ['status' => ['watches' => [['id' => 'win.startup', 'state' => 'partial', 'items' => 3, 'error' => 'a key was skipped by this agent\'s policy', 'skipped' => 4]]]]);
+        $this->ship([], null, 0, ['status' => ['watches' => [['id' => 'win.startup', 'state' => 'partial', 'items' => 3, 'error' => 'a key was skipped by this agent\'s policy', 'skipped' => 4]], 'resumed_after_s' => 7200]]);
         $s = $this->api('GET', [(string) $this->dev, 'changes', 'status'], $this->tech)[1];
         $this->assertSame([4, 'partial'], [$s['device']['monitor']['watches'][0]['skipped'], $s['device']['monitor']['watches'][0]['state']]);
+        $this->assertSame(7200, $s['device']['monitor']['resumed_after_s'], 'the operator sees that the offer was gone for a while');
+    }
+
+    public function testAResentBatchStillCostsTheRateBudget(): void
+    {
+        $this->enable(limits: ['change_rate_per_min' => 10]);
+        $batch = array_map(static fn (int $i): array => self::ch(['item' => "d$i"]), range(1, 6));
+        $this->assertSame(6, $this->ship($batch)[1]['accepted']);
+        $this->ship($batch);   // a resend: all duplicates, but 6 more against this minute's budget of 10
+        [, $j] = $this->ship(array_map(static fn (int $i): array => self::ch(['item' => "n$i"]), range(1, 6)));
+        $this->assertSame([0, 6], [$j['accepted'], $j['dropped']], 'duplicates are not free');
     }
 
     public function testLongValuesAreCutAndFlagged(): void
