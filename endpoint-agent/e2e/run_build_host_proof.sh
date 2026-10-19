@@ -14,8 +14,11 @@ PASS=0 FAIL=0 MOCK_PID="" BG_PID=""
 ok() { PASS=$((PASS+1)); printf '  PASS %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; }
 check() { local d=$1; shift; if "$@"; then ok "$d"; else bad "$d"; fi; }
-cleanup() { [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null || true; [ -n "$BG_PID" ] && kill "$BG_PID" 2>/dev/null || true
-  docker ps -aq --filter name=rbh- | xargs -r docker rm -f >/dev/null 2>&1 || true; }
+cleanup() {
+  if [ -n "${MOCK_PID:-}" ]; then kill "$MOCK_PID" 2>/dev/null || true; fi
+  if [ -n "${BG_PID:-}" ]; then kill "$BG_PID" 2>/dev/null || true; fi
+  docker ps -aq --filter name=rbh- | xargs -r docker rm -f >/dev/null 2>&1 || true
+}
 trap cleanup EXIT
 
 freeport() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
