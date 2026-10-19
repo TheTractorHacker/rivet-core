@@ -605,6 +605,7 @@ final class ChangeMonitorTest extends RemoteTestCase
         $this->enable();
         $a = self::ch(['item' => 'A']);
         $this->ship([$a]);
+        $this->h->clock->advance(5);   // the first batch was received in an earlier second
         $before = count($this->bus->of(RmmEvent::CHANGE_DETECTED));
         $this->ship([$a, self::ch(['item' => 'B'])]);
         $new = array_slice($this->bus->of(RmmEvent::CHANGE_DETECTED), $before);
