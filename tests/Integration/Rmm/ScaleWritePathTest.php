@@ -62,6 +62,7 @@ final class ScaleWritePathTest extends RmmTestCase
         for ($i = 0; $i < 12; ++$i) {
             $checks[] = ['key' => "c$i", 'status' => 'ok', 'detail' => "d$i"];
         }
+        $this->checkin([]);   // warm-up: the very first check-in of a device also records its delivered check set (a one-off, rc.24)
         $first = $this->statementsOf(fn () => $this->checkin($checks));
         $second = $this->statementsOf(fn () => $this->checkin($checks));
         $three = $this->statementsOf(fn () => $this->checkin(array_slice($checks, 0, 3)));
@@ -129,7 +130,7 @@ final class ScaleWritePathTest extends RmmTestCase
         $marker = $this->h->one("SELECT last_reported_at FROM endpoint_agent_checks WHERE device_id={$this->dev}");
         $n = $this->statementsOf(fn () => $this->checkin($ok));
         $this->assertSame($marker, $this->h->one("SELECT last_reported_at FROM endpoint_agent_checks WHERE device_id={$this->dev}"));
-        $this->assertLessThanOrEqual(9, $n);
+        $this->assertLessThanOrEqual(10, $n, "9 before rc.24 plus the one primary-key read of the delivered check set");
         // a change is always written
         $this->checkin([['key' => 'svc', 'status' => 'warn', 'detail' => 'slow']]);
         $row = $this->h->rows("SELECT * FROM endpoint_agent_checks WHERE device_id={$this->dev}")[0];

@@ -614,7 +614,7 @@ final class CheckinService
                     $keys[] = (string) $c['key'];
                 }
             }
-            $this->sql->transaction(fn () => (new CheckReconciler($this->sql, $this->checks))->reconcile($dev, $keys, array_map(static fn (array $c): string => (string) $c['key'], $schedule)));
+            (new CheckReconciler($this->sql, $this->checks))->reconcile($dev, $keys, array_map(static fn (array $c): string => (string) $c['key'], $schedule));
         } catch (\Throwable $e) {
             error_log('rmm check-in (stale check cleanup): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0031 not applied yet
         }

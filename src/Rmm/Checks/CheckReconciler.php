@@ -42,9 +42,11 @@ final class CheckReconciler
         if (!$force && $row !== null && $row['set_hash'] === $hash) {
             return 0;
         }
-        $removed = $this->checks->removeStale($dev, $keys, $force || $row !== null ? null : $scheduled);
-        $this->sql->run('INSERT INTO rmm_device_checkset (device_id, set_hash) VALUES (?, ?) ON DUPLICATE KEY UPDATE set_hash = VALUES(set_hash), updated_at = CURRENT_TIMESTAMP', [$deviceId, $hash]);
+        return $this->sql->transaction(function () use ($dev, $keys, $scheduled, $force, $row, $deviceId, $hash): int {
+            $removed = $this->checks->removeStale($dev, $keys, $force || $row !== null ? null : $scheduled);
+            $this->sql->run('INSERT INTO rmm_device_checkset (device_id, set_hash) VALUES (?, ?) ON DUPLICATE KEY UPDATE set_hash = VALUES(set_hash), updated_at = CURRENT_TIMESTAMP', [$deviceId, $hash]);
 
-        return $removed;
+            return $removed;
+        });
     }
 }

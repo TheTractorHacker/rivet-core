@@ -779,7 +779,7 @@ final class RmmModule
                 $offerCaps = $this->settings()->hasExtendedChecks() ? $caps : null;
                 $list = array_values(array_filter($list, static fn (array $c): bool => \RivetCore\Rmm\Checks\CheckCatalog::offeredTo((string) $c['type'], $offerCaps)));
             }
-            $removed += $this->sql()->transaction(fn (): int => $rec->reconcile($dev, array_map(static fn (array $c): string => (string) $c['key'], $list), [], true));
+            $removed += $rec->reconcile($dev, array_map(static fn (array $c): string => (string) $c['key'], $list), [], true);
             ++$n;
         }
 
