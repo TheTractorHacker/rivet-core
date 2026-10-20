@@ -56,7 +56,7 @@ final class PolicyPackManifestTest extends TestCase
 
     public function testAnInvalidItemCanNeverBePacked(): void
     {
-        $base = (require __DIR__ . '/../../../../src/Rmm/Policy/StarterPack/data/pack.php');
+        $base = json_decode((string) file_get_contents(__DIR__ . '/../../../../src/Rmm/Policy/StarterPack/data/pack.json'), true);
         $try = function (callable $mutate) use ($base): string {
             $m = $base;
             $m['items'] = [$mutate($base['items'][0])];

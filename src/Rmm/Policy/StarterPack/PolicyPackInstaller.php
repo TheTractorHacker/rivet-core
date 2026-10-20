@@ -117,7 +117,7 @@ final class PolicyPackInstaller
             if ($state !== 'not_installed') {
                 return ['outcome' => 'unchanged', 'entity_id' => $ent['id'] ?? null, 'state' => $state];
             }
-            if ($isChange && empty($sel['confirm_instance_wide'])) {
+            if ($isChange && ($sel['confirm_instance_wide'] ?? false) !== true) {
                 return ['outcome' => 'blocked', 'reason' => 'This changes an instance-wide setting for all devices; confirm it with confirm_instance_wide.'];
             }
             $r = PolicyPack::resolve($it, $params);
@@ -146,7 +146,7 @@ final class PolicyPackInstaller
             if ($state !== 'update_available') {
                 return ['outcome' => 'unchanged', 'entity_id' => $ent['id']];
             }
-            if ($live && empty($sel['include_live'])) {
+            if ($live && ($sel['include_live'] ?? false) !== true) {
                 return ['outcome' => 'skipped', 'reason' => 'In use (enabled or assigned): updating changes devices without a review. Pass include_live to update it anyway.'];
             }
         }

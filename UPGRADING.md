@@ -178,7 +178,7 @@ For every edition that runs the RMM module. Additive; old agents keep working.
 
 ## Adopting the policy starter pack (Unreleased, no migration)
 
-1. **Nothing is required.** No migration, no new table. The pack is data in Core (`src/Rmm/Policy/StarterPack/data/pack.php`); nothing is installed until an administrator asks.
+1. **Nothing is required.** No migration, no new table. The pack is data in Core (`src/Rmm/Policy/StarterPack/data/pack.json`); nothing is installed until an administrator asks.
 2. **Wiring.** `RmmModule::policyPackInstaller()` and `policyPackActions()` exist; `StarterApi` (already mounted by `technicianApi()`) now answers `endpoint_devices/starter/policies[/{plan|install|update|reset|uninstall}]`. If you build `StarterApi` by hand, pass `$module->policyPackActions()` as its second argument.
 3. **Ability.** The routes need `rmm.admin`, like policy editing. No new ability.
 4. **Edition UI.** A "Starter policies" card on the Policies page: the exact list is in [docs/rmm/POLICY_STARTER_PACK.md](docs/rmm/POLICY_STARTER_PACK.md), section 7.

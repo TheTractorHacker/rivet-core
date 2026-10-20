@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Regenerates the item tables of docs/rmm/POLICY_STARTER_PACK.md (between its `policypack:items` markers) from the manifest in src/Rmm/Policy/StarterPack/data/pack.php.
+ * Regenerates the item tables of docs/rmm/POLICY_STARTER_PACK.md (between its `policypack:items` markers) from the manifest in src/Rmm/Policy/StarterPack/data/pack.json.
  *
  *   php scripts/build-policy-pack-doc.php           rewrite
  *   php scripts/build-policy-pack-doc.php --check   exit 1 when stale (the test suite runs the same comparison)

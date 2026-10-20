@@ -11,9 +11,12 @@ use RivetCore\Rmm\Patch\PatchPolicySettings;
 use RivetCore\Rmm\Policy\PolicySettings;
 
 /**
- * The policy starter pack: a versioned manifest (data/pack.php) of policies, alerting presets, patch policies, maintenance window templates and
+ * The policy starter pack: a versioned manifest (data/pack.json) of policies, alerting presets, patch policies, maintenance window templates and
  * change-monitor presets, loaded and validated with the very validators the UI and REST API use. {@see self::bundled()} throws on the first
  * invalid item, so an invalid pack can never be offered or installed.
+ *
+ * Manifest items: id, kind, rev (raise it when the content changes), name, platform (windows | linux | any), group, summary (what it does), why, body (the data, shape per
+ * kind), why_settings (setting => rationale; every setting needs one), params (install-time parameters, optional). Bump `version` for any change.
  *
  * Identity needs no table: a pack policy carries the marker ` [pp|<item id>|<rev>|<hash>]` at the end of its description (a maintenance window in its
  * note). The hash is over what the pack owns (name, description, settings), so an edit by an administrator is detected by comparing.
@@ -54,9 +57,12 @@ final class PolicyPack
 
     public static function bundled(): self
     {
-        /** @var array<string,mixed> $m */
-        $m = require __DIR__ . '/data/pack.php';
+        $m = json_decode((string) file_get_contents(__DIR__ . '/data/pack.json'), true, 64, JSON_THROW_ON_ERROR);
+        if (!is_array($m)) {
+            throw new \RuntimeException('Policy pack: unreadable manifest.');
+        }
 
+        /** @var array<string,mixed> $m */
         return new self($m);
     }
 

@@ -21,7 +21,7 @@ final class PolicyPackTest extends AutomationTestCase
     /** A copy of the bundled pack as the next release: rev + 1 for the given item, with a changed summary. */
     private function nextPack(string $id): PolicyPack
     {
-        $m = require __DIR__ . '/../../../src/Rmm/Policy/StarterPack/data/pack.php';
+        $m = json_decode((string) file_get_contents(__DIR__ . '/../../../src/Rmm/Policy/StarterPack/data/pack.json'), true);
         $m['version'] = '1.0.1';
         foreach ($m['items'] as &$i) {
             if ($i['id'] === $id) {
@@ -212,6 +212,7 @@ final class PolicyPackTest extends AutomationTestCase
         $cs->update(['presets' => ['windows' => ['win.hosts']]], 1);
         $this->assertSame(['blocked' => 1], $this->inst()->run('install', ['ids' => ['change-servers']], 1)['counts']);
         $this->assertSame(['win.hosts'], $cs->enabledPresets('windows'));
+        $this->assertSame(['blocked' => 1], $this->inst()->run('install', ['ids' => ['change-servers'], 'confirm_instance_wide' => 'false'], 1)['counts'], 'only a real true confirms');
         $this->assertSame(['added' => 1], $this->inst()->run('install', ['ids' => ['change-servers'], 'confirm_instance_wide' => true], 1)['counts']);
         $this->assertEqualsCanonicalizing(['win.hosts', 'win.startup', 'win.local_admins', 'win.defender'], $cs->enabledPresets('windows'));
         $this->assertSame('installed', $this->item($this->inst()->catalog(), 'change-servers')['state']);
