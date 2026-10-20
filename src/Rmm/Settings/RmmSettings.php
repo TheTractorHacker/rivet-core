@@ -54,7 +54,12 @@ final class RmmSettings
 
     public const INGEST_MODES = ['sync', 'queued'];
 
-    /** @var array<string,array{0:int,1:int}> limits_json keys => [min, max]; unknown keys are refused */
+    /**
+     * limits_json keys => [min, max]; unknown keys are refused. The table grows with the protocol (a new limit is additive), so it is not part of the frozen API.
+     *
+     * @internal
+     * @var array<string,array{0:int,1:int}>
+     */
     public const LIMIT_KEYS = [
         'max_checkins_per_min' => [0, 1000000],
         'retry_after_min_s' => [1, 3600],
@@ -129,6 +134,7 @@ final class RmmSettings
         // 1 (default): the optional rc.25 per-check-in metrics (memory bytes, disk bytes, per-core, IOPS, ...) become samples; 0 ignores them (fleets that care about volume).
         'metrics_extended' => [0, 1],
     ];
+    /** The default of every limit in {@see self::LIMIT_KEYS}; grows with it. @internal */
     public const LIMIT_DEFAULTS = [
         'max_checkins_per_min' => 0,
         'retry_after_min_s' => 30,
