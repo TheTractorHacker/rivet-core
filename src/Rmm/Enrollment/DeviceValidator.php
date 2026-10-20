@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Enrollment;
 
+use RivetCore\Rmm\Assets\DeviceTypeClassifier;
 use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\RmmProtocol;
 
@@ -53,11 +54,39 @@ final class DeviceValidator
     }
 
     /**
+     * The optional hardware facts of an enrollment device block or a check-in inventory (rc.29): anything outside the closed vocabularies, or of the
+     * wrong type, is left out (never a rejection: an old or odd agent must still enroll).
+     *
+     * @param array<string,mixed> $d
+     * @return array{chassis_type:?string,has_battery:?bool,is_virtual:?bool,virtualization:?string,role_hints:list<string>}
+     */
+    public static function cleanHardware(array $d): array
+    {
+        $in = static fn (mixed $v, array $allowed): ?string => is_string($v) && in_array($v, $allowed, true) ? $v : null;
+        $roles = [];
+        if (is_array($d['role_hints'] ?? null)) {
+            foreach (array_slice($d['role_hints'], 0, 16) as $r) {
+                if (is_string($r) && in_array($r, DeviceTypeClassifier::ROLE_HINTS, true)) {
+                    $roles[$r] = $r;
+                }
+            }
+        }
+
+        return [
+            'chassis_type' => $in($d['chassis_type'] ?? null, DeviceTypeClassifier::CHASSIS),
+            'has_battery' => is_bool($d['has_battery'] ?? null) ? $d['has_battery'] : null,
+            'is_virtual' => is_bool($d['is_virtual'] ?? null) ? $d['is_virtual'] : null,
+            'virtualization' => $in($d['virtualization'] ?? null, DeviceTypeClassifier::VIRTUALIZATION),
+            'role_hints' => array_values($roles),
+        ];
+    }
+
+    /**
      * Validate and normalise the device block of an enrollment request.
      *
      * @param array<string,mixed> $d
      * @param bool $allowLinux admit os "linux" (RivetIT's EA_ALLOW_NON_WINDOWS test flag; never true in production)
-     * @return array{install_id:string,machine_guid:?string,hostname:string,os_version:string,arch:string,serial:?string,manufacturer:?string,model:?string,macs:list<string>,agent_version:string}
+     * @return array{install_id:string,machine_guid:?string,hostname:string,os_version:string,arch:string,serial:?string,manufacturer:?string,model:?string,macs:list<string>,agent_version:string,chassis_type:?string,has_battery:?bool,is_virtual:?bool,virtualization:?string,role_hints:list<string>}
      * @throws ApiError 422 invalid, message "device.<field> is invalid"
      */
     public static function validateDevice(array $d, bool $allowLinux = false): array
@@ -110,6 +139,6 @@ final class DeviceValidator
             'model' => self::cleanText($d['model'] ?? null, 200),
             'macs' => array_values($macs),
             'agent_version' => $ver,
-        ];
+        ] + self::cleanHardware($d);
     }
 }
