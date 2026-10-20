@@ -387,6 +387,7 @@ These are the values of `RivetCore\Rmm\RmmProtocol`; `tests/Unit/Rmm/FrozenConst
 | `CHECKIN_MAX_CHECKS` | `100` |
 | `CHECKIN_MAX_BUFFERED` | `100` |
 | `CHECKIN_MAX_DISKS` | `32` |
+| `CHECKIN_MAX_CORES` | `256` |
 | `CHECKIN_MAX_INVENTORY_BYTES` | `65536` |
 | `CHECKIN_FUTURE_SKEW_S` | `900` |
 | `CLOCK_OFFSET_MAX_S` | `86400` |
