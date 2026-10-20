@@ -117,7 +117,17 @@ type Probe struct {
 	Exists func(string) bool
 	// Timeout for each program run (default 10 s).
 	Timeout time.Duration
+	// ExtraPaths is an operator-configured agent executable (config mesh_agent_path), tried before the defaults. Only an absolute
+	// path whose file name contains "meshagent" is accepted; nothing else is ever executed.
+	ExtraPaths []string
 }
+
+// ValidExtraPath reports whether a configured path may be tried as a Mesh agent executable.
+func ValidExtraPath(p string) bool {
+	return p != "" && filepath.IsAbs(p) && strings.Contains(strings.ToLower(filepath.Base(p)), "meshagent")
+}
+
+var optDirRe = regexp.MustCompile(`^meshagent[A-Za-z0-9._-]*$`)
 
 // DefaultPaths are the usual install locations. Windows: `%ProgramFiles%\Mesh
 // Agent\MeshAgent.exe` (also what `--remove-meshagent` uses). Linux: the
@@ -132,7 +142,16 @@ func DefaultPaths(goos string) []string {
 		}
 		return out
 	}
-	return []string{"/usr/local/mesh_services/meshagent/meshagent", "/opt/meshagent/meshagent", "/usr/local/mesh/meshagent"}
+	out := []string{"/usr/local/mesh_services/meshagent/meshagent", "/opt/meshagent/meshagent", "/usr/local/mesh/meshagent"}
+	// /opt/meshagent*/meshagent: only real directories named meshagent..., one level, never a symlink.
+	if ds, err := os.ReadDir("/opt"); err == nil {
+		for _, d := range ds {
+			if d.Type().IsDir() && optDirRe.MatchString(d.Name()) && d.Name() != "meshagent" {
+				out = append(out, filepath.Join("/opt", d.Name(), "meshagent"))
+			}
+		}
+	}
+	return out
 }
 
 // registryKeys are queried (Windows) when running the agent yields nothing.
@@ -145,6 +164,16 @@ func (p *Probe) defaults() {
 	}
 	if p.Paths == nil {
 		p.Paths = DefaultPaths(p.GOOS)
+	}
+	if len(p.ExtraPaths) > 0 {
+		var ex []string
+		for _, e := range p.ExtraPaths {
+			if ValidExtraPath(e) {
+				ex = append(ex, e)
+			}
+		}
+		p.Paths = append(ex, p.Paths...)
+		p.ExtraPaths = nil
 	}
 	if p.Run == nil {
 		p.Run = RunProgram
@@ -179,12 +208,15 @@ func (p Probe) NodeID(ctx context.Context) (id, source string) {
 	if exe == "" {
 		return "", ""
 	}
-	rctx, cancel := context.WithTimeout(ctx, p.Timeout)
-	exit, out, err := p.Run(rctx, filepath.Dir(exe), exe, []string{"-nodeid"})
-	cancel()
-	if err == nil && exit == 0 {
-		if id, ok := ParseNodeIDOutput(out); ok {
-			return id, "nodeid"
+	// `-nodeid` is the documented form; some builds only accept `--nodeid`. Needs root on Linux; banner text is ignored.
+	for _, flag := range []string{"-nodeid", "--nodeid"} {
+		rctx, cancel := context.WithTimeout(ctx, p.Timeout)
+		exit, out, err := p.Run(rctx, filepath.Dir(exe), exe, []string{flag})
+		cancel()
+		if err == nil && exit == 0 {
+			if id, ok := ParseNodeIDOutput(out); ok {
+				return id, "nodeid"
+			}
 		}
 	}
 	for _, name := range []string{"MeshAgent.msh", "meshagent.msh"} {
