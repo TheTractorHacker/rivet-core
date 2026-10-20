@@ -56,7 +56,7 @@ func newAgent(st *store.Store, log *slog.Logger, exe string, tune ...time.Durati
 		minIv, pendIv = tune[0], tune[1]
 	}
 	return agent.New(agent.Options{Store: st, Version: version, Exe: exe, MinInterval: minIv, PendingInterval: pendIv,
-		Platform: collect.NewPlatform(), Rebooter: agent.NewRebooter(log), Log: log})
+		Platform: collect.NewPlatform(), Rebooter: agent.NewRebooter(log), Log: log, Now: testClock()})
 }
 
 func consoleLog(level string) *slog.Logger { return logx.New(os.Stderr, level) }
