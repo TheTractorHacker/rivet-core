@@ -18,7 +18,7 @@ use RivetCore\Rmm\Settings\RmmSettings;
  *   feature.script_checks      script checks are delivered to the device
  *   feature.checks             any check is delivered (the device keeps reporting metrics)
  *   agent.ring                 update ring this device is offered, "stable" or "pilot"
- *   check.<key>                a check template: {type, params, interval_s}; disable removes the check of that key, also one of the global list
+ *   check.<key>                a check template: {type, params, interval_s, os?} (os: windows, linux or any, default any = "applies to"); disable removes the check of that key, also one of the global list
  *
  * Modes: override sets the value, disable switches the key off (for a feature: off; for a check: removed; for an interval or the ring: the
  * key is dropped so the less specific value, or the global default, applies), inherit says nothing and exists so an assignment can cancel a key its
@@ -126,6 +126,9 @@ final class PolicySettings
                     return [null, 'a check template is an object {type, params, interval_s}.'];
                 }
                 $one = ['key' => substr($key, 6), 'type' => $value['type'] ?? '', 'params' => $value['params'] ?? [], 'interval_s' => $value['interval_s'] ?? 0];
+                if (array_key_exists('os', $value)) {
+                    $one['os'] = $value['os'];
+                }
                 [$list, $err] = ChecksValidator::validate((string) json_encode([$one]));
                 if ($err !== null || $list === null || !isset($list[0])) {
                     return [null, $err ?? 'invalid check template.'];
@@ -133,7 +136,12 @@ final class PolicySettings
                 $c = $list[0];
                 $params = $c['params'];
 
-                return [['type' => $c['type'], 'params' => $params, 'interval_s' => $c['interval_s']], null];
+                $tpl = ['type' => $c['type'], 'params' => $params, 'interval_s' => $c['interval_s']];
+                if (isset($c['os'])) {
+                    $tpl['os'] = $c['os'];   // "applies to": windows or linux; absent = any
+                }
+
+                return [$tpl, null];
         }
     }
 

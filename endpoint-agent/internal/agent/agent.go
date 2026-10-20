@@ -423,7 +423,7 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 func toStoreChecks(in []api.CheckSpec) []store.CheckSpec {
 	out := make([]store.CheckSpec, 0, len(in))
 	for _, c := range in {
-		out = append(out, store.CheckSpec{Key: c.Key, Type: c.Type, Params: c.Params, IntervalS: c.IntervalS, Signature: c.Signature, Raw: c.Raw})
+		out = append(out, store.CheckSpec{Key: c.Key, Type: c.Type, Params: c.Params, IntervalS: c.IntervalS, Signature: c.Signature, OS: c.OS, Raw: c.Raw})
 	}
 	return out
 }
@@ -457,6 +457,7 @@ func cloneFeatures(in map[string]bool) map[string]bool {
 // "checks": false runs none, "script_checks": false skips the checks that run a
 // script. An absent toggle means allowed.
 func applyPolicyToChecks(specs []store.CheckSpec, features map[string]bool) []store.CheckSpec {
+	specs = checksForOS(specs, runtime.GOOS)
 	if len(features) == 0 {
 		return specs
 	}
@@ -473,6 +474,32 @@ func applyPolicyToChecks(specs []store.CheckSpec, features map[string]bool) []st
 		return out
 	}
 	return specs
+}
+
+// checksForOS drops every check limited to another operating system (the
+// optional "os" member, rc.24). The server already leaves such checks out of
+// the list it sends; this is the second line, so a wrong or old server list can
+// never make Windows look for a Linux service. An empty or "any" target, and
+// any value this agent does not know, runs everywhere (old behaviour).
+func checksForOS(specs []store.CheckSpec, goos string) []store.CheckSpec {
+	keep := true
+	for _, c := range specs {
+		if (c.OS == "windows" || c.OS == "linux") && c.OS != goos {
+			keep = false
+			break
+		}
+	}
+	if keep {
+		return specs
+	}
+	out := make([]store.CheckSpec, 0, len(specs))
+	for _, c := range specs {
+		if (c.OS == "windows" || c.OS == "linux") && c.OS != goos {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 func updateCheck(st store.State, version string) api.CheckResult {

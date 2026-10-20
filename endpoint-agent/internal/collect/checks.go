@@ -85,6 +85,9 @@ func (c *Collector) checkService(ctx context.Context, key string, raw json.RawMe
 		Name     string `json:"name"`
 		Expected string `json:"expected"`
 		Startup  string `json:"startup"`
+		// Missing says what a service that does not exist means: "fail" (default),
+		// "warn" or "ignore" (reported ok, so no alert). Same on Windows and Linux.
+		Missing string `json:"missing"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil || strings.TrimSpace(p.Name) == "" {
 		return res(key, Unknown, "invalid service check parameters")
@@ -96,6 +99,12 @@ func (c *Collector) checkService(ctx context.Context, key string, raw json.RawMe
 		return c.P.ServiceState(ctx, p.Name)
 	})
 	if errors.Is(err, ErrNotFound) {
+		switch strings.ToLower(strings.TrimSpace(p.Missing)) {
+		case "warn":
+			return res(key, Warn, fmt.Sprintf("service %s not found", p.Name))
+		case "ignore":
+			return res(key, OK, fmt.Sprintf("service %s not found (ignored)", p.Name))
+		}
 		return res(key, Fail, fmt.Sprintf("service %s not found", p.Name))
 	}
 	if err != nil {

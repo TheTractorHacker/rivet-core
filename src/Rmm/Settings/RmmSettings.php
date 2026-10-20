@@ -8,6 +8,7 @@ use RivetCore\Rmm\Contracts\RmmBridgeInterface;
 use RivetCore\Rmm\Contracts\SecretBoxInterface;
 use RivetCore\Rmm\Crypto\Signer;
 use RivetCore\Rmm\Checks\CheckCatalog;
+use RivetCore\Rmm\Checks\RmmChecks;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Support\Sql;
 
@@ -640,12 +641,15 @@ final class RmmSettings
      * A Phase 3 check type is included only when $caps (the device's announced capabilities) lists `check:<type>`; the four original types
      * are always included. With no capabilities (enrollment, an old agent) the list is therefore exactly what it always was.
      *
+     * With $os ('windows' or 'linux', the device's OS) a check limited to the other OS is not delivered (rc.24); the signature covers each
+     * delivered entry, including its `os` member when it has one.
+     *
      * @param list<string>|null $caps
      * @return list<array<string,mixed>>
      */
-    public function signedChecks(?array $caps = null): array
+    public function signedChecks(?array $caps = null, ?string $os = null): array
     {
-        return $this->signCheckList($this->checks(), $caps);
+        return $this->signCheckList($this->checks(), $caps, $os);
     }
 
     /**
@@ -655,12 +659,15 @@ final class RmmSettings
      * @param list<string>|null $caps
      * @return list<array<string,mixed>>
      */
-    public function signCheckList(array $checks, ?array $caps = null): array
+    public function signCheckList(array $checks, ?array $caps = null, ?string $os = null): array
     {
         [$sec] = $this->signingKey();
         $out = [];
         foreach ($checks as $c) {
             if (!CheckCatalog::offeredTo((string) $c['type'], $caps)) {
+                continue;
+            }
+            if ($os !== null && !RmmChecks::appliesTo($c, $os)) {
                 continue;
             }
             $item = [
@@ -671,6 +678,10 @@ final class RmmSettings
             ];
             if (is_array($item['params']) && $item['params'] === []) {
                 $item['params'] = new \stdClass();
+            }
+            $target = RmmChecks::osOf($c);
+            if ($target !== null) {
+                $item['os'] = $target;
             }
             $item['signature'] = Signer::sign(Signer::checkMessage($item), $sec);
             $out[] = $item;

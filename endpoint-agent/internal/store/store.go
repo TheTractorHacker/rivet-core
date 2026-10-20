@@ -79,6 +79,7 @@ type CheckSpec struct {
 	Params    json.RawMessage `json:"params,omitempty"`
 	IntervalS int             `json:"interval_s,omitempty"`
 	Signature string          `json:"signature,omitempty"`
+	OS        string          `json:"os,omitempty"`  // optional target OS, see api.CheckSpec
 	Raw       json.RawMessage `json:"raw,omitempty"` // as delivered; used to verify Signature at run time
 }
 

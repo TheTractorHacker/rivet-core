@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Policy;
 
+use RivetCore\Rmm\Checks\RmmChecks;
 use RivetCore\Rmm\Settings\ChecksValidator;
 use RivetCore\Rmm\Settings\RmmSettings;
 
@@ -28,7 +29,7 @@ final class EffectivePolicy
     {
         $cfg = $this->settings->get();
 
-        return EffectiveConfig::compose(PolicyResolver::resolve($this->store->layersFor($dev)), $this->settings->checks(), (int) $cfg['check_in_interval_s'], (int) $cfg['collect_interval_s'], $capabilities);
+        return EffectiveConfig::compose(PolicyResolver::resolve($this->store->layersFor($dev)), $this->settings->checks(), (int) $cfg['check_in_interval_s'], (int) $cfg['collect_interval_s'], $capabilities, RmmChecks::deviceOs($dev));
     }
 
     /**
@@ -54,7 +55,7 @@ final class EffectivePolicy
             'collect_interval_s' => $eff['collect_interval_s'],
             'features' => $eff['features'],
             'ring' => $eff['ring'],
-            'checks' => array_map(static fn (array $c): array => ['key' => $c['key'], 'type' => $c['type'], 'params' => $c['params'], 'interval_s' => $c['interval_s'], 'from' => $eff['sources']['check.' . $c['key']] ?? null], ChecksValidator::toWire($eff['checks'])),
+            'checks' => array_map(static fn (array $c): array => ['key' => $c['key'], 'type' => $c['type'], 'params' => $c['params'], 'interval_s' => $c['interval_s']] + (isset($c['os']) ? ['os' => $c['os']] : []) + ['from' => $eff['sources']['check.' . $c['key']] ?? null], ChecksValidator::toWire($eff['checks'])),
             'sources' => $eff['sources'] === [] ? new \stdClass() : $eff['sources'],
             'layers' => array_map(static fn (PolicyLayer $l): array => ['assignment_id' => $l->assignmentId, 'policy_id' => $l->policyId, 'policy' => $names[$l->policyId] ?? '',
                 'scope_type' => $l->scopeType, 'priority' => $l->priority, 'enforce' => $l->enforce], $layers),

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Policy;
 
+use RivetCore\Rmm\Checks\RmmChecks;
 use RivetCore\Rmm\Settings\ChecksValidator;
 use RivetCore\Rmm\Crypto\CanonicalJson;
 use RivetCore\Rmm\Settings\RmmSettings;
@@ -21,9 +22,10 @@ final class EffectiveConfig
      * @param array<string,array{mode:string,value:mixed,source:array<string,mixed>}> $resolved {@see PolicyResolver::resolve()}
      * @param list<array<string,mixed>> $baseChecks the instance's global check list (key, type, params, interval_s)
      * @param list<string>|null $capabilities what the device announced (`check:<type>` entries), or null when it never announced anything
+     * @param string|null $os the device's OS ('windows' or 'linux'): a check limited to the other OS is not part of the effective list (rc.24)
      * @return array{applied:bool,checks:list<array<string,mixed>>,check_in_interval_s:int,collect_interval_s:int,features:array<string,bool>,ring:?string,version:string,sources:array<string,array<string,mixed>>}
      */
-    public static function compose(array $resolved, array $baseChecks, int $globalCheckIn, int $globalCollect, ?array $capabilities = null): array
+    public static function compose(array $resolved, array $baseChecks, int $globalCheckIn, int $globalCollect, ?array $capabilities = null, ?string $os = null): array
     {
         $checkIn = $globalCheckIn;
         $collect = $globalCollect;
@@ -86,11 +88,19 @@ final class EffectiveConfig
             $checks = array_values(array_filter($checks, static fn (array $c): bool => $c['type'] !== 'script'));
         }
         $checks = self::filterByCapabilities($checks, $capabilities);
+        if ($os !== null) {
+            $checks = RmmChecks::forOs($checks, $os);
+        }
         $checks = array_map(static function (array $c): array {
             $c['params'] = ChecksValidator::paramsOf($c);
             $c['interval_s'] = (int) $c['interval_s'];
+            $item = ['key' => (string) $c['key'], 'type' => (string) $c['type'], 'params' => $c['params'], 'interval_s' => $c['interval_s']];
+            $target = RmmChecks::osOf($c);
+            if ($target !== null) {
+                $item['os'] = $target;
+            }
 
-            return ['key' => (string) $c['key'], 'type' => (string) $c['type'], 'params' => $c['params'], 'interval_s' => $c['interval_s']];
+            return $item;
         }, $checks);
 
         $sources = [];

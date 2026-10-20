@@ -164,7 +164,7 @@ final class EnrollmentService
             'matched_asset_id' => $result['matched_asset_id'],
             'signing_public_key' => $pub,
             'signing_key_id' => $kid,
-            'config' => ['checks' => $this->settings->signedChecks(), 'collect_interval_s' => (int) $cfg['collect_interval_s']],
+            'config' => ['checks' => $this->settings->signedChecks(null, $os), 'collect_interval_s' => (int) $cfg['collect_interval_s']],
         ];
     }
 
