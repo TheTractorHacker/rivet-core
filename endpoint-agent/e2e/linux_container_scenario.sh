@@ -209,8 +209,8 @@ echo "-- the good case: pinned download, the installer runs, the node id is repo
 D1="$(grep -c MESH-DOWNLOAD "$OUT/events.log")"
 $IS --binary "$OUT/inst-good" >"$OUT/mesh5.out" 2>&1; rc=$?
 chk "install exit 0" '[ $rc = 0 ]'
-chk "downloaded from <mesh>/meshagents?id=6&meshid=<group URL form, @ and $ literal>&installflags=0 (linux/amd64 = 6)" 'grep -qF -- "MESH-DOWNLOAD id=6 meshid=$MESHGROUP installflags=0 raw=id=6&meshid=$MESHGROUP&installflags=0" "$OUT/events.log"'
-chk "the downloaded installer ran with -install and put the agent in place" 'grep -q "installed by: .* -install" "$OUT/mesh-installed.marker" && [ -x "$MESHDIR/meshagent" ]'
+chk "downloaded the binary from <mesh>/meshagents?id=6 (no meshid) and the settings from <mesh>/meshsettings?id=<group URL form, @ and $ literal>" 'grep -qF -- "MESH-DOWNLOAD id=6 meshid= installflags= raw=id=6" "$OUT/events.log" && grep -qF -- "MESH-SETTINGS meshid=$MESHGROUP raw=id=$MESHGROUP" "$OUT/events.log"'
+chk "the downloaded installer ran with -fullinstall --copy-msh=1, the .msh carried StartupType, and the agent is in place and running" 'grep -q "installed by: .* -fullinstall --copy-msh=1" "$OUT/mesh-installed.marker" && grep -qx "StartupType=[0-9]" "$OUT/mesh-installed.msh" && ! grep -q "StartupType=9" "$OUT/mesh-installed.msh" && [ -x "$MESHDIR/meshagent" ] && pgrep -f "$MESHDIR/meshagent" >/dev/null'
 chk "the work directory was removed" '[ -z "$(ls -d /var/lib/rivetit-agent/mesh-install-* 2>/dev/null)" ]'
 chk "outcome saved 0600 without the group id" '[ "$(stat -c %a /var/lib/rivetit-agent/mesh_agent.json)" = 600 ] && grep -q "\"installed\": true" /var/lib/rivetit-agent/mesh_agent.json && ! grep -rqaF -- "$MESHGROUP" /var/lib/rivetit-agent'
 chk "the install output says so" 'grep -q "MeshCentral agent: installed" "$OUT/mesh5.out"'
