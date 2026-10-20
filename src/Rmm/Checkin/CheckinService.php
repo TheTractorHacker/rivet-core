@@ -609,7 +609,8 @@ final class CheckinService
         $add('disk.write_iops', 'total', self::num($m['disk_write_iops'] ?? null), 'All disks');
         $add('disk.queue_length', 'total', self::num($m['disk_queue'] ?? null), 'All disks');
         $add('network.errors', 'total', self::intOrNull($m['net_errors'] ?? null), 'All adapters');
-        $add('battery.charge_percent', null, self::num($m['battery_pct'] ?? null));
+        $bat = self::num($m['battery_pct'] ?? null);
+        $add('battery.charge_percent', null, $bat !== null && $bat <= 100 ? $bat : null);   // a percentage: out of range is dropped, never clamped
     }
 
     // ------------------------------------------------------------------ clock skew
