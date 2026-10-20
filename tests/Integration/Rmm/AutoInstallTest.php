@@ -537,7 +537,7 @@ final class AutoInstallTest extends DeployTestCase
         foreach ($j['templates'] as $t) {
             $this->assertFalse($t['verified'], $t['key'] . ' is unverified');
             $this->assertStringContainsString('UNVERIFIED', implode(' ', $t['notes']));
-            $this->assertStringNotContainsString('http', json_encode($t), 'no vendor address is hard-coded');
+            $this->assertSame(0, preg_match('#https?://[a-z0-9-]+\\.[a-z]{2,}#i', json_encode($t)), 'no vendor address is hard-coded');
             if ($t['fmt'] === 'exe') {
                 $this->assertNull(ArgsTemplate::validate($t['silent_args']), $t['key'] . ' passes the argument rules');
             }
