@@ -46,6 +46,9 @@ Editions can show one short, identical device header. Additive; nothing existing
 - **Editions.** See UPGRADING.md ("Adopting device types").
 ## 1.0.0-rc.29 (hypervisor visibility: Proxmox VE and Hyper-V; migration 0036)
 
+**Docs: MSI first real-PC result.** `docs/rmm/MSI_VERIFY.md` now records the first real Windows run (2026-10-20, Windows 10 IoT LTSC 21H2, x64): the stamped MSI installs, enrolls and installs the optional Mesh agent. Upgrade, repair and uninstall are still unrun. Editions can drop the blanket "never run on a real Windows PC" banner and keep only the "unsigned: SmartScreen may warn" note.
+
+
 A hypervisor host used to be "just a server": its VMs were invisible. The endpoint agent on a **Proxmox VE** host (Linux) or a **Hyper-V** host (Windows) now reports its guests, storage and cluster; Core stores it, raises alerts and offers a read model and REST routes. **Only these two platforms.** Design, exact commands, privacy statement and the list of what is NOT verified: [docs/rmm/HYPERVISORS.md](docs/rmm/HYPERVISORS.md). Wire: PROTOCOL.md 3.2.10. Every change is additive; an old agent and an old server are unaffected (tested).
 
 - **Off by default, three gates.** The `hypervisor` sub-switch (new in `RmmSettings::FEATURES`, `rmm.admin`), the agent's `hypervisor` capability (withdrawn by the local `disable_hypervisor`), and a **signed `config.hypervisor`** (domain `rivetit-hypervisor-config-v1`, `seq` against replay) that carries the intervals. The agent collects only while the latest response carries it.

@@ -1,9 +1,23 @@
 # Verifying the Windows MSI on a real Windows PC (checklist for the owner)
 
-Status: 1.0.0-rc.16. **Everything below the line "Run these" has never been run.** The MSI template is built on Linux by msitools `wixl`; what was checked there is
+Status: 1.0.0-rc.29. **First real-PC result, 2026-10-20 (owner test, details below): the stamped MSI installs, enrolls and installs the optional Mesh agent on Windows. The rest of this checklist (upgrade, repair, uninstall, policies and the other combinations) is still unrun.** The MSI template is built on Linux by msitools `wixl`; what was checked there is
 structure, not behaviour. Run this on a **disposable** Windows 10/11 x64 machine or VM (take a snapshot first), as an administrator, against a **test** RivetIT server
 you can enroll devices into. Report what differs; the "expected" lines are what the package was designed to do, written from knowledge of Windows Installer logs, so the exact
 wording may differ. Design and limits: [AGENT_BUILD.md](AGENT_BUILD.md) ("The Windows MSI template").
+
+## Verified on a real PC (2026-10-20)
+
+One run by the owner on a production-grade workstation: an HP Z4 G5 running Windows 10 IoT Enterprise LTSC 2021 (21H2, build 19044), x64, agent 0.9.3, MSI built by the server's own build host and stamped by the server for a department, with "Also install the MeshCentral agent" ticked.
+
+| Checked | Result |
+|---|---|
+| `msiexec` accepts the template with the enrollment payload appended after the end of the file | **works** (the package installed; the earlier open question "whether msiexec accepts a package with the payload appended" is answered for this OS version) |
+| Enrollment from the MSI-installed agent | **works**: HTTP 201, the device was approved and linked to an asset, the single-use token was consumed |
+| Optional Mesh agent install from the MSI | **works**: the Mesh agent installed and the PC appeared in MeshCentral (test H below) |
+| Check-ins after install | worked once the PC's clock was within the server's window (a clock 5 minutes ahead caused HTTP 422 until rc.23 widened the window and made the agent self-correct) |
+| Unsigned package | SmartScreen / application-control warnings are still possible; sign your own copy if your policy needs it |
+
+Still not run: upgrade over an older version, repair, uninstall, a second install on the same PC, Windows 11 and ARM64 (there is no ARM64 MSI: use the .exe), an offline install, and Intune / Group Policy deployment of the MSI.
 
 ## What was only parse-checked (no Windows involved)
 
