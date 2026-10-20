@@ -28,6 +28,10 @@ const (
 	LinuxInstallDir = "/usr/local/mesh_services/meshagent"
 )
 
+// LinuxInstallArgs are what MeshCentral's script runs (a payload's linux install_args are ignored:
+// the server stamps the legacy `-install` into every payload and that never installs a service).
+var LinuxInstallArgs = []string{"-fullinstall", "--copy-msh=1"}
+
 // SettingsURL is `<mesh>/meshsettings?id=<meshid>` (the group id; never log it).
 func (s *Spec) SettingsURL() string {
 	return strings.TrimRight(s.URL, "/") + "/meshsettings?id=" + s.WireMeshID()
@@ -87,7 +91,7 @@ func withStartupType(msh []byte, n int) []byte {
 }
 
 func installLinux(ctx context.Context, spec *Spec, o InstallOptions, id int, res *Result, fail func(string, ...any) Result) Result {
-	args := spec.Args("linux")
+	args := LinuxInstallArgs
 	max := o.MaxBytes
 	if max <= 0 {
 		max = MaxDownload

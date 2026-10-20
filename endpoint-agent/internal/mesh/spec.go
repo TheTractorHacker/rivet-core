@@ -61,18 +61,16 @@ var DefaultAgentIDs = map[string]int{
 	"linux/386":     5,
 	"linux/amd64":   6,
 	"linux/arm64":   26,
-	"linux/arm":     25,
-	"linux/riscv64": 45,
 }
 
 // DefaultInstallArgs is what is passed to the downloaded installer, by GOOS.
 // Windows: `MeshAgent.exe -fullinstall` (installs the service, using the
-// settings the server embedded in the download). Linux: MeshCentral's own script
-// downloads the binary and the settings (.msh) separately and runs
-// `./meshagent -fullinstall --copy-msh=1` (see install_linux.go).
+// settings the server embedded in the download). Linux: not used; the Linux flow
+// always runs LinuxInstallArgs, because the server stamps this legacy table
+// (linux: -install) into every payload.
 var DefaultInstallArgs = map[string][]string{
 	"windows": {"-fullinstall"},
-	"linux":   {"-fullinstall", "--copy-msh=1"},
+	"linux":   {"-install"}, // legacy table shared with the server; IGNORED on Linux (see LinuxInstallArgs)
 }
 
 // GroupURLForm is MeshCentral's URL form of a device group id: base64 of the 48-byte

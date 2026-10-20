@@ -129,7 +129,7 @@ func TestInstallJobPushesTheSameInstallAndMapsTheNode(t *testing.T) {
 	if d["installed"] != true || d["node_id"] != testNode || d["agent_id"] != float64(6) || d["host"] == "" {
 		t.Fatalf("%v", d)
 	}
-	if got, _ := os.ReadFile(r.marker); !strings.Contains(string(got), "args -install") {
+	if got, _ := os.ReadFile(r.marker); !strings.Contains(string(got), "args -fullinstall --copy-msh=1") {
 		t.Fatalf("installer arguments: %q", got)
 	}
 	if h := m.allHits(); len(h) != 2 || h[0] != "/meshagents?id=6" || h[1] != "/meshsettings?id="+testGroupURL {
@@ -259,7 +259,7 @@ func TestUninstallJob(t *testing.T) {
 	}
 	found := false
 	for _, a := range r.runs {
-		found = found || a == "-uninstall"
+		found = found || a == "-fulluninstall"
 	}
 	if !found {
 		t.Fatalf("uninstall flag not used: %v", r.runs)

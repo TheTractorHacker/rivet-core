@@ -389,7 +389,7 @@ func TestWindowsFlowUsesTheWindowsIDAndArgsWithAFakeRunner(t *testing.T) {
 func TestUnknownPlatformHasNoAgentID(t *testing.T) {
 	m := newMock(t, 200, "", nil)
 	o := opts(t)
-	o.GOARCH = "mips"
+	o.GOARCH = "riscv64"
 	if res := Install(context.Background(), rawSpec(t, m.URL, pinOf(m, true)), o); res.Installed || !strings.Contains(res.Error, "no Mesh agent id") {
 		t.Fatalf("%+v", res)
 	}
