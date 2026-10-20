@@ -491,7 +491,6 @@ final class CheckinService
             'uptime_s' => self::intOrNull($inv['uptime_s'] ?? null),
             'logged_in_user' => $txt($inv['logged_in_user'] ?? null, 200),
             'pending_reboot' => isset($inv['pending_reboot']) ? (bool) $inv['pending_reboot'] : null,
-            'desktop_session' => is_bool($inv['desktop_session'] ?? null) ? $inv['desktop_session'] : null,   // additive: a graphical session or display manager exists (null from an older agent)
             'disks' => [],
             'network' => [],
         ];
@@ -499,6 +498,9 @@ final class CheckinService
         $hasHw = $hw['chassis_type'] !== null || $hw['has_battery'] !== null || $hw['is_virtual'] !== null || $hw['virtualization'] !== null || $hw['role_hints'] !== [];
         if ($hasHw) {
             $clean += $hw;   // additive keys of inventory_json, only when the agent sent facts
+        }
+        if (is_bool($inv['desktop_session'] ?? null)) {
+            $clean['desktop_session'] = $inv['desktop_session'];   // additive: a graphical session or display manager exists; absent from an older agent (never stored as null)
         }
         $disks = is_array($inv['disks'] ?? null) ? array_slice($inv['disks'], 0, self::MAX_DISKS) : [];
         foreach ($disks as $d) {
