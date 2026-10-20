@@ -12,6 +12,7 @@ use RivetCore\Rmm\Deploy\DeployProtocol;
 use RivetCore\Rmm\Deploy\HostedFiles;
 use RivetCore\Rmm\Deploy\PackageCatalog;
 use RivetCore\Rmm\Deploy\PackageParams;
+use RivetCore\Rmm\Deploy\SoftwareTemplates;
 use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Technician\ActionResult;
@@ -136,6 +137,70 @@ final class AutoInstallActions
         $d = $this->authz->check($who->userId, RmmAbility::SOFTWARE_DEPLOY, $clientId);
 
         return $d ?? ($this->authz->clientOk($who->userId, $clientId) ? null : 'Client not found.');
+    }
+
+    // ------------------------------------------------------------------ starter templates
+
+    /** The starter templates (data only; every one is marked unverified) and what each needs from you. */
+    public function templates(RmmPrincipal $who): ActionResult
+    {
+        if (($e = $this->role($who, RmmAbility::SOFTWARE_VIEW)) !== null) {
+            return $e;
+        }
+
+        return ActionResult::ok('ok', 200, 'ok', ['templates' => SoftwareTemplates::all(), 'you_provide' => SoftwareTemplates::PROVIDES]);
+    }
+
+    /**
+     * Create a package (or add a version to one) from a starter template. The template gives the format and the suggested arguments; you give the version, the
+     * installer (an address on an allowed host, or an uploaded file), its hash and size, and the detection rule. Everything goes through the same checks as a version added by
+     * hand; the arguments may be replaced (they are checked the same way).
+     *
+     * @param array<string,mixed> $in {name?, package_id?, publisher?, version, url?|hosted_file_id?, sha256?, size_bytes?, silent_args?, detect_kind?, detect_value?, detect_min?, product_code?, pkg_name?, pin_version?}
+     */
+    public function fromTemplate(RmmPrincipal $who, string $key, array $in): ActionResult
+    {
+        if (($e = $this->role($who, RmmAbility::SOFTWARE_MANAGE) ?? $this->unrestricted($who) ?? $this->featureOff()) !== null) {
+            return $e;
+        }
+        $t = SoftwareTemplates::find($key);
+        if ($t === null) {
+            return ActionResult::fail(404, 'not_found', 'No such template.');
+        }
+
+        return $this->guard(function () use ($who, $t, $in): ActionResult {
+            $ver = array_diff_key($in, array_flip(['name', 'package_id', 'publisher']));
+            $ver['os'] = $t['os'];
+            $ver['fmt'] = $t['fmt'];
+            if ($t['fmt'] === 'exe') {
+                $ver['silent_args'] ??= $t['silent_args'];
+            }
+            $pid = $in['package_id'] ?? null;
+            if ($pid !== null) {
+                if (!is_int($pid) || $this->catalog->package($pid) === null) {
+                    throw new \InvalidArgumentException('package_id must name an existing package.');
+                }
+            }
+            // Check the version first so a refusal leaves no half-made package behind.
+            $created = false;
+            if ($pid === null) {
+                $pkg = $this->catalog->savePackage(null, ['name' => $in['name'] ?? $t['name'], 'publisher' => $in['publisher'] ?? $t['publisher'], 'description' => 'From the starter template "' . $t['name'] . '" (unverified)'], $who->userId);
+                $pid = (int) $pkg['package_id'];
+                $created = true;
+            }
+            try {
+                $v = $this->catalog->addVersion((int) $pid, $ver, $who->userId);
+            } catch (\InvalidArgumentException $e) {
+                if ($created) {
+                    $this->catalog->deletePackage((int) $pid);
+                }
+                throw $e;
+            }
+            $this->audit->record('Software Template Used', "{$who->userName} created version {$v['version']} of package #$pid from the starter template \"{$t['key']}\" (unverified)", 0, 0);
+
+            return ActionResult::ok('Saved. This template is unverified: run a dry run, then one pilot machine, before relying on it.', 201, 'saved', ['package_id' => (int) $pid, 'version' => $v,
+                'parameters_to_set' => array_map(static fn (array $p): string => (string) $p['name'], $t['placeholders'])]);
+        });
     }
 
     // ------------------------------------------------------------------ vendor parameters

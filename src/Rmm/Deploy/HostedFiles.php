@@ -31,6 +31,7 @@ final class HostedFiles
 {
     public const DEFAULT_MAX_BYTES = 536870912;
     public const GRANT_TTL_S = 86400;
+    public const MAX_FILES = 200;
     public const ROUTE = 'agent_software';
     private const NAME_RE = '/^hosted_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.bin$/D';
     private const OLE = "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
@@ -81,6 +82,9 @@ final class HostedFiles
         $dir = $this->dir();
         if ($dir === null) {
             return ['ok' => false, 'error' => 'No directory for hosted installers is configured or it is not writable.'];
+        }
+        if ((int) $this->sql->val('SELECT COUNT(*) FROM rmm_hosted_files') >= self::MAX_FILES) {
+            return ['ok' => false, 'error' => 'At most ' . self::MAX_FILES . ' hosted installers. Delete one that no version uses first.'];
         }
         if (is_link($path) || !is_file($path)) {
             return ['ok' => false, 'error' => 'The upload is not a regular file.'];

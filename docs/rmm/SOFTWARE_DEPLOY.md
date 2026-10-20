@@ -2,7 +2,7 @@
 
 Install what you assigned, check that it is there, and show the difference. An administrator keeps a catalog of packages; a package is assigned to a scope (everyone, a client, a site, a group, a tag, one device); the agent reports what each machine has; the scheduler installs or removes the difference, only where it is allowed and never faster than the limits you set; a report shows deployed against expected by package, client, ring or device, and exports it as CSV.
 
-Status: **built in Core (migration 0029), not adopted by an edition yet**, behind the `software_deploy` sub-switch (off by default). Linux (apt, and dnf by parser and fixture) is proven end to end on a real systemd container with a real apt ([section 12](#12-what-is-proven-and-what-is-not)). Windows (MSI and EXE with a hash-pinned download) is **cross-compiled and unit-tested with a fake registry, a fake process runner and a local TLS server only: it has never been run on a real Windows machine.**
+Status: **built in Core (migration 0029; section 14 adds install-with-the-agent, migration 0033), not adopted by an edition yet**, behind the `software_deploy` sub-switch (off by default). Linux (apt, and dnf by parser and fixture) is proven end to end on a real systemd container with a real apt ([section 12](#12-what-is-proven-and-what-is-not)). Windows (MSI and EXE with a hash-pinned download) is **cross-compiled and unit-tested with a fake registry, a fake process runner and a local TLS server only: it has never been run on a real Windows machine.**
 
 Related: [FEATURES.md](FEATURES.md) rows 10.1 to 10.3 and 12.x, [openapi-device.yaml](openapi-device.yaml) (`/endpoint_devices/software_*`, `/endpoint_devices/{id}/deployments*`), [PROTOCOL.md](PROTOCOL.md) section 3.6b, [PATCHING.md](PATCHING.md) (rings, windows and the pattern this follows), [CAPACITY.md](CAPACITY.md), [docs/modules/rmm.md](../modules/rmm.md), issue [#73](https://github.com/TheTractorHacker/rivet-core/issues/73).
 
@@ -147,3 +147,77 @@ Run on 2026-10-17 with the agent built from this tree: **59 checks, `SOFTWARE PR
 7. **Drift.** The package is removed by hand, the next detection notices, and the scheduler puts it back. Removing the assignment uninstalls nothing.
 
 Not covered by the proof: any Windows path, dnf, yum, a restart request by the installed package (the Linux reboot marker is covered by a unit test), the two-person approval over HTTP (covered by `DeployTest`), rings (covered by `DeploySchedulerTest`).
+
+## 14. Install apps when the agent installs (1.0.0-rc.26, migration 0033)
+
+Like other RMMs: the technician issues the installer and ticks the catalog apps (Huntress, Comet Backup, ...) that go on the new PC with the agent, and catalog packages can be marked "install automatically on new devices". Everything below is **additive** (the device protocol is untouched: no new job type, no new capability, no agent change) and **built on the `software_install` job of section 5**: the same pinned hash, allowed host or hosted file, sealed values, one install at a time per device, verification by detection. It is behind the same `software_deploy` switch (off by default). **Never run on a real PC; Windows vendor installers are UNVERIFIED.**
+
+```
+admin:   package -> auto-install scope + order + required    vendor parameters (sealed)    hosted installer files
+technician (installer page): ticks apps ------------------------------+  (stored on the enrollment token; audited: who ticked what)
+                                                                       v
+device enrolls --> plan: one row per (device, app) [rmm_device_apps]   (new device: policy apps + ticked apps; re-enrolling: ticked apps only; INSERT IGNORE)
+scheduler step --> next app by install_order --> software_install job (normal, signed) --> result --> status per app
+```
+
+### 14.1 Per package: scope, order, required
+
+`PUT endpoint_devices/software_autoinstall/{package_id}` `{scope, os?, clients?, install_order?, required?}` (needs `rmm.software.deploy` and a scope that sees every client).
+
+| Field | Meaning |
+|---|---|
+| `scope` | `off` (default), `all` (every new device), `clients` (chosen clients/departments, optionally one location each), `os` (`windows` or `linux`) |
+| `install_order` | 1 to 9999, lower first (so the security agent installs before backup) |
+| `required` | a required app that **failed** stops the later ones (they become `skipped` with the reason); a best-effort app that failed does not |
+
+Only a **new** device (outcome `enrolled`) gets the policy apps; a re-enrollment or reinstall never does, so turning a policy on later does not reach machines that are already enrolled. A policy app on a package that needs a second person (`two_person`) still waits for that approval for each device.
+
+### 14.2 Vendor parameters
+
+An exe version's `silent_args` may be a TEMPLATE with named placeholders: `/ACCT_ID={{account_key}} /ORG_KEY={{org_key}} /S`. The template is the allow-list and is immutable like the rest of the version:
+
+* a placeholder is `{{name}}` (lower-case letters, digits, underscore; at most 30 characters), at most 8, and must come **straight after `=` or `:`**, so it is always the value of a named option and can never be a token or an option of its own;
+* with the placeholders replaced by a letter the template must pass the normal argument rules (section 3: no quotes, no shell characters, at most 12 words of 80 characters);
+* a technician never types an argument, only a **value** for a name the template declares. A value is 1 to 128 characters of letters, digits and `. _ ~ : / = + , -` (no space, quote, brace, backslash or shell character), and the rendered text must again pass the argument rules; the agent checks it a third time.
+
+Values are stored per package (`global`) or as an override for one `client` or one `location` (most specific wins), `PUT endpoint_devices/software_params/{package_id}` `{name, value, scope?, scope_id?}`, `DELETE` the same with `{name, scope?, scope_id?}`; `GET` says which names are declared and where each is set, **never a value**. They are sealed with the edition's `SecretBoxInterface`; no read, audit row, event or log ever contains one. When a job is built the values are unsealed, the arguments are rendered, validated, and passed through the job sidecar's secret slot (`extra.secret`, the mechanism the MeshCentral group id uses): the job row holds `[redacted:secret]` in `args`, the real text is put back only when the job is signed for the device, wiped as soon as the job has a final result, and scrubbed (also as base64, URL-encoded and JSON-escaped, and each value on its own) from any output the device reports. A missing value fails that app with the **names** that are missing (and the installer page refuses to tick it for that client).
+
+**Who receives the values.** Only a device that is **linked** to an asset and online: a device that waits in `pending_approval` is sent nothing. Anyone who holds an enrollment token and a matching asset (serial or MAC) can enroll a device that then receives the vendor keys of the apps planned for it, as any endpoint of that customer would. With the setting `unmatched_policy` = `auto_create` a token alone is enough to get linked, so **do not combine `auto_create` with parameters you cannot afford to lose** (keep the token short-lived and the use count low).
+
+### 14.3 Hosted installer files
+
+For vendors whose download addresses are account-specific, upload the installer instead of allow-listing a host. `POST endpoint_devices/software_files` (raw body, header `X-Filename`; or `AutoInstallActions::uploadFile()` from an edition's upload handler), then add a version with `hosted_file_id` instead of `url`, `sha256` and `size_bytes` (the file gives its own). Rules: a Windows installer only (MZ or MSI header), at most 200 files, 1 KiB up to `hosted_max_bytes` (default 512 MiB, never above 1 GiB), stored under `<binary_dir>/hosted/hosted_<uuid>.bin` (random name, never from the upload; the directory is created 0750 with deny files and must be outside the web root and the in-app backup), never opened as an archive (so there is nothing to expand: a zip bomb is just a file of its size), checked against its size and SHA-256 every time it is served. A device gets it through **`GET /api/v1/agent_software/{job_id}/{secret}`** (new route, `RmmModule::hostedFileApi()`, an edition mounts it next to the other device routes): the secret is random (48 hex digits), exists for that one job, is sealed in the job like any vendor value, only its SHA-256 is stored, and works only while that job is queued or running for the file it was built for (24 h at most). The agent sends no credentials when it downloads, so the address is the credential; every refusal is the same 404. It needs a usable https service address (a DNS name, default port).
+
+### 14.4 Technician ticks, explicit approval, the audit trail
+
+`RmmAdmin::downloadInstaller()` and `deploymentCommands()` take a new last argument `array $appIds` (needs `rmm.software.deploy` for that client on top of `rmm.token.manage`). The ticked ids are stored on the enrollment token (`rmm_installer_apps`) and every device that token enrolls gets them. **Ticking is the explicit decision for that device**: a ticked app runs for real even while `software_live_install` is 0. A policy app without a tick follows the rule of every scheduled install: a **dry run** (shown as `skipped`, "dry run only") until `software_live_install` is 1. A `two_person` package still needs a second person for each device; the approval is requested in the name of the technician who ticked it (or the administrator who set the policy), and nobody approves their own. Audit rows: `Installer Apps Chosen` (who ticked which apps for which token), `Auto-install Planned` (device, source per app), `Software Auto-install Set`, `Software Parameter Set/Cleared` (name and scope, no value), the usual job rows. `GET endpoint_devices/software_autoinstall/selectable?client_id=&location_id=&os=` is the installer page's helper: apps that can be ticked, which are pre-ticked by policy, order, required, two-person and missing parameter names.
+
+### 14.5 Per-device status
+
+`GET endpoint_devices/{id}/autoinstall` (also `AutoInstallService::deviceApps()`): per app `status` `queued | installing | installed | failed | skipped`, `reason` (for example "waiting for a second person to approve (approval #7)", "dry run only", "not started: the required app \"Security\" failed", "needs_reboot"), `source` (`auto` or `chosen`), `selected_by`, `install_order`, `required`, `attempts`. A locked package manager or a failed download is retried (5 minutes apart, up to 3 attempts); a job that never ran is queued again; an app still waiting after 14 days is `skipped`. Rule: the planner queues **one app per device per scheduler pass**, and nothing at all when the switch is off, `jobs` is off, the device is not linked, offline, did not announce `software:install`, or the global limits (`software_max_installs`, per client) are reached.
+
+### 14.6 Starter templates (data only, all UNVERIFIED)
+
+`GET endpoint_devices/software_templates`; `POST software_templates/{key}` creates a package (or, with `package_id`, a version) from one, through the same checks as a version added by hand. A template carries no binary, no address, no hash and no key. It says what you must supply (version, an installer on an allowed host or an uploaded file, sha256 and size, the detection rule, the parameter values) and **marks everything unverified**.
+
+| Key | Kind | Suggested arguments | Honest status |
+|---|---|---|---|
+| `huntress_agent` | exe | `/ACCT_ID={{account_key}} /ORG_KEY={{org_key}} /S` | the switch names are a placeholder to confirm with Huntress; never run |
+| `comet_backup_windows` | exe | `/S /SERVER={{server_url}} /COMPANY={{company_id}}` | Comet branded installers differ by server; replace with your installer's documented arguments |
+| `comet_backup_linux` | apt | none | a package from a repository already on the machine |
+| `custom_exe`, `custom_msi` | exe, msi | `/S` / fixed `/qn /norestart` | generic: the vendor's own silent switches go in; an MSI cannot take properties |
+
+Veeam Agent, ESET, Bitdefender, Sophos, SentinelOne and Datto are **not** listed: their silent switches could not be stated with certainty. Use `custom_exe` with the vendor's documentation.
+
+### 14.7 Tables (migration `0033_rmm_auto_install`, eight new tables, nothing altered, nothing inserted)
+
+`rmm_package_auto`, `rmm_package_auto_clients`, `rmm_package_params` (sealed values), `rmm_installer_apps`, `rmm_device_apps`, `rmm_hosted_files`, `rmm_version_hosted`, `rmm_hosted_grants`.
+
+### 14.8 What is NOT done / not proven
+
+* **Windows is still unproven**: the whole chain (download from a hosted address, an exe with sealed arguments, exit code 3010 = "installed, restart needed") is covered by PHP integration tests and the agent's existing fake-runner unit tests only. Exit code 1641 from an **exe** stays a failure (an installer that started a restart on its own is not treated as success); for an MSI it is "restart needed" as before.
+* **MSI properties** (`ACCT_KEY=...`) cannot be passed: an MSI is installed with fixed options. Vendors that need them must be installed through their exe bootstrapper.
+* **Linux** apps take no parameters.
+* The apps are planned **when the device enrolls**; a device that enrolled while the switch was off, or before a policy existed, is not retrofitted (assign the package instead, section 1).
+* Reinstall/re-enroll with a **new installer that ticks apps** plans the ticked apps that are not yet planned; an app already `installed` is not installed again (the agent also reports `already_installed`).
+* No UI: the edition pages are described in UPGRADING.md ("Adopting install-with-the-agent").

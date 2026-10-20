@@ -153,6 +153,10 @@ final class PackageCatalog
         }
         $this->sql->transaction(function () use ($packageId): bool {
             $this->sql->run('DELETE FROM rmm_package_installs WHERE package_id = ?', [$packageId]);
+            foreach (['rmm_package_auto', 'rmm_package_auto_clients', 'rmm_package_params', 'rmm_installer_apps', 'rmm_device_apps'] as $t) {
+                $this->sql->run("DELETE FROM $t WHERE package_id = ?", [$packageId]);
+            }
+            $this->sql->run('DELETE h FROM rmm_version_hosted h JOIN rmm_package_versions v ON v.version_id = h.version_id WHERE v.package_id = ?', [$packageId]);
             $this->sql->run('DELETE FROM rmm_package_versions WHERE package_id = ?', [$packageId]);
             $this->sql->run('DELETE FROM rmm_packages WHERE package_id = ?', [$packageId]);
 

@@ -19,13 +19,14 @@ use RivetCore\Rmm\Technician\ActionResult;
  *   DELETE endpoint_devices/software_params/{package_id}                 {name, scope?, scope_id?}
  *   GET    endpoint_devices/software_files                               hosted installer files (no paths)
  *   POST   endpoint_devices/software_files                               raw body (application/octet-stream, header X-Filename): stores an installer; DELETE software_files/{id}
+ *   GET    endpoint_devices/software_templates                           the starter templates (data only, all unverified); POST software_templates/{key} creates a package or version from one
  *   GET    endpoint_devices/{id}/autoinstall                             the apps this device was told to install with the agent: status and reason per app
  *
  * @api
  */
 final class AutoInstallApi
 {
-    public const FLEET = ['software_autoinstall', 'software_params', 'software_files'];
+    public const FLEET = ['software_autoinstall', 'software_params', 'software_files', 'software_templates'];
 
     public function __construct(private readonly AutoInstallActions $actions, private readonly int $maxUploadBytes = 536870912)
     {
@@ -81,6 +82,16 @@ final class AutoInstallApi
                 }
 
                 return self::result($m === 'DELETE' ? $this->actions->clearParam($who, (int) $second, $in) : $this->actions->setParam($who, (int) $second, $in));
+            case 'software_templates':
+                if ($second === null) {
+                    return $m === 'GET' ? self::result($this->actions->templates($who)) : self::method();
+                }
+                if ($m !== 'POST') {
+                    return self::method();
+                }
+                [$in, $bad] = $this->body($req);
+
+                return $bad ?? self::result($this->actions->fromTemplate($who, $second, $in));
             case 'software_files':
                 if ($second === null) {
                     if ($m === 'GET') {

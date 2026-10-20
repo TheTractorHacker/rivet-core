@@ -524,6 +524,41 @@ final class AutoInstallTest extends DeployTestCase
         $this->assertSame(404, $api->handle(new RmmRequest('GET', 'agent_software', [$job['job_id'], $secret], [], [], '127.0.0.1', 'a', true, null, null))->status);
     }
 
+    // ------------------------------------------------------------------ templates
+
+    public function testStarterTemplatesAreDataOnlyAndGoThroughTheSameChecks(): void
+    {
+        [$c, $j] = $this->api('GET', ['software_templates'], $this->viewer);
+        $this->assertSame(200, $c);
+        $keys = array_column($j['templates'], 'key');
+        $this->assertContains('huntress_agent', $keys);
+        $this->assertContains('comet_backup_windows', $keys);
+        $this->assertContains('custom_exe', $keys);
+        foreach ($j['templates'] as $t) {
+            $this->assertFalse($t['verified'], $t['key'] . ' is unverified');
+            $this->assertStringContainsString('UNVERIFIED', implode(' ', $t['notes']));
+            $this->assertStringNotContainsString('http', json_encode($t), 'no vendor address is hard-coded');
+            if ($t['fmt'] === 'exe') {
+                $this->assertNull(ArgsTemplate::validate($t['silent_args']), $t['key'] . ' passes the argument rules');
+            }
+        }
+        $in = ['name' => 'Huntress', 'version' => '2026.1', 'url' => 'https://' . self::HOST . '/huntress/setup.exe', 'sha256' => self::SHA, 'size_bytes' => 5000, 'detect_kind' => 'uninstall_name', 'detect_value' => 'Huntress Agent'];
+        $this->assertSame(404, $this->api('POST', ['software_templates', 'nope'], $this->admin, $in)[0]);
+        $this->assertSame(403, $this->api('POST', ['software_templates', 'huntress_agent'], $this->viewer, $in)[0]);
+        $this->assertSame(422, $this->api('POST', ['software_templates', 'huntress_agent'], $this->admin, ['sha256' => 'bad'] + $in)[0]);
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_packages WHERE name = 'Huntress'"), 'a refused version leaves no package behind');
+        [$c, $r] = $this->api('POST', ['software_templates', 'huntress_agent'], $this->admin, $in);
+        $this->assertSame(201, $c, json_encode($r));
+        $this->assertSame(['account_key', 'org_key'], $r['parameters_to_set']);
+        $this->assertSame('/ACCT_ID={{account_key}} /ORG_KEY={{org_key}} /S', $r['version']['silent_args']);
+        $this->assertSame(['account_key', 'org_key'], $this->api('GET', ['software_params', (string) $r['package_id']], $this->viewer)[1]['declared']);
+        // a package that is deleted takes its policy, parameters and plans with it
+        $this->assertSame(200, $this->param((int) $r['package_id'], 'org_key', 'abcdef'));
+        $this->assertSame(200, $this->auto((int) $r['package_id'], ['scope' => 'all'])[0]);
+        $this->assertSame(200, $this->api('DELETE', ['software_packages', (string) $r['package_id']], $this->admin)[0]);
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_package_params') + (int) $this->h->one('SELECT COUNT(*) FROM rmm_package_auto'));
+    }
+
     // ------------------------------------------------------------------ migration
 
     public function testTheMigrationOnlyAddsEmptyTablesAndRunsTwice(): void
