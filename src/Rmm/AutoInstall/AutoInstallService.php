@@ -13,7 +13,6 @@ use RivetCore\Rmm\Deploy\DeployProtocol;
 use RivetCore\Rmm\Deploy\DeployService;
 use RivetCore\Rmm\Deploy\PackageCatalog;
 use RivetCore\Rmm\Deploy\PackageParams;
-use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Support\Sql;
 
@@ -55,7 +54,6 @@ final class AutoInstallService
         private readonly DeployExpectations $expectations,
         private readonly PackageParams $params,
         private readonly DeployApprovalService $approvals,
-        private readonly DeviceRepository $devices,
         private readonly RmmTenancyInterface $tenancy,
         private readonly RmmAuditInterface $audit,
     ) {

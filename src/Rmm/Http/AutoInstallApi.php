@@ -32,7 +32,9 @@ final class AutoInstallApi
     {
     }
 
-    /** @param list<string> $seg */
+    /**
+     * @param list<string> $seg
+     */
     public function fleet(RmmRequest $req, RmmPrincipal $who, array $seg): RmmResponse
     {
         $m = strtoupper($req->method);
@@ -107,7 +109,11 @@ final class AutoInstallApi
         return self::notFound();
     }
 
-    /** A route under a device (`autoinstall`); null for a path this class does not own. @param list<string> $seg */
+    /**
+     * A route under a device (`autoinstall`); null for a path this class does not own.
+     *
+     * @param list<string> $seg
+     */
     public function device(RmmRequest $req, RmmPrincipal $who, int $id, array $seg): ?RmmResponse
     {
         if (($seg[1] ?? '') !== 'autoinstall') {

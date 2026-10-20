@@ -582,7 +582,7 @@ final class RmmModule
     {
         if ($this->autoInstall === null) {
             $this->autoInstall = new \RivetCore\Rmm\AutoInstall\AutoInstallService($this->sql(), $this->settings(), $this->deployService(), $this->packageCatalog(), $this->deployExpectations(), $this->packageParams(),
-                $this->deployApprovals(), $this->devices(), $this->tenancy, $this->audit);
+                $this->deployApprovals(), $this->tenancy, $this->audit);
         }
 
         return $this->autoInstall;

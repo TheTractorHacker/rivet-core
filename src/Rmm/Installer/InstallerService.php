@@ -97,7 +97,7 @@ final class InstallerService
         if ($installMeshAgent) {
             $this->sql->run('INSERT INTO endpoint_agent_installer_options (token_id, install_mesh_agent, created_at) VALUES (?, 1, ?) ON DUPLICATE KEY UPDATE install_mesh_agent = 1', [$t['token_id'], $this->sql->utcNow()]);
         }
-        if ($appIds !== [] && $this->autoInstall !== null) {
+        if ($appIds !== []) {
             $why = $this->autoInstall->recordSelection((int) $t['token_id'], $appIds, $clientId, $locationId, $userId, $actorName);
             if ($why !== null) {
                 $this->enrollment->revokeToken($t['token_id'], $userId);
