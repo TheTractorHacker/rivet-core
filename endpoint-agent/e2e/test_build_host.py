@@ -16,8 +16,8 @@ TOKEN = "tok_SECRET_0123456789abcdef"
 
 
 class Args:
-    token = TOKEN; job_id = "j1"; version = "1.2.3"; ref = "main"; targets = "windows-amd64 windows-arm64"
-    msi = False; out_dir = ""; fail_uploads = 0
+    token = TOKEN; job_id = "j1"; version = "1.2.3"; ref = "main"; targets = "windows-amd64 windows-arm64 linux-amd64 linux-arm64"
+    msi = False; out_dir = ""; fail_uploads = 0; legacy = False; linux = None
 
 
 def start(**kw):
@@ -77,6 +77,21 @@ class MockServer(unittest.TestCase):
         big = b"a" * (M.MAX_CHUNK + 1)
         self.assertEqual(post(self.base, "upload", up("rivetit-agent-windows-amd64.exe", big))[0], 400)
         self.assertEqual(post(self.base, "upload", up("SHA256SUMS", exe, data_b64="@@@"))[0], 400)
+
+    def test_linux_names(self):
+        post(self.base, "poll", POLL)
+        elf = b"\x7fELF" + b"x" * 10
+        for n in ("rivetit-agent-linux-amd64", "rivetit-agent-linux-arm64", "install-linux.sh", "rivetit-agent-linux-arm64.tar.gz"):
+            self.assertEqual(post(self.base, "upload", up(n, elf))[0], 200, n)
+        self.assertEqual(post(self.base, "upload", up("rivetit-agent-linux-386", elf))[0], 400)
+        self.assertEqual(post(self.base, "upload", up("evil/install-linux.sh", elf))[0], 400)
+
+    def test_legacy_server_refuses_linux_names(self):
+        mock, srv, base = start(legacy=True); self.addCleanup(srv.shutdown)
+        post(base, "poll", POLL)
+        code, body = post(base, "upload", up("rivetit-agent-linux-amd64", b"\x7fELF"))
+        self.assertEqual((code, body["error"]), (400, "unknown_file"))
+        self.assertEqual(post(base, "upload", up("rivetit-agent-windows-amd64.exe", b"MZ"))[0], 200)
 
     def test_complete_verifies_hashes(self):
         post(self.base, "poll", POLL)

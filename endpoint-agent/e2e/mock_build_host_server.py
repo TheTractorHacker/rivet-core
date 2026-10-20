@@ -9,6 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 NAMES = ["rivetit-agent-windows-amd64.exe", "rivetit-agent-windows-arm64.exe",
          "rivetit-agent-windows-amd64.msi", "SHA256SUMS"]
+LINUX_NAMES = ["rivetit-agent-linux-amd64", "rivetit-agent-linux-arm64", "install-linux.sh",
+               "rivetit-agent-linux-amd64.tar.gz", "rivetit-agent-linux-arm64.tar.gz"]
 STATES = {"building", "uploading", "failed"}
 STAGES = ["prepare", "clone", "build_windows_amd64", "build_windows_arm64", "msi", "verify", "upload"]
 PROGRESS_KEYS = {"stage", "pct", "detail", "elapsed_s"}
@@ -30,6 +32,8 @@ class Mock:
         if a.job_id:
             self.job = {"id": a.job_id, "version": a.version, "source_ref": a.ref,
                         "targets": a.targets.split(), "msi": a.msi, "expires_at": "2099-01-01T00:00:00Z"}
+            if getattr(a, "linux", None) is not None:
+                self.job["linux"] = a.linux
         self.state = "queued" if self.job else "none"
         self.chunks, self.totals, self.files = {}, {}, {}
         self.events, self.errors, self.statuses = [], [], []
@@ -103,7 +107,9 @@ class Mock:
         self.need(set(b) == {"job_id", "name", "index", "total", "sha256_chunk", "data_b64"}, "upload: members")
         self.check_job(b)
         n, i, t = b["name"], b["index"], b["total"]
-        self.need(n in NAMES, "upload: name not allowed")
+        if getattr(self.a, "legacy", False) and n in LINUX_NAMES:   # an older edition: only the Windows names exist
+            raise Err(400, "unknown_file")
+        self.need(n in NAMES + LINUX_NAMES, "upload: name not allowed")
         self.need(self.job and (n == "SHA256SUMS" or self.allowed_name(n)), "upload: file not requested by the job")
         self.need(type(i) is int and type(t) is int and 1 <= t <= 64 and 0 <= i < t, "upload: index/total")
         self.need(isinstance(b["data_b64"], str) and isinstance(b["sha256_chunk"], str), "upload: types")
@@ -124,6 +130,11 @@ class Mock:
 
     def allowed_name(self, n):
         t = self.job["targets"]
+        if n in LINUX_NAMES:
+            if self.job.get("linux") is False:
+                return False
+            a = "amd64" if "amd64" in n else "arm64" if "arm64" in n else None
+            return any(x.startswith("linux-") and (a is None or x == "linux-" + a) for x in t)
         return (n.endswith("amd64.exe") and "windows-amd64" in t) or (n.endswith("arm64.exe") and "windows-arm64" in t) \
             or (n.endswith(".msi") and self.job["msi"])
 
@@ -144,7 +155,7 @@ class Mock:
             self.need(mm, "SHA256SUMS line format"); sums[mm.group(2)] = mm.group(1)
         self.need(set(files) == set(sums), "manifest and SHA256SUMS list different files")
         for name, sha in files.items():
-            self.need(name in NAMES and name != "SHA256SUMS" and name in self.files, "file not uploaded: %s" % name)
+            self.need(name in NAMES + LINUX_NAMES and name != "SHA256SUMS" and name in self.files, "file not uploaded: %s" % name)
             actual = hashlib.sha256(self.files[name]).hexdigest()
             self.need(actual == sha == sums[name], "hash mismatch for %s" % name)
         for name in self.files:
@@ -214,10 +225,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, required=True); p.add_argument("--token", required=True)
     p.add_argument("--job-id", default=""); p.add_argument("--version", default="0.0.1-hosttest")
-    p.add_argument("--ref", default="main"); p.add_argument("--targets", default="windows-amd64 windows-arm64")
+    p.add_argument("--ref", default="main"); p.add_argument("--targets", default="windows-amd64 windows-arm64 linux-amd64 linux-arm64")
+    p.add_argument("--legacy", action="store_true", help="act like an older edition: refuse the Linux file names with 400 unknown_file")
+    p.add_argument("--linux", choices=["true", "false"], default=None, help="send the optional linux hint in the job")
     p.add_argument("--msi", action="store_true"); p.add_argument("--out-dir", default="")
     p.add_argument("--fail-uploads", type=int, default=0, help="answer the first N upload calls with 503")
     a = p.parse_args()
+    a.linux = None if a.linux is None else a.linux == "true"
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(Mock(a)))
     print("mock build host server on 127.0.0.1:%d" % a.port, flush=True)
     srv.serve_forever()
