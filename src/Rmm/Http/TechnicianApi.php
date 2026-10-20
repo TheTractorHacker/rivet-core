@@ -95,6 +95,7 @@ final class TechnicianApi
         private readonly ?DeployApi $deployApi = null,
         private readonly ?ChangeApi $changeApi = null,
         private readonly ?AutoInstallApi $autoInstallApi = null,
+        private readonly ?HypervisorApi $hypervisorApi = null,
     ) {
     }
 
@@ -143,6 +144,9 @@ final class TechnicianApi
             }
             if ($seg !== [] && $this->changeApi !== null && in_array($seg[0], ChangeApi::FLEET, true)) {
                 return $this->changeApi->fleet($req, $who, $seg);
+            }
+            if ($seg !== [] && $this->hypervisorApi !== null && in_array($seg[0], HypervisorApi::FLEET, true)) {
+                return $this->hypervisorApi->fleet($req, $who, $seg);
             }
             if ($seg !== [] && $this->starterApi !== null && in_array($seg[0], StarterApi::FLEET, true)) {
                 return $this->starterApi->fleet($req, $who, $seg);
@@ -238,6 +242,9 @@ final class TechnicianApi
             return $routed;
         }
         if ($what === 'changes' && $this->changeApi !== null && ($routed = $this->changeApi->device($req, $who, $id, $seg)) !== null) {
+            return $routed;
+        }
+        if ($what === 'hypervisor' && $this->hypervisorApi !== null && ($routed = $this->hypervisorApi->device($req, $who, $id, $seg)) !== null) {
             return $routed;
         }
         if ($what === 'autoinstall' && $this->autoInstallApi !== null && ($routed = $this->autoInstallApi->device($req, $who, $id, $seg)) !== null) {

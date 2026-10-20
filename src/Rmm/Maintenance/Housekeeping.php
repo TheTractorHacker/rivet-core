@@ -78,6 +78,7 @@ final class Housekeeping
         private readonly ?\RivetCore\Rmm\Deploy\DeployScheduler $deploy = null,
         private readonly ?\RivetCore\Rmm\Change\ChangeService $changes = null,
         private readonly ?\RivetCore\Rmm\Change\ChangeRuleService $changeRules = null,
+        private readonly ?\RivetCore\Rmm\Hypervisor\HypervisorService $hypervisor = null,
     ) {
         $this->pause = $pause ?? static function (int $us): void {
             usleep($us);
@@ -169,6 +170,18 @@ final class Housekeeping
                 }
             } catch (\Throwable $e) {
                 error_log('rmm housekeeping (change monitor): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0030 not applied yet
+            }
+        }
+        // Hypervisor visibility: VMs and storage missing past their retention and rows of devices that no longer exist. Runs while the switch is on or rows still exist (so turning it off still cleans up).
+        if ($this->hypervisor !== null) {
+            try {
+                if ($this->settings->featureOn('hypervisor') || (int) $this->sql->val('SELECT COUNT(*) FROM rmm_hypervisor_hosts') > 0) {
+                    foreach ($this->hypervisor->prune() as $k => $v) {
+                        $out['pruned_hypervisor_' . $k] = $v;
+                    }
+                }
+            } catch (\Throwable $e) {
+                error_log('rmm housekeeping (hypervisor): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0035 not applied yet
             }
         }
         if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {

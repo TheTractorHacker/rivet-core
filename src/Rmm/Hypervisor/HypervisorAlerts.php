@@ -130,6 +130,7 @@ final class HypervisorAlerts
         $down = in_array((string) $vm['state'], ['stopped', 'error'], true);
         $started = $trans !== null && in_array($trans['to'], ['stopped', 'error'], true) && in_array($trans['from'], ['running', 'paused', 'transitioning', 'suspended'], true);
         $sinceH = ($now - Sql::ts((string) ($vm['state_changed_at'] ?? ''))) / 3600;
+        $ev = null;
         if ($started) {
             $ev = [RmmEvent::HYPERVISOR_VM_DOWN, $base + ['vm_type' => (string) $vm['type'], 'from_state' => $trans['from'], 'to_state' => $trans['to'], 'node' => (string) $vm['node'], 'alert_check_key' => $kd]];
             if ($limits['hypervisor_alert_vm_down'] !== 1) {

@@ -70,6 +70,8 @@ final class CheckinService
         private readonly ?RemoteSettings $remote = null,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
         private readonly ?\RivetCore\Rmm\Change\ChangeSettings $change = null,
+        private readonly ?\RivetCore\Rmm\Hypervisor\HypervisorSettings $hypervisor = null,
+        private readonly ?\RivetCore\Rmm\Hypervisor\HypervisorService $hypervisorService = null,
     ) {
     }
 
@@ -122,6 +124,12 @@ final class CheckinService
         $announce = ['clock_offset' => self::clockOffset($body['clock_offset_s'] ?? null), 'caps' => DeviceState::cleanCapabilities($body['capabilities'] ?? null), 'platform' => is_string($body['platform'] ?? null) ? $body['platform'] : null, 'software' => null];
         // The optional MeshCentral agent report: read here, applied in process() (tiny, so it is never queued). Never an error.
         $announce['mesh_agent'] = $this->meshAgents !== null && array_key_exists(RmmProtocol::CHECKIN_MESH_AGENT, $body) ? $body[RmmProtocol::CHECKIN_MESH_AGENT] : null;
+        // The optional hypervisor report (Proxmox VE / Hyper-V host): read only while the `hypervisor` sub-switch is on, no load is being shed and the device announced `hypervisor`. A bad block is dropped, never an error.
+        $announce['hypervisor'] = null;
+        if (($features['hypervisor'] ?? false) && $this->hypervisorService !== null && array_key_exists('hypervisor', $body) && (int) ($cfg['shed_level'] ?? 0) === 0
+            && in_array(\RivetCore\Rmm\Hypervisor\HypervisorProtocol::CAP, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
+            $announce['hypervisor'] = \RivetCore\Rmm\Hypervisor\HypervisorService::cleanReport($body['hypervisor'], $this->sql->time());
+        }
         $wantsSoftware = $features['inventory_software'] && $this->software !== null && $announce['caps'] !== null && in_array(DeviceState::CAP_SOFTWARE_INVENTORY, $announce['caps'], true);
         // Phase 2: the policies that reach this device (one read, only while the `policies` sub-switch is on).
         $policy = null;
@@ -214,6 +222,15 @@ final class CheckinService
             if ($changeConfig !== null) {
                 $offered[] = \RivetCore\Rmm\Change\ChangeProtocol::CAP;
                 $out['config']['change'] = $changeConfig;
+            }
+        }
+        // Hypervisor visibility, additive: only an agent that announced `hypervisor`, while the `hypervisor` sub-switch is on, below load shedding level 2, with a usable signing key. The
+        // configuration is signed; an unsigned one is never offered. The agent itself decides whether the machine is a Proxmox VE or Hyper-V host. Every other response is byte-identical to before.
+        if (($features['hypervisor'] ?? false) && $this->hypervisor !== null && (int) ($cfg['shed_level'] ?? 0) < 2 && in_array(\RivetCore\Rmm\Hypervisor\HypervisorProtocol::CAP, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
+            $hvConfig = $this->hypervisor->agentConfig((string) ($dev['os'] ?? 'windows'));
+            if ($hvConfig !== null) {
+                $offered[] = \RivetCore\Rmm\Hypervisor\HypervisorProtocol::CAP;
+                $out['config']['hypervisor'] = $hvConfig;
             }
         }
         if ($offered !== []) {
@@ -316,6 +333,9 @@ final class CheckinService
         if (($announce['software'] ?? null) !== null) {
             $work['software'] = $announce['software'];
         }
+        if (($announce['hypervisor'] ?? null) !== null) {
+            $work['hypervisor'] = $announce['hypervisor'];
+        }
         if (isset($announce['alert_defs'])) {
             $work['alert_defs'] = $announce['alert_defs'];
         }
@@ -382,6 +402,13 @@ final class CheckinService
                 $this->deviceState->requestSoftwareResync($deviceId);   // load shedding: acknowledged, not ingested, so ask again later
             } else {
                 $this->software->apply($dev, $w['software']);
+            }
+        }
+        if (is_array($w['hypervisor'] ?? null) && ($features['hypervisor'] ?? false) && $this->hypervisorService !== null) {
+            try {
+                $this->hypervisorService->apply($dev, $w['hypervisor']);
+            } catch (\Throwable $e) {
+                error_log('rmm hypervisor ingest: ' . get_class($e) . ': ' . $e->getMessage());   // never fails the check-in (e.g. migration 0035 not applied yet)
             }
         }
         $linked = $dev['link_state'] === 'linked' && !empty($dev['asset_id']);
