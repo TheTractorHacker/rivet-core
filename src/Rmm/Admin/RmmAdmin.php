@@ -436,7 +436,7 @@ final class RmmAdmin
             return ActionResult::fail(422, 'invalid', $out);
         }
 
-        return ActionResult::ok('Installer ready.', 200, 'ok', ['download' => $out]);
+        return ActionResult::ok('Installer ready.', 200, 'ok', ['download' => $out, 'mesh_after_approval' => $installMeshAgent]);
     }
 
     /**
@@ -460,7 +460,7 @@ final class RmmAdmin
         $commands = $this->installers->deploymentCommands(['token' => $r['token'], 'token_plain' => $r['token_plain'], 'department' => $r['department']], $arch, $installMeshAgent, $format);
 
         return ActionResult::ok('Enrollment token created. Copy the commands now: the token is shown only once.', 201, 'created',
-            ['token' => $r['token'], 'token_plain' => $r['token_plain'], 'commands' => $commands, 'department' => $r['department']]);
+            ['token' => $r['token'], 'token_plain' => $r['token_plain'], 'commands' => $commands, 'department' => $r['department'], 'mesh_after_approval' => $installMeshAgent]);
     }
 
     // ------------------------------------------------------------------

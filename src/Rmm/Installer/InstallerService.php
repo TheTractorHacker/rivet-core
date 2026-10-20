@@ -49,8 +49,9 @@ final class InstallerService
     /**
      * Create the enrollment token and the stamp payload for a client. Nothing is created when a precondition fails.
      *
-     * $installMeshAgent is the tick-box "also install the MeshCentral agent" (off by default): the installer then carries the Mesh source from the
-     * MeshCentral settings, and the choice is remembered for the token, so the token-gated download that scripts call serves the same payload. It is
+     * $installMeshAgent is the tick-box "also install the MeshCentral agent (after the device is approved)" (off by default). Since rc.27 the installer carries NOTHING of
+     * the Mesh settings (the device group id is an invitation secret): the choice is only remembered for the token, and the server pushes the sealed `mesh_install` job once the device is
+     * linked ({@see \RivetCore\Rmm\Mesh\MeshAfterApproval}). Tokens issued before rc.27 (option value 1) keep the old install-time Mesh block. It is
      * refused up front when the Mesh settings cannot support it (switched off, no https address, no device group id). The RivetIT agent never bundles a
      * Mesh binary and a failed Mesh install never fails the RivetIT install.
      *
@@ -62,7 +63,7 @@ final class InstallerService
      * Refused up front when software deployment is off, an app is unknown or switched off, or its vendor parameters have no value for this client.
      *
      * @param list<int> $appIds
-     * @return array{ok:bool,error?:string,token?:array<string,mixed>,token_plain?:string,payload?:string,installer_id?:string,department?:string}
+     * @return array{ok:bool,error?:string,token?:array<string,mixed>,token_plain?:string,payload?:string,installer_id?:string,department?:string,mesh_after_approval?:bool}
      */
     public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = []): array
     {
@@ -95,7 +96,7 @@ final class InstallerService
             return ['ok' => false, 'error' => 'The enrollment token could not be created.'];
         }
         if ($installMeshAgent) {
-            $this->sql->run('INSERT INTO endpoint_agent_installer_options (token_id, install_mesh_agent, created_at) VALUES (?, 1, ?) ON DUPLICATE KEY UPDATE install_mesh_agent = 1', [$t['token_id'], $this->sql->utcNow()]);
+            $this->sql->run('INSERT INTO endpoint_agent_installer_options (token_id, install_mesh_agent, created_at) VALUES (?, ' . \RivetCore\Rmm\Mesh\MeshAfterApproval::OPTION_AFTER_APPROVAL . ', ?) ON DUPLICATE KEY UPDATE install_mesh_agent = ' . \RivetCore\Rmm\Mesh\MeshAfterApproval::OPTION_AFTER_APPROVAL, [$t['token_id'], $this->sql->utcNow()]);
         }
         if ($appIds !== []) {
             $why = $this->autoInstall->recordSelection((int) $t['token_id'], $appIds, $clientId, $locationId, $userId, $actorName);
@@ -113,9 +114,9 @@ final class InstallerService
         }
         $dept = $this->installer->departmentName($clientId);
         $this->audit->record('Installer Created', "$actorName created installer $installerId ($arch" . ($format === InstallerFormat::MSI ? ', msi' : '') . ") for {$this->clientLabel} \"$dept\" with enrollment token #{$t['token_id']} ({$row['token_selector']}), "
-            . "{$row['max_uses']} uses, expires {$row['expires_at']} UTC" . ($installMeshAgent ? ', also installs the MeshCentral agent' : ''), $clientId, 0);
+            . "{$row['max_uses']} uses, expires {$row['expires_at']} UTC" . ($installMeshAgent ? ', installs the MeshCentral agent after the device is approved' : ''), $clientId, 0);
 
-        return ['ok' => true, 'token' => $row, 'token_plain' => $t['token'], 'payload' => $payload, 'installer_id' => $installerId, 'department' => $dept];
+        return ['ok' => true, 'token' => $row, 'token_plain' => $t['token'], 'payload' => $payload, 'installer_id' => $installerId, 'department' => $dept, 'mesh_after_approval' => $installMeshAgent];
     }
 
     /**
@@ -167,8 +168,9 @@ final class InstallerService
             'server' => $server,
             'filename' => $this->installer->filename($issued['department'], $arch),
             'powershell' => self::powershellSnippet($server, $issued['token_plain'], $arch, $issued['department']),
-            'linux' => self::linuxSnippet($server, $issued['token_plain'], $arch, $issued['department'], $this->installer->caPem(), $installMeshAgent ? $this->meshAgents?->installBlock() : null),
+            'linux' => self::linuxSnippet($server, $issued['token_plain'], $arch, $issued['department'], $this->installer->caPem()),   // never the Mesh address, group id or pin: the server pushes the Mesh install once the device is approved
             'detection' => ['service' => self::WINDOWS_SERVICE, 'file' => self::WINDOWS_INSTALLED_FILE],
+            'mesh_after_approval' => $installMeshAgent,
         ];
         if ($format === InstallerFormat::MSI) {
             $name = $this->installer->filename($issued['department'], $arch, InstallerFormat::MSI);
