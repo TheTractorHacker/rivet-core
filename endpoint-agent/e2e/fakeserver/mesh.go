@@ -39,7 +39,7 @@ case "$1" in
     exit 0;;
   -fulluninstall)
     echo "uninstalled" >> %[1]s/mesh-uninstalled.marker
-    for f in $(grep -la "/usr/local/mesh_services/[m]eshagent/meshagent" /proc/[0-9]*/cmdline 2>/dev/null); do p=${f#/proc/}; kill "${p%%/*}" 2>/dev/null; done
+    for f in $(grep -la "/usr/local/mesh_services/[m]eshagent/meshagent.-run" /proc/[0-9]*/cmdline 2>/dev/null); do p=${f#/proc/}; kill "${p%%/*}" 2>/dev/null; done
     rm -rf /usr/local/mesh_services/meshagent /etc/init.d/meshagent
     exit 0;;
 esac
