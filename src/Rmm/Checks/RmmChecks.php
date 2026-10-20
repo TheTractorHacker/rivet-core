@@ -35,7 +35,11 @@ final class RmmChecks
         return [$v === 'any' ? null : $v, null];
     }
 
-    /** The OS a check is limited to, or null for any (an unknown stored value counts as any). @param array<string,mixed> $check */
+    /**
+     * The OS a check is limited to, or null for any (an unknown stored value counts as any).
+     *
+     * @param array<string,mixed> $check
+     */
     public static function osOf(array $check): ?string
     {
         $o = $check['os'] ?? null;
@@ -43,7 +47,11 @@ final class RmmChecks
         return $o === 'windows' || $o === 'linux' ? $o : null;
     }
 
-    /** The OS to filter a device's checks by: its stored `os` when that is windows or linux, else null (no filtering). @param array<string,mixed> $dev */
+    /**
+     * The OS to filter a device's checks by: its stored `os` when that is windows or linux, else null (no filtering).
+     *
+     * @param array<string,mixed> $dev
+     */
     public static function deviceOs(array $dev): ?string
     {
         $o = $dev['os'] ?? null;
