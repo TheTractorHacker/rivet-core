@@ -25,7 +25,7 @@ func startMockMesh(dir, addr, group, node string, s *server) {
 # FAKE MeshAgent for the e2e run
 case "$1" in
   -nodeid) echo "MeshAgent (fake)"; echo '%[2]s'; exit 0;;
-  -run) exec sleep 3600;;
+  -run) sleep 3600; exit 0;;
   -fullinstall)
     # what the real one does: copy itself and the .msh into the install dir, register a service, start it
     D=/usr/local/mesh_services/meshagent
