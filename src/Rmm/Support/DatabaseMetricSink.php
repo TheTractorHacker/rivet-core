@@ -36,7 +36,8 @@ final class DatabaseMetricSink implements RmmMetricSinkInterface, RmmMetricReade
     /** Windows longer than a week are read from the daily tier (7 days of hourly points are 168 per series; 90 days would be 2,160). */
     public const DAILY_FROM_SECONDS = 604800;
     /** Metrics worth an hourly history; the rest (totals, uptime, pending reboot) only keep their latest value. */
-    public const ROLLUP_KEYS = ['cpu.utilization', 'memory.utilization', 'disk.utilization', 'disk.free_bytes', 'network.rx_bytes_per_s', 'network.tx_bytes_per_s'];
+    public const ROLLUP_KEYS = ['cpu.utilization', 'memory.utilization', 'disk.utilization', 'disk.free_bytes', 'network.rx_bytes_per_s', 'network.tx_bytes_per_s',
+        'memory.used_bytes', 'memory.available_bytes', 'cpu.core.utilization', 'disk.read_iops', 'disk.write_iops', 'disk.queue_length', 'network.errors', 'battery.charge_percent'];
     private const KEY_RE = '/^[a-z0-9_.]{1,64}$/D';
 
     private readonly Sql $sql;

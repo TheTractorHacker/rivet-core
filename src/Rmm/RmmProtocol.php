@@ -67,6 +67,8 @@ final class RmmProtocol
     public const CHECKIN_MAX_CHECKS = 100;
     public const CHECKIN_MAX_BUFFERED = 100;
     public const CHECKIN_MAX_DISKS = 32;
+    /** Per-core utilization values read from one check-in's metrics (rc.25, additive). */
+    public const CHECKIN_MAX_CORES = 256;
     public const CHECKIN_MAX_INVENTORY_BYTES = 65536;
     public const CHECKIN_FUTURE_SKEW_S = 900;
     /** The largest clock_offset_s an agent may report and the largest correction it applies (24 hours). Beyond it the report is ignored and the agent stamps its own time. */
