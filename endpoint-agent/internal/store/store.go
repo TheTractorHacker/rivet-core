@@ -21,6 +21,7 @@ type Config struct {
 	CAFile            string `json:"ca_file,omitempty"`         // extra CA PEM (internal CAs), added to the system pool
 	PinSPKISHA256     string `json:"pin_spki_sha256,omitempty"` // optional hex SHA-256 of the server leaf SubjectPublicKeyInfo
 	Department        string `json:"department,omitempty"`      // informational; the enrollment token is the authority
+	MeshAgentPath     string `json:"mesh_agent_path,omitempty"` // optional absolute path of the MeshCentral agent executable (name must contain "meshagent")
 	MeshNodeID        string `json:"mesh_node_id,omitempty"`    // explicit override for the MeshCentral node id
 	MeshMSHPath       string `json:"mesh_msh_path,omitempty"`   // override path of meshagent.msh
 	MaxConcurrentJobs int    `json:"max_concurrent_jobs,omitempty"`

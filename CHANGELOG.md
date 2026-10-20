@@ -14,6 +14,11 @@ Observed on a real Linux box: the log showed `enrolled status=pending_approval` 
 - **Migration 0034** (`0034_rmm_mesh_after_approval`): one new table, nothing altered.
 - **Tests.** `MeshAfterApprovalTest` (9) plus changes in `MeshAgentTest`.
 - **Editions.** See UPGRADING.md ("Adopting Mesh install after approval").
+## Unreleased (agent: Mesh node id retry; no migration, no server change)
+
+- **Agent.** The Mesh node id was read once at start and then daily, so a Mesh agent installed seconds after the RivetIT agent started (the one-line installer with `--install-mesh-agent`) left the device unmapped until a restart or the next day. The agent now keeps looking until it has found an id: every 60 s for the first 10 minutes after start, every 5 minutes for the next 2 hours, then daily; it stops once found and re-reports on change. A stat of the known Mesh paths on each loop picks up an agent that appears later, and a finished `mesh_install` job restarts the schedule.
+- **Linux locations.** `/opt/meshagent*/meshagent` (real directories only), an operator `mesh_agent_path` (absolute, name contains `meshagent`), and `meshagent --nodeid` as a fallback to `-nodeid`.
+- **Check-in.** The `mesh_agent` block gains an additive `state` (`ready`, `installed_no_node_id`, `not_found`, `error`).
 
 ## 1.0.0-rc.26 (policy starter pack; no migration)
 

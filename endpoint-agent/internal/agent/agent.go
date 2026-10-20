@@ -149,7 +149,7 @@ func New(o Options) (*Agent, error) {
 		a.loadClock(st0)
 	}
 	if a.meshRep == nil {
-		a.meshRep = &mesh.Reporter{StateDir: o.Store.Dir, Probe: mesh.Probe{GOOS: runtime.GOOS}, Now: a.now, Override: a.meshNodeOverride}
+		a.meshRep = &mesh.Reporter{StateDir: o.Store.Dir, Probe: mesh.Probe{GOOS: runtime.GOOS, ExtraPaths: []string{cfg.MeshAgentPath}}, Now: a.now, Override: a.meshNodeOverride}
 	}
 	a.col = collect.New(o.Platform, func() store.Config { a.mu.Lock(); defer a.mu.Unlock(); return a.cfg })
 	a.col.SetStateDir(o.Store.Dir)
@@ -694,7 +694,7 @@ func (a *Agent) buildInflight(ctx context.Context) (*store.Inflight, error) {
 		in.WithInventory, in.InventoryHash = true, collect.InventoryHash(*inv)
 	}
 	if mr := a.meshIfDue(ctx, st); mr != nil {
-		req.MeshAgent = &api.MeshAgentReport{Installed: mr.Installed, Version: mr.Version, NodeID: mr.NodeID, Error: mr.Error}
+		req.MeshAgent = &api.MeshAgentReport{Installed: mr.Installed, Version: mr.Version, NodeID: mr.NodeID, Error: mr.Error, State: mr.State}
 		in.WithMesh, in.MeshHash = true, mr.Hash()
 	}
 	a.sw.pending = nil
@@ -949,6 +949,12 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 		d = a.o.MinInterval // keep draining the queue
 	} else if d = api.Jitter(d, intervalJitter, a.rand); d < a.o.MinInterval {
 		d = a.o.MinInterval
+	}
+	// A Mesh agent is on the machine (or was just installed) but its node id is not read yet: come back on the retry schedule.
+	if a.meshRep != nil {
+		if r := a.meshRep.Retry(); r > 0 && d > r {
+			d = r
+		}
 	}
 	return checkinOutcome{delay: d, ok: true}
 }

@@ -215,6 +215,7 @@ type MeshAgentReport struct {
 	Version   string `json:"version,omitempty"`
 	NodeID    string `json:"node_id,omitempty"`
 	Error     string `json:"error,omitempty"`
+	State     string `json:"state,omitempty"` // ready | installed_no_node_id | not_found | error (additive)
 }
 
 // SoftwareItem is one installed product. Its identity is (Source, Name).
