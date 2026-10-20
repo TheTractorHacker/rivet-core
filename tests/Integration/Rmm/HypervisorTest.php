@@ -596,6 +596,7 @@ final class HypervisorTest extends RemoteTestCase
         $this->assertLessThanOrEqual(30, $summary);
         $this->assertLessThanOrEqual(20, $off);
         $this->assertSame(1000, (int) $this->h->one('SELECT COUNT(*) FROM rmm_hypervisor_vms'));
+        $this->h->mysqli->query('ANALYZE TABLE rmm_hypervisor_vms')->fetch_all();
         $bytes = (int) $this->h->one("SELECT data_length + index_length FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'rmm_hypervisor_vms'");
         fwrite(STDERR, 'rmm_hypervisor_vms: ' . $bytes . ' bytes for 1000 rows (' . intdiv($bytes, 1000) . " per VM; InnoDB pages, so a small table is rounded up)\n");
     }

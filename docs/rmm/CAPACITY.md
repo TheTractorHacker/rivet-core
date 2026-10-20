@@ -650,3 +650,35 @@ Off by default (`change_monitor` sub-switch) and free while off: no change table
 
 Load: 1,000 devices at 20 records a day is 0.23 records a second on average (about 850 MB in 90 days at 470 bytes); a patch Tuesday sends a few hundred records per device within minutes, which the per-device budget spreads over several minutes per device. The capacity report gains a `change_monitor` block (records, devices reporting, the limits, the cap and worst-case sizes) while the switch is on. Estimates of how many records a Windows device really produces are in [CHANGE_MONITOR.md](CHANGE_MONITOR.md) section 10 and are **not measured on Windows**.
 
+
+## 22. Hypervisor visibility paths (Proxmox VE, Hyper-V)
+
+Off by default (`hypervisor` sub-switch) and free while off: a block in a check-in is ignored before it is read, the offer is not made, `Housekeeping` prunes only if hypervisor rows exist. With the switch on, a check-in from an agent that announced `hypervisor` costs one Ed25519 signature (the offer, about 400 bytes more in the response, to every Linux and Windows agent, because only the agent knows whether it is a hypervisor). Only a host that is one sends a block. Full design: [HYPERVISORS.md](HYPERVISORS.md).
+
+### 22.1 Limits (`limits_json`)
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `hypervisor_full_interval_s` | 600 | 300 to 86,400 | the full list at most this often (signed into the agent's configuration) |
+| `hypervisor_summary_interval_s` | 120 | 60 to 600 | the state-change probe in between (not above the full interval) |
+| `hypervisor_max_vms` | 1,000 | 1 to 1,000 | VMs stored per host; a host that goes over is cut and never marks VMs missing; hard stop at this + 200 rows including missing ones |
+| `hypervisor_retention_days` | 30 | 1 to 365 | missing VMs and storages are purged after this |
+| `hypervisor_history_per_vm` | 20 | 5 to 100 | the ring of state changes per VM |
+| `hypervisor_snapshot_days`, `_backup_days` | 7, 2 | 1 to 365 | alert thresholds |
+| `hypervisor_storage_warn_pct`, `_crit_pct` | 85, 95 | 1 to 100 | warn must not exceed crit |
+| `hypervisor_vm_down_resolve_h` | 24 | 1 to 720 | a VM stopped longer than this is taken as switched off |
+| `hypervisor_alert_vm_down`, `_backup`, `_snapshot`, `_storage`, `_pool`, `_quorum` | 1 | 0 or 1 | raise the alert (0: only the event / the record) |
+
+### 22.2 Model and measurement
+
+| What | Cost | Bound |
+|---|---|---|
+| Statements per check-in carrying a block, 1,000 VMs (measured by `HypervisorTest::testWhatAThousandVmReportCostsInStatementsAndBytes`, MariaDB 11.8, scratch DB, one device) | first full report **41**, identical full report **38**, full with one state change **43**, summary with one change **24**, empty summary **16**; a check-in without a block: 0 more | full: chunks of 100 VMs per upsert, one `NOT IN` of at most 1,000 keys; alert evaluation reads the device's `hv.*` check rows, its VMs and storages once |
+| Check-ins that carry a block | one full per `hypervisor_full_interval_s` per host (default 6 an hour) and at most one summary per `hypervisor_summary_interval_s` that has a change | an unchanged host sends no summary |
+| Storage per VM | **about 390 bytes per VM row with its five indexes (measured, 1,000 typical rows after `ANALYZE TABLE`)**; with every text at its maximum about 2.9 KB (name 100, node 64, tags 300, ignore reason 200 characters, declared widths in utf8mb4) | `hypervisor_max_vms` + 200 rows per host |
+| Fleet example | 50 hosts x 100 VMs = 5,000 rows, about 2 MB; one host with 1,000 VMs about 0.4 MB; storage rows about 150 bytes each; the history ring at most `history_per_vm` x 60 bytes per VM | |
+| Request size | about 300 bytes per VM with all optional members (the agent cuts to 300 KiB, so 1,000 VMs is about the limit); the report waits one check-in if the body would pass 900 KiB | 1 MiB body cap |
+| Agent | one background collection per interval: roughly 6 + (VMs to look up for snapshots, at most 300) `pvesh` calls on Proxmox (each 5 s timeout), 3 PowerShell starts on Hyper-V; **not timed on a real host** | 3 minute ceiling per collection |
+| Shedding | level 1: the block is dropped (acknowledged, not stored); level 2 and above: the offer is withdrawn and the agent stops | |
+
+Load: 50 hosts at the default intervals is 300 full reports an hour, about 12,000 statements an hour (3.4 a second), plus the alert evaluation. Not measured on the reference hardware: the figures above are one device on a scratch database.
