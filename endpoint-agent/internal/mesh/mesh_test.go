@@ -44,7 +44,12 @@ type mock struct {
 	mu   sync.Mutex
 	hits []string
 	uris []string // the request line target exactly as the server received it
+	// /meshsettings answer (defaults: 200 and a small .msh)
+	settingsStatus int
+	settings       string
 }
+
+const defaultMSH = "MeshName=Test\nMeshType=2\nStartupType=9\nmeshServiceName=Mesh Agent\n"
 
 func (m *mock) lastURI() string {
 	m.mu.Lock()
@@ -53,6 +58,12 @@ func (m *mock) lastURI() string {
 		return ""
 	}
 	return m.uris[len(m.uris)-1]
+}
+
+func (m *mock) allHits() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.hits...)
 }
 
 func (m *mock) lastQuery() string {
@@ -72,6 +83,15 @@ func newMock(t *testing.T, status int, ctype string, body []byte) *mock {
 		m.hits = append(m.hits, r.URL.Path+"?"+r.URL.RawQuery)
 		m.uris = append(m.uris, r.RequestURI)
 		m.mu.Unlock()
+		if r.URL.Path == "/meshsettings" {
+			st, body := m.settingsStatus, m.settings
+			if st == 0 {
+				st, body = 200, defaultMSH
+			}
+			w.WriteHeader(st)
+			_, _ = w.Write([]byte(body))
+			return
+		}
 		if r.URL.Path != "/meshagents" {
 			http.NotFound(w, r)
 			return
@@ -96,13 +116,55 @@ func pinOf(m *mock, sha384 bool) string {
 	return hex.EncodeToString(s[:])
 }
 
+// fakeInstaller is a stub meshagent: it records its arguments and, unless
+// MESH_TEST_NOINSTALL is set, creates the files `-fullinstall` would.
 func fakeInstaller(t *testing.T, marker string, exit int) []byte {
 	t.Helper()
-	return []byte("#!/bin/sh\necho \"ran with $@\" > " + marker + "\necho installer-output\nexit " + string(rune('0'+exit)) + "\n")
+	return []byte("#!/bin/sh\necho \"ran with $@\" > " + marker + "\ncp ./meshagent.msh \"" + marker + ".msh\" 2>/dev/null\n" +
+		"if [ -z \"$MESH_TEST_NOINSTALL\" ] && [ -n \"$MESH_TEST_DIR\" ]; then mkdir -p \"$MESH_TEST_DIR\"; cp ./meshagent \"$MESH_TEST_DIR/meshagent\"; cp ./meshagent.msh \"$MESH_TEST_DIR/meshagent.msh\"; fi\n" +
+		"echo installer-output\nexit " + string(rune('0'+exit)) + "\n")
+}
+
+// linuxHooks makes the Linux flow hermetic: a temp install dir (exported to the stub as MESH_TEST_DIR),
+// a fake systemd and short verification timings. The fake service is "registered" once the stub installed the files.
+type linuxRig struct {
+	dir      string
+	state    string // what is-active prints
+	unitless bool   // list-unit-files finds nothing
+	ctl      [][]string
+}
+
+func (l *linuxRig) apply(o *InstallOptions) {
+	o.LinuxInstallDir = l.dir
+	o.StartupType = func() int { return 1 }
+	o.SystemdRunDir = filepath.Dir(l.dir) // exists
+	o.PollInterval, o.VerifyTimeout = 5*time.Millisecond, 100*time.Millisecond
+	o.Systemctl = func(_ context.Context, a ...string) (string, int) {
+		l.ctl = append(l.ctl, a)
+		switch a[0] {
+		case "list-unit-files":
+			if l.unitless {
+				return "", 0
+			}
+			return "meshagent.service enabled enabled\n", 0
+		case "is-active":
+			return l.state + "\n", 0
+		}
+		return "", 1
+	}
+}
+
+func newLinuxRig(t *testing.T) *linuxRig {
+	l := &linuxRig{dir: filepath.Join(t.TempDir(), "mesh_services", "meshagent"), state: "active"}
+	t.Setenv("MESH_TEST_DIR", l.dir)
+	t.Setenv("MESH_TEST_NOINSTALL", "")
+	return l
 }
 
 func opts(t *testing.T) InstallOptions {
-	return InstallOptions{GOOS: "linux", GOARCH: "amd64", WorkDir: t.TempDir(), Log: quiet()}
+	o := InstallOptions{GOOS: "linux", GOARCH: "amd64", WorkDir: t.TempDir(), Log: quiet()}
+	newLinuxRig(t).apply(&o)
+	return o
 }
 
 func TestInstallSuccessPinnedSHA384(t *testing.T) {
@@ -115,11 +177,14 @@ func TestInstallSuccessPinnedSHA384(t *testing.T) {
 	if !res.Installed || res.Error != "" || res.ExitCode != 0 {
 		t.Fatalf("result %+v", res)
 	}
-	if got, _ := os.ReadFile(marker); !strings.Contains(string(got), "ran with -install") {
-		t.Fatalf("installer did not run with -install: %q", got)
+	if got, _ := os.ReadFile(marker); !strings.Contains(string(got), "ran with -fullinstall --copy-msh=1") {
+		t.Fatalf("installer did not run with the Mesh script args: %q", got)
 	}
-	if q := m.lastQuery(); q != "/meshagents?id=6&meshid="+testGroupURL+"&installflags=0" {
-		t.Fatalf("download URL %q", q)
+	if q := m.lastQuery(); q != "/meshsettings?id="+testGroupURL { // last request: the settings
+		t.Fatalf("settings URL %q", q)
+	}
+	if h := m.allHits(); len(h) != 2 || h[0] != "/meshagents?id=6" {
+		t.Fatalf("download URLs %q", h)
 	}
 	if res.SHA256 == "" || res.AgentID != 6 || !strings.Contains(res.Log, "installer-output") {
 		t.Fatalf("result %+v", res)
@@ -140,8 +205,8 @@ func TestInstallSuccessPinnedSHA256AndArm64Table(t *testing.T) {
 	if !res.Installed || res.AgentID != 26 {
 		t.Fatalf("result %+v", res)
 	}
-	if !strings.HasPrefix(m.lastQuery(), "/meshagents?id=26&") {
-		t.Fatal(m.lastQuery())
+	if h := m.allHits(); h[0] != "/meshagents?id=26" {
+		t.Fatal(h)
 	}
 }
 
@@ -155,8 +220,8 @@ func TestPayloadTableOverridesTheBuiltInIDs(t *testing.T) {
 	if res := Install(context.Background(), s, opts(t)); !res.Installed || res.AgentID != 99 {
 		t.Fatalf("%+v", res)
 	}
-	if !strings.HasPrefix(m.lastQuery(), "/meshagents?id=99&") {
-		t.Fatal(m.lastQuery())
+	if h := m.allHits(); h[0] != "/meshagents?id=99" {
+		t.Fatal(h)
 	}
 }
 

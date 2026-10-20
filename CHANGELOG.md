@@ -19,6 +19,13 @@ Observed on a real Linux box: the log showed `enrolled status=pending_approval` 
 - **Agent.** The Mesh node id was read once at start and then daily, so a Mesh agent installed seconds after the RivetIT agent started (the one-line installer with `--install-mesh-agent`) left the device unmapped until a restart or the next day. The agent now keeps looking until it has found an id: every 60 s for the first 10 minutes after start, every 5 minutes for the next 2 hours, then daily; it stops once found and re-reports on change. A stat of the known Mesh paths on each loop picks up an agent that appears later, and a finished `mesh_install` job restarts the schedule.
 - **Linux locations.** `/opt/meshagent*/meshagent` (real directories only), an operator `mesh_agent_path` (absolute, name contains `meshagent`), and `meshagent --nodeid` as a fallback to `-nodeid`.
 - **Check-in.** The `mesh_agent` block gains an additive `state` (`ready`, `installed_no_node_id`, `not_found`, `error`).
+## Unreleased (Linux MeshCentral agent install fixed; agent only, no migration)
+
+A real Debian/Proxmox host reported "the Mesh agent installer finished" and "MeshCentral agent: installed." while no Mesh agent existed. The Linux routine ran `./meshagent -install` on a binary downloaded with a `meshid` and trusted exit 0.
+
+- **Linux now follows MeshCentral's own script**: binary from `meshagents?id=<N>` (no `meshid`), settings from `meshsettings?id=<group>`, `StartupType=<n>` (systemd 1, upstart 2, init.d 3, as the script detects it) added to the `.msh`, then `./meshagent -fullinstall --copy-msh=1`. A `linux` entry in the stamped `install_args` is ignored (the server stamped the legacy `-install`). Windows is unchanged.
+- **Verified, not trusted**: the install directory, the `meshagent` service (registered and active within 30 s; for non-systemd an init script and a running process) are checked, and each failure has a precise reason in the job result, the check-in Mesh state, `install.log` and the installer's last line. The group id is never logged. Uninstall now uses `-fulluninstall`.
+- Docs: REMOTE_AND_LOGS.md ("Linux install"). Tests: mock Mesh server with a stub agent. Not run against a real MeshCentral.
 
 ## 1.0.0-rc.26 (policy starter pack; no migration)
 

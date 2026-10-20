@@ -158,7 +158,7 @@ Why `rmm.remote.manage` and not `rmm.admin`: the same grant that starts the Mesh
 * **Idempotent.** A device that already reports the Mesh agent answers `200` with `skipped: already_installed` (add `force` to run the installer again); a second click while one install is queued or running answers `200` with `skipped: already_queued`. The bulk call can be repeated safely; it counts `created`, `skipped_installed`, `skipped_queued`, `skipped_unsupported` (older agent), `skipped_denied` (no grant for that client) and `skipped_error`.
 * **Approval.** The two-person approval queue only knows library script runs. A bulk install larger than `approval_bulk_threshold` (when that is set) is therefore **refused** (`409 approval_required`), never queued around the rule: install in batches by tag or client. With the default threshold of 0 there is no approval rule.
 * **Result.** `GET endpoint_devices/{id}/remote/jobs/{job_id}`, the device detail (`mesh_agent`: installed, version, node id, map state, error; and `mesh_install`: `available`, `agent_supports`, `installed`, present only while the install is available), the audit log (`Remote Tool Queued`, `Mesh Agent Installed`, `Mesh Agent Install Failed`, `Mesh Agent Bulk Install`) and the existing webhook event `rmm.mesh.agent_installed`. The node id is mapped by the existing rules (above).
-* **Removal** runs the Mesh agent's own uninstaller and nothing else (the RivetIT agent stays). The uninstall flags (`-fulluninstall` on Windows, `-uninstall` on Linux) are unverified against a real MeshAgent.
+* **Removal** runs the Mesh agent's own uninstaller and nothing else (the RivetIT agent stays). The uninstall flag is `-fulluninstall` on both (as MeshCentral's own script runs it); not verified against a real MeshAgent.
 
 ### Where the node id comes from, and how it is mapped
 
@@ -192,10 +192,32 @@ The RivetIT agent reads the local node id at every start and once a day (only on
 **Still unverified**, written from the MeshCentral documentation and source as remembered, and tested only against mocks and fixtures. Before a fleet roll-out, try one machine of each operating system and confirm:
 
 1. **The other agent ids**, from MeshCentral's `meshAgentsArchitectureNumbers` (My Server, Mesh Agents lists them): 3 Windows x86-32 service, 5 Linux x86-32, 6 Linux x86-64, 26 Linux ARM 64-bit (aarch64), and 36 for Windows ARM64, which is the **least certain**. (4, Windows x86-64, is verified.) A wrong id is corrected under the Mesh settings (`mesh_agent_ids`), from the server, without a new agent: it travels in the installer. `installflags` 0 = both interactive and background, 1 = background only, 2 = interactive only.
-2. **The install arguments.** Windows `MeshAgent.exe -fullinstall`; Linux `./meshagent -install`. MeshCentral's own Linux script also passes `--installPath=/usr/local/mesh_services/meshagent` and may copy a `.msh` file; whether a binary downloaded with a `meshid` already embeds the group on your version, or needs a `.msh`, has to be confirmed. Correct them with `mesh_install_args`.
-3. **The uninstall arguments** used by `--remove-meshagent`: Windows `-fulluninstall`, Linux `-uninstall`.
+2. **The install arguments.** Windows `MeshAgent.exe -fullinstall` (corrected with `mesh_install_args`). Linux: fixed, as in MeshCentral's own script (see "Linux install" below); the `linux` entry of `mesh_install_args` is ignored.
+3. **The uninstall arguments** used by `--remove-meshagent`: `-fulluninstall` on both.
 4. **The node id.** That `-nodeid` prints the id (the code accepts a bare id or `node//<id>`, alone on a line, optionally after `NodeID:`), that it is the same id MeshCentral shows for the device, and whether a registry value or the `.msh` ever holds it (the standard `.msh` holds the server and group, not the node; the registry key `HKLM\SOFTWARE\Open Source\MeshAgent2` is a guess). The default locations are `%ProgramFiles%\Mesh Agent\MeshAgent.exe` and `/usr/local/mesh_services/meshagent/meshagent`.
 5. **The Windows agent code** was cross-compiled and vetted, never run on a Windows host.
+
+### Linux install (rc.27, after a real failure on 2026-10-20)
+
+The first Linux routine downloaded `meshagents?id=6&meshid=...` and ran `./meshagent -install`, treating exit 0 as success. On a Debian-based Proxmox host the log said "the Mesh agent installer finished", the installer printed "MeshCentral agent: installed." and no Mesh agent existed. The Linux install now does exactly what MeshCentral's own script (`GET <mesh>/meshagents?script=1`) does, and then **checks the result instead of trusting the exit code**:
+
+1. Download the binary from `<mesh>/meshagents?id=<agent id>` (6 for x86-64, 26 aarch64, 5 x86-32; **no** `meshid`) and the settings from `<mesh>/meshsettings?id=<device group id>`, both over https with the same pinning/CA rules, size caps and timeouts, into a private 0700 directory.
+2. Detect the init system as the script does (1 systemd, 2 upstart, 3 init.d, 0 unknown) and add or replace `StartupType=<n>` in `meshagent.msh`.
+3. Run `./meshagent -fullinstall --copy-msh=1` (timeout, output capped at 4 KiB, the group id masked).
+4. **Verify**: `/usr/local/mesh_services/meshagent/meshagent` and `meshagent.msh` exist; with systemd, `meshagent.service` is registered and `systemctl is-active meshagent` becomes `active` within 30 s; without systemd, an init script exists and the installed binary is running. Only then is the result "installed". The node id is read afterwards as before.
+
+Messages (job result, check-in Mesh state, `install.log`, and the last line `install-linux.sh` prints; the RivetIT install itself still exits 0):
+
+| Message | Meaning and fix |
+|---|---|
+| `download of meshsettings returned HTTP 404: check the device group id` | the device group id is wrong or the group was deleted; fix it in the Mesh settings |
+| `download of the Mesh agent (id N) returned HTTP <code>` | the agent id is not served by your Mesh server (check Mesh Agents in My Server; correct `mesh_agent_ids`) |
+| `installer exited 0 but meshagent is missing from /usr/local/mesh_services/meshagent` | the Mesh installer did nothing; run it by hand from `install.log`'s output, look for a missing library or an unsupported init system |
+| `installer exited 0 but no meshagent service was registered` | files are there but no systemd unit (or init script) was created |
+| `service installed but not active: <state>` | the unit exists but is `failed`, `inactive` or stuck `activating`; run `journalctl -u meshagent` |
+| `the Mesh installer exited with code N` | the installer failed; its last output is in `install.log` |
+
+Not tested against a real MeshCentral server: the flow and the checks are exercised against a mock server and a stub `meshagent` (`internal/mesh/install_linuxflow_test.go`, `e2e/linux_container_scenario.sh`). Whether `meshsettings` accepts the 64-character URL form of the group id (the script passes whatever it is given) is confirmed only by MeshCentral's script, not by a run.
 
 What was proven: the whole flow on Linux in a container against a mock Mesh server that serves a fake `meshagent` (download, pin, run, node id report, no-fail, uninstall behaviour); the pinning, size, redirect and error handling and the parsers with unit tests; the server rules with integration tests. See `endpoint-agent/e2e/run_linux_container_e2e.sh` and `endpoint-agent/internal/mesh`.
 

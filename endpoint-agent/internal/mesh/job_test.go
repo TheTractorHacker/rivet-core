@@ -44,11 +44,13 @@ type jobRig struct {
 	runs   []string
 	node   string
 	change atomic.Int32
+	lx     *linuxRig
 }
 
 // newJobRig wires a JobDeps whose "installed agent" exists only once the fake installer script has run.
 func newJobRig(t *testing.T) *jobRig {
 	r := &jobRig{t: t, state: t.TempDir(), node: testNode}
+	r.lx = newLinuxRig(t)
 	dir := t.TempDir()
 	r.agent = filepath.Join(dir, "meshagent")
 	r.marker = filepath.Join(dir, "ran")
@@ -66,12 +68,13 @@ func newJobRig(t *testing.T) *jobRig {
 		},
 		OnChange: func() { r.change.Add(1) },
 	}
+	r.deps.Options = r.lx.apply
 	return r
 }
 
 // installer is a shell script that behaves like Mesh's installer: it "installs" the agent file.
 func (r *jobRig) installer(exit int) []byte {
-	return []byte("#!/bin/sh\necho \"args $@\" > " + r.marker + "\n: > " + r.agent + "\necho installer-output\nexit " + string(rune('0'+exit)) + "\n")
+	return []byte("#!/bin/sh\necho \"args $@\" > " + r.marker + "\n: > " + r.agent + "\nmkdir -p \"$MESH_TEST_DIR\"; cp ./meshagent \"$MESH_TEST_DIR/meshagent\"; cp ./meshagent.msh \"$MESH_TEST_DIR/\"\necho installer-output\nexit " + string(rune('0'+exit)) + "\n")
 }
 
 func decodeDoc(t *testing.T, out string) map[string]any {
@@ -126,11 +129,11 @@ func TestInstallJobPushesTheSameInstallAndMapsTheNode(t *testing.T) {
 	if d["installed"] != true || d["node_id"] != testNode || d["agent_id"] != float64(6) || d["host"] == "" {
 		t.Fatalf("%v", d)
 	}
-	if got, _ := os.ReadFile(r.marker); !strings.Contains(string(got), "args -install") {
+	if got, _ := os.ReadFile(r.marker); !strings.Contains(string(got), "args -fullinstall --copy-msh=1") {
 		t.Fatalf("installer arguments: %q", got)
 	}
-	if q := m.lastQuery(); q != "/meshagents?id=6&meshid="+testGroupURL+"&installflags=0" {
-		t.Fatalf("download address %q", q)
+	if h := m.allHits(); len(h) != 2 || h[0] != "/meshagents?id=6" || h[1] != "/meshsettings?id="+testGroupURL {
+		t.Fatalf("download addresses %q", h)
 	}
 	if strings.Contains(res.Output, testGroupURL) || strings.Contains(res.Output, testGroup) {
 		t.Fatal("the device group id must never be echoed in a job result")
@@ -187,7 +190,7 @@ func TestInstallJobFailuresAreReportedAndNothingIsLeftBehind(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			r := newJobRig(t)
 			if c.opts != nil {
-				r.deps.Options = c.opts
+				r.deps.Options = func(o *InstallOptions) { r.lx.apply(o); c.opts(o) }
 			}
 			m := newMock(t, c.status, c.ctype, c.body(r))
 			res := r.deps.Handlers()[JobInstall](context.Background(), jobParams(m.URL, c.pin(m), nil), 65536)
@@ -256,7 +259,7 @@ func TestUninstallJob(t *testing.T) {
 	}
 	found := false
 	for _, a := range r.runs {
-		found = found || a == "-uninstall"
+		found = found || a == "-fulluninstall"
 	}
 	if !found {
 		t.Fatalf("uninstall flag not used: %v", r.runs)

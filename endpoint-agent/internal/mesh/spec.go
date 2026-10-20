@@ -8,12 +8,12 @@
 // hash), runs it, and records the outcome. Nothing in this package may ever make
 // the RivetIT install fail: every function reports through a Result.
 //
-// PARTLY VERIFIED against a real MeshCentral: the download address shape
+// PARTLY VERIFIED against a real MeshCentral: the Windows download address shape
 // `<mesh>/meshagents?id=4&meshid=<64-character URL form>&installflags=0` (id 4 is
-// the Windows x64 agent). STILL UNVERIFIED: the Linux agent ids, the install
-// arguments and the node-id locations, written from the MeshCentral
-// documentation and source as remembered and exercised here only against mock
-// servers and fixtures. See docs/rmm/REMOTE_AND_LOGS.md.
+// the Windows x64 agent). The Linux flow is ported from the server's own script
+// (`<mesh>/meshagents?script=1`) after a real failure on 2026-10-20; it is
+// exercised here only against mock servers. STILL UNVERIFIED against a real
+// Mesh: the node-id locations. See docs/rmm/REMOTE_AND_LOGS.md.
 package mesh
 
 import (
@@ -65,10 +65,12 @@ var DefaultAgentIDs = map[string]int{
 
 // DefaultInstallArgs is what is passed to the downloaded installer, by GOOS.
 // Windows: `MeshAgent.exe -fullinstall` (installs the service, using the
-// settings the server embedded in the download). Linux: `./meshagent -install`.
+// settings the server embedded in the download). Linux: not used; the Linux flow
+// always runs LinuxInstallArgs, because the server stamps this legacy table
+// (linux: -install) into every payload.
 var DefaultInstallArgs = map[string][]string{
 	"windows": {"-fullinstall"},
-	"linux":   {"-install"},
+	"linux":   {"-install"}, // legacy table shared with the server; IGNORED on Linux (see LinuxInstallArgs)
 }
 
 // GroupURLForm is MeshCentral's URL form of a device group id: base64 of the 48-byte

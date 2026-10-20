@@ -250,17 +250,14 @@ type UninstallResult struct {
 	Log      string
 }
 
-// Uninstall runs the Mesh agent's own uninstaller (Windows -fulluninstall, Linux -uninstall). The flags are from the
+// Uninstall runs the Mesh agent's own uninstaller (-fulluninstall on both, as MeshCentral's own script runs it). The flags are from the
 // MeshAgent documentation as remembered and were NOT run against a real agent. It never touches the RivetIT agent.
 func Uninstall(ctx context.Context, p Probe, goos string) UninstallResult {
 	exe := p.Found()
 	if exe == "" {
 		return UninstallResult{}
 	}
-	arg := "-uninstall"
-	if goos == "windows" {
-		arg = "-fulluninstall"
-	}
+	arg := "-fulluninstall" // Windows and (MeshCentral's own script) Linux
 	run := p.Run
 	if run == nil {
 		run = RunProgram

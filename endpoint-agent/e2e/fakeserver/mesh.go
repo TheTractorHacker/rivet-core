@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// startMockMesh serves a stand-in for a MeshCentral server's agent download: GET /meshagents?id=N&meshid=<64-character URL form>&installflags=F answers a tiny shell script that
-// behaves like a MeshAgent for the three commands the installer uses (-install, -nodeid, -uninstall). It is NOT MeshCentral: it proves our side of the
+// startMockMesh serves a stand-in for a MeshCentral server's agent download: GET /meshagents?id=N (Linux, like MeshCentral's own script) or /meshagents?id=N&meshid=<64-character URL form>&installflags=F (Windows) and GET /meshsettings?id=<meshid> answer a tiny shell script that
+// behaves like a MeshAgent for the three commands the installer uses (-fullinstall, -nodeid, -fulluninstall). It is NOT MeshCentral: it proves our side of the
 // protocol (URL, pinning, running the installer, reporting the node id), not that a real Mesh server speaks it. See docs/rmm/REMOTE_AND_LOGS.md.
 func startMockMesh(dir, addr, group, node string, s *server) {
 	pems := selfSignedNamed(dir, "mesh_ca.pem", "mock-meshcentral")
@@ -25,15 +25,22 @@ func startMockMesh(dir, addr, group, node string, s *server) {
 # FAKE MeshAgent for the e2e run
 case "$1" in
   -nodeid) echo "MeshAgent (fake)"; echo '%[2]s'; exit 0;;
-  -install)
-    mkdir -p /usr/local/mesh_services/meshagent
-    cp "$0" /usr/local/mesh_services/meshagent/meshagent
-    chmod 755 /usr/local/mesh_services/meshagent/meshagent
+  -run) sleep 3600; exit 0;;
+  -fullinstall)
+    # what the real one does: copy itself and the .msh into the install dir, register a service, start it
+    D=/usr/local/mesh_services/meshagent
+    mkdir -p "$D"
+    cp "$0" "$D/meshagent"; chmod 755 "$D/meshagent"
+    case "$*" in *--copy-msh=1*) cp ./meshagent.msh "$D/meshagent.msh";; esac
+    printf '#!/bin/sh\n' > /etc/init.d/meshagent; chmod 755 /etc/init.d/meshagent
     echo "installed by: $0 $*" >> %[1]s/mesh-installed.marker
+    cp ./meshagent.msh %[1]s/mesh-installed.msh
+    setsid "$D/meshagent" -run >/dev/null 2>&1 </dev/null &
     exit 0;;
-  -uninstall)
+  -fulluninstall)
     echo "uninstalled" >> %[1]s/mesh-uninstalled.marker
-    rm -rf /usr/local/mesh_services/meshagent
+    for f in $(grep -la "/usr/local/mesh_services/[m]eshagent/meshagent.-run" /proc/[0-9]*/cmdline 2>/dev/null); do p=${f#/proc/}; kill "${p%%/*}" 2>/dev/null; done
+    rm -rf /usr/local/mesh_services/meshagent /etc/init.d/meshagent
     exit 0;;
 esac
 echo "unknown command: $*" >&2
@@ -43,7 +50,7 @@ exit 2
 	mux.HandleFunc("/meshagents", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		s.logf("MESH-DOWNLOAD id=%s meshid=%s installflags=%s raw=%s", q.Get("id"), q.Get("meshid"), q.Get("installflags"), r.URL.RawQuery)
-		if group != "" && q.Get("meshid") != group {
+		if q.Get("meshid") != "" && group != "" && q.Get("meshid") != group {
 			http.NotFound(w, r)
 			return
 		}
@@ -62,6 +69,15 @@ exit 2
 			return
 		}
 		w.Write([]byte(script))
+	})
+	mux.HandleFunc("/meshsettings", func(w http.ResponseWriter, r *http.Request) {
+		s.logf("MESH-SETTINGS meshid=%s raw=%s", r.URL.Query().Get("id"), r.URL.RawQuery)
+		if group != "" && r.URL.Query().Get("id") != group {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write([]byte("MeshName=E2E\nMeshType=2\nStartupType=9\nMeshID=0x00\nServerID=00\nMeshServer=wss://mock/agent.ashx\n"))
 	})
 	ln, err := newTLSListener(addr, cert)
 	if err != nil {

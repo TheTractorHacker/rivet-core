@@ -11,6 +11,9 @@
 #   Optional MeshCentral agent, installed from YOUR OWN Mesh server (never bundled; a failure never fails the RivetIT install):
 #     a stamped installer carries it when the administrator ticked "also install the MeshCentral agent"; add --no-mesh-agent to skip it.
 #     with a plain agent:  ... --install-mesh-agent --mesh-url https://mesh.example.com --mesh-group-id <meshid from the Mesh download address, 64 chars or hex> [--mesh-cert-pin <sha384 hex>]
+#     The result line printed at the end is the agent's VERIFIED result: "MeshCentral agent: installed." only after the Mesh files, the meshagent
+#     service (active) were checked, else "MeshCentral agent: NOT installed (<reason>)." (the RivetIT agent stays installed, exit status 0;
+#     the reason is also in /var/lib/rivetit-agent/install.log and in the device's Mesh state).
 #   Remove:  sudo ./install-linux.sh --uninstall [--purge] [--remove-meshagent]   (Mesh is left alone unless --remove-meshagent)
 #
 # What it does: picks the binary for this CPU, VERIFIES it (SHA-256 for --url downloads, ELF header and a `version`
