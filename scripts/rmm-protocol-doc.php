@@ -209,7 +209,7 @@ function vectorsBlock(string $root): string
     $t = json_decode((string) file_get_contents($dir . '/agent_installer_trailer_vectors.json'), true);
     $out = "Both files live in `endpoint-agent/testdata/vectors/` and are read by the Go agent and by the PHP tests; `php scripts/endpoint-vectors.php --check` regenerates them and fails on any byte difference.\n\n";
     $out .= "| File | SHA-256 |\n|---|---|\n";
-    foreach (['agent_job_signing_vectors.json', 'agent_installer_trailer_vectors.json', 'agent_installer_mesh_vectors.json', 'agent_software_deploy_vectors.json', 'agent_change_monitor_vectors.json', 'agent_check_os_vectors.json'] as $f) {
+    foreach (['agent_job_signing_vectors.json', 'agent_installer_trailer_vectors.json', 'agent_installer_mesh_vectors.json', 'agent_software_deploy_vectors.json', 'agent_change_monitor_vectors.json', 'agent_check_os_vectors.json', 'agent_hypervisor_vectors.json'] as $f) {
         $out .= '| `' . $f . '` | `' . hash_file('sha256', $dir . '/' . $f) . "` |\n";
     }
     $out .= "\n**Job signing** (`agent_job_signing_vectors.json`). Test key: " . trim((string) preg_replace('/\s+/', ' ', $j['test_key']['seed_derivation'])) . '; public key `' . $j['test_key']['public_key_base64'] . "`.\n\n";

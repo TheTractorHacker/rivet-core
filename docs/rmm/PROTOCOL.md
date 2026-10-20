@@ -1021,6 +1021,7 @@ Both files live in `endpoint-agent/testdata/vectors/` and are read by the Go age
 | `agent_software_deploy_vectors.json` | `f52af62a9163a63b869d378e513bde81490c598aec7caae469ed58e2a3554ef2` |
 | `agent_change_monitor_vectors.json` | `aa20e416e88f667681f169d26b38ea6dd53a94397a4d1d6012d6bc173df6a50e` |
 | `agent_check_os_vectors.json` | `dfbf0dceb2cc9dbd06d392787d30a2399b26c12299e2f909e7b95b1d533dbaab` |
+| `agent_hypervisor_vectors.json` | `6830b9fec805d857994d518889c0f7bc84f265ab58cdba58b442a69ed6b8148b` |
 
 **Job signing** (`agent_job_signing_vectors.json`). Test key: SHA-256 of the ASCII string RivetIT-agent-TEST-seed (raw 32 bytes); public key `iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=`.
 
