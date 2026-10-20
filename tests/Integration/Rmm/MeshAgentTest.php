@@ -172,6 +172,7 @@ final class MeshAgentTest extends RemoteTestCase
     {
         $this->meshOn();
         $r = $this->h->module->installerService()->issue($this->h->clientA, 0, 'stable', 24, 5, 'm', 'amd64', 1, 'Admin', true);
+        $this->h->mysqli->query('UPDATE endpoint_agent_installer_options SET install_mesh_agent = 1');   // a token issued before rc.27
         $this->h->module->settings()->set(['mesh_enabled' => 0]);
         $d = $this->download($r['token_plain']);
         $this->assertArrayNotHasKey('install_mesh_agent', $d, 'a download never fails over the optional feature');
@@ -179,21 +180,26 @@ final class MeshAgentTest extends RemoteTestCase
         $this->assertSame(1, $this->audit('Installer Mesh Skipped'));
     }
 
-    public function testTheDeploymentCommandsCarryTheLinuxMeshFlagsAndThePowerShellStaysTheSame(): void
+    public function testTheDeploymentCommandsNoLongerCarryTheMeshFlagsButTheManualLinuxHelperStillBuildsThem(): void
     {
         $this->meshOn(['mesh_server_cert_pin' => hash('sha384', 'c')]);
         $a = $this->h->module->admin();
         $with = $a->deploymentCommands($this->admin, $this->h->clientA, 0, 'stable', 24, 5, 'w', 'amd64', true);
         $without = $a->deploymentCommands($this->admin, $this->h->clientA, 0, 'stable', 24, 5, 'w', 'amd64');
         $this->assertTrue($with->ok, $with->message);
-        $lx = $with->data['commands']['linux'];
+        $this->assertTrue($with->data['mesh_after_approval']);
+        $this->assertTrue($with->data['commands']['mesh_after_approval']);
+        $this->assertFalse($without->data['commands']['mesh_after_approval']);
+        $this->assertStringNotContainsString('mesh', strtolower($with->data['commands']['linux']), 'no Mesh address, group id, pin or flag any more');
+        $this->assertStringNotContainsString('mesh', strtolower($without->data['commands']['linux']));
+        $this->assertStringNotContainsString('mesh', strtolower($with->data['commands']['powershell']));
+        // the static builder keeps working for manual use (install-linux.sh flags are unchanged)
+        $block = $this->h->module->meshAgents()->installBlock();
+        $lx = \RivetCore\Rmm\Installer\InstallerService::linuxSnippet('https://rmm.example.test', 'tok', 'amd64', 'Dept A', null, $block);
         $this->assertStringContainsString("--install-mesh-agent --mesh-url 'https://mesh.example.com' --mesh-group-id '" . self::GROUP_URL . "' --mesh-cert-pin '" . hash('sha384', 'c') . "'", $lx);
-        $this->assertStringNotContainsString('mesh', $without->data['commands']['linux']);
-        $this->assertStringNotContainsString('mesh', strtolower($with->data['commands']['powershell']), 'the stamped installer carries it; the snippet is unchanged');
-        $this->assertStringNotContainsString('mesh', strtolower($without->data['commands']['powershell']));
     }
 
-    public function testTheAdminDownloadIsAStampedInstallerThatCarriesIt(): void
+    public function testTheAdminDownloadIsAStampedInstallerThatCarriesNothingOfMesh(): void
     {
         $this->meshOn();
         $r = $this->h->module->admin()->downloadInstaller($this->admin, $this->h->clientA, 0, 'stable', 24, 5, 'd', 'amd64', true);
@@ -201,7 +207,9 @@ final class MeshAgentTest extends RemoteTestCase
         $file = $r->data['download']->file;
         $p = InstallerStamp::read((string) file_get_contents($file->path) . (string) $file->trailer);
         $this->assertNotNull($p);
-        $this->assertTrue($p['data']['install_mesh_agent']);
+        $this->assertArrayNotHasKey('install_mesh_agent', $p['data'], 'the Mesh agent installs after approval, not from the installer');
+        $this->assertArrayNotHasKey('mesh', $p['data']);
+        $this->assertTrue($r->data['mesh_after_approval']);
         $this->assertFalse($this->h->module->admin()->downloadInstaller($this->tech, $this->h->clientA, 0, 'stable', 24, 5, 'd', 'amd64', true)->ok, 'token management is an admin ability');
     }
 

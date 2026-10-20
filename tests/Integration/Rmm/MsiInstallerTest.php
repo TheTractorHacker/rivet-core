@@ -219,7 +219,7 @@ final class MsiInstallerTest extends RmmTestCase
         $this->assertSame($before, hash_file('sha256', $path));
     }
 
-    public function testTheMsiCarriesTheMeshOptionLikeTheExe(): void
+    public function testTheMsiCarriesNothingOfMeshLikeTheExe(): void
     {
         $this->publish();
         $this->h->module->settings()->set(['mesh_enabled' => 1, 'mesh_url' => 'https://mesh.example.com']);
@@ -227,8 +227,9 @@ final class MsiInstallerTest extends RmmTestCase
         $r = $this->h->module->admin()->downloadInstaller($this->admin, $this->h->clientA, 0, 'stable', 5, 7, '', 'amd64', true, InstallerFormat::MSI);
         $this->assertTrue($r->ok, $r->message);
         $d = InstallerStamp::read($this->emit($r->data['download']))['data'];
-        $this->assertTrue($d['install_mesh_agent']);
-        $this->assertSame('https://mesh.example.com', $d['mesh']['url']);
+        $this->assertArrayNotHasKey('install_mesh_agent', $d, 'rc.27: the Mesh agent installs after approval, the MSI payload carries nothing of Mesh');
+        $this->assertArrayNotHasKey('mesh', $d);
+        $this->assertStringNotContainsString('mesh.example.com', json_encode($d));
     }
 
     public function testTheDefaultFormatIsStillTheExeAndAnMsiNeedsNoAgentBinary(): void
