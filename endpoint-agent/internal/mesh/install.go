@@ -25,7 +25,7 @@ const (
 	// MaxDownload caps the downloaded installer (a MeshAgent is a few MB).
 	MaxDownload = 64 << 20
 	// logTail is how much of the installer's output is kept in the result.
-	logTail = 1024
+	logTail = 4096
 )
 
 // RunFunc runs a program and returns its exit code and the tail of its output.
@@ -45,6 +45,15 @@ type InstallOptions struct {
 	DownloadTimeout, RunTimeout time.Duration
 	// MaxBytes overrides MaxDownload (tests).
 	MaxBytes int64
+	// Linux flow and its verification (tests replace these; zero values are the real system).
+	LinuxInstallDir string                                                           // default /usr/local/mesh_services/meshagent
+	StartupType     func() int                                                       // default DetectStartupType
+	SystemdRunDir   string                                                           // default /run/systemd/system
+	Systemctl       func(ctx context.Context, args ...string) (out string, exit int) // default runs systemctl
+	AgentRunning    func(exe string) bool                                            // non-systemd: is the installed binary running (default /proc scan)
+	InitScriptPaths []string                                                         // non-systemd registration files (default /etc/init.d/meshagent, /etc/init/meshagent.conf)
+	VerifyTimeout   time.Duration                                                    // default 30s
+	PollInterval    time.Duration                                                    // default 1s
 }
 
 // Result is what the installer learned. It is saved (mesh_agent.json) and later
@@ -91,6 +100,9 @@ func Install(ctx context.Context, spec *Spec, o InstallOptions) (res Result) {
 		return fail("no Mesh agent id is known for %s/%s", o.GOOS, o.GOARCH)
 	}
 	res.AgentID = id
+	if o.GOOS == "linux" {
+		return installLinux(ctx, spec, o, id, &res, fail)
+	}
 	args := spec.Args(o.GOOS)
 	if len(args) == 0 {
 		return fail("no install arguments are known for %s", o.GOOS)
@@ -228,9 +240,21 @@ func newClient(spec *Spec) *http.Client {
 }
 
 func download(ctx context.Context, spec *Spec, id int, o InstallOptions, max int64) ([]byte, error) {
-	u := spec.DownloadURL(id)
+	b, status, err := fetch(ctx, spec, spec.DownloadURL(id), o, max)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("the Mesh server answered HTTP %d", status)
+	}
+	return b, nil
+}
+
+// fetch GETs u over https (pinned or system roots, redirects to the same host
+// only, size capped). A non-200 answer returns its status with no body and no error.
+func fetch(ctx context.Context, spec *Spec, u string, o InstallOptions, max int64) ([]byte, int, error) {
 	if !strings.HasPrefix(u, "https://") { // belt and braces: Validate already guarantees it
-		return nil, errors.New("refusing a non-https Mesh address")
+		return nil, 0, errors.New("refusing a non-https Mesh address")
 	}
 	cl := o.HTTPClient
 	if cl == nil {
@@ -238,34 +262,34 @@ func download(ctx context.Context, spec *Spec, id int, o InstallOptions, max int
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, errors.New("invalid Mesh download address")
+		return nil, 0, errors.New("invalid Mesh download address")
 	}
 	req.Header.Set("User-Agent", "RivetIT-Agent")
 	resp, err := cl.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("download failed: %s", scrubErr(err, spec))
+		return nil, 0, fmt.Errorf("download failed: %s", scrubErr(err, spec))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("the Mesh server answered HTTP %d", resp.StatusCode)
+		return nil, resp.StatusCode, nil
 	}
 	if ct := strings.ToLower(resp.Header.Get("Content-Type")); strings.HasPrefix(ct, "text/html") {
-		return nil, errors.New("the Mesh server sent a web page instead of an installer (check the device group id)")
+		return nil, 0, errors.New("the Mesh server sent a web page instead of the file (check the device group id)")
 	}
 	if resp.ContentLength > max {
-		return nil, fmt.Errorf("the download is larger than the %d MiB limit", max>>20)
+		return nil, 0, fmt.Errorf("the download is larger than the %d KiB limit", max>>10)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, max+1))
 	if err != nil {
-		return nil, fmt.Errorf("download failed: %s", scrubErr(err, spec))
+		return nil, 0, fmt.Errorf("download failed: %s", scrubErr(err, spec))
 	}
 	if int64(len(b)) > max {
-		return nil, fmt.Errorf("the download is larger than the %d MiB limit", max>>20)
+		return nil, 0, fmt.Errorf("the download is larger than the %d KiB limit", max>>10)
 	}
 	if len(b) == 0 {
-		return nil, errors.New("the Mesh server sent an empty file")
+		return nil, 0, errors.New("the Mesh server sent an empty file")
 	}
-	return b, nil
+	return b, http.StatusOK, nil
 }
 
 // scrubErr turns a transport error into text without the request URL (which
@@ -282,8 +306,8 @@ type tailBuf struct{ b []byte }
 
 func (t *tailBuf) Write(p []byte) (int, error) {
 	t.b = append(t.b, p...)
-	if len(t.b) > 4*logTail {
-		t.b = t.b[len(t.b)-4*logTail:]
+	if len(t.b) > logTail {
+		t.b = t.b[len(t.b)-logTail:]
 	}
 	return len(p), nil
 }
