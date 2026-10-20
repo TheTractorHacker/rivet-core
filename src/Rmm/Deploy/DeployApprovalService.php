@@ -95,6 +95,10 @@ final class DeployApprovalService
     {
         if (($request['op'] ?? '') === 'assign') {
             $this->sql->run('DELETE FROM rmm_package_assignments WHERE assignment_id = ? AND enabled = 0 AND activated_at IS NULL', [(int) ($request['assignment_id'] ?? 0)]);
+        } elseif (($request['op'] ?? '') === 'run') {
+            // An app planned at enrollment that was waiting for this approval ({@see \RivetCore\Rmm\AutoInstall\AutoInstallService}) is done with.
+            $this->sql->run("UPDATE rmm_device_apps a JOIN rmm_package_versions v ON v.package_id = a.package_id AND v.version_id = ? SET a.status = 'skipped', a.reason = 'the second person rejected it', a.updated_at = ?
+                WHERE a.device_id = ? AND a.status = 'approval'", [(int) ($request['version_id'] ?? 0), $this->sql->utcNow(), (int) ($request['device_id'] ?? 0)]);
         }
     }
 

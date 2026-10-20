@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Deploy;
 
 use RivetCore\Rmm\Authz\RmmAbility;
+use RivetCore\Rmm\Job\JobExtras;
 use RivetCore\Rmm\Job\JobType;
 use RivetCore\Rmm\Job\JobTypeRegistry;
 
@@ -164,7 +165,10 @@ final class DeployJobTypes
         $url = $p['url'] ?? null;
         $sha = $p['sha256'] ?? null;
         $size = $p['size'] ?? null;
-        if (SourceUrl::host($url) === null || $url !== SourceUrl::normalise($url)) {
+        // A hosted installer's address (it carries a job-bound secret) and an exe's arguments with vendor values are SEALED: the job row holds the marker, the real value is put
+        // back only when the job is signed for the device ({@see \RivetCore\Rmm\Job\JobExtras}), and the agent validates it again.
+        $sealedUrl = $url === JobExtras::SECRET_MARK;
+        if (!$sealedUrl && (SourceUrl::host($url) === null || $url !== SourceUrl::normalise($url))) {
             return $bad('url must be a plain https address (lower-case host name, no user information, default port).');
         }
         if (!is_string($sha) || preg_match(DeployProtocol::SHA256_RE, $sha) !== 1) {
@@ -177,7 +181,8 @@ final class DeployJobTypes
         if ($fmt === 'msi' && array_key_exists('args', $p)) {
             return $bad('An msi is installed with fixed options; args is for an exe.');
         }
-        if (!is_string($args) || !DeployProtocol::argsOk($args)) {
+        $sealedArgs = $args === JobExtras::SECRET_MARK && $fmt === 'exe';
+        if (!is_string($args) || (!$sealedArgs && !DeployProtocol::argsOk($args))) {
             return $bad('args holds characters or tokens that are not allowed.');
         }
         $out += ['url' => $url, 'sha256' => $sha, 'size' => $size];

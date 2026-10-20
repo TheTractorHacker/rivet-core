@@ -221,6 +221,9 @@ final class RmmModule
     private ?PackageSourcePolicyInterface $packageSources = null;
     private ?\RivetCore\Rmm\Deploy\PackageCatalog $packageCatalog = null;
     private ?\RivetCore\Rmm\Deploy\DeployExpectations $deployExpectations = null;
+    private ?\RivetCore\Rmm\Deploy\PackageParams $packageParams = null;
+    private ?\RivetCore\Rmm\Deploy\HostedFiles $hostedFiles = null;
+    private ?\RivetCore\Rmm\AutoInstall\AutoInstallService $autoInstall = null;
     private ?\RivetCore\Rmm\Deploy\DeployService $deployService = null;
     private ?\RivetCore\Rmm\Deploy\DeployApprovalService $deployApprovals = null;
     private ?\RivetCore\Rmm\Deploy\DeployReader $deployReader = null;
@@ -239,7 +242,7 @@ final class RmmModule
     private readonly RmmEventsInterface $events;
 
     /**
-     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>} $options
+     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,hosted_max_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -492,7 +495,38 @@ final class RmmModule
     /** Queue software jobs and apply their results. */
     public function deployService(): \RivetCore\Rmm\Deploy\DeployService
     {
-        return $this->deployService ??= new \RivetCore\Rmm\Deploy\DeployService($this->sql(), $this->settings(), $this->jobs(), $this->packageCatalog(), $this->deployExpectations(), $this->eventPublisher());
+        if ($this->deployService === null) {
+            $this->deployService = new \RivetCore\Rmm\Deploy\DeployService($this->sql(), $this->settings(), $this->jobs(), $this->packageCatalog(), $this->deployExpectations(), $this->eventPublisher(), $this->packageParams(), $this->hostedFiles());
+            // The result of an install job also settles the matching row of "install apps when the agent installs".
+            $this->deployService->onInstallApplied(function (int $deviceId, int $packageId, array $parsed, string $mode, bool $lost): void {
+                /** @var array{ok:bool,result:string,code:string,detail:string,version:string,reboot_required:bool} $parsed */
+                $this->autoInstall()->onInstallResult($deviceId, $packageId, $parsed, $mode, $lost);
+            });
+        }
+
+        return $this->deployService;
+    }
+
+    /** Vendor parameter values of packages, sealed with the edition's SecretBox (never returned by any read). */
+    public function packageParams(): \RivetCore\Rmm\Deploy\PackageParams
+    {
+        return $this->packageParams ??= new \RivetCore\Rmm\Deploy\PackageParams($this->sql(), $this->box, $this->packageCatalog());
+    }
+
+    /** Installer files uploaded to the server (option `binary_dir`, subdirectory `hosted`; option `hosted_max_bytes` caps one file, default 512 MiB). */
+    public function hostedFiles(): \RivetCore\Rmm\Deploy\HostedFiles
+    {
+        return $this->hostedFiles ??= new \RivetCore\Rmm\Deploy\HostedFiles($this->sql(), $this->updates(), $this->audit, $this->options['binary_dir'] ?? null, $this->options['hosted_max_bytes'] ?? null);
+    }
+
+    /**
+     * The device-facing download of a hosted installer (`GET /api/v1/agent_software/{job_id}/{secret}`); the edition mounts it next to the other device routes.
+     *
+     * @param \Closure(string,int,int):bool $rateLimit (bucket, limit, windowSeconds): true when within budget
+     */
+    public function hostedFileApi(\Closure $rateLimit): \RivetCore\Rmm\Http\HostedFileApi
+    {
+        return new \RivetCore\Rmm\Http\HostedFileApi($this->hostedFiles(), $this->settings(), $rateLimit, $this->options['allow_insecure_http'] ?? false);
     }
 
     /** Two-person approval of software runs and assignments. */
@@ -529,7 +563,18 @@ final class RmmModule
     public function deployScheduler(): \RivetCore\Rmm\Deploy\DeployScheduler
     {
         return $this->deployScheduler ??= new \RivetCore\Rmm\Deploy\DeployScheduler($this->sql(), $this->settings(), $this->devices(), $this->deployService(), $this->deployExpectations(),
-            $this->scheduleGate ?? new MaintenanceScheduleGate($this->maintenance(), $this->settings()));
+            $this->scheduleGate ?? new MaintenanceScheduleGate($this->maintenance(), $this->settings()), $this->autoInstall(), $this->hostedFiles());
+    }
+
+    /** Install apps when the agent installs: auto-install policies, installer-time selection, planning at enrollment, the per-device app status. */
+    public function autoInstall(): \RivetCore\Rmm\AutoInstall\AutoInstallService
+    {
+        if ($this->autoInstall === null) {
+            $this->autoInstall = new \RivetCore\Rmm\AutoInstall\AutoInstallService($this->sql(), $this->settings(), $this->deployService(), $this->packageCatalog(), $this->deployExpectations(), $this->packageParams(),
+                $this->deployApprovals(), $this->devices(), $this->tenancy, $this->audit);
+        }
+
+        return $this->autoInstall;
     }
 
     /** The patch work of the housekeeping pass. */
@@ -667,7 +712,17 @@ final class RmmModule
 
     public function enrollment(): EnrollmentService
     {
-        return $this->enrollment ??= new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel(), $this->eventPublisher(), $this->cache(), $this->herd());
+        if ($this->enrollment === null) {
+            $this->enrollment = new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel(), $this->eventPublisher(), $this->cache(), $this->herd());
+            // Install apps when the agent installs: plan the catalog apps of a device that has just enrolled (a no-op while `software_deploy` is off).
+            $this->enrollment->onEnrolled(function (int $deviceId, int $tokenId, string $event): void {
+                if ($this->settings()->featureOn(DeployProtocol::FEATURE) && ($dev = $this->devices()->find($deviceId)) !== null) {
+                    $this->autoInstall()->planDevice($dev, $tokenId, $event);
+                }
+            });
+        }
+
+        return $this->enrollment;
     }
 
     public function deviceService(): DeviceService

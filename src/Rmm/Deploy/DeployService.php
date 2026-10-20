@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Deploy;
 
 use RivetCore\Rmm\Enrollment\DeviceValidator;
+use RivetCore\Rmm\Job\JobExtras;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\Settings\RmmSettings;
@@ -34,7 +35,22 @@ final class DeployService
         private readonly PackageCatalog $catalog,
         private readonly DeployExpectations $expectations,
         private readonly ?RmmEventPublisher $events = null,
+        private readonly ?PackageParams $params = null,
+        private readonly ?HostedFiles $hosted = null,
     ) {
+    }
+
+    /** @var (\Closure(int,int,array<string,mixed>,string,bool):void)|null */
+    private ?\Closure $installListener = null;
+
+    /**
+     * Called with (device id, package id, parsed result, mode, lost) after the result of an install job has been applied; used by the auto-install planner.
+     *
+     * @param \Closure(int,int,array<string,mixed>,string,bool):void $f
+     */
+    public function onInstallApplied(\Closure $f): void
+    {
+        $this->installListener = $f;
     }
 
     // ------------------------------------------------------------------ queueing
@@ -53,9 +69,11 @@ final class DeployService
      *
      * @param array<string,mixed> $dev
      * @param array<string,mixed> $v a catalog version row ({@see PackageCatalog::version()})
-     * @return array{ok:true,params:array<string,mixed>}|array{ok:false,error:string,code:string}
+     * @param string|null $jobId the id the job will have (a hosted installer's download address is bound to it)
+     * @return array{ok:true,params:array<string,mixed>,secret:array<string,string>}|array{ok:false,error:string,code:string}
+     *         `params` is what the job row holds: a sealed value is the marker {@see JobExtras::SECRET_MARK}; `secret` holds the real values, to be passed as `extra.secret`
      */
-    public function paramsFor(array $dev, array $v, string $action, string $mode, int $maxMinutes = DeployProtocol::MAX_MINUTES_DEFAULT): array
+    public function paramsFor(array $dev, array $v, string $action, string $mode, int $maxMinutes = DeployProtocol::MAX_MINUTES_DEFAULT, ?string $jobId = null): array
     {
         $fail = static fn (string $why, string $code = 'invalid'): array => ['ok' => false, 'error' => $why, 'code' => $code];
         if (!in_array($action, DeployProtocol::ACTIONS, true) || !in_array($mode, DeployProtocol::MODES, true)) {
@@ -73,6 +91,7 @@ final class DeployService
             return $fail('That version is for ' . $v['fmt'] . ' and the device uses ' . $mgr . '.', 'unsupported');
         }
         $p = ['action' => $action, 'mode' => $mode, 'fmt' => $v['fmt']];
+        $secret = [];
         if ($os === 'linux') {
             $p['pkg'] = $v['pkg_name'];
             if ($action === 'install' && $v['pin_version']) {
@@ -82,17 +101,41 @@ final class DeployService
             // Windows: the version row is checked once more as if it were being saved now, so a row that was edited behind the API's back, or a host that was taken off
             // the list since, never reaches an agent.
             try {
-                PackageCatalog::validateVersion(self::asInput($v), $this->catalog->sources());
+                PackageCatalog::validateVersion(self::asInput($v), $this->catalog->sources(), $v['hosted_file_id'] === null ? null : ['sha256' => $v['sha256'], 'size_bytes' => $v['size_bytes']]);
             } catch (\InvalidArgumentException $e) {
                 return $fail('The catalog entry no longer passes the checks: ' . $e->getMessage(), 'source_refused');
             }
-            if ($action === 'install' && !$this->catalog->sources()->allows((string) $v['url'], (int) $dev['client_id'])) {
+            $hostedId = $v['hosted_file_id'] ?? null;
+            if ($action === 'install' && $hostedId === null && !$this->catalog->sources()->allows((string) $v['url'], (int) $dev['client_id'])) {
                 return $fail('The download host is not allowed for this client.', 'source_refused');
             }
             if ($action === 'install') {
-                $p += ['url' => $v['url'], 'sha256' => $v['sha256'], 'size' => $v['size_bytes']];
+                $url = (string) $v['url'];
+                if ($hostedId !== null) {
+                    $url = $this->hosted === null || $jobId === null ? null : $this->hosted->grant($jobId, (int) $hostedId);
+                    if ($url === null) {
+                        return $fail('The hosted installer cannot be offered: the service address must be an https address with a host name, and the file must exist.', 'hosted_unavailable');
+                    }
+                    $secret['url'] = $url;
+                    $secret['_grant'] = substr($url, -48);   // scrubbed from any output the device echoes
+                }
+                $p += ['url' => $url, 'sha256' => $v['sha256'], 'size' => $v['size_bytes']];
                 if ($v['fmt'] === 'exe') {
-                    $p['args'] = $v['silent_args'];
+                    $args = (string) $v['silent_args'];
+                    if (ArgsTemplate::hasPlaceholders($args)) {
+                        $names = ArgsTemplate::names($args);
+                        $values = $this->params?->resolve((int) $v['package_id'], (int) $dev['client_id'], (int) ($dev['location_id'] ?? 0), $names) ?? [];
+                        $missing = array_values(array_diff($names, array_keys($values)));
+                        if ($missing !== []) {
+                            return $fail('Vendor parameters are missing for this device: ' . implode(', ', $missing) . '. An administrator sets them for the package, the client or the location.', 'params_missing');
+                        }
+                        $args = ArgsTemplate::render($args, $values);
+                        if ($args === null) {
+                            return $fail('The vendor parameters do not fit the arguments (too long or not allowed).', 'params_invalid');
+                        }
+                        $secret['args'] = $args;
+                    }
+                    $p['args'] = $args;
                 } else {
                     $p['product_code'] = $v['product_code'];
                 }
@@ -115,8 +158,18 @@ final class DeployService
         if ($err !== null) {
             return $fail($err);
         }
+        // What the job row holds: the marker instead of every sealed value (and the same validator accepts it).
+        foreach (['url', 'args'] as $k) {
+            if (isset($secret[$k])) {
+                $clean[$k] = JobExtras::SECRET_MARK;
+            }
+        }
+        [$clean, $err] = DeployJobTypes::install($clean);
+        if ($err !== null) {
+            return $fail($err);
+        }
 
-        return ['ok' => true, 'params' => $clean];
+        return ['ok' => true, 'params' => $clean, 'secret' => $secret];
     }
 
     /**
@@ -129,7 +182,9 @@ final class DeployService
         if ($v['os'] === 'linux') {
             return $in + ['pkg_name' => $v['pkg_name'], 'pin_version' => (bool) $v['pin_version']];
         }
-        $in += ['url' => $v['url'], 'sha256' => $v['sha256'], 'size_bytes' => $v['size_bytes']];
+        if ($v['hosted_file_id'] === null) {
+            $in += ['url' => $v['url'], 'sha256' => $v['sha256'], 'size_bytes' => $v['size_bytes']];
+        }
         if ($v['fmt'] === 'exe') {
             return $in + ['silent_args' => $v['silent_args'], 'detect_kind' => $v['detect_kind'], 'detect_value' => $v['detect_value'], 'detect_min' => $v['detect_min']];
         }
@@ -152,27 +207,33 @@ final class DeployService
         if ($pkg === null || !$pkg['enabled']) {
             return ['ok' => false, 'error' => 'That package is switched off.', 'code' => 'invalid'];
         }
-        $built = $this->paramsFor($dev, $v, $action, $mode, (int) ($opts['max_minutes'] ?? DeployProtocol::MAX_MINUTES_DEFAULT));
+        $jobId = JobService::uuid();
+        $built = $this->paramsFor($dev, $v, $action, $mode, (int) ($opts['max_minutes'] ?? DeployProtocol::MAX_MINUTES_DEFAULT), $jobId);
         if (!$built['ok']) {
             return $built;
         }
         if ($this->pendingJob($deviceId, DeployProtocol::JOB_INSTALL) !== null) {
+            $this->hosted?->revoke($jobId);
+
             return ['ok' => true, 'skipped' => 'already_queued'];   // one install at a time per device
         }
         $source = $opts['source'] ?? 'manual';
         $now = $this->sql->time();
         $idem = ($opts['idem'] ?? false) === true ? hash('sha256', "deploy:$deviceId:{$v['package_id']}:{$v['version_id']}:$action:$mode:" . intdiv($now, 3600)) : null;
-        $jobId = JobService::uuid();
         $ledger = $this->sql->run('INSERT IGNORE INTO rmm_package_jobs (job_id, device_id, client_id, type, package_id, version_id, action, mode, source, idem_key, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [$jobId, $deviceId, (int) $dev['client_id'], DeployProtocol::JOB_INSTALL, $v['package_id'], $v['version_id'], $action, $mode, $source, $idem, $opts['user_id'] ?? null, $this->sql->utcNow()]);
         if ($ledger === 0) {
+            $this->hosted?->revoke($jobId);
+
             return ['ok' => true, 'skipped' => 'duplicate'];
         }
         $timeoutCap = (int) $this->settings->get()['job_max_timeout_s'];
         $mins = (int) $built['params']['max_minutes'];
-        $r = $this->jobs->create($dev, DeployProtocol::JOB_INSTALL, null, $built['params'], min($timeoutCap, $mins * 60 + 300), true, (int) ($opts['user_id'] ?? 0), ['job_id' => $jobId]);
+        $r = $this->jobs->create($dev, DeployProtocol::JOB_INSTALL, null, $built['params'], min($timeoutCap, $mins * 60 + 300), true, (int) ($opts['user_id'] ?? 0),
+            ['job_id' => $jobId] + ($built['secret'] === [] ? [] : ['extra' => ['secret' => $built['secret']]]));
         if (!$r['ok']) {
             $this->sql->run('DELETE FROM rmm_package_jobs WHERE job_id = ?', [$jobId]);
+            $this->hosted?->revoke($jobId);
 
             return ['ok' => false, 'error' => (string) ($r['error'] ?? 'The job could not be queued.'), 'code' => (string) ($r['code'] ?? 'invalid')];
         }
@@ -361,6 +422,9 @@ final class DeployService
             } else {
                 $this->sql->run('UPDATE rmm_package_installs SET fail_count = fail_count + 1, attempts = attempts + 1 WHERE device_id = ? AND package_id = ?', [$deviceId, $packageId]);
             }
+        }
+        if ($this->installListener !== null) {
+            ($this->installListener)($deviceId, $packageId, $parsed, $mode, $lost);
         }
         $name = (string) ($this->sql->val('SELECT name FROM rmm_packages WHERE package_id = ?', [$packageId]) ?? '');
         $fields = ['job_id' => (string) $job['job_id'], 'package' => mb_substr($name, 0, 100), 'action' => $action, 'mode' => $mode];
