@@ -192,11 +192,16 @@ abstract class RmmAssetsConformanceTestCase extends TestCase
         $this->assertNull($row['serial'] === '' ? null : $row['serial']);
     }
 
+    /**
+     * @param array<string,string> $extra
+     * @return array<string,mixed>
+     */
     private function device(string $osVersion, array $extra = []): array
     {
         return ['hostname' => 'T-' . self::token(), 'os_version' => $osVersion, 'manufacturer' => null, 'model' => null, 'serial' => null] + $extra;
     }
 
+    /** @param array<string,mixed> $device */
     private function typeOf(array $device): string
     {
         $row = $this->readAsset($this->assets()->createForDevice($device, 11, 0));

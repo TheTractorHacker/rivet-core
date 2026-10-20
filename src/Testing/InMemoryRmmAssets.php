@@ -110,7 +110,7 @@ class InMemoryRmmAssets implements RmmAssetsInterface, RmmAssetNamesInterface
         if ($a['os'] === '' && $facts['os'] !== '') {
             $a['os'] = $facts['os'];
         }
-        if (($a['type'] ?? '') === '' && DeviceTypeClassifier::validLabel($facts['type'] ?? null)) {
+        if ($a['type'] === '' && DeviceTypeClassifier::validLabel($facts['type'] ?? null)) {
             $a['type'] = DeviceTypeClassifier::resolve((string) $facts['type'], $this->typeNames);
         }
     }
