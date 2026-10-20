@@ -179,6 +179,10 @@ type CheckinRequest struct {
 	// on the first check-in after it changes and then daily; absent on a device
 	// without a Mesh agent and from every agent older than 1.0.0-rc.12.
 	MeshAgent *MeshAgentReport `json:"mesh_agent,omitempty"`
+	// ClockOffsetS is the agent's own estimate of server time minus its local clock, in
+	// whole seconds (rc.23). Informational for the technician; the server never trusts
+	// it for anything else. Absent until the agent has measured one.
+	ClockOffsetS *int64 `json:"clock_offset_s,omitempty"`
 }
 
 // CapMeshNodeID is announced by an agent that can read and report the local

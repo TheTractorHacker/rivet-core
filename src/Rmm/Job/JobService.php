@@ -409,8 +409,8 @@ final class JobService
         }
         $ts = strtotime($v);
         $now = $this->sql->time();
-        if ($ts === false || $ts > $now + 300 || $ts < $now - 86400 * 30) {
-            throw new ApiError(422, 'invalid', "$field is out of range");
+        if ($ts === false || $ts > $now + RmmProtocol::CHECKIN_FUTURE_SKEW_S || $ts < $now - 86400 * 30) {
+            throw ApiError::badTime("$field is out of range", (int) $ts, $now);
         }
 
         return gmdate('Y-m-d H:i:s', $ts);

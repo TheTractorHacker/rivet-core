@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -37,6 +38,20 @@ type APIError struct {
 	// Received is the "received" member of a transfer 409 answer (bytes the server
 	// already holds); nil when the body had none.
 	Received *int64
+	// ServerTime and SkewS are the additive members of a time refusal (422 invalid:
+	// "collected_at is in the future", rc.23): the server clock and the device clock
+	// minus the server clock in seconds. Absent from older servers.
+	ServerTime ServerTime
+	SkewS      *int64
+	// Date is the response's HTTP Date header (second resolution), zero when absent.
+	Date time.Time
+}
+
+// TimeRefusal reports whether this is the 422 invalid answer to a timestamp outside
+// the server's window. It needs the server's clock, from the body or the Date header.
+func (e *APIError) TimeRefusal() bool {
+	return e.Status == 422 && e.Code == "invalid" && (e.SkewS != nil || e.ServerTime.OK) &&
+		(strings.Contains(e.Message, "in the future") || strings.Contains(e.Message, "retention window") || strings.Contains(e.Message, "out of range"))
 }
 
 func (e *APIError) Error() string {
@@ -87,6 +102,9 @@ type Client struct {
 	base *url.URL
 	hc   *http.Client
 	opt  Options
+
+	dateMu sync.Mutex
+	date   time.Time // Date header of the latest response
 }
 
 // New builds a Client. TLS verification is always on; there is no insecure
@@ -217,6 +235,7 @@ func (c *Client) DoRaw(ctx context.Context, method, name string, raw []byte, out
 	if len(data) > MaxResponseBytes {
 		return &APIError{Err: errors.New("response exceeds size cap")}
 	}
+	c.noteDate(resp)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return c.errorFrom(resp, data)
 	}
@@ -233,6 +252,32 @@ func (c *Client) DoRaw(ctx context.Context, method, name string, raw []byte, out
 	return nil
 }
 
+func parseDate(h string) time.Time {
+	if h == "" {
+		return time.Time{}
+	}
+	t, err := http.ParseTime(h)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+func (c *Client) noteDate(resp *http.Response) {
+	if d := parseDate(resp.Header.Get("Date")); !d.IsZero() {
+		c.dateMu.Lock()
+		c.date = d
+		c.dateMu.Unlock()
+	}
+}
+
+// LastDate returns the latest response's Date header (second resolution); ok is false before any response (or when none carried one).
+func (c *Client) LastDate() (time.Time, bool) {
+	c.dateMu.Lock()
+	defer c.dateMu.Unlock()
+	return c.date, !c.date.IsZero()
+}
+
 // errorFrom builds the APIError of a non-2xx response (JSON error/code members are
 // read when the body has them; "received" is the byte count a transfer answer
 // carries on a 409 resync).
@@ -240,12 +285,18 @@ func (c *Client) errorFrom(resp *http.Response, data []byte) *APIError {
 	ra := resp.Header.Get("Retry-After")
 	ae := &APIError{Status: resp.StatusCode, RetryAfter: ParseRetryAfter(ra, c.opt.Now()), RetryAfterRaw: ParseRetryAfterCap(ra, c.opt.Now(), MaxModuleRetryAfter)}
 	var e struct {
-		Error    string `json:"error"`
-		Code     string `json:"code"`
-		Received *int64 `json:"received"`
+		Error    string     `json:"error"`
+		Code     string     `json:"code"`
+		Received *int64     `json:"received"`
+		SkewS    *int64     `json:"skew_s"`
+		Server   ServerTime `json:"server_time"`
 	}
 	if json.Unmarshal(data, &e) == nil {
-		ae.Code, ae.Message, ae.Received = e.Code, e.Error, e.Received
+		ae.Code, ae.Message, ae.Received, ae.SkewS, ae.ServerTime = e.Code, e.Error, e.Received, e.SkewS, e.Server
+	}
+	ae.Date = parseDate(resp.Header.Get("Date"))
+	if !ae.ServerTime.OK && !ae.Date.IsZero() && ae.SkewS == nil && ae.Code == "invalid" {
+		ae.ServerTime = ServerTime{T: ae.Date, OK: true} // an older server: the Date header is the best clock it gives
 	}
 	if ae.Message == "" {
 		ae.Message = http.StatusText(resp.StatusCode)

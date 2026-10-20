@@ -228,7 +228,7 @@ final class RemoteRulesTest extends TestCase
         $this->assertLessThanOrEqual(RemoteProtocol::LOG_MESSAGE_MAX, mb_strlen($long['message'] ?? ''));
         $this->assertSame(1, LogService::cleanEvent(['level' => 'critical'] + $ok, $now, $now - 86400)['level'] ?? null);
         $this->assertSame(5, LogService::cleanEvent(['level' => 'verbose'] + $ok, $now, $now - 86400)['level'] ?? null);
-        $this->assertSame($now + 300, LogService::cleanEvent(['ts' => gmdate('Y-m-d\TH:i:s\Z', $now + 99999)] + $ok, $now, $now - 86400)['ts'] ?? null, 'a clock in the future is clamped');
+        $this->assertSame($now + 900, LogService::cleanEvent(['ts' => gmdate('Y-m-d\TH:i:s\Z', $now + 99999)] + $ok, $now, $now - 86400)['ts'] ?? null, 'a clock in the future is clamped');
         foreach ([['ts' => 'yesterday'], ['ts' => gmdate('Y-m-d\TH:i:s\Z', $now - 10 * 86400)], ['level' => 'fatal'], ['level' => 3], ['message' => ['x']], ['ts' => null]] as $bad) {
             $this->assertNull(LogService::cleanEvent($bad + $ok, $now, $now - 86400), json_encode($bad));
         }

@@ -146,7 +146,7 @@ final class SchemaDiffTest extends TestCase
             foreach ($rows as &$r) {
                 unset($r['updated_at']); // ON UPDATE current_timestamp()
                 // columns the migrations add are not part of what existed before
-                foreach (['ca_pem', 'arch', 'binary_id', 'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices'] as $new) {
+                foreach (['ca_pem', 'arch', 'binary_id', 'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices', 'clock_skew_s', 'clock_skew_at', 'clock_offset_s', 'clock_skew_event_at', 'last_reject_reason', 'last_reject_at'] as $new) {
                     unset($r[$new]);
                 }
             }
@@ -164,7 +164,8 @@ final class SchemaDiffTest extends TestCase
         // Only the ten original tables: migration 0018 adds more (endpoint_agent_check_history among them), covered by the phase 1 tests below.
         $in = "'" . implode("','", array_keys(RmmSchema::tables())) . "'";
         $tables = $db->fetchAll("SELECT TABLE_NAME, ENGINE, TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) ORDER BY TABLE_NAME");
-        $columns = $db->fetchAll("SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) ORDER BY TABLE_NAME, ORDINAL_POSITION");
+        // The six clock columns are added by migration 0031 (after the reference was frozen); ClockSkewTest covers them, so this comparison leaves them out. They are the LAST columns, so no ordinal moves.
+        $columns = $db->fetchAll("SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) AND NOT (TABLE_NAME = 'endpoint_agent_devices' AND COLUMN_NAME IN ('clock_skew_s','clock_skew_at','clock_offset_s','clock_skew_event_at','last_reject_reason','last_reject_at')) ORDER BY TABLE_NAME, ORDINAL_POSITION");
         $indexes = $db->fetchAll("SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME, SUB_PART FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX");
 
         return ['tables' => $tables, 'columns' => $columns, 'indexes' => $indexes];

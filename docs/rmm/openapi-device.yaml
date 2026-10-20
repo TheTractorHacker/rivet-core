@@ -4233,6 +4233,7 @@ components:
             last_collected_at: {type: [string, 'null'], format: date-time}
             inventory: {type: [object, 'null']}
             metrics: {type: [object, 'null']}
+            clock: {type: object, description: 'Present once a clock skew was measured or a check-in was refused for its time (1.0.0-rc.23). skew_s is the device collected_at minus the server time (positive = the device is ahead); agent_offset_s is the agent own estimate of server minus local; last_reject says why the last check-in was refused (null once one is accepted).', properties: {skew_s: {type: [integer, 'null']}, measured_at: {type: [string, 'null'], format: date-time}, agent_offset_s: {type: [integer, 'null']}, last_reject: {type: [object, 'null'], properties: {reason: {type: string}, at: {type: [string, 'null'], format: date-time}}}}}
             match_reason: {type: string, description: 'no_match, hostname_only, ambiguous, scope_mismatch, asset_already_linked, asset_retired, matched_serial, matched_mac, ...'}
             mesh_mapped: {type: boolean}
             mesh_agent:

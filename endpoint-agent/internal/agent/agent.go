@@ -90,19 +90,23 @@ type Agent struct {
 	o   Options
 	log *slog.Logger
 
-	mu       sync.Mutex
-	cfg      store.Config
-	client   *api.Client
-	col      *collect.Collector
-	runner   *collect.CheckRunner
-	ring     *buffer.Ring
-	exec     *jobs.Executor
-	verifier *jobs.Verifier
-	upd      *update.Manager
-	meshRep  *mesh.Reporter
-	logs     *logs.Manager   // RMM Phase 8 log collection; idle until a check-in offers logs:collect
-	chg      *change.Manager // change monitoring; idle until a check-in offers change:monitor with a signed configuration
-	skew     time.Duration
+	mu           sync.Mutex
+	cfg          store.Config
+	client       *api.Client
+	col          *collect.Collector
+	runner       *collect.CheckRunner
+	ring         *buffer.Ring
+	exec         *jobs.Executor
+	verifier     *jobs.Verifier
+	upd          *update.Manager
+	meshRep      *mesh.Reporter
+	logs         *logs.Manager   // RMM Phase 8 log collection; idle until a check-in offers logs:collect
+	chg          *change.Manager // change monitoring; idle until a check-in offers change:monitor with a signed configuration
+	skew         time.Duration   // the correction being applied (zero while the PC clock is close enough)
+	clkOff       time.Duration   // estimate of server time minus the PC clock
+	clkHave      bool
+	clkWarned    time.Time // last time the clock warning was logged (once per hour)
+	timeRetrySeq uint64    // the seq a time refusal was already retried for
 
 	tokCache struct {
 		mtime time.Time
@@ -141,8 +145,11 @@ func New(o Options) (*Agent, error) {
 		return nil, err
 	}
 	a := &Agent{o: o, log: o.Log, cfg: cfg, meshRep: o.Mesh}
+	if st0, err := o.Store.LoadState(); err == nil {
+		a.loadClock(st0)
+	}
 	if a.meshRep == nil {
-		a.meshRep = &mesh.Reporter{StateDir: o.Store.Dir, Probe: mesh.Probe{GOOS: runtime.GOOS}, Now: o.Now, Override: a.meshNodeOverride}
+		a.meshRep = &mesh.Reporter{StateDir: o.Store.Dir, Probe: mesh.Probe{GOOS: runtime.GOOS}, Now: a.now, Override: a.meshNodeOverride}
 	}
 	a.col = collect.New(o.Platform, func() store.Config { a.mu.Lock(); defer a.mu.Unlock(); return a.cfg })
 	a.col.SetStateDir(o.Store.Dir)
@@ -159,6 +166,7 @@ func New(o Options) (*Agent, error) {
 	a.ring = buffer.Open(o.Store.BufferPath(), cfg.BufferMaxSamples, cfg.BufferMaxBytes)
 	a.verifier = &jobs.Verifier{Now: a.now}
 	a.logs = logs.New(logs.Options{
+		Offset:    func() time.Duration { a.mu.Lock(); defer a.mu.Unlock(); return a.skew },
 		Readers:   logs.PlatformReaders(remote.ExecRunner{}),
 		Send:      a.sendLogs,
 		StatePath: o.Store.LogsStatePath(),
@@ -404,7 +412,7 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 	if err != nil {
 		return nil, err
 	}
-	a.applySkew(resp.ServerTime)
+	a.observeResponse(resp.ServerTime, a.o.Now())
 	st, _ := a.o.Store.LoadState()
 	a.syncVerifier(st)
 	a.o.Store.DropEnrollToken()
@@ -418,17 +426,6 @@ func toStoreChecks(in []api.CheckSpec) []store.CheckSpec {
 		out = append(out, store.CheckSpec{Key: c.Key, Type: c.Type, Params: c.Params, IntervalS: c.IntervalS, Signature: c.Signature, OS: c.OS, Raw: c.Raw})
 	}
 	return out
-}
-
-func (a *Agent) applySkew(t api.ServerTime) {
-	if !t.OK {
-		return
-	}
-	s := time.Until(t.T)
-	a.mu.Lock()
-	a.skew = s
-	a.mu.Unlock()
-	_ = a.o.Store.Update(func(st *store.State) error { st.ClockSkewS = s.Seconds(); return nil })
 }
 
 // ---- sampling ----
@@ -667,6 +664,7 @@ func (a *Agent) buildInflight(ctx context.Context) (*store.Inflight, error) {
 	}
 	req := api.CheckinRequest{AgentVersion: a.o.Version, Buffered: []api.Buffered{}}
 	req.Platform, req.Arch, req.Capabilities = runtime.GOOS, runtime.GOARCH, a.capabilities()
+	req.ClockOffsetS = a.clockOffsetS()
 	var through uint64
 	if n := len(entries); n > 0 {
 		latest := entries[n-1]
@@ -792,6 +790,9 @@ func (a *Agent) checkIn(ctx context.Context, attempt int) checkinOutcome {
 		}
 	}
 	resp, err := a.api().Checkin(ctx, in.Body)
+	if err != nil && a.recoverTime(in, err) {
+		resp, err = a.api().Checkin(ctx, in.Body) // once, right away, with the corrected stamps
+	}
 	if err != nil {
 		return a.checkinFailed(in, err, attempt, bo)
 	}
@@ -856,7 +857,7 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 	}
 	a.finishInflight(in)
 	a.checkins++
-	a.applySkew(resp.ServerTime)
+	a.observeResponse(resp.ServerTime, a.o.Now())
 	probation := a.upd != nil && a.upd.InProbation()
 	if probation {
 		if err := a.upd.Confirm(); err != nil {

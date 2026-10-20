@@ -7,6 +7,7 @@ namespace RivetCore\Rmm\Change;
 use RivetCore\Rmm\Crypto\Redactor;
 use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\RmmEvent;
+use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 
@@ -187,7 +188,7 @@ final class ChangeService
         if (!is_string($ts) || preg_match(self::TIME_RE, $ts) !== 1 || ($t = strtotime($ts)) === false || $t < $oldest) {
             return null;
         }
-        $t = min($t, $now + 300);
+        $t = min($t, $now + RmmProtocol::CHECKIN_FUTURE_SKEW_S);
         $kind = $e['kind'] ?? null;
         $watch = $e['watch'] ?? null;
         if (!is_string($kind) || !in_array($kind, ChangeProtocol::KINDS, true) || !is_string($watch) || !isset($known[$watch]) || ($known[$watch]['kind'] ?? '') !== $kind) {

@@ -32,7 +32,7 @@ $rest = $m[2] ?? '';
 $deviceEndpoints = ['agent_enroll', 'agent_checkin', 'agent_jobs', 'agent_update', 'agent_installer', 'agent_transfer', 'agent_logs', 'agent_changes'];
 
 mysqli_report(MYSQLI_REPORT_OFF);
-$edition = new GoldenEdition((string) getenv('RMM_GOLDEN_STATE'), false);
+$edition = new GoldenEdition((string) getenv('RMM_GOLDEN_STATE'), getenv('RMM_PROOF_INSECURE') === '1');   // RMM_PROOF_INSECURE: the clock proof talks plain http to this fixture
 register_shutdown_function(static function () use ($edition): void {
     $edition->save();
 });
@@ -63,7 +63,7 @@ if (!in_array($resource, $deviceEndpoints, true)) {
     return true;
 }
 $peer = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
-$secure = strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';   // the TLS proxy says so; this fixture trusts it
+$secure = getenv('RMM_PROOF_INSECURE') === '1' || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';   // the TLS proxy says so; this fixture trusts it
 $req = $edition->request((string) $_SERVER['REQUEST_METHOD'], $resource, $query, $headers, $peer, $secure, $declared);
 (new SapiEmitter())->emit($edition->api->handle($req));
 

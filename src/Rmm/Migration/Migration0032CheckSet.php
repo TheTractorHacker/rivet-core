@@ -15,11 +15,11 @@ use RivetCore\Migration\MigrationInterface;
  *
  * @internal
  */
-final class Migration0031CheckSet implements MigrationInterface
+final class Migration0032CheckSet implements MigrationInterface
 {
     public function id(): string
     {
-        return '0031_rmm_check_set';
+        return '0032_rmm_check_set';
     }
 
     /** @return array<string,string> */

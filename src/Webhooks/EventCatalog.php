@@ -69,6 +69,7 @@ final class EventCatalog
     private const RMM_EXTRA = [
         'rmm.device.enrolled' => [['link_state', 'string', 'linked or pending_approval'], ['os', 'string', 'windows or linux'], ['outcome', 'string', 'enrolled, re-enrolled or reinstalled']],
         'rmm.device.offline' => [['last_checkin_at', 'string', 'Last check-in, RFC 3339 UTC']],
+        'rmm.device.clock_skew' => [['skew_s', 'integer', 'Device clock minus server clock, seconds'], ['direction', 'string', 'ahead or behind'], ['server_time', 'string', 'Server time when measured, RFC 3339 UTC']],
         'rmm.device.online' => [['offline_since', 'string', 'When the device was reported offline, RFC 3339 UTC (null when unknown)']],
         'rmm.check.failed' => [['check_key', 'string', 'Check key'], ['status', 'string', 'warn or fail'], ['detail', 'string', 'Check detail'], ['alert_id', 'integer', 'Alert opened'], ['episode', 'integer', 'Failure episode number']],
         'rmm.check.recovered' => [['check_key', 'string', 'Check key'], ['alert_id', 'integer', 'Alert resolved'], ['episode', 'integer', 'Failure episode number']],
@@ -393,6 +394,7 @@ final class EventCatalog
             ['rmm', 'rmm.deploy.started', 'Software job queued', 'An installation or removal of a package (or a dry run) was queued for a device.', 'info', 'rmm', 'agent,endpoint,rmm,software,deploy,package,install,uninstall', null],
             ['rmm', 'rmm.deploy.finished', 'Software job finished', 'A software installation or removal finished on a device.', 'info', 'rmm', 'agent,endpoint,rmm,software,deploy,package,install,uninstall', null],
             ['rmm', 'rmm.deploy.failed', 'Software job failed', 'A software installation or removal failed on a device.', 'warning', 'rmm', 'agent,endpoint,rmm,software,deploy,package,install,uninstall,failed', null],
+            ['rmm', 'rmm.device.clock_skew', 'Device clock is wrong', 'A device clock differs from the server clock by more than two minutes (at most once a day per device). Check the PC time zone and time sync.', 'warning', 'rmm', 'agent,endpoint,rmm,device,clock,time,timezone,skew', null],
             ['rmm', 'rmm.change.detected', 'Change detected', 'A registry value, configuration file, local group member or scheduled task changed on a device (change monitoring).', 'info', 'rmm', 'agent,endpoint,rmm,change,registry,config,file,group,task,audit', null],
             ['rmm', 'rmm.change.rule_matched', 'Change rule matched', 'A change rule matched recorded changes of a device and raised or kept an alert.', 'warning', 'rmm', 'agent,endpoint,rmm,change,registry,config,alert', null],
             ['rmm', 'rmm.software.removed', 'Software removed', 'Software disappeared from a device.', 'info', 'rmm', 'agent,endpoint,rmm,inventory,application,uninstall,package', null],
