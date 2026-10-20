@@ -209,7 +209,7 @@ Messages (job result, check-in Mesh state, `install.log`, and the last line `ins
 | Message | Meaning and fix |
 |---|---|
 | `download of meshsettings returned HTTP 404: check the device group id` | the device group id is wrong or the group was deleted; fix it in the Mesh settings |
-| `download of the Mesh agent (id N) returned HTTP code` | the agent id is not served by your Mesh server (check Mesh Agents in My Server; correct `mesh_agent_ids`) |
+| `download of the Mesh agent (id N) returned HTTP <code>` | the agent id is not served by your Mesh server (check Mesh Agents in My Server; correct `mesh_agent_ids`) |
 | `installer exited 0 but meshagent is missing from /usr/local/mesh_services/meshagent` | the Mesh installer did nothing; run it by hand from `install.log`'s output, look for a missing library or an unsupported init system |
 | `installer exited 0 but no meshagent service was registered` | files are there but no systemd unit (or init script) was created |
 | `service installed but not active: <state>` | the unit exists but is `failed`, `inactive` or stuck `activating`; run `journalctl -u meshagent` |
