@@ -185,7 +185,7 @@ final class AutoInstallActions
         if ($scope === 'global') {
             $e = $this->role($who, RmmAbility::SOFTWARE_MANAGE) ?? $this->unrestricted($who);
         } elseif ($scope === 'client') {
-            $e = $this->role($who, RmmAbility::SOFTWARE_MANAGE, $scopeId) ?? ($this->authz->clientOk($who->userId, $scopeId) ? null : ActionResult::fail(404, 'not_found', 'Client not found.'));
+            $e = $scopeId <= 0 || !$this->authz->clientOk($who->userId, $scopeId) ? ActionResult::fail(404, 'not_found', 'Client not found.') : $this->role($who, RmmAbility::SOFTWARE_MANAGE, $scopeId);
         } elseif ($scope === 'location') {
             $e = $this->role($who, RmmAbility::SOFTWARE_MANAGE) ?? $this->unrestricted($who);   // a location id alone does not say which client it belongs to
         } else {

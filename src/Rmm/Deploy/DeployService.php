@@ -134,6 +134,9 @@ final class DeployService
                             return $fail('The vendor parameters do not fit the arguments (too long or not allowed).', 'params_invalid');
                         }
                         $secret['args'] = $args;
+                        foreach ($values as $n => $val) {
+                            $secret['v_' . $n] = $val;   // each value on its own, so output that echoes only a part of the arguments is scrubbed too
+                        }
                     }
                     $p['args'] = $args;
                 } else {

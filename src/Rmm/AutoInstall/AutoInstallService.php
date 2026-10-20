@@ -380,6 +380,13 @@ final class AutoInstallService
         // A required app that failed (or was refused) stops the ones after it.
         $blocked = $this->sql->one("SELECT a.install_order, p.name FROM rmm_device_apps a JOIN rmm_packages p ON p.package_id = a.package_id
             WHERE a.device_id = ? AND a.required = 1 AND a.status = 'failed' ORDER BY a.install_order LIMIT 1", [$deviceId]);
+        if ($blocked !== null) {
+            $n = $this->sql->run("UPDATE rmm_device_apps SET status = 'skipped', reason = ?, updated_at = ? WHERE device_id = ? AND status = 'queued' AND install_order >= ?",
+                ['not started: the required app "' . mb_substr((string) $blocked['name'], 0, 60) . '" failed', $now, $deviceId, (int) $blocked['install_order']]);
+            if ($n > 0) {
+                return ['skipped' => $n] + $out;
+            }
+        }
         $next = $this->sql->all("SELECT a.*, p.name, p.enabled, p.two_person FROM rmm_device_apps a JOIN rmm_packages p ON p.package_id = a.package_id
             WHERE a.device_id = ? AND a.status = 'queued' AND (a.attempts = 0 OR a.updated_at <= ?) ORDER BY a.install_order, a.package_id LIMIT 1", [$deviceId, $this->sql->utcAt(-self::RETRY_AFTER_S)]);
         if ($next === []) {
@@ -393,9 +400,6 @@ final class AutoInstallService
 
             return $out;
         };
-        if ($blocked !== null && (int) $a['install_order'] >= (int) $blocked['install_order']) {
-            return $skip('not started: the required app "' . mb_substr((string) $blocked['name'], 0, 60) . '" failed');
-        }
         if ((int) $a['enabled'] !== 1) {
             return $skip('the package is switched off');
         }
