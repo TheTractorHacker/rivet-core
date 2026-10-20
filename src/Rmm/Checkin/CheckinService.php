@@ -269,7 +269,7 @@ final class CheckinService
      * @param array<mixed> $buffered
      * @param array<string,mixed> $cfg
      * @param array<string,bool> $features
-     * @param array{caps?:?list<string>,platform?:?string,software?:?array<string,mixed>,alert_defs?:array<string,array<string,mixed>>,mesh_agent?:mixed} $announce what the agent announced (capabilities, platform) and its validated software report
+     * @param array{clock_offset?:?int,caps?:?list<string>,platform?:?string,software?:?array<string,mixed>,alert_defs?:array<string,array<string,mixed>>,mesh_agent?:mixed} $announce what the agent announced (capabilities, platform) and its validated software report
      * @param array{last_checkin_at:string,last_ip:string} $live the liveness columns, written with the rest of the device row in ONE statement
      * @return array<string,mixed> the device row as the check-in leaves it
      */
