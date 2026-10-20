@@ -452,7 +452,9 @@
                 ],
                 "body": {
                     "error": "collected_at is in the future",
-                    "code": "invalid"
+                    "code": "invalid",
+                    "server_time": "<TS>",
+                    "skew_s": "<SKEW>"
                 }
             }
         },

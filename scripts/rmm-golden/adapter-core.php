@@ -191,6 +191,10 @@ switch ($cmd) {
             $rows = [];
             $res = $q("SELECT * FROM `$t` ORDER BY $order");
             while ($r = $res->fetch_assoc()) {
+                if ($t === 'endpoint_agent_devices') {
+                    // rc.23 clock columns (migration 0031) are not part of the baseline; left out like the switch columns.
+                    $r = array_diff_key($r, array_flip(['clock_skew_s', 'clock_skew_at', 'clock_offset_s', 'clock_skew_event_at', 'last_reject_reason', 'last_reject_at']));
+                }
                 $rows[] = $r;
             }
             $out[$t] = $rows;

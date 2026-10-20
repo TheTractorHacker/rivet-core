@@ -41,7 +41,7 @@ Identity rules (unchanged): a known `install_id` re-enrolls (a different machine
 
 ### 3.2 `agent_checkin` (POST, device token)
 
-Request: `{seq (integer, idempotency key per device), collected_at (RFC 3339, at most 300 s in the future), agent_version, inventory (object, at most 65536 bytes, or null), metrics {cpu_pct, mem_pct, disk[{mount, used_pct}], net_rx_bps, net_tx_bps}, checks [{key, status ("ok","warn","fail","unknown"), detail, value (optional number)}] (at most 100), buffered [{collected_at, metrics, checks}] (at most 100), update_result (optional {version, state ("ok","failed","rolled_back"), detail})}`. Body cap 1 MiB. A missing metric produces no sample; it is never stored as 0. Duplicate `seq` is a normal 200 (the liveness is real, the data is not processed twice). At most 40 per 60 s per device (429).
+Request: `{seq (integer, idempotency key per device), collected_at (RFC 3339, at most 900 s in the future since rc.23; it was 300), agent_version, inventory (object, at most 65536 bytes, or null), metrics {cpu_pct, mem_pct, disk[{mount, used_pct}], net_rx_bps, net_tx_bps}, checks [{key, status ("ok","warn","fail","unknown"), detail, value (optional number)}] (at most 100), buffered [{collected_at, metrics, checks}] (at most 100), update_result (optional {version, state ("ok","failed","rolled_back"), detail})}`. Body cap 1 MiB. A missing metric produces no sample; it is never stored as 0. Duplicate `seq` is a normal 200 (the liveness is real, the data is not processed twice). At most 40 per 60 s per device (429).
 
 Response 200: `{ok, status, matched_asset_id, next_check_in_s, jobs_pending, config: {checks: [signed], collect_interval_s}, update (signed manifest, or null), server_time, signing_key_id}`. `jobs_pending` is 0 and `update` is omitted while the `jobs` or `updates` sub-switch is off. Under load shedding (levels 2 and 3) the interval grows and level 3 answers 503 `unavailable` with a jittered `Retry-After`.
 
@@ -176,6 +176,17 @@ Everything here is optional on both sides; an agent that does not announce `chan
 * **Watches.** `registry` (Windows): `paths` of `{key, depth 0..4, values?}`; a key starting `HKU\*\` is read once for every loaded user hive; `values` limits the read to those value names. `file`: `paths` of `{path, depth 0..3?, match?}`; a folder is read down to `depth` levels (at least one), `match` a name filter with `*` and `?`. `group` (Windows): `name`, the members of a local group (`net localgroup`). `task` (Windows): the scheduled task definitions. Watch ids are `win.<name>`, `lnx.<name>` (presets) or `custom.<name>`. The agent applies its own policy again to every path (the credential hives SAM and SECURITY and the LSA key parts that hold the boot key, shadow files, private keys and other credential stores are never read), clamps every number and ignores what it refuses.
 * **Caps the agent applies whatever it is told.** interval 60 s to 24 h; at most 100 records per request; 10 to 2000 records per minute; values cut at 64 to 512 bytes; at most 60 watches, 20 paths per watch, 5000 items per watch; at most 500 changes per poll per watch and 2000 records waiting to be sent (what does not fit is counted in `dropped`).
 * **Security log presets.** `config.logs` (3.2.4) may carry, for Windows, sources with `levels: []` (read every level: audit events have Level 0) and, only for an agent that announced `logs:presets`, a source with `aggregate: {window_s, min, by}`: the agent sums the events of that source up on the device and ships one entry per window and per combination of the `by` event fields, only when the count reaches `min`. An agent that did not announce `logs:presets` is never offered an aggregated source.
+
+#### 3.2.8 Clock and time zone (additive, 1.0.0-rc.23)
+
+A PC whose clock or time zone is wrong used to be refused at every check-in ("collected_at is in the future") and never appeared in the console. rc.23 widens the window and lets both sides see the problem. Everything here is additive: an agent or a server that predates it keeps working unchanged.
+
+* **Window.** `CHECKIN_FUTURE_SKEW_S` is 900 (was 300) for `collected_at`, buffered `collected_at`, job report times (`started_at`, `finished_at`) and log and change record times (these are clamped to now + 900, not refused). The "older than the retention window" rule is unchanged.
+* **Refusal.** A 422 `invalid` for a time outside the window carries two more members after `error` and `code`: `server_time` (RFC 3339 UTC) and `skew_s` (the device time minus the server time, whole seconds; positive = the device is ahead). A malformed time (not RFC 3339) has neither. The refused body leaves no trace on the server, so the agent may resend the same `seq`.
+* **Every server answer** to `agent_enroll` (201) and `agent_checkin` (200) already carries `server_time`; an agent also reads the HTTP `Date` header as a fallback (older servers).
+* **Agent.** Keeps `offset = server time - local clock` from those answers: smoothed, ignored when it is more than 24 h or unparsable, persisted in the state directory (`clock_skew_s`). When `|offset|` exceeds 60 s (released below 30 s) it stamps everything it sends (`collected_at`, buffered samples, job reports, log events, change records) with local time plus the offset, capped at 24 h, and logs one warning per hour. On a time refusal it re-measures from the refusal's `server_time`, shifts the in-flight body by `-skew_s`, and resends once at once (not again for that `seq`; the normal back-off applies after that).
+* **`clock_offset_s`** (optional integer, check-in request): the agent's own estimate of server time minus its clock. Informational; values beyond 24 h or not integers are ignored, never an error.
+* **Server.** On every accepted check-in it stores the skew it measured (`collected_at` minus its own clock) on the device, and on the first refused one (then at most hourly) the skew and the reason. The technician device detail gains an additive `clock` object `{skew_s, measured_at, agent_offset_s, last_reject}` and the live document gains it only when worth showing. `rmm.device.clock_skew` is published when `|skew|` exceeds the `clock_skew_alert_s` limit (default 120, 0 = off), at most once per device per day. See [CLOCK_AND_TIME.md](CLOCK_AND_TIME.md).
 
 ### 3.6 Remote-tool job types (Phase 6, additive)
 
@@ -358,7 +369,8 @@ These are the values of `RivetCore\Rmm\RmmProtocol`; `tests/Unit/Rmm/FrozenConst
 | `CHECKIN_MAX_BUFFERED` | `100` |
 | `CHECKIN_MAX_DISKS` | `32` |
 | `CHECKIN_MAX_INVENTORY_BYTES` | `65536` |
-| `CHECKIN_FUTURE_SKEW_S` | `300` |
+| `CHECKIN_FUTURE_SKEW_S` | `900` |
+| `CLOCK_OFFSET_MAX_S` | `86400` |
 | `CHECK_KEY_RE` | `/^[A-Za-z0-9_.:-]{1,100}$/` |
 | `CHECK_STATUSES` | `["ok","warn","fail","unknown"]` |
 

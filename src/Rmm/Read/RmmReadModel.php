@@ -1039,7 +1039,10 @@ final class RmmReadModel
             'shed' => $shed,
             'seq' => (int) $dev['last_seq'],
         ];
-        if (($clock = self::clockOf($dev)) !== null) {
+        // Additive and only when worth showing (a refusal, or a clock off by more than the alert limit): a healthy device's live document is what it always was.
+        $clock = self::clockOf($dev);
+        $limit = (int) ($this->settings->limits()['clock_skew_alert_s'] ?? 120);
+        if ($clock !== null && ($clock['last_reject'] !== null || ($limit > 0 && abs((int) $clock['skew_s']) > $limit))) {
             $body['clock'] = $clock;
         }
 

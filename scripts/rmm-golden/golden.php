@@ -252,6 +252,7 @@ final class Run
                 'created_by' => $this->aliasOf('user', $v, 'USER'),
                 'owned_by_device_id' => $this->aliasOf('device', $v, 'DEVICE'),
                 'age_s' => '<AGE>',
+                'skew_s' => '<SKEW>',   // rc.23: device time minus server time on a time refusal; depends on the request's own clock
                 'id' => ($ctx['entity'] ?? '') === 'device' ? $this->aliasOf('device', $v, 'DEVICE') : $v,
                 default => $v,
             };
