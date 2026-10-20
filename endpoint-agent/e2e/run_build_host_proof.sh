@@ -64,7 +64,8 @@ T0=$SECONDS
 if run_host --once --progress >"$ROOT/runA.out" 2>&1; then ok "build-host exited 0 ($((SECONDS-T0)) s)"; else bad "build-host exited non-zero"; tail -20 "$ROOT/runA.out"; fi
 check "job built on the server" test "$(sj state)" = built
 check "no server-side validation errors" test "$(sj errors)" = "[]"
-for f in rivetit-agent-windows-amd64.exe rivetit-agent-windows-arm64.exe rivetit-agent-windows-amd64.msi SHA256SUMS; do
+for f in rivetit-agent-windows-amd64.exe rivetit-agent-windows-arm64.exe rivetit-agent-windows-amd64.msi \
+  rivetit-agent-linux-amd64 rivetit-agent-linux-arm64 install-linux.sh SHA256SUMS; do
   check "uploaded $f" test -s "$ROOT/uploaded/$f"; done
 CH=$(sj uploaded/rivetit-agent-windows-amd64.exe/chunks)
 check "exe was uploaded in several chunks ($CH)" test "$CH" -gt 1
@@ -95,7 +96,11 @@ git clone -q "$ROOT/origin.git" "$ROOT/direct"; git -C "$ROOT/direct" checkout -
 GOIMG="golang:$(awk '/^go /{print $2; exit}' "$ROOT/direct/endpoint-agent/go.mod")"
 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/gomod -v "$ROOT/gomod:/gomod" \
   -v "$ROOT/direct/endpoint-agent":/src -w /src "$GOIMG" make dist "VERSION=$VERSION" "COMMIT=$SHORT" >"$ROOT/direct.log" 2>&1 || { echo "direct build failed"; tail "$ROOT/direct.log"; }
-for f in rivetit-agent-windows-amd64.exe rivetit-agent-windows-arm64.exe; do
+check "linux amd64 upload is an x86-64 ELF" bash -c "head -c4 '$ROOT/uploaded/rivetit-agent-linux-amd64' | grep -q ELF && [ \"\$(od -An -t x1 -j18 -N2 '$ROOT/uploaded/rivetit-agent-linux-amd64' | tr -d ' ')\" = 3e00 ]"
+check "linux arm64 upload is an aarch64 ELF" bash -c "[ \"\$(od -An -t x1 -j18 -N2 '$ROOT/uploaded/rivetit-agent-linux-arm64' | tr -d ' ')\" = b700 ]"
+check "SHA256SUMS lists the Linux files" bash -c "grep -q ' rivetit-agent-linux-amd64\$' '$ROOT/uploaded/SHA256SUMS' && grep -q ' install-linux.sh\$' '$ROOT/uploaded/SHA256SUMS'"
+check "manifest carries the Linux hashes" test "$(sj manifest/files/rivetit-agent-linux-arm64)" = "$(sha256sum "$ROOT/uploaded/rivetit-agent-linux-arm64" | cut -d' ' -f1)"
+for f in rivetit-agent-windows-amd64.exe rivetit-agent-windows-arm64.exe rivetit-agent-linux-amd64 rivetit-agent-linux-arm64 install-linux.sh; do
   check "$f is byte-identical to a direct make dist" cmp -s "$ROOT/uploaded/$f" "$ROOT/direct/endpoint-agent/dist/$f"; done
 stop_mock
 echo "   (second independent build via --dry-run, for MSI reproducibility)"
@@ -103,6 +108,18 @@ if run_host --dry-run --ref main --version "$VERSION" >"$ROOT/dry.out" 2>&1; the
   check "MSI from --dry-run is byte-identical to the uploaded MSI" cmp -s "$ROOT/uploaded/rivetit-agent-windows-amd64.msi" "$ROOT/work/dry-run-out/rivetit-agent-windows-amd64.msi"
   check "dry run left no temp dirs" leftovers
 else bad "dry run failed"; tail -10 "$ROOT/dry.out"; fi
+
+echo "== A2. old-style server refuses the Linux names (HTTP 400 unknown_file): job must still succeed with the Windows files"
+start_mock --job-id job-A2 --version "$VERSION" --ref main --msi --legacy --out-dir "$ROOT/uploaded-legacy"
+if run_host --once >"$ROOT/runA2.out" 2>&1; then ok "legacy server: build-host exited 0"; else bad "legacy server: build-host failed"; tail -20 "$ROOT/runA2.out"; fi
+check "legacy server: job built" test "$(sj state)" = built
+check "legacy server: warned about skipped Linux files" grep -q "WARNING: the server does not accept rivetit-agent-linux-amd64" "$ROOT/runA2.out"
+check "legacy server: Windows files arrived" test -s "$ROOT/uploaded-legacy/rivetit-agent-windows-arm64.exe"
+check "legacy server: no Linux file stored" bash -c "! ls '$ROOT/uploaded-legacy' | grep -q linux"
+check "legacy server: SHA256SUMS lists only what was accepted and verifies" bash -c "cd '$ROOT/uploaded-legacy' && ! grep -q linux SHA256SUMS && sha256sum -c SHA256SUMS >/dev/null"
+check "legacy server: progress ends at 100" test "$(state | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["progress"][-1]["pct"])')" = 100
+check "legacy server: no leftovers" leftovers
+stop_mock
 
 echo "== B. refusals"
 start_mock --job-id job-B --version "$VERSION" --ref evil
