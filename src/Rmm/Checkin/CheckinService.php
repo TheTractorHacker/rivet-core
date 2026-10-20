@@ -7,6 +7,7 @@ namespace RivetCore\Rmm\Checkin;
 use RivetCore\Rmm\Alerting\AlertingEngine;
 use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Checks\CheckEvaluator;
+use RivetCore\Rmm\Checks\RmmChecks;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
 use RivetCore\Rmm\Device\DeviceRepository;
@@ -169,8 +170,8 @@ final class CheckinService
             'next_check_in_s' => $interval,
             'jobs_pending' => $features['jobs'] ? $this->jobs->pendingCount((int) $dev['device_id']) : 0,
             'config' => $policy === null
-                ? ['checks' => $this->settings->signedChecks($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null), 'collect_interval_s' => (int) $cfg['collect_interval_s']]
-                : ['checks' => $this->settings->signCheckList($policy['checks'], $this->capsOf($dev, $announce['caps']) ?? []), 'collect_interval_s' => $policy['collect_interval_s']],
+                ? ['checks' => $this->settings->signedChecks($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null, RmmChecks::deviceOs($dev)), 'collect_interval_s' => (int) $cfg['collect_interval_s']]
+                : ['checks' => $this->settings->signCheckList($policy['checks'], $this->capsOf($dev, $announce['caps']) ?? [], RmmChecks::deviceOs($dev)), 'collect_interval_s' => $policy['collect_interval_s']],
         ];
         if ($knowsPolicies) {
             // Additive, offered only to an agent that announced `policies`: every other response is byte-identical to before.

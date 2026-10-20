@@ -6,6 +6,7 @@ namespace RivetCore\Rmm\Settings;
 
 use RivetCore\Rmm\Alerting\FlapDetector;
 use RivetCore\Rmm\Checks\CheckCatalog;
+use RivetCore\Rmm\Checks\RmmChecks;
 use RivetCore\Rmm\RmmProtocol;
 
 /**
@@ -27,7 +28,7 @@ final class ChecksValidator
     public const SCRIPT_TIMEOUT_MAX_S = 60;
 
     /**
-     * @return array{0:?list<array{key:mixed,type:string,params:array<mixed>,interval_s:int}>,1:?string} [normalised list, error]
+     * @return array{0:?list<array{key:mixed,type:string,params:array<mixed>,interval_s:int,os?:string}>,1:?string} [normalised list, error]
      */
     public static function validate(string $json): array
     {
@@ -88,7 +89,15 @@ final class ChecksValidator
                     $params['flap'] = $flap;
                 }
             }
-            $out[] = ['key' => $c['key'], 'type' => $type, 'params' => $params, 'interval_s' => $iv];
+            [$os, $osErr] = RmmChecks::normalizeOs($c['os'] ?? null);
+            if ($osErr !== null) {
+                return [null, 'Check ' . $key . ': ' . $osErr];
+            }
+            $item = ['key' => $c['key'], 'type' => $type, 'params' => $params, 'interval_s' => $iv];
+            if ($os !== null) {
+                $item['os'] = $os;   // only windows or linux is stored; "any" is the absence of the member
+            }
+            $out[] = $item;
         }
 
         return [$out, null];
