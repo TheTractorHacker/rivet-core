@@ -566,6 +566,17 @@ final class RmmModule
             $this->scheduleGate ?? new MaintenanceScheduleGate($this->maintenance(), $this->settings()), $this->autoInstall(), $this->hostedFiles());
     }
 
+    /** What technicians and administrators do with auto-install (shared by the REST API and the edition's pages). */
+    public function autoInstallActions(): \RivetCore\Rmm\AutoInstall\AutoInstallActions
+    {
+        return new \RivetCore\Rmm\AutoInstall\AutoInstallActions($this->devices(), $this->authorizer(), $this->settings(), $this->packageCatalog(), $this->packageParams(), $this->hostedFiles(), $this->autoInstall(), $this->audit);
+    }
+
+    public function autoInstallApi(): \RivetCore\Rmm\Http\AutoInstallApi
+    {
+        return new \RivetCore\Rmm\Http\AutoInstallApi($this->autoInstallActions(), $this->hostedFiles()->maxBytes());
+    }
+
     /** Install apps when the agent installs: auto-install policies, installer-time selection, planning at enrollment, the per-device app status. */
     public function autoInstall(): \RivetCore\Rmm\AutoInstall\AutoInstallService
     {
@@ -1109,7 +1120,7 @@ final class RmmModule
     /** Per-client installers and deployment snippets (the administrator side). */
     public function installerService(): InstallerService
     {
-        return $this->installerService ??= new InstallerService($this->sql(), $this->updates(), $this->installerDownload(), $this->enrollment(), $this->tenancy, $this->audit, $this->binaryStore(), $this->clientLabel(), $this->meshAgents());
+        return $this->installerService ??= new InstallerService($this->sql(), $this->updates(), $this->installerDownload(), $this->enrollment(), $this->tenancy, $this->audit, $this->binaryStore(), $this->clientLabel(), $this->meshAgents(), $this->autoInstall());
     }
 
     /** Technician and administrator actions on devices, shared by the web handlers and the REST API. */
@@ -1129,7 +1140,7 @@ final class RmmModule
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */
     public function technicianApi(): TechnicianApi
     {
-        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi(), $this->patchApi(), $this->deployApi(), $this->changeApi());
+        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi(), $this->patchApi(), $this->deployApi(), $this->changeApi(), $this->autoInstallApi());
     }
 
     /** The alerts, maintenance windows, escalation policies and thresholds routes (mounted by {@see technicianApi()}). */

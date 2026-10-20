@@ -248,9 +248,9 @@ final class AutoInstallService
             if ($p === null || !$p['enabled']) {
                 return 'One of the chosen apps does not exist or is switched off.';
             }
-            $v = $this->newestVersion($id, 'windows');
+            $v = $this->newestVersion($id, 'windows') ?? $this->newestVersion($id, 'linux');
             if ($v === null) {
-                return $p['name'] . ' has no Windows version in the catalog.';
+                return $p['name'] . ' has no version in the catalog that is not retired.';
             }
             $need = $v['fmt'] === 'exe' ? ArgsTemplate::names((string) $v['silent_args']) : [];
             $missing = $this->params->missing($id, $clientId, $locationId, $need);
