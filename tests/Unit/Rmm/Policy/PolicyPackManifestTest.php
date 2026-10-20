@@ -75,4 +75,10 @@ final class PolicyPackManifestTest extends TestCase
         $this->assertNotSame('', $try(static function (array $i): array { $i['kind'] = 'patch_policy'; $i['body'] = ['settings' => ['ring' => 'nope']]; return $i; }));
         $this->assertNotSame('', $try(static function (array $i): array { $i['body']['settings']['check.starter.disk_free']['params']['warn_free_pct'] = 'x'; return $i; }));
     }
+
+    public function testTheDocumentedTablesAreCurrent(): void
+    {
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/../../../../scripts/build-policy-pack-doc.php') . ' --check 2>&1', $out, $rc);
+        $this->assertSame(0, $rc, implode("\n", $out));
+    }
 }

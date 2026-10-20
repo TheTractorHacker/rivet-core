@@ -218,6 +218,16 @@ final class PolicyPackTest extends AutomationTestCase
         $this->assertSame(['skipped' => 1], $this->inst()->run('uninstall', ['ids' => ['change-servers']], 1)['counts']);
     }
 
+    public function testTheCliPathNeedsNoAbilityButIsAudited(): void
+    {
+        $r = $this->h->module->policyPackActions()->runFromCli('install', ['ids' => ['minimal']], 0);
+        $this->assertTrue($r->ok);
+        $this->assertSame(['added' => 1], $r->data['counts']);
+        $rec = array_values(array_filter($this->h->audit->records(), static fn (array $x): bool => $x['action'] === 'Policy Pack Item Added'));
+        $this->assertStringStartsWith('CLI added', $rec[0]['description']);
+        $this->assertFalse($this->h->module->policyPackActions()->runFromCli('install', ['ids' => ['nope']])->ok);
+    }
+
     public function testUnknownIdsAreRefused(): void
     {
         $this->expectException(\InvalidArgumentException::class);

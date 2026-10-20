@@ -46,8 +46,25 @@ final class PolicyPackActions
         if (($e = $this->admin($who)) !== null) {
             return $e;
         }
+
+        return $this->go($who->userName, $who->userId, $op, $selection, $dryRun);
+    }
+
+    /**
+     * The operator's own shell (scripts/policy-pack.php): no ability check, because whoever can run PHP on the server already owns the database; the audit rows say so.
+     *
+     * @param array<string,mixed> $selection
+     */
+    public function runFromCli(string $op, array $selection, int $userId = 0, bool $dryRun = false): ActionResult
+    {
+        return $this->go('CLI', $userId, $op, $selection, $dryRun);
+    }
+
+    /** @param array<string,mixed> $selection */
+    private function go(string $userName, int $userId, string $op, array $selection, bool $dryRun): ActionResult
+    {
         try {
-            $r = $this->installer->run($op, $selection, $who->userId, $dryRun);
+            $r = $this->installer->run($op, $selection, $userId, $dryRun);
         } catch (\InvalidArgumentException $ex) {
             return ActionResult::fail(422, 'invalid', $ex->getMessage());
         }
@@ -56,11 +73,11 @@ final class PolicyPackActions
             foreach ($r['items'] as $i) {
                 if (in_array($i['outcome'], ['added', 'updated', 'reset', 'removed'], true)) {
                     ++$n;
-                    $this->audit->record('Policy Pack Item ' . ucfirst((string) $i['outcome']), "{$who->userName} {$i['outcome']} policy pack item \"{$i['name']}\" ({$i['kind']}, {$r['pack_id']} {$r['pack_version']})", 0, (int) ($i['entity_id'] ?? 0));
+                    $this->audit->record('Policy Pack Item ' . ucfirst((string) $i['outcome']), "$userName {$i['outcome']} policy pack item \"{$i['name']}\" ({$i['kind']}, {$r['pack_id']} {$r['pack_version']})", 0, (int) ($i['entity_id'] ?? 0));
                 }
             }
             if ($n > 0) {
-                $this->audit->record('Policy Pack ' . ucfirst($op), "{$who->userName} ran policy pack $op: " . json_encode($r['counts']), 0, 0);
+                $this->audit->record('Policy Pack ' . ucfirst($op), "$userName ran policy pack $op: " . json_encode($r['counts']), 0, 0);
             }
         }
 
