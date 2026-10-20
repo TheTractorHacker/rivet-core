@@ -2,6 +2,18 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.29 (device type for new assets; migration 0036)
+
+"Everything is a laptop by default": a new asset got Laptop unless the OS text said "server". Now the agent reports what the box is and the installer can say it outright.
+
+- **Agent (protocol additive, section 3.2.10).** Optional `chassis_type`, `has_battery`, `is_virtual`, `virtualization`, `role_hints` in the enrollment `device` and the check-in `inventory` (Windows: CIM enclosure and battery, `vmms`/`NTDS` services, Hyper-V guest key; Linux: `/sys/class/dmi/id/chassis_type`, power supplies, `systemd-detect-virt`, `/proc/1/environ`, Proxmox and Samba AD markers). Closed vocabularies, left out when unread. Go tests with fixtures; Windows vet clean (not run on Windows).
+- **`DeviceTypeClassifier`** (pure, `@api`): the documented decision table (docs/modules/rmm.md) gives Laptop, Desktop, Server, Virtual Machine, Hypervisor, Tablet or Other; `resolve()` maps a label to an edition that lacks it. No facts: the old rule.
+- **Installer option `device_type`** (`auto` default): last parameter of `InstallerService::issue()/issueDownload()` and `RmmAdmin::downloadInstaller()/deploymentCommands()`; stored by token (never in the installer file), validated, audited, shown by `RmmReadModel::tokens()`.
+- **Contract (additive).** `createForDevice($device)` gets `asset_type_detected` and, when chosen, `asset_type_hint`. `fillBlanks($facts)` gets optional `type`, filled only when blank. A matched existing asset's type is never changed. `pendingApprovals()` rows gain `suggested_type`. Old adapters ignore the new keys and keep working.
+- **Kit.** `RmmAssetsConformanceTestCase` gains hint, detected, old-rule and blank-type tests (new optional hooks `supportedTypes()` and `createAssetWithType()`; the type-fill tests skip without the latter). Five new mutants, all caught.
+- **Migration 0036** (`0036_rmm_device_type`): `endpoint_agent_installer_options.device_type` (default `auto`) and `endpoint_agent_devices.detected_type` (NULL). Additive, idempotent, no backfill. Code tolerates the columns being absent.
+- **Editions.** See UPGRADING.md ("Adopting device types").
+
 ## 1.0.0-rc.26 (policy starter pack; no migration)
 
 A starter pack of **policies**, next to the script starter pack: 24 items, installed with one call, all created switched off and assigned to nothing. See [docs/rmm/POLICY_STARTER_PACK.md](docs/rmm/POLICY_STARTER_PACK.md).
