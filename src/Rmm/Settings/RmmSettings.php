@@ -123,6 +123,8 @@ final class RmmSettings
         'software_live_install' => [0, 1],
         'software_deploy_history_days' => [30, 3650],
         'software_batch' => [10, 5000],
+        // Clock skew: the |device clock - server clock| in seconds above which a device raises `rmm.device.clock_skew` (at most once a day per device); 0 turns the event off.
+        'clock_skew_alert_s' => [0, 86400],
     ];
     public const LIMIT_DEFAULTS = [
         'max_checkins_per_min' => 0,
@@ -172,6 +174,7 @@ final class RmmSettings
         'software_live_install' => 0,
         'software_deploy_history_days' => 365,
         'software_batch' => 100,
+        'clock_skew_alert_s' => 120,
     ];
 
     /** @var array<string,mixed>|null */
