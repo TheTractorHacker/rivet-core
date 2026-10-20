@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Read;
 
+use RivetCore\Rmm\Presentation\DeviceHeader;
 use RivetCore\Rmm\Settings\ChecksValidator;
 use RivetCore\Rmm\Authz\RmmAbility;
 use RivetCore\Rmm\Authz\RmmAuthorizer;
@@ -266,6 +267,18 @@ final class RmmReadModel
     public function detail(array $d, bool $showJobOutput, ?array $cfg = null): array
     {
         return $this->detailBase($d, $showJobOutput, $cfg, false, 20);
+    }
+
+    /**
+     * The short device header (name, state, OS, facts, at most four chips, the volume list) built from a device detail, for the editions to render. No query of its own.
+     *
+     * @param array<string,mixed> $detail what {@see self::detail()} returned
+     * @param array<string,array<string,mixed>>|null $thresholds optional override of {@see DeviceHeader::THRESHOLDS}
+     * @return array<string,mixed>
+     */
+    public function header(array $detail, ?array $thresholds = null): array
+    {
+        return DeviceHeader::build($detail, $thresholds);
     }
 
     /**
