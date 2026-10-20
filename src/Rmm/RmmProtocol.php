@@ -68,7 +68,7 @@ final class RmmProtocol
     public const CHECKIN_MAX_BUFFERED = 100;
     public const CHECKIN_MAX_DISKS = 32;
     public const CHECKIN_MAX_INVENTORY_BYTES = 65536;
-    public const CHECKIN_FUTURE_SKEW_S = 300;
+    public const CHECKIN_FUTURE_SKEW_S = 900;
     public const CHECK_KEY_RE = '/^[A-Za-z0-9_.:-]{1,100}$/';
     public const CHECK_STATUSES = ['ok', 'warn', 'fail', 'unknown'];
 

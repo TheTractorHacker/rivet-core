@@ -8,6 +8,7 @@ use RivetCore\Rmm\Crypto\Redactor;
 use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Remote\RemoteSettings;
+use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -130,7 +131,7 @@ final class LogService
         if ($t < $oldest) {
             return null;   // older than the retention: it would be pruned at once
         }
-        $t = min($t, $now + 300);
+        $t = min($t, $now + RmmProtocol::CHECKIN_FUTURE_SKEW_S);
         $lvl = $e['level'] ?? null;
         if ($lvl === 'verbose') {
             $lvl = 'debug';

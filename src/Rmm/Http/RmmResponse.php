@@ -37,6 +37,6 @@ final class RmmResponse
     /** {"error": message, "code": code}, as ApiError produces. */
     public static function error(ApiError $e): self
     {
-        return self::json($e->http, ['error' => $e->getMessage(), 'code' => $e->errCode], $e->headers);
+        return self::json($e->http, $e->extra + ['error' => $e->getMessage(), 'code' => $e->errCode], $e->headers);
     }
 }

@@ -64,7 +64,7 @@ final class FrozenConstantsTest extends TestCase
         $this->assertSame(['succeeded', 'failed', 'timed_out', 'cancelled', 'expired'], P::JOB_FINAL_STATES);
         $this->assertSame(['running', 'succeeded', 'failed', 'timed_out', 'cancelled'], P::JOB_REPORTABLE_STATES);
         $this->assertSame(['result_lost', 'never_started', 'no_result_by_deadline', 'device_retired'], P::JOB_REASONS);
-        $this->assertSame([100, 100, 32, 65536, 300], [P::CHECKIN_MAX_CHECKS, P::CHECKIN_MAX_BUFFERED, P::CHECKIN_MAX_DISKS, P::CHECKIN_MAX_INVENTORY_BYTES, P::CHECKIN_FUTURE_SKEW_S]);
+        $this->assertSame([100, 100, 32, 65536, 900], [P::CHECKIN_MAX_CHECKS, P::CHECKIN_MAX_BUFFERED, P::CHECKIN_MAX_DISKS, P::CHECKIN_MAX_INVENTORY_BYTES, P::CHECKIN_FUTURE_SKEW_S]);
         $this->assertSame(['ok', 'warn', 'fail', 'unknown'], P::CHECK_STATUSES);
         $this->assertSame(1, preg_match(P::CHECK_KEY_RE, 'svc.spooler:state-1_x'));
         $this->assertSame(0, preg_match(P::CHECK_KEY_RE, str_repeat('a', 101)));

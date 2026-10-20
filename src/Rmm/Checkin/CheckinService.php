@@ -581,10 +581,10 @@ final class CheckinService
         $ts = $dt->getTimestamp();
         $now = $this->sql->time();
         if ($ts > $now + RmmProtocol::CHECKIN_FUTURE_SKEW_S) {
-            throw new ApiError(422, 'invalid', "$field is in the future");
+            throw ApiError::badTime("$field is in the future", $ts, $now);
         }
         if ($ts < $now - (int) $cfg['retention_days'] * 86400) {
-            throw new ApiError(422, 'invalid', "$field is older than the retention window");
+            throw ApiError::badTime("$field is older than the retention window", $ts, $now);
         }
 
         return $dt->setTime((int) $dt->format('H'), (int) $dt->format('i'), (int) $dt->format('s'));
