@@ -38,7 +38,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-FAIL_NOTE="" JOB_ID="" COMPLETED=0 TMP="" CONTAINERS=() SRC="" CACHE_REPO="" LOG="" ERR_LINE=""
+LAST_CODE=0 SKIPPED=() FAIL_NOTE="" JOB_ID="" COMPLETED=0 TMP="" CONTAINERS=() SRC="" CACHE_REPO="" LOG="" ERR_LINE=""
 trap 'ERR_LINE=$LINENO' ERR
 
 # ---------- config ----------
@@ -55,6 +55,7 @@ load_config() {
   GO_IMAGE="${GO_IMAGE:-}" MSI_IMAGE="${MSI_IMAGE:-rivetit-msitools:0.103-2}"
   BUILD_CPUS="${BUILD_CPUS:-2}" BUILD_MEMORY="${BUILD_MEMORY:-4g}" BUILD_TIMEOUT_S="${BUILD_TIMEOUT_S:-1500}"
   HTTP_TIMEOUT="${HTTP_TIMEOUT:-120}"
+  UPLOAD_LINUX_TARBALLS="${UPLOAD_LINUX_TARBALLS:-0}"
   [ -n "$CORE_REPO" ] || die "CORE_REPO is not set in $CONF"
   case "$WORKDIR" in /*) ;; *) die "WORKDIR must be an absolute path" ;; esac
   if [ "$MODE" != dry ]; then
@@ -114,6 +115,7 @@ api() { # endpoint bodyfile outfile -> 0 on success; retries 5xx/network with ba
     code=$(curl -sS --fail --max-time "$maxtime" --connect-timeout 20 --proto "$proto" --proto-redir =https \
       -K "$TMP/curl.cfg" -X POST -H 'Content-Type: application/json' -H 'Accept: application/json' \
       --data-binary "@$body" -o "$out" -w '%{http_code}' "$SERVER_URL/$ep" 2>"$TMP/curl.err") || rc=$?
+    LAST_CODE=${code:-0}
     [ "$rc" -eq 0 ] && return 0
     [ "$quiet" = 1 ] || log "$ep: attempt $attempt failed (curl $rc, http ${code:-0}): $(tr '\n' ' ' <"$TMP/curl.err" | cut -c1-200)"
     case "${code:-0}" in 4[0-9][0-9]) [ "$code" = 408 ] || [ "$code" = 429 ] || return 1 ;; esac
@@ -217,6 +219,21 @@ run_limited() { # note cmd... : runs in background, heartbeats, enforces the ove
   done
   wait "$pid" || die "$note failed (see the log tail)"
 }
+elf_check() { # file expected-arch (amd64|arm64): ELF magic, 64-bit little-endian, executable/shared type, machine; python3 standard library only
+  python3 -I -c '
+import struct, sys
+f, arch = sys.argv[1], sys.argv[2]
+h = open(f, "rb").read(64)
+want = {"amd64": 0x3e, "arm64": 0xb7}[arch]
+if len(h) < 64 or h[:4] != b"\x7fELF": sys.exit("no ELF magic")
+if h[4] != 2 or h[5] != 1: sys.exit("not a 64-bit little-endian ELF")
+etype, mach = struct.unpack_from("<HH", h, 16)
+if etype not in (2, 3): sys.exit("ELF type %d is not an executable" % etype)
+if mach != want: sys.exit("wrong machine 0x%x, expected 0x%x" % (mach, want))' "$1" "$2" || die "$(basename "$1") failed the ELF check"
+}
+size_cap() { # file max-bytes
+  local sz; sz=$(stat -c %s "$1"); [ "$sz" -le "$2" ] || die "$(basename "$1") is $sz bytes, over the $2 byte cap"
+}
 pe_check() { # file expected-machine-hex-LE-bytes e.g. "64 86"
   local f=$1 want=$2 off sig mach
   [ "$(head -c2 "$f")" = MZ ] || die "$(basename "$f") is not a PE file (no MZ)"
@@ -231,8 +248,8 @@ dist_watch() { # make dist builds amd64 first: its file appearing marks the star
     progress build_windows_arm64 40 "windows amd64 built, building arm64"; creep 60 150
   fi
 }
-build_job() { # version ref targets msi(true|false) -> files in $OUT, SHA256SUMS written
-  local version=$1 ref=$2 targets=$3 want_msi=$4 gov n f
+build_job() { # version ref targets msi(true|false) linux(true|false|"") -> files in $OUT, SHA256SUMS written
+  local version=$1 ref=$2 targets=$3 want_msi=$4 want_linux=${5:-} gov n f
   DEADLINE=$(( SECONDS + BUILD_TIMEOUT_S ))
   progress prepare 5 "job accepted, fetching source"
   progress clone 5 "fetching and checking out $ref"
@@ -279,6 +296,17 @@ build_job() { # version ref targets msi(true|false) -> files in $OUT, SHA256SUMS
   case " $targets " in *" windows-arm64 "*) UPLOAD+=(rivetit-agent-windows-arm64.exe) ;; esac
   [ "$want_msi" = true ] && UPLOAD+=(rivetit-agent-windows-amd64.msi)
   [ "${#UPLOAD[@]}" -gt 0 ] || die "the job asks for no uploadable target (windows-amd64, windows-arm64)"
+  local lin=() a
+  if [ "$want_linux" != false ]; then
+    for a in amd64 arm64; do
+      if [ "$want_linux" = true ] || case " $targets " in *" linux-$a "*) true ;; *) false ;; esac; then lin+=("rivetit-agent-linux-$a"); fi
+    done
+    if [ "${#lin[@]}" -gt 0 ]; then
+      lin+=(install-linux.sh)
+      if [ "$UPLOAD_LINUX_TARBALLS" = 1 ]; then for a in "${lin[@]}"; do case "$a" in rivetit-agent-linux-*) lin+=("$a.tar.gz") ;; esac; done; fi
+    fi
+  fi
+  UPLOAD+=("${lin[@]}")
   for f in "${UPLOAD[@]}"; do [ -s "$OUT/$f" ] || die "expected output $f is missing or empty"; done
   [ ! -f "$OUT/rivetit-agent-windows-amd64.exe" ] || pe_check "$OUT/rivetit-agent-windows-amd64.exe" "64 86"
   [ ! -f "$OUT/rivetit-agent-windows-arm64.exe" ] || pe_check "$OUT/rivetit-agent-windows-arm64.exe" "64 aa"
@@ -294,13 +322,27 @@ build_job() { # version ref targets msi(true|false) -> files in $OUT, SHA256SUMS
     local vout; vout=$(docker "${DOCKER_ARGS[@]}" --network none "$GO_IMAGE" "./dist/rivetit-agent-linux-$la" version 2>>"$LOG") || die "the Linux agent does not run"
     case "$vout" in "rivetit-agent $version ($short) "*) ;; *) die "the agent reports '$vout', expected version $version commit $short" ;; esac
   fi
-  ( cd "$OUT" && sha256sum "${UPLOAD[@]}" >SHA256SUMS )
-  UPLOAD+=(SHA256SUMS)
+  for f in "${lin[@]}"; do
+    case "$f" in
+      rivetit-agent-linux-*.tar.gz) [ "$(head -c2 "$OUT/$f" | od -An -t x1 | tr -d ' \n')" = 1f8b ] || die "$f is not a gzip file"; size_cap "$OUT/$f" 67108864 ;;
+      rivetit-agent-linux-amd64|rivetit-agent-linux-arm64)
+        elf_check "$OUT/$f" "${f##*-}"; size_cap "$OUT/$f" 67108864
+        grep -aqF -- "$version" "$OUT/$f" || die "$f does not contain the version string $version" ;;
+      install-linux.sh)
+        [ "$(head -c2 "$OUT/$f")" = '#!' ] || die "install-linux.sh has no shebang"; size_cap "$OUT/$f" 262144
+        bash -n "$OUT/$f" || die "install-linux.sh has a syntax error" ;;
+    esac
+  done
+  write_sums
   progress verify 85 "outputs verified"
   GO_VERSION_BUILT=$(docker run --rm --network none "$GO_IMAGE" go env GOVERSION 2>/dev/null || echo unknown)
 }
 
+write_sums() { ( cd "$OUT" && sha256sum "${UPLOAD[@]}" >SHA256SUMS ); }
+skipped() { local s; for s in "${SKIPPED[@]}"; do [ "$s" != "$1" ] || return 0; done; return 1; }
+
 # ---------- upload ----------
+is_linux_name() { case "$1" in rivetit-agent-linux-*|install-linux.sh) return 0 ;; esac; return 1; }
 upload_file() { # name
   local name=$1 f="$OUT/$1" size total i=0 chunk sha
   size=$(stat -c %s "$f"); [ "$size" -gt 0 ] || die "$name is empty"
@@ -311,7 +353,14 @@ upload_file() { # name
     sha=$(sha256sum "$chunk" | cut -d' ' -f1)
     base64 -w0 "$chunk" >"$TMP/chunk.b64"
     jmk "$TMP/up.json" "job_id:s:$JOB_ID" "name:s:$name" "index:i:$i" "total:i:$total" "sha256_chunk:s:$sha" "data_b64:f:$TMP/chunk.b64"
-    api upload "$TMP/up.json" "$TMP/up.out" || die "upload of $name chunk $i/$total failed"
+    if ! api upload "$TMP/up.json" "$TMP/up.out"; then
+      # an older server does not know the Linux names: it answers 4xx on the first chunk; warn, skip, keep the Windows files
+      if [ "$i" -eq 0 ] && is_linux_name "$name" && case "$LAST_CODE" in 400|403|404|409|415|422) true ;; *) false ;; esac; then
+        log "WARNING: the server does not accept $name (HTTP $LAST_CODE, older edition?): skipping it"
+        SKIPPED+=("$name"); UP_DONE=$(( UP_DONE + total )); return 0
+      fi
+      die "upload of $name chunk $i/$total failed"
+    fi
     i=$(( i + 1 )); UP_DONE=$(( UP_DONE + 1 ))
     progress upload $(( 85 + 15 * UP_DONE / UP_TOTAL )) "chunk $UP_DONE of $UP_TOTAL ($name)"
   done
@@ -321,9 +370,15 @@ upload_all() {
   local f specs=() sz
   UP_TOTAL=0 UP_DONE=0
   for f in "${UPLOAD[@]}"; do sz=$(stat -c %s "$OUT/$f"); UP_TOTAL=$(( UP_TOTAL + (sz + CHUNK_BYTES - 1) / CHUNK_BYTES )); done
-  [ "$UP_TOTAL" -gt 0 ] || UP_TOTAL=1
+  UP_TOTAL=$(( UP_TOTAL + 1 )) # SHA256SUMS, one chunk, uploaded last
   progress upload 85 "uploading ${#UPLOAD[@]} files in $UP_TOTAL chunks"
   for f in "${UPLOAD[@]}"; do upload_file "$f"; done
+  if [ "${#SKIPPED[@]}" -gt 0 ]; then # rebuild the file list and SHA256SUMS without what the server refused, then upload the sums last
+    local keep=(); for f in "${UPLOAD[@]}"; do skipped "$f" || keep+=("$f"); done
+    UPLOAD=("${keep[@]}"); write_sums
+  fi
+  UPLOAD+=(SHA256SUMS)
+  upload_file SHA256SUMS
   for f in "${UPLOAD[@]}"; do [ "$f" = SHA256SUMS ] || specs+=("manifest/files/$f:s:$(sha256sum "$OUT/$f" | cut -d' ' -f1)"); done
   jmk "$TMP/complete.json" "job_id:s:$JOB_ID" "${specs[@]}" "manifest/commit:s:$COMMIT_FULL" "manifest/go_version:s:$GO_VERSION_BUILT" \
     "manifest/built_at:s:$(date -u +%FT%TZ)"
@@ -365,7 +420,7 @@ case "$MODE" in
     ref=${DRY_REF:-${ALLOWED_REFS%% *}}
     ref_allowed "$ref" || die "ref '$ref' is not in ALLOWED_REFS"
     [[ $DRY_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die "bad --version"
-    build_job "$DRY_VERSION" "$ref" "windows-amd64 windows-arm64" true
+    build_job "$DRY_VERSION" "$ref" "windows-amd64 windows-arm64 linux-amd64 linux-arm64" true true
     rm -rf "$WORKDIR/dry-run-out"; mkdir -p "$WORKDIR/dry-run-out"; cp -a "$OUT"/. "$WORKDIR/dry-run-out/"
     log "dry run complete: nothing was uploaded; files are in $WORKDIR/dry-run-out"
     printf '%s\n' "$WORKDIR/dry-run-out" ;;
@@ -378,13 +433,13 @@ case "$MODE" in
     JOB_ID=$id; JOB_T0=$SECONDS
     [[ $JOB_ID =~ ^[A-Za-z0-9_-]{1,64}$ ]] || { JOB_ID=""; die "the server sent an invalid job id"; }
     version=$(jget "$TMP/poll.out" job.version); ref=$(jget "$TMP/poll.out" job.source_ref)
-    targets=$(jget "$TMP/poll.out" job.targets); want_msi=$(jget "$TMP/poll.out" job.msi)
+    targets=$(jget "$TMP/poll.out" job.targets); want_msi=$(jget "$TMP/poll.out" job.msi); want_linux=$(jget "$TMP/poll.out" job.linux)
     log "job $JOB_ID: version $version ref $ref"
     [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die "refused: invalid version"
     [[ $targets =~ ^[a-z0-9\ -]*$ ]] || die "refused: invalid targets"
     ref_allowed "$ref" || die "refused: source ref '${ref:0:80}' is not in this build host's ALLOWED_REFS"
     [ "$want_msi" = true ] || want_msi=false
     progress prepare 0 "job claimed and checked"
-    build_job "$version" "$ref" "$targets" "$want_msi"
+    build_job "$version" "$ref" "$targets" "$want_msi" "$want_linux"
     upload_all ;;
 esac
