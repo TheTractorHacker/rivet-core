@@ -12,6 +12,7 @@ declare(strict_types=1);
  * Files: agent_job_signing_vectors.json (canonical JSON rule, job/check/manifest Ed25519 signatures),
  * agent_installer_trailer_vectors.json (the stamped-installer footer format; FROZEN, never regenerate it with different bytes) and
  * agent_software_deploy_vectors.json (ADDED in 1.0.0-rc.21: accept/reject vectors for the parameters of the software jobs, replayed by the Go agent),
+ * agent_check_os_vectors.json (ADDED in 1.0.0-rc.24: signed check definitions with the optional os member and the keys delivered per OS, replayed by the Go agent),
  * agent_change_monitor_vectors.json (ADDED in 1.0.0-rc.22: the watch policy decisions, the secret-name rule and one complete signed change configuration, replayed by the Go agent), and
  * agent_installer_mesh_vectors.json (ADDED in 1.0.0-rc.12: payloads that carry the optional `install_mesh_agent` / `mesh` members, plus the
  * Mesh agent-id and install-argument tables both sides must agree on; an additive file so the frozen one keeps its bytes). Ed25519 signatures are deterministic, so
@@ -528,12 +529,44 @@ function changeMonitorVectors(): string
     return json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
 }
 
+function checkOsVectors(): string
+{
+    $seed = hash('sha256', 'RivetIT-agent-TEST-seed', true);
+    [$pub, $sec] = Signer::keypairFromSeed($seed);
+    $schedule = [
+        ['key' => 'svc_eventlog', 'type' => 'service', 'params' => ['name' => 'EventLog', 'expected' => 'running'], 'interval_s' => 300, 'os' => 'windows'],
+        ['key' => 'svc_cron', 'type' => 'service', 'params' => ['name' => 'cron', 'missing' => 'warn'], 'interval_s' => 300, 'os' => 'linux'],
+        ['key' => 'disk_any', 'type' => 'disk', 'params' => ['mount' => '/'], 'interval_s' => 600],
+        ['key' => 'pending_reboot', 'type' => 'pending_reboot', 'params' => [], 'interval_s' => 3600, 'os' => 'windows'],
+    ];
+    $signed = [];
+    foreach ($schedule as $c) {
+        $item = $c;
+        if ($item['params'] === []) {
+            $item['params'] = new \stdClass();
+        }
+        $item['signature'] = Signer::sign(Signer::checkMessage($item), $sec);
+        $signed[] = $item;
+    }
+    $keys = static fn (array $l): array => array_column($l, 'key');
+    $out = [
+        'description' => 'Per-OS check targeting (1.0.0-rc.24). signed_checks: check definitions as the server delivers them, each signed by the test key over the canonical JSON of the entry INCLUDING its optional os member (windows or linux; absent means every OS). The agent verifies the object exactly as delivered. delivered: the keys the server delivers to a device of that os (RmmChecks::forOs); the agent must run exactly these keys from the same list (it drops any check whose os is not its own GOOS). missing_values: the service check param missing (fail, warn, ignore; default fail).',
+        'test_key' => ['public_key_base64' => $pub],
+        'signed_checks' => json_decode((string) json_encode($signed)),   // objects, so empty params stay {}
+        'delivered' => ['windows' => $keys(\RivetCore\Rmm\Checks\RmmChecks::forOs($schedule, 'windows')), 'linux' => $keys(\RivetCore\Rmm\Checks\RmmChecks::forOs($schedule, 'linux'))],
+        'missing_values' => ['fail', 'warn', 'ignore'],
+    ];
+
+    return json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
+}
+
 $files = [
     'agent_installer_trailer_vectors.json' => installerTrailerVectors(),
     'agent_job_signing_vectors.json' => jobSigningVectors(),
     'agent_installer_mesh_vectors.json' => installerMeshVectors(),   // appended last: the two frozen lines of SHA256SUMS keep their place
     'agent_software_deploy_vectors.json' => softwareDeployVectors(),   // rc.21: additive again
     'agent_change_monitor_vectors.json' => changeMonitorVectors(),   // rc.22: additive again
+    'agent_check_os_vectors.json' => checkOsVectors(),   // rc.24: additive again
 ];
 $sums = '';
 foreach ($files as $name => $bytes) {

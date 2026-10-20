@@ -209,7 +209,7 @@ function vectorsBlock(string $root): string
     $t = json_decode((string) file_get_contents($dir . '/agent_installer_trailer_vectors.json'), true);
     $out = "Both files live in `endpoint-agent/testdata/vectors/` and are read by the Go agent and by the PHP tests; `php scripts/endpoint-vectors.php --check` regenerates them and fails on any byte difference.\n\n";
     $out .= "| File | SHA-256 |\n|---|---|\n";
-    foreach (['agent_job_signing_vectors.json', 'agent_installer_trailer_vectors.json', 'agent_installer_mesh_vectors.json', 'agent_software_deploy_vectors.json', 'agent_change_monitor_vectors.json'] as $f) {
+    foreach (['agent_job_signing_vectors.json', 'agent_installer_trailer_vectors.json', 'agent_installer_mesh_vectors.json', 'agent_software_deploy_vectors.json', 'agent_change_monitor_vectors.json', 'agent_check_os_vectors.json'] as $f) {
         $out .= '| `' . $f . '` | `' . hash_file('sha256', $dir . '/' . $f) . "` |\n";
     }
     $out .= "\n**Job signing** (`agent_job_signing_vectors.json`). Test key: " . trim((string) preg_replace('/\s+/', ' ', $j['test_key']['seed_derivation'])) . '; public key `' . $j['test_key']['public_key_base64'] . "`.\n\n";
@@ -230,6 +230,8 @@ function vectorsBlock(string $root): string
     $sd = json_decode((string) file_get_contents($dir . '/agent_software_deploy_vectors.json'), true);
     $accept = static fn (array $l): int => count(array_filter($l, static fn (array $c): bool => $c['valid']));
     $out .= "\n**Software job parameters** (`agent_software_deploy_vectors.json`, added in 1.0.0-rc.21; the files above are unchanged): accept/reject vectors for the parameters of `software_install` (" . count($sd['install']) . ' cases, ' . $accept($sd['install']) . ' accepted) and `software_detect` (' . count($sd['detect']) . ' cases, ' . $accept($sd['detect']) . " accepted). The agent must refuse every rejected one as `invalid_params` before it runs or downloads anything; the server builds only accepted ones. The PHP validators are checked against the labels by the generator and the Go agent replays the file in `internal/deploy`.\n";
+    $co = json_decode((string) file_get_contents($dir . '/agent_check_os_vectors.json'), true);
+    $out .= "\n**Per-OS check targeting** (`agent_check_os_vectors.json`, added in 1.0.0-rc.24; the files above are unchanged): " . count($co['signed_checks']) . ' signed check definitions, some carrying the optional `os` member (it is part of the signed object), and the keys delivered to a Windows and to a Linux device. The Go agent replays the file in `internal/agent`: every signature must verify over the object exactly as delivered, and dropping the checks of the other OS from the full list must leave exactly the delivered keys.' . "\n";
     $cm = json_decode((string) file_get_contents($dir . '/agent_change_monitor_vectors.json'), true);
     $out .= "\n**Change monitoring** (`agent_change_monitor_vectors.json`, added in 1.0.0-rc.22; the files above are unchanged): the watch policy's answer for " . count($cm['policy']['registry']) . ' registry keys and ' . count($cm['policy']['file']) . ' file paths (plus ' . count($cm['policy']['file_extra_root']['rows']) . ' with an extra root), the secret-name rule for ' . count($cm['secret_names']) . ' value names, and one complete signed `config.change` object (domain line, canonical JSON, Ed25519 by the test key). The Go agent replays the file in `internal/change`: its policy must agree on every row, the signature must verify, and one changed character must break it.' . "\n";
 
