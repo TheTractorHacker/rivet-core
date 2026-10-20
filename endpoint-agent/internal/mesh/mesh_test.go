@@ -456,7 +456,7 @@ func TestProbeWindowsRegistryFallbackWithFakeRunner(t *testing.T) {
 	if id, src := p.NodeID(context.Background()); id != testNode || src != "registry" {
 		t.Fatalf("%q %q", id, src)
 	}
-	if len(calls) != 2 || !strings.HasSuffix(calls[0], "-nodeid") || !strings.HasPrefix(calls[1], "reg.exe query HKLM") {
+	if len(calls) != 3 || !strings.HasSuffix(calls[0], " -nodeid") || !strings.HasSuffix(calls[1], " --nodeid") || !strings.HasPrefix(calls[2], "reg.exe query HKLM") {
 		t.Fatal(calls)
 	}
 }
@@ -502,7 +502,7 @@ func TestReporter(t *testing.T) {
 		t.Fatalf("runs=%d", runs)
 	}
 	b, _ := json.Marshal(r)
-	if string(b) != `{"installed":true,"node_id":"`+testNode+`"}` {
+	if string(b) != `{"installed":true,"node_id":"`+testNode+`","state":"ready"}` {
 		t.Fatal(string(b))
 	}
 }
