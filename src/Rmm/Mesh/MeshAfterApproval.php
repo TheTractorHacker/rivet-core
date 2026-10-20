@@ -113,8 +113,8 @@ final class MeshAfterApproval
             return;
         }
         $attempts = (int) $row['attempts'];
-        if ($attempts > 0 && (string) $row['updated_at'] > $this->sql->utcAt(-min(300, 60 * $attempts))) {
-            return;   // backoff between tries: 1, 2, 3, 4, then every 5 minutes
+        if ($attempts >= 2 && (string) $row['updated_at'] > $this->sql->utcAt(-min(300, 60 * ($attempts - 1)))) {
+            return;   // the first two tries (the enrollment and the first check-in) are free, then a backoff of 1, 2, 3, 4 and at most 5 minutes
         }
         $r = ($this->remote)()->installMeshAgentAfterApproval($dev);
         $this->apply($row, $dev, $r);

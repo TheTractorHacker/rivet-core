@@ -96,12 +96,39 @@ final class MeshAgentTest extends RemoteTestCase
         $this->assertArrayNotHasKey('install_mesh_agent', $this->download($r['token_plain']));
     }
 
-    public function testTheTickBoxCarriesTheMeshSourceInTheInteractiveAndTheTokenGatedInstaller(): void
+    public function testTheNewTickBoxCarriesNothingOfTheMeshSettingsInAnyInstaller(): void
+    {
+        $this->meshOn(['mesh_server_cert_pin' => hash('sha384', 'server cert')]);
+        $r = $this->h->module->installerService()->issue($this->h->clientA, 0, 'stable', 24, 5, 'mesh', 'amd64', 1, 'Admin', true);
+        $this->assertTrue($r['ok'], json_encode($r));
+        $this->assertTrue($r['mesh_after_approval']);
+        $this->assertSame(2, (int) $this->h->one('SELECT install_mesh_agent FROM endpoint_agent_installer_options'), 'after-approval is option value 2');
+        foreach ([json_decode((string) $r['payload'], true), $this->download($r['token_plain'])] as $d) {
+            $this->assertArrayNotHasKey('install_mesh_agent', $d);
+            $this->assertArrayNotHasKey('mesh', $d);
+            $this->assertStringNotContainsString(self::GROUP_URL, json_encode($d));
+            $this->assertStringNotContainsString('mesh.example.com', json_encode($d));
+        }
+        $cmds = $this->h->module->installerService()->deploymentCommands(['token' => $r['token'], 'token_plain' => $r['token_plain'], 'department' => $r['department']], 'amd64', true);
+        $this->assertTrue($cmds['mesh_after_approval']);
+        foreach ([$cmds['linux'], $cmds['powershell']] as $c) {
+            $this->assertStringNotContainsString('--install-mesh-agent', $c);
+            $this->assertStringNotContainsString('--mesh-group-id', $c);
+            $this->assertStringNotContainsString(self::GROUP_URL, $c);
+            $this->assertStringNotContainsString('mesh.example.com', $c);
+        }
+        $this->assertStringContainsString('installs the MeshCentral agent after the device is approved', json_encode($this->h->audit->records()));
+    }
+
+    public function testALegacyTokenKeepsTheInstallTimeMeshSourceInTheInteractiveAndTheTokenGatedInstaller(): void
     {
         $pin = hash('sha384', 'server cert');
         $this->meshOn(['mesh_server_cert_pin' => strtoupper($pin), 'mesh_agent_ids' => ['windows/arm64' => 40], 'mesh_install_args' => ['linux' => ['-install', '--installPath=/opt/mesh']]]);
         $r = $this->h->module->installerService()->issue($this->h->clientA, 0, 'stable', 24, 5, 'mesh', 'amd64', 1, 'Admin', true);
         $this->assertTrue($r['ok'], json_encode($r));
+        // A token issued BEFORE rc.27 stored option value 1 ("install at install time"); the new tick-box stores 2. Simulate the old token.
+        $this->h->mysqli->query('UPDATE endpoint_agent_installer_options SET install_mesh_agent = 1');
+        $r['payload'] = $this->h->module->installerDownload()->payloadFor($this->h->rows('SELECT * FROM endpoint_agent_enrollment_tokens WHERE token_id=' . (int) $r['token']['token_id'])[0], $r['token_plain'], (string) $r['installer_id'])[0];
         $payloads = [json_decode((string) $r['payload'], true), $this->download($r['token_plain'])];
         foreach ($payloads as $d) {
             $this->assertSame(1, $d['version'], 'the payload version stays 1');
@@ -117,7 +144,7 @@ final class MeshAgentTest extends RemoteTestCase
             $this->assertArrayNotHasKey('mesh_login_key', $m);
             $this->assertLessThan(InstallerStamp::MAX_PAYLOAD, strlen(json_encode($d)));
         }
-        $this->assertStringContainsString('also installs the MeshCentral agent', json_encode($this->h->audit->records()));
+        $this->assertStringContainsString('installs the MeshCentral agent after the device is approved', json_encode($this->h->audit->records()));
         // a token issued WITHOUT the box stays without it, whatever the settings say
         $plain = $this->h->module->installerService()->issue($this->h->clientA, 0, 'stable', 24, 5, 'plain', 'amd64', 1, 'Admin');
         $this->assertArrayNotHasKey('mesh', $this->download($plain['token_plain']));
