@@ -8,7 +8,7 @@ use RivetCore\Testing\InMemoryRmmAssets;
 
 /**
  * The reference assets store with an optional named flaw: includes_archived, serial_prefix, mac_strict, mac_duplicates,
- * host_case_sensitive, ignores_limit, find_archived_null, all_laptops, fill_overwrites, fill_nothing, move_all, throws_unknown, bad_shape.
+ * host_case_sensitive, ignores_limit, find_archived_null, all_laptops, fill_overwrites, fill_nothing, ignores_hint, ignores_detected, hint_overrides_nothing, type_overwrites, type_not_filled, move_all, throws_unknown, bad_shape.
  */
 final class FlawedRmmAssets extends InMemoryRmmAssets
 {
@@ -92,6 +92,15 @@ final class FlawedRmmAssets extends InMemoryRmmAssets
 
     public function createForDevice(array $device, int $clientId, int $locationId): int
     {
+        if ($this->flaw === 'ignores_hint') {
+            unset($device['asset_type_hint']);
+        }
+        if ($this->flaw === 'ignores_detected') {
+            unset($device['asset_type_detected']);
+        }
+        if ($this->flaw === 'hint_overrides_nothing' && isset($device['asset_type_hint'])) {
+            $device['asset_type_hint'] = 'Laptop';   // always the default, whatever was chosen
+        }
         $id = parent::createForDevice($device, $clientId, $locationId);
         if ($this->flaw === 'all_laptops') {
             $this->assets[$id]['type'] = 'Laptop';
@@ -115,6 +124,12 @@ final class FlawedRmmAssets extends InMemoryRmmAssets
             $this->assets[$assetId]['os'] = $facts['os'];
 
             return;
+        }
+        if ($this->flaw === 'type_overwrites' && isset($facts['type'])) {
+            $this->assets[$assetId]['type'] = $facts['type'];
+        }
+        if ($this->flaw === 'type_not_filled') {
+            unset($facts['type']);
         }
         parent::fillBlanks($assetId, $facts);
     }

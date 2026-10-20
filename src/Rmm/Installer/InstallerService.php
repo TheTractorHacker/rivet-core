@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Installer;
 
+use RivetCore\Rmm\Assets\DeviceTypeClassifier;
 use RivetCore\Rmm\Binaries\BinaryStore;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Contracts\RmmTenancyInterface;
@@ -63,9 +64,10 @@ final class InstallerService
      * Refused up front when software deployment is off, an app is unknown or switched off, or its vendor parameters have no value for this client.
      *
      * @param list<int> $appIds
+     * @param string $deviceType 'auto' or a DeviceTypeClassifier label: stored by token (never in the installer file), audited, validated against the fixed list
      * @return array{ok:bool,error?:string,token?:array<string,mixed>,token_plain?:string,payload?:string,installer_id?:string,department?:string,mesh_after_approval?:bool}
      */
-    public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = []): array
+    public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = [], string $deviceType = 'auto'): array
     {
         if (!InstallerFormat::valid($format)) {
             return ['ok' => false, 'error' => 'Choose the installer format: exe or msi.'];
@@ -79,6 +81,9 @@ final class InstallerService
             if ($why !== null) {
                 return ['ok' => false, 'error' => $why];
             }
+        }
+        if ($deviceType !== 'auto' && !DeviceTypeClassifier::validLabel($deviceType)) {
+            return ['ok' => false, 'error' => 'Choose a device type from the list, or leave it on automatic detection.'];
         }
         if ($clientId <= 0 || $this->tenancy->clientName($clientId) === null) {
             return ['ok' => false, 'error' => 'Choose the ' . $this->clientLabel . ' the devices belong to.'];
@@ -98,6 +103,15 @@ final class InstallerService
         if ($installMeshAgent) {
             $this->sql->run('INSERT INTO endpoint_agent_installer_options (token_id, install_mesh_agent, created_at) VALUES (?, ' . \RivetCore\Rmm\Mesh\MeshAfterApproval::OPTION_AFTER_APPROVAL . ', ?) ON DUPLICATE KEY UPDATE install_mesh_agent = ' . \RivetCore\Rmm\Mesh\MeshAfterApproval::OPTION_AFTER_APPROVAL, [$t['token_id'], $this->sql->utcNow()]);
         }
+        if ($deviceType !== 'auto') {
+            try {
+                $this->sql->run('INSERT INTO endpoint_agent_installer_options (token_id, device_type, created_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE device_type = VALUES(device_type)', [$t['token_id'], $deviceType, $this->sql->utcNow()]);
+            } catch (\Throwable) {
+                $this->enrollment->revokeToken($t['token_id'], $userId);   // migration 0035 not applied: never hand out an installer that would silently ignore the choice
+
+                return ['ok' => false, 'error' => 'The device type option is not available until the database is updated.'];
+            }
+        }
         if ($appIds !== []) {
             $why = $this->autoInstall->recordSelection((int) $t['token_id'], $appIds, $clientId, $locationId, $userId, $actorName);
             if ($why !== null) {
@@ -114,7 +128,7 @@ final class InstallerService
         }
         $dept = $this->installer->departmentName($clientId);
         $this->audit->record('Installer Created', "$actorName created installer $installerId ($arch" . ($format === InstallerFormat::MSI ? ', msi' : '') . ") for {$this->clientLabel} \"$dept\" with enrollment token #{$t['token_id']} ({$row['token_selector']}), "
-            . "{$row['max_uses']} uses, expires {$row['expires_at']} UTC" . ($installMeshAgent ? ', installs the MeshCentral agent after the device is approved' : ''), $clientId, 0);
+            . "{$row['max_uses']} uses, expires {$row['expires_at']} UTC" . ($installMeshAgent ? ', installs the MeshCentral agent after the device is approved' : '') . ($deviceType !== 'auto' ? ", new assets get the type \"$deviceType\"" : ''), $clientId, 0);
 
         return ['ok' => true, 'token' => $row, 'token_plain' => $t['token'], 'payload' => $payload, 'installer_id' => $installerId, 'department' => $dept, 'mesh_after_approval' => $installMeshAgent];
     }
@@ -126,9 +140,9 @@ final class InstallerService
      * @param list<int> $appIds see {@see issue()}
      * @return RmmResponse|string the download, or the refusal message
      */
-    public function issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = []): RmmResponse|string
+    public function issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = [], string $deviceType = 'auto'): RmmResponse|string
     {
-        $r = $this->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, $label, $arch, $userId, $actorName, $installMeshAgent, $format, $appIds);
+        $r = $this->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, $label, $arch, $userId, $actorName, $installMeshAgent, $format, $appIds, $deviceType);
         if (!$r['ok'] || !isset($r['token'], $r['payload'], $r['department'])) {
             return (string) ($r['error'] ?? 'The installer could not be created.');
         }

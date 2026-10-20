@@ -14,7 +14,7 @@ use RivetCore\Rmm\Contracts\RmmAssetsInterface;
  * Checks: lookups return only non-archived assets with the documented row shape; serial is an exact match; MACs match ignoring
  * case and treating '-' and ':' alike, and an asset with several matching MACs comes back once; hostname matches
  * case-insensitively; limits are honoured; find() reports archived and null for unknown ids; createForDevice() makes an Active
- * 'Server' or 'Laptop' with "Windows <os_version>" in the client and location; fillBlanks() fills only blanks and never
+ * 'Server' or 'Laptop' (and, since rc.29, the installer's `asset_type_hint` first, else `asset_type_detected`, mapped onto the edition's own types; fillBlanks() fills a blank `type` and never changes one) with "Windows <os_version>" in the client and location; fillBlanks() fills only blanks and never
  * overwrites; moveToClient() moves the asset and nothing else; nothing throws for unknown ids.
  *
  * @api
@@ -32,6 +32,28 @@ abstract class RmmAssetsConformanceTestCase extends TestCase
      *        macs exactly as a person may have typed them: any case, ':' or '-' separators
      */
     abstract protected function createAsset(array $asset): int;
+
+    /**
+     * The asset type names the edition has (exact spelling). The default, Laptop and Server, is what every edition has had since before rc.29;
+     * return more (Desktop, Virtual Machine, Hypervisor, Tablet, Other) and the kit checks those labels map one to one; a label you do not list must
+     * fall back as {@see \RivetCore\Rmm\Assets\DeviceTypeClassifier::resolve()} says.
+     *
+     * @return list<string>
+     */
+    protected function supportedTypes(): array
+    {
+        return ['Laptop', 'Server'];
+    }
+
+    /**
+     * Create an asset whose type is $type ('' = blank). An edition that can store a blank type overrides this; the default skips the two type-fill tests.
+     *
+     * @param array{name:string, client_id:int, serial:?string, macs:list<string>, archived:bool, model:string, make:string, os:string} $asset
+     */
+    protected function createAssetWithType(array $asset, string $type): int
+    {
+        $this->markTestSkipped('This edition does not offer createAssetWithType().');
+    }
 
     /**
      * Read an asset back from the edition's store, not through the adapter.
@@ -168,6 +190,72 @@ abstract class RmmAssetsConformanceTestCase extends TestCase
         $this->assertNotNull($row);
         $this->assertSame('Server', $row['type']);
         $this->assertNull($row['serial'] === '' ? null : $row['serial']);
+    }
+
+    /**
+     * @param array<string,string> $extra
+     * @return array<string,mixed>
+     */
+    private function device(string $osVersion, array $extra = []): array
+    {
+        return ['hostname' => 'T-' . self::token(), 'os_version' => $osVersion, 'manufacturer' => null, 'model' => null, 'serial' => null] + $extra;
+    }
+
+    /** @param array<string,mixed> $device */
+    private function typeOf(array $device): string
+    {
+        $row = $this->readAsset($this->assets()->createForDevice($device, 11, 0));
+        $this->assertNotNull($row);
+
+        return $row['type'];
+    }
+
+    public function testAnInstallerTypeHintWins(): void
+    {
+        // The hint beats both the detected type and the OS text, in both directions.
+        $this->assertSame('Server', $this->typeOf($this->device('10.0.22631 Pro', ['asset_type_hint' => 'Server', 'asset_type_detected' => 'Laptop'])));
+        $this->assertSame('Laptop', $this->typeOf($this->device('10.0.20348 Windows Server 2022', ['asset_type_hint' => 'Laptop', 'asset_type_detected' => 'Server'])));
+        foreach (['Desktop', 'Virtual Machine', 'Hypervisor', 'Tablet', 'Other'] as $label) {
+            $this->assertSame(
+                \RivetCore\Rmm\Assets\DeviceTypeClassifier::resolve($label, $this->supportedTypes()),
+                $this->typeOf($this->device('10.0.22631 Pro', ['asset_type_hint' => $label, 'asset_type_detected' => 'Laptop'])),
+                "hint $label"
+            );
+        }
+    }
+
+    public function testTheDetectedTypeIsUsedWithoutAHint(): void
+    {
+        $this->assertSame('Server', $this->typeOf($this->device('10.0.22631 Pro', ['asset_type_detected' => 'Server'])));
+        $this->assertSame('Laptop', $this->typeOf($this->device('10.0.20348 Windows Server 2022', ['asset_type_detected' => 'Laptop'])));
+        $this->assertSame(
+            \RivetCore\Rmm\Assets\DeviceTypeClassifier::resolve('Virtual Machine', $this->supportedTypes()),
+            $this->typeOf($this->device('10.0.22631 Pro', ['asset_type_detected' => 'Virtual Machine']))
+        );
+    }
+
+    public function testWithoutTheTypeKeysTheOldRuleStillApplies(): void
+    {
+        $this->assertSame('Server', $this->typeOf($this->device('Windows SERVER 2019')));
+        $this->assertSame('Laptop', $this->typeOf($this->device('10.0.22631 Pro')));
+    }
+
+    public function testFillBlanksFillsABlankType(): void
+    {
+        $id = $this->createAssetWithType($this->spec([]), '');
+        $this->assets()->fillBlanks($id, ['serial' => null, 'model' => null, 'manufacturer' => null, 'os' => '', 'type' => 'Server']);
+        $row = $this->readAsset($id);
+        $this->assertNotNull($row);
+        $this->assertSame('Server', $row['type']);
+    }
+
+    public function testFillBlanksNeverOverwritesAnAssetsType(): void
+    {
+        $id = $this->createAssetWithType($this->spec([]), 'Laptop');
+        $this->assets()->fillBlanks($id, ['serial' => null, 'model' => null, 'manufacturer' => null, 'os' => '', 'type' => 'Server']);
+        $row = $this->readAsset($id);
+        $this->assertNotNull($row);
+        $this->assertSame('Laptop', $row['type']);
     }
 
     public function testFillBlanksFillsOnlyBlanks(): void

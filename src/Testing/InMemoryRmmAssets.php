@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Testing;
 
+use RivetCore\Rmm\Assets\DeviceTypeClassifier;
 use RivetCore\Rmm\Contracts\RmmAssetNamesInterface;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 
@@ -18,8 +19,11 @@ class InMemoryRmmAssets implements RmmAssetsInterface, RmmAssetNamesInterface
     protected array $assets = [];
     protected int $next = 100;
 
+    /** @var list<string> the asset type names this store has; a label it lacks falls back through {@see DeviceTypeClassifier::resolve()} */
+    public array $typeNames = DeviceTypeClassifier::LABELS;
+
     /**
-     * @param array{name?:string,client_id?:int,serial?:?string,macs?:list<string>,archived?:bool,model?:string,make?:string,os?:string} $a
+     * @param array{name?:string,client_id?:int,serial?:?string,macs?:list<string>,archived?:bool,model?:string,make?:string,os?:string,type?:string} $a
      */
     public function addAsset(array $a): int
     {
@@ -31,7 +35,7 @@ class InMemoryRmmAssets implements RmmAssetsInterface, RmmAssetNamesInterface
             'model' => $a['model'] ?? '',
             'make' => $a['make'] ?? '',
             'os' => $a['os'] ?? '',
-            'type' => 'Laptop',
+            'type' => $a['type'] ?? 'Laptop',
             'status' => 'Active',
             'macs' => array_map(self::mac(...), $a['macs'] ?? []),
             'archived' => $a['archived'] ?? false,
@@ -81,7 +85,9 @@ class InMemoryRmmAssets implements RmmAssetsInterface, RmmAssetNamesInterface
             'os' => 'Windows ' . $device['os_version'],
         ]);
         $this->assets[$id]['location_id'] = $locationId;
-        $this->assets[$id]['type'] = stripos($device['os_version'], 'server') !== false ? 'Server' : 'Laptop';
+        // The installer's choice (asset_type_hint) wins, then the Core classifier's verdict (asset_type_detected), then the pre-rc.29 rule.
+        $detected = $device['asset_type_detected'] ?? DeviceTypeClassifier::classify(['os_version' => $device['os_version']]);
+        $this->assets[$id]['type'] = DeviceTypeClassifier::resolve(DeviceTypeClassifier::choose($device['asset_type_hint'] ?? null, (string) $detected), $this->typeNames);
 
         return $id;
     }
@@ -103,6 +109,9 @@ class InMemoryRmmAssets implements RmmAssetsInterface, RmmAssetNamesInterface
         }
         if ($a['os'] === '' && $facts['os'] !== '') {
             $a['os'] = $facts['os'];
+        }
+        if ($a['type'] === '' && DeviceTypeClassifier::validLabel($facts['type'] ?? null)) {
+            $a['type'] = DeviceTypeClassifier::resolve((string) $facts['type'], $this->typeNames);
         }
     }
 

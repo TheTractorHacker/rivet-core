@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Checkin;
 
 use RivetCore\Rmm\Alerting\AlertingEngine;
+use RivetCore\Rmm\Assets\DeviceTypeClassifier;
+use RivetCore\Rmm\Assets\DeviceTypes;
 use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Checks\CheckCatalog;
 use RivetCore\Rmm\Checks\CheckEvaluator;
@@ -390,6 +392,7 @@ final class CheckinService
         $linked = $dev['link_state'] === 'linked' && !empty($dev['asset_id']);
         if ($cleanInv !== null && $linked) {
             $this->assets->fillBlanks((int) $dev['asset_id'], [
+                'type' => (new DeviceTypes($this->sql))->forDevice($dev)['type'],
                 'serial' => DeviceValidator::cleanSerial($cleanInv['serial']) ?? ($dev['serial'] === null ? null : (string) $dev['serial']),
                 'model' => $cleanInv['model'],
                 'manufacturer' => $cleanInv['manufacturer'],
@@ -492,6 +495,11 @@ final class CheckinService
             'disks' => [],
             'network' => [],
         ];
+        $hw = DeviceValidator::cleanHardware($inv);
+        $hasHw = $hw['chassis_type'] !== null || $hw['has_battery'] !== null || $hw['is_virtual'] !== null || $hw['virtualization'] !== null || $hw['role_hints'] !== [];
+        if ($hasHw) {
+            $clean += $hw;   // additive keys of inventory_json, only when the agent sent facts
+        }
         $disks = is_array($inv['disks'] ?? null) ? array_slice($inv['disks'], 0, self::MAX_DISKS) : [];
         foreach ($disks as $d) {
             if (is_array($d) && ($mount = $txt($d['mount'] ?? null, 64)) !== null) {
@@ -519,6 +527,12 @@ final class CheckinService
             WHERE device_id = ?',
             [json_encode($clean), $this->sql->utcNow(), $clean['hostname'], $clean['os_version'], $clean['manufacturer'], $clean['model'], DeviceValidator::cleanSerial($clean['serial']),
                 $macs !== [] ? json_encode(array_values($macs)) : $dev['mac_addresses'], $clean['logged_in_user'], $clean['pending_reboot'] === null ? null : (int) $clean['pending_reboot'], $clean['uptime_s'], $deviceId]);
+
+        if ($hasHw) {
+            // The type follows the hardware facts the agent reports now; it is only ever used to fill a BLANK asset type, never to overwrite.
+            (new DeviceTypes($this->sql))->saveDetected($deviceId, DeviceTypeClassifier::classify(
+                ['os' => $dev['os'] ?? null, 'os_version' => $clean['os_version'] ?? ($dev['os_version'] ?? '')] + $hw));
+        }
 
         if (is_string($meshNode) && DeviceRepository::validMeshNodeId($meshNode)) {
             $existing = $this->sql->one('SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id = ?', [$deviceId]);

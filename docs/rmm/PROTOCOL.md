@@ -274,6 +274,20 @@ Body cap 262144 bytes: `{changes: [{ts, kind, watch, change, target, item, old, 
 
 `200 {ok, accepted, dropped, duplicates}`: the server drops a record it cannot understand, one for a watch the device was not told to read, one whose target is outside that watch or refused by the watch policy, and everything beyond the device's per-minute budget (`change_rate_per_min`, default 120), the device's row cap (`change_device_max_rows`, default 5000) or the fleet cap (`change_fleet_max_rows`, default 500000), and counts what it dropped; a record stored before (same time, watch, target, item, change, hashes and value) is a duplicate and is not stored twice, so resending a batch whose answer was lost is safe. Control characters become spaces and credential-shaped text is redacted again before storage. The agent removes records from its queue only after a `200`. `503 feature_disabled` while the `change_monitor` sub-switch is off; `503 unavailable` with a jittered `Retry-After` at load-shedding level 2 and up; `429` above 30 requests per 60 s per device; `422` for a body that is not shaped like this; `413` over the cap.
 
+#### 3.2.10 Device type facts (additive, 1.0.0-rc.29)
+
+Every new asset used to be a Laptop (or a Server when the OS text said so). rc.29 lets the agent report what the box physically is. Protocol 1 stays frozen: every member is OPTIONAL, goes in the enrollment `device` object and in the check-in `inventory` object, and is left out when it could not be read (never guessed, never null-filled). A server that does not know them ignores them; the server drops a value of the wrong type or outside its vocabulary instead of rejecting the request (enrollment and check-in never fail over these).
+
+| Member | Type and vocabulary | Source |
+| --- | --- | --- |
+| `chassis_type` | `laptop`, `desktop`, `tower`, `all_in_one`, `mini_pc`, `server`, `rack_server`, `blade`, `tablet`, `other` | SMBIOS enclosure type (Windows `Win32_SystemEnclosure.ChassisTypes[0]`, Linux `/sys/class/dmi/id/chassis_type`), mapped: 3,4,15,16,24 desktop; 6,7 tower; 8,9,10,14,31,32 laptop; 11,30 tablet; 13 all_in_one; 17,25 server; 5,23 rack_server; 28,29 blade; 35,36 mini_pc; 1,12,18-22,26,27,33,34 other; 2 and anything else omitted |
+| `has_battery` | boolean | Windows `Win32_Battery` count > 0 (a UPS counts there, so a desktop chassis wins on the server); Linux a `/sys/class/power_supply/*` of type `Battery` whose `scope` is not `Device` |
+| `is_virtual` | boolean | true for any `virtualization` other than `none` |
+| `virtualization` | `vmware`, `hyperv`, `kvm`, `qemu`, `xen`, `virtualbox`, `parallels`, `lxc`, `container`, `other`, `none` | firmware vendor and product strings; the Hyper-V guest registry key; Linux `systemd-detect-virt` (when installed) and the `container=` marker of `/proc/1/environ` |
+| `role_hints` | list of at most 4 of `hypervisor_host`, `domain_controller` | Windows services `vmms` / `NTDS` present; Linux `/etc/pve` or `pveversion` (Proxmox), `/var/lib/samba/private/sam.ldb` |
+
+**Server.** The classifier (`Rmm\Assets\DeviceTypeClassifier`, decision table in docs/modules/rmm.md) turns them into one of Laptop, Desktop, Server, Virtual Machine, Hypervisor, Tablet, Other. The result is stored as `endpoint_agent_devices.detected_type` and handed to `RmmAssetsInterface::createForDevice()` as `asset_type_detected`; an installer's explicit choice (kept server-side by token, never inside the installer file or its trailer) goes along as `asset_type_hint`. An existing asset is only ever given a type when its type is blank. The validated facts are also kept in the stored inventory document.
+
 ## 4. Signing
 
 * **Canonical JSON** (what is signed): UTF-8; object keys sorted by their UTF-8 bytes, recursively; arrays in order; no whitespace; strings escape only `"`, `\`, `\b`, `\f`, `\n`, `\r`, `\t` and the other code points below U+0020 as lower-case `\u00xx`, everything else raw (including `/ < > &`, U+007F, U+2028, U+2029); **integers only** (floats are rejected in check definitions); `true`, `false`, `null`.

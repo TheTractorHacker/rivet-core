@@ -446,3 +446,30 @@ Not yet adopted: RivetIT adopts first (it already has the tables), then RivetMSP
 ## Per-OS check targeting (1.0.0-rc.24)
 
 The global check schedule is one list, so Linux-only service checks (`svc_cron`, `svc_sshd`, ...) used to reach Windows PCs, report "service X not found" (`fail`) and raise alerts nobody could clear. A check definition (schedule or policy template) now takes an optional `os` (`windows`, `linux`; left out = both). Delivery filters by the device's OS and signs each delivered entry including `os`; the agent ignores a check for another OS; a check that stops being delivered loses its row and its open alert (resolved by the system, reason `not_applicable`, no ticket). A service check also takes `missing` (`fail` default, `warn`, `ignore`). Wire details: [PROTOCOL.md](../rmm/PROTOCOL.md) 3.2.8. Edition steps: [UPGRADING.md](../../UPGRADING.md) "Adopting per-OS check targeting". Code: `Checks\RmmChecks`, `Checks\CheckReconciler`, `CheckEvaluator::removeStale()`, `RmmModule::reconcileChecks()`, `Migration0032CheckSet`; Go: `internal/agent` `checksForOS`, `internal/collect` `checkService`.
+
+## Device type for new assets (1.0.0-rc.28)
+
+A new asset used to be a Laptop unless the OS text said "server". The agent now reports hardware facts (protocol section 3.2.10) and `Rmm\Assets\DeviceTypeClassifier` decides; a technician can also fix the type when the installer is issued.
+
+Labels (the only values): Laptop, Desktop, Server, Virtual Machine, Hypervisor, Tablet, Other. The first row that applies wins; a missing, mistyped or out-of-vocabulary fact never matches.
+
+| # | Condition | Type |
+| --- | --- | --- |
+| 1 | `role_hints` has `hypervisor_host` (Proxmox, Hyper-V role) | Hypervisor |
+| 2 | `is_virtual` true, or `virtualization` is not `none` (VMware, Hyper-V, KVM/QEMU, Xen, VirtualBox, Parallels, LXC, container) | Virtual Machine |
+| 3 | `role_hints` has `domain_controller` | Server |
+| 4 | `os_version` contains "server" (case-insensitive) | Server |
+| 5 | chassis `server`, `rack_server`, `blade` | Server |
+| 6 | chassis `tablet` | Tablet |
+| 7 | chassis `laptop` | Laptop |
+| 8 | chassis `desktop`, `tower`, `all_in_one`, `mini_pc` | Desktop |
+| 9 | `has_battery` true | Laptop |
+| 10 | Linux, `has_battery` false | Server |
+| 11 | Windows, `has_battery` false | Desktop |
+| 12 | nothing usable | Server if the OS text says server, else Laptop (the old rule; what an old agent gets) |
+
+Decisions worth knowing: a virtual Windows Server is a **Virtual Machine** (row 2 before row 4); the OS stays readable in the asset's OS field. A desktop chassis beats a battery (Windows reports a UPS as a battery). "Other" is never detected, only chosen.
+
+**Installer option.** `device_type` (`auto` default, or a label) on `InstallerService::issue()`, `issueDownload()`, `RmmAdmin::downloadInstaller()` and `deploymentCommands()` (last parameter). Validated against the fixed list (an unknown value is refused and no token is left), stored in `endpoint_agent_installer_options.device_type` keyed by token (migration 0035), audited in "Installer Created", and listed as `device_type` by `RmmReadModel::tokens()`. It is not part of the installer file, the MSI payload or the deployment commands: nothing changes in those formats.
+
+**What the edition gets.** `RmmAssetsInterface::createForDevice($device, ...)` receives `asset_type_detected` (always) and `asset_type_hint` (only when the installer chose): use the hint, else the detected label, map the label to your own asset type, and use `DeviceTypeClassifier::resolve($label, $yourTypeNames)` for labels you lack. `fillBlanks()` gets an optional `type` and fills it only when the asset's type is blank. A device matched to an existing asset never changes that asset's type. `RmmReadModel::pendingApprovals()` rows carry `suggested_type` (hint, else detected) to prefill the approval screen's type dropdown for "create asset". The type is re-detected on each inventory and stored as `detected_type`.

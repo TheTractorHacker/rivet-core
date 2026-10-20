@@ -36,6 +36,7 @@ use RivetCore\Rmm\Migration\Migration0031ClockSkew;
 use RivetCore\Rmm\Migration\Migration0032CheckSet;
 use RivetCore\Rmm\Migration\Migration0033AutoInstall;
 use RivetCore\Rmm\Migration\Migration0034MeshAfterApproval;
+use RivetCore\Rmm\Migration\Migration0035DeviceType;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
 
@@ -83,6 +84,7 @@ final class CoreMigrations
             new Migration0032CheckSet(),
             new Migration0033AutoInstall(),
             new Migration0034MeshAfterApproval(),
+            new Migration0035DeviceType(),
         ];
     }
 }

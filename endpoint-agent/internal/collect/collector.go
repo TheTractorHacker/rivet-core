@@ -271,6 +271,9 @@ func (c *Collector) Device(ctx context.Context, installID, version string) api.D
 	}); err == nil {
 		d.OSVersion = r.v
 	}
+	if h, ok := c.hardware(ctx); ok {
+		h.applyDevice(&d)
+	}
 	return d
 }
 
@@ -328,6 +331,9 @@ func (c *Collector) Inventory(ctx context.Context) api.Inventory {
 	}
 	if id := c.MeshNodeID(ctx); id != "" {
 		inv.MeshNodeID = &id
+	}
+	if h, ok := c.hardware(ctx); ok {
+		h.applyInventory(&inv)
 	}
 	return inv
 }

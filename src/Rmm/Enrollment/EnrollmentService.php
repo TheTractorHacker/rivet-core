@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Enrollment;
 
+use RivetCore\Rmm\Assets\DeviceTypeClassifier;
+use RivetCore\Rmm\Assets\DeviceTypes;
 use RivetCore\Rmm\Capacity\HerdControl;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
@@ -250,6 +252,9 @@ final class EnrollmentService
         $hash = hash('sha256', $newToken);
         $expires = $this->sql->utcAt(RmmProtocol::DEVICE_TOKEN_VALID_DAYS * 86400);
         $macsJson = json_encode($d['macs']);
+        $detected = DeviceTypeClassifier::classify($d + ['os' => $os]);
+        $types = new DeviceTypes($this->sql);
+        $hint = $types->hintForToken((int) $token['token_id']);
 
         // 1. Same install_id: re-enrollment.
         $dev = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE install_id = ? FOR UPDATE', [$d['install_id']]);
@@ -287,6 +292,7 @@ final class EnrollmentService
             // A reinstalled agent restarts its sequence numbers; the idempotency window restarts with it.
             $this->sql->run('DELETE FROM endpoint_agent_checkins WHERE device_id = ?', [$dev['device_id']]);
             $deviceId = (int) $dev['device_id'];
+            $types->saveDetected($deviceId, $detected);
             $dev = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ?', [$deviceId]) ?? $dev;
             if ($dev['link_state'] === 'linked' && !empty($dev['asset_id'])) {
                 $asset = $this->assets->find((int) $dev['asset_id']);
@@ -319,7 +325,7 @@ final class EnrollmentService
             $state = 'linked';
             $status = 'linked';
         } elseif ($match['status'] === 'pending_approval' && $match['reason'] === 'no_match' && $this->settings->get()['unmatched_policy'] === 'auto_create') {
-            $assetId = $this->createAsset($d, (int) $token['client_id'], (int) $token['location_id']);
+            $assetId = $this->createAsset($d, (int) $token['client_id'], (int) $token['location_id'], $hint, $detected);
             $state = 'linked';
             $status = 'linked';
             $reason = 'auto_created';
@@ -330,6 +336,7 @@ final class EnrollmentService
             [$d['install_id'], $d['machine_guid'], $d['hostname'], $os, $d['os_version'], $d['arch'], $d['serial'], $d['manufacturer'], $d['model'], $macsJson,
                 $d['agent_version'], $assetId, (int) $token['client_id'], (int) $token['location_id'], $token['ring'], $state, $reason,
                 $match['candidates'] !== [] ? json_encode($match['candidates']) : null, $hash, $now, $expires, $token['token_id'], $now, substr($ip, 0, 64), $now]);
+        $types->saveDetected($deviceId, $detected);
         if ($assetId !== null) {
             $this->linker->ensure($deviceId, $assetId);
         }
@@ -470,9 +477,15 @@ final class EnrollmentService
     }
 
     /** @param array<string,mixed> $d */
-    private function createAsset(array $d, int $clientId, int $locationId): int
+    private function createAsset(array $d, int $clientId, int $locationId, ?string $hint = null, ?string $detected = null): int
     {
-        return $this->assets->createForDevice([
+        $detected = DeviceTypeClassifier::validLabel($detected) ? (string) $detected : DeviceTypeClassifier::classify(['os_version' => (string) $d['os_version']]);
+        $typeKeys = ['asset_type_detected' => $detected];
+        if (DeviceTypeClassifier::validLabel($hint)) {
+            $typeKeys['asset_type_hint'] = (string) $hint;   // the installer's explicit choice; absent for "auto"
+        }
+
+        return $this->assets->createForDevice($typeKeys + [
             'hostname' => (string) $d['hostname'],
             'os_version' => (string) $d['os_version'],
             'manufacturer' => $d['manufacturer'] === null ? null : (string) $d['manufacturer'],
@@ -501,9 +514,10 @@ final class EnrollmentService
             return ['ok' => true, 'message' => 'Device rejected and its credential revoked.'];
         }
         if ($action === 'create_asset') {
+            $t = (new DeviceTypes($this->sql))->forDevice($dev);
             $asset = $this->createAsset([
                 'hostname' => $dev['hostname'], 'os_version' => $dev['os_version'], 'manufacturer' => $dev['manufacturer'], 'model' => $dev['model'], 'serial' => $dev['serial'],
-            ], (int) $dev['client_id'], (int) $dev['location_id']);
+            ], (int) $dev['client_id'], (int) $dev['location_id'], $t['hint'], $t['detected']);
         } elseif ($action === 'link' && $assetId !== null && $assetId > 0) {
             $row = $this->assets->find($assetId);
             if ($row === null || $row['archived']) {

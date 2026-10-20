@@ -40,16 +40,24 @@ interface RmmAssetsInterface
 
     /**
      * Create an asset for an unmatched device (policy auto_create or an administrator's "create asset"). Returns the new id.
-     * Type is 'Server' when os_version contains "server" (case-insensitive), otherwise 'Laptop'; status 'Active'; the OS text is "Windows <os_version>".
+     * Status 'Active'; the OS text is "Windows <os_version>".
      *
-     * @param array{hostname:string, os_version:string, manufacturer:?string, model:?string, serial:?string} $device
+     * TYPE (since 1.0.0-rc.29). Core passes two additive keys: `asset_type_hint`, present only when the technician chose a type for the installer
+     * (one of Laptop, Desktop, Server, Virtual Machine, Hypervisor, Tablet, Other; absent for "detect automatically"), and `asset_type_detected`, always
+     * present, the {@see \RivetCore\Rmm\Assets\DeviceTypeClassifier} verdict from the agent's hardware facts (same label set). Use the hint when it is
+     * there, otherwise the detected label, and map the label to the edition's own asset type name; a label the edition has no asset type for goes through
+     * {@see \RivetCore\Rmm\Assets\DeviceTypeClassifier::resolve()} (Hypervisor and Virtual Machine -> Server, Tablet, Desktop and Other -> Laptop).
+     * An adapter written before rc.29 ignores both keys and keeps the old rule (Server when os_version contains "server", else Laptop): still valid, just less accurate.
+     *
+     * @param array{hostname:string, os_version:string, manufacturer:?string, model:?string, serial:?string, asset_type_hint?:string, asset_type_detected?:string} $device
      */
     public function createForDevice(array $device, int $clientId, int $locationId): int;
 
     /**
-     * Fill blanks only, never overwrite what a human typed: serial and model when empty, make when '', OS when empty.
+     * Fill blanks only, never overwrite what a human typed: serial and model when empty, make when '', OS when empty, and (since rc.29, optional key
+     * `type`, a DeviceTypeClassifier label) the asset type when it is empty. A device matched to an EXISTING asset therefore never changes that asset's type.
      *
-     * @param array{serial:?string, model:?string, manufacturer:?string, os:string} $facts
+     * @param array{serial:?string, model:?string, manufacturer:?string, os:string, type?:string} $facts
      */
     public function fillBlanks(int $assetId, array $facts): void;
 

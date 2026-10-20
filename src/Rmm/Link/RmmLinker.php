@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Link;
 
+use RivetCore\Rmm\Assets\DeviceTypes;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 use RivetCore\Rmm\Contracts\RmmBridgeInterface;
 use RivetCore\Rmm\RmmProtocol;
@@ -49,6 +50,7 @@ final class RmmLinker
             'model' => (string) $dev['model'],
         ]);
         $this->assets->fillBlanks($assetId, [
+            'type' => (new DeviceTypes($this->sql))->forDevice($dev)['type'],   // fills a BLANK type only (contract); a human's type is never touched
             'serial' => $dev['serial'] === null ? null : (string) $dev['serial'],
             'model' => $dev['model'] === null ? null : (string) $dev['model'],
             'manufacturer' => $dev['manufacturer'] === null ? null : (string) $dev['manufacturer'],

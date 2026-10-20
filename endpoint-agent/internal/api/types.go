@@ -23,6 +23,13 @@ type Device struct {
 	Model        *string  `json:"model"`
 	MACAddresses []string `json:"mac_addresses"`
 	AgentVersion string   `json:"agent_version"`
+
+	// Additive (rc.29): hardware facts the server classifies a new asset's type from. Each is omitted when it could not be read.
+	ChassisType    string   `json:"chassis_type,omitempty"`
+	HasBattery     *bool    `json:"has_battery,omitempty"`
+	IsVirtual      *bool    `json:"is_virtual,omitempty"`
+	Virtualization string   `json:"virtualization,omitempty"`
+	RoleHints      []string `json:"role_hints,omitempty"`
 }
 
 type EnrollRequest struct {
@@ -131,6 +138,13 @@ type Inventory struct {
 	MeshNodeID       *string    `json:"mesh_node_id"`
 	// DesktopSession (additive): true when the machine has a graphical session or display manager (Linux) or is not a Server Core install (Windows); absent when unknown.
 	DesktopSession *bool `json:"desktop_session,omitempty"`
+
+	// Additive (rc.29): same facts as Device; omitted when unknown.
+	ChassisType    string   `json:"chassis_type,omitempty"`
+	HasBattery     *bool    `json:"has_battery,omitempty"`
+	IsVirtual      *bool    `json:"is_virtual,omitempty"`
+	Virtualization string   `json:"virtualization,omitempty"`
+	RoleHints      []string `json:"role_hints,omitempty"`
 }
 
 type DiskMetric struct {

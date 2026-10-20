@@ -420,9 +420,10 @@ final class RmmAdmin
      * The administrator's "download installer": an audited enrollment token and the stamped installer as a download.
      *
      * @param list<int> $appIds catalog apps ticked to install with the agent (needs `rmm.software.deploy` for the client)
+     * @param string $deviceType 'auto' (default: detect) or a label of {@see \RivetCore\Rmm\Assets\DeviceTypeClassifier::LABELS}; kept server-side by token, passed to RmmAssetsInterface::createForDevice as `asset_type_hint`
      * @return ActionResult data: `download` (an {@see RmmResponse}) on success; on a refusal the message says why and no token is left behind
      */
-    public function downloadInstaller(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = []): ActionResult
+    public function downloadInstaller(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = [], string $deviceType = 'auto'): ActionResult
     {
         if (($d = $this->deny($by, RmmAbility::TOKEN_MANAGE, $clientId)) !== null) {
             return $d;
@@ -431,7 +432,7 @@ final class RmmAdmin
         if ($appIds !== [] && ($d = $this->deny($by, RmmAbility::SOFTWARE_DEPLOY, $clientId)) !== null) {
             return $d;
         }
-        $out = $this->installers->issueDownload($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent, $format, $appIds);
+        $out = $this->installers->issueDownload($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent, $format, $appIds, $deviceType);
         if (is_string($out)) {
             return ActionResult::fail(422, 'invalid', $out);
         }
@@ -443,9 +444,10 @@ final class RmmAdmin
      * "Show deployment commands": an audited enrollment token plus ready-to-paste commands (the token is shown once).
      *
      * @param list<int> $appIds catalog apps ticked to install with the agent (needs `rmm.software.deploy` for the client)
+     * @param string $deviceType 'auto' (default: detect) or a label of {@see \RivetCore\Rmm\Assets\DeviceTypeClassifier::LABELS}; kept server-side by token, passed to RmmAssetsInterface::createForDevice as `asset_type_hint`
      * @return ActionResult data: `token` (row), `token_plain`, `commands` (see {@see InstallerService::deploymentCommands()})
      */
-    public function deploymentCommands(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = []): ActionResult
+    public function deploymentCommands(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = [], string $deviceType = 'auto'): ActionResult
     {
         if (($d = $this->deny($by, RmmAbility::TOKEN_MANAGE, $clientId)) !== null) {
             return $d;
@@ -453,7 +455,7 @@ final class RmmAdmin
         if ($appIds !== [] && ($d = $this->deny($by, RmmAbility::SOFTWARE_DEPLOY, $clientId)) !== null) {
             return $d;
         }
-        $r = $this->installers->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent, $format, $appIds);
+        $r = $this->installers->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent, $format, $appIds, $deviceType);
         if (!$r['ok'] || !isset($r['token'], $r['token_plain'], $r['department'])) {
             return ActionResult::fail(422, 'invalid', (string) ($r['error'] ?? 'The installer could not be created.'));
         }

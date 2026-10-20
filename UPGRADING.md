@@ -213,6 +213,16 @@ Behaviour change for the "Also install the MeshCentral agent" installer option; 
 5. **Compatibility.** Installers/tokens issued before rc.27 keep installing Mesh at install time (and still carry the group id); re-issue them to get the new behaviour. Remote tools must be on for the push; otherwise the device page says "skipped: remote tools are off".
 6. **Agents.** The agent must announce `job:mesh_install` (rc.16 or later); older agents show "waiting for the agent to announce Mesh install support".
 
+## Adopting device types (migration 0035, 1.0.0-rc.28)
+
+1. **Migration.** `CoreMigrations::all()` gains `0035_rmm_device_type`: `endpoint_agent_installer_options.device_type varchar(20) NOT NULL DEFAULT 'auto'` and `endpoint_agent_devices.detected_type varchar(20) NULL`. Mirror both in your `db.sql`. Nothing is backfilled; without them Core behaves exactly as before.
+2. **Map the labels to your asset types** in `RmmAssetsInterface::createForDevice()`. `$device['asset_type_hint']` (present only when the technician chose) wins, else `$device['asset_type_detected']` (always present). Labels: Laptop, Desktop, Server, Virtual Machine, Hypervisor, Tablet, Other. Call `DeviceTypeClassifier::resolve($label, $yourTypeNames)` for a label you have no type for (Hypervisor and Virtual Machine become Server; Tablet, Desktop and Other become Laptop). Not changing the adapter is valid: it keeps the old Server/Laptop rule.
+3. **`fillBlanks()`** may receive `$facts['type']` (a label): set the asset type from it only when the asset's type is empty. Never overwrite.
+4. **Installer page.** Add a dropdown "Device type": Detect automatically (`auto`) / Laptop / Desktop / Server / Virtual machine / Hypervisor, passed as the new last argument of `downloadInstaller()` and `deploymentCommands()`. Tokens list: show `device_type` from `RmmReadModel::tokens()`.
+5. **Approval screen.** Add a type dropdown for "create asset", prefilled with `suggested_type` from `RmmReadModel::pendingApprovals()`; today `resolvePending('create_asset')` uses the hint, else the detected type.
+6. **Conformance kit.** Optionally override `supportedTypes()` and `createAssetWithType()` in your `RmmAssetsConformanceTestCase` subclass to run the new checks (the type-fill ones skip otherwise).
+7. **Agents.** The new facts come with the next agent release; older agents send none and get the old default.
+
 ## Adopting install-with-the-agent (migration 0033, 1.0.0-rc.26)
 
 Additive and dormant: behind the existing `software_deploy` switch (off by default); no package is auto-install until an administrator sets it; the device protocol, job types and capabilities are unchanged and no agent change is needed. Model, rules and limits: [docs/rmm/SOFTWARE_DEPLOY.md](docs/rmm/SOFTWARE_DEPLOY.md) section 14.
@@ -391,6 +401,7 @@ forward-only, additive and idempotent; running the whole list on a current datab
 | `0030_rmm_change_monitor` | `Rmm\Migration\Migration0030ChangeMonitor` | four new tables for change monitoring: `endpoint_agent_change_settings`, `endpoint_agent_change_records`, `endpoint_agent_change_state`, `endpoint_agent_change_rules` (all `IF NOT EXISTS`, nothing existing altered, no row inserted; DDL in `Rmm\Migration\ChangeSchema::tables()`) | 1.0.0-rc.22 |
 | `0031_rmm_clock_skew` | `Rmm\Migration\Migration0031ClockSkew` | six nullable columns on `endpoint_agent_devices` for device clock skew (guarded `ADD COLUMN`, nothing backfilled) | 1.0.0-rc.23 |
 | `0033_rmm_auto_install` | `Rmm\Migration\Migration0033AutoInstall` | eight new tables for install-with-the-agent: auto-install policy, vendor parameters (sealed), installer ticks, per-device app status, hosted installer files (nothing altered, no row inserted) | 1.0.0-rc.26 |
+| `0035_rmm_device_type` | `Rmm\Migration\Migration0035DeviceType` | two additive columns: installer `device_type` (default `auto`) and device `detected_type` (nothing inserted, nothing backfilled) | 1.0.0-rc.28 |
 | `0029_rmm_software_deploy` | `Rmm\Migration\Migration0029SoftwareDeploy` | eight new tables for software deployment: `rmm_software_hosts`, `rmm_packages`, `rmm_package_versions`, `rmm_package_assignments`, `rmm_package_installs`, `rmm_package_history`, `rmm_package_jobs`, `rmm_deploy_state` (all `IF NOT EXISTS`, nothing existing altered, no row inserted; DDL in `Rmm\Migration\DeploySchema::tables()`) | 1.0.0-rc.21 |
 
 The authoritative list is `RivetCore\Migration\CoreMigrations::all()`; the exact ids (`$m->id()`) are what `rivet_core_migrations`
