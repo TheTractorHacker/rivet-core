@@ -48,7 +48,7 @@ final class RmmSettings
     public const MESH_TOKEN_TTL_DEFAULT_S = 300;
 
     /** Every feature a sub-switch may name (the first five are live in Phase 0; the rest are reserved for later phases). */
-    public const FEATURES = ['monitoring', 'metrics', 'jobs', 'remote', 'updates', 'inventory_software', 'policies', 'scripts', 'patching', 'software', 'software_deploy', 'logs', 'change_monitor', 'reports', 'alerting', 'remote_tools', 'filetransfer'];
+    public const FEATURES = ['monitoring', 'metrics', 'jobs', 'remote', 'updates', 'inventory_software', 'policies', 'scripts', 'patching', 'software', 'software_deploy', 'logs', 'change_monitor', 'hypervisor', 'reports', 'alerting', 'remote_tools', 'filetransfer'];
     /** What a NULL features_json means: today's behaviour. `remote` follows mesh_enabled. */
     public const LEGACY_FEATURES = ['monitoring', 'metrics', 'jobs', 'updates'];
 
@@ -133,6 +133,27 @@ final class RmmSettings
         'clock_skew_alert_s' => [0, 86400],
         // 1 (default): the optional rc.25 per-check-in metrics (memory bytes, disk bytes, per-core, IOPS, ...) become samples; 0 ignores them (fleets that care about volume).
         'metrics_extended' => [0, 1],
+        // Hypervisor visibility (`hypervisor` switch). The two intervals are part of the SIGNED configuration an agent gets (it clamps them again): a full list at most every
+        // hypervisor_full_interval_s, a compact state-change summary in between. Caps are per host; a VM absent from a complete report is "missing" and purged after the retention days.
+        'hypervisor_full_interval_s' => [300, 86400],
+        'hypervisor_summary_interval_s' => [60, 600],
+        'hypervisor_max_vms' => [1, 1000],
+        'hypervisor_retention_days' => [1, 365],
+        'hypervisor_history_per_vm' => [5, 100],
+        // Alert thresholds: a snapshot older than N days, a last backup older than N days, a storage above N percent (warning, then critical).
+        'hypervisor_snapshot_days' => [1, 365],
+        'hypervisor_backup_days' => [1, 365],
+        'hypervisor_storage_warn_pct' => [1, 100],
+        'hypervisor_storage_crit_pct' => [1, 100],
+        // A VM that stays stopped longer than this many hours is taken as switched off on purpose and its alert resolves.
+        'hypervisor_vm_down_resolve_h' => [1, 720],
+        // 1 (default) raises alerts for the condition, 0 only records it.
+        'hypervisor_alert_vm_down' => [0, 1],
+        'hypervisor_alert_backup' => [0, 1],
+        'hypervisor_alert_snapshot' => [0, 1],
+        'hypervisor_alert_storage' => [0, 1],
+        'hypervisor_alert_pool' => [0, 1],
+        'hypervisor_alert_quorum' => [0, 1],
     ];
     /** The default of every limit in {@see self::LIMIT_KEYS}; grows with it. @internal */
     public const LIMIT_DEFAULTS = [
@@ -185,6 +206,22 @@ final class RmmSettings
         'software_batch' => 100,
         'clock_skew_alert_s' => 120,
         'metrics_extended' => 1,
+        'hypervisor_full_interval_s' => 600,
+        'hypervisor_summary_interval_s' => 120,
+        'hypervisor_max_vms' => 1000,
+        'hypervisor_retention_days' => 30,
+        'hypervisor_history_per_vm' => 20,
+        'hypervisor_snapshot_days' => 7,
+        'hypervisor_backup_days' => 2,
+        'hypervisor_storage_warn_pct' => 85,
+        'hypervisor_storage_crit_pct' => 95,
+        'hypervisor_vm_down_resolve_h' => 24,
+        'hypervisor_alert_vm_down' => 1,
+        'hypervisor_alert_backup' => 1,
+        'hypervisor_alert_snapshot' => 1,
+        'hypervisor_alert_storage' => 1,
+        'hypervisor_alert_pool' => 1,
+        'hypervisor_alert_quorum' => 1,
     ];
 
     /** @var array<string,mixed>|null */
@@ -548,6 +585,12 @@ final class RmmSettings
         $shi = $out['shed_retry_max_s'] ?? self::LIMIT_DEFAULTS['shed_retry_max_s'];
         if ($lo > $hi || $slo > $shi) {
             return [null, 'A retry-after minimum must not exceed its maximum.'];
+        }
+        if (($out['hypervisor_storage_warn_pct'] ?? self::LIMIT_DEFAULTS['hypervisor_storage_warn_pct']) > ($out['hypervisor_storage_crit_pct'] ?? self::LIMIT_DEFAULTS['hypervisor_storage_crit_pct'])) {
+            return [null, 'The hypervisor storage warning percentage must not exceed the critical one.'];
+        }
+        if (($out['hypervisor_summary_interval_s'] ?? self::LIMIT_DEFAULTS['hypervisor_summary_interval_s']) > ($out['hypervisor_full_interval_s'] ?? self::LIMIT_DEFAULTS['hypervisor_full_interval_s'])) {
+            return [null, 'The hypervisor summary interval must not exceed the full interval.'];
         }
         foreach (['shed_backlog', 'shed_db_ms'] as $family) {
             $t = [];

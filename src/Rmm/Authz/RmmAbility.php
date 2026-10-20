@@ -65,6 +65,10 @@ final class RmmAbility
     public const CHANGE_VIEW = 'rmm.change.view';
     /** Turn change-monitoring presets on and off, add custom watches and manage change rules. Needs `rmm.change.view` too. The switch and the storage caps need `rmm.admin`. */
     public const CHANGE_MANAGE = 'rmm.change.manage';
+    /** See the hypervisor hosts (Proxmox VE, Hyper-V) of devices, their VMs, storage and state history. Needs `rmm.device.view` too. Map it like `rmm.device.view`: VM names and sizes only, no configuration or guest data. */
+    public const HYPERVISOR_VIEW = 'rmm.hypervisor.view';
+    /** Ignore a VM (templates, dev guests) and set the hypervisor alert thresholds. Needs `rmm.hypervisor.view` too. The `hypervisor` switch itself needs `rmm.admin`. */
+    public const HYPERVISOR_MANAGE = 'rmm.hypervisor.manage';
     /** Module settings, switches, signing key, MeshCentral settings. */
     public const ADMIN = 'rmm.admin';
 
@@ -72,7 +76,7 @@ final class RmmAbility
     public static function all(): array
     {
         return [self::DEVICE_VIEW, self::DEVICE_MANAGE, self::JOB_RUN_SAVED, self::JOB_REBOOT, self::JOB_RUN_SCRIPT, self::JOB_APPROVE, self::REMOTE_LAUNCH,
-            self::TOKEN_MANAGE, self::BINARY_PUBLISH, self::ALERT_MANAGE, self::REMOTE_MANAGE, self::PATCH_VIEW, self::PATCH_MANAGE, self::PATCH_INSTALL, self::SOFTWARE_VIEW, self::SOFTWARE_MANAGE, self::SOFTWARE_DEPLOY, self::CHANGE_VIEW, self::CHANGE_MANAGE, self::ADMIN];
+            self::TOKEN_MANAGE, self::BINARY_PUBLISH, self::ALERT_MANAGE, self::REMOTE_MANAGE, self::PATCH_VIEW, self::PATCH_MANAGE, self::PATCH_INSTALL, self::SOFTWARE_VIEW, self::SOFTWARE_MANAGE, self::SOFTWARE_DEPLOY, self::CHANGE_VIEW, self::CHANGE_MANAGE, self::HYPERVISOR_VIEW, self::HYPERVISOR_MANAGE, self::ADMIN];
     }
 
     /** Abilities of the administration side: they do not need the technician's `device.view` grant. */
@@ -100,6 +104,8 @@ final class RmmAbility
             self::SOFTWARE_DEPLOY => 'Your role cannot install or remove software on devices.',
             self::CHANGE_VIEW => 'Your role cannot view recorded changes.',
             self::CHANGE_MANAGE => 'Your role cannot manage change monitoring.',
+            self::HYPERVISOR_VIEW => 'Your role cannot view hypervisor hosts.',
+            self::HYPERVISOR_MANAGE => 'Your role cannot manage hypervisor monitoring.',
             self::ADMIN, self::DEVICE_MANAGE, self::TOKEN_MANAGE, self::BINARY_PUBLISH => 'Administrator access is required.',
             default => 'Unknown action.',
         };

@@ -107,6 +107,19 @@ final class RmmEvent
     /** A device's clock differs from the server's by more than the `clock_skew_alert_s` limit (120 s by default; 0 turns it off). At most once per device per day. Fields: skew_s (device minus server, seconds), direction ("ahead" or "behind"), server_time. */
     public const DEVICE_CLOCK_SKEW = 'rmm.device.clock_skew';
 
+    /** A VM that was running is no longer running (hypervisor visibility, `hypervisor` switch; templates and ignored VMs never). Fields: vm_key, vm_name, vm_type, host_device_id, from_state, to_state, node, alert_check_key. */
+    public const HYPERVISOR_VM_DOWN = 'rmm.hypervisor.vm_down';
+    /** A VM's last backup failed or is older than the `hypervisor_backup_days` limit. Fields: vm_key, vm_name, reason ("failed", "warning" or "stale"), last_backup_at, last_backup_result, age_days, threshold_days, alert_check_key. */
+    public const HYPERVISOR_BACKUP_FAILED = 'rmm.hypervisor.backup_failed';
+    /** A VM has a snapshot older than the `hypervisor_snapshot_days` limit. Fields: vm_key, vm_name, snapshot_count, oldest_snapshot_at, age_days, threshold_days, alert_check_key. */
+    public const HYPERVISOR_SNAPSHOT_OLD = 'rmm.hypervisor.snapshot_old';
+    /** A hypervisor storage is above the warning or critical percentage. Fields: storage, type, used_pct, level ("warn" or "fail"), total_bytes, used_bytes, alert_check_key. */
+    public const HYPERVISOR_STORAGE_LOW = 'rmm.hypervisor.storage_low';
+    /** A ZFS pool or Ceph cluster is degraded or faulted, or a Proxmox storage is unavailable. Fields: storage, type, health ("warn" or "error"), alert_check_key. */
+    public const HYPERVISOR_POOL_DEGRADED = 'rmm.hypervisor.pool_degraded';
+    /** A Proxmox or Hyper-V cluster lost quorum (as seen by the reporting host). Fields: cluster, platform, nodes_online, nodes_total, alert_check_key. */
+    public const HYPERVISOR_CLUSTER_QUORUM_LOST = 'rmm.hypervisor.cluster_quorum_lost';
+
     /** @return list<string> */
     public static function all(): array
     {
@@ -116,6 +129,7 @@ final class RmmEvent
             self::POLICY_ASSIGNED, self::SCRIPT_RUN, self::APPROVAL_REQUESTED, self::APPROVAL_DECIDED, self::FILE_TRANSFERRED, self::LOG_RULE_MATCHED, self::MESH_AGENT_INSTALLED, self::MESH_NODE_CONFLICT, self::STARTER_INSTALLED,
             self::PATCH_SCAN_COMPLETED, self::PATCH_APPROVED, self::PATCH_INSTALL_STARTED, self::PATCH_INSTALL_FINISHED, self::PATCH_INSTALL_FAILED,
             self::DEPLOY_STARTED, self::DEPLOY_FINISHED, self::DEPLOY_FAILED,
-            self::CHANGE_DETECTED, self::CHANGE_RULE_MATCHED, self::DEVICE_CLOCK_SKEW];
+            self::CHANGE_DETECTED, self::CHANGE_RULE_MATCHED, self::DEVICE_CLOCK_SKEW,
+            self::HYPERVISOR_VM_DOWN, self::HYPERVISOR_BACKUP_FAILED, self::HYPERVISOR_SNAPSHOT_OLD, self::HYPERVISOR_STORAGE_LOW, self::HYPERVISOR_POOL_DEGRADED, self::HYPERVISOR_CLUSTER_QUORUM_LOST];
     }
 }

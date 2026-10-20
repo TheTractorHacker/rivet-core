@@ -36,7 +36,7 @@ final class AuthorizerTest extends TestCase
 
     public function testAbilityNamesAreTheDocumentedOnesAndMatchTheJobRegistry(): void
     {
-        $this->assertSame(['rmm.device.view', 'rmm.device.manage', 'rmm.job.run_saved', 'rmm.job.reboot', 'rmm.job.run_script', 'rmm.job.approve', 'rmm.remote.launch', 'rmm.token.manage', 'rmm.binary.publish', 'rmm.alert.manage', 'rmm.remote.manage', 'rmm.patch.view', 'rmm.patch.manage', 'rmm.patch.install', 'rmm.software.view', 'rmm.software.manage', 'rmm.software.deploy', 'rmm.change.view', 'rmm.change.manage', 'rmm.admin'], RmmAbility::all());
+        $this->assertSame(['rmm.device.view', 'rmm.device.manage', 'rmm.job.run_saved', 'rmm.job.reboot', 'rmm.job.run_script', 'rmm.job.approve', 'rmm.remote.launch', 'rmm.token.manage', 'rmm.binary.publish', 'rmm.alert.manage', 'rmm.remote.manage', 'rmm.patch.view', 'rmm.patch.manage', 'rmm.patch.install', 'rmm.software.view', 'rmm.software.manage', 'rmm.software.deploy', 'rmm.change.view', 'rmm.change.manage', 'rmm.hypervisor.view', 'rmm.hypervisor.manage', 'rmm.admin'], RmmAbility::all());
         $this->assertSame(JobTypeRegistry::ABILITY_RUN_SAVED, RmmAbility::JOB_RUN_SAVED);
         $this->assertSame(JobTypeRegistry::ABILITY_REBOOT, RmmAbility::JOB_REBOOT);
         $this->assertSame(JobTypeRegistry::ABILITY_RUN_SCRIPT, RmmAbility::JOB_RUN_SCRIPT);
