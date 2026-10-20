@@ -278,6 +278,19 @@ final class PolicyPack
                 }
                 $v = $e['value'];
                 $os = $v['os'] ?? null;
+                if ($v['type'] === 'disk') {   // a legacy type: the platform validators do not look at its params, so the pack does
+                    foreach ($v['params'] as $pk => $pv) {
+                        $max = str_ends_with((string) $pk, '_pct') ? 100 : 1000000;
+                        if (!in_array($pk, ['warn_free_pct', 'fail_free_pct', 'warn_free_gb', 'fail_free_gb'], true) || !is_int($pv) || $pv < 0 || $pv > $max) {
+                            throw $bad("check $key: bad disk parameter $pk.");
+                        }
+                    }
+                    foreach (['pct', 'gb'] as $u) {
+                        if (isset($v['params']["warn_free_$u"], $v['params']["fail_free_$u"]) && $v['params']["fail_free_$u"] > $v['params']["warn_free_$u"]) {
+                            throw $bad("check $key: the fail limit must not be above the warn limit.");
+                        }
+                    }
+                }
                 $plats = CheckCatalog::types()[$v['type']]['platforms'] ?? ['windows', 'linux'];
                 if ($i['platform'] !== 'any' && $os !== $i['platform']) {
                     throw $bad("check $key must say os={$i['platform']}.");
