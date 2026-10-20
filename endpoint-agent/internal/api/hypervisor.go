@@ -50,27 +50,26 @@ type HypervisorBackup struct {
 }
 
 type HypervisorVM struct {
-	ID           string               `json:"id"`   // proxmox "qemu/100", hyperv: the VM GUID
-	Name         string               `json:"name"`
-	Type         string               `json:"type"` // qemu | lxc | hyperv
-	State        string               `json:"state"`
-	Node         string               `json:"node,omitempty"`
-	CPUs         int                  `json:"cpus,omitempty"`
-	CPUPct       *float64             `json:"cpu_pct,omitempty"`
-	MemBytes     *int64               `json:"mem_bytes,omitempty"`
-	MemMaxBytes  *int64               `json:"mem_max_bytes,omitempty"`
-	DiskBytes    *int64               `json:"disk_bytes,omitempty"`      // provisioned
-	DiskUsed     *int64               `json:"disk_used_bytes,omitempty"` // allocated on the host, when known
-	UptimeS      *int64               `json:"uptime_s,omitempty"`
-	Template     bool                 `json:"template,omitempty"`
-	Tags         []string             `json:"tags,omitempty"`
-	Snapshots    *HypervisorSnapshots `json:"snapshots,omitempty"`
-	LastBackup   *HypervisorBackup    `json:"last_backup,omitempty"`
-	BackupJob    *bool                `json:"backup_covered,omitempty"` // a backup job includes this guest (proxmox)
-	GuestAgent   *bool                `json:"guest_agent,omitempty"`
-	Replication  string               `json:"replication,omitempty"` // normal | warning | critical (hyperv)
-	Generation   int                  `json:"generation,omitempty"`
-	ConfigVer    string               `json:"config_version,omitempty"`
+	ID          string               `json:"id"` // proxmox "qemu/100", hyperv: the VM GUID
+	Name        string               `json:"name"`
+	Type        string               `json:"type"` // qemu | lxc | hyperv
+	State       string               `json:"state"`
+	Node        string               `json:"node,omitempty"`
+	CPUs        int                  `json:"cpus,omitempty"`
+	CPUPct      *float64             `json:"cpu_pct,omitempty"`
+	MemBytes    *int64               `json:"mem_bytes,omitempty"`
+	MemMaxBytes *int64               `json:"mem_max_bytes,omitempty"`
+	DiskBytes   *int64               `json:"disk_bytes,omitempty"`      // provisioned
+	DiskUsed    *int64               `json:"disk_used_bytes,omitempty"` // allocated on the host, when known
+	UptimeS     *int64               `json:"uptime_s,omitempty"`
+	Template    bool                 `json:"template,omitempty"`
+	Tags        []string             `json:"tags,omitempty"`
+	Snapshots   *HypervisorSnapshots `json:"snapshots,omitempty"`
+	LastBackup  *HypervisorBackup    `json:"last_backup,omitempty"`
+	BackupJob   *bool                `json:"backup_covered,omitempty"` // a backup job includes this guest (proxmox)
+	GuestAgent  *bool                `json:"guest_agent,omitempty"`
+	Replication string               `json:"replication,omitempty"` // normal | warning | critical (hyperv)
+	Generation  int                  `json:"generation,omitempty"`
 }
 
 type HypervisorStore struct {
