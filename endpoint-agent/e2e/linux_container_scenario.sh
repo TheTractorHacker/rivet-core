@@ -161,6 +161,7 @@ MESHURL="$(cat "$OUT/mesh_url")"; MESHPIN="$(cat "$OUT/mesh_pin")"
 # the variables below are read inside the eval'd chk strings, which shellcheck cannot see
 # shellcheck disable=SC2034
 MESHDIR=/usr/local/mesh_services/meshagent
+meshrunning() { grep -qa "/usr/local/mesh_services/[m]eshagent/meshagent" /proc/[0-9]*/cmdline 2>/dev/null; }
 stampmesh() { # stampmesh OUTFILE URL GROUP PIN
   "$BIN/rivetit-agent-dev" stamp --in "$BIN/rivetit-agent-1.0.0" --out "$1" --server "$SERVER" --token rvte1.e2esel.E2Esecret123 --department "E2E" --ttl 1h --ca "$OUT/ca.pem" \
     --mesh-url "$2" --mesh-group "$3" --mesh-pin "$4" >/dev/null 2>&1; }
@@ -210,7 +211,7 @@ D1="$(grep -c MESH-DOWNLOAD "$OUT/events.log")"
 $IS --binary "$OUT/inst-good" >"$OUT/mesh5.out" 2>&1; rc=$?
 chk "install exit 0" '[ $rc = 0 ]'
 chk "downloaded the binary from <mesh>/meshagents?id=6 (no meshid) and the settings from <mesh>/meshsettings?id=<group URL form, @ and $ literal>" 'grep -qF -- "MESH-DOWNLOAD id=6 meshid= installflags= raw=id=6" "$OUT/events.log" && grep -qF -- "MESH-SETTINGS meshid=$MESHGROUP raw=id=$MESHGROUP" "$OUT/events.log"'
-chk "the downloaded installer ran with -fullinstall --copy-msh=1, the .msh carried StartupType, and the agent is in place and running" 'grep -q "installed by: .* -fullinstall --copy-msh=1" "$OUT/mesh-installed.marker" && grep -qx "StartupType=[0-9]" "$OUT/mesh-installed.msh" && ! grep -q "StartupType=9" "$OUT/mesh-installed.msh" && [ -x "$MESHDIR/meshagent" ] && pgrep -f "$MESHDIR/meshagent" >/dev/null'
+chk "the downloaded installer ran with -fullinstall --copy-msh=1, the .msh carried StartupType, and the agent is in place and running" 'grep -q "installed by: .* -fullinstall --copy-msh=1" "$OUT/mesh-installed.marker" && grep -qx "StartupType=[0-9]" "$OUT/mesh-installed.msh" && ! grep -q "StartupType=9" "$OUT/mesh-installed.msh" && [ -x "$MESHDIR/meshagent" ] && meshrunning'
 chk "the work directory was removed" '[ -z "$(ls -d /var/lib/rivetit-agent/mesh-install-* 2>/dev/null)" ]'
 chk "outcome saved 0600 without the group id" '[ "$(stat -c %a /var/lib/rivetit-agent/mesh_agent.json)" = 600 ] && grep -q "\"installed\": true" /var/lib/rivetit-agent/mesh_agent.json && ! grep -rqaF -- "$MESHGROUP" /var/lib/rivetit-agent'
 chk "the install output says so" 'grep -q "MeshCentral agent: installed" "$OUT/mesh5.out"'
@@ -269,8 +270,8 @@ chk "no work directory is left behind by any failure" '[ -z "$(ls -d /var/lib/ri
 echo "-- the good case: the same pinned download and install as at install time"
 # shellcheck disable=SC2034
 D2="$(dl)"; ctl "mesh_push=ok"; pushwait 6
-chk "the job succeeded (installed) and the pinned download used the Linux id 6 and the URL-form group" 'pushout 6 | grep -q "state=succeeded" && pushout 6 | grep -q "installed" && [ "$(dl)" = "$((D2+1))" ] && grep -qF -- "MESH-DOWNLOAD id=6 meshid=$MESHGROUP installflags=0" "$OUT/events.log"'
-chk "the downloaded installer ran with -install and the fake meshagent is in place" 'grep -q "installed by: .* -install" "$OUT/mesh-installed.marker" && [ -x "$MESHDIR/meshagent" ]'
+chk "the job succeeded (installed) and the pinned download used the Linux id 6 and meshsettings the URL-form group" 'pushout 6 | grep -q "state=succeeded" && pushout 6 | grep -q "installed" && [ "$(dl)" = "$((D2+1))" ] && grep -qF -- "MESH-SETTINGS meshid=$MESHGROUP" "$OUT/events.log"'
+chk "the downloaded installer ran with -fullinstall --copy-msh=1 and the fake meshagent is in place and running" 'grep -q "installed by: .* -fullinstall --copy-msh=1" "$OUT/mesh-installed.marker" && [ -x "$MESHDIR/meshagent" ] && meshrunning'
 chk "the job result carries the node id and never the group id" 'pushout 6 | grep -qF "node//$MESHNODE_RAW" && ! pushout 6 | grep -qF -- "$MESHGROUP"'
 chk "the outcome is saved 0600 without the group id" '[ "$(stat -c %a /var/lib/rivetit-agent/mesh_agent.json)" = 600 ] && grep -q "\"installed\": true" /var/lib/rivetit-agent/mesh_agent.json && ! grep -rqaF -- "$MESHGROUP" /var/lib/rivetit-agent'
 chk "the next check-in reports installed=true with the node id (the server maps it)" 'wait_for 30 "grep -qF \"MESH-REPORT installed=true node_id=node//\$MESHNODE_RAW\" \$OUT/events.log"'
@@ -287,7 +288,7 @@ echo "-- mesh_uninstall removes only the Mesh agent"
 rm -f "$OUT/mesh-uninstalled.marker"
 # shellcheck disable=SC2034
 R2="$(grep -c "MESH-REPORT" "$OUT/events.log")"; ctl "mesh_push=uninstall"; pushwait 9
-chk "the Mesh agent's own uninstaller ran (-uninstall) and the RivetIT agent is untouched" 'pushout 9 | grep -q "state=succeeded" && [ -e "$OUT/mesh-uninstalled.marker" ] && [ ! -e "$MESHDIR/meshagent" ] && [ -x /opt/rivetit-agent/rivetit-agent ] && alive'
+chk "the Mesh agent's own uninstaller ran (-fulluninstall) and the RivetIT agent is untouched" 'pushout 9 | grep -q "state=succeeded" && [ -e "$OUT/mesh-uninstalled.marker" ] && [ ! -e "$MESHDIR/meshagent" ] && [ -x /opt/rivetit-agent/rivetit-agent ] && alive'
 chk "the check-in now reports installed=false (so the server clears its record)" 'wait_for 30 "[ \$(grep MESH-REPORT \$OUT/events.log | tail -n +$((R2+1)) | grep -c \"installed=false\") -ge 1 ]"'
 supervise_stop
 $IS --uninstall --purge >/dev/null 2>&1
