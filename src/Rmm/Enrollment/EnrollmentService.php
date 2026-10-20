@@ -65,6 +65,20 @@ final class EnrollmentService
         $this->afterEnroll = $f;
     }
 
+    /** @var (\Closure(int):void)|null */
+    private ?\Closure $afterApprove = null;
+
+    /**
+     * Called after an administrator approved (linked) a pending device, with the device id. Cannot change the outcome: an exception is logged and dropped.
+     * Used by "install the Mesh agent after the device is approved".
+     *
+     * @param \Closure(int):void $f
+     */
+    public function onApproved(\Closure $f): void
+    {
+        $this->afterApprove = $f;
+    }
+
     // ------------------------------------------------------------------ enrollment tokens
 
     /**
@@ -513,6 +527,13 @@ final class EnrollmentService
         });
         $this->audit->record('Approved', "Device $deviceId linked to asset $asset by user $userId ($action)", (int) $dev['client_id'], $asset);
         $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
+        if ($this->afterApprove !== null) {
+            try {
+                ($this->afterApprove)($deviceId);
+            } catch (\Throwable $e) {
+                error_log('endpoint agent: after-approve hook failed: ' . get_class($e));
+            }
+        }
 
         return ['ok' => true, 'message' => 'Device linked to asset #' . $asset . '.'];
     }

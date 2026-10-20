@@ -163,6 +163,7 @@ final class RmmModule
     private ?MeshService $mesh = null;
     private ?MeshAgentSettings $meshAgentSettings = null;
     private ?MeshAgentService $meshAgents = null;
+    private ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfterApproval = null;
     private ?InstallerService $installerService = null;
     private ?TechnicianActions $technician = null;
     private ?RmmAdmin $admin = null;
@@ -732,6 +733,15 @@ final class RmmModule
                 if ($this->settings()->featureOn(DeployProtocol::FEATURE) && ($dev = $this->devices()->find($deviceId)) !== null) {
                     $this->autoInstall()->planDevice($dev, $tokenId, $event);
                 }
+                // Install the Mesh agent after the device is approved: remember the plan (only when the token asked for it) and, for an automatically linked device, start it.
+                if (($dev = $this->devices()->find($deviceId)) !== null) {
+                    $this->meshAfterApproval()->plan($dev, $tokenId);
+                }
+            });
+            $this->enrollment->onApproved(function (int $deviceId): void {
+                if (($dev = $this->devices()->find($deviceId)) !== null) {
+                    $this->meshAfterApproval()->advance($dev);
+                }
             });
         }
 
@@ -748,7 +758,7 @@ final class RmmModule
         return new CheckinService($this->sql(), $this->settings(), $this->devices(), $this->checks(), $this->jobs(), $this->updates(), $this->linker(), $this->assets, $this->metrics,
             function (array $work): void {
                 $this->ingestQueue()->enqueue($work);
-            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy(), $this->remoteSettings(), $this->meshAgents(), $this->changeSettings());
+            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy(), $this->remoteSettings(), $this->meshAgents(), $this->changeSettings(), $this->meshAfterApproval());
     }
 
     /** Capabilities, presence and software bookkeeping of a device (table rmm_device_state). */
@@ -1125,6 +1135,11 @@ final class RmmModule
     }
 
     /** The optional MeshCentral agent: the installer's Mesh block, the device's report and the automatic node-id mapping. */
+    public function meshAfterApproval(): \RivetCore\Rmm\Mesh\MeshAfterApproval
+    {
+        return $this->meshAfterApproval ??= new \RivetCore\Rmm\Mesh\MeshAfterApproval($this->sql(), $this->settings(), $this->meshAgents(), $this->audit, fn () => $this->remoteActions());
+    }
+
     public function meshAgents(): MeshAgentService
     {
         return $this->meshAgents ??= new MeshAgentService($this->sql(), $this->settings(), $this->meshAgentSettings(), $this->devices(), $this->audit, $this->eventPublisher());

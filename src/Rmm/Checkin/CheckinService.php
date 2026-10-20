@@ -70,6 +70,7 @@ final class CheckinService
         private readonly ?RemoteSettings $remote = null,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
         private readonly ?\RivetCore\Rmm\Change\ChangeSettings $change = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfter = null,
     ) {
     }
 
@@ -166,6 +167,8 @@ final class CheckinService
             throw $e;
         }
         $this->events?->release();
+        // The Mesh agent an enrollment token asked for installs once the device is linked and has announced it can (a no-op for every device without a plan; never fails a check-in).
+        $this->meshAfter?->advance($dev);
 
         $interval = $policy === null ? (int) $cfg['check_in_interval_s'] : $policy['check_in_interval_s'];
         if ((int) ($cfg['shed_level'] ?? 0) >= 2) {

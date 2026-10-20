@@ -496,6 +496,30 @@ final class RemoteActions
     }
 
     /**
+     * The Mesh agent install an enrollment token asked for ("install the Mesh agent once this device is approved"), queued by the SERVER for a device that is already
+     * linked. There is no user: it acts as the system principal and needs no ability, because the administrator's tick-box on the installer was the decision and the
+     * device only gets here after an approval or an automatic match. Everything else is the manual path: the remote-tools switch (409 `feature_disabled`), Mesh enabled and
+     * configured (409 `not_configured`), a linked device, the announced `job:mesh_install` capability (409 `unsupported`), idempotent (`already_installed`, `already_queued`),
+     * and the same sealed job (the group id comes from the stored settings and is kept out of the job row). Called by {@see \RivetCore\Rmm\Mesh\MeshAfterApproval}.
+     *
+     * @param array<string,mixed> $dev the device row
+     */
+    public function installMeshAgentAfterApproval(array $dev): ActionResult
+    {
+        if (!$this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_TOOLS)) {
+            return ActionResult::fail(409, 'feature_disabled', self::offText(RemoteProtocol::FEATURE_REMOTE_TOOLS));
+        }
+        if (($dev['link_state'] ?? '') !== 'linked') {
+            return ActionResult::fail(409, 'conflict', 'Only a device linked to an asset can be managed. Approve it first.');
+        }
+        if (($refused = $this->meshInstallRefusal()) !== null) {
+            return $refused;
+        }
+
+        return $this->pushMeshInstall(new RmmPrincipal(0, 'System'), $dev, false);
+    }
+
+    /**
      * @param array<string,mixed> $dev
      */
     private function pushMeshInstall(RmmPrincipal $who, array $dev, bool $force): ActionResult
