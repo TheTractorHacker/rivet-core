@@ -7,6 +7,7 @@ namespace RivetCore\Rmm\Checkin;
 use RivetCore\Rmm\Alerting\AlertingEngine;
 use RivetCore\Rmm\Capacity\LoadShedder;
 use RivetCore\Rmm\Checks\CheckEvaluator;
+use RivetCore\Rmm\Checks\CheckReconciler;
 use RivetCore\Rmm\Checks\RmmChecks;
 use RivetCore\Rmm\Contracts\RmmAssetsInterface;
 use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
@@ -173,6 +174,7 @@ final class CheckinService
                 ? ['checks' => $this->settings->signedChecks($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null, RmmChecks::deviceOs($dev)), 'collect_interval_s' => (int) $cfg['collect_interval_s']]
                 : ['checks' => $this->settings->signCheckList($policy['checks'], $this->capsOf($dev, $announce['caps']) ?? [], RmmChecks::deviceOs($dev)), 'collect_interval_s' => $policy['collect_interval_s']],
         ];
+        $this->reconcileDelivered($dev, $out['config']['checks']);
         if ($knowsPolicies) {
             // Additive, offered only to an agent that announced `policies`: every other response is byte-identical to before.
             $out['config']['policy'] = ['version' => $policy['version'], 'applied' => $policy['applied'], 'features' => $policy['features']];
@@ -589,6 +591,22 @@ final class CheckinService
         }
 
         return $dt->setTime((int) $dt->format('H'), (int) $dt->format('i'), (int) $dt->format('s'));
+    }
+
+    /**
+     * Checks that stopped applying to the device (other OS, off the schedule, removed by a policy) lose their row and their open alert. One primary
+     * key read per check-in; the work happens only when the delivered set changed. Never fails the check-in.
+     *
+     * @param array<string,mixed> $dev
+     * @param list<array<string,mixed>> $delivered
+     */
+    private function reconcileDelivered(array $dev, array $delivered): void
+    {
+        try {
+            $this->sql->transaction(fn () => (new CheckReconciler($this->sql, $this->checks))->reconcile($dev, array_map(static fn (array $c): string => (string) $c['key'], $delivered)));
+        } catch (\Throwable $e) {
+            error_log('rmm check-in (stale check cleanup): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0031 not applied yet
+        }
     }
 
     /**

@@ -752,6 +752,40 @@ final class RmmModule
         return new InstallerDownload($this->sql(), $this->settings(), $this->updates(), $this->tenancy, $this->audit, $this->attempts(), $this->options['installer_prefix'] ?? RmmProtocol::INSTALLER_NAME_PREFIX, $this->clientLabel(), $this->meshAgents(), $this->binaryStore());
     }
 
+    /**
+     * One-off (idempotent) cleanup of checks that no longer apply to a device, for every live device or just one: removes the
+     * `endpoint_agent_checks` row of a check key the device would not be given now (other OS, off the schedule, removed by a policy) and resolves
+     * its open alert as "no longer applies" (system, no ticket). The check-in does the same lazily for a device that checks in; this reaches the
+     * devices that are offline and is what to run once after upgrading to 1.0.0-rc.24. Server-reported keys (log, change, patch rules) are kept.
+     *
+     * @return array{devices:int,removed:int}
+     */
+    public function reconcileChecks(?int $deviceId = null): array
+    {
+        $rec = new \RivetCore\Rmm\Checks\CheckReconciler($this->sql(), $this->checks());
+        $policies = $this->settings()->featureOn('policies');
+        $n = 0;
+        $removed = 0;
+        $rows = $deviceId !== null
+            ? array_filter([$this->sql()->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ?', [$deviceId])])
+            : $this->sql()->all('SELECT * FROM endpoint_agent_devices WHERE retired_at IS NULL AND revoked_at IS NULL');
+        foreach ($rows as $dev) {
+            $caps = DeviceState::capabilitiesOf($this->deviceState()->get((int) $dev['device_id']));
+            if ($policies) {
+                $list = $this->effectivePolicy()->forDevice($dev, $caps)['checks'];
+            } else {
+                $os = \RivetCore\Rmm\Checks\RmmChecks::deviceOs($dev);
+                $list = $os === null ? $this->settings()->checks() : \RivetCore\Rmm\Checks\RmmChecks::forOs($this->settings()->checks(), $os);
+                $offerCaps = $this->settings()->hasExtendedChecks() ? $caps : null;
+                $list = array_values(array_filter($list, static fn (array $c): bool => \RivetCore\Rmm\Checks\CheckCatalog::offeredTo((string) $c['type'], $offerCaps)));
+            }
+            $removed += $this->sql()->transaction(fn (): int => $rec->reconcile($dev, array_map(static fn (array $c): string => (string) $c['key'], $list), true));
+            ++$n;
+        }
+
+        return ['devices' => $n, 'removed' => $removed];
+    }
+
     public function housekeeping(): Housekeeping
     {
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),

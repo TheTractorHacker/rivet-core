@@ -202,6 +202,53 @@ final class CheckEvaluator
         );
     }
 
+    /** The message shown for an alert resolved because its check stopped applying to the device. */
+    public const NOT_APPLICABLE_MESSAGE = 'This check no longer applies to the device';
+    public const NOT_APPLICABLE_REASON = 'not_applicable';
+
+    /**
+     * Remove the check rows of this device whose key is not in $deliveredKeys (server-reported key families excepted), resolving the linked open
+     * alert as "no longer applies": resolved by the system (no user), no ticket is created, nothing is re-raised. The alert is resolved through
+     * the bridge exactly as a recovery is, so the edition's conservative ticket auto-close applies. Idempotent.
+     *
+     * @param array<string,mixed> $dev
+     * @param list<string> $deliveredKeys
+     * @return int rows removed
+     */
+    public function removeStale(array $dev, array $deliveredKeys): int
+    {
+        $deviceId = (int) $dev['device_id'];
+        $delivered = array_flip($deliveredKeys);
+        $stale = [];
+        foreach ($this->sql->all('SELECT check_key, alert_id FROM endpoint_agent_checks WHERE device_id = ?', [$deviceId]) as $c) {
+            $k = (string) $c['check_key'];
+            if (!isset($delivered[$k]) && !RmmChecks::isServerKey($k)) {
+                $stale[$k] = $c['alert_id'] === null ? null : (int) $c['alert_id'];
+            }
+        }
+        if ($stale === []) {
+            return 0;
+        }
+        $integration = $this->settings->integrationId();
+        foreach ($stale as $k => $alertId) {
+            if ($alertId === null) {
+                continue;
+            }
+            $this->bridge->resolveAlert($integration, $alertId);
+            if ($this->alerting !== null && $this->alerting->enabled()) {
+                $this->alerting->alerts->resolved($dev, $k, $alertId, self::NOT_APPLICABLE_REASON);
+            }
+        }
+        $keys = array_keys($stale);
+        $in = implode(',', array_fill(0, count($keys), '?'));
+        $this->sql->run("DELETE FROM endpoint_agent_checks WHERE device_id = ? AND check_key IN ($in)", array_merge([$deviceId], $keys));
+        if ($this->alerting !== null && $this->alerting->enabled()) {
+            $this->sql->run("DELETE FROM rmm_check_eval WHERE device_id = ? AND check_key IN ($in)", array_merge([$deviceId], $keys));
+        }
+
+        return count($keys);
+    }
+
     /** Device retired or removed: resolve everything still open so no orphan alert stays "new". */
     public function resolveAllOpen(int $deviceId, string $why): void
     {
