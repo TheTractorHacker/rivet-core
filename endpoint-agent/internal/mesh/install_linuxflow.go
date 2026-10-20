@@ -267,6 +267,14 @@ func processRunning(exe string) bool {
 		if p, err := os.Readlink("/proc/" + e.Name() + "/exe"); err == nil && strings.TrimSuffix(p, " (deleted)") == exe {
 			return true
 		}
+		// a script agent (the e2e stand-in) shows up as its interpreter; match its argv instead
+		if b, err := os.ReadFile("/proc/" + e.Name() + "/cmdline"); err == nil {
+			for _, a := range strings.Split(string(b), "\x00") {
+				if a == exe {
+					return true
+				}
+			}
+		}
 	}
 	return false
 }
