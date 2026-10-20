@@ -34,6 +34,7 @@ use RivetCore\Rmm\Migration\Migration0029SoftwareDeploy;
 use RivetCore\Rmm\Migration\Migration0030ChangeMonitor;
 use RivetCore\Rmm\Migration\Migration0031ClockSkew;
 use RivetCore\Rmm\Migration\Migration0032CheckSet;
+use RivetCore\Rmm\Migration\Migration0033AutoInstall;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
 
@@ -79,6 +80,7 @@ final class CoreMigrations
             new Migration0030ChangeMonitor(),
             new Migration0031ClockSkew(),
             new Migration0032CheckSet(),
+            new Migration0033AutoInstall(),
         ];
     }
 }

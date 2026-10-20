@@ -51,6 +51,20 @@ final class EnrollmentService
     ) {
     }
 
+    /** @var (\Closure(int,int,string):void)|null */
+    private ?\Closure $afterEnroll = null;
+
+    /**
+     * Called after every successful enrollment (the device row exists and the answer is built) with (device id, enrollment token id, outcome: enrolled | re-enrolled | reinstalled).
+     * It cannot change the answer and cannot make the enrollment fail: an exception is logged and dropped. Used by the auto-install planner.
+     *
+     * @param \Closure(int,int,string):void $f
+     */
+    public function onEnrolled(\Closure $f): void
+    {
+        $this->afterEnroll = $f;
+    }
+
     // ------------------------------------------------------------------ enrollment tokens
 
     /**
@@ -151,6 +165,14 @@ final class EnrollmentService
             (int) $token['client_id'], (int) ($result['matched_asset_id'] ?? 0));
         $this->events?->emit(RmmEvent::DEVICE_ENROLLED, ['device_id' => $result['device_id'], 'asset_id' => $result['matched_asset_id'], 'client_id' => (int) $token['client_id'], 'hostname' => $d['hostname']],
             ['link_state' => $result['status'], 'os' => $os, 'outcome' => $result['event']]);
+
+        if ($this->afterEnroll !== null) {
+            try {
+                ($this->afterEnroll)((int) $result['device_id'], (int) $token['token_id'], (string) $result['event']);
+            } catch (\Throwable $e) {
+                error_log('endpoint agent: after-enroll hook failed: ' . get_class($e));
+            }
+        }
 
         [, $pub, $kid] = $this->settings->signingKey();
         $cfg = $this->settings->get();

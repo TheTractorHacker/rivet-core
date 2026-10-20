@@ -153,6 +153,10 @@ final class PackageCatalog
         }
         $this->sql->transaction(function () use ($packageId): bool {
             $this->sql->run('DELETE FROM rmm_package_installs WHERE package_id = ?', [$packageId]);
+            foreach (['rmm_package_auto', 'rmm_package_auto_clients', 'rmm_package_params', 'rmm_installer_apps', 'rmm_device_apps'] as $t) {
+                $this->sql->run("DELETE FROM $t WHERE package_id = ?", [$packageId]);
+            }
+            $this->sql->run('DELETE h FROM rmm_version_hosted h JOIN rmm_package_versions v ON v.version_id = h.version_id WHERE v.package_id = ?', [$packageId]);
             $this->sql->run('DELETE FROM rmm_package_versions WHERE package_id = ?', [$packageId]);
             $this->sql->run('DELETE FROM rmm_packages WHERE package_id = ?', [$packageId]);
 
@@ -178,13 +182,13 @@ final class PackageCatalog
     /** @return list<array<string,mixed>> */
     public function versions(int $packageId): array
     {
-        return array_map(self::versionRow(...), $this->sql->all('SELECT * FROM rmm_package_versions WHERE package_id = ? ORDER BY version_id DESC', [$packageId]));
+        return array_map(self::versionRow(...), $this->sql->all('SELECT v.*, h.file_id AS hosted_file_id FROM rmm_package_versions v LEFT JOIN rmm_version_hosted h ON h.version_id = v.version_id WHERE v.package_id = ? ORDER BY v.version_id DESC', [$packageId]));
     }
 
     /** @return array<string,mixed>|null */
     public function version(int $versionId): ?array
     {
-        $r = $this->sql->one('SELECT * FROM rmm_package_versions WHERE version_id = ?', [$versionId]);
+        $r = $this->sql->one('SELECT v.*, h.file_id AS hosted_file_id FROM rmm_package_versions v LEFT JOIN rmm_version_hosted h ON h.version_id = v.version_id WHERE v.version_id = ?', [$versionId]);
 
         return $r === null ? null : self::versionRow($r);
     }
@@ -201,11 +205,22 @@ final class PackageCatalog
         if ($this->package($packageId) === null) {
             throw new \InvalidArgumentException('Package not found.');
         }
-        $allowed = ['version', 'os', 'fmt', 'pkg_name', 'pin_version', 'url', 'sha256', 'size_bytes', 'silent_args', 'product_code', 'detect_kind', 'detect_value', 'detect_min'];
+        $allowed = ['version', 'os', 'fmt', 'pkg_name', 'pin_version', 'url', 'sha256', 'size_bytes', 'silent_args', 'product_code', 'detect_kind', 'detect_value', 'detect_min', 'hosted_file_id'];
         if (array_diff(array_keys($in), $allowed) !== []) {
             throw new \InvalidArgumentException('Unknown field: ' . mb_substr((string) array_values(array_diff(array_keys($in), $allowed))[0], 0, 40) . '.');
         }
-        $row = self::validateVersion($in, $this->sources);
+        $hosted = null;
+        $fileId = null;
+        if (array_key_exists('hosted_file_id', $in)) {
+            $fileId = $in['hosted_file_id'];
+            $f = is_int($fileId) ? $this->sql->one('SELECT file_id, sha256, size_bytes FROM rmm_hosted_files WHERE file_id = ?', [$fileId]) : null;
+            if ($f === null) {
+                throw new \InvalidArgumentException('hosted_file_id must name a file uploaded to the server.');
+            }
+            $hosted = ['sha256' => (string) $f['sha256'], 'size_bytes' => (int) $f['size_bytes']];
+            unset($in['hosted_file_id']);
+        }
+        $row = self::validateVersion($in, $this->sources, $hosted);
         if ((int) $this->sql->val('SELECT COUNT(*) FROM rmm_package_versions WHERE package_id = ?', [$packageId]) >= self::MAX_VERSIONS_PER_PACKAGE) {
             throw new \InvalidArgumentException('At most ' . self::MAX_VERSIONS_PER_PACKAGE . ' versions per package.');
         }
@@ -215,6 +230,9 @@ final class PackageCatalog
         $id = $this->sql->insert('INSERT INTO rmm_package_versions (package_id, version, os, fmt, pkg_name, pin_version, url, sha256, size_bytes, silent_args, product_code, detect_kind, detect_value, detect_min, created_by, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [$packageId, $row['version'], $row['os'], $row['fmt'], $row['pkg_name'], $row['pin_version'], $row['url'], $row['sha256'], $row['size_bytes'],
             $row['silent_args'], $row['product_code'], $row['detect_kind'], $row['detect_value'], $row['detect_min'], $userId, $this->sql->utcNow()]);
+        if ($fileId !== null) {
+            $this->sql->run('INSERT INTO rmm_version_hosted (version_id, file_id) VALUES (?, ?)', [$id, $fileId]);
+        }
 
         return $this->version($id) ?? [];
     }
@@ -230,10 +248,11 @@ final class PackageCatalog
      * Check and normalise a version. Pure apart from asking the source policy.
      *
      * @param array<string,mixed> $in
+     * @param array{sha256:string,size_bytes:int}|null $hosted a file uploaded to the server ({@see \RivetCore\Rmm\Deploy\HostedFiles}): then `url`, `sha256` and `size_bytes` must be absent and the hash and size are the file's
      * @return array{version:string,os:string,fmt:string,pkg_name:string,pin_version:int,url:string,sha256:string,size_bytes:int,silent_args:string,product_code:string,detect_kind:string,detect_value:string,detect_min:string}
      * @throws \InvalidArgumentException
      */
-    public static function validateVersion(array $in, PackageSourcePolicyInterface $sources): array
+    public static function validateVersion(array $in, PackageSourcePolicyInterface $sources, ?array $hosted = null): array
     {
         $label = $in['version'] ?? null;
         if (!is_string($label) || preg_match(self::LABEL_RE, $label) !== 1) {
@@ -276,6 +295,16 @@ final class PackageCatalog
                 throw new \InvalidArgumentException("$k does not apply to a Windows installer.");
             }
         }
+        if ($hosted !== null) {
+            foreach (['url', 'sha256', 'size_bytes'] as $k) {
+                if (array_key_exists($k, $in)) {
+                    throw new \InvalidArgumentException("$k does not apply to a hosted installer: the uploaded file gives its own hash and size.");
+                }
+            }
+            $url = '';
+            $sha = $hosted['sha256'];
+            $size = $hosted['size_bytes'];
+        } else {
         $url = SourceUrl::normalise($in['url'] ?? null);
         if ($url === null) {
             throw new \InvalidArgumentException('url must be a plain https address: a host name (no IP address), the default port, no user information, no fragment, at most ' . DeployProtocol::URL_MAX . ' characters.');
@@ -294,6 +323,7 @@ final class PackageCatalog
         $size = $in['size_bytes'] ?? null;
         if (!is_int($size) || $size < 1 || $size > DeployProtocol::SIZE_MAX) {
             throw new \InvalidArgumentException('size_bytes is the exact size of the installer, 1 to ' . DeployProtocol::SIZE_MAX . ' bytes.');
+        }
         }
         $row['url'] = $url;
         $row['sha256'] = $sha;
@@ -326,9 +356,10 @@ final class PackageCatalog
             throw new \InvalidArgumentException('An exe has no product code.');
         }
         $args = $in['silent_args'] ?? '';
-        if (!is_string($args) || !DeployProtocol::argsOk($args)) {
+        if (!is_string($args) || ArgsTemplate::validate($args) !== null) {
             throw new \InvalidArgumentException('silent_args may hold letters, digits, spaces and / \\ - _ = . : , + only (no quotes), at most ' . DeployProtocol::ARGS_MAX_TOKENS . ' words of '
-                . DeployProtocol::ARGS_MAX_TOKEN_CHARS . ' characters, separated by single spaces.');
+                . DeployProtocol::ARGS_MAX_TOKEN_CHARS . ' characters, separated by single spaces. A vendor value goes in as {{name}} straight after = or : (for example /ORG_KEY={{org_key}}); '
+                . (is_string($args) ? (string) ArgsTemplate::validate($args) : ''));
         }
         $dk = $in['detect_kind'] ?? null;
         $dv = $in['detect_value'] ?? null;
@@ -353,6 +384,6 @@ final class PackageCatalog
         return ['version_id' => (int) $r['version_id'], 'package_id' => (int) $r['package_id'], 'version' => (string) $r['version'], 'os' => (string) $r['os'], 'fmt' => (string) $r['fmt'],
             'pkg_name' => (string) $r['pkg_name'], 'pin_version' => (int) $r['pin_version'] === 1, 'url' => (string) $r['url'], 'sha256' => (string) $r['sha256'], 'size_bytes' => (int) $r['size_bytes'],
             'silent_args' => (string) $r['silent_args'], 'product_code' => (string) $r['product_code'], 'detect_kind' => (string) $r['detect_kind'], 'detect_value' => (string) $r['detect_value'],
-            'detect_min' => (string) $r['detect_min'], 'retired' => (int) $r['retired'] === 1, 'created_at' => Sql::iso((string) $r['created_at'])];
+            'detect_min' => (string) $r['detect_min'], 'retired' => (int) $r['retired'] === 1, 'hosted_file_id' => isset($r['hosted_file_id']) ? (int) $r['hosted_file_id'] : null, 'created_at' => Sql::iso((string) $r['created_at'])];
     }
 }

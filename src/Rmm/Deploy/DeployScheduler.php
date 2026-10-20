@@ -33,13 +33,16 @@ final class DeployScheduler
         private readonly DeployService $service,
         private readonly DeployExpectations $expectations,
         private readonly ?ScheduleGateInterface $gate = null,
+        private readonly ?\RivetCore\Rmm\AutoInstall\AutoInstallService $auto = null,
+        private readonly ?HostedFiles $hosted = null,
     ) {
     }
 
     /** @return array<string,int> */
     public function run(): array
     {
-        $out = ['deploy_applied' => 0, 'deploy_evaluated' => 0, 'deploy_detects_queued' => 0, 'deploy_installs_queued' => 0, 'deploy_dry_runs_queued' => 0, 'deploy_deferred' => 0, 'deploy_pruned' => 0];
+        $out = ['deploy_applied' => 0, 'deploy_evaluated' => 0, 'deploy_detects_queued' => 0, 'deploy_installs_queued' => 0, 'deploy_dry_runs_queued' => 0, 'deploy_deferred' => 0, 'deploy_pruned' => 0,
+            'autoinstall_queued' => 0, 'autoinstall_dry_runs' => 0, 'autoinstall_approvals' => 0, 'autoinstall_skipped' => 0, 'autoinstall_deferred' => 0];
         if (!$this->settings->featureOn(DeployProtocol::FEATURE)) {
             return $out;
         }
@@ -56,6 +59,14 @@ final class DeployScheduler
             $out['deploy_installs_queued'] = $r['live'];
             $out['deploy_dry_runs_queued'] = $r['dry'];
             $out['deploy_deferred'] = $r['deferred'];
+        }
+        if ($shed <= 1 && $this->auto !== null) {
+            $a = $this->auto->advance($batch);
+            $out['autoinstall_queued'] = $a['queued'];
+            $out['autoinstall_dry_runs'] = $a['dry'];
+            $out['autoinstall_approvals'] = $a['approvals'];
+            $out['autoinstall_skipped'] = $a['skipped'];
+            $out['autoinstall_deferred'] = $a['deferred'];
         }
         $out['deploy_pruned'] = $this->prune($limits);
 
@@ -197,6 +208,9 @@ final class DeployScheduler
         $n += $this->sql->run("DELETE a FROM rmm_package_assignments a WHERE a.scope_type = 'tag' AND NOT EXISTS (SELECT 1 FROM rmm_tags t WHERE t.tag_id = a.scope_id)");
         $n += $this->sql->run("DELETE a FROM rmm_package_assignments a WHERE a.scope_type = 'group' AND NOT EXISTS (SELECT 1 FROM rmm_groups g WHERE g.group_id = a.scope_id)");
         $n += $this->sql->run("DELETE a FROM rmm_package_assignments a WHERE a.scope_type = 'device' AND NOT EXISTS (SELECT 1 FROM endpoint_agent_devices d WHERE d.device_id = a.scope_id)");
+
+        $n += $this->auto?->prune() ?? 0;
+        $n += $this->hosted?->pruneGrants() ?? 0;
 
         return $n;
     }

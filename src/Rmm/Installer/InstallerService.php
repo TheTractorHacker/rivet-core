@@ -40,6 +40,7 @@ final class InstallerService
         private readonly BinaryStore $binaries,
         private readonly string $clientLabel = 'client',
         private readonly ?MeshAgentService $meshAgents = null,
+        private readonly ?\RivetCore\Rmm\AutoInstall\AutoInstallService $autoInstall = null,
     ) {
     }
 
@@ -56,9 +57,14 @@ final class InstallerService
      * $format is `exe` (default) or `msi`: with `msi` the precondition is a published MSI template for the architecture instead of a published agent executable;
      * the token and the payload are the same either way.
      *
+     * $appIds are the catalog apps a technician ticked to install with the agent ({@see \RivetCore\Rmm\AutoInstall\AutoInstallService}); the caller has already checked the
+     * `rmm.software.deploy` ability. They are stored on the token (additive table), count as explicit approval for the devices it enrolls, and who ticked what is audited.
+     * Refused up front when software deployment is off, an app is unknown or switched off, or its vendor parameters have no value for this client.
+     *
+     * @param list<int> $appIds
      * @return array{ok:bool,error?:string,token?:array<string,mixed>,token_plain?:string,payload?:string,installer_id?:string,department?:string}
      */
-    public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE): array
+    public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = []): array
     {
         if (!InstallerFormat::valid($format)) {
             return ['ok' => false, 'error' => 'Choose the installer format: exe or msi.'];
@@ -79,6 +85,9 @@ final class InstallerService
         if ($locationId > 0 && !$this->tenancy->locationInClient($locationId, $clientId)) {
             $locationId = 0;
         }
+        if ($appIds !== [] && $this->autoInstall === null) {
+            return ['ok' => false, 'error' => 'Installing apps with the agent is not available on this module.'];
+        }
         $installerId = JobService::uuid();
         $t = $this->enrollment->createToken($clientId, $locationId, $ring, $ttlHours, $maxUses, $label !== '' ? $label : 'Installer ' . substr($installerId, 0, 8), $userId);
         $row = $this->sql->one('SELECT * FROM endpoint_agent_enrollment_tokens WHERE token_id = ?', [$t['token_id']]);
@@ -87,6 +96,14 @@ final class InstallerService
         }
         if ($installMeshAgent) {
             $this->sql->run('INSERT INTO endpoint_agent_installer_options (token_id, install_mesh_agent, created_at) VALUES (?, 1, ?) ON DUPLICATE KEY UPDATE install_mesh_agent = 1', [$t['token_id'], $this->sql->utcNow()]);
+        }
+        if ($appIds !== []) {
+            $why = $this->autoInstall->recordSelection((int) $t['token_id'], $appIds, $clientId, $locationId, $userId, $actorName);
+            if ($why !== null) {
+                $this->enrollment->revokeToken($t['token_id'], $userId);
+
+                return ['ok' => false, 'error' => $why];
+            }
         }
         [$payload, $err] = $this->installer->payloadFor($row, $t['token'], $installerId);
         if ($payload === null) {
@@ -105,11 +122,12 @@ final class InstallerService
      * The administrator's "download installer": {@see issue()} then the stamped base binary as a download response. When the file
      * cannot be served the token is revoked again (nothing was handed out, so no live token is left behind).
      *
+     * @param list<int> $appIds see {@see issue()}
      * @return RmmResponse|string the download, or the refusal message
      */
-    public function issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE): RmmResponse|string
+    public function issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = []): RmmResponse|string
     {
-        $r = $this->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, $label, $arch, $userId, $actorName, $installMeshAgent, $format);
+        $r = $this->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, $label, $arch, $userId, $actorName, $installMeshAgent, $format, $appIds);
         if (!$r['ok'] || !isset($r['token'], $r['payload'], $r['department'])) {
             return (string) ($r['error'] ?? 'The installer could not be created.');
         }

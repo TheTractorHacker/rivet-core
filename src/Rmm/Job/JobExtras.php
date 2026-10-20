@@ -132,7 +132,9 @@ final class JobExtras
         }
         foreach ($this->secrets((string) $job['job_id']) ?? [] as $value) {
             if (strlen($value) >= 4) {
-                $output = str_replace([$value, base64_encode($value), rawurlencode($value)], '[redacted]', $output);
+                // also as JSON text escapes it (a device's JSON report writes "/" as "\/"), so a value with a slash does not slip through
+                $json = substr((string) json_encode($value), 1, -1);
+                $output = str_replace([$value, base64_encode($value), rawurlencode($value), $json], '[redacted]', $output);
             }
         }
 

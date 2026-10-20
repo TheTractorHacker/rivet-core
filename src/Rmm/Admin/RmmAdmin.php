@@ -419,14 +419,19 @@ final class RmmAdmin
     /**
      * The administrator's "download installer": an audited enrollment token and the stamped installer as a download.
      *
+     * @param list<int> $appIds catalog apps ticked to install with the agent (needs `rmm.software.deploy` for the client)
      * @return ActionResult data: `download` (an {@see RmmResponse}) on success; on a refusal the message says why and no token is left behind
      */
-    public function downloadInstaller(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE): ActionResult
+    public function downloadInstaller(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = []): ActionResult
     {
         if (($d = $this->deny($by, RmmAbility::TOKEN_MANAGE, $clientId)) !== null) {
             return $d;
         }
-        $out = $this->installers->issueDownload($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent, $format);
+        // Ticking apps to install with the agent is a software decision: it needs rmm.software.deploy for that client, on top of the right to issue an installer.
+        if ($appIds !== [] && ($d = $this->deny($by, RmmAbility::SOFTWARE_DEPLOY, $clientId)) !== null) {
+            return $d;
+        }
+        $out = $this->installers->issueDownload($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent, $format, $appIds);
         if (is_string($out)) {
             return ActionResult::fail(422, 'invalid', $out);
         }
@@ -437,14 +442,18 @@ final class RmmAdmin
     /**
      * "Show deployment commands": an audited enrollment token plus ready-to-paste commands (the token is shown once).
      *
+     * @param list<int> $appIds catalog apps ticked to install with the agent (needs `rmm.software.deploy` for the client)
      * @return ActionResult data: `token` (row), `token_plain`, `commands` (see {@see InstallerService::deploymentCommands()})
      */
-    public function deploymentCommands(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE): ActionResult
+    public function deploymentCommands(RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = []): ActionResult
     {
         if (($d = $this->deny($by, RmmAbility::TOKEN_MANAGE, $clientId)) !== null) {
             return $d;
         }
-        $r = $this->installers->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent, $format);
+        if ($appIds !== [] && ($d = $this->deny($by, RmmAbility::SOFTWARE_DEPLOY, $clientId)) !== null) {
+            return $d;
+        }
+        $r = $this->installers->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $arch, $by->userId, $by->userName, $installMeshAgent, $format, $appIds);
         if (!$r['ok'] || !isset($r['token'], $r['token_plain'], $r['department'])) {
             return ActionResult::fail(422, 'invalid', (string) ($r['error'] ?? 'The installer could not be created.'));
         }
