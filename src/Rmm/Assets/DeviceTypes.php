@@ -11,7 +11,7 @@ use RivetCore\Rmm\Support\Sql;
  * device). Every read and write tolerates an installation where migration 0036 has not been applied yet (the columns are then simply absent: the
  * old behaviour), because an optional feature must never break enrollment or a check-in.
  *
- * @internal
+ * @api
  */
 final class DeviceTypes
 {

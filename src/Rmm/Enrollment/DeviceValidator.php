@@ -86,7 +86,7 @@ final class DeviceValidator
      *
      * @param array<string,mixed> $d
      * @param bool $allowLinux admit os "linux" (RivetIT's EA_ALLOW_NON_WINDOWS test flag; never true in production)
-     * @return array{install_id:string,machine_guid:?string,hostname:string,os_version:string,arch:string,serial:?string,manufacturer:?string,model:?string,macs:list<string>,agent_version:string,chassis_type:?string,has_battery:?bool,is_virtual:?bool,virtualization:?string,role_hints:list<string>}
+     * @return array{install_id:string,machine_guid:?string,hostname:string,os_version:string,arch:string,serial:?string,manufacturer:?string,model:?string,macs:list<string>,agent_version:string,chassis_type?:string,has_battery?:bool,is_virtual?:bool,virtualization?:string,role_hints?:list<string>}
      * @throws ApiError 422 invalid, message "device.<field> is invalid"
      */
     public static function validateDevice(array $d, bool $allowLinux = false): array
@@ -139,6 +139,6 @@ final class DeviceValidator
             'model' => self::cleanText($d['model'] ?? null, 200),
             'macs' => array_values($macs),
             'agent_version' => $ver,
-        ] + self::cleanHardware($d);
+        ] + array_filter(self::cleanHardware($d), static fn (mixed $v): bool => $v !== null && $v !== []);   // only the facts that were sent and valid
     }
 }

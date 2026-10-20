@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Read;
 
+use RivetCore\Rmm\Assets\DeviceTypes;
 use RivetCore\Rmm\Settings\ChecksValidator;
 use RivetCore\Rmm\Authz\RmmAbility;
 use RivetCore\Rmm\Authz\RmmAuthorizer;
@@ -229,6 +230,16 @@ final class RmmReadModel
     }
 
     // ------------------------------------------------------------------ devices
+
+    /**
+     * The asset type "create asset" would give this pending device: the installer's choice, else the detected type.
+     *
+     * @param array<string,mixed> $d
+     */
+    private function suggestedType(array $d): string
+    {
+        return (new DeviceTypes($this->sql))->forDevice($d)['type'];
+    }
 
     /**
      * @param array<string,mixed> $d a device row
@@ -1075,6 +1086,8 @@ final class RmmReadModel
             'match_reason' => $d['match_reason'],
             'match_reason_text' => $this->matchReasonText((string) $d['match_reason']),
             'candidates' => self::candidates($d),
+            // additive (rc.29): what a "create asset" would make, for the approval screen's type dropdown to prefill
+            'suggested_type' => $this->suggestedType($d),
         ], $rows);
     }
 
@@ -1099,14 +1112,23 @@ final class RmmReadModel
     public function tokens(int $limit = 50): array
     {
         $now = $this->sql->time();
+        try {
+            $types = [];
+            foreach ($this->sql->all('SELECT token_id, device_type FROM endpoint_agent_installer_options') as $o) {
+                $types[(int) $o['token_id']] = (string) $o['device_type'];
+            }
+        } catch (\Throwable) {
+            $types = [];   // migration 0036 not applied yet
+        }
 
-        return array_map(static function (array $t) use ($now): array {
+        return array_map(static function (array $t) use ($now, $types): array {
             $state = $t['revoked_at'] !== null ? 'revoked' : (Sql::ts((string) $t['expires_at']) <= $now ? 'expired' : ((int) $t['use_count'] >= (int) $t['max_uses'] ? 'used_up' : 'active'));
 
             return ['token_id' => (int) $t['token_id'], 'selector' => $t['token_selector'], 'label' => $t['label'], 'client_id' => (int) $t['client_id'], 'location_id' => (int) $t['location_id'],
                 'ring' => $t['ring'], 'max_uses' => (int) $t['max_uses'], 'use_count' => (int) $t['use_count'], 'expires_at' => Sql::iso((string) $t['expires_at']),
                 'revoked_at' => Sql::iso($t['revoked_at'] === null ? null : (string) $t['revoked_at']), 'last_used_at' => Sql::iso($t['last_used_at'] === null ? null : (string) $t['last_used_at']),
-                'created_by' => (int) $t['created_by'], 'created_at' => Sql::iso((string) $t['created_at']), 'state' => $state];
+                'created_by' => (int) $t['created_by'], 'created_at' => Sql::iso((string) $t['created_at']), 'state' => $state,
+                'device_type' => $types[(int) $t['token_id']] ?? 'auto'];
         }, $this->sql->all('SELECT * FROM endpoint_agent_enrollment_tokens ORDER BY token_id DESC LIMIT ' . max(1, min(500, $limit))));
     }
 

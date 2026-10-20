@@ -30,6 +30,16 @@ final class RmmAssetsKitTest extends RmmAssetsConformanceTestCase
         return $this->store()->addAsset($asset);
     }
 
+    protected function supportedTypes(): array
+    {
+        return $this->store()->typeNames;
+    }
+
+    protected function createAssetWithType(array $asset, string $type): int
+    {
+        return $this->store()->addAsset($asset + ['type' => $type]);
+    }
+
     protected function readAsset(int $assetId): ?array
     {
         $r = $this->store()->row($assetId);
