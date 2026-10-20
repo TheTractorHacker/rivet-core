@@ -3522,6 +3522,166 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/hypervisor:
+    get:
+      tags: [Technician]
+      operationId: listHypervisorHosts
+      summary: Proxmox VE and Hyper-V hosts with VM counts (hypervisor visibility)
+      description: |
+        Needs `rmm.hypervisor.view`. Hosts of the caller's clients with platform, version, cluster and quorum, VM counts, storage health and a stale / error flag, plus a summary. See HYPERVISORS.md.
+      security: [{userToken: []}]
+      parameters:
+        - {name: q, in: query, schema: {type: string}}
+        - {name: platform, in: query, schema: {type: string}}
+        - {name: client_id, in: query, schema: {type: integer}}
+        - {name: problems, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer}}
+        - {name: offset, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/hypervisor/vms:
+    get:
+      tags: [Technician]
+      operationId: searchHypervisorVms
+      summary: Search the VMs of the caller's clients
+      description: |
+        Needs `rmm.hypervisor.view`. Filters: device_id, client_id, q (name, key or tag), state, type (qemu, lxc, hyperv), template, ignored, missing, snapshots=1, backup (stale, failed, none).
+      security: [{userToken: []}]
+      parameters:
+        - {name: device_id, in: query, schema: {type: integer}}
+        - {name: client_id, in: query, schema: {type: integer}}
+        - {name: q, in: query, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string}}
+        - {name: type, in: query, schema: {type: string}}
+        - {name: template, in: query, schema: {type: string}}
+        - {name: ignored, in: query, schema: {type: string}}
+        - {name: missing, in: query, schema: {type: string}}
+        - {name: snapshots, in: query, schema: {type: string}}
+        - {name: backup, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer}}
+        - {name: offset, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/hypervisor/vms/{vm_id}:
+    get:
+      tags: [Technician]
+      operationId: getHypervisorVm
+      summary: One VM with its state history and open alerts
+      description: |
+        Needs `rmm.hypervisor.view`.
+      security: [{userToken: []}]
+      parameters:
+        - {name: vm_id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    put:
+      tags: [Technician]
+      operationId: ignoreHypervisorVm
+      summary: Ignore (or stop ignoring) a VM
+      description: |
+        Needs `rmm.hypervisor.manage`. An ignored VM raises no alerts and an open one resolves. Audited.
+      security: [{userToken: []}]
+      parameters:
+        - {name: vm_id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: false, required: [ignored], properties: {ignored: {type: boolean}, reason: {type: string, maxLength: 200}}}}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/hypervisor/vms/{vm_id}/asset-suggestions:
+    get:
+      tags: [Technician]
+      operationId: suggestHypervisorVmAssets
+      summary: Asset hints for a VM (nothing is linked)
+      description: |
+        Needs `rmm.hypervisor.view`. Matches by VM name, guest name (`guest_name`) and MAC (`mac`, comma separated) when the edition has them.
+      security: [{userToken: []}]
+      parameters:
+        - {name: vm_id, in: path, required: true, schema: {type: integer}}
+        - {name: mac, in: query, schema: {type: string}}
+        - {name: guest_name, in: query, schema: {type: string}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/hypervisor/settings:
+    get:
+      tags: [Technician]
+      operationId: getHypervisorSettings
+      summary: The hypervisor switch, thresholds, defaults and ranges
+      description: |
+        Needs `rmm.hypervisor.view`.
+      security: [{userToken: []}]
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    put:
+      tags: [Technician]
+      operationId: updateHypervisorSettings
+      summary: Change the hypervisor settings
+      description: |
+        `limits` (`hypervisor_*`) need `rmm.hypervisor.manage` and access to every client; `features` (the `hypervisor` switch) needs `rmm.admin`. Nothing is written when a value is refused.
+      security: [{userToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: false, properties: {features: {type: object, properties: {hypervisor: {type: boolean}}}, limits: {type: object, additionalProperties: {type: integer}}}}}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+  /endpoint_devices/{id}/hypervisor:
+    get:
+      tags: [Technician]
+      operationId: getHypervisorHost
+      summary: One hypervisor host: cluster, storage and a page of its VMs
+      description: |
+        Needs `rmm.hypervisor.view`.
+      security: [{userToken: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: q, in: query, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string}}
+        - {name: type, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer}}
+        - {name: offset, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+    put:
+      tags: [Technician]
+      operationId: ignoreHypervisorHost
+      summary: Stop (or resume) storing what a host reports
+      description: |
+        Needs `rmm.hypervisor.manage`.
+      security: [{userToken: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: false, required: [ignored], properties: {ignored: {type: boolean}}}}}
+      responses:
+        '200': {description: Done, content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
   /endpoint_devices/changes:
     get:
       tags: [Technician]
