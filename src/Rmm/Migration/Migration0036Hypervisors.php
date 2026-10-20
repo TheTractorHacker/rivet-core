@@ -9,15 +9,15 @@ use RivetCore\Migration\MigrationInterface;
 
 /**
  * RMM hypervisor visibility (Proxmox VE, Hyper-V): the host, VM, storage and state-history tables ({@see HypervisorSchema}). Purely additive and idempotent: every statement is CREATE
- * TABLE IF NOT EXISTS and no row is inserted. The tables cost nothing until the `hypervisor` sub-switch is on. (0034 belongs to the Mesh work on another branch.)
+ * TABLE IF NOT EXISTS and no row is inserted. The tables cost nothing until the `hypervisor` sub-switch is on. (0034 is the Mesh work and 0035 the device type, on other branches.)
  *
  * @internal
  */
-final class Migration0035Hypervisors implements MigrationInterface
+final class Migration0036Hypervisors implements MigrationInterface
 {
     public function id(): string
     {
-        return '0035_rmm_hypervisors';
+        return '0036_rmm_hypervisors';
     }
 
     public function up(DatabaseInterface $database): void

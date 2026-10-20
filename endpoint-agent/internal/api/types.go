@@ -205,7 +205,7 @@ type CheckinRequest struct {
 	// whole seconds (rc.23). Informational for the technician; the server never trusts
 	// it for anything else. Absent until the agent has measured one.
 	ClockOffsetS *int64 `json:"clock_offset_s,omitempty"`
-	// Hypervisor is the Proxmox VE / Hyper-V host report (rc.28, docs/rmm/HYPERVISORS.md). Only ever present
+	// Hypervisor is the Proxmox VE / Hyper-V host report (rc.29, docs/rmm/HYPERVISORS.md). Only ever present
 	// after a response offered the "hypervisor" feature with a signed config.hypervisor object.
 	Hypervisor *HypervisorReport `json:"hypervisor,omitempty"`
 }

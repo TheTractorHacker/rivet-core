@@ -217,6 +217,39 @@ The metrics subsystem has keys for memory bytes, disk bytes, per-core load, disk
 
 Rates (`cpu_core_pct`, IOPS, `net_errors`) are absent from the first sample after the agent starts and after a counter reset. The server validates every member on its own: a bad member is dropped (never clamped), the others still count. The `metrics_extended` limit (0 or 1, default 1) makes the server ignore the whole group. The stored `last_metrics_json` keeps its original five members. The agent adds about 300 bytes per sample (about 40 bytes per core).
 
+#### 3.2.10 Hypervisor visibility: Proxmox VE and Hyper-V (additive, 1.0.0-rc.29)
+
+Everything here is optional on both sides; an agent that does not announce `hypervisor` gets the same response as before and cannot feed the tables. Full design, exact commands, privacy statement and what is unverified: [HYPERVISORS.md](HYPERVISORS.md).
+
+* **Announce.** The agent adds `hypervisor` to its `capabilities` (Linux and Windows builds; withdrawn by the local switch `disable_hypervisor`). Announcing collects nothing.
+* **Offer.** Only when the device announced `hypervisor`, the `hypervisor` sub-switch is on, the load-shedding level is below 2 and the server holds a usable signing key, the response carries `"hypervisor"` in `features` and `config.hypervisor`, a SIGNED object:
+
+```json
+{"features": ["hypervisor"],
+ "config": {"hypervisor": {"v": 1, "kind": "hypervisor_config", "platform": "linux", "full_interval_s": 600, "summary_interval_s": 120, "max_vms": 1000, "snapshot_lookups": 300,
+   "seq": 1760000000, "version": "9f2c01aa77d3e5b1", "signature": "<base64 Ed25519>"}}}
+```
+
+  `version` is the first 16 hex characters of the SHA-256 of the signed message of the object without `version` and `signature`. **The signature** is Ed25519 (the key the agent pinned at enrolment) over the domain line `rivetit-hypervisor-config-v1`, a line feed, then the canonical JSON of the object without its `signature` member; a job, check or change signature never verifies as one and the reverse. `seq` is the time of the last settings change: the agent keeps the highest it saw and refuses a lower one. `platform` is `linux` or `windows` by the device's OS. The agent clamps every number (`full_interval_s` 300 to 86,400, `summary_interval_s` 60 to 600 and not above the full one, `max_vms` at most 1,000, `snapshot_lookups` at most 300); the object is at most 2,048 bytes.
+* **Report.** Only after a response offered the feature with a configuration that verified, the request may carry `hypervisor`:
+
+```json
+{"hypervisor": {"mode": "full", "platform": "proxmox", "version": "8.2.4", "collected_at": "2026-10-20T12:00:00Z",
+  "cluster": {"name": "homelab", "quorate": true, "nodes": [{"name": "devpve", "online": true}], "failed_groups": 0},
+  "vms": [{"id": "qemu/100", "name": "dc01", "type": "qemu", "state": "running", "node": "devpve", "cpus": 4, "cpu_pct": 2.1, "mem_bytes": 4294967296, "mem_max_bytes": 8589934592,
+           "disk_bytes": 107374182400, "uptime_s": 864000, "template": false, "tags": ["prod"], "snapshots": {"count": 2, "oldest_at": "2026-09-27T19:06:40Z"},
+           "last_backup": {"at": "2026-10-19T02:00:01Z", "result": "ok"}, "backup_covered": true}],
+  "storage": [{"name": "rpool", "type": "zfs_pool", "total_bytes": 500107862016, "used_bytes": 451096576000, "health": "warn"}],
+  "truncated": false, "error": "", "cfg_version": "9f2c01aa77d3e5b1"}}
+{"hypervisor": {"mode": "summary", "platform": "proxmox", "collected_at": "2026-10-20T12:02:00Z", "changes": [{"id": "qemu/101", "state": "stopped"}], "vm_count": 4}}
+```
+
+  `mode` is `full` (the whole inventory of the host) or `summary` (only the VMs whose state changed since the last acknowledged report). `platform` is `proxmox` or `hyperv`. A VM `id` is `qemu/<vmid>`, `lxc/<vmid>` (Proxmox) or the lower-case VM GUID (Hyper-V); `type` is `qemu`, `lxc` or `hyperv` and must agree with the id and the platform. `state` is one of `running`, `stopped`, `paused`, `suspended`, `transitioning`, `error`, `unknown`. Optional VM members (left out, never 0, when unknown or not applicable): `cpu_pct` 0..100, `mem_bytes`, `mem_max_bytes`, `disk_bytes` (provisioned), `disk_used_bytes`, `uptime_s`, `snapshots {count, oldest_at}`, `last_backup {at, result: ok|warning|failed}`, `backup_covered`, `guest_agent`, `replication` (`normal|warning|critical`, Hyper-V), `generation`. Storage `health` is `ok`, `warn`, `error` or `unknown`; ZFS pools are storages of type `zfs_pool`, Ceph one of type `ceph`.
+* **Caps.** At most 1,000 VMs, 200 storages, 64 cluster nodes, 1,000 changes; a name up to 100 characters, a node 64, a tag 40 (8 tags), a version 60, `error` 300; control characters, bidirectional overrides and zero-width marks are replaced by a space and the text trimmed. The agent keeps the block under 300 KiB (VMs are cut from the tail and `truncated` is set); the 1 MiB check-in body cap applies as before. A full list at most every `full_interval_s`, a summary in between.
+* **Validation.** The server validates every field on its own, as it does the metrics: a bad field is dropped (never clamped) and the others still count; a VM with a bad or disagreeing id / type / platform is dropped alone; a block that is not an object, or has another `mode` or `platform`, is ignored. Nothing here ever fails the check-in. A block while the switch is off, from a device that did not announce `hypervisor`, or under load shedding level 1 or more, is acknowledged and ignored.
+* **Missing VMs.** A `full` report marks the device's VMs that are absent from it as missing (purged after `hypervisor_retention_days`), unless it has an `error`, `truncated` is true, or the server's per-device cap cut it. A `summary` only changes the state of VMs already known. An `error` with no VMs records the error and changes nothing else.
+* **Events and alerts.** `rmm.hypervisor.vm_down`, `backup_failed`, `snapshot_old`, `storage_low`, `pool_degraded`, `cluster_quorum_lost`, and checks `hv.*` through the alerting pipeline; see HYPERVISORS.md section 6.
+
 ### 3.6 Remote-tool job types (Phase 6, additive)
 
 Six job types, queued only by their own technician endpoints, only for a device that announced the matching capability flag (an agent that announced no capability at all is never assumed to have it, unlike the `job:<type>` rule), and only while the `remote_tools` (services, processes) or `filetransfer` (files) sub-switch is on. They are signed like every job; their `params` are flat, validated on the server against strict allow-lists and validated again by the agent, which turns them into an argument list and never into a command string. The result is the job report: `succeeded` with exit code 0, or `failed` with exit code 1, and `output` is one compact JSON document (at most `max_output_bytes`; lists are shortened with `"truncated": true`, never cut mid-text).

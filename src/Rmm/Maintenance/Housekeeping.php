@@ -181,7 +181,7 @@ final class Housekeeping
                     }
                 }
             } catch (\Throwable $e) {
-                error_log('rmm housekeeping (hypervisor): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0035 not applied yet
+                error_log('rmm housekeeping (hypervisor): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0036 not applied yet
             }
         }
         if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {

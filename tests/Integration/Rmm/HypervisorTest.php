@@ -319,7 +319,7 @@ final class HypervisorTest extends RemoteTestCase
         $this->h->mysqli->query('RENAME TABLE rmm_hypervisor_hosts TO rmm_hypervisor_hosts_off');
         try {
             [$c] = $this->send(self::full([self::vm('qemu/100')]));
-            $this->assertSame(200, $c, 'e.g. migration 0035 not applied yet');
+            $this->assertSame(200, $c, 'e.g. migration 0036 not applied yet');
         } finally {
             $this->h->mysqli->query('RENAME TABLE rmm_hypervisor_hosts_off TO rmm_hypervisor_hosts');
         }
@@ -567,6 +567,37 @@ final class HypervisorTest extends RemoteTestCase
         $this->assertSame(404, $this->api('PUT', ['hypervisor', 'vms', (string) $idA], $scoped, ['ignored' => true])[0]);
         $this->assertSame(0, (int) $this->vmRow('qemu/100')['ignored']);
         $this->assertSame(404, $this->api('GET', ['hypervisor'], $scoped, null, ['client_id' => (string) $this->h->clientA])[0]);
+    }
+
+    public function testWhatAThousandVmReportCostsInStatementsAndBytes(): void
+    {
+        $this->on();
+        $vms = [];
+        for ($i = 1; $i <= 1000; ++$i) {
+            $vms[] = self::vm('qemu/' . (100 + $i), ['name' => 'server-' . $i . '.prod', 'tags' => ['prod', 'web'], 'snapshots' => ['count' => 1, 'oldest_at' => self::iso(-86400)], 'last_backup' => ['at' => self::iso(-3600), 'result' => 'ok'], 'backup_covered' => true, 'guest_agent' => true]);
+        }
+        $storage = [['name' => 'local', 'type' => 'dir', 'total_bytes' => 1000, 'used_bytes' => 100, 'health' => 'ok']];
+        $count = function (array $block): int {
+            $before = $this->h->counting->statements;
+            $this->send($block);
+
+            return $this->h->counting->statements - $before;
+        };
+        $first = $count(self::full($vms, ['storage' => $storage]));
+        $steady = $count(self::full($vms, ['storage' => $storage]));
+        $vms[0]['state'] = 'stopped';
+        $withChange = $count(self::full($vms, ['storage' => $storage]));
+        $summary = $count(['mode' => 'summary', 'platform' => 'proxmox', 'collected_at' => self::iso(-1), 'changes' => [['id' => 'qemu/101', 'state' => 'running']], 'vm_count' => 1000]);
+        $off = $count(['mode' => 'summary', 'platform' => 'proxmox', 'collected_at' => self::iso(-1), 'changes' => []]);
+        fwrite(STDERR, "\nhypervisor statements per check-in (1000 VMs): first full $first, steady full $steady, full with one change $withChange, summary with one change $summary, empty summary $off\n");
+        $this->assertLessThanOrEqual(80, $first);
+        $this->assertLessThanOrEqual(60, $steady);
+        $this->assertLessThanOrEqual(75, $withChange);
+        $this->assertLessThanOrEqual(30, $summary);
+        $this->assertLessThanOrEqual(20, $off);
+        $this->assertSame(1000, (int) $this->h->one('SELECT COUNT(*) FROM rmm_hypervisor_vms'));
+        $bytes = (int) $this->h->one("SELECT data_length + index_length FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'rmm_hypervisor_vms'");
+        fwrite(STDERR, 'rmm_hypervisor_vms: ' . $bytes . ' bytes for 1000 rows (' . intdiv($bytes, 1000) . " per VM; InnoDB pages, so a small table is rounded up)\n");
     }
 
     public function testQueuedIngestModeProcessesTheReportToo(): void

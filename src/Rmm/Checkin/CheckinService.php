@@ -408,7 +408,7 @@ final class CheckinService
             try {
                 $this->hypervisorService->apply($dev, $w['hypervisor']);
             } catch (\Throwable $e) {
-                error_log('rmm hypervisor ingest: ' . get_class($e) . ': ' . $e->getMessage());   // never fails the check-in (e.g. migration 0035 not applied yet)
+                error_log('rmm hypervisor ingest: ' . get_class($e) . ': ' . $e->getMessage());   // never fails the check-in (e.g. migration 0036 not applied yet)
             }
         }
         $linked = $dev['link_state'] === 'linked' && !empty($dev['asset_id']);

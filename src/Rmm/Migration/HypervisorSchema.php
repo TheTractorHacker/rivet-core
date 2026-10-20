@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Migration;
 
 /**
- * The tables of RMM hypervisor visibility (Proxmox VE and Hyper-V hosts), created by migration 0035. Every statement is CREATE TABLE IF NOT EXISTS with an explicit engine, charset and
+ * The tables of RMM hypervisor visibility (Proxmox VE and Hyper-V hosts), created by migration 0036. Every statement is CREATE TABLE IF NOT EXISTS with an explicit engine, charset and
  * collation; nothing existing is altered and nothing is inserted. The tables cost nothing until the `hypervisor` sub-switch is on.
  *
  * Row-size note: the widest row is a VM. Its declared columns add up to about 1.9 KB in utf8mb4 (name 100, node 64, tags 300, ignore reason 200 characters, the rest are numbers and short
