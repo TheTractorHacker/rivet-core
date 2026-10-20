@@ -6,7 +6,7 @@ namespace RivetCore\Rmm\Hypervisor;
 
 use RivetCore\Rmm\Checks\CheckEvaluator;
 use RivetCore\Rmm\RmmEvent;
-use RivetCore\Rmm\RmmEventPublisher;
+use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Support\Sql;
 
@@ -65,7 +65,7 @@ final class HypervisorAlerts
             $this->vm($vm, $touched['transitions'][(string) $vm['vm_key']] ?? null, $open, $limits, $now, $failN, $okN, $want, $dev, $full);
         }
         if ($full) {
-            $this->storage($deviceId, $open, $limits, $want);
+            $this->storage($deviceId, $open, $limits, $want, $failN);
             $q = $host['quorate'] ?? null;
             if ($q !== null && $limits['hypervisor_alert_quorum'] === 1) {
                 $nodes = json_decode((string) ($host['cluster_nodes_json'] ?? '[]'), true);
@@ -73,7 +73,7 @@ final class HypervisorAlerts
                 $on = count(array_filter($nodes, static fn ($n): bool => is_array($n) && !empty($n['online'])));
                 $name = HypervisorProtocol::alertText((string) ($host['cluster_name'] ?? ''));
                 $want['hv.quorum'] = (int) $q === 0
-                    ? ['status' => 'fail', 'detail' => 'Cluster ' . ($name === '' ? '' : $name . ' ') . 'lost quorum (' . $on . ' of ' . count($nodes) . ' nodes online as seen from this host).', 'copies' => 1,
+                    ? ['status' => 'fail', 'detail' => 'Cluster ' . ($name === '' ? '' : $name . ' ') . 'lost quorum (' . $on . ' of ' . count($nodes) . ' nodes online as seen from this host).', 'copies' => $failN,
                         'event' => [RmmEvent::HYPERVISOR_CLUSTER_QUORUM_LOST, ['cluster' => $name, 'platform' => (string) ($host['platform'] ?? ''), 'nodes_online' => $on, 'nodes_total' => count($nodes), 'alert_check_key' => 'hv.quorum']]]
                     : ['status' => 'ok', 'detail' => 'Cluster has quorum.', 'copies' => 1, 'event' => null];
             }
@@ -101,7 +101,9 @@ final class HypervisorAlerts
             // an open alert whose condition was not evaluated at all any more (the VM is gone, ignored, a template, or the switch for that class was turned off) resolves
             foreach ($open as $key => $isOpen) {
                 if ($isOpen && !isset($want[$key])) {
-                    $results[] = ['key' => $key, 'status' => 'ok', 'detail' => 'No longer applicable.', 'at' => $at];
+                    for ($i = 0; $i < $okN; ++$i) {
+                        $results[] = ['key' => $key, 'status' => 'ok', 'detail' => 'No longer applicable.', 'at' => $at];   // gone, ignored or switched off: resolved at once
+                    }
                 }
             }
         }
@@ -172,7 +174,7 @@ final class HypervisorAlerts
                     'warning' => 'The last backup of VM ' . $label . ' finished with warnings.',
                     default => $age === null ? 'VM ' . $label . ' is in a backup job but no backup was found.' : 'The last backup of VM ' . $label . ' is ' . $age . ' days old (limit ' . $days . ').',
                 };
-                $want[$kb] = ['status' => $status, 'detail' => $detail, 'copies' => 1, 'event' => [RmmEvent::HYPERVISOR_BACKUP_FAILED, $base + ['reason' => $reason, 'last_backup_at' => $vm['last_backup_at'] === null ? null : Sql::iso((string) $vm['last_backup_at']),
+                $want[$kb] = ['status' => $status, 'detail' => $detail, 'copies' => $reason === 'failed' ? $failN : 1, 'event' => [RmmEvent::HYPERVISOR_BACKUP_FAILED, $base + ['reason' => $reason, 'last_backup_at' => $vm['last_backup_at'] === null ? null : Sql::iso((string) $vm['last_backup_at']),
                     'last_backup_result' => $vm['last_backup_result'], 'age_days' => $age, 'threshold_days' => $days, 'alert_check_key' => $kb]]];
             }
         }
@@ -196,7 +198,7 @@ final class HypervisorAlerts
      * @param array<string,int> $limits
      * @param array<string,array<string,mixed>> $want
      */
-    private function storage(int $deviceId, array $open, array $limits, array &$want): void
+    private function storage(int $deviceId, array $open, array $limits, array &$want, int $failN): void
     {
         foreach ($this->sql->all('SELECT * FROM rmm_hypervisor_storage WHERE device_id = ? AND missing_since IS NULL LIMIT 250', [$deviceId]) as $s) {
             $name = HypervisorProtocol::alertText((string) $s['name'], 48);
@@ -214,7 +216,7 @@ final class HypervisorAlerts
                 $k = HypervisorProtocol::CHECK_PREFIX . 'pool.' . HypervisorProtocol::keyPart((string) $s['name']);
                 $h = (string) $s['health'];
                 if ($h === 'warn' || $h === 'error') {
-                    $want[$k] = ['status' => $h === 'error' ? 'fail' : 'warn', 'detail' => ($type === 'zfs_pool' ? 'ZFS pool ' : ($type === 'ceph' ? 'Ceph ' : 'Storage ')) . $name . ' is ' . ($h === 'error' ? 'faulted or unavailable' : 'degraded') . '.', 'copies' => 1,
+                    $want[$k] = ['status' => $h === 'error' ? 'fail' : 'warn', 'detail' => ($type === 'zfs_pool' ? 'ZFS pool ' : ($type === 'ceph' ? 'Ceph ' : 'Storage ')) . $name . ' is ' . ($h === 'error' ? 'faulted or unavailable' : 'degraded') . '.', 'copies' => $failN,
                         'event' => [RmmEvent::HYPERVISOR_POOL_DEGRADED, ['storage' => $name, 'type' => $type, 'health' => $h, 'alert_check_key' => $k]]];
                 } elseif ($h === 'ok') {
                     $want[$k] = ['status' => 'ok', 'detail' => 'Healthy.', 'copies' => 1, 'event' => null];

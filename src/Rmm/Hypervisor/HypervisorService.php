@@ -283,8 +283,6 @@ final class HypervisorService
     {
         $complete = $r['error'] === '' && !$r['truncated'] && !$r['cut'];
         $cl = $r['cluster'];
-        $hostSet = [$r['platform'], $r['version'], $cl['name'] ?? '', isset($cl['quorate']) ? ($cl['quorate'] ? 1 : 0) : null, $cl === null ? null : (string) json_encode($cl['nodes']), (int) ($cl['failed_groups'] ?? 0),
-            $r['truncated'] || $r['cut'] ? 1 : 0, $r['cfg_version'], $r['collected_at'], $now, $now, $r['error'], $now, $deviceId];
         $isErrorOnly = $r['error'] !== '' && $r['vms'] === [] && $r['storage'] === [];
         if ($isErrorOnly) {
             // the host could not be read: say so, and touch nothing else (the last good inventory stays, visibly stale)
@@ -293,8 +291,13 @@ final class HypervisorService
 
             return null;
         }
-        $this->sql->run('UPDATE rmm_hypervisor_hosts SET platform = ?, version = ?, cluster_name = ?, quorate = ?, cluster_nodes_json = ?, failed_groups = ?, truncated = ?, cfg_version = ?,
-            last_collected_at = ?, last_full_at = ?, last_report_at = ?, error = ?, updated_at = ? WHERE device_id = ?', $hostSet);
+        $this->sql->run('UPDATE rmm_hypervisor_hosts SET platform = ?, version = ?, truncated = ?, cfg_version = ?, last_collected_at = ?, last_full_at = ?, last_report_at = ?, error = ?, updated_at = ? WHERE device_id = ?',
+            [$r['platform'], $r['version'], $r['truncated'] || $r['cut'] ? 1 : 0, $r['cfg_version'], $r['collected_at'], $now, $now, $r['error'], $now, $deviceId]);
+        if ($cl !== null || $r['error'] === '') {
+            // no cluster in a clean report means a stand-alone host; a report with an error may just have failed to read it, so the last known cluster stays
+            $this->sql->run('UPDATE rmm_hypervisor_hosts SET cluster_name = ?, quorate = ?, cluster_nodes_json = ?, failed_groups = ? WHERE device_id = ?',
+                [$cl['name'] ?? '', isset($cl['quorate']) ? ($cl['quorate'] ? 1 : 0) : null, $cl === null ? null : (string) json_encode($cl['nodes']), (int) ($cl['failed_groups'] ?? 0), $deviceId]);
+        }
 
         $cap = min($limits['hypervisor_max_vms'], HypervisorProtocol::MAX_VMS);
         $vms = $r['vms'];
@@ -340,7 +343,7 @@ final class HypervisorService
         $this->sql->run('DELETE FROM rmm_hypervisor_vms WHERE device_id = ? AND missing_since IS NOT NULL AND missing_since < ?', [$deviceId, $this->sql->utcAt(-$limits['hypervisor_retention_days'] * 86400)]);
 
         $this->upsertStorage($deviceId, $r['storage'], $complete, $limits, $now);
-        $count = (int) $this->sql->val('SELECT COUNT(*) FROM rmm_hypervisor_vms WHERE device_id = ? AND missing_since IS NULL', [$deviceId]);
+        $count = (int) $this->sql->val('SELECT COUNT(*) FROM rmm_hypervisor_vms WHERE device_id = ? AND missing_since IS NULL AND template = 0', [$deviceId]);
         $this->sql->run('UPDATE rmm_hypervisor_hosts SET vm_count = ? WHERE device_id = ?', [$count, $deviceId]);
 
         return ['transitions' => $transitions, 'vm_ids' => array_values($ids)];
@@ -357,7 +360,7 @@ final class HypervisorService
             $values[] = '(' . implode(', ', array_fill(0, 25, '?')) . ', NULL)';
             array_push($params, $deviceId, $v['key'], $v['name'], $v['type'], $v['state'], $now, $v['node'], $v['cpus'], $v['cpu_pct'], $v['mem_bytes'], $v['mem_max_bytes'], $v['disk_bytes'], $v['disk_used_bytes'],
                 $v['uptime_s'], $v['template'] ? 1 : 0, $v['tags'], $v['snapshot_count'], $v['oldest_snapshot_at'], $v['last_backup_at'], $v['last_backup_result'], $v['backup_covered'], $v['guest_agent'],
-                $v['replication'] ?? '', $now, $now, $now);
+                $v['replication'] ?? '', $now, $now);
         }
         // state_changed_at is assigned BEFORE state, so the comparison still sees the old state (assignments run left to right).
         $this->sql->run('INSERT INTO rmm_hypervisor_vms (device_id, vm_key, name, type, state, state_changed_at, node, cpus, cpu_pct, mem_bytes, mem_max_bytes, disk_bytes, disk_used_bytes, uptime_s, template, tags,

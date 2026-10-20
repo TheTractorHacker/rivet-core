@@ -240,7 +240,7 @@ final class HypervisorReader
             'platform' => (string) $r['platform'], 'version' => (string) $r['version'],
             'cluster' => (string) $r['cluster_name'] === '' && $r['quorate'] === null ? null : ['name' => (string) $r['cluster_name'], 'quorate' => $r['quorate'] === null ? null : (int) $r['quorate'] === 1,
                 'nodes' => is_array($nodes) ? $nodes : [], 'failed_groups' => (int) $r['failed_groups']],
-            'vms' => (int) ($r['vms'] ?? 0), 'vms_running' => (int) ($r['vms_running'] ?? 0), 'templates' => (int) ($r['templates'] ?? 0), 'vms_missing' => (int) ($r['vms_missing'] ?? 0),
+            'vm_count' => (int) ($r['vms'] ?? 0), 'vms_running' => (int) ($r['vms_running'] ?? 0), 'templates' => (int) ($r['templates'] ?? 0), 'vms_missing' => (int) ($r['vms_missing'] ?? 0),
             'storages' => (int) ($r['storages'] ?? 0), 'storages_unhealthy' => (int) ($r['storages_unhealthy'] ?? 0),
             'truncated' => (int) $r['truncated'] === 1, 'ignored' => (int) $r['ignored'] === 1, 'error' => (string) $r['error'], 'stale' => $stale,
             'last_collected_at' => Sql::iso($r['last_collected_at'] === null ? null : (string) $r['last_collected_at']), 'last_full_at' => Sql::iso($r['last_full_at'] === null ? null : (string) $r['last_full_at']),
