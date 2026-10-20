@@ -25,6 +25,9 @@ type Options struct {
 	Send      SendFunc
 	StatePath string // logs_state.json ("" = bookmarks are not persisted)
 	Now       func() time.Time
+	// Offset is the correction to add to an event's own timestamp (the PC clock) to get
+	// server time; nil or zero leaves events untouched.
+	Offset    func() time.Duration
 	Redact    func(string) string
 	Log       *slog.Logger
 	Backoff   api.Backoff
@@ -243,6 +246,7 @@ func (m *Manager) readAll(ctx context.Context, cfg *Config) {
 		}
 		m.srcFail[key], m.warned[key] = 0, false
 		for _, it := range res.Items {
+			it.Event.TS = m.shiftTS(it.Event.TS)
 			if ag != nil {
 				ag.add(it, m.o.Now())
 				continue
@@ -382,4 +386,21 @@ func (m *Manager) onSendError(cfg *Config, err error, n int) (time.Duration, boo
 	}
 	m.fail++
 	return m.o.Backoff.Delay(m.fail - 1), true
+}
+
+// shiftTS moves an event's RFC 3339 timestamp by the clock correction. A value that does
+// not parse is left as it is (the server drops it).
+func (m *Manager) shiftTS(ts string) string {
+	if m.o.Offset == nil {
+		return ts
+	}
+	d := m.o.Offset()
+	if d == 0 {
+		return ts
+	}
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return ts
+	}
+	return t.Add(d).UTC().Format(time.RFC3339)
 }
