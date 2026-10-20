@@ -141,3 +141,25 @@ func (p *LinuxPlatform) Battery(ctx context.Context) (Battery, error) {
 	}
 	return Battery{}, ErrUnsupported
 }
+
+// DesktopSession: a graphical default target, an enabled display manager, or a live X/Wayland socket means the machine has a desktop. A server with the default
+// multi-user.target and no display manager is headless, so the server leads with the terminal.
+func (p *LinuxPlatform) DesktopSession(ctx context.Context) (bool, error) {
+	target, _ := os.Readlink(p.f("/etc/systemd/system/default.target"))
+	if target == "" {
+		target, _ = os.Readlink(p.f("/lib/systemd/system/default.target"))
+	}
+	_, dmErr := os.Lstat(p.f("/etc/systemd/system/display-manager.service"))
+	var socks []string
+	if es, err := os.ReadDir(p.f("/tmp/.X11-unix")); err == nil {
+		for _, e := range es {
+			socks = append(socks, e.Name())
+		}
+	}
+	if us, err := filepath.Glob(p.f("/run/user/*/wayland-*")); err == nil {
+		for _, u := range us {
+			socks = append(socks, filepath.Base(u))
+		}
+	}
+	return linuxHasDesktop(target, dmErr == nil, socks), nil
+}

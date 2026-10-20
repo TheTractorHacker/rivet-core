@@ -488,13 +488,15 @@ final class CheckinService
             'uptime_s' => self::intOrNull($inv['uptime_s'] ?? null),
             'logged_in_user' => $txt($inv['logged_in_user'] ?? null, 200),
             'pending_reboot' => isset($inv['pending_reboot']) ? (bool) $inv['pending_reboot'] : null,
+            'desktop_session' => is_bool($inv['desktop_session'] ?? null) ? $inv['desktop_session'] : null,   // additive: a graphical session or display manager exists (null from an older agent)
             'disks' => [],
             'network' => [],
         ];
         $disks = is_array($inv['disks'] ?? null) ? array_slice($inv['disks'], 0, self::MAX_DISKS) : [];
         foreach ($disks as $d) {
             if (is_array($d) && ($mount = $txt($d['mount'] ?? null, 64)) !== null) {
-                $clean['disks'][] = ['mount' => $mount, 'total_bytes' => self::intOrNull($d['total_bytes'] ?? null), 'free_bytes' => self::intOrNull($d['free_bytes'] ?? null), 'fs' => $txt($d['fs'] ?? null, 20)];
+                $clean['disks'][] = ['mount' => $mount, 'total_bytes' => self::intOrNull($d['total_bytes'] ?? null), 'free_bytes' => self::intOrNull($d['free_bytes'] ?? null), 'fs' => $txt($d['fs'] ?? null, 20)]
+                    + array_filter(['source' => $txt($d['source'] ?? null, 200), 'label' => $txt($d['label'] ?? null, 100)], static fn ($v): bool => $v !== null);   // additive: the file-system source (rpool/data/x, /dev/sda2) and the volume label
             }
         }
         foreach ($nics as $n) {

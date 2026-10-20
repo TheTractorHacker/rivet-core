@@ -304,7 +304,12 @@ func (c *Collector) Inventory(ctx context.Context) api.Inventory {
 	}
 	if ds, err := call(c, ctx, "disks", 0, c.P.Disks); err == nil {
 		for _, d := range ds {
-			inv.Disks = append(inv.Disks, api.DiskInfo{Mount: d.Mount, TotalBytes: d.Total, FreeBytes: d.Free, FS: d.FS})
+			inv.Disks = append(inv.Disks, api.DiskInfo{Mount: d.Mount, TotalBytes: d.Total, FreeBytes: d.Free, FS: d.FS, Source: d.Source, Label: d.Label})
+		}
+	}
+	if ds, ok := c.P.(DesktopSessioner); ok {
+		if v, err := call(c, ctx, "desktop", 0, ds.DesktopSession); err == nil {
+			inv.DesktopSession = &v
 		}
 	}
 	if u, err := call(c, ctx, "uptime", 0, c.P.UptimeS); err == nil {

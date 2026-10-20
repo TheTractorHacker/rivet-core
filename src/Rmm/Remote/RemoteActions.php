@@ -11,6 +11,7 @@ use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Mesh\MeshService;
+use RivetCore\Rmm\Presentation\RemoteHeader;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Technician\ActionResult;
@@ -456,6 +457,40 @@ final class RemoteActions
 
         return ActionResult::ok('ok', 200, 'ok', ['configured' => $configured, 'mapped' => $node !== null, 'node_id' => $views === [] ? null : $node, 'views' => $configured && $node !== null ? $views : [],
             'terminal_files_enabled' => $this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_TOOLS)]);
+    }
+
+    /**
+     * The remote part of the shared device header ({@see \RivetCore\Rmm\Presentation\RemoteHeader}), for THIS caller: the views he may open, the one the button leads with and a sentence for the state.
+     * Built on the same facts as {@see self::meshInfo()}, which stays as it was. `$hints` are optional facts the edition knows: `server` (a server chassis or virtual server).
+     * Order of decisions: device scope (404) -> the pure decision table. A caller without remote abilities still gets the state, with every view unavailable and the reason.
+     *
+     * @param array<string,mixed> $hints
+     */
+    public function headerRemote(RmmPrincipal $who, int $deviceId, array $hints = []): ActionResult
+    {
+        [$dev, $err] = $this->deviceFor($who, $deviceId);
+        if ($err !== null || $dev === null) {
+            return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
+        }
+        $client = (int) $dev['client_id'];
+        $cfg = $this->settings->get();
+        $inv = is_string($dev['inventory_json'] ?? null) ? json_decode($dev['inventory_json'], true) : null;
+        $inv = is_array($inv) ? $inv : [];
+        $state = $this->devices->status($dev, $cfg);
+
+        return ActionResult::ok('ok', 200, 'ok', RemoteHeader::decide([
+            'family' => \RivetCore\Rmm\Presentation\DeviceHeader::family($inv, (string) ($dev['os'] ?? '') . ' ' . (string) ($dev['os_version'] ?? '')),
+            'has_desktop' => is_bool($inv['desktop_session'] ?? null) ? $inv['desktop_session'] : null,
+            'server' => ($hints['server'] ?? false) === true,
+            'enabled' => (int) $cfg['mesh_enabled'] === 1,
+            'configured' => (string) $cfg['mesh_url'] !== '' && !empty($cfg['mesh_login_key_enc']),
+            'node' => $this->mesh->nodeFor($deviceId),
+            'agent_installed' => ($this->meshAgents?->stateFor($deviceId)['installed'] ?? false) === true,
+            'offline' => in_array($state['state'], ['offline', 'stale', 'never'], true),
+            'can_launch' => $this->authz->allowed($who->userId, RmmAbility::REMOTE_LAUNCH, $client),
+            'can_manage' => $this->authz->allowed($who->userId, RmmAbility::REMOTE_MANAGE, $client),
+            'tools_on' => $this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_TOOLS),
+        ]));
     }
 
     // ------------------------------------------------------------------ the Mesh agent: push an install or a removal

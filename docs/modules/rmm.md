@@ -372,6 +372,40 @@ Built after v1.0.0-rc.11 (migration `0023_rmm_mesh_agent`, three new tables, not
 
 **Verified:** PHP unit and integration tests, the Go tests with a mock Mesh server, a Linux container run against a mock Mesh server serving a fake `meshagent`. **Not verified against a real MeshCentral:** the download address, the agent ids (Windows ARM64 least certain), the install and uninstall arguments, where the node id can be read, and the Windows code on a Windows host.
 
+## Device header view-model
+
+`RmmReadModel::header($detail)` (pure, no query; `Rmm\Presentation\DeviceHeader::build()`) turns the device detail into the short header both editions render, and `RemoteActions::headerRemote($principal, $deviceId, $hints)` gives the remote-access part for one caller (`Presentation\RemoteHeader::decide()` is the pure table). Nothing existing changed; `meshInfo()` and the detail keys are as before.
+
+`header()` returns `name`, `status`, `os {family: windows|linux|other, label}`, `meta {os_version, arch, last_seen_at, agent_version, ring}`, `has_desktop` (bool or null from an older agent), `chips` and `volumes`. `chips` holds at most four entries in the fixed order **cpu, ram, disk, uptime** (a chip without data is left out): `{key:cpu|ram, pct, level}`, `{key:disk, label, used_pct, free_bytes, total_bytes, level, pool, more}`, `{key:uptime, seconds}`. `level` is `ok|warn|crit`, from the same threshold shape alerting uses: CPU and memory warn at 85 and crit at 95; disk warn at 80 and crit at 90 (the limit itself counts; override per key with the second argument).
+
+**Which volume is the disk chip** (first match wins):
+
+| Step | Rule |
+|---|---|
+| 1 | Pseudo volumes are never a unit: file systems tmpfs, devtmpfs, ramfs, squashfs, overlay, aufs, proc, sysfs, devpts, cgroup\*, fuse.\*; mounts under /run, /sys, /proc, /dev, /snap, /var/lib/docker, /var/lib/containers, /var/lib/kubelet; size 0. Windows: anything that is not a drive letter, and a label of Recovery, System Reserved or EFI. They stay in `volumes` with `pseudo: true`. |
+| 2 | `/boot/efi`, `/boot/firmware`, `/efi` are minor: chosen only when nothing else is left. |
+| 3 | Pool members collapse into one unit (see below). |
+| 4 | The system unit wins (C: on Windows, / on Linux; the pool that holds it), else the fullest unit. |
+
+`more` is the number of other non-pseudo, non-minor units (pools count once). Fresh metrics figures (`used_pct`, `free_bytes`, `total_bytes`) win over the inventory's for the same mount; a metrics-only disk still shows.
+
+**Pools.** With the agent's additive `source` (the device column of /proc/mounts, or the Windows volume GUID): ZFS volumes group by the first path segment of the dataset (`rpool/data/subvol-102-disk-0` -> `rpool`); any other volume that shares a `/dev/...` source with another (btrfs subvolumes, bind mounts) groups under that device. Without it (old agents) the fallback is: ZFS volumes with the same free figure, or volumes with the same free and total figures. A pool's figures: ZFS used = sum of the members' used, free = the shared free space, total = used + free; other kinds report the shared total and free once. A pool entry in `volumes` is `{mount, label (pool name), fs_type, used_pct, free_bytes, total_bytes, level, pseudo:false, pool:{name, kind: zfs|device|shared, used_pct, free_bytes, total_bytes, level, count, children[]}}`; a loose volume is `{mount, label, fs_type, used_pct, free_bytes, total_bytes, level, pseudo}`. Mount strings lose control characters and are cut at 200 characters, the list at 200 entries (the check-in itself keeps 32 disks).
+
+**Remote.** `{state, views[{view: desktop|terminal|files, label, available, reason?}], primary, hint, can_map_manually}`.
+
+| State (first match) | When |
+|---|---|
+| `disabled` | Mesh switched off |
+| `not_configured` | on, but no address or login key |
+| `unmapped_agent_installed` | no node yet and the device reported an installed Mesh agent |
+| `unmapped` | no node, no agent reported |
+| `offline` | mapped, but the device is offline, stale or never checked in |
+| `ready` | otherwise |
+
+Views: desktop needs `rmm.remote.launch`; terminal and files need `rmm.remote.manage` and the `remote_tools` switch; all three need state `ready` or `offline`. Primary: Windows leads with desktop (terminal when the agent reports `desktop_session: false`, i.e. Server Core); Linux and other leads with terminal, except desktop when the agent reports `desktop_session: true` and the edition did not pass `server: true`. A primary that is not available is null (Windows falls back to the other available view). `can_map_manually` is true while Mesh is configured, no node is mapped and the caller may manage. A caller outside the device's scope gets 404; one without remote abilities gets every view unavailable with the reason.
+
+**Agent (additive, protocol unchanged).** Inventory disks gain optional `source` and `label` (Linux: the /proc/mounts device; Windows: the volume GUID and label) and the inventory gains `desktop_session` (Linux: graphical default target, an enabled display manager or an X/Wayland socket; Windows: false only for Server Core and Nano). The server keeps them in the stored inventory and ignores nothing else; an older agent simply omits them.
+
 ## Behaviour that matters
 
 - **Authorization is decided on every call.** The role may not view devices at all: 403, which reveals nothing about any device. The device is missing **or** outside the caller's clients: the same 404. The role lacks the specific ability: 403 with a generic reason, audited for jobs and remote sessions. A destructive job (every reboot) needs `confirm`; only a device linked to an asset receives jobs.

@@ -114,7 +114,7 @@ func TestLinuxInventoryFromFakeSysTree(t *testing.T) {
 		t.Fatalf("%v %v", pending, why)
 	}
 	// the mount table is the fake one, the sizes are a real statfs of <root>/
-	if ds, err := p.Disks(ctx); err != nil || len(ds) != 1 || ds[0].Mount != "/" || ds[0].FS != "ext4" || ds[0].Total == 0 {
+	if ds, err := p.Disks(ctx); err != nil || len(ds) != 1 || ds[0].Mount != "/" || ds[0].FS != "ext4" || ds[0].Total == 0 || ds[0].Source != "/dev/vda1" {
 		t.Fatalf("%v %v", ds, err)
 	}
 }
@@ -218,5 +218,32 @@ func TestLinuxDisksRealStatfsOnRoot(t *testing.T) {
 		if d.Total == 0 || d.Free > d.Total || d.FS == "" || d.Mount == "" {
 			t.Fatalf("implausible disk %+v", d)
 		}
+	}
+}
+
+func TestLinuxDisksKeepZFSSourcesAndDesktopSession(t *testing.T) {
+	root := t.TempDir()
+	writeTree(t, root, map[string]string{
+		"proc/mounts":                        "rpool/ROOT/pve-1 / zfs rw 0 0\nrpool/data /rpool/data zfs rw 0 0\nrpool/data/subvol-102-disk-0 /rpool/data/subvol-102-disk-0 zfs rw 0 0\ntmpfs /run tmpfs rw 0 0\n",
+		"tmp/.X11-unix/X0":                   "",
+		"rpool/data/subvol-102-disk-0/.keep": "", "run/.keep": "",
+	})
+	p := &LinuxPlatform{Root: root}
+	ds, err := p.Disks(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var src []string
+	for _, d := range ds {
+		src = append(src, d.Source)
+	}
+	if len(src) < 2 || src[0] != "rpool/ROOT/pve-1" {
+		t.Fatalf("%v", src)
+	}
+	if v, err := p.DesktopSession(context.Background()); err != nil || !v {
+		t.Fatalf("an X socket means a desktop: %v %v", v, err)
+	}
+	if v, _ := (&LinuxPlatform{Root: t.TempDir()}).DesktopSession(context.Background()); v {
+		t.Fatal("an empty root is headless")
 	}
 }

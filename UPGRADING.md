@@ -76,6 +76,15 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Adopting the device header view-model (1.0.0-rc.27)
+
+No migration, nothing is required. To get the short header, render from the new arrays instead of walking `inventory.disks` and `metrics.disk` yourself:
+
+1. Call `$readModel->header($readModel->detail($device, false))` for the header and `$remoteActions->headerRemote($principal, $deviceId, ['server' => $isServerChassis])` for the remote part (404 for a device outside the principal's scope).
+2. Render `chips` (at most four; colour from `level`), a "N more" link from `chips[disk].more` that opens a modal listing `volumes` (pools once with their `children`; hide `pseudo` rows by default), and the Remote access control as a split button: `remote.primary` is the main action, the other `views` with `available: false` are greyed with their `reason`, show `remote.hint` for any state but `ready`, and a "map by hand" action when `can_map_manually`.
+3. Remove: one chip per volume, the single greyed "Launch remote session" button, and the "An administrator maps this device to a MeshCentral node first" text (use `remote.hint`).
+4. Agents older than this release have no `source`/`desktop_session`; the grouping heuristics and the OS rules apply until they update.
+
 ## Adopting the RMM module (unreleased)
 
 For an edition that wants the endpoint agent (RivetIT, then RivetMSP). The module is off by default and adds no required constructor argument to any existing type, but its three migrations are part of `CoreMigrations::all()` (there is no opt-in `RmmMigrations` list; the design draft proposed one and the owner chose otherwise, ADR-010 decision 9). **So an edition gets the ten `endpoint_agent_*` tables, and the migration ledger rows, as soon as it runs `MigrationRunner::run()` with `CoreMigrations::all()`, whether or not it ever enables the module** (RivetMSP included). The tables are additive and empty until a device enrolls, and the master switch defaults to off.

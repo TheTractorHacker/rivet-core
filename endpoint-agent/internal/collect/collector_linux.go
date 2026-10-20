@@ -131,7 +131,7 @@ func (p *LinuxPlatform) Disks(ctx context.Context) ([]DiskStat, error) {
 			continue
 		}
 		bs := uint64(st.Bsize)
-		out = append(out, DiskStat{Mount: m.Mount, Total: st.Blocks * bs, Free: st.Bavail * bs, FS: m.FS})
+		out = append(out, DiskStat{Mount: m.Mount, Total: st.Blocks * bs, Free: st.Bavail * bs, FS: m.FS, Source: mountSource(m.Device)})
 	}
 	return out, nil
 }

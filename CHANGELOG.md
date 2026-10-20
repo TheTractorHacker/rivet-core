@@ -26,6 +26,13 @@ A real Debian/Proxmox host reported "the Mesh agent installer finished" and "Mes
 - **Linux now follows MeshCentral's own script**: binary from `meshagents?id=<N>` (no `meshid`), settings from `meshsettings?id=<group>`, `StartupType=<n>` (systemd 1, upstart 2, init.d 3, as the script detects it) added to the `.msh`, then `./meshagent -fullinstall --copy-msh=1`. A `linux` entry in the stamped `install_args` is ignored (the server stamped the legacy `-install`). Windows is unchanged.
 - **Verified, not trusted**: the install directory, the `meshagent` service (registered and active within 30 s; for non-systemd an init script and a running process) are checked, and each failure has a precise reason in the job result, the check-in Mesh state, `install.log` and the installer's last line. The group id is never logged. Uninstall now uses `-fulluninstall`.
 - Docs: REMOTE_AND_LOGS.md ("Linux install"). Tests: mock Mesh server with a stub agent. Not run against a real MeshCentral.
+## 1.0.0-rc.27 (device header view-model; no migration)
+
+Editions can show one short, identical device header. Additive; nothing existing changed. See [docs/modules/rmm.md](docs/modules/rmm.md) "Device header view-model".
+
+- **`RmmReadModel::header($detail, $thresholds = null)`** (`Rmm\Presentation\DeviceHeader`, pure): name, status, OS, meta, at most four chips (cpu, ram, disk, uptime) with ok/warn/crit levels, and the full `volumes` list with ZFS/btrfs/bind-mount pools grouped (`pool` + `children`). One primary volume (system volume first, pseudo mounts, snap loops, tmpfs, recovery partitions and /boot/efi ignored).
+- **`RemoteActions::headerRemote($principal, $deviceId, $hints)`** (`Presentation\RemoteHeader`): state (`ready`, `unmapped_agent_installed`, `unmapped`, `not_configured`, `disabled`, `offline`), the views this caller may open, the primary view (terminal on Linux and servers, desktop on Windows and Linux workstations), a plain sentence and `can_map_manually`. `meshInfo()` is unchanged.
+- **Agent (additive).** Inventory disks carry optional `source` and `label`; the inventory carries `desktop_session`. Older agents work through heuristics. The check-in keeps both in the stored inventory.
 
 ## 1.0.0-rc.26 (policy starter pack; no migration)
 
