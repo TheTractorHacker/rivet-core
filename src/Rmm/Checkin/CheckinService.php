@@ -84,7 +84,12 @@ final class CheckinService
         if (!is_int($seq) || $seq < 0 || $seq > 9007199254740991) {
             throw new ApiError(422, 'invalid', 'seq must be a non-negative integer');
         }
-        $collected = $this->parseTime($body['collected_at'] ?? null, 'collected_at', $cfg);
+        try {
+            $collected = $this->parseTime($body['collected_at'] ?? null, 'collected_at', $cfg);
+        } catch (ApiError $e) {
+            $this->noteRejected($dev, $e);   // why this device is not checking in, for the technician (best effort, never changes the answer)
+            throw $e;
+        }
         $ver = $body['agent_version'] ?? null;
         if (!is_string($ver) || preg_match(RmmProtocol::AGENT_VERSION_RE, $ver) !== 1) {
             throw new ApiError(422, 'invalid', 'agent_version is invalid');
@@ -110,7 +115,7 @@ final class CheckinService
         $primaryChecks = $this->cleanChecks($checks, true);
         $this->shedIfOverloaded($dev, $cfg);
         // Phase 1, all optional and never an error: what the agent announced and the software report it may carry.
-        $announce = ['caps' => DeviceState::cleanCapabilities($body['capabilities'] ?? null), 'platform' => is_string($body['platform'] ?? null) ? $body['platform'] : null, 'software' => null];
+        $announce = ['clock_offset' => self::clockOffset($body['clock_offset_s'] ?? null), 'caps' => DeviceState::cleanCapabilities($body['capabilities'] ?? null), 'platform' => is_string($body['platform'] ?? null) ? $body['platform'] : null, 'software' => null];
         // The optional MeshCentral agent report: read here, applied in process() (tiny, so it is never queued). Never an error.
         $announce['mesh_agent'] = $this->meshAgents !== null && array_key_exists(RmmProtocol::CHECKIN_MESH_AGENT, $body) ? $body[RmmProtocol::CHECKIN_MESH_AGENT] : null;
         $wantsSoftware = $features['inventory_software'] && $this->software !== null && $announce['caps'] !== null && in_array(DeviceState::CAP_SOFTWARE_INVENTORY, $announce['caps'], true);
@@ -275,13 +280,18 @@ final class CheckinService
         $newer = $dev['last_collected_at'] === null || $collectedSql >= $dev['last_collected_at'];
         $this->updates->recordResult($dev, $updateResult);
         $row = array_merge($dev, $live, ['last_seq' => max((int) $dev['last_seq'], $seq)]);
+        // Clock skew rides on the same UPDATE (no extra statement): device collected_at minus server now, the agent's own estimate, and a cleared refusal.
+        $skew = $collected->getTimestamp() - $this->sql->time();
+        $offset = $announce['clock_offset'] ?? null;
         if ($newer) {
             $metricsJson = $metrics === null ? null : json_encode(self::cleanMetrics($metrics));
             $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ?, agent_version = ?, last_collected_at = ?, last_seq = GREATEST(last_seq, ?),
-                last_metrics_json = ? WHERE device_id = ?', [$live['last_checkin_at'], $live['last_ip'], $ver, $collectedSql, $seq, $metricsJson, $deviceId]);
-            $row = array_merge($row, ['agent_version' => $ver, 'last_collected_at' => $collectedSql, 'last_metrics_json' => $metricsJson]);
+                last_metrics_json = ?, clock_skew_s = ?, clock_skew_at = ?, clock_offset_s = ?, last_reject_reason = NULL, last_reject_at = NULL WHERE device_id = ?',
+                [$live['last_checkin_at'], $live['last_ip'], $ver, $collectedSql, $seq, $metricsJson, $skew, $live['last_checkin_at'], $offset, $deviceId]);
+            $row = array_merge($row, ['agent_version' => $ver, 'last_collected_at' => $collectedSql, 'last_metrics_json' => $metricsJson, 'clock_skew_s' => $skew, 'clock_skew_at' => $live['last_checkin_at']]);
+            $this->announceSkew($row, $skew);
         } else {
-            $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ?, last_seq = GREATEST(last_seq, ?) WHERE device_id = ?', [$live['last_checkin_at'], $live['last_ip'], $seq, $deviceId]);
+            $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ?, last_seq = GREATEST(last_seq, ?), last_reject_reason = NULL, last_reject_at = NULL WHERE device_id = ?', [$live['last_checkin_at'], $live['last_ip'], $seq, $deviceId]);
         }
         if ($this->deviceState !== null) {
             $state = ($announce['caps'] ?? null) !== null ? $this->deviceState->note($deviceId, $announce['platform'] ?? null, $announce['caps']) : null;
@@ -560,6 +570,59 @@ final class CheckinService
         }
 
         return $out;
+    }
+
+    // ------------------------------------------------------------------ clock skew
+
+    /** The agent's own server-minus-local estimate: an integer within one day, else ignored (it is a hint for the technician, never an error). */
+    private static function clockOffset(mixed $v): ?int
+    {
+        return is_int($v) && abs($v) <= RmmProtocol::CLOCK_OFFSET_MAX_S ? $v : null;
+    }
+
+    /**
+     * Raise `rmm.device.clock_skew` when the device's clock differs from the server's by more than the `clock_skew_alert_s` limit (0 = off), at most once a day per
+     * device, so a device that stays wrong never flaps. The day guard is a column, so it survives restarts and works across workers.
+     *
+     * @param array<string,mixed> $dev the device row (device_id, asset_id, client_id, hostname, clock_skew_event_at)
+     */
+    private function announceSkew(array $dev, int $skew): void
+    {
+        $limit = (int) ($this->settings->limits()['clock_skew_alert_s'] ?? 0);
+        if ($limit <= 0 || abs($skew) <= $limit || $this->events === null || !$this->events->enabled()) {
+            return;
+        }
+        $deviceId = (int) $dev['device_id'];
+        $before = $this->sql->utcAt(-86400);
+        // Claim the day atomically: only the statement that moves the stamp past the guard publishes.
+        if ($this->sql->run('UPDATE endpoint_agent_devices SET clock_skew_event_at = ? WHERE device_id = ? AND (clock_skew_event_at IS NULL OR clock_skew_event_at < ?)', [$this->sql->utcNow(), $deviceId, $before]) === 1) {
+            $this->events->emit(RmmEvent::DEVICE_CLOCK_SKEW, $dev, ['skew_s' => $skew, 'direction' => $skew > 0 ? 'ahead' : 'behind', 'server_time' => $this->sql->isoNow()]);
+        }
+    }
+
+    /**
+     * Remember why a check-in was refused for its time (first one, then at most hourly), and announce a large skew. Best effort: a failure here never changes the 422.
+     *
+     * @param array<string,mixed> $dev the authenticated device row
+     */
+    private function noteRejected(array $dev, ApiError $e): void
+    {
+        $skew = $e->extra['skew_s'] ?? null;
+        if (!is_int($skew)) {
+            return;
+        }
+        try {
+            $reason = mb_substr($e->getMessage(), 0, 200);
+            $lastAt = $dev['last_reject_at'] ?? null;
+            if (($dev['last_reject_reason'] ?? null) === $reason && is_string($lastAt) && $lastAt >= $this->sql->utcAt(-3600)) {
+                return;
+            }
+            $now = $this->sql->utcNow();
+            $this->sql->run('UPDATE endpoint_agent_devices SET last_reject_reason = ?, last_reject_at = ?, clock_skew_s = ?, clock_skew_at = ? WHERE device_id = ?', [$reason, $now, $skew, $now, $dev['device_id']]);
+            $this->announceSkew($dev, $skew);
+        } catch (\Throwable $x) {
+            error_log('rmm clock skew note: ' . $x->getMessage());
+        }
     }
 
     // ------------------------------------------------------------------ small validators

@@ -269,6 +269,26 @@ final class RmmReadModel
     }
 
     /**
+     * What the clock columns say, or null while nothing was measured: skew_s (device collected_at minus server time at the last check-in or first refusal), measured_at,
+     * agent_offset_s (the agent's own estimate of server minus local, null for an agent that does not report it) and last_reject (why the last check-in was refused, null
+     * once one was accepted).
+     *
+     * @param array<string,mixed> $d a device row
+     * @return array{skew_s:?int,measured_at:?string,agent_offset_s:?int,last_reject:?array{reason:string,at:?string}}|null
+     */
+    public static function clockOf(array $d): ?array
+    {
+        if (($d['clock_skew_s'] ?? null) === null && ($d['last_reject_reason'] ?? null) === null) {
+            return null;
+        }
+
+        return ['skew_s' => ($d['clock_skew_s'] ?? null) === null ? null : (int) $d['clock_skew_s'],
+            'measured_at' => Sql::iso(($d['clock_skew_at'] ?? null) === null ? null : (string) $d['clock_skew_at']),
+            'agent_offset_s' => ($d['clock_offset_s'] ?? null) === null ? null : (int) $d['clock_offset_s'],
+            'last_reject' => ($d['last_reject_reason'] ?? null) === null ? null : ['reason' => (string) $d['last_reject_reason'], 'at' => Sql::iso(($d['last_reject_at'] ?? null) === null ? null : (string) $d['last_reject_at'])]];
+    }
+
+    /**
      * @param array<string,mixed> $d
      * @param array<string,mixed>|null $cfg
      * @return array<string,mixed>
@@ -287,6 +307,9 @@ final class RmmReadModel
         $out['inventory'] = self::decode($d['inventory_json'] ?? null);
         $out['metrics'] = self::decode($d['last_metrics_json'] ?? null);
         $out['match_reason'] = $d['match_reason'];
+        if (($clock = self::clockOf($d)) !== null) {
+            $out['clock'] = $clock;   // additive: only once a skew was measured or a check-in was refused for its time
+        }
         $out['mesh_mapped'] = $this->sql->val('SELECT 1 FROM endpoint_agent_mesh_nodes WHERE device_id = ?', [$d['device_id']]) !== null;
         // Additive and only present once the device has reported a MeshCentral agent, so the detail of every other device is byte for byte what it was:
         // {installed, version, node_id, error, map_state (mapped|conflict|kept_manual|null), conflict_device_id, first_installed_at, reported_at}.
@@ -965,7 +988,7 @@ final class RmmReadModel
         $j = $this->sql->one("SELECT COALESCE(SUM(state = 'queued'), 0) AS queued, COALESCE(SUM(state = 'running'), 0) AS running, MAX(updated_at) AS touched
             FROM endpoint_agent_jobs WHERE device_id = ? AND state IN ('queued', 'running')", [$deviceId]) ?? [];
         $shed = (int) ($cfg['shed_level'] ?? 0);
-        $etag = 'W/"' . md5(implode('|', [(int) $dev['last_seq'], (string) ($dev['last_checkin_at'] ?? ''), (string) ($dev['link_state'] ?? ''), (string) ($dev['revoked_at'] ?? ''), (string) ($dev['retired_at'] ?? ''),
+        $etag = 'W/"' . md5(implode('|', [(int) $dev['last_seq'], (string) ($dev['last_checkin_at'] ?? ''), (string) ($dev['link_state'] ?? ''), (string) ($dev['revoked_at'] ?? ''), (string) ($dev['retired_at'] ?? ''), (string) ($dev['last_reject_at'] ?? ''),
             (int) ($c['n'] ?? 0), (int) ($c['alerts'] ?? 0), (string) ($c['changed'] ?? ''), (int) ($j['queued'] ?? 0), (int) ($j['running'] ?? 0), (string) ($j['touched'] ?? ''), $shed])) . '"';
         if ($ifNoneMatch !== null && trim($ifNoneMatch) === $etag) {
             return ['status' => 304, 'etag' => $etag, 'body' => null];
@@ -1016,6 +1039,9 @@ final class RmmReadModel
             'shed' => $shed,
             'seq' => (int) $dev['last_seq'],
         ];
+        if (($clock = self::clockOf($dev)) !== null) {
+            $body['clock'] = $clock;
+        }
 
         return ['status' => 200, 'etag' => $etag, 'body' => $body];
     }

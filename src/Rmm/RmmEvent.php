@@ -104,6 +104,9 @@ final class RmmEvent
     /** A change rule matched on a device and raised or kept its alert. Fields: rule_id, rule_name, match_count, watch, target, item, change, sample (at most 200 characters), alert_check_key. */
     public const CHANGE_RULE_MATCHED = 'rmm.change.rule_matched';
 
+    /** A device's clock differs from the server's by more than the `clock_skew_alert_s` limit (120 s by default; 0 turns it off). At most once per device per day. Fields: skew_s (device minus server, seconds), direction ("ahead" or "behind"), server_time. */
+    public const DEVICE_CLOCK_SKEW = 'rmm.device.clock_skew';
+
     /** @return list<string> */
     public static function all(): array
     {
@@ -113,6 +116,6 @@ final class RmmEvent
             self::POLICY_ASSIGNED, self::SCRIPT_RUN, self::APPROVAL_REQUESTED, self::APPROVAL_DECIDED, self::FILE_TRANSFERRED, self::LOG_RULE_MATCHED, self::MESH_AGENT_INSTALLED, self::MESH_NODE_CONFLICT, self::STARTER_INSTALLED,
             self::PATCH_SCAN_COMPLETED, self::PATCH_APPROVED, self::PATCH_INSTALL_STARTED, self::PATCH_INSTALL_FINISHED, self::PATCH_INSTALL_FAILED,
             self::DEPLOY_STARTED, self::DEPLOY_FINISHED, self::DEPLOY_FAILED,
-            self::CHANGE_DETECTED, self::CHANGE_RULE_MATCHED];
+            self::CHANGE_DETECTED, self::CHANGE_RULE_MATCHED, self::DEVICE_CLOCK_SKEW];
     }
 }
