@@ -541,4 +541,18 @@ final class CheckinTest extends RmmTestCase
         $this->assertCount(1, $this->samples('memory.used_bytes'));
         $this->assertCount(3, $this->samples('cpu.core.utilization'));
     }
+
+    public function testSharedVectorProducesExactlyTheDeclaredSamples(): void
+    {
+        $v = json_decode((string) file_get_contents(__DIR__ . '/../../Fixtures/rmm/vectors/metrics-extended.json'), true);
+        $this->linkedDevice();
+        [$c] = $this->h->checkin($this->T, ['metrics' => $v['metrics']]);
+        $this->assertSame(200, $c);
+        $got = array_map(static fn (array $s): array => ['key' => $s['key'], 'instance' => $s['instance'], 'value' => (float) $s['value']], $this->h->metrics->stored());
+        $want = array_map(static fn (array $s): array => ['key' => $s['key'], 'instance' => $s['instance'], 'value' => (float) $s['value']], $v['expect_samples']);
+        $order = static fn (array $a, array $b): int => [$a['key'], (string) $a['instance']] <=> [$b['key'], (string) $b['instance']];
+        usort($got, $order);
+        usort($want, $order);
+        $this->assertEquals($want, $got);
+    }
 }
