@@ -149,7 +149,7 @@ Everything here is optional on both sides. The optional "also install the MeshCe
 
 #### 3.2.6 Pushed MeshCentral agent install (additive, 1.0.0-rc.16)
 
-At install time the Mesh options live only in the stamped installer payload (3.2.5, section 6), so an agent that enrolled without them, or one that has since updated itself, never installs a Mesh agent. Two ordinary signed job types fix that. They add no endpoint and change no existing member; an agent that predates them never announces the capabilities and is never offered the jobs.
+At install time the Mesh options live only in the stamped installer payload (3.2.5, section 6; since rc.27 only for tokens issued earlier: a new installer carries none of them and the server pushes `mesh_install` once the device is approved), so an agent that enrolled without them, or one that has since updated itself, never installs a Mesh agent. Two ordinary signed job types fix that. They add no endpoint and change no existing member; an agent that predates them never announces the capabilities and is never offered the jobs.
 
 | Type | Flag | Params | Destructive | Result document |
 |---|---|---|---|---|

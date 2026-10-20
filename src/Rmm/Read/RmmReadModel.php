@@ -74,6 +74,7 @@ final class RmmReadModel
         private readonly ?\RivetCore\Rmm\Patch\PatchReader $patches = null,
         private readonly ?\RivetCore\Rmm\Deploy\DeployReader $deploy = null,
         private readonly ?\RivetCore\Rmm\Change\ChangeService $changeService = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfterApproval = null,
     ) {
     }
 
@@ -323,6 +324,10 @@ final class RmmReadModel
             $caps = \RivetCore\Rmm\Device\DeviceState::capabilitiesOf($this->sql->one('SELECT capabilities_json FROM rmm_device_state WHERE device_id = ?', [$d['device_id']]));
             $out['mesh_install'] = ['available' => true, 'agent_supports' => in_array(\RivetCore\Rmm\Remote\RemoteProtocol::CAP_MESH_INSTALL, $caps, true),
                 'installed' => ($out['mesh_agent']['installed'] ?? false) === true];
+        }
+        // Additive, only for a device whose enrollment token asked for "install the Mesh agent after the device is approved" (rc.27): {state (waiting_approval|waiting|queued|installing|installed|failed|skipped), label}.
+        if (($after = $this->meshAfterApproval?->view((int) $d['device_id'])) !== null) {
+            $out['mesh_after_approval'] = $after;
         }
         $out['checks'] = array_map($richChecks ? self::richCheck(...) : self::shortCheck(...),
             $this->sql->all('SELECT * FROM endpoint_agent_checks WHERE device_id = ? ORDER BY check_key', [$d['device_id']]));

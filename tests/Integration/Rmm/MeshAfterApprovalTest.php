@@ -98,6 +98,7 @@ final class MeshAfterApprovalTest extends RemoteTestCase
         $this->announce($tok, self::caps());
         $this->assertSame([], $this->jobs($d), 'nothing before approval, however often it checks in');
         $this->assertSame('Mesh agent: waiting for approval', $this->line($d));
+        $this->assertSame('waiting_approval', $this->h->module->readModel()->detail($this->h->module->devices()->find($d), false)['mesh_after_approval']['state'] ?? null, 'the read model carries the state line');
 
         $this->approve($d);
         $jobs = $this->jobs($d);

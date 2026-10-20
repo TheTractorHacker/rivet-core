@@ -2,6 +2,19 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.27 (install the Mesh agent after the device is approved; migration 0034)
+
+Observed on a real Linux box: the log showed `enrolled status=pending_approval` and then "the Mesh agent installer finished" 12 seconds later, and the Mesh device group id (an invitation secret) was part of the command anyone could read. The installer tick-box now means "install the MeshCentral agent once this device is approved".
+
+- **Installer.** `InstallerService::issue()` stores the tick as option value `2` ("after approval"). The installer payload, the Linux command (`deploymentCommands()['linux']`), the PowerShell and MSI commands carry NO Mesh address, group id or pin and no `install_mesh_agent`/`mesh` members, so the Windows installer no longer performs the Mesh step itself. `deploymentCommands()`, `downloadInstaller()` and `issue()` results gain the boolean `mesh_after_approval`. `install-linux.sh --install-mesh-agent/--mesh-url/--mesh-group-id` and the payload members still work for manual use.
+- **Compatibility.** A token issued before rc.27 has option value `1` and keeps the old install-time behaviour (the served installer still carries the Mesh block), so installers already handed out keep working. Only newly issued tokens use the new flow. The payload format and protocol are unchanged (no conformance or golden change).
+- **Server push.** New `Mesh\MeshAfterApproval`. `EnrollmentService::onEnrolled()` plans one `rmm_mesh_after_approval` row for a device whose token asked; when the device is linked (matched at enrollment, approved through `resolvePending()` which gains the `onApproved()` hook, or at a check-in while linked) the server queues ONE sealed `mesh_install` job through `RemoteActions::installMeshAgentAfterApproval()` (system principal, no user ability; same sealed group id, pin, agent-id and argument tables as the manual push; idempotent: `already_installed`, `already_queued`). Audit: "Mesh agent install queued after approval for device N (installer option)".
+- **Skips and retries.** Remote tools off: recorded "skipped: remote tools are off". Mesh off or incomplete: "skipped: <reason>". Agent has not announced `job:mesh_install`: retried at check-ins (first two tries free, then 1 to 5 minutes apart) for 24 hours, then "failed: the agent never announced...". A skipped or failed plan is final until an installer with the option is used again. Never for a device whose token did not ask, never while pending, rejected or revoked.
+- **Read model.** `RmmReadModel::detail()` gains `mesh_after_approval {state, label}` (only for devices that were planned): "Mesh agent: waiting for approval / queued / installing / installed / skipped: ... / failed: ...".
+- **Migration 0034** (`0034_rmm_mesh_after_approval`): one new table, nothing altered.
+- **Tests.** `MeshAfterApprovalTest` (9) plus changes in `MeshAgentTest`.
+- **Editions.** See UPGRADING.md ("Adopting Mesh install after approval").
+
 ## 1.0.0-rc.26 (policy starter pack; no migration)
 
 A starter pack of **policies**, next to the script starter pack: 24 items, installed with one call, all created switched off and assigned to nothing. See [docs/rmm/POLICY_STARTER_PACK.md](docs/rmm/POLICY_STARTER_PACK.md).

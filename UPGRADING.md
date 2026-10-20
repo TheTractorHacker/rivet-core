@@ -193,6 +193,17 @@ For every edition that runs the RMM module. Additive; old agents keep working.
 4. **Edition UI.** A "Starter policies" card on the Policies page: the exact list is in [docs/rmm/POLICY_STARTER_PACK.md](docs/rmm/POLICY_STARTER_PACK.md), section 7.
 5. **CLI.** `php scripts/policy-pack.php --bootstrap=<file returning your RmmModule> install --ids=...` for a deploy script.
 6. **Upgrading the pack later.** A new Core release raises item `rev`s; the card shows "Update available"; edited items are never touched, "Reset to pack version" is explicit.
+## Adopting Mesh install after approval (migration 0034, 1.0.0-rc.27)
+
+Behaviour change for the "Also install the MeshCentral agent" installer option; no protocol change, no new ability, no new route.
+
+1. **Migration.** `CoreMigrations::all()` gains `0034_rmm_mesh_after_approval` (one new table). Until it runs the feature is a no-op (the hook errors are swallowed).
+2. **Wording.** Rename the tick-box to "Also install the MeshCentral agent (after the device is approved)" and add the sentence "The Mesh agent installs after you approve the device." wherever `mesh_after_approval` is true in the `downloadInstaller()` / `deploymentCommands()` result (`$result->data['mesh_after_approval']`, and `$commands['mesh_after_approval']`). The Linux command no longer shows `--install-mesh-agent`; do not re-add it.
+3. **Device page.** Show the state line from `detail()['mesh_after_approval']['label']` (present only for devices planned by such an installer; `state` is one of `waiting_approval`, `waiting`, `queued`, `installing`, `installed`, `skipped`, `failed`). The existing `mesh_agent` and `mesh_install` blocks are unchanged.
+4. **Nothing to do for the flow itself.** `RmmModule::enrollment()` wires the enrollment and approval hooks and `checkin()` the check-in step. An edition that builds `EnrollmentService`/`CheckinService` itself must call `onApproved()` and pass `MeshAfterApproval` (last constructor argument of `CheckinService` and `RmmReadModel`).
+5. **Compatibility.** Installers/tokens issued before rc.27 keep installing Mesh at install time (and still carry the group id); re-issue them to get the new behaviour. Remote tools must be on for the push; otherwise the device page says "skipped: remote tools are off".
+6. **Agents.** The agent must announce `job:mesh_install` (rc.16 or later); older agents show "waiting for the agent to announce Mesh install support".
+
 ## Adopting install-with-the-agent (migration 0033, 1.0.0-rc.26)
 
 Additive and dormant: behind the existing `software_deploy` switch (off by default); no package is auto-install until an administrator sets it; the device protocol, job types and capabilities are unchanged and no agent change is needed. Model, rules and limits: [docs/rmm/SOFTWARE_DEPLOY.md](docs/rmm/SOFTWARE_DEPLOY.md) section 14.
