@@ -166,6 +166,16 @@ For an edition that already runs the RMM module. Everything is additive and dorm
 8. **Constructor arguments.** `RmmModule` builds everything (`meshAgentSettings()`, `meshAgents()`); an edition that constructs `CheckinService`, `InstallerDownload`, `InstallerService`, `RmmAdmin`, `RemoteActions` or `RmmReadModel` itself passes the new optional trailing arguments or switches to `RmmModule`.
 9. **The agent.** Ship the agent of this release (its installer understands the new payload members, `install-linux.sh` gains `--install-mesh-agent`, `--mesh-url`, `--mesh-group-id`, `--mesh-cert-pin`, `--no-mesh-agent` and `uninstall --remove-meshagent`). **Not verified against a real MeshCentral server**: the download address, the agent ids, the install arguments and the node-id locations are from the MeshCentral documentation as remembered and are exercised against mocks only; check them against your Mesh version before a fleet roll-out (the ids and arguments can be corrected from the server without a new agent).
 
+## Adopting per-OS check targeting (migration 0031, 1.0.0-rc.24)
+
+Additive and dormant until your schedule uses `os`: a schedule without it is delivered exactly as before.
+
+1. **Migration.** `CoreMigrations::all()` gains `0031_rmm_check_set` (one new table, `rmm_device_checkset`; nothing existing is altered).
+2. **Schedule builder.** Set `os` (`windows` or `linux`) on every check the OS-specific checklist knows (service checks first: from the Windows/Linux choice table, `svc_eventlog` is `windows`, `svc_chronyd`, `svc_cron`, `svc_crond`, `svc_fail2ban`, `svc_rsyslog`, `svc_ssh`, `svc_sshd`, `svc_systemd-timesyncd` are `linux`); leave it out (or `any`) for checks that run everywhere. `ChecksValidator` keeps it through save and load and rejects any other value. Add a note to the admin screen that a check ticked for one OS is only sent to devices of that OS. A policy check template can carry the same `os`.
+3. **Clean up what is already there.** Each device is cleaned at its next check-in. For the devices that are offline, and to clear the false alerts at once, call `$module->reconcileChecks()` once (for example from your maintenance command); it is idempotent and returns `['devices' => n, 'removed' => n]`. Alerts are resolved through your bridge's `resolveAlert()`; show the reason `not_applicable` ("This check no longer applies to the device") where you show a resolve reason.
+4. **Agents.** Roll out the new agent when convenient: it also ignores a check for the other OS and honours `missing` on service checks. Old agents work unchanged.
+5. **Do not name your own checks** `patch.*`, `log.rule_*` or `change.rule_*`: those keys belong to the server and are never cleaned.
+
 ## Adopting change monitoring (registry, files, groups, tasks, Security log presets; migration 0030, 1.0.0-rc.22)
 
 For an edition that already runs the RMM module. Everything is additive and dormant: the `change_monitor` sub-switch (new in `RmmSettings::FEATURES`) is off, an agent that does not announce `change:monitor` is answered exactly as before, and the golden transcripts of older agents replay identically. The model, the privacy rules, the scale numbers and the security review are in [docs/rmm/CHANGE_MONITOR.md](docs/rmm/CHANGE_MONITOR.md); the module-level detail is in [docs/modules/rmm.md](docs/modules/rmm.md) ("Change monitoring").

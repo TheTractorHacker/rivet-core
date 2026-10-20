@@ -6,6 +6,7 @@ namespace RivetCore\Rmm\Checkin;
 
 use RivetCore\Rmm\Alerting\AlertingEngine;
 use RivetCore\Rmm\Capacity\LoadShedder;
+use RivetCore\Rmm\Checks\CheckCatalog;
 use RivetCore\Rmm\Checks\CheckEvaluator;
 use RivetCore\Rmm\Checks\CheckReconciler;
 use RivetCore\Rmm\Checks\RmmChecks;
@@ -174,7 +175,7 @@ final class CheckinService
                 ? ['checks' => $this->settings->signedChecks($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null, RmmChecks::deviceOs($dev)), 'collect_interval_s' => (int) $cfg['collect_interval_s']]
                 : ['checks' => $this->settings->signCheckList($policy['checks'], $this->capsOf($dev, $announce['caps']) ?? [], RmmChecks::deviceOs($dev)), 'collect_interval_s' => $policy['collect_interval_s']],
         ];
-        $this->reconcileDelivered($dev, $out['config']['checks']);
+        $this->reconcileDelivered($dev, $out['config']['checks'], $policy === null ? ($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null) : ($this->capsOf($dev, $announce['caps']) ?? []));
         if ($knowsPolicies) {
             // Additive, offered only to an agent that announced `policies`: every other response is byte-identical to before.
             $out['config']['policy'] = ['version' => $policy['version'], 'applied' => $policy['applied'], 'features' => $policy['features']];
@@ -595,15 +596,25 @@ final class CheckinService
 
     /**
      * Checks that stopped applying to the device (other OS, off the schedule, removed by a policy) lose their row and their open alert. One primary
-     * key read per check-in; the work happens only when the delivered set changed. Never fails the check-in.
+     * key read per check-in; the work happens only when the delivered set changed. Never fails the check-in. A check the schedule still has for
+     * this OS but that was left out only because the device did not announce `check:<type>` is kept: it stopped reporting, it did not stop applying.
      *
      * @param array<string,mixed> $dev
      * @param list<array<string,mixed>> $delivered
+     * @param list<string>|null $caps the capabilities the delivery was filtered by
      */
-    private function reconcileDelivered(array $dev, array $delivered): void
+    private function reconcileDelivered(array $dev, array $delivered, ?array $caps): void
     {
         try {
-            $this->sql->transaction(fn () => (new CheckReconciler($this->sql, $this->checks))->reconcile($dev, array_map(static fn (array $c): string => (string) $c['key'], $delivered)));
+            $schedule = $this->settings->checks();
+            $keys = array_map(static fn (array $c): string => (string) $c['key'], $delivered);
+            $os = RmmChecks::deviceOs($dev);
+            foreach ($os === null ? $schedule : RmmChecks::forOs($schedule, $os) as $c) {
+                if (!CheckCatalog::offeredTo((string) $c['type'], $caps)) {
+                    $keys[] = (string) $c['key'];
+                }
+            }
+            $this->sql->transaction(fn () => (new CheckReconciler($this->sql, $this->checks))->reconcile($dev, $keys, array_map(static fn (array $c): string => (string) $c['key'], $schedule)));
         } catch (\Throwable $e) {
             error_log('rmm check-in (stale check cleanup): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0031 not applied yet
         }

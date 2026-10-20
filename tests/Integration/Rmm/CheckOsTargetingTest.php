@@ -137,7 +137,10 @@ final class CheckOsTargetingTest extends RmmTestCase
     {
         $this->devices();
         $this->define(self::schedule());
+        $this->delivered($this->winT);   // the first sight of a device only records the delivered set
         $this->h->q("INSERT INTO endpoint_agent_checks (device_id, check_key, status, detail) VALUES ({$this->win}, 'patch.compliance', 'fail', 'x'), ({$this->win}, 'log.rule_7', 'fail', 'x'), ({$this->win}, 'change.rule_2', 'fail', 'x'), ({$this->win}, 'gone_key', 'fail', 'x')");
+        $this->assertSame(['gone_key'], array_values(array_diff(array_column($this->rows($this->win), 'check_key'), ['change.rule_2', 'log.rule_7', 'patch.compliance'])), 'a first sight leaves a key the schedule never had alone');
+        $this->define(array_slice(self::schedule(), 0, 2));   // the delivered set changes, so the cleanup runs
         $this->delivered($this->winT);
         $this->assertSame(['change.rule_2', 'log.rule_7', 'patch.compliance'], array_column($this->rows($this->win), 'check_key'));
     }

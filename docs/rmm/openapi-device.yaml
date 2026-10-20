@@ -4039,6 +4039,7 @@ components:
               type: {type: string, enum: [service, disk, pending_reboot, script, cpu, memory, process, port, ping, http, cert, ntp, smart, av, systemd_failed, inodes], description: 'The four original types go to every agent; a Phase 3 type only to an agent that announced `check:<type>`'}
               params: {type: object}
               interval_s: {type: integer}
+              os: {type: string, enum: [windows, linux], description: 'Optional (rc.24), present only when the check is limited to one OS; signed with the rest. The server never sends a check whose os is not the device\'s; the agent also ignores one. Absent = every OS.'}
               signature: {type: string, description: Ed25519 over the canonical JSON of the other fields}
         collect_interval_s: {type: integer}
         policy:
@@ -4307,7 +4308,7 @@ components:
         collect_interval_s: {type: integer}
         features: {type: object}
         ring: {type: [string, 'null']}
-        checks: {type: array, items: {type: object, properties: {key: {type: string}, type: {type: string}, params: {type: object}, interval_s: {type: integer}, from: {type: [object, 'null']}}}}
+        checks: {type: array, items: {type: object, properties: {key: {type: string}, type: {type: string}, params: {type: object}, interval_s: {type: integer}, os: {type: string, enum: [windows, linux]}, from: {type: [object, 'null']}}}}
         sources: {type: object, description: 'Setting key to {mode, assignment_id, policy_id, scope_type, enforced}'}
         layers: {type: array, items: {type: object, properties: {assignment_id: {type: integer}, policy_id: {type: integer}, policy: {type: string}, scope_type: {type: string}, priority: {type: integer}, enforce: {type: boolean}}}}
     Policy:

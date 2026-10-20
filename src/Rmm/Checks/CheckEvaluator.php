@@ -213,16 +213,18 @@ final class CheckEvaluator
      *
      * @param array<string,mixed> $dev
      * @param list<string> $deliveredKeys
+     * @param list<string>|null $onlyKeys when given, only these keys may be removed
      * @return int rows removed
      */
-    public function removeStale(array $dev, array $deliveredKeys): int
+    public function removeStale(array $dev, array $deliveredKeys, ?array $onlyKeys = null): int
     {
         $deviceId = (int) $dev['device_id'];
         $delivered = array_flip($deliveredKeys);
+        $only = $onlyKeys === null ? null : array_flip($onlyKeys);
         $stale = [];
         foreach ($this->sql->all('SELECT check_key, alert_id FROM endpoint_agent_checks WHERE device_id = ?', [$deviceId]) as $c) {
             $k = (string) $c['check_key'];
-            if (!isset($delivered[$k]) && !RmmChecks::isServerKey($k)) {
+            if (!isset($delivered[$k]) && !RmmChecks::isServerKey($k) && ($only === null || isset($only[$k]))) {
                 $stale[$k] = $c['alert_id'] === null ? null : (int) $c['alert_id'];
             }
         }
