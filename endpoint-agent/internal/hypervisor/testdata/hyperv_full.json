@@ -1,0 +1,6 @@
+{"ok":true,"version":"10.0.20348","vms":[
+ {"id":"0F1A2B3C-0000-4000-8000-000000000001","name":"SQL01","state":"Running","gen":2,"ver":"11.0","cpus":8,"cpu":12,"memA":17179869184,"memD":12884901888,"memMax":34359738368,"up":123456,"hb":"OkApplicationsHealthy","repl":"Normal","snaps":2,"oldest":1759000000,"disk":214748364800,"diskUsed":96636764160},
+ {"id":"0f1a2b3c-0000-4000-8000-000000000002","name":"FS01","state":"Off","gen":1,"ver":"9.0","cpus":2,"cpu":0,"memA":0,"memD":0,"memMax":4294967296,"up":0,"hb":"NoContact","repl":"Critical","snaps":0,"disk":107374182400,"diskUsed":53687091200},
+ {"id":"0f1a2b3c-0000-4000-8000-000000000003","name":"APP01","state":"RunningCritical","gen":2,"cpus":4,"cpu":150,"memA":1,"memMax":2,"up":-5},
+ {"id":"not-a-guid","name":"bad","state":"Running"}],
+ "vols":[{"name":"D:","total":2000000000000,"free":500000000000}],"errors":["replication: access denied"]}

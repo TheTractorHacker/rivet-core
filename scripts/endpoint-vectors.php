@@ -560,6 +560,64 @@ function checkOsVectors(): string
     return json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
 }
 
+/**
+ * Hypervisor visibility (1.0.0-rc.29): one complete SIGNED config.hypervisor object (domain line, canonical JSON, Ed25519 by the test key) the Go agent must accept and one changed character must
+ * break, and agent-shaped check-in blocks with the server's verdict (HypervisorService::cleanReport at the pinned `now`). The Go agent decodes every `agent_shaped` input into its report type and
+ * must encode it back to the same JSON (no field is lost or renamed); the PHP validator is checked against `expect` by the generator and by EndpointVectorFilesTest.
+ */
+function hypervisorVectors(): string
+{
+    $seed = hash('sha256', 'RivetIT-agent-TEST-seed', true);
+    [$pub, $sec] = Signer::keypairFromSeed($seed);
+    $now = 1760000000;
+    $config = ['v' => 1, 'kind' => 'hypervisor_config', 'platform' => 'linux', 'full_interval_s' => 600, 'summary_interval_s' => 120, 'max_vms' => 1000, 'snapshot_lookups' => 300, 'seq' => 1760000000];
+    $config['version'] = substr(hash('sha256', Signer::hypervisorConfigMessage($config)), 0, 16);
+    $message = Signer::hypervisorConfigMessage($config);
+    $config['signature'] = Signer::sign($message, $sec);
+
+    $proxmox = ['mode' => 'full', 'platform' => 'proxmox', 'version' => '8.2.4', 'collected_at' => '2025-10-09T08:00:00Z',
+        'cluster' => ['name' => 'homelab', 'quorate' => true, 'nodes' => [['name' => 'devpve', 'online' => true], ['name' => 'pve2', 'online' => false]]],
+        'vms' => [
+            ['id' => 'qemu/100', 'name' => 'dc01', 'type' => 'qemu', 'state' => 'running', 'node' => 'devpve', 'cpus' => 4, 'cpu_pct' => 2.1, 'mem_bytes' => 4294967296, 'mem_max_bytes' => 8589934592, 'disk_bytes' => 107374182400,
+                'uptime_s' => 864000, 'tags' => ['windows', 'prod'], 'snapshots' => ['count' => 2, 'oldest_at' => '2025-09-27T19:06:40Z'], 'last_backup' => ['at' => '2025-10-08T02:00:01Z', 'result' => 'ok'], 'backup_covered' => true],
+            ['id' => 'qemu/101', 'name' => 'web01', 'type' => 'qemu', 'state' => 'stopped', 'node' => 'devpve', 'cpus' => 2, 'mem_max_bytes' => 2147483648, 'disk_bytes' => 34359738368, 'snapshots' => ['count' => 0],
+                'last_backup' => ['at' => '2025-10-01T02:00:01Z', 'result' => 'failed'], 'backup_covered' => false],
+            ['id' => 'qemu/9000', 'name' => 'debian12-tmpl', 'type' => 'qemu', 'state' => 'stopped', 'node' => 'devpve', 'cpus' => 1, 'template' => true],
+            ['id' => 'lxc/200', 'name' => 'pihole', 'type' => 'lxc', 'state' => 'running', 'node' => 'devpve', 'cpus' => 1, 'cpu_pct' => 0.1, 'mem_bytes' => 134217728, 'mem_max_bytes' => 536870912, 'disk_bytes' => 4294967296, 'uptime_s' => 3600],
+        ],
+        'storage' => [['name' => 'local', 'type' => 'dir', 'total_bytes' => 105088212992, 'used_bytes' => 22548578304, 'health' => 'ok'], ['name' => 'rpool', 'type' => 'zfs_pool', 'total_bytes' => 500107862016, 'used_bytes' => 451096576000, 'health' => 'warn'],
+            ['name' => 'ceph', 'type' => 'ceph', 'health' => 'warn']], 'cfg_version' => '0123456789abcdef'];
+    $hyperv = ['mode' => 'full', 'platform' => 'hyperv', 'version' => '10.0.20348', 'collected_at' => '2025-10-09T08:00:00Z',
+        'cluster' => ['name' => 'HVCL01', 'quorate' => true, 'nodes' => [['name' => 'HV1', 'online' => true], ['name' => 'HV2', 'online' => true]], 'failed_groups' => 1],
+        'vms' => [['id' => '0f1a2b3c-0000-4000-8000-000000000001', 'name' => 'SQL01', 'type' => 'hyperv', 'state' => 'running', 'node' => 'HV1', 'cpus' => 8, 'cpu_pct' => 12, 'mem_bytes' => 17179869184, 'mem_max_bytes' => 34359738368,
+            'disk_bytes' => 214748364800, 'disk_used_bytes' => 96636764160, 'uptime_s' => 123456, 'snapshots' => ['count' => 2, 'oldest_at' => '2025-09-27T19:06:40Z'], 'guest_agent' => true, 'replication' => 'normal', 'generation' => 2]],
+        'storage' => [['name' => 'D:', 'type' => 'volume', 'total_bytes' => 2000000000000, 'used_bytes' => 1500000000000, 'health' => 'ok']]];
+    $summary = ['mode' => 'summary', 'platform' => 'proxmox', 'collected_at' => '2025-10-09T08:02:00Z', 'changes' => [['id' => 'qemu/101', 'state' => 'running']], 'vm_count' => 4];
+    $errorOnly = ['mode' => 'full', 'platform' => 'proxmox', 'collected_at' => '2025-10-09T08:00:00Z', 'error' => 'guests: pvesh exited with status 255'];
+    $hostile = ['mode' => 'full', 'platform' => 'proxmox', 'collected_at' => 'not a time', 'version' => str_repeat('v', 200),
+        'vms' => [['id' => 'qemu/400', 'name' => "x\u{0}\n<script>alert(1)</script>\u{202e}" . str_repeat('A', 300), 'type' => 'qemu', 'state' => 'on fire', 'cpus' => 1000000000, 'cpu_pct' => 500, 'mem_bytes' => -5, 'uptime_s' => 1.5,
+            'tags' => ['<b>t</b>'], 'snapshots' => ['count' => 'many'], 'last_backup' => ['at' => '2999-01-01T00:00:00Z', 'result' => 'great']],
+            ['id' => 'qemu/../etc', 'name' => 'path', 'type' => 'qemu'], ['id' => 'qemu/401', 'name' => 'mismatch', 'type' => 'hyperv'], ['id' => 'qemu/402', 'name' => 'ok', 'type' => 'qemu', 'state' => 'running'], 'junk', null],
+        'storage' => [['name' => '', 'type' => 'x'], ['name' => 's', 'total_bytes' => 10, 'used_bytes' => 99, 'health' => 'great']]];
+    $cases = [];
+    foreach ([['proxmox_full', $proxmox, true], ['hyperv_full', $hyperv, true], ['summary', $summary, true], ['error_only', $errorOnly, true], ['hostile', $hostile, false]] as [$name, $input, $shaped]) {
+        $c = \RivetCore\Rmm\Hypervisor\HypervisorService::cleanReport($input, $now);
+        $cases[] = ['name' => $name, 'agent_shaped' => $shaped, 'input' => json_decode((string) json_encode($input)),
+            'expect' => $c === null ? null : ['mode' => $c['mode'], 'platform' => $c['platform'], 'vms' => array_column($c['vms'], 'key'), 'storage' => array_column($c['storage'], 'name'), 'changes' => array_column($c['changes'], 'key'),
+                'error' => $c['error'], 'version_length' => strlen($c['version']), 'first_vm_name_length' => $c['vms'] === [] ? 0 : mb_strlen($c['vms'][0]['name']), 'first_vm_state' => $c['vms'] === [] ? '' : $c['vms'][0]['state']]];
+    }
+    $out = [
+        'format' => 'RIVETIT-HYPERVISOR-v1',
+        'description' => 'Hypervisor visibility vectors (1.0.0-rc.29). signed_config: a complete config.hypervisor object; the signed message is the domain line, a line feed, then the canonical JSON of the object without its signature; the agent must accept it with the test public key (platform linux), and must refuse it after any change. reports: check-in `hypervisor` blocks. agent_shaped inputs are what a collector produces: the Go agent must decode and re-encode every one to the same JSON. expect is the server verdict (HypervisorService::cleanReport at `now`): the VM keys and storage names kept, in order. The hostile input is only for the server: every bad field is dropped on its own.',
+        'now' => $now,
+        'test_key' => ['public_key_base64' => $pub],
+        'signed_config' => ['domain' => \RivetCore\Rmm\Hypervisor\HypervisorProtocol::SIGN_DOMAIN, 'message' => $message, 'config' => json_decode((string) json_encode($config))],
+        'reports' => $cases,
+    ];
+
+    return json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
+}
+
 $files = [
     'agent_installer_trailer_vectors.json' => installerTrailerVectors(),
     'agent_job_signing_vectors.json' => jobSigningVectors(),
@@ -567,6 +625,7 @@ $files = [
     'agent_software_deploy_vectors.json' => softwareDeployVectors(),   // rc.21: additive again
     'agent_change_monitor_vectors.json' => changeMonitorVectors(),   // rc.22: additive again
     'agent_check_os_vectors.json' => checkOsVectors(),   // rc.24: additive again
+    'agent_hypervisor_vectors.json' => hypervisorVectors(),   // rc.29: additive again
 ];
 $sums = '';
 foreach ($files as $name => $bytes) {

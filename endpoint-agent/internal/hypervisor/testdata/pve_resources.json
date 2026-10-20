@@ -1,0 +1,9 @@
+[
+ {"id":"qemu/100","type":"qemu","vmid":100,"name":"dc01","node":"devpve","status":"running","cpu":0.0213,"maxcpu":4,"mem":4294967296,"maxmem":8589934592,"disk":0,"maxdisk":107374182400,"diskread":1,"diskwrite":2,"netin":1,"netout":1,"uptime":864000,"template":0,"tags":"windows;prod","hastate":"started"},
+ {"id":"qemu/101","type":"qemu","vmid":101,"name":"web01","node":"devpve","status":"stopped","cpu":0,"maxcpu":2,"mem":0,"maxmem":2147483648,"disk":0,"maxdisk":34359738368,"uptime":0,"template":0},
+ {"id":"qemu/9000","type":"qemu","vmid":9000,"name":"debian12-tmpl","node":"devpve","status":"stopped","cpu":0,"maxcpu":1,"mem":0,"maxmem":1073741824,"maxdisk":8589934592,"uptime":0,"template":1,"tags":"template"},
+ {"id":"lxc/200","type":"lxc","vmid":200,"name":"pihole","node":"devpve","status":"running","cpu":0.001,"maxcpu":1,"mem":134217728,"maxmem":536870912,"disk":1073741824,"maxdisk":4294967296,"uptime":3600,"template":0},
+ {"id":"qemu/300","type":"qemu","vmid":300,"name":"remote-vm","node":"pve2","status":"running","cpu":0.5,"maxcpu":2,"mem":1,"maxmem":2,"maxdisk":3,"uptime":5,"template":0},
+ {"id":"storage/devpve/local","type":"storage","storage":"local","node":"devpve","status":"available"},
+ {"id":"node/devpve","type":"node","node":"devpve","status":"online"}
+]

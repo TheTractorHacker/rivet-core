@@ -85,6 +85,17 @@ No migration, nothing is required. To get the short header, render from the new 
 3. Remove: one chip per volume, the single greyed "Launch remote session" button, and the "An administrator maps this device to a MeshCentral node first" text (use `remote.hint`).
 4. Agents older than this release have no `source`/`desktop_session`; the grouping heuristics and the OS rules apply until they update.
 
+## Adopting hypervisor visibility (1.0.0-rc.29)
+
+Optional and off by default; nothing changes for an edition that does nothing (the golden transcripts replay identically, an agent without the capability is answered as before).
+
+1. **Migration.** `CoreMigrations::all()` ends with `0036_rmm_hypervisors` (four new tables, nothing altered, idempotent). (0034 is the Mesh work and 0035 the device type; this one is 0036.)
+2. **Abilities.** Map `rmm.hypervisor.view` (like `rmm.device.view`: names and sizes only) and `rmm.hypervisor.manage` (ignore a VM or host, change thresholds) in your `AccessPolicyInterface`. A policy that enforces anything must deny an ability it does not know.
+3. **Agents.** Roll out an agent of this release (it announces `hypervisor`). Then, as `rmm.admin`, switch on `hypervisor` (`PUT endpoint_devices/hypervisor/settings {"features": {"hypervisor": true}}`). Only a Proxmox VE host (Linux) or a Hyper-V host (Windows) reports anything. Try one host first: nothing here has run against real hypervisors (HYPERVISORS.md section 9).
+4. **Events.** The six `rmm.hypervisor.*` events are in `EventCatalog`; nothing to add for an edition that forwards the catalog. The alerts are checks (`hv.*`) and go through your bridge like any check.
+5. **Pages to build (the edition's work).** A **hosts page** from `hypervisorReader()->hosts()` (platform, version, cluster and quorum, VM count, running, storage health, stale / error flags); a **host page** from `hypervisorReader()->host()` (storage with used %, the VM table, cluster nodes); a **VM table** from `vms()` (search, state / type / backup / snapshot filters) with a detail drawer from `vm()` (state history, open alerts) and an "Ignore this VM" action (`hypervisorActions()->setVmIgnored()`); a **settings card** from `hypervisorActions()->settingsView()` / `updateSettings()` (the switch, thresholds, per-class alert switches); optionally the **asset link** from `hypervisorLinker()->suggest()`, which only suggests, you decide. The REST routes are served by `technicianApi()` unchanged.
+6. **Cluster note.** If more than one node of a Proxmox cluster has an agent, each reports the whole cluster's guests; show a VM under the node that runs it (`node`).
+
 ## Adopting the RMM module (unreleased)
 
 For an edition that wants the endpoint agent (RivetIT, then RivetMSP). The module is off by default and adds no required constructor argument to any existing type, but its three migrations are part of `CoreMigrations::all()` (there is no opt-in `RmmMigrations` list; the design draft proposed one and the owner chose otherwise, ADR-010 decision 9). **So an edition gets the ten `endpoint_agent_*` tables, and the migration ledger rows, as soon as it runs `MigrationRunner::run()` with `CoreMigrations::all()`, whether or not it ever enables the module** (RivetMSP included). The tables are additive and empty until a device enrolls, and the master switch defaults to off.

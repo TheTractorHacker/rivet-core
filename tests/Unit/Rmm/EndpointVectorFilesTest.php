@@ -21,6 +21,7 @@ final class EndpointVectorFilesTest extends TestCase
         'agent_software_deploy_vectors.json' => 'f52af62a9163a63b869d378e513bde81490c598aec7caae469ed58e2a3554ef2',   // 1.0.0-rc.21: accept/reject vectors of the software job parameters
         'agent_change_monitor_vectors.json' => 'aa20e416e88f667681f169d26b38ea6dd53a94397a4d1d6012d6bc173df6a50e',   // 1.0.0-rc.22: the change-monitoring watch policy, secret names and a signed configuration
         'agent_check_os_vectors.json' => 'dfbf0dceb2cc9dbd06d392787d30a2399b26c12299e2f909e7b95b1d533dbaab',   // 1.0.0-rc.24: signed check definitions with the optional os member, delivered keys per OS
+        'agent_hypervisor_vectors.json' => '6830b9fec805d857994d518889c0f7bc84f265ab58cdba58b442a69ed6b8148b',   // 1.0.0-rc.29: a signed hypervisor configuration and check-in blocks with the server verdict
     ];
 
     public function testFilesMatchTheRivetItBaseline(): void

@@ -1,0 +1,1 @@
+{"ok":true,"name":"HVCL01","nodes":[{"name":"HV1","state":"Up"},{"name":"HV2","state":"Down"},{"name":"HV3","state":"Up"}],"failed":1}

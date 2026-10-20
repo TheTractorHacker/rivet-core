@@ -239,6 +239,11 @@ final class RmmModule
     private ?\RivetCore\Rmm\Change\ChangeService $changeService = null;
     private ?\RivetCore\Rmm\Change\ChangeActions $changeActions = null;
     private ?\RivetCore\Rmm\Http\ChangeApi $changeApi = null;
+    private ?\RivetCore\Rmm\Hypervisor\HypervisorSettings $hypervisorSettings = null;
+    private ?\RivetCore\Rmm\Hypervisor\HypervisorAlerts $hypervisorAlerts = null;
+    private ?\RivetCore\Rmm\Hypervisor\HypervisorService $hypervisorService = null;
+    private ?\RivetCore\Rmm\Hypervisor\HypervisorActions $hypervisorActions = null;
+    private ?\RivetCore\Rmm\Http\HypervisorApi $hypervisorApi = null;
 
     private readonly RmmAuditInterface $audit;
     private readonly RmmMetricSinkInterface $metrics;
@@ -453,6 +458,51 @@ final class RmmModule
     public function changeActions(): \RivetCore\Rmm\Change\ChangeActions
     {
         return $this->changeActions ??= new \RivetCore\Rmm\Change\ChangeActions($this->devices(), $this->authorizer(), $this->settings(), $this->changeSettings(), $this->changeService(), $this->changeRules(), $this->audit);
+    }
+
+    // ------------------------------------------------------------------ hypervisor visibility (Proxmox VE, Hyper-V)
+
+    /** The hypervisor limits (thresholds, intervals) and the signed configuration an agent receives. */
+    public function hypervisorSettings(): \RivetCore\Rmm\Hypervisor\HypervisorSettings
+    {
+        return $this->hypervisorSettings ??= new \RivetCore\Rmm\Hypervisor\HypervisorSettings($this->settings());
+    }
+
+    /** Alerts and events from what a hypervisor host reported (through the check pipeline). */
+    public function hypervisorAlerts(): \RivetCore\Rmm\Hypervisor\HypervisorAlerts
+    {
+        return $this->hypervisorAlerts ??= new \RivetCore\Rmm\Hypervisor\HypervisorAlerts($this->sql(), $this->settings(), $this->checks(), $this->eventPublisher());
+    }
+
+    /** Hypervisor ingest: validate a report and store hosts, VMs, storage and the state history; also the retention clean-up. */
+    public function hypervisorService(): \RivetCore\Rmm\Hypervisor\HypervisorService
+    {
+        return $this->hypervisorService ??= new \RivetCore\Rmm\Hypervisor\HypervisorService($this->sql(), $this->settings(), $this->hypervisorAlerts());
+    }
+
+    /** The hypervisor read model: hosts with VM counts, one host, the VM search, one VM with its history. */
+    public function hypervisorReader(): \RivetCore\Rmm\Hypervisor\HypervisorReader
+    {
+        return new \RivetCore\Rmm\Hypervisor\HypervisorReader($this->sql(), $this->settings());
+    }
+
+    /** Asset suggestions for a VM (hints only: the edition links, Core never auto-creates). */
+    public function hypervisorLinker(): \RivetCore\Rmm\Hypervisor\HypervisorLinker
+    {
+        return new \RivetCore\Rmm\Hypervisor\HypervisorLinker($this->sql(), $this->assets);
+    }
+
+    /** Reading hypervisors and managing the monitoring (shared by the REST API and the edition's pages). */
+    public function hypervisorActions(): \RivetCore\Rmm\Hypervisor\HypervisorActions
+    {
+        return $this->hypervisorActions ??= new \RivetCore\Rmm\Hypervisor\HypervisorActions($this->sql(), $this->devices(), $this->authorizer(), $this->settings(), $this->hypervisorSettings(), $this->hypervisorReader(),
+            $this->hypervisorAlerts(), $this->hypervisorLinker(), $this->audit);
+    }
+
+    /** The hypervisor routes (mounted by {@see technicianApi()}). */
+    public function hypervisorApi(): \RivetCore\Rmm\Http\HypervisorApi
+    {
+        return $this->hypervisorApi ??= new \RivetCore\Rmm\Http\HypervisorApi($this->hypervisorActions());
     }
 
     /** The change-monitoring routes (mounted by {@see technicianApi()}). */
@@ -758,7 +808,7 @@ final class RmmModule
         return new CheckinService($this->sql(), $this->settings(), $this->devices(), $this->checks(), $this->jobs(), $this->updates(), $this->linker(), $this->assets, $this->metrics,
             function (array $work): void {
                 $this->ingestQueue()->enqueue($work);
-            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy(), $this->remoteSettings(), $this->meshAgents(), $this->changeSettings(), $this->meshAfterApproval());
+            }, $this->deviceState(), $this->software(), $this->eventPublisher(), $this->effectivePolicy(), $this->remoteSettings(), $this->meshAgents(), $this->changeSettings(), $this->meshAfterApproval(), $this->hypervisorSettings(), $this->hypervisorService());
     }
 
     /** Capabilities, presence and software bookkeeping of a device (table rmm_device_state). */
@@ -869,7 +919,7 @@ final class RmmModule
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
             $this->databaseSink(), $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->storage(), $this->cache(), $this->externalSink(),
-            $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules());
+            $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules(), $this->hypervisorService());
     }
 
     /** The database metric sink, whether it was passed as the sink or inside a {@see CompositeMetricSink}. */
@@ -1168,7 +1218,7 @@ final class RmmModule
     /** The technician REST API handler (`endpoint_devices`): the edition authenticates and passes the principal. */
     public function technicianApi(): TechnicianApi
     {
-        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi(), $this->patchApi(), $this->deployApi(), $this->changeApi(), $this->autoInstallApi());
+        return new TechnicianApi($this->authorizer(), $this->technician(), $this->readModel(), $this->inventory(), $this->policyActions(), $this->scriptActions(), $this->fieldActions(), $this->alertingApi(), $this->remoteApi(), $this->starterApi(), $this->patchApi(), $this->deployApi(), $this->changeApi(), $this->autoInstallApi(), $this->hypervisorApi());
     }
 
     /** The alerts, maintenance windows, escalation policies and thresholds routes (mounted by {@see technicianApi()}). */

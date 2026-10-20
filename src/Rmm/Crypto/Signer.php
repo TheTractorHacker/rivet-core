@@ -135,6 +135,18 @@ final class Signer
         return \RivetCore\Rmm\Change\ChangeProtocol::SIGN_DOMAIN . "\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($config), false)));
     }
 
+    /**
+     * The message signed for a hypervisor configuration (docs/rmm/PROTOCOL.md 3.2.10): the domain line, a line feed, then the canonical JSON of the object without its signature.
+     *
+     * @param array<string,mixed> $config
+     */
+    public static function hypervisorConfigMessage(array $config): string
+    {
+        unset($config['signature']);
+
+        return \RivetCore\Rmm\Hypervisor\HypervisorProtocol::SIGN_DOMAIN . "\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($config), false)));
+    }
+
     /** An update manifest is signed over the lowercase hex SHA-256 TEXT of the package. */
     public static function signManifest(string $sha256Hex, string $secretKeyB64): string
     {

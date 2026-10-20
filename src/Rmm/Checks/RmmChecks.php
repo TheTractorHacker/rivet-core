@@ -16,7 +16,7 @@ final class RmmChecks
     public const OS_VALUES = ['windows', 'linux', 'any'];
 
     /** Key families the server itself reports into endpoint_agent_checks (never part of a delivered list). */
-    public const SERVER_KEY_PREFIXES = ['log.rule_', 'change.rule_', 'patch.'];
+    public const SERVER_KEY_PREFIXES = ['log.rule_', 'change.rule_', 'patch.', 'hv.'];
 
     /**
      * Validate an `os` value from an admin or a policy.

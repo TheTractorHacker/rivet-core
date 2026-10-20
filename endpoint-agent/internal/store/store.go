@@ -32,6 +32,7 @@ type Config struct {
 	DisableSoftware   bool   `json:"disable_software,omitempty"`      // local kill switch: software_detect/software_install jobs fail with disabled_locally and software:* is not announced
 	DisableLogs       bool   `json:"disable_logs,omitempty"`          // local kill switch: never collect or ship logs
 	DisableChange     bool   `json:"disable_change,omitempty"`        // local kill switch: never watch the registry, files, groups or tasks; change:monitor is not announced
+	DisableHypervisor bool   `json:"disable_hypervisor,omitempty"`    // local kill switch: never collect Proxmox/Hyper-V data; "hypervisor" is not announced
 	// ChangeExtraRoots adds absolute folders a signed change-monitoring file watch may read
 	// (a local administrator's decision; the server can never widen the agent's own list).
 	ChangeExtraRoots []string `json:"change_extra_roots,omitempty"`
@@ -158,6 +159,8 @@ type Inflight struct {
 	// WithMesh marks a body that carries a mesh_agent block with hash MeshHash.
 	WithMesh bool   `json:"with_mesh,omitempty"`
 	MeshHash string `json:"mesh_hash,omitempty"`
+	// WithHypervisor marks a body that carries a hypervisor block (acknowledged with the check-in).
+	WithHypervisor bool `json:"with_hypervisor,omitempty"`
 }
 
 // Store is a directory of agent files.

@@ -84,6 +84,8 @@ type ServerConfig struct {
 	// the same reason, and because its signature covers the exact object: the
 	// agent verifies it before it reads a single registry value or file.
 	Change json.RawMessage `json:"change,omitempty"`
+	// Hypervisor is the signed hypervisor-collection configuration (kept raw like Change).
+	Hypervisor json.RawMessage `json:"hypervisor,omitempty"`
 }
 
 type EnrollResponse struct {
@@ -222,6 +224,9 @@ type CheckinRequest struct {
 	// whole seconds (rc.23). Informational for the technician; the server never trusts
 	// it for anything else. Absent until the agent has measured one.
 	ClockOffsetS *int64 `json:"clock_offset_s,omitempty"`
+	// Hypervisor is the Proxmox VE / Hyper-V host report (rc.29, docs/rmm/HYPERVISORS.md). Only ever present
+	// after a response offered the "hypervisor" feature with a signed config.hypervisor object.
+	Hypervisor *HypervisorReport `json:"hypervisor,omitempty"`
 }
 
 // CapMeshNodeID is announced by an agent that can read and report the local
