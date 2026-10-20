@@ -101,6 +101,9 @@ type DiskInfo struct {
 	TotalBytes uint64 `json:"total_bytes"`
 	FreeBytes  uint64 `json:"free_bytes"`
 	FS         string `json:"fs"`
+	// Additive: absent from older agents; the server groups pool members (ZFS datasets) by Source.
+	Source string `json:"source,omitempty"`
+	Label  string `json:"label,omitempty"`
 }
 
 type NetInfo struct {
@@ -126,6 +129,8 @@ type Inventory struct {
 	LoggedInUser     *string    `json:"logged_in_user"`
 	PendingReboot    *bool      `json:"pending_reboot"`
 	MeshNodeID       *string    `json:"mesh_node_id"`
+	// DesktopSession (additive): true when the machine has a graphical session or display manager (Linux) or is not a Server Core install (Windows); absent when unknown.
+	DesktopSession *bool `json:"desktop_session,omitempty"`
 }
 
 type DiskMetric struct {

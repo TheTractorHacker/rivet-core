@@ -177,12 +177,18 @@ func (p *WinPlatform) Disks(ctx context.Context) ([]DiskStat, error) {
 		if err := windows.GetDiskFreeSpaceEx(rp, &avail, &total, &free); err != nil {
 			continue
 		}
-		fsn := ""
-		var fsb [32]uint16
-		if err := windows.GetVolumeInformation(rp, nil, 0, nil, nil, nil, &fsb[0], uint32(len(fsb))); err == nil {
+		fsn, label := "", ""
+		var fsb, lb [64]uint16
+		if err := windows.GetVolumeInformation(rp, &lb[0], uint32(len(lb)), nil, nil, nil, &fsb[0], uint32(len(fsb))); err == nil {
 			fsn = windows.UTF16ToString(fsb[:])
+			label = windows.UTF16ToString(lb[:])
 		}
-		out = append(out, DiskStat{Mount: fmt.Sprintf("%c:", 'A'+i), Total: total, Free: avail, FS: fsn})
+		var guid [64]uint16
+		src := ""
+		if err := windows.GetVolumeNameForVolumeMountPoint(rp, &guid[0], uint32(len(guid))); err == nil {
+			src = windows.UTF16ToString(guid[:])
+		}
+		out = append(out, DiskStat{Mount: fmt.Sprintf("%c:", 'A'+i), Total: total, Free: avail, FS: fsn, Source: src, Label: label})
 	}
 	return out, nil
 }
@@ -316,4 +322,13 @@ func (p *WinPlatform) MeshAgentDir() string {
 		}
 	}
 	return ""
+}
+
+// DesktopSession is true for every install except Server Core (no shell, no desktop to share).
+func (p *WinPlatform) DesktopSession(ctx context.Context) (bool, error) {
+	t, err := regString(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion`, "InstallationType")
+	if err != nil {
+		return false, err
+	}
+	return windowsHasDesktop(t), nil
 }

@@ -25,6 +25,8 @@ type DiskStat struct {
 	Mount       string
 	Total, Free uint64
 	FS          string
+	// Additive (header view-model): the file-system source (ZFS dataset, device node or volume GUID) and the volume label; empty when unknown.
+	Source, Label string
 }
 
 type ServiceInfo struct {
