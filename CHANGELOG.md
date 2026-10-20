@@ -2,6 +2,14 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## Unreleased (Linux MeshCentral agent install fixed; agent only, no migration)
+
+A real Debian/Proxmox host reported "the Mesh agent installer finished" and "MeshCentral agent: installed." while no Mesh agent existed. The Linux routine ran `./meshagent -install` on a binary downloaded with a `meshid` and trusted exit 0.
+
+- **Linux now follows MeshCentral's own script**: binary from `meshagents?id=<N>` (no `meshid`), settings from `meshsettings?id=<group>`, `StartupType=<n>` (systemd 1, upstart 2, init.d 3, as the script detects it) added to the `.msh`, then `./meshagent -fullinstall --copy-msh=1`. A `linux` entry in the stamped `install_args` is ignored (the server stamped the legacy `-install`). Windows is unchanged.
+- **Verified, not trusted**: the install directory, the `meshagent` service (registered and active within 30 s; for non-systemd an init script and a running process) are checked, and each failure has a precise reason in the job result, the check-in Mesh state, `install.log` and the installer's last line. The group id is never logged. Uninstall now uses `-fulluninstall`.
+- Docs: REMOTE_AND_LOGS.md ("Linux install"). Tests: mock Mesh server with a stub agent. Not run against a real MeshCentral.
+
 ## 1.0.0-rc.26 (policy starter pack; no migration)
 
 A starter pack of **policies**, next to the script starter pack: 24 items, installed with one call, all created switched off and assigned to nothing. See [docs/rmm/POLICY_STARTER_PACK.md](docs/rmm/POLICY_STARTER_PACK.md).
