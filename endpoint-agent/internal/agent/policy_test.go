@@ -2,6 +2,7 @@ package agent
 
 import (
 	"net/http"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -121,4 +122,39 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// A check limited to another OS is never run or reported, whatever the server
+// delivered; "any", empty and unknown targets run everywhere.
+func TestChecksForOS(t *testing.T) {
+	specs := []store.CheckSpec{
+		{Key: "w", Type: "service", OS: "windows"}, {Key: "l", Type: "service", OS: "linux"},
+		{Key: "a", Type: "service", OS: "any"}, {Key: "e", Type: "disk"}, {Key: "x", Type: "disk", OS: "plan9"},
+	}
+	keys := func(in []store.CheckSpec) []string {
+		var k []string
+		for _, c := range in {
+			k = append(k, c.Key)
+		}
+		return k
+	}
+	if got := keys(checksForOS(specs, "windows")); !slices.Equal(got, []string{"w", "a", "e", "x"}) {
+		t.Fatalf("windows: %v", got)
+	}
+	if got := keys(checksForOS(specs, "linux")); !slices.Equal(got, []string{"l", "a", "e", "x"}) {
+		t.Fatalf("linux: %v", got)
+	}
+	plain := []store.CheckSpec{{Key: "d", Type: "disk"}}
+	if got := checksForOS(plain, "linux"); len(got) != 1 || &got[0] != &plain[0] {
+		t.Fatalf("an untargeted list must come back untouched: %v", got)
+	}
+	// The real run path filters for the GOOS the binary was built for.
+	other := "windows"
+	if runtime.GOOS == "windows" {
+		other = "linux"
+	}
+	got := applyPolicyToChecks([]store.CheckSpec{{Key: "n", Type: "service", OS: other}, {Key: "y", Type: "service", OS: runtime.GOOS}}, nil)
+	if len(got) != 1 || got[0].Key != "y" {
+		t.Fatalf("applyPolicyToChecks must drop the other OS: %v", got)
+	}
 }

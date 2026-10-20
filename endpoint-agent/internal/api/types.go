@@ -37,6 +37,7 @@ type CheckSpec struct {
 	Params    json.RawMessage `json:"params,omitempty"`
 	IntervalS int             `json:"interval_s,omitempty"`
 	Signature string          `json:"signature,omitempty"` // detached ed25519 over the canonical object (server fixture: check_definition)
+	OS        string          `json:"os,omitempty"`        // optional target: "windows" or "linux"; empty or "any" = every OS (rc.24, signed with the rest)
 	Raw       json.RawMessage `json:"-"`                   // the object exactly as delivered, for signature verification
 }
 
