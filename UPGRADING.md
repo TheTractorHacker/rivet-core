@@ -185,6 +185,15 @@ For every edition that runs the RMM module. Additive; old agents keep working.
 4. **UI to build.** Device detail has an additive `clock` object (`skew_s`, `measured_at`, `agent_offset_s`, `last_reject {reason, at}`): show "clock N minutes ahead/behind" when `|skew_s|` is over two minutes, and for a device with no check-in show `last_reject.reason` instead of "not reported yet". `RmmReadModel::clockOf($row)` builds it from a device row.
 5. **Agent.** Ship the rc.23 agent for the self-correction. The golden replay adapter ignores the new columns; one transcript (`collected-at-in-the-future`) is a declared delta.
 
+## Adopting the policy starter pack (Unreleased, no migration)
+
+1. **Nothing is required.** No migration, no new table. The pack is data in Core (`src/Rmm/Policy/StarterPack/data/pack.json`); nothing is installed until an administrator asks.
+2. **Wiring.** `RmmModule::policyPackInstaller()` and `policyPackActions()` exist; `StarterApi` (already mounted by `technicianApi()`) now answers `endpoint_devices/starter/policies[/{plan|install|update|reset|uninstall}]`. If you build `StarterApi` by hand, pass `$module->policyPackActions()` as its second argument.
+3. **Ability.** The routes need `rmm.admin`, like policy editing. No new ability.
+4. **Edition UI.** A "Starter policies" card on the Policies page: the exact list is in [docs/rmm/POLICY_STARTER_PACK.md](docs/rmm/POLICY_STARTER_PACK.md), section 7.
+5. **CLI.** `php scripts/policy-pack.php --bootstrap=<file returning your RmmModule> install --ids=...` for a deploy script.
+6. **Upgrading the pack later.** A new Core release raises item `rev`s; the card shows "Update available"; edited items are never touched, "Reset to pack version" is explicit.
+
 ## Adopting per-OS check targeting (migration 0032, 1.0.0-rc.24)
 
 Additive and dormant until your schedule uses `os`: a schedule without it is delivered exactly as before.

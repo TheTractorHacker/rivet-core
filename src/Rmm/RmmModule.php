@@ -201,6 +201,8 @@ final class RmmModule
     private ?StarterInstaller $starterInstaller = null;
     private ?StarterActions $starterActions = null;
     private ?StarterApi $starterApi = null;
+    private ?\RivetCore\Rmm\Policy\StarterPack\PolicyPackInstaller $policyPackInstaller = null;
+    private ?\RivetCore\Rmm\Technician\PolicyPackActions $policyPackActions = null;
     private ?ScheduleGateInterface $scheduleGate = null;
     private ?RemoteSettings $remoteSettings = null;
     private ?TransferService $transferService = null;
@@ -1001,10 +1003,21 @@ final class RmmModule
         return $this->starterActions ??= new StarterActions($this->authorizer(), $this->starterInstaller(), $this->audit, $this->eventPublisher());
     }
 
+    /** The policy starter pack (checks, alerting presets, patch policies, maintenance windows, change presets; administrators). */
+    public function policyPackInstaller(): \RivetCore\Rmm\Policy\StarterPack\PolicyPackInstaller
+    {
+        return $this->policyPackInstaller ??= new \RivetCore\Rmm\Policy\StarterPack\PolicyPackInstaller($this->policyStore(), $this->patchPolicies(), $this->maintenance(), $this->changeSettings());
+    }
+
+    public function policyPackActions(): \RivetCore\Rmm\Technician\PolicyPackActions
+    {
+        return $this->policyPackActions ??= new \RivetCore\Rmm\Technician\PolicyPackActions($this->authorizer(), $this->policyPackInstaller(), $this->audit);
+    }
+
     /** The starter pack routes (mounted by {@see technicianApi()}). */
     public function starterApi(): StarterApi
     {
-        return $this->starterApi ??= new StarterApi($this->starterActions());
+        return $this->starterApi ??= new StarterApi($this->starterActions(), $this->policyPackActions());
     }
 
     // ------------------------------------------------------------------ technician and administration side

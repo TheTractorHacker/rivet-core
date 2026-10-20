@@ -6,6 +6,7 @@ namespace RivetCore\Rmm\Http;
 
 use RivetCore\Rmm\Authz\RmmPrincipal;
 use RivetCore\Rmm\Technician\ActionResult;
+use RivetCore\Rmm\Technician\PolicyPackActions;
 use RivetCore\Rmm\Technician\StarterActions;
 
 /**
@@ -19,6 +20,9 @@ use RivetCore\Rmm\Technician\StarterActions;
  *   POST endpoint_devices/starter/install      the same body: installs it; per item outcome added, updated, staged, unchanged, skipped, blocked, failed
  *   POST endpoint_devices/starter/uninstall    the same body, plus {dry_run?}: retires untouched starter scripts and deletes untouched, off, unassigned drafts
  *
+ *   GET  endpoint_devices/starter/policies           the policy starter pack: every policy, alerting preset, patch policy, maintenance window and change preset with its state
+ *   POST endpoint_devices/starter/policies/{plan|install|update|reset|uninstall}   {ids?, params?, include_live?, confirm_instance_wide?, dry_run?, op? (plan only)}
+ *
  * @api
  */
 final class StarterApi
@@ -26,7 +30,7 @@ final class StarterApi
     /** First path segment that belongs here. */
     public const FLEET = ['starter'];
 
-    public function __construct(private readonly StarterActions $starter)
+    public function __construct(private readonly StarterActions $starter, private readonly ?PolicyPackActions $policyPack = null)
     {
     }
 
@@ -35,6 +39,9 @@ final class StarterApi
     {
         $m = strtoupper($req->method);
         $what = $seg[1] ?? null;
+        if ($what === 'policies' && $this->policyPack !== null) {
+            return $this->policies($req, $who, $m, $seg[2] ?? null, $seg[3] ?? null);
+        }
         if (isset($seg[2]) || $what === null) {
             return self::json(404, ['error' => 'Not found', 'code' => 'not_found']);
         }
@@ -71,6 +78,39 @@ final class StarterApi
         unset($in['dry_run']);
 
         return self::result($this->starter->uninstall($who, $in, $dry));
+    }
+
+    private function policies(RmmRequest $req, RmmPrincipal $who, string $m, ?string $op, ?string $extra): RmmResponse
+    {
+        if ($extra !== null) {
+            return self::json(404, ['error' => 'Not found', 'code' => 'not_found']);
+        }
+        if ($op === null) {
+            return $m === 'GET' ? self::result($this->policyPack->catalog($who)) : self::method();
+        }
+        if (!in_array($op, ['plan', 'install', 'update', 'reset', 'uninstall'], true)) {
+            return self::json(404, ['error' => 'Not found', 'code' => 'not_found']);
+        }
+        if ($m !== 'POST') {
+            return self::method();
+        }
+        [$in, $bad] = $this->body($req);
+        if ($bad !== null) {
+            return $bad;
+        }
+        $dry = !empty($in['dry_run']);
+        unset($in['dry_run']);
+        if ($op === 'plan') {
+            $o = $in['op'] ?? 'install';
+            unset($in['op']);
+            if (!is_string($o) || !in_array($o, ['install', 'update', 'reset', 'uninstall'], true)) {
+                return self::json(422, ['error' => 'op must be install, update, reset or uninstall.', 'code' => 'invalid']);
+            }
+
+            return self::result($this->policyPack->run($who, $o, $in, true));
+        }
+
+        return self::result($this->policyPack->run($who, $op, $in, $dry));
     }
 
     /** @return array{0:array<string,mixed>,1:?RmmResponse} */
