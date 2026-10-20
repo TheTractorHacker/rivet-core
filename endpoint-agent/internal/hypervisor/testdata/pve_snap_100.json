@@ -1,0 +1,3 @@
+[{"name":"before-upgrade","snaptime":1759000000,"description":"password is in here","vmstate":0,"parent":null},
+ {"name":"weekly","snaptime":1760000000,"parent":"before-upgrade"},
+ {"name":"current","digest":"abc","running":1,"description":"You are here!","parent":"weekly"}]

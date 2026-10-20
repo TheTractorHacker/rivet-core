@@ -95,7 +95,10 @@ func (p *Proxmox) States(ctx context.Context, o Options) (map[string]string, err
 	if err != nil {
 		return nil, err
 	}
-	vms, _ := parseResources(out)
+	vms, _, ok := parseResources(out)
+	if !ok {
+		return nil, errors.New("the guest list is unreadable")
+	}
 	m := make(map[string]string, len(vms))
 	for _, v := range vms {
 		m[v.ID] = v.State
@@ -139,7 +142,11 @@ func (p *Proxmox) Full(ctx context.Context, o Options) (*api.HypervisorReport, e
 		rep.Error = cleanText("guests: "+errText(err), MaxErrorLen)
 		return rep, errors.New(rep.Error)
 	}
-	vms, bad := parseResources(out)
+	vms, bad, ok := parseResources(out)
+	if !ok {
+		rep.Error = "guests: the guest list is unreadable"
+		return rep, errors.New(rep.Error)
+	}
 	if bad > 0 {
 		problems = append(problems, fmt.Sprintf("%d guest entries could not be read", bad))
 	}
@@ -386,10 +393,10 @@ func stateOf(s string) string {
 }
 
 // parseResources reads /cluster/resources?type=vm. bad counts entries that were skipped.
-func parseResources(b []byte) (vms []pveVM, bad int) {
+func parseResources(b []byte) (vms []pveVM, bad int, ok bool) {
 	items, ok := decodeArray(b)
 	if !ok {
-		return nil, 1
+		return nil, 0, false
 	}
 	for _, it := range items {
 		typ := str(it["type"])
@@ -443,7 +450,7 @@ func parseResources(b []byte) (vms []pveVM, bad int) {
 		v.Tags = splitTags(str(it["tags"]))
 		vms = append(vms, v)
 	}
-	return vms, bad
+	return vms, bad, true
 }
 
 func splitTags(s string) []string {

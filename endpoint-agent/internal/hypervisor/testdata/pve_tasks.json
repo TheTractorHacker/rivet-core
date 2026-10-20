@@ -1,0 +1,4 @@
+[{"upid":"UPID:devpve:0001:00000001:6700:vzdump:100:root@pam:","node":"devpve","pid":1,"pstart":1,"starttime":1760000000,"endtime":1760000300,"type":"vzdump","id":"100","user":"root@pam","status":"OK"},
+ {"upid":"UPID:devpve:0002:00000002:6700:vzdump:101:root@pam:","node":"devpve","pid":2,"pstart":2,"starttime":1760100000,"endtime":1760100100,"type":"vzdump","id":"101","user":"root@pam","status":"ERROR: job failed with err -5 - Input/output error"},
+ {"upid":"UPID:devpve:0003:00000003:6700:vzdump::root@pam:","node":"devpve","pid":3,"pstart":3,"starttime":1760200000,"endtime":1760200900,"type":"vzdump","id":"","user":"root@pam","status":"WARNINGS: 1"},
+ {"upid":"UPID:devpve:0004:00000004:6700:vzdump:200:root@pam:","node":"devpve","pid":4,"pstart":4,"starttime":1760300000,"type":"vzdump","id":"200","user":"root@pam","status":"OK"}]
