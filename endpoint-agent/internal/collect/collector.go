@@ -29,6 +29,7 @@ type Collector struct {
 	mu      sync.Mutex
 	cpuPrev *cpuSample
 	netPrev *netSample
+	extPrev *extSample
 	hung    map[string]bool
 
 	stateDirV string
@@ -115,6 +116,16 @@ func call[T any](c *Collector, ctx context.Context, key string, d time.Duration,
 	}
 }
 
+// extSample is the previous reading of the cumulative counters behind the extended metrics.
+type extSample struct {
+	cores         []CoreTime
+	reads, writes uint64
+	haveIO        bool
+	errs          uint64
+	haveErrs      bool
+	at            time.Time
+}
+
 func pct(v float64) *float64 {
 	if v < 0 {
 		v = 0
@@ -157,6 +168,8 @@ func (c *Collector) Metrics(ctx context.Context) api.Metrics {
 		return mem{t, a}, err
 	}); err == nil && r.t > 0 && r.a <= r.t {
 		m.MemPct = pct(100 * float64(r.t-r.a) / float64(r.t))
+		t, a, u := r.t, r.a, r.t-r.a
+		m.MemTotalBytes, m.MemAvailableBytes, m.MemUsedBytes = &t, &a, &u
 	}
 
 	if ds, err := call(c, ctx, "disks", 0, c.P.Disks); err == nil {
@@ -164,7 +177,8 @@ func (c *Collector) Metrics(ctx context.Context) api.Metrics {
 			if d.Total == 0 || d.Free > d.Total {
 				continue
 			}
-			m.Disk = append(m.Disk, api.DiskMetric{Mount: d.Mount, UsedPct: *pct(100 * float64(d.Total-d.Free) / float64(d.Total))})
+			free, total := d.Free, d.Total
+			m.Disk = append(m.Disk, api.DiskMetric{Mount: d.Mount, UsedPct: *pct(100 * float64(d.Total-d.Free) / float64(d.Total)), FreeBytes: &free, TotalBytes: &total})
 		}
 	}
 
@@ -187,6 +201,7 @@ func (c *Collector) Metrics(ctx context.Context) api.Metrics {
 			}
 		}
 	}
+	c.extendedMetrics(ctx, &m)
 	return m
 }
 

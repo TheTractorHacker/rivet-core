@@ -120,7 +120,7 @@ func TestCPUDeltaAndFirstSampleNull(t *testing.T) {
 
 func TestFailedCollectorsAreNullNeverZero(t *testing.T) {
 	f := newFake()
-	for _, k := range []string{"cpu", "mem", "disks", "net"} {
+	for _, k := range []string{"cpu", "mem", "disks", "net", "uptime", "pendingreboot"} {
 		f.fail[k] = true
 	}
 	b, _ := json.Marshal(newCol(f).Metrics(context.Background()))

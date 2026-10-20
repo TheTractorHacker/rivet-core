@@ -131,6 +131,9 @@ type Inventory struct {
 type DiskMetric struct {
 	Mount   string  `json:"mount"`
 	UsedPct float64 `json:"used_pct"`
+	// Additive (rc.25): absent from older agents; a server that does not know them ignores them.
+	FreeBytes  *uint64 `json:"free_bytes,omitempty"`
+	TotalBytes *uint64 `json:"total_bytes,omitempty"`
 }
 
 // Metrics: a metric that could not be collected is null, NEVER 0.
@@ -140,7 +143,24 @@ type Metrics struct {
 	Disk     []DiskMetric `json:"disk"`
 	NetRxBps *float64     `json:"net_rx_bps"`
 	NetTxBps *float64     `json:"net_tx_bps"`
+
+	// Additive since rc.25 (protocol 1 stays frozen: every field is optional and omitted when it could not be read).
+	MemUsedBytes      *uint64   `json:"mem_used_bytes,omitempty"`
+	MemAvailableBytes *uint64   `json:"mem_available_bytes,omitempty"`
+	MemTotalBytes     *uint64   `json:"mem_total_bytes,omitempty"`
+	UptimeS           *uint64   `json:"uptime_s,omitempty"`
+	PendingReboot     *int      `json:"pending_reboot,omitempty"` // 0 or 1
+	CPUCorePct        []float64 `json:"cpu_core_pct,omitempty"`   // per logical core, at most MaxCores
+	DiskReadIOPS      *float64  `json:"disk_read_iops,omitempty"`
+	DiskWriteIOPS     *float64  `json:"disk_write_iops,omitempty"`
+	DiskQueue         *float64  `json:"disk_queue,omitempty"`
+	NetErrors         *uint64   `json:"net_errors,omitempty"` // errors since the previous sample
+	BatteryPct        *float64  `json:"battery_pct,omitempty"`
+	BatteryCharging   *int      `json:"battery_charging,omitempty"` // 0 or 1
 }
+
+// MaxCores caps cpu_core_pct.
+const MaxCores = 256
 
 type CheckResult struct {
 	Key    string `json:"key"`

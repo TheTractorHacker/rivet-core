@@ -1,0 +1,135 @@
+{
+  "about": "rc.25 additive vector: a check-in 'metrics' object with every optional extended field, and the samples a server with metrics_extended=1 must produce. Old servers ignore the extra members; battery_charging is accepted and not mapped (no metric key). The Go agent's api.Metrics must round-trip this object unchanged (endpoint-agent/internal/api/vectors_test.go).",
+  "metrics": {
+    "cpu_pct": 12.5,
+    "mem_pct": 40,
+    "disk": [
+      {
+        "mount": "C:",
+        "used_pct": 60.8,
+        "free_bytes": 200000000000,
+        "total_bytes": 512000000000
+      }
+    ],
+    "net_rx_bps": 8000,
+    "net_tx_bps": 4000,
+    "mem_used_bytes": 6000000000,
+    "mem_available_bytes": 10000000000,
+    "mem_total_bytes": 16000000000,
+    "uptime_s": 7200,
+    "pending_reboot": 1,
+    "cpu_core_pct": [
+      10.5,
+      20,
+      30.25
+    ],
+    "disk_read_iops": 12.5,
+    "disk_write_iops": 7,
+    "disk_queue": 0.5,
+    "net_errors": 3,
+    "battery_pct": 81.5,
+    "battery_charging": 1
+  },
+  "expect_samples": [
+    {
+      "key": "cpu.utilization",
+      "instance": null,
+      "value": 12.5
+    },
+    {
+      "key": "memory.utilization",
+      "instance": null,
+      "value": 40
+    },
+    {
+      "key": "disk.utilization",
+      "instance": "C:",
+      "value": 60.8
+    },
+    {
+      "key": "network.rx_bytes_per_s",
+      "instance": "total",
+      "value": 1000
+    },
+    {
+      "key": "network.tx_bytes_per_s",
+      "instance": "total",
+      "value": 500
+    },
+    {
+      "key": "disk.free_bytes",
+      "instance": "C:",
+      "value": 200000000000
+    },
+    {
+      "key": "disk.total_bytes",
+      "instance": "C:",
+      "value": 512000000000
+    },
+    {
+      "key": "memory.used_bytes",
+      "instance": null,
+      "value": 6000000000
+    },
+    {
+      "key": "memory.available_bytes",
+      "instance": null,
+      "value": 10000000000
+    },
+    {
+      "key": "memory.total_bytes",
+      "instance": null,
+      "value": 16000000000
+    },
+    {
+      "key": "system.uptime_seconds",
+      "instance": null,
+      "value": 7200
+    },
+    {
+      "key": "system.pending_reboot",
+      "instance": null,
+      "value": 1
+    },
+    {
+      "key": "cpu.core.utilization",
+      "instance": "0",
+      "value": 10.5
+    },
+    {
+      "key": "cpu.core.utilization",
+      "instance": "1",
+      "value": 20
+    },
+    {
+      "key": "cpu.core.utilization",
+      "instance": "2",
+      "value": 30.25
+    },
+    {
+      "key": "disk.read_iops",
+      "instance": "total",
+      "value": 12.5
+    },
+    {
+      "key": "disk.write_iops",
+      "instance": "total",
+      "value": 7
+    },
+    {
+      "key": "disk.queue_length",
+      "instance": "total",
+      "value": 0.5
+    },
+    {
+      "key": "network.errors",
+      "instance": "total",
+      "value": 3
+    },
+    {
+      "key": "battery.charge_percent",
+      "instance": null,
+      "value": 81.5
+    }
+  ]
+}

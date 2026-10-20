@@ -4076,8 +4076,22 @@ components:
                 properties:
                   mount: {type: string}
                   used_pct: {type: [number, 'null']}
+                  free_bytes: {type: integer, minimum: 0, description: 'rc.25, optional'}
+                  total_bytes: {type: integer, minimum: 0, description: 'rc.25, optional'}
             net_rx_bps: {type: [number, 'null']}
             net_tx_bps: {type: [number, 'null']}
+            mem_used_bytes: {type: integer, minimum: 0, description: 'rc.25, optional'}
+            mem_available_bytes: {type: integer, minimum: 0, description: 'rc.25, optional'}
+            mem_total_bytes: {type: integer, minimum: 0, description: 'rc.25, optional'}
+            uptime_s: {type: integer, minimum: 0, description: 'rc.25, optional'}
+            pending_reboot: {type: integer, enum: [0, 1], description: 'rc.25, optional'}
+            cpu_core_pct: {type: array, maxItems: 256, items: {type: number, minimum: 0, maximum: 100}, description: 'rc.25, optional, per logical core'}
+            disk_read_iops: {type: number, minimum: 0, description: 'rc.25, optional'}
+            disk_write_iops: {type: number, minimum: 0, description: 'rc.25, optional'}
+            disk_queue: {type: number, minimum: 0, description: 'rc.25, optional'}
+            net_errors: {type: integer, minimum: 0, description: 'rc.25, optional, since the previous sample'}
+            battery_pct: {type: number, minimum: 0, maximum: 100, description: 'rc.25, optional, only with a battery'}
+            battery_charging: {type: integer, enum: [0, 1], description: 'rc.25, optional, accepted and not mapped'}
         checks:
           type: array
           maxItems: 100

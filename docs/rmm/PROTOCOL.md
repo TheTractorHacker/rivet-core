@@ -198,6 +198,25 @@ A PC whose clock or time zone is wrong used to be refused at every check-in ("co
 * **`clock_offset_s`** (optional integer, check-in request): the agent's own estimate of server time minus its clock. Informational; values beyond 24 h or not integers are ignored, never an error.
 * **Server.** On every accepted check-in it stores the skew it measured (`collected_at` minus its own clock) on the device, and on the first refused one (then at most hourly) the skew and the reason. The technician device detail gains an additive `clock` object `{skew_s, measured_at, agent_offset_s, last_reject}` and the live document gains it only when worth showing. `rmm.device.clock_skew` is published when `|skew|` exceeds the `clock_skew_alert_s` limit (default 120, 0 = off), at most once per device per day. See [CLOCK_AND_TIME.md](CLOCK_AND_TIME.md).
 
+#### 3.2.9 Extended check-in metrics (additive, 1.0.0-rc.25)
+
+The metrics subsystem has keys for memory bytes, disk bytes, per-core load, disk I/O, network errors and battery, but an agent used to send only `cpu_pct`, `mem_pct`, `disk[{mount, used_pct}]`, `net_rx_bps` and `net_tx_bps`, so those charts stayed blank. rc.25 adds OPTIONAL members to the check-in `metrics` object (and to each `buffered[].metrics`). An agent leaves out any member it could not read (never 0); a server that predates this ignores them; an agent that predates this simply does not send them. No existing member changes.
+
+| Member | Type | Metric key (instance) |
+|---|---|---|
+| `mem_used_bytes`, `mem_available_bytes`, `mem_total_bytes` | integer >= 0 | `memory.used_bytes`, `memory.available_bytes`, `memory.total_bytes` |
+| `disk[].free_bytes`, `disk[].total_bytes` | integer >= 0 | `disk.free_bytes`, `disk.total_bytes` (mount) |
+| `uptime_s` | integer >= 0 | `system.uptime_seconds` |
+| `pending_reboot` | 0 or 1 | `system.pending_reboot` |
+| `cpu_core_pct` | list of numbers 0..100, at most 256 (`CHECKIN_MAX_CORES`), index = core | `cpu.core.utilization` (instance `"0"`, `"1"`, ..., label `Core N`) |
+| `disk_read_iops`, `disk_write_iops` | number >= 0, operations per second since the previous sample, summed over physical disks | `disk.read_iops`, `disk.write_iops` (`total`) |
+| `disk_queue` | number >= 0, instantaneous queue depth summed over physical disks | `disk.queue_length` (`total`) |
+| `net_errors` | integer >= 0, receive plus transmit errors since the previous sample | `network.errors` (`total`) |
+| `battery_pct` | number 0..100, only when a battery exists | `battery.charge_percent` |
+| `battery_charging` | 0 or 1 | accepted, not mapped (no metric key) |
+
+Rates (`cpu_core_pct`, IOPS, `net_errors`) are absent from the first sample after the agent starts and after a counter reset. The server validates every member on its own: a bad member is dropped (never clamped), the others still count. The `metrics_extended` limit (0 or 1, default 1) makes the server ignore the whole group. The stored `last_metrics_json` keeps its original five members. The agent adds about 300 bytes per sample (about 40 bytes per core).
+
 ### 3.6 Remote-tool job types (Phase 6, additive)
 
 Six job types, queued only by their own technician endpoints, only for a device that announced the matching capability flag (an agent that announced no capability at all is never assumed to have it, unlike the `job:<type>` rule), and only while the `remote_tools` (services, processes) or `filetransfer` (files) sub-switch is on. They are signed like every job; their `params` are flat, validated on the server against strict allow-lists and validated again by the agent, which turns them into an argument list and never into a command string. The result is the job report: `succeeded` with exit code 0, or `failed` with exit code 1, and `output` is one compact JSON document (at most `max_output_bytes`; lists are shortened with `"truncated": true`, never cut mid-text).
@@ -378,6 +397,7 @@ These are the values of `RivetCore\Rmm\RmmProtocol`; `tests/Unit/Rmm/FrozenConst
 | `CHECKIN_MAX_CHECKS` | `100` |
 | `CHECKIN_MAX_BUFFERED` | `100` |
 | `CHECKIN_MAX_DISKS` | `32` |
+| `CHECKIN_MAX_CORES` | `256` |
 | `CHECKIN_MAX_INVENTORY_BYTES` | `65536` |
 | `CHECKIN_FUTURE_SKEW_S` | `900` |
 | `CLOCK_OFFSET_MAX_S` | `86400` |

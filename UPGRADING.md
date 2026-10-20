@@ -166,6 +166,15 @@ For an edition that already runs the RMM module. Everything is additive and dorm
 8. **Constructor arguments.** `RmmModule` builds everything (`meshAgentSettings()`, `meshAgents()`); an edition that constructs `CheckinService`, `InstallerDownload`, `InstallerService`, `RmmAdmin`, `RemoteActions` or `RmmReadModel` itself passes the new optional trailing arguments or switches to `RmmModule`.
 9. **The agent.** Ship the agent of this release (its installer understands the new payload members, `install-linux.sh` gains `--install-mesh-agent`, `--mesh-url`, `--mesh-group-id`, `--mesh-cert-pin`, `--no-mesh-agent` and `uninstall --remove-meshagent`). **Not verified against a real MeshCentral server**: the download address, the agent ids, the install arguments and the node-id locations are from the MeshCentral documentation as remembered and are exercised against mocks only; check them against your Mesh version before a fleet roll-out (the ids and arguments can be corrected from the server without a new agent).
 
+## Adopting extended check-in metrics (1.0.0-rc.25)
+
+No migration. Ship the rc.25 agent: it adds optional members to the check-in `metrics` object (PROTOCOL.md 3.2.9); the server of this release maps them to the existing metric keys, so memory bytes, disk bytes, per-core, disk I/O, network error and battery charts fill in. Old agents keep sending the five original members; an old server ignores the new ones.
+
+1. **Volume.** Each check-in batch now yields about 13 + 2 x disks + cores more samples (see CAPACITY.md 6.1). To keep the old volume set `{"metrics_extended": 0}` in the module limits; the server then ignores the extra members (the agent still sends them, about 300 bytes).
+2. **Editions with their own sink** (`RmmMetricSinkInterface`) receive new keys: `memory.used_bytes`, `memory.available_bytes`, `cpu.core.utilization` (instance `"0"`..`"255"`), `disk.read_iops`, `disk.write_iops`, `disk.queue_length`, `network.errors`, `battery.charge_percent`, and `disk.free_bytes`/`disk.total_bytes`/`memory.total_bytes`/`system.*` now on every check-in. Make sure the metric definitions exist (an unknown key should be dropped by the sink, not fail the batch).
+3. **`DatabaseMetricSink`** keeps hourly rollups for eight more keys; the hourly table grows accordingly.
+4. **Windows.** The new Windows collectors were not run on a real Windows host before release; verify one device (Metrics tab) after the update.
+
 ## Adopting device clock-skew handling (migration 0031, 1.0.0-rc.23)
 
 For every edition that runs the RMM module. Additive; old agents keep working.

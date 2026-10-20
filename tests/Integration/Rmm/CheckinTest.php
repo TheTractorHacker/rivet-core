@@ -454,4 +454,105 @@ final class CheckinTest extends RmmTestCase
         }
         $this->assertSame(Signer::keyId($pub), $r['signing_key_id']);
     }
+
+    /** @return array<string,mixed> */
+    private static function extendedMetrics(): array
+    {
+        return ['cpu_pct' => 12.5, 'mem_pct' => 40, 'disk' => [['mount' => 'C:', 'used_pct' => 60.8, 'free_bytes' => 200000000000, 'total_bytes' => 512000000000]], 'net_rx_bps' => 8000, 'net_tx_bps' => 4000,
+            'mem_used_bytes' => 6000000000, 'mem_available_bytes' => 10000000000, 'mem_total_bytes' => 16000000000, 'uptime_s' => 7200, 'pending_reboot' => 1,
+            'cpu_core_pct' => [10.5, 20, 30.25], 'disk_read_iops' => 12.5, 'disk_write_iops' => 7, 'disk_queue' => 0.5, 'net_errors' => 3, 'battery_pct' => 81.5, 'battery_charging' => 1];
+    }
+
+    public function testExtendedMetricsProduceASamplePerMappedKey(): void
+    {
+        $this->linkedDevice();
+        [$c] = $this->h->checkin($this->T, ['metrics' => self::extendedMetrics()]);
+        $this->assertSame(200, $c);
+        $want = ['memory.used_bytes' => 6000000000, 'memory.available_bytes' => 10000000000, 'memory.total_bytes' => 16000000000, 'system.uptime_seconds' => 7200, 'system.pending_reboot' => 1,
+            'disk.read_iops' => 12.5, 'disk.write_iops' => 7, 'disk.queue_length' => 0.5, 'network.errors' => 3, 'battery.charge_percent' => 81.5, 'disk.free_bytes' => 200000000000, 'disk.total_bytes' => 512000000000,
+            'cpu.utilization' => 12.5, 'memory.utilization' => 40, 'disk.utilization' => 60.8, 'network.rx_bytes_per_s' => 1000, 'network.tx_bytes_per_s' => 500];
+        foreach ($want as $key => $value) {
+            $s = $this->samples($key);
+            $this->assertCount(1, $s, $key);
+            $this->assertEquals($value, $s[0]['value'], $key);
+        }
+        $this->assertSame('C:', $this->samples('disk.free_bytes')[0]['instance']);
+        $this->assertSame('total', $this->samples('disk.read_iops')[0]['instance']);
+        $cores = $this->samples('cpu.core.utilization');
+        $this->assertSame(['0', '1', '2'], array_column($cores, 'instance'));
+        $this->assertEquals([10.5, 20, 30.25], array_column($cores, 'value'));
+        $this->assertSame('Core 1', $cores[1]['label']);
+    }
+
+    public function testExtendedMetricsSwitchOffKeepsTheBasics(): void
+    {
+        $this->linkedDevice();
+        $this->h->module->settings()->set(['limits_json' => json_encode(['metrics_extended' => 0])]);
+        [$c] = $this->h->checkin($this->T, ['metrics' => self::extendedMetrics()]);
+        $this->assertSame(200, $c);
+        foreach (['memory.used_bytes', 'cpu.core.utilization', 'disk.free_bytes', 'battery.charge_percent', 'network.errors', 'system.uptime_seconds'] as $k) {
+            $this->assertCount(0, $this->samples($k), $k);
+        }
+        foreach (['cpu.utilization', 'memory.utilization', 'disk.utilization', 'network.rx_bytes_per_s'] as $k) {
+            $this->assertCount(1, $this->samples($k), $k);
+        }
+    }
+
+    public function testHostileExtendedFieldsAreDroppedOneByOne(): void
+    {
+        $this->linkedDevice();
+        $m = ['cpu_pct' => 5, 'mem_used_bytes' => -5, 'mem_available_bytes' => 'lots', 'mem_total_bytes' => 4096, 'uptime_s' => 1.0e30, 'pending_reboot' => 7,
+            'cpu_core_pct' => array_merge([50, 150, -1, 'x', null], array_fill(0, 400, 1)), 'disk' => [['mount' => 'D:', 'used_pct' => 1, 'free_bytes' => 'x', 'total_bytes' => 10]],
+            'disk_read_iops' => -1, 'disk_write_iops' => 'NaN', 'disk_queue' => [1], 'net_errors' => 2, 'battery_pct' => 101];
+        [$c] = $this->h->checkin($this->T, ['metrics' => $m]);
+        $this->assertSame(200, $c);
+        foreach (['memory.used_bytes', 'memory.available_bytes', 'system.uptime_seconds', 'system.pending_reboot', 'disk.read_iops', 'disk.write_iops', 'disk.queue_length', 'disk.free_bytes'] as $k) {
+            $this->assertCount(0, $this->samples($k), $k);
+        }
+        $this->assertCount(1, $this->samples('memory.total_bytes'));
+        $this->assertCount(1, $this->samples('disk.total_bytes'));
+        $this->assertCount(1, $this->samples('network.errors'));
+        $this->assertCount(1, $this->samples('cpu.utilization'));
+        $cores = $this->samples('cpu.core.utilization');
+        $this->assertLessThanOrEqual(256, count($cores), 'capped');
+        $this->assertSame('0', $cores[0]['instance']);
+        $this->assertCount(0, array_filter($cores, static fn (array $s): bool => $s['value'] > 100 || $s['value'] < 0));
+        $this->assertCount(0, $this->samples('battery.charge_percent'), 'a charge above 100 is not a percentage');
+    }
+
+    public function testAnOldStyleCheckinStillWorksAndAddsNoExtendedSamples(): void
+    {
+        $this->linkedDevice();
+        [$c] = $this->h->checkin($this->T, ['metrics' => ['cpu_pct' => 12.5, 'mem_pct' => 40, 'disk' => [['mount' => 'C:', 'used_pct' => 60.8]], 'net_rx_bps' => 1000.5, 'net_tx_bps' => 500]]);
+        $this->assertSame(200, $c);
+        $this->assertCount(1, $this->samples('disk.utilization'));
+        foreach (['memory.used_bytes', 'cpu.core.utilization', 'disk.free_bytes', 'disk.total_bytes', 'battery.charge_percent', 'system.uptime_seconds'] as $k) {
+            $this->assertCount(0, $this->samples($k), $k);
+        }
+        $m = json_decode((string) $this->h->one("SELECT last_metrics_json FROM endpoint_agent_devices WHERE device_id={$this->dev}"), true);
+        $this->assertSame(['cpu_pct', 'mem_pct', 'disk', 'net_rx_bps', 'net_tx_bps'], array_keys($m), 'the stored last-metrics document keeps its frozen shape');
+    }
+
+    public function testExtendedMetricsInABufferedBatchAreMappedToo(): void
+    {
+        $this->linkedDevice();
+        [$c] = $this->h->checkin($this->T, ['buffered' => [['collected_at' => $this->h::ts(-600), 'metrics' => self::extendedMetrics(), 'checks' => []]]]);
+        $this->assertSame(200, $c);
+        $this->assertCount(1, $this->samples('memory.used_bytes'));
+        $this->assertCount(3, $this->samples('cpu.core.utilization'));
+    }
+
+    public function testSharedVectorProducesExactlyTheDeclaredSamples(): void
+    {
+        $v = json_decode((string) file_get_contents(__DIR__ . '/../../Fixtures/rmm/vectors/metrics-extended.json'), true);
+        $this->linkedDevice();
+        [$c] = $this->h->checkin($this->T, ['metrics' => $v['metrics']]);
+        $this->assertSame(200, $c);
+        $got = array_map(static fn (array $s): array => ['key' => $s['key'], 'instance' => $s['instance'], 'value' => (float) $s['value']], $this->h->metrics->stored());
+        $want = array_map(static fn (array $s): array => ['key' => $s['key'], 'instance' => $s['instance'], 'value' => (float) $s['value']], $v['expect_samples']);
+        $order = static fn (array $a, array $b): int => [$a['key'], (string) $a['instance']] <=> [$b['key'], (string) $b['instance']];
+        usort($got, $order);
+        usort($want, $order);
+        $this->assertEquals($want, $got);
+    }
 }

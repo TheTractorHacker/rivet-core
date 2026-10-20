@@ -213,6 +213,7 @@ Inputs: devices D, check-in interval C (s), collect interval K (s), metrics on o
 check-ins per second   = D / C
 batches per check-in   = max(1, round(C / K))
 sample rows per check-in = batches x 7                      (0 with metrics off; about 7 per batch: cpu, memory, 1 to 3 disks, rx, tx)
+with metrics_extended (default on, rc.25): + 14 + 2 x disks + cores per batch   (about 22 + cores more; see 6.1)
 rows per check-in      = 7 + sample rows                    (check-in row, device updates, link; the model's base)
 statements per check-in = 12 + (metrics on ? 7 + batches : 0)
 rows/s = check-ins/s x rows per check-in        statements/s = check-ins/s x statements per check-in
@@ -228,6 +229,10 @@ steady raw storage     = sample rows x check-ins/s x 86,400 x R x 120 bytes
 | 5,000 | Recommended | 16.7 | 233 | 333 | 2.5 (7.5) | 36 GB | 8.5 GB (7 d) |
 | 10,000 | Recommended | 33.3 | 467 | 667 | 5 (15) | 73 GB | 17 GB (7 d) |
 | 5,000 | Light | 8.3 | 58 | 100 | 1.25 (3.75) | 0 | 0 |
+
+### 6.1 Extended metrics (rc.25, `metrics_extended`)
+
+With the limit on (the default) every batch carries, besides the 7 samples above: memory used, available and total (3), uptime and pending reboot (2), per disk free and total bytes (2 x disks, so 2 to 6), per core utilization (one per logical core, at most 256), disk read IOPS, write IOPS and queue (3) and network errors (1), plus battery on laptops. That is about **13 + 2 x disks + cores** more sample rows: a typical 8 core machine with 2 disks goes from 7 to about 32 per batch (4.5x), a 64 core server to about 88. The check-in body grows by about 300 bytes plus 40 bytes per core. Raw storage and the sink's multi-row INSERTs scale with the sample count, so a fleet that sized itself on 7 rows per batch should multiply the sample-row terms of the formulas by about 4.5 (more for servers) or turn the group off with `{"metrics_extended": 0}` in the limits (the server then ignores the members; the basic five metrics are unaffected). The database metric sink keeps the latest value of every key but writes an hourly rollup row only for the keys listed in `DatabaseMetricSink::ROLLUP_KEYS`; rc.25 adds eight of them (memory used and available, per-core utilization, disk read and write IOPS, queue length, network errors, battery charge), so the hourly table grows by about 8 + cores rows per device per hour. Not measured under load in this release: the figures are counted from the code, not benchmarked.
 
 The constants (7 rows per batch, 12 base statements, 120 bytes per row, 0.15 s per request) are the design's assumptions; section 8 compares them with measurements.
 `CapacityReport::project()` is exactly this and is unit-tested against the design's table.

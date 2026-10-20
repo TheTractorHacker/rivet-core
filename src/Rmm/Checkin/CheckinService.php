@@ -43,6 +43,7 @@ final class CheckinService
     public const MAX_CHECKS = RmmProtocol::CHECKIN_MAX_CHECKS;
     public const MAX_BUFFERED = RmmProtocol::CHECKIN_MAX_BUFFERED;
     public const MAX_DISKS = RmmProtocol::CHECKIN_MAX_DISKS;
+    public const MAX_CORES = RmmProtocol::CHECKIN_MAX_CORES;
     public const MAX_INVENTORY_BYTES = RmmProtocol::CHECKIN_MAX_INVENTORY_BYTES;
     private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
     /** At load-shedding level 1 buffered samples older than this are acknowledged but not ingested. */
@@ -419,11 +420,12 @@ final class CheckinService
         if ($assetId > 0 && $features['metrics']) {
             $staleBefore = (int) ($w['received'] ?? $this->sql->time()) - self::SHED_STALE_SAMPLE_S;
             $shed = !empty($w['shed']);
+            $extended = (int) ($this->settings->limits()['metrics_extended'] ?? 1) === 1;
             foreach ($batches as $i => [$at, $m, $inv]) {
                 if ($shed && $i > 0 && $at->getTimestamp() < $staleBefore) {
                     continue;   // acknowledged, not ingested
                 }
-                foreach ($this->samplesFor($assetId, $at, $m, $inv) as $s) {
+                foreach ($this->samplesFor($assetId, $at, $m, $inv, $extended) as $s) {
                     $samples[] = $s;
                 }
             }
@@ -530,7 +532,7 @@ final class CheckinService
      * @param array<string,mixed>|null $inv
      * @return list<array{asset_id:int,key:string,instance:?string,value:int|float,at:\DateTimeImmutable,label:?string}>
      */
-    private function samplesFor(int $assetId, \DateTimeImmutable $at, ?array $m, ?array $inv): array
+    private function samplesFor(int $assetId, \DateTimeImmutable $at, ?array $m, ?array $inv, bool $extended = true): array
     {
         $out = [];
         $add = static function (string $key, ?string $inst, int|float|null $val, ?string $label = null) use (&$out, $assetId, $at): void {
@@ -548,8 +550,16 @@ final class CheckinService
             $disks = is_array($m['disk'] ?? null) ? array_slice($m['disk'], 0, self::MAX_DISKS) : [];
             foreach ($disks as $d) {
                 if (is_array($d) && is_string($d['mount'] ?? null) && $d['mount'] !== '') {
-                    $add('disk.utilization', mb_substr($d['mount'], 0, 64), self::num($d['used_pct'] ?? null), mb_substr($d['mount'], 0, 64));
+                    $mt = mb_substr($d['mount'], 0, 64);
+                    $add('disk.utilization', $mt, self::num($d['used_pct'] ?? null), $mt);
+                    if ($extended) {
+                        $add('disk.free_bytes', $mt, self::intOrNull($d['free_bytes'] ?? null), $mt);
+                        $add('disk.total_bytes', $mt, self::intOrNull($d['total_bytes'] ?? null), $mt);
+                    }
                 }
+            }
+            if ($extended) {
+                $this->extendedSamples($m, $add);
             }
             // The agent reports BITS per second; the metric registry stores bytes per second.
             $rx = self::num($m['net_rx_bps'] ?? null);
@@ -574,6 +584,37 @@ final class CheckinService
         }
 
         return $out;
+    }
+
+    /**
+     * The optional per-check-in fields added in rc.25 (protocol 1 stays frozen: an agent that does not send them simply produces no sample for them). Every
+     * value is validated on its own, so one bad field never costs the others; the `metrics_extended` limit (default on) turns the whole group off.
+     *
+     * @param array<string,mixed> $m
+     * @param \Closure(string,?string,int|float|null,?string=):void $add
+     */
+    private function extendedSamples(array $m, \Closure $add): void
+    {
+        $add('memory.used_bytes', null, self::intOrNull($m['mem_used_bytes'] ?? null));
+        $add('memory.available_bytes', null, self::intOrNull($m['mem_available_bytes'] ?? null));
+        $add('memory.total_bytes', null, self::intOrNull($m['mem_total_bytes'] ?? null));
+        $add('system.uptime_seconds', null, self::intOrNull($m['uptime_s'] ?? null));
+        $pr = $m['pending_reboot'] ?? null;
+        if ($pr === 0 || $pr === 1) {
+            $add('system.pending_reboot', null, $pr);
+        }
+        $cores = $m['cpu_core_pct'] ?? null;
+        if (is_array($cores) && array_is_list($cores)) {
+            foreach (array_slice($cores, 0, self::MAX_CORES) as $i => $v) {
+                $add('cpu.core.utilization', (string) $i, self::num($v), 'Core ' . $i);
+            }
+        }
+        $add('disk.read_iops', 'total', self::num($m['disk_read_iops'] ?? null), 'All disks');
+        $add('disk.write_iops', 'total', self::num($m['disk_write_iops'] ?? null), 'All disks');
+        $add('disk.queue_length', 'total', self::num($m['disk_queue'] ?? null), 'All disks');
+        $add('network.errors', 'total', self::intOrNull($m['net_errors'] ?? null), 'All adapters');
+        $bat = self::num($m['battery_pct'] ?? null);
+        $add('battery.charge_percent', null, $bat !== null && $bat <= 100 ? $bat : null);   // a percentage: out of range is dropped, never clamped
     }
 
     // ------------------------------------------------------------------ clock skew

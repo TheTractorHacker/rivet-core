@@ -50,3 +50,27 @@ type Platform interface {
 	// MeshAgentDir is where an existing MeshCentral agent is expected ("" if none).
 	MeshAgentDir() string
 }
+
+// CoreTime is one logical core's cumulative idle and total time (any consistent unit).
+type CoreTime struct{ Idle, Total uint64 }
+
+// DiskIO is the cumulative read/write operation count over all physical disks and the instantaneous queue depth (negative = unknown).
+type DiskIO struct {
+	Reads, Writes uint64
+	Queue         float64
+}
+
+// Battery is the charge state of the first battery; Charging is meaningful only when the call succeeds.
+type Battery struct {
+	Pct      float64
+	Charging bool
+}
+
+// ExtraPlatform is OPTIONAL: a Platform that also implements it feeds the extended per-check-in metrics (rc.25). Any method may
+// return an error (or ErrUnsupported); that field is then simply left out.
+type ExtraPlatform interface {
+	CoreTimes(ctx context.Context) ([]CoreTime, error)
+	DiskIO(ctx context.Context) (DiskIO, error)
+	NetErrors(ctx context.Context) (uint64, error)
+	Battery(ctx context.Context) (Battery, error) // ErrUnsupported when the machine has none
+}
