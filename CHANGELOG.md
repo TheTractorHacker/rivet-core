@@ -2,6 +2,14 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.27 (device header view-model; no migration)
+
+Editions can show one short, identical device header. Additive; nothing existing changed. See [docs/modules/rmm.md](docs/modules/rmm.md) "Device header view-model".
+
+- **`RmmReadModel::header($detail, $thresholds = null)`** (`Rmm\Presentation\DeviceHeader`, pure): name, status, OS, meta, at most four chips (cpu, ram, disk, uptime) with ok/warn/crit levels, and the full `volumes` list with ZFS/btrfs/bind-mount pools grouped (`pool` + `children`). One primary volume (system volume first, pseudo mounts, snap loops, tmpfs, recovery partitions and /boot/efi ignored).
+- **`RemoteActions::headerRemote($principal, $deviceId, $hints)`** (`Presentation\RemoteHeader`): state (`ready`, `unmapped_agent_installed`, `unmapped`, `not_configured`, `disabled`, `offline`), the views this caller may open, the primary view (terminal on Linux and servers, desktop on Windows and Linux workstations), a plain sentence and `can_map_manually`. `meshInfo()` is unchanged.
+- **Agent (additive).** Inventory disks carry optional `source` and `label`; the inventory carries `desktop_session`. Older agents work through heuristics. The check-in keeps both in the stored inventory.
+
 ## 1.0.0-rc.26 (policy starter pack; no migration)
 
 A starter pack of **policies**, next to the script starter pack: 24 items, installed with one call, all created switched off and assigned to nothing. See [docs/rmm/POLICY_STARTER_PACK.md](docs/rmm/POLICY_STARTER_PACK.md).
