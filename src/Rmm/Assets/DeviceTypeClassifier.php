@@ -138,7 +138,7 @@ final class DeviceTypeClassifier
             $label = self::FALLBACK[$label];
         }
 
-        return $label;
+        return in_array($label, $available, true) || $label === 'Laptop' ? $label : 'Laptop';
     }
 
     /**
