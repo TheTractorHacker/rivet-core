@@ -35,7 +35,8 @@ final class Migration0015EndpointAgentConverge implements MigrationInterface
         if (self::hasIndex($database, 'endpoint_agent_releases', 'uniq_version_ring')) {
             $database->execute('ALTER TABLE `endpoint_agent_releases` DROP INDEX `uniq_version_ring`');
         }
-        if (!self::hasIndex($database, 'endpoint_agent_releases', 'uniq_version_ring_arch')) {
+        // Migration 0037 replaces this key with one that includes the OS; running this step again afterwards must not bring the narrower key back.
+        if (!self::hasIndex($database, 'endpoint_agent_releases', 'uniq_version_ring_arch') && !self::hasIndex($database, 'endpoint_agent_releases', 'uniq_version_ring_arch_os')) {
             $database->execute('ALTER TABLE `endpoint_agent_releases` ADD UNIQUE KEY `uniq_version_ring_arch` (`version`,`ring`,`arch`)');
         }
     }
