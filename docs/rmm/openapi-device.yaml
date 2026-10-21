@@ -152,6 +152,7 @@ paths:
       parameters:
         - {name: arch, in: query, required: true, schema: {type: string, enum: [amd64, arm64]}}
         - {name: version, in: query, required: true, schema: {type: string, examples: ['1.2.0']}}
+        - {name: os, in: query, required: false, description: 'Optional (rc.30, additive): the OS the agent runs on (runtime.GOOS). Absent = the device''s stored OS (else windows). A value that contradicts the stored OS is a 404; an unknown value is 422. Releases and binaries are per OS: a Linux device is only ever served an ELF executable, a Windows device a PE.', schema: {type: string, enum: [windows, linux]}}
       responses:
         '200':
           description: The agent executable

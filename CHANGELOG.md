@@ -2,6 +2,21 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.30 (agent binaries and releases are per operating system; migration 0037)
+
+Bug seen on a real installation: `endpoint_agent_binaries` and `endpoint_agent_releases` keyed only on version and architecture, so a Linux agent (a Proxmox host) was offered agent 0.9.5 through `agent_update?arch=amd64&version=0.9.5`, downloaded the Windows PE and (correctly) refused it as "not a valid ELF executable"; the failure was then stored in `update_state_json` and that version was skip-listed for the device for good.
+
+- **Migration 0037** (`0037_rmm_agent_os`): `os varchar(10) NOT NULL DEFAULT 'windows'` on both tables (every existing row is a Windows binary, so nothing is backfilled); the unique keys become `uniq_version_arch_os (version, arch, os)` and `uniq_version_ring_arch_os (version, ring, arch, os)` (new key added before the old one is dropped). Guarded and idempotent. Migration 0015 no longer re-creates the old release key when the new one exists. Code that runs before the migration behaves as Windows-only (`AgentOs::supported()`), never offering a Windows build to a Linux device.
+- **Publish.** `BinaryStore::publish()` / `RmmAdmin::uploadBinary()` take `os` (`windows` default, `linux`) in `$opts`. `BinaryInspector::inspect()` gains `$os` and `$version`; Linux checks: ELF magic, 64-bit little-endian, executable or PIE, `e_machine` matches the architecture, size cap, version string present, no installer footer. A file whose magic is the other platform's is refused with a clear message. Release rows get the binary's os; `publishRelease()` gains an optional `$os` that must match the binary; `UpdateService::addRelease()` and `RmmAdmin::addExternalRelease()` gain a trailing `$os = 'windows'`.
+- **Offer and serve.** `offeredRelease()`, `currentBinary($arch, $os = 'windows')`, `hostedBinaryFor($dev, $arch, $version, $requestedOs = null)` and the manifest URL (`&os=linux` for Linux only; the Windows URL is byte for byte unchanged) filter by the device's OS. `agent_update` accepts an optional `os` query parameter (additive). Installers use Windows binaries only.
+- **Serve-time check.** Before streaming, the stored file's magic must match the device's OS; otherwise nothing is streamed, the error is logged and audited, and the binary and its releases are deactivated. `BinaryStore::activate()` and `publishRelease()` refuse such a binary.
+- **Failures.** A failure that says "wrong platform" (`UpdateService::isWrongPlatform()`) is no longer skip-listed. New `UpdateService::clearUpdateFailures($deviceId|null, $version|null, $os|null)` and `RmmAdmin::clearUpdateFailures()`; publishing a release clears that version's failures on devices of its OS.
+- **Read model.** `releases()` and `binaries()` rows gain `os`; `binaries()` also `platform_ok` (true / false / null when the file cannot be read).
+- **Agent.** The hosted-update download adds `os=<GOOS>` to the server's `agent_update` address. Older servers ignore it.
+- **Compatibility.** Frozen protocol: additive only; the golden replay is identical (the adapter projects `os` out). Old agents work unchanged. An edition that has not run 0037 keeps working as before for Windows.
+- **Tests.** `AgentOsTest` (8), Go `TestWithOS*`, `TestDownloadSendsTheAgentsOS`.
+- **Editions.** See UPGRADING.md ("Adopting per-OS agent binaries").
+
 ## 1.0.0-rc.27 (install the Mesh agent after the device is approved; migration 0034)
 
 Observed on a real Linux box: the log showed `enrolled status=pending_approval` and then "the Mesh agent installer finished" 12 seconds later, and the Mesh device group id (an invitation secret) was part of the command anyone could read. The installer tick-box now means "install the MeshCentral agent once this device is approved".

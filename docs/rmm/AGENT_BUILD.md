@@ -127,6 +127,10 @@ enabled, `User=root`/`Restart=always`/`StateDirectory`, check-in, a signed shell
 clean stop and uninstall. That container's `/tmp` is `noexec`, which is how the install script's "find a directory that allows executing" logic was found necessary. Run it after `run_linux_container_e2e.sh` (it reuses the
 binaries in `e2e/work-linux/bin`).
 
+### Windows and Linux binaries are separate (1.0.0-rc.30)
+
+The hosted update channel keys a binary and its release on `(version, arch, os)`. Publish the Windows build and the Linux build of the same version as two binaries (`os` `windows`, the default, and `linux`); a device is only ever offered and served the one for its own OS, and the agent adds `os=<GOOS>` to its download request. The publish check refuses a file whose magic is not the declared OS's (PE `MZ` for windows; ELF for linux, which must also be a 64-bit little-endian executable or PIE for the declared architecture, within the size cap, and contain the version string the agent embeds with `-ldflags -X`). So `rivetit-agent-linux-amd64` is published with `os=linux, arch=amd64, version=<the -X version>`, never as a Windows binary. Linux binaries are never stamped into installers (installers are Windows only).
+
 ### Provenance of the source tree
 
 `endpoint-agent/` was imported from RivetIT `origin/beta` at `4ba51d35` (agent tag `agent-v0.1.0-beta.1` lineage). The 9 commits that touched the Go tree there can be reconstructed with
