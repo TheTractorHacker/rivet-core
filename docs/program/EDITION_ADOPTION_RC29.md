@@ -25,3 +25,14 @@ For the RivetIT and RivetMSP sessions. Core is tagged `v1.0.0-rc.29`. Both editi
 
 ## Report back
 What you deployed (versions, DB steps), tests and baseline failures honestly, and anything unverified (the Windows paths and the Proxmox / Hyper-V collectors have never run on a real host).
+
+## Addendum (2026-10-21): rc.30, per-OS agent binaries and releases
+
+Core `v1.0.0-rc.30` fixes a real bug found on mwa: `endpoint_agent_binaries` and `endpoint_agent_releases` keyed only on version + arch, so a Linux agent could be offered a Windows .exe as its self-update. Adopt it with the rest (pending Core migration list is now 0033 to 0037; RivetIT DB step 2.6.182, RivetMSP 2.6.103).
+
+1. Add `Migration0037AgentOs` to the edition's migration list and mirror it in `db.sql`: `os varchar(10) NOT NULL DEFAULT 'windows'` on both tables, with `UNIQUE (version, arch, os)` on binaries and `UNIQUE (version, ring, arch, os)` on releases.
+2. Stop creating `endpoint_agent_releases` rows from `endpoint_agent_linux_files`. A release row without `os='linux'` is a Windows release.
+3. Move the hosted Linux files into the Core tables: `uploadBinary($by, $path, $version, $arch, ['os'=>'linux','release_ring'=>'stable','rollout_pct'=>10])`, or insert into `endpoint_agent_binaries` with `os='linux'` and call `binaryAction($by,$id,'offer_update',$ring,$pct)`; files go under `bin_<32hex>.bin` outside the web root. Mapping: UPGRADING.md "Adopting per-OS agent binaries".
+4. Recover `devpve` once a real Linux 0.9.5 release is published: `updates()->clearUpdateFailures(<devpve device id>, '0.9.5')`.
+5. Optional UI: show `os` and `platform_ok` in the binaries and releases lists; platform selector on upload.
+6. Build an agent that sends `os=<GOOS>` in its update request (rc.30 agent); older agents still work because the server uses the device's stored os.
