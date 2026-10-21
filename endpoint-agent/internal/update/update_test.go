@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -377,5 +378,43 @@ func TestBearerOnlyToServerHost(t *testing.T) {
 	}
 	if auth != "" {
 		t.Fatal("bearer sent to a different host")
+	}
+}
+
+func TestWithOSAddsThePlatformOnlyToTheServersUpdateAddress(t *testing.T) {
+	const base = "https://rmm.example.test/api/v1/agent_update?arch=amd64&version=1.1.0"
+	if got := WithOS(base, "linux"); got != "https://rmm.example.test/api/v1/agent_update?arch=amd64&os=linux&version=1.1.0" {
+		t.Fatalf("linux: %s", got)
+	}
+	if got := WithOS(base+"&os=windows", "linux"); got != base+"&os=windows" {
+		t.Fatalf("an address that already names an os must stay as the server wrote it: %s", got)
+	}
+	for _, u := range []string{"https://rmm.example.test/dl/agent.exe", "https://rmm.example.test/api/v1/agent_update_file", "::bad"} {
+		if got := WithOS(u, "linux"); got != u {
+			t.Fatalf("%s must be unchanged, got %s", u, got)
+		}
+	}
+	if got := WithOS(base, ""); got != base {
+		t.Fatalf("empty goos: %s", got)
+	}
+}
+
+func TestDownloadSendsTheAgentsOS(t *testing.T) {
+	e := newEnv(t)
+	var gotQuery string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Write(e.body)
+	}))
+	defer srv.Close()
+	m := e.manifest("1.1.0")
+	m.URL = srv.URL + "/api/v1/agent_update?arch=amd64&version=1.1.0"
+	host := strings.TrimPrefix(srv.URL, "https://")
+	dest := filepath.Join(e.dir, "dl.bin")
+	if err := Download(context.Background(), srv.Client(), m, dest, host, "tok"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "os=" + runtime.GOOS; !strings.Contains(gotQuery, want) || !strings.Contains(gotQuery, "arch=amd64") {
+		t.Fatalf("query %q does not carry %s", gotQuery, want)
 	}
 }

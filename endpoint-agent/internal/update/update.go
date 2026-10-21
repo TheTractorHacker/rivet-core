@@ -98,7 +98,7 @@ func Validate(cur string, m api.UpdateManifest, pub ed25519.PublicKey, allowedHo
 // the URL host equals serverHost.
 func Download(ctx context.Context, hc *http.Client, m api.UpdateManifest, dest, serverHost, bearer string) error {
 	u, _ := url.Parse(m.URL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, WithOS(m.URL, runtime.GOOS), nil)
 	if err != nil {
 		return err
 	}
@@ -140,6 +140,25 @@ func Download(ctx context.Context, hc *http.Client, m api.UpdateManifest, dest, 
 		return fail(err)
 	}
 	return f.Close()
+}
+
+// WithOS adds os=<goos> to the query of the server's own hosted-update address
+// (.../api/v1/agent_update) so the server serves the package for the platform
+// this agent runs on and never a package built for another one. Any other URL,
+// and one that already names an os, is returned unchanged. An older server
+// ignores the parameter.
+func WithOS(raw, goos string) string {
+	u, err := url.Parse(raw)
+	if err != nil || !strings.HasSuffix(u.Path, "/api/v1/agent_update") {
+		return raw
+	}
+	q := u.Query()
+	if q.Has("os") || goos == "" {
+		return raw
+	}
+	q.Set("os", goos)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // VerifyBinary is a sanity check that the file is an executable for this
