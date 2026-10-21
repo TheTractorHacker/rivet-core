@@ -362,7 +362,7 @@ final class DeviceApi
             }
             // Optional `os` (rc.30, additive): what the agent runs on (runtime.GOOS). An old agent sends none and is served for the OS it was enrolled as.
             $askedOs = $req->query['os'] ?? null;
-            if ($askedOs !== null && (!is_string($askedOs) || AgentOs::normalize($askedOs) === null)) {
+            if ($askedOs !== null && AgentOs::normalize($askedOs) === null) {
                 throw new ApiError(422, 'invalid', 'os must be windows or linux.');
             }
             $os = AgentOs::forDevice($dev, $askedOs);
