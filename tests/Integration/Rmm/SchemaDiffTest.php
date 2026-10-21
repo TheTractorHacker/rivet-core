@@ -168,6 +168,15 @@ final class SchemaDiffTest extends TestCase
         $columns = $db->fetchAll("SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) AND NOT (TABLE_NAME = 'endpoint_agent_devices' AND COLUMN_NAME IN ('clock_skew_s','clock_skew_at','clock_offset_s','clock_skew_event_at','last_reject_reason','last_reject_at','detected_type')) ORDER BY TABLE_NAME, ORDINAL_POSITION");
         $indexes = $db->fetchAll("SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME, SUB_PART FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX");
 
+        // rc.30 (migration 0037) adds `os` to the binaries and releases tables and to their unique keys; ReleaseOsTest covers it. Here the key is read back under its
+        // baseline name without the column, so every comparison with the frozen reference keeps proving the rest of the schema.
+        $columns = array_values(array_filter($columns, static fn (array $c): bool => !($c['COLUMN_NAME'] === 'os' && in_array($c['TABLE_NAME'], ['endpoint_agent_binaries', 'endpoint_agent_releases'], true))));
+        $indexes = array_values(array_filter($indexes, static fn (array $i): bool => !($i['COLUMN_NAME'] === 'os' && in_array($i['TABLE_NAME'], ['endpoint_agent_binaries', 'endpoint_agent_releases'], true))));
+        foreach ($indexes as &$i) {
+            $i['INDEX_NAME'] = ['uniq_version_arch_os' => 'uniq_version_arch', 'uniq_version_ring_arch_os' => 'uniq_version_ring_arch'][$i['INDEX_NAME']] ?? $i['INDEX_NAME'];
+        }
+        unset($i);
+
         return ['tables' => $tables, 'columns' => $columns, 'indexes' => $indexes];
     }
 
