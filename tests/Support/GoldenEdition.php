@@ -89,7 +89,7 @@ final class GoldenEdition
     public static function migrate(\mysqli $m): void
     {
         $db = new MysqliDatabase($m);
-        foreach ([new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs(), new Migration0023MeshAgent(), new \RivetCore\Rmm\Migration\Migration0031ClockSkew(), new \RivetCore\Rmm\Migration\Migration0032CheckSet(), new \RivetCore\Rmm\Migration\Migration0034MeshAfterApproval(), new \RivetCore\Rmm\Migration\Migration0035DeviceType(), new \RivetCore\Rmm\Migration\Migration0036Hypervisors()] as $mig) {
+        foreach ([new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs(), new Migration0023MeshAgent(), new \RivetCore\Rmm\Migration\Migration0031ClockSkew(), new \RivetCore\Rmm\Migration\Migration0032CheckSet(), new \RivetCore\Rmm\Migration\Migration0034MeshAfterApproval(), new \RivetCore\Rmm\Migration\Migration0035DeviceType(), new \RivetCore\Rmm\Migration\Migration0036Hypervisors(), new \RivetCore\Rmm\Migration\Migration0037AgentOs()] as $mig) {
             $mig->up($db);
         }
     }

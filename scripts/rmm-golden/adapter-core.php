@@ -195,6 +195,9 @@ switch ($cmd) {
                     // rc.23 clock columns (migration 0031) and the rc.28 detected_type (migration 0035) are not part of the baseline; left out like the switch columns.
                     $r = array_diff_key($r, array_flip(['clock_skew_s', 'clock_skew_at', 'clock_offset_s', 'clock_skew_event_at', 'last_reject_reason', 'last_reject_at', 'detected_type']));
                 }
+                if ($t === 'endpoint_agent_releases' || $t === 'endpoint_agent_binaries') {
+                    unset($r['os']);   // rc.30 (migration 0037): not part of the baseline
+                }
                 $rows[] = $r;
             }
             $out[$t] = $rows;
