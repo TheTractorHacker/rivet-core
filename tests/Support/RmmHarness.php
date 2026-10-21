@@ -357,23 +357,33 @@ final class RmmHarness
         return $b . substr(str_repeat($chunk, intdiv($need, 32) + 1), 0, $need);
     }
 
+    /** A minimal ELF64 little-endian executable header (e_type 2) for the machine, padded to `size`, with `$text` embedded (the version string the publish check looks for). */
+    public static function fakeElf(int $machine, int $size, string $text, int $type = 2): string
+    {
+        $h = "\x7fELF" . chr(2) . chr(1) . chr(1) . str_repeat("\0", 9) . pack('v', $type) . pack('v', $machine) . pack('V', 1);
+        $h = str_pad($h, 64, "\0") . $text . "\0";
+
+        return str_pad($h, $size, "\xAB");
+    }
+
     /**
      * Store a hosted agent binary the way the admin publish path does (file under the binary dir, rows in endpoint_agent_binaries
      * and, for a ring, endpoint_agent_releases) so the read side can be tested without the admin layer.
      *
      * @return array{binary_id:int,sha256:string,size:int,path:string,bytes:string}
      */
-    public function publishBinary(string $version, string $arch = 'amd64', int $size = 8192, bool $current = false, ?string $ring = null, int $pct = 100, string $minVersion = '0.0.0'): array
+    public function publishBinary(string $version, string $arch = 'amd64', int $size = 8192, bool $current = false, ?string $ring = null, int $pct = 100, string $minVersion = '0.0.0', string $os = 'windows'): array
     {
-        $bytes = self::fakePe(\RivetCore\Rmm\RmmProtocol::ARCHS[$arch], $size, 'fill-' . $version);
+        $machine = \RivetCore\Rmm\RmmProtocol::ARCHS[$arch];
+        $bytes = $os === 'linux' ? self::fakeElf($arch === 'amd64' ? 62 : 183, $size, $version) : self::fakePe($machine, $size, 'fill-' . $version);
         $name = 'bin_' . bin2hex(random_bytes(16)) . '.bin';
         file_put_contents($this->binaryDir . '/' . $name, $bytes);
         $sha = hash('sha256', $bytes);
-        $this->mysqli->query("INSERT INTO endpoint_agent_binaries (version, arch, sha256, size_bytes, storage_name, uploaded_by, active, is_current, created_at) VALUES ('$version', '$arch', '$sha', $size, '$name', 1, 1, " . ($current ? 1 : 0) . ', UTC_TIMESTAMP())');
+        $this->mysqli->query("INSERT INTO endpoint_agent_binaries (version, arch, sha256, size_bytes, storage_name, uploaded_by, active, is_current, created_at, os) VALUES ('$version', '$arch', '$sha', $size, '$name', 1, 1, " . ($current ? 1 : 0) . ", UTC_TIMESTAMP(), '$os')");
         $id = (int) $this->mysqli->insert_id;
         if ($ring !== null) {
-            $url = $this->module->updates()->updateUrl($arch, $version) ?? 'https://example.test/x';
-            $this->mysqli->query("INSERT INTO endpoint_agent_releases (version, url, sha256, min_version, ring, rollout_pct, notes, created_by, created_at, arch, binary_id) VALUES ('$version', '" . $this->mysqli->real_escape_string($url) . "', '$sha', '$minVersion', '$ring', $pct, 'test', 1, UTC_TIMESTAMP(), '$arch', $id)");
+            $url = $this->module->updates()->updateUrl($arch, $version, $os) ?? 'https://example.test/x';
+            $this->mysqli->query("INSERT INTO endpoint_agent_releases (version, url, sha256, min_version, ring, rollout_pct, notes, created_by, created_at, arch, binary_id, os) VALUES ('$version', '" . $this->mysqli->real_escape_string($url) . "', '$sha', '$minVersion', '$ring', $pct, 'test', 1, UTC_TIMESTAMP(), '$arch', $id, '$os')");
         }
 
         return ['binary_id' => $id, 'sha256' => $sha, 'size' => $size, 'path' => $this->binaryDir . '/' . $name, 'bytes' => $bytes];
