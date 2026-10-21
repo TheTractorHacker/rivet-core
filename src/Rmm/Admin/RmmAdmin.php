@@ -19,6 +19,7 @@ use RivetCore\Rmm\Mesh\MeshAgentSettings;
 use RivetCore\Rmm\Mesh\MeshService;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\AgentOs;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Update\UpdateService;
 
@@ -264,7 +265,9 @@ final class RmmAdmin
     /**
      * Publish an uploaded agent executable (the edition has already verified it is an uploaded file).
      *
-     * @param array{activate?:bool,release_ring?:?string,rollout_pct?:int,notes?:string} $opts
+     * `$opts['os']` is `windows` (default; a PE executable) or `linux` (an ELF executable); the file must match it (1.0.0-rc.30).
+     *
+     * @param array{activate?:bool,release_ring?:?string,rollout_pct?:int,notes?:string,os?:string} $opts
      * @return ActionResult data: `binary` row on success
      */
     public function uploadBinary(RmmPrincipal $by, string $tmpPath, string $version, string $arch, array $opts = []): ActionResult
@@ -283,10 +286,10 @@ final class RmmAdmin
             return ActionResult::fail(422, 'invalid', (string) ($res['error'] ?? 'The binary could not be published.'));
         }
         $b = $res['binary'];
-        $this->audit->record('Binary Uploaded', "{$by->userName} uploaded agent binary {$b['version']} ({$b['arch']}, sha256 {$b['sha256']}, {$b['size_bytes']} bytes)"
+        $this->audit->record('Binary Uploaded', "{$by->userName} uploaded agent binary {$b['version']} ({$b['arch']}, " . AgentOs::ofRow($b) . ", sha256 {$b['sha256']}, {$b['size_bytes']} bytes)"
             . ((int) $b['is_current'] === 1 ? ' and made it current' : '') . ($opts['release_ring'] !== null ? " and offered it to the {$opts['release_ring']} ring" : ''), 0, 0);
 
-        return ActionResult::ok('Agent binary ' . $b['version'] . ' (' . $b['arch'] . ') stored. SHA-256 ' . $b['sha256'] . '.', 200, 'stored', ['binary' => $b, 'created' => (bool) ($res['created'] ?? false)]);
+        return ActionResult::ok('Agent binary ' . $b['version'] . ' (' . $b['arch'] . ', ' . AgentOs::ofRow($b) . ') stored. SHA-256 ' . $b['sha256'] . '.', 200, 'stored', ['binary' => $b, 'created' => (bool) ($res['created'] ?? false)]);
     }
 
     /**
@@ -390,14 +393,37 @@ final class RmmAdmin
     }
 
     /** Offer a package hosted elsewhere (a legacy manual release). */
-    public function addExternalRelease(RmmPrincipal $by, string $version, string $url, string $sha256, string $minVersion, string $ring, int $pct, string $notes): ActionResult
+    public function addExternalRelease(RmmPrincipal $by, string $version, string $url, string $sha256, string $minVersion, string $ring, int $pct, string $notes, string $os = AgentOs::WINDOWS): ActionResult
     {
         if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
             return $d;
         }
-        $err = $this->updates->addRelease(trim($version), trim($url), trim($sha256), trim($minVersion) !== '' ? trim($minVersion) : '0.0.0', $ring, $pct, trim($notes), $by->userId);
+        $err = $this->updates->addRelease(trim($version), trim($url), trim($sha256), trim($minVersion) !== '' ? trim($minVersion) : '0.0.0', $ring, $pct, trim($notes), $by->userId, $os);
 
         return $err === null ? ActionResult::ok('Release saved.') : ActionResult::fail(422, 'invalid', $err);
+    }
+
+    /**
+     * Let devices offer a version again after an update failure skip-listed it (rc.30). `$deviceId` null means every device; `$version` null clears the whole update
+     * state of the device(s), a version removes just that one; `$os` limits it to devices of that operating system.
+     *
+     * @return ActionResult data: `devices` number of devices changed
+     */
+    public function clearUpdateFailures(RmmPrincipal $by, ?int $deviceId = null, ?string $version = null, ?string $os = null): ActionResult
+    {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+            return $d;
+        }
+        if ($version !== null && preg_match(RmmProtocol::AGENT_VERSION_RE, $version) !== 1) {
+            return ActionResult::fail(422, 'invalid', 'The version must look like 1.2.3.');
+        }
+        if ($os !== null && AgentOs::normalize($os) === null) {
+            return ActionResult::fail(422, 'invalid', 'The platform must be windows or linux.');
+        }
+        $n = $this->updates->clearUpdateFailures($deviceId, $version, $os === null ? null : AgentOs::normalize($os));
+        $this->audit->record('Agent Update Failures Cleared', "{$by->userName} cleared update failures (device " . ($deviceId ?? 'all') . ', version ' . ($version ?? 'all') . ", $n changed)", 0, 0);
+
+        return ActionResult::ok("Update failures cleared on $n device(s).", 200, 'cleared', ['devices' => $n]);
     }
 
     /** Change the rollout percentage and the active flag of a release (0 pauses a rollout, inactive withdraws it). */

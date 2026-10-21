@@ -8,6 +8,7 @@ use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Http\FileDownload;
 use RivetCore\Rmm\Http\RmmResponse;
 use RivetCore\Rmm\RmmProtocol;
+use RivetCore\Rmm\Support\AgentOs;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Update\UpdateService;
 
@@ -146,13 +147,13 @@ final class BinaryStore
     }
 
     /**
-     * Validate a candidate Windows agent executable on disk ({@see BinaryInspector::inspect()} with this store's size cap).
+     * Validate a candidate agent executable on disk for its platform, `windows` (default) or `linux` ({@see BinaryInspector::inspect()} with this store's size cap).
      *
      * @return array{sha256:string,size:int}|string a description on success, an error message otherwise
      */
-    public function inspect(string $path, string $arch, ?int $maxBytes = null): array|string
+    public function inspect(string $path, string $arch, ?int $maxBytes = null, string $os = AgentOs::WINDOWS, ?string $version = null): array|string
     {
-        return BinaryInspector::inspect($path, $arch, $maxBytes ?? $this->maxBytes());
+        return BinaryInspector::inspect($path, $arch, $maxBytes ?? $this->maxBytes(), $os, $version);
     }
 
     // ---------------------------------------------------------------- publishing
@@ -161,7 +162,9 @@ final class BinaryStore
      * Validate, copy into storage and register a binary. Re-publishing the identical file for the same (version, arch) is a no-op;
      * a different file for an existing (version, arch) is refused (a released version never changes under devices).
      *
-     * @param array{activate?:bool,release_ring?:?string,rollout_pct?:int,notes?:string} $opts
+     * `$opts['os']` (alias `platform`) is `windows` (default; PE) or `linux` (ELF): the file's magic must match it. Versions are unique per (version, arch, os).
+     *
+     * @param array{activate?:bool,release_ring?:?string,rollout_pct?:int,notes?:string,os?:string,platform?:string} $opts
      * @return array{ok:bool,error?:string,binary?:array<string,mixed>,created?:bool}
      */
     public function publish(string $path, string $version, string $arch, int $userId, array $opts = []): array
@@ -172,15 +175,25 @@ final class BinaryStore
         if ($this->storageDir() === null) {
             return ['ok' => false, 'error' => 'No agent binary directory is configured for this installation.'];
         }
-        $info = $this->inspect($path, $arch);
+        $os = AgentOs::normalize($opts['os'] ?? $opts['platform'] ?? AgentOs::WINDOWS);
+        if ($os === null) {
+            return ['ok' => false, 'error' => 'The platform must be windows or linux.'];
+        }
+        $osCols = AgentOs::supported($this->sql);
+        if ($os !== AgentOs::WINDOWS && !$osCols) {
+            return ['ok' => false, 'error' => 'This database has not run migration 0037 (agent binary platform) yet, so only Windows binaries can be published.'];
+        }
+        $info = $this->inspect($path, $arch, null, $os, $version);
         if (is_string($info)) {
             return ['ok' => false, 'error' => $info];
         }
-        $existing = $this->sql->one('SELECT * FROM endpoint_agent_binaries WHERE version = ? AND arch = ?', [$version, $arch]);
+        $existing = $osCols
+            ? $this->sql->one('SELECT * FROM endpoint_agent_binaries WHERE version = ? AND arch = ? AND os = ?', [$version, $arch, $os])
+            : $this->sql->one('SELECT * FROM endpoint_agent_binaries WHERE version = ? AND arch = ?', [$version, $arch]);
         $created = false;
         if ($existing !== null) {
             if (!hash_equals((string) $existing['sha256'], $info['sha256'])) {
-                return ['ok' => false, 'error' => "Version $version for $arch is already published with different contents. Use a new version number."];
+                return ['ok' => false, 'error' => "Version $version for $arch ($os) is already published with different contents. Use a new version number."];
             }
             $bin = $existing;
             if (!is_file($this->pathFor($bin))) {   // the row survived but the file was lost: restore it from this upload
@@ -189,8 +202,11 @@ final class BinaryStore
         } else {
             $name = 'bin_' . bin2hex(random_bytes(16)) . '.bin';
             $this->copyIn($path, $name);
-            $id = $this->sql->insert('INSERT INTO endpoint_agent_binaries (version, arch, sha256, size_bytes, storage_name, uploaded_by, active, is_current, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?)',
-                [$version, $arch, $info['sha256'], $info['size'], $name, $userId, $this->sql->utcNow()]);
+            $id = $osCols
+                ? $this->sql->insert('INSERT INTO endpoint_agent_binaries (version, arch, sha256, size_bytes, storage_name, uploaded_by, active, is_current, created_at, os) VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?, ?)',
+                    [$version, $arch, $info['sha256'], $info['size'], $name, $userId, $this->sql->utcNow(), $os])
+                : $this->sql->insert('INSERT INTO endpoint_agent_binaries (version, arch, sha256, size_bytes, storage_name, uploaded_by, active, is_current, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?)',
+                    [$version, $arch, $info['sha256'], $info['size'], $name, $userId, $this->sql->utcNow()]);
             $bin = $this->sql->one('SELECT * FROM endpoint_agent_binaries WHERE binary_id = ?', [$id]) ?? [];
             $created = true;
         }
@@ -234,7 +250,7 @@ final class BinaryStore
         }
     }
 
-    /** Make this binary the one new installers are stamped from for its architecture (and make sure it is active). */
+    /** Make this binary the one new installers are stamped from for its architecture and platform (and make sure it is active). Only a Windows binary is ever stamped into an installer. */
     public function setCurrent(int $binaryId): bool
     {
         $b = $this->sql->one('SELECT * FROM endpoint_agent_binaries WHERE binary_id = ?', [$binaryId]);
@@ -242,7 +258,8 @@ final class BinaryStore
             return false;
         }
         $this->sql->transaction(function () use ($b, $binaryId): void {
-            $this->sql->run('UPDATE endpoint_agent_binaries SET is_current = 0 WHERE arch = ?', [$b['arch']]);
+            $this->sql->run('UPDATE endpoint_agent_binaries SET is_current = 0 WHERE arch = ?' . (AgentOs::supported($this->sql) ? ' AND os = ?' : ''),
+                AgentOs::supported($this->sql) ? [$b['arch'], AgentOs::ofRow($b)] : [$b['arch']]);
             $this->sql->run('UPDATE endpoint_agent_binaries SET is_current = 1, active = 1 WHERE binary_id = ?', [$binaryId]);
         });
 
@@ -262,8 +279,9 @@ final class BinaryStore
     /** Reactivate a deactivated binary (it is not offered as an update again until {@see publishRelease()} runs). */
     public function activate(int $binaryId): bool
     {
-        if ($this->sql->one('SELECT binary_id FROM endpoint_agent_binaries WHERE binary_id = ?', [$binaryId]) === null) {
-            return false;
+        $b = $this->sql->one('SELECT * FROM endpoint_agent_binaries WHERE binary_id = ?', [$binaryId]);
+        if ($b === null || !$this->platformOk($b)) {
+            return false;   // a file whose magic is not its row's platform is never switched back on
         }
         $this->sql->run('UPDATE endpoint_agent_binaries SET active = 1 WHERE binary_id = ?', [$binaryId]);
 
@@ -275,26 +293,58 @@ final class BinaryStore
      *
      * @return string|null error message
      */
-    public function publishRelease(int $binaryId, string $ring, int $pct, string $notes, int $userId): ?string
+    public function publishRelease(int $binaryId, string $ring, int $pct, string $notes, int $userId, ?string $os = null): ?string
     {
         $b = $this->sql->one('SELECT * FROM endpoint_agent_binaries WHERE binary_id = ? AND active = 1', [$binaryId]);
         if ($b === null) {
             return 'Unknown or inactive binary.';
         }
+        $binOs = AgentOs::ofRow($b);
+        if ($os !== null && AgentOs::normalize($os) !== $binOs) {
+            return "That binary is a $binOs binary; it cannot be offered as a " . (AgentOs::normalize($os) ?? 'different') . ' release.';
+        }
+        if (!$this->platformOk($b)) {
+            return 'The stored file is not a ' . $binOs . ' executable (wrong platform); it cannot be offered.';
+        }
         if (!in_array($ring, RmmProtocol::RINGS, true)) {
             return 'Unknown ring.';
         }
-        $url = $this->updates->updateUrl((string) $b['arch'], (string) $b['version']);
+        $url = $this->updates->updateUrl((string) $b['arch'], (string) $b['version'], $binOs);
         if ($url === null) {
             return 'Set an https service URL first: agents download hosted updates from it.';
         }
-        $this->sql->run('INSERT INTO endpoint_agent_releases (version, url, sha256, min_version, ring, rollout_pct, notes, created_by, created_at, arch, binary_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE url = VALUES(url), sha256 = VALUES(sha256), rollout_pct = VALUES(rollout_pct), notes = VALUES(notes), active = 1, binary_id = VALUES(binary_id)',
-            [$b['version'], $url, $b['sha256'], '0.0.0', $ring, max(0, min(100, $pct)), mb_substr($notes, 0, 500), $userId, $this->sql->utcNow(), $b['arch'], $b['binary_id']]);
-        $this->audit->record('Agent Release Published', "Release {$b['version']} ({$b['arch']}, $ring, $pct%) from hosted binary #{$b['binary_id']} by user $userId", 0, 0);
+        $now = $this->sql->utcNow();
+        $cols = 'version, url, sha256, min_version, ring, rollout_pct, notes, created_by, created_at, arch, binary_id';
+        $vals = [$b['version'], $url, $b['sha256'], '0.0.0', $ring, max(0, min(100, $pct)), mb_substr($notes, 0, 500), $userId, $now, $b['arch'], $b['binary_id']];
+        if (AgentOs::supported($this->sql)) {
+            $cols .= ', os';
+            $vals[] = $binOs;
+        }
+        $this->sql->run("INSERT INTO endpoint_agent_releases ($cols) VALUES (" . implode(', ', array_fill(0, count($vals), '?')) . ')
+            ON DUPLICATE KEY UPDATE url = VALUES(url), sha256 = VALUES(sha256), rollout_pct = VALUES(rollout_pct), notes = VALUES(notes), active = 1, binary_id = VALUES(binary_id)', $vals);
+        $this->audit->record('Agent Release Published', "Release {$b['version']} ({$b['arch']}, $binOs, $ring, $pct%) from hosted binary #{$b['binary_id']} by user $userId", 0, 0);
+        // A fixed or newly published package makes an earlier failure of this version on this platform obsolete: devices are offered it again.
+        $this->updates->clearUpdateFailures(null, (string) $b['version'], $binOs);
         $this->updates->releasesChanged();
 
         return null;
+    }
+
+    /**
+     * Whether the stored file of a binary row still starts with the magic of the platform the row claims. A file that is missing is not a mismatch (the integrity check
+     * reports that); a file that disagrees is deactivated by {@see UpdateService::openBinary()} when it is about to be served.
+     *
+     * @param array<string,mixed> $row an endpoint_agent_binaries row
+     */
+    public function platformOk(array $row): bool
+    {
+        try {
+            $path = $this->pathFor($row);
+        } catch (\RuntimeException) {
+            return true;
+        }
+
+        return !is_file($path) || AgentOs::magicMatches($path, AgentOs::ofRow($row));
     }
 
     /** Change the rollout percentage and the active flag of a release row (a rollout can be paused with 0 or switched off). */

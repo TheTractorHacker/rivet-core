@@ -20,6 +20,7 @@ use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Software\SoftwareVersion;
+use RivetCore\Rmm\Support\AgentOs;
 use RivetCore\Rmm\Support\RmmCache;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Tags\GroupService;
@@ -1167,7 +1168,7 @@ final class RmmReadModel
      */
     public function releases(int $limit = 30): array
     {
-        return array_map(static fn (array $r): array => ['release_id' => (int) $r['release_id'], 'version' => $r['version'], 'ring' => $r['ring'], 'arch' => $r['arch'], 'min_version' => $r['min_version'],
+        return array_map(static fn (array $r): array => ['release_id' => (int) $r['release_id'], 'version' => $r['version'], 'ring' => $r['ring'], 'arch' => $r['arch'], 'os' => AgentOs::ofRow($r), 'min_version' => $r['min_version'],
             'rollout_pct' => (int) $r['rollout_pct'], 'active' => (bool) $r['active'], 'hosted' => $r['binary_id'] !== null, 'binary_id' => $r['binary_id'] === null ? null : (int) $r['binary_id'],
             'url' => $r['url'], 'sha256' => $r['sha256'], 'notes' => $r['notes'], 'created_at' => Sql::iso((string) $r['created_at'])],
             $this->sql->all('SELECT * FROM endpoint_agent_releases ORDER BY release_id DESC LIMIT ' . max(1, min(200, $limit))));
@@ -1178,8 +1179,9 @@ final class RmmReadModel
      */
     public function binaries(int $limit = 40): array
     {
-        return array_map(static fn (array $b): array => ['binary_id' => (int) $b['binary_id'], 'version' => $b['version'], 'arch' => $b['arch'], 'sha256' => $b['sha256'],
-            'size_bytes' => (int) $b['size_bytes'], 'active' => (bool) $b['active'], 'is_current' => (bool) $b['is_current'], 'uploaded_by' => (int) $b['uploaded_by'], 'created_at' => Sql::iso((string) $b['created_at'])],
+        return array_map(fn (array $b): array => ['binary_id' => (int) $b['binary_id'], 'version' => $b['version'], 'arch' => $b['arch'], 'os' => AgentOs::ofRow($b), 'sha256' => $b['sha256'],
+            'size_bytes' => (int) $b['size_bytes'], 'active' => (bool) $b['active'], 'is_current' => (bool) $b['is_current'], 'uploaded_by' => (int) $b['uploaded_by'], 'created_at' => Sql::iso((string) $b['created_at']),
+            'platform_ok' => $this->updates->platformOk($b)],
             $this->sql->all('SELECT * FROM endpoint_agent_binaries ORDER BY binary_id DESC LIMIT ' . max(1, min(200, $limit))));
     }
 

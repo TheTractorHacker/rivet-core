@@ -23,6 +23,7 @@ use RivetCore\Rmm\Remote\TransferService;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\RmmState;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\AgentOs;
 use RivetCore\Rmm\Update\UpdateService;
 
 /**
@@ -359,13 +360,24 @@ final class DeviceApi
             if (!is_string($arch) || !isset(RmmProtocol::ARCHS[$arch]) || !is_string($version) || preg_match(RmmProtocol::BINARY_VERSION_RE, $version) !== 1) {
                 throw new ApiError(422, 'invalid', 'arch (amd64 or arm64) and version are required.');
             }
-            $bin = $this->updates->hostedBinaryFor($dev, $arch, $version);
+            // Optional `os` (rc.30, additive): what the agent runs on (runtime.GOOS). An old agent sends none and is served for the OS it was enrolled as.
+            $askedOs = $req->query['os'] ?? null;
+            if ($askedOs !== null && (!is_string($askedOs) || AgentOs::normalize($askedOs) === null)) {
+                throw new ApiError(422, 'invalid', 'os must be windows or linux.');
+            }
+            $os = AgentOs::forDevice($dev, $askedOs);
+            $bin = $this->updates->hostedBinaryFor($dev, $arch, $version, $askedOs);
             if ($bin === null) {
                 throw new ApiError(404, 'not_found', 'Not found.');
             }
-            $this->audit->record('Agent Update Downloaded', "Device $deviceId downloaded hosted agent $version ($arch)", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+            // Defense in depth: the first bytes of the stored file must be this device's executable format, or nothing is streamed.
+            [$file, $error] = $this->updates->openBinary($bin, '', $os);
+            if ($file === null) {
+                throw new ApiError(503, 'unavailable', (string) $error);
+            }
+            $this->audit->record('Agent Update Downloaded', "Device $deviceId downloaded hosted agent $version ($arch" . ($os === AgentOs::WINDOWS ? '' : ", $os") . ')', (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
 
-            return $this->download($bin, RmmProtocol::DOWNLOAD_NAME_PREFIX . $arch . '.exe', '');
+            return FileDownload::response($file, RmmProtocol::DOWNLOAD_NAME_PREFIX . $arch . ($os === AgentOs::WINDOWS ? '.exe' : ''));
         });
     }
 
