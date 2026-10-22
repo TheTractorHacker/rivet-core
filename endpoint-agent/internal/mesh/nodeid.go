@@ -117,10 +117,16 @@ type Probe struct {
 	Exists func(string) bool
 	// Timeout for each program run (default 10 s).
 	Timeout time.Duration
+	// Trusted decides whether a found executable may be run. Default (when Exists is also the default, i.e. the real file system): the file and all its parent
+	// directories must be root-owned, not symlinks and not writable by group or others (Linux). Tests with fixtures leave it nil and nothing is checked.
+	Trusted func(string) bool
 	// ExtraPaths is an operator-configured agent executable (config mesh_agent_path), tried before the defaults. Only an absolute
 	// path whose file name contains "meshagent" is accepted; nothing else is ever executed.
 	ExtraPaths []string
 }
+
+// trustCheck is the default Probe.Trusted. A variable only so that this package's tests, which put fake agents in a temporary directory, can relax it.
+var trustCheck = trustedExe
 
 // ValidExtraPath reports whether a configured path may be tried as a Mesh agent executable.
 func ValidExtraPath(p string) bool {
@@ -183,6 +189,9 @@ func (p *Probe) defaults() {
 	}
 	if p.Exists == nil {
 		p.Exists = func(s string) bool { st, err := os.Stat(s); return err == nil && !st.IsDir() }
+		if p.Trusted == nil {
+			p.Trusted = trustCheck
+		}
 	}
 	if p.Timeout <= 0 {
 		p.Timeout = 10 * time.Second
@@ -193,7 +202,7 @@ func (p *Probe) defaults() {
 func (p Probe) Found() string {
 	p.defaults()
 	for _, c := range p.Paths {
-		if c != "" && p.Exists(c) {
+		if c != "" && p.Exists(c) && (p.Trusted == nil || p.Trusted(c)) {
 			return c
 		}
 	}
