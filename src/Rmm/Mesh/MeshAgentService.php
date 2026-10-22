@@ -199,6 +199,7 @@ final class MeshAgentService
      * row: it can only confirm a node the server already trusts for this device, or move one from a retired device of the same asset; anything else
      * is ignored (the `mesh_agent` report is where a claim that needs approval is recorded and audited).
      *
+     * @internal called by the check-in service
      * @param array<string,mixed> $dev the device row
      */
     public function claimFromInventory(array $dev, string $nodeId): void

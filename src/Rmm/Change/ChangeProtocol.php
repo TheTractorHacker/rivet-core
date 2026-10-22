@@ -120,6 +120,8 @@ final class ChangeProtocol
      * The rc.31 redaction rules (security review F2), the same as the agent's `hardenRedact` in endpoint-agent/internal/change/redact.go and checked against the same
      * vectors: PASS / PW tokens and _KEY / CamelCase Key names, a secret in the next word of a switch, `-p <word>` for tools that take it that way, the value of any
      * Environment= / export assignment not on the harmless list, and long hex / base64 runs (not in an SSH public key line).
+     *
+     * @internal called by {@see redact()}; public so the shared vectors can reach it
      */
     public static function harden(string $s): string
     {
