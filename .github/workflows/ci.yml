@@ -85,7 +85,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: shellcheck -x endpoint-agent/scripts/build-host.sh endpoint-agent/e2e/run_build_host_proof.sh
+      - run: shellcheck -x endpoint-agent/scripts/build-host.sh endpoint-agent/e2e/run_build_host_proof.sh endpoint-agent/scripts/install-linux.sh endpoint-agent/e2e/test_install_linux.sh
+      - run: bash endpoint-agent/e2e/test_install_linux.sh
       - run: python3 endpoint-agent/e2e/test_build_host.py -v
       # The real Docker build proof (endpoint-agent/e2e/run_build_host_proof.sh) is a documented manual/optional run: it takes minutes.
 
