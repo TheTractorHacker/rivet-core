@@ -133,7 +133,7 @@ final class ChangeProtocol
         $assign = '(?:"[A-Za-z_][A-Za-z0-9_]*=[^"]*"|\'[A-Za-z_][A-Za-z0-9_]*=[^\']*\'|[A-Za-z_][A-Za-z0-9_]*=\S*)';
         $s = preg_replace_callback('/(\bEnvironment\s*=\s*|\bexport\s+)(' . $assign . '(?:\s+' . $assign . ')*)/', static function (array $k) use ($m): string {
             return $k[1] . preg_replace_callback('/"([A-Za-z_][A-Za-z0-9_]*)=([^"]*)"|\'([A-Za-z_][A-Za-z0-9_]*)=([^\']*)\'|([A-Za-z_][A-Za-z0-9_]*)=(\S*)/', static function (array $a) use ($m): string {
-                if (($a[1] ?? '') !== '' && !self::envHarmless($a[1])) {
+                if ($a[1] !== '' && !self::envHarmless($a[1])) {
                     return '"' . $a[1] . '=' . $m . '"';
                 }
                 if (($a[3] ?? '') !== '' && !self::envHarmless($a[3])) {
