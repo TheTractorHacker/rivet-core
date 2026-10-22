@@ -202,10 +202,11 @@ func New(o Options) (*Agent, error) {
 		},
 	})
 	a.hv = hypervisor.New(hypervisor.ManagerOptions{
-		Detect: hypervisor.SystemDetector(remote.ExecRunner{}),
-		GOOS:   hypervisor.GOOS(),
-		Now:    a.now,
-		Log:    a.log,
+		Detect:  hypervisor.SystemDetector(remote.ExecRunner{}),
+		GOOS:    hypervisor.GOOS(),
+		Now:     a.now,
+		Log:     a.log,
+		SeqPath: o.Store.HypervisorSeqPath(),
 		Verify: func(domain string, raw []byte, sig string) error {
 			a.mu.Lock()
 			v := &jobs.Verifier{PublicKey: a.verifier.PublicKey}

@@ -39,6 +39,7 @@ use RivetCore\Rmm\Migration\Migration0034MeshAfterApproval;
 use RivetCore\Rmm\Migration\Migration0035DeviceType;
 use RivetCore\Rmm\Migration\Migration0036Hypervisors;
 use RivetCore\Rmm\Migration\Migration0037AgentOs;
+use RivetCore\Rmm\Migration\Migration0038ConfigSeq;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
 
@@ -89,6 +90,7 @@ final class CoreMigrations
             new Migration0035DeviceType(),
             new Migration0036Hypervisors(),
             new Migration0037AgentOs(),
+            new Migration0038ConfigSeq(),
         ];
     }
 }

@@ -135,6 +135,23 @@ final class HypervisorTest extends RemoteTestCase
         $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_hypervisor_vms'), 'a device that did not announce hypervisor cannot feed it');
     }
 
+    /** rc.31 review F11: the hypervisor configuration's seq is a stored counter too (it used to be the shared settings row's updated_at, and the agent kept it only in memory). */
+    public function testTheHypervisorConfigSeqIsAMonotonicCounterIndependentOfUpdatedAt(): void
+    {
+        $this->on();
+        $first = $this->announce($this->devToken, self::caps(), 'linux')['config']['hypervisor'];
+        $this->assertSame($first['seq'], $this->announce($this->devToken, self::caps(), 'linux')['config']['hypervisor']['seq']);
+        $ahead = $first['seq'] + 7200;
+        $this->h->q("UPDATE endpoint_agent_config_seq SET seq = $ahead WHERE name = 'hypervisor:linux'");
+        $this->h->q("UPDATE endpoint_agent_settings SET updated_at = '2001-01-01 00:00:00'");
+        $this->h->module->settings()->get(true);
+        $this->assertSame($ahead, $this->announce($this->devToken, self::caps(), 'linux')['config']['hypervisor']['seq']);
+        $this->assertSame(200, $this->api('PUT', ['hypervisor', 'settings'], $this->manager, ['limits' => ['hypervisor_full_interval_s' => 901]])[0]);
+        $next = $this->announce($this->devToken, self::caps(), 'linux')['config']['hypervisor'];
+        $this->assertGreaterThan($ahead, $next['seq']);
+        $this->assertSame(901, $next['full_interval_s']);
+    }
+
     public function testTheSignedConfigIsOfferedOnlyToAnAgentThatAskedWhileTheSwitchIsOn(): void
     {
         $this->on();

@@ -88,6 +88,40 @@ final class ChangeMonitorTest extends RemoteTestCase
         $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_change_records'));
     }
 
+    /** rc.31 review F11 (migration 0038): seq is a stored counter, not the settings row's updated_at, so a restore or a clock step backwards cannot make agents refuse new configurations. */
+    public function testTheConfigSeqIsAMonotonicCounterThatSurvivesARestoreAndAClockStepBack(): void
+    {
+        $this->switchOn(['change_monitor']);
+        $this->enable();
+        $first = $this->announce($this->devToken, self::caps())['config']['change'];
+        $this->assertSame($first['seq'], $this->announce($this->devToken, self::caps())['config']['change']['seq'], 'an unchanged configuration keeps its seq');
+        // agents accepted a seq from a clock that was an hour ahead, then the clock came back and the settings row looks old (a restored database): the next change must still go UP
+        $ahead = $first['seq'] + 3600;
+        $this->h->q("UPDATE endpoint_agent_config_seq SET seq = $ahead WHERE name = 'change:windows'");
+        $this->h->q("UPDATE endpoint_agent_change_settings SET updated_at = '2001-01-01 00:00:00'");
+        $this->h->module->changeSettings()->refresh();
+        $this->assertSame($ahead, $this->announce($this->devToken, self::caps())['config']['change']['seq'], 'the stored counter is what is offered, whatever updated_at says');
+        $this->h->module->changeSettings()->update(['limits' => ['change_rate_per_min' => 77]], 1);
+        $second = $this->announce($this->devToken, self::caps())['config']['change'];
+        $this->assertGreaterThan($ahead, $second['seq'], 'a change after a clock step back still raises seq above everything offered before');
+        // and the same body again (a change reverted) is a change of body: it raises it again, it never reuses an old number
+        $this->h->module->changeSettings()->update(['limits' => ['change_rate_per_min' => 120]], 1);
+        $this->assertGreaterThan($second['seq'], $this->announce($this->devToken, self::caps())['config']['change']['seq']);
+        $this->assertGreaterThanOrEqual(1, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_config_seq WHERE name LIKE 'change:%'"), 'a counter per platform');
+    }
+
+    public function testTheConfigSeqFallsBackToTheOldBehaviourBeforeMigration0038(): void
+    {
+        $this->switchOn(['change_monitor']);
+        $this->enable();
+        $this->h->q('DROP TABLE endpoint_agent_config_seq');
+        \RivetCore\Rmm\Support\ConfigSequence::forget();
+        $cfg = $this->announce($this->devToken, self::caps())['config']['change'];
+        $this->assertSame(\RivetCore\Rmm\Support\Sql::ts((string) $this->h->one('SELECT updated_at FROM endpoint_agent_change_settings WHERE id=1')), $cfg['seq']);
+        $this->h->q(\RivetCore\Rmm\Migration\Migration0038ConfigSeq::table());
+        \RivetCore\Rmm\Support\ConfigSequence::forget();
+    }
+
     public function testTheSignedConfigIsOfferedOnlyToAnAgentThatAskedWhileTheSwitchIsOnAndAWatchExists(): void
     {
         $this->switchOn(['change_monitor']);

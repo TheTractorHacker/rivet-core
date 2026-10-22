@@ -6,6 +6,7 @@ namespace RivetCore\Rmm\Hypervisor;
 
 use RivetCore\Rmm\Crypto\Signer;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\ConfigSequence;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -20,7 +21,7 @@ final class HypervisorSettings
         'hypervisor_backup_days', 'hypervisor_storage_warn_pct', 'hypervisor_storage_crit_pct', 'hypervisor_vm_down_resolve_h', 'hypervisor_alert_vm_down', 'hypervisor_alert_backup', 'hypervisor_alert_snapshot',
         'hypervisor_alert_storage', 'hypervisor_alert_pool', 'hypervisor_alert_quorum'];
 
-    public function __construct(private readonly RmmSettings $settings)
+    public function __construct(private readonly RmmSettings $settings, private readonly ?ConfigSequence $sequence = null)
     {
     }
 
@@ -51,9 +52,11 @@ final class HypervisorSettings
         $platform = HypervisorProtocol::platformOfOs($os);
         $l = $this->limits();
         $cfg = ['v' => HypervisorProtocol::CONFIG_VERSION, 'kind' => 'hypervisor_config', 'platform' => $platform, 'full_interval_s' => $l['hypervisor_full_interval_s'],
-            'summary_interval_s' => min($l['hypervisor_summary_interval_s'], $l['hypervisor_full_interval_s']), 'max_vms' => $l['hypervisor_max_vms'], 'snapshot_lookups' => 300,
-            // monotonic: the time of the last settings change. The agent keeps the highest it has seen and refuses a lower one, so an old signed configuration cannot be replayed
-            'seq' => max(1, Sql::ts((string) ($this->settings->get()['updated_at'] ?? '')))];
+            'summary_interval_s' => min($l['hypervisor_summary_interval_s'], $l['hypervisor_full_interval_s']), 'max_vms' => $l['hypervisor_max_vms'], 'snapshot_lookups' => 300];
+        // monotonic and independent of the clock and of updated_at (rc.31, migration 0038): the agent keeps the highest seq it has seen and refuses a lower one, so an old signed
+        // configuration cannot be replayed. Before rc.31 the seq was the settings row's updated_at.
+        $legacy = Sql::ts((string) ($this->settings->get()['updated_at'] ?? ''));
+        $cfg['seq'] = $this->sequence === null ? max(1, $legacy) : $this->sequence->seq('hypervisor:' . $platform, $cfg, $legacy);
         $cfg['version'] = substr(hash('sha256', Signer::hypervisorConfigMessage($cfg)), 0, 16);
         try {
             [$sec] = $this->settings->signingKey();

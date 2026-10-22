@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"os"
 	"runtime"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"rivetit-agent/internal/api"
+	"rivetit-agent/internal/store"
 )
 
 // Supported reports whether this build can collect hypervisor data at all.
@@ -32,6 +36,9 @@ type ManagerOptions struct {
 	GOOS   string
 	Now    func() time.Time
 	Log    *slog.Logger
+	// SeqPath is where the highest configuration seq ever accepted is kept (hypervisor_seq, 0600). "" = kept in memory only. The seq survives a restart and a
+	// Configure(nil), so an older signed configuration cannot be replayed after the agent restarts or the feature was switched off and on again.
+	SeqPath string
 }
 
 // Manager decides when to collect and what to put in the next check-in. It
@@ -55,6 +62,7 @@ type Manager struct {
 	readyStates map[string]string
 	pending     *api.HypervisorReport
 	pendStates  map[string]string
+	highSeq     int64 // the highest configuration seq accepted, kept across reset() and (with SeqPath) across restarts
 }
 
 func New(o ManagerOptions) *Manager {
@@ -64,7 +72,34 @@ func New(o ManagerOptions) *Manager {
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
-	return &Manager{o: o}
+	m := &Manager{o: o}
+	m.highSeq = readSeq(o.SeqPath)
+	return m
+}
+
+// readSeq reads the persisted seq (0 when there is none or it is unreadable: a missing file means this agent never accepted one).
+func readSeq(path string) int64 {
+	if path == "" {
+		return 0
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+func (m *Manager) persistSeq() {
+	if m.o.SeqPath == "" {
+		return
+	}
+	if err := store.WriteFileAtomic(m.o.SeqPath, []byte(strconv.FormatInt(m.highSeq, 10)+"\n"), 0o600); err != nil {
+		m.o.Log.Warn("could not save the hypervisor configuration seq", "err", err)
+	}
 }
 
 // Configure applies config.hypervisor (raw, signed). nil switches collection off.
@@ -84,9 +119,13 @@ func (m *Manager) Configure(raw json.RawMessage) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.cfg != nil && cfg.Seq < m.cfg.Seq {
-		m.o.Log.Warn("hypervisor configuration is older than the one in force; ignored", "seq", cfg.Seq, "have", m.cfg.Seq)
+	if cfg.Seq < m.highSeq {
+		m.o.Log.Warn("hypervisor configuration is older than one already accepted (a replay); ignored", "seq", cfg.Seq, "have", m.highSeq)
 		return errors.New("stale configuration")
+	}
+	if cfg.Seq > m.highSeq {
+		m.highSeq = cfg.Seq
+		m.persistSeq()
 	}
 	if m.cfg == nil || m.cfg.Version != cfg.Version {
 		m.lastFullAt, m.lastProbeAt = time.Time{}, time.Time{} // a changed configuration collects at once

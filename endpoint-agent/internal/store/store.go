@@ -183,18 +183,19 @@ func Open(dir string) (*Store, error) {
 func (s *Store) path(n string) string { return filepath.Join(s.Dir, n) }
 
 // File locations.
-func (s *Store) ConfigPath() string      { return s.path("config.json") }
-func (s *Store) StatePath() string       { return s.path("state.json") }
-func (s *Store) TokenPath() string       { return s.path("device.token") }
-func (s *Store) EnrollTokenPath() string { return s.path("enroll.token") }
-func (s *Store) JobsPath() string        { return s.path("jobs.json") }
-func (s *Store) BufferPath() string      { return s.path("buffer.json") }
-func (s *Store) InflightPath() string    { return s.path("inflight.json") }
-func (s *Store) UpdatePath() string      { return s.path("update.json") }
-func (s *Store) SoftwarePath() string    { return s.path("software.json") }
-func (s *Store) LogPath() string         { return s.path("agent.log") }
-func (s *Store) LogsStatePath() string   { return s.path("logs_state.json") }
-func (s *Store) ChangeStatePath() string { return s.path("change_state.json") }
+func (s *Store) ConfigPath() string        { return s.path("config.json") }
+func (s *Store) StatePath() string         { return s.path("state.json") }
+func (s *Store) TokenPath() string         { return s.path("device.token") }
+func (s *Store) EnrollTokenPath() string   { return s.path("enroll.token") }
+func (s *Store) JobsPath() string          { return s.path("jobs.json") }
+func (s *Store) BufferPath() string        { return s.path("buffer.json") }
+func (s *Store) InflightPath() string      { return s.path("inflight.json") }
+func (s *Store) UpdatePath() string        { return s.path("update.json") }
+func (s *Store) SoftwarePath() string      { return s.path("software.json") }
+func (s *Store) LogPath() string           { return s.path("agent.log") }
+func (s *Store) LogsStatePath() string     { return s.path("logs_state.json") }
+func (s *Store) ChangeStatePath() string   { return s.path("change_state.json") }
+func (s *Store) HypervisorSeqPath() string { return s.path("hypervisor_seq") }
 
 func readJSON(path string, v any) (bool, error) {
 	b, err := os.ReadFile(path)

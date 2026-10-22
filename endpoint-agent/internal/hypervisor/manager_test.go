@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -327,5 +330,50 @@ func TestFitCutsToBudget(t *testing.T) {
 	b, _ := json.Marshal(rep)
 	if len(rep.VMs) > MaxVMs || len(b) > MaxReportBytes || !rep.Truncated {
 		t.Fatalf("%d vms, %d bytes, truncated=%v", len(rep.VMs), len(b), rep.Truncated)
+	}
+}
+
+// Security review F11: the highest accepted seq survives a restart and a switch-off, so an older signed configuration cannot be replayed after either.
+func TestConfigSeqIsPersistedAndSurvivesRestartAndReset(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hypervisor_seq")
+	fp := &fakePlatform{states: map[string]string{}}
+	c := &clock{t: time.Now()}
+	mk := func() *Manager {
+		return New(ManagerOptions{Detect: func(ctx context.Context) (Collector, error) { return fp, nil }, Verify: verifyOK, GOOS: "linux", Now: c.now, SeqPath: path})
+	}
+	m := mk()
+	if err := m.Configure(cfgJSON(50, "cccccccccccccccc", nil)); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(path); err != nil || strings.TrimSpace(string(b)) != "50" {
+		t.Fatalf("seq not persisted: %q %v", b, err)
+	}
+	// switched off and on again with an older configuration: refused
+	if err := m.Configure(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Configure(cfgJSON(49, "dddddddddddddddd", nil)); err == nil || m.Active() {
+		t.Fatal("an older configuration was accepted after the feature was switched off")
+	}
+	// a restart: a fresh Manager still refuses it, and accepts the same or a newer one
+	m2 := mk()
+	if err := m2.Configure(cfgJSON(49, "dddddddddddddddd", nil)); err == nil || m2.Active() {
+		t.Fatal("an older configuration was accepted after a restart")
+	}
+	if err := m2.Configure(cfgJSON(50, "cccccccccccccccc", nil)); err != nil || !m2.Active() {
+		t.Fatalf("the same seq must still be accepted: %v", err)
+	}
+	if err := m2.Configure(cfgJSON(51, "eeeeeeeeeeeeeeee", nil)); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); strings.TrimSpace(string(b)) != "51" {
+		t.Fatalf("seq not advanced: %q", b)
+	}
+	// a damaged file is the same as none (the agent never accepted one)
+	if err := os.WriteFile(path, []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := mk().Configure(cfgJSON(1, "ffffffffffffffff", nil)); err != nil {
+		t.Fatalf("an unreadable seq file must not lock the agent out: %v", err)
 	}
 }

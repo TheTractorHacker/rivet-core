@@ -465,7 +465,7 @@ final class RmmModule
     /** The hypervisor limits (thresholds, intervals) and the signed configuration an agent receives. */
     public function hypervisorSettings(): \RivetCore\Rmm\Hypervisor\HypervisorSettings
     {
-        return $this->hypervisorSettings ??= new \RivetCore\Rmm\Hypervisor\HypervisorSettings($this->settings());
+        return $this->hypervisorSettings ??= new \RivetCore\Rmm\Hypervisor\HypervisorSettings($this->settings(), new \RivetCore\Rmm\Support\ConfigSequence($this->sql()));
     }
 
     /** Alerts and events from what a hypervisor host reported (through the check pipeline). */

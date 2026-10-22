@@ -8,6 +8,7 @@ use RivetCore\Rmm\Contracts\ChangeWatchPolicyInterface;
 use RivetCore\Rmm\Crypto\CanonicalJson;
 use RivetCore\Rmm\Crypto\Signer;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\ConfigSequence;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -253,9 +254,10 @@ final class ChangeSettings
         }
         $l = $this->limits();
         $cfg = ['v' => ChangeProtocol::CONFIG_VERSION, 'kind' => 'change_config', 'platform' => $os, 'interval_s' => $l['change_interval_s'], 'batch_max' => ChangeProtocol::BATCH_MAX,
-            'rate_per_min' => $l['change_rate_per_min'], 'max_value_bytes' => $l['change_max_value_bytes'], 'watches' => $watches,
-            // monotonic: the time of the last settings change. The agent keeps the highest it has seen and refuses a lower one, so an old signed configuration cannot be replayed to undo a narrowing
-            'seq' => max(1, Sql::ts((string) ($this->row()['updated_at'] ?? '')))];
+            'rate_per_min' => $l['change_rate_per_min'], 'max_value_bytes' => $l['change_max_value_bytes'], 'watches' => $watches];
+        // monotonic and independent of the clock and of updated_at (rc.31, migration 0038). The agent keeps the highest seq it has seen and refuses a lower one, so an old signed
+        // configuration cannot be replayed to undo a narrowing; a restored database or a clock step backwards must not lock the agents out of new configurations either.
+        $cfg['seq'] = (new ConfigSequence($this->sql))->seq('change:' . $os, $cfg, Sql::ts((string) ($this->row()['updated_at'] ?? '')));
         $cfg['version'] = substr(hash('sha256', Signer::changeConfigMessage($cfg)), 0, 16);
         try {
             [$sec] = $this->settings->signingKey();
