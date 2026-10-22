@@ -168,4 +168,21 @@ final class DeviceService
 
         return true;
     }
+
+    /**
+     * device_automation_disabled (1.0.0-rc.31): for a device another tool already manages (a second RMM/patch
+     * agent), so RivetCore's own scheduled scripts and patch installs never fire on it - see
+     * {@see \RivetCore\Rmm\Scripts\TargetResolver} and {@see \RivetCore\Rmm\Patch\PatchScheduler::queueInstalls()}.
+     * Monitoring, inventory, patch scanning and a technician's own deliberate "run now" are unaffected.
+     * False for a device that does not exist.
+     */
+    public function setAutomationDisabled(int $deviceId, bool $disabled): bool
+    {
+        if ($this->devices->find($deviceId) === null) {
+            return false;
+        }
+        $this->sql->run('UPDATE endpoint_agent_devices SET device_automation_disabled = ? WHERE device_id = ?', [$disabled ? 1 : 0, $deviceId]);
+
+        return true;
+    }
 }

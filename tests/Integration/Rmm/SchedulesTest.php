@@ -95,6 +95,16 @@ final class SchedulesTest extends AutomationTestCase
         $this->assertSame(4, $this->jobCount());
     }
 
+    public function testDeviceAutomationDisabledIsExcludedFromEveryTarget(): void
+    {
+        $this->h->q("UPDATE endpoint_agent_devices SET device_automation_disabled = 1 WHERE device_id = {$this->d1}");
+        $this->schedule();
+        $out = $this->hk();
+        $this->assertSame(1, $out['schedule_jobs_created'], 'only d2, d1 is excluded');
+        $this->assertCount(0, $this->jobs($this->d1));
+        $this->assertCount(1, $this->jobs($this->d2));
+    }
+
     public function testAnIdempotencyKeyStopsAReplayedSlot(): void
     {
         $s = $this->schedule();

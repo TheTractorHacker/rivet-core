@@ -138,10 +138,12 @@ final class PatchScheduler
             $perClient[(int) $r['client_id']] = (int) $r['c'];
             $total += (int) $r['c'];
         }
+        // device_automation_disabled (1.0.0-rc.31): never queued for install, even an already-approved patch -
+        // scanning/compliance evaluation above is untouched, so Approvals still shows what is missing.
         $rows = $this->sql->all("SELECT a.device_id FROM rmm_patch_available a JOIN rmm_device_state st ON st.device_id = a.device_id AND st.capabilities_json LIKE '%\"patch:install\"%'
             JOIN endpoint_agent_devices d ON d.device_id = a.device_id
             WHERE a.status IN ('approved','failed') AND (a.status = 'approved' OR (a.fail_count < ? AND (a.last_attempt_at IS NULL OR a.last_attempt_at <= ?)))
-              AND d.link_state = 'linked' AND d.revoked_at IS NULL AND d.retired_at IS NULL AND d.last_checkin_at > ?
+              AND d.link_state = 'linked' AND d.revoked_at IS NULL AND d.retired_at IS NULL AND d.device_automation_disabled = 0 AND d.last_checkin_at > ?
             GROUP BY a.device_id ORDER BY MIN(COALESCE(a.last_attempt_at, '1970-01-01')), a.device_id LIMIT " . max(1, $batch),
             [PatchInstallService::MAX_ATTEMPTS, $this->sql->utcAt(-PatchInstallService::RETRY_AFTER_S), $this->sql->utcAt(-(int) $cfg['offline_after_s'])]);
         foreach ($rows as $r) {

@@ -95,7 +95,10 @@ final class TargetResolver
      */
     private function where(string $type, int $id, ?array $visibleClientIds, array $platforms): array
     {
-        $w = ["d.revoked_at IS NULL", "d.retired_at IS NULL", "d.link_state = 'linked'", 'd.asset_id IS NOT NULL'];
+        // device_automation_disabled (1.0.0-rc.31): excluded from every target type alike, including an explicit
+        // device target or a manual run-on-target bulk action - runOnDevice() (a single, deliberate "run now" on
+        // one named device) does not go through this resolver at all, so it is never affected.
+        $w = ["d.revoked_at IS NULL", "d.retired_at IS NULL", "d.link_state = 'linked'", 'd.asset_id IS NOT NULL', 'd.device_automation_disabled = 0'];
         $p = [];
         switch ($type) {
             case 'device':

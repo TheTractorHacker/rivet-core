@@ -137,6 +137,20 @@ final class PatchSchedulerTest extends PatchTestCase
         $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_jobs WHERE mode = 'install'"));
     }
 
+    public function testDeviceAutomationDisabledDefersAnInstallEvenWhenApprovedAndLive(): void
+    {
+        $this->approvedUpdate();
+        $this->policy(['install_enabled' => true]);
+        $this->limits(['patch_live_install' => 1]);
+        $this->h->q("UPDATE endpoint_agent_devices SET device_automation_disabled = 1 WHERE device_id = {$this->dev}");
+        $r = $this->pass();
+        $this->assertSame([0, 0], [$r['patch_installs_queued'], $r['patch_dry_runs_queued']]);
+        $this->assertSame(0, $this->installJobs());
+        $this->h->q("UPDATE endpoint_agent_devices SET device_automation_disabled = 0 WHERE device_id = {$this->dev}");
+        $r = $this->pass();
+        $this->assertSame(1, $r['patch_installs_queued'], 're-enabling it lets the scheduler install the already-approved update');
+    }
+
     public function testADeclinedOrUnapprovedUpdateIsNeverScheduled(): void
     {
         $this->scanWith($this->dev, $this->tok, self::winScan([self::WIN_KB => ['security', 'A'], self::WIN_KB2 => ['security', 'B']]));

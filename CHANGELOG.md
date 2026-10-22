@@ -2,6 +2,10 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.32 (per-device automation kill switch; migration 0039)
+
+- **`device_automation_disabled`: a per-device switch for an asset another tool (a second RMM/patch agent) already manages.** Turning it on excludes the device from every scheduled-script target type ({@see Rmm\Scripts\TargetResolver}: device, tag, group, client, site, policy or "all" alike, and a manual run-on-target bulk action) and stops {@see Rmm\Patch\PatchScheduler::queueInstalls()} from ever queuing a patch install for it. Deliberately narrow: patch scanning/compliance evaluation, monitoring/alerting, software inventory, and a technician's own deliberate single-device "run script now" ({@see Rmm\Technician\ScriptActions::runOnDevice()}, which never goes through `TargetResolver`) or a manual patch install are unaffected - this is a scheduler-only kill switch, not a device-wide automation pause. New `Rmm\Device\DeviceService::setAutomationDisabled()`, `Rmm\Technician\TechnicianActions::setAutomationDisabled()`. Migration 0039 adds the column, default 0 (off): nothing changes for an existing device until an admin turns it on.
+
 ## 1.0.0-rc.31 (security fixes from the rc.21 to rc.30 review; PHP 8.5 minimum; migration 0038)
 
 Fixes the findings of the security review of `v1.0.0-rc.21..v1.0.0-rc.30` ([docs/security/REVIEW_RC30.md](docs/security/REVIEW_RC30.md) has every finding with its status: fixed, deferred or edition). The RMM device protocol is unchanged and only grows (one new `map_state` value); an old agent works against this server and the golden replay is identical. The review's one Medium (F1) changes a default, see "Mesh" below.
