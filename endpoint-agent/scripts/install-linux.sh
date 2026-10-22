@@ -3,7 +3,10 @@
 #
 #   Stamped installer (per-department binary downloaded from the server, carries URL, CA and one-shot token):
 #     sudo ./install-linux.sh --binary ./rivetit-agent-sales
-#     sudo ./install-linux.sh --fetch-installer --server https://rmm.example.com --token-file /root/enroll.token
+#     sudo ./install-linux.sh --fetch-installer --server https://rmm.example.com --token-file /root/enroll.token [--installer-sha256 <64 hex>]
+#       A stamped installer is built per enrollment token, so its SHA-256 cannot be known in advance: this download is protected by TLS (add --ca for a
+#       private CA) and nothing else. --installer-sha256 is for the case where someone already knows the digest (for example the administrator
+#       downloaded the same installer and hashed it); without it the script says so.
 #   Plain agent + token passed separately (tarball, GitHub release, internal mirror):
 #     sudo ./install-linux.sh --server https://rmm.example.com --token-file /root/enroll.token          # binary next to this script
 #     sudo ./install-linux.sh --url https://mirror.example.com/rivetit-agent-linux-amd64 --sha256 <64 hex> \
@@ -30,9 +33,9 @@ umask 077
 die()  { echo "install-linux.sh: error: $*" >&2; exit "${2:-64}"; }
 note() { echo "install-linux.sh: $*"; }
 
-usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
-BINARY="" URL="" SHA256="" SERVER="" TOKEN_FILE="" CA="" PIN="" DEPARTMENT="" STATE_DIR="" INSTALL_DIR=""
+BINARY="" URL="" SHA256="" INSTALLER_SHA256="" SERVER="" TOKEN_FILE="" CA="" PIN="" DEPARTMENT="" STATE_DIR="" INSTALL_DIR=""
 NO_SERVICE=0 FETCH=0 UNINSTALL=0 PURGE=0
 MESH_INSTALL=0 MESH_URL="" MESH_GROUP="" MESH_PIN="" NO_MESH=0 REMOVE_MESH=0
 while [ $# -gt 0 ]; do
@@ -41,6 +44,7 @@ while [ $# -gt 0 ]; do
     --url) URL="${2:?}"; shift 2;;
     --sha256) SHA256="${2:?}"; shift 2;;
     --fetch-installer) FETCH=1; shift;;
+    --installer-sha256) INSTALLER_SHA256="${2:?}"; shift 2;;
     --server) SERVER="${2:?}"; shift 2;;
     --token-file) TOKEN_FILE="${2:?}"; shift 2;;
     --ca) CA="${2:?}"; shift 2;;
@@ -84,6 +88,15 @@ done
 rm -f "$WORK/probe"
 trap 'rm -rf "$WORK"' EXIT
 
+# Run the agent as a child (NOT exec: exec would replace the shell and the EXIT trap would never remove $WORK, which holds the fetched stamped
+# installer with its one-shot enrollment token), remove the work directory, and exit with the agent's status.
+run_and_clean() {
+  local status=0
+  "$@" || status=$?
+  rm -rf "$WORK"
+  exit "$status"
+}
+
 DEST_STATE="${STATE_DIR:-/var/lib/rivetit-agent}"
 DEST_INSTALL="${INSTALL_DIR:-/opt/rivetit-agent}"
 COMMON=(--state-dir "$DEST_STATE" --install-dir "$DEST_INSTALL")
@@ -93,7 +106,7 @@ if [ "$UNINSTALL" = 1 ]; then
   [ -x "$BIN" ] || BIN="$(command -v rivetit-agent || true)"
   [ -n "$BIN" ] || die "the agent is not installed (no $DEST_INSTALL/rivetit-agent)" 1
   args=(uninstall "${COMMON[@]}"); [ "$PURGE" = 1 ] && args+=(--purge); [ "$REMOVE_MESH" = 1 ] && args+=(--remove-meshagent)
-  exec "$BIN" "${args[@]}"
+  run_and_clean "$BIN" "${args[@]}"
 fi
 
 fetch() { # fetch URL OUTFILE [curl args...]  (HTTPS only; file:// is accepted for offline mirrors and tests)
@@ -136,6 +149,14 @@ if [ "$FETCH" = 1 ]; then
   printf '{"token":"%s","arch":"%s"}' "$tok" "$ARCH" | fetch "${SERVER%/}/api/v1/agent_installer" "$BINARY" -X POST -H 'Content-Type: application/json' --data-binary @- \
     || die "could not fetch the stamped installer (does the server offer a Linux installer for $ARCH?)" 65
   unset tok
+  if [ -n "$INSTALLER_SHA256" ]; then
+    [[ "$INSTALLER_SHA256" =~ ^[A-Fa-f0-9]{64}$ ]] || die "--installer-sha256 must be 64 hex characters"
+    got="$(sha256sum "$BINARY" | cut -d' ' -f1)"
+    [ "${got,,}" = "${INSTALLER_SHA256,,}" ] || die "SHA-256 mismatch for the fetched installer: expected $INSTALLER_SHA256, got $got" 65
+    note "installer SHA-256 verified"
+  else
+    note "warning: the fetched installer is trusted on TLS alone (no --installer-sha256 given)"
+  fi
   STAMPED_MODE=1
 elif [ -n "$URL" ]; then
   [ -n "$SHA256" ] || die "--url requires --sha256 (the expected SHA-256 of the binary)"
@@ -166,7 +187,7 @@ if [ "$FETCH" = 1 ] || { [ -z "$SERVER" ] && [ -z "$TOKEN_FILE" ]; }; then
 fi
 if [ "$STAMPED_MODE" = 1 ]; then
   args=(setup --silent "${COMMON[@]}"); [ "$NO_SERVICE" = 1 ] && args+=(--no-service); [ "$NO_MESH" = 1 ] && args+=(--no-mesh-agent)
-  exec "$BINARY" "${args[@]}"
+  run_and_clean "$BINARY" "${args[@]}"
 fi
 [ -n "$SERVER" ] && [ -n "$TOKEN_FILE" ] || die "a plain agent needs --server and --token-file (or use a stamped installer)"
 validate_token_file
@@ -178,4 +199,4 @@ args=(install --server "$SERVER" --token-file "$TOKEN_FILE" "${COMMON[@]}")
 if [ "$MESH_INSTALL" = 1 ]; then
   args+=(--install-mesh-agent --mesh-url "$MESH_URL" --mesh-group-id "$MESH_GROUP"); [ -n "$MESH_PIN" ] && args+=(--mesh-cert-pin "$MESH_PIN")
 fi
-exec "$BINARY" "${args[@]}"
+run_and_clean "$BINARY" "${args[@]}"
