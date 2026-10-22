@@ -50,7 +50,7 @@ func (e *engine) findActors(ctx context.Context, recs []Record) {
 	}
 	ms := int(actorLookback / time.Millisecond)
 	q := fmt.Sprintf("*[System[(EventID=4657) and TimeCreated[timediff(@SystemTime) <= %d]]]", ms)
-	res, err := e.o.Runner.Run(ctx, "wevtutil.exe", []string{"qe", "Security", "/f:xml", "/rd:true", fmt.Sprintf("/c:%d", actorMaxEvts), "/q:" + q}, 8<<20, 30*time.Second)
+	res, err := e.o.Runner.Run(ctx, systemExe("wevtutil.exe"), []string{"qe", "Security", "/f:xml", "/rd:true", fmt.Sprintf("/c:%d", actorMaxEvts), "/q:" + q}, 8<<20, 30*time.Second)
 	if err != nil || res.ExitCode != 0 {
 		e.actorOffUntil = e.now().Add(actorCooldown)
 		return

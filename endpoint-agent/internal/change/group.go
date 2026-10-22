@@ -85,7 +85,7 @@ func (e *engine) groupMembers(ctx context.Context, name string) ([]string, error
 	if !reGroup.MatchString(name) || e.o.Runner == nil {
 		return nil, errors.New("not a group name this agent will use")
 	}
-	res, err := e.o.Runner.Run(ctx, "net.exe", []string{"localgroup", name}, netMaxBytes, netTimeout)
+	res, err := e.o.Runner.Run(ctx, systemExe("net.exe"), []string{"localgroup", name}, netMaxBytes, netTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (e *engine) groupMembers(ctx context.Context, name string) ([]string, error
 // S-1-5-32-544, for a Windows in another language.
 func (e *engine) localAdminsName(ctx context.Context) string {
 	const script = "(New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544').Translate([System.Security.Principal.NTAccount]).Value"
-	res, err := e.o.Runner.Run(ctx, "powershell.exe", []string{"-NoProfile", "-NonInteractive", "-Command", script}, 4096, netTimeout)
+	res, err := e.o.Runner.Run(ctx, systemExe(`WindowsPowerShell\v1.0\powershell.exe`), []string{"-NoProfile", "-NonInteractive", "-Command", script}, 4096, netTimeout)
 	if err != nil || res.ExitCode != 0 {
 		return ""
 	}

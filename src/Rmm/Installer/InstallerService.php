@@ -255,14 +255,17 @@ final class InstallerService
             . "}\n";
     }
 
-    /** A PowerShell single-quoted string literal. Control characters are refused outright. */
+    /**
+     * A PowerShell single-quoted string literal. Control characters (including the C1 controls and the Unicode line and paragraph separators, which PowerShell treats as line
+     * ends) are refused outright. PowerShell treats U+2018, U+2019, U+201A and U+201B as single quotes too, so each of them is doubled like the ASCII one (security review F14).
+     */
     public static function psQuote(string $v): string
     {
-        if (preg_match('/[\x00-\x1f\x7f]/', $v) === 1) {
+        if (preg_match('/[\x00-\x1f\x7f\x{80}-\x{9f}\x{2028}\x{2029}]/u', $v) === 1 || preg_match('//u', $v) !== 1) {
             throw new \InvalidArgumentException('control character in a script value');
         }
 
-        return "'" . str_replace("'", "''", $v) . "'";
+        return "'" . (string) preg_replace('/([\x{27}\x{2018}\x{2019}\x{201A}\x{201B}])/u', '$1$1', $v) . "'";
     }
 
     /** A POSIX shell single-quoted word. Control characters are refused (a newline only when $allowNewline is set, for PEM text). */

@@ -28,25 +28,27 @@ func (h *HyperV) now() time.Time {
 	return time.Now()
 }
 
+// root is the Windows directory. It never comes back empty (security review F14): SystemRoot, then windir, then C:\Windows, so no program is ever started by its
+// bare name (which is looked up on PATH) by an agent that runs as SYSTEM.
 func (h *HyperV) root() string {
 	if h.SystemRoot != "" {
 		return h.SystemRoot
 	}
-	return os.Getenv("SystemRoot")
+	if r := os.Getenv("SystemRoot"); r != "" {
+		return r
+	}
+	if r := os.Getenv("windir"); r != "" {
+		return r
+	}
+	return `C:\Windows`
 }
 
 func (h *HyperV) psExe() string {
-	if r := h.root(); r != "" {
-		return filepath.Join(r, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-	}
-	return "powershell.exe"
+	return filepath.Join(h.root(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
 }
 
 func (h *HyperV) scExe() string {
-	if r := h.root(); r != "" {
-		return filepath.Join(r, "System32", "sc.exe")
-	}
-	return "sc.exe"
+	return filepath.Join(h.root(), "System32", "sc.exe")
 }
 
 func (h *HyperV) ps(ctx context.Context, timeout time.Duration, script string) ([]byte, error) {

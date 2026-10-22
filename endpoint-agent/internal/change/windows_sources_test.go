@@ -40,7 +40,7 @@ func TestANewLocalAdministratorIsReported(t *testing.T) {
 	r := groupRig(t)
 	members := netEnglish
 	r.run.fn = func(name string, args []string) (remote.RunResult, error) {
-		if name != "net.exe" || len(args) != 2 || args[0] != "localgroup" || args[1] != "Administrators" {
+		if exeName(name) != "net.exe" || len(args) != 2 || args[0] != "localgroup" || args[1] != "Administrators" {
 			t.Errorf("only net.exe localgroup Administrators is run: %s %v", name, args)
 		}
 		return remote.RunResult{Stdout: []byte(members)}, nil
@@ -64,14 +64,14 @@ func TestALocalisedWindowsIsResolvedBySid(t *testing.T) {
 	r := groupRig(t)
 	r.run.fn = func(name string, args []string) (remote.RunResult, error) {
 		switch {
-		case name == "net.exe" && args[1] == "Administrators":
+		case exeName(name) == "net.exe" && args[1] == "Administrators":
 			return remote.RunResult{ExitCode: 2, Stderr: []byte("System error 1376")}, nil
-		case name == "powershell.exe":
+		case exeName(name) == "powershell.exe":
 			if !strings.Contains(strings.Join(args, " "), "S-1-5-32-544") {
 				t.Errorf("%v", args)
 			}
 			return remote.RunResult{Stdout: []byte("BUILTIN\\Administratoren\r\n")}, nil
-		case name == "net.exe" && args[1] == "Administratoren":
+		case exeName(name) == "net.exe" && args[1] == "Administratoren":
 			return remote.RunResult{Stdout: []byte(netGerman)}, nil
 		}
 		t.Errorf("unexpected %s %v", name, args)
@@ -199,7 +199,7 @@ func TestTheActorComesFromAuditEventsWhenWindowsRecordedThem(t *testing.T) {
 	calls := 0
 	r.run.fn = func(name string, args []string) (remote.RunResult, error) {
 		calls++
-		if name != "wevtutil.exe" || args[0] != "qe" || args[1] != "Security" || !strings.Contains(strings.Join(args, " "), "EventID=4657") {
+		if exeName(name) != "wevtutil.exe" || args[0] != "qe" || args[1] != "Security" || !strings.Contains(strings.Join(args, " "), "EventID=4657") {
 			t.Errorf("%s %v", name, args)
 		}
 		return remote.RunResult{Stdout: []byte(auditXML)}, nil
@@ -242,5 +242,32 @@ func TestAFailingAuditLookupSwitchesItOffForAnHour(t *testing.T) {
 	r.tick()
 	if calls != 2 {
 		t.Errorf("tried again after the cooldown: %d", calls)
+	}
+}
+
+// exeName is the program name of a path the agent started (the agent now starts system programs by absolute path).
+func exeName(path string) string {
+	if i := strings.LastIndexAny(path, `\/`); i >= 0 {
+		return path[i+1:]
+	}
+	return path
+}
+
+// Security review F14: the agent, running as SYSTEM, starts the Windows helper programs by absolute path below %SystemRoot%\System32, never by a bare name that
+// PATH would resolve.
+func TestSystemProgramsAreStartedByAbsolutePath(t *testing.T) {
+	t.Setenv("SystemRoot", `D:\Win`)
+	for rel, want := range map[string]string{"net.exe": `D:\Win\System32\net.exe`, "wevtutil.exe": `D:\Win\System32\wevtutil.exe`} {
+		if got := systemExe(rel); got != want {
+			t.Errorf("%s: %q", rel, got)
+		}
+	}
+	t.Setenv("SystemRoot", "")
+	t.Setenv("windir", "")
+	if got := systemExe("net.exe"); got != `C:\Windows\System32\net.exe` {
+		t.Errorf("fallback: %q", got)
+	}
+	if got := systemExe(`WindowsPowerShell\v1.0\powershell.exe`); !strings.HasSuffix(got, `\System32\WindowsPowerShell\v1.0\powershell.exe`) {
+		t.Errorf("powershell: %q", got)
 	}
 }

@@ -27,6 +27,19 @@ final class InstallerSnippetsTest extends TestCase
     public function testPowerShellQuoting(): void
     {
         $this->assertSame("'it''s'", InstallerService::psQuote("it's"));
+        // PowerShell also treats the typographic single quotes as quotes: each one is doubled so none can end the literal (review F14)
+        foreach (["\u{2018}", "\u{2019}", "\u{201A}", "\u{201B}"] as $q) {
+            $this->assertSame("'a{$q}{$q}b'", InstallerService::psQuote("a{$q}b"));
+        }
+        $this->assertSame("'x\u{2019}\u{2019}; Remove-Item C:\\ \u{2019}\u{2019}'", InstallerService::psQuote("x\u{2019}; Remove-Item C:\\ \u{2019}"));
+        foreach (["\u{85}", "\u{2028}", "\u{2029}", "\xff"] as $bad) {
+            try {
+                InstallerService::psQuote("a{$bad}b");
+                $this->fail('refused: ' . bin2hex($bad));
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
         $this->assertSame("'a\$b`c\"d'", InstallerService::psQuote('a$b`c"d'), '$ ` and " are inert inside single quotes');
         foreach (["a\nb", "a\0b", "a\rb", "a\x7fb"] as $bad) {
             try {

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"hash"
+	"os"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -186,4 +187,18 @@ func Display(raw string, max int, redact func(string) string) (text string, reda
 		c, truncated = Truncate(c, max), true
 	}
 	return c, redacted, truncated
+}
+
+// systemExe is the absolute path of a Windows system program below %SystemRoot%\System32 (security review F14): the agent runs as SYSTEM, and a program named by
+// its bare name is looked up on PATH, where a writable directory would let an unprivileged user plant a copy. When SystemRoot is not set, windir and then C:\Windows
+// are used; a bare name is never returned.
+func systemExe(rel string) string {
+	root := os.Getenv("SystemRoot")
+	if root == "" {
+		root = os.Getenv("windir")
+	}
+	if root == "" {
+		root = `C:\Windows`
+	}
+	return strings.TrimRight(root, `\/`) + `\System32\` + rel
 }
