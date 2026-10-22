@@ -89,7 +89,43 @@ final class AutoInstallActions
             return $e;
         }
 
-        return ActionResult::ok('ok', 200, 'ok', ['enabled' => $this->settings->featureOn(DeployProtocol::FEATURE), 'packages' => $this->auto->packages()]);
+        $visible = $this->authz->visibleClientIds($who->userId);
+
+        return ActionResult::ok('ok', 200, 'ok', ['enabled' => $this->settings->featureOn(DeployProtocol::FEATURE), 'packages' => array_map(fn (array $p): array => $this->limitedTo($p, $visible), $this->auto->packages())]);
+    }
+
+    /**
+     * A package row as a caller who sees only some clients may read it (security review F6): the clients and locations a policy targets, and the client and location scopes
+     * of the vendor parameters that are set, are cut down to the caller's clients, so another client's id is not disclosed. The location of a parameter does not say which
+     * client it belongs to, so a restricted caller does not see location scopes at all. `null` = the caller sees every client: nothing is cut.
+     *
+     * @param array<string,mixed> $p
+     * @param list<int>|null $visible
+     * @return array<string,mixed>
+     */
+    private function limitedTo(array $p, ?array $visible): array
+    {
+        if ($visible === null) {
+            return $p;
+        }
+        if (isset($p['auto']['clients']) && is_array($p['auto']['clients'])) {
+            $p['auto']['clients'] = array_values(array_filter($p['auto']['clients'], static fn (array $c): bool => in_array((int) $c['client_id'], $visible, true)));
+        }
+        if (isset($p['params']['set']) && is_array($p['params']['set'])) {
+            $p['params']['set'] = $this->setLimitedTo($p['params']['set'], $visible);
+        }
+
+        return $p;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $set
+     * @param list<int> $visible
+     * @return list<array<string,mixed>>
+     */
+    private function setLimitedTo(array $set, array $visible): array
+    {
+        return array_values(array_filter($set, static fn (array $r): bool => $r['scope'] === 'global' || ($r['scope'] === 'client' && in_array((int) $r['scope_id'], $visible, true))));
     }
 
     /**
@@ -215,7 +251,10 @@ final class AutoInstallActions
             return ActionResult::fail(404, 'not_found', 'Package not found.');
         }
 
-        return ActionResult::ok('ok', 200, 'ok', ['declared' => $this->params->declared($packageId), 'set' => $this->params->status($packageId), 'values_are_never_shown' => true]);
+        $set = $this->params->status($packageId);
+        $visible = $this->authz->visibleClientIds($who->userId);
+
+        return ActionResult::ok('ok', 200, 'ok', ['declared' => $this->params->declared($packageId), 'set' => $visible === null ? $set : $this->setLimitedTo($set, $visible), 'values_are_never_shown' => true]);
     }
 
     /**

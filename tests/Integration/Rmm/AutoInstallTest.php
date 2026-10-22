@@ -454,6 +454,34 @@ final class AutoInstallTest extends DeployTestCase
 
     // ------------------------------------------------------------------ authorization
 
+    /** rc.31 review F6: a client-restricted reader does not learn other clients' ids from the policy targets or the parameter scopes. */
+    public function testAClientRestrictedReaderSeesOnlyTheirOwnClientsInPoliciesAndParameterScopes(): void
+    {
+        $p = $this->edr();
+        $a = $this->h->clientA;
+        $b = $this->h->clientB;
+        $this->assertSame(200, $this->auto($p, ['scope' => 'clients', 'clients' => [['client_id' => $a, 'location_id' => 0], ['client_id' => $b, 'location_id' => 0]]], $this->deployer)[0]);
+        $this->assertSame(200, $this->param($p, 'org_key', 'for-a', 'client', $a, $this->admin));
+        $this->assertSame(200, $this->param($p, 'org_key', 'for-b', 'client', $b, $this->admin));
+        $this->assertSame(200, $this->param($p, 'org_key', 'for-loc', 'location', 777, $this->admin));
+        $find = fn (array $j): array => array_values(array_filter($j['packages'], static fn (array $x): bool => $x['package_id'] === $p))[0];
+        // an unrestricted reader sees everything
+        $all = $find($this->api('GET', ['software_autoinstall'], $this->viewer)[1]);
+        $this->assertSame([$a, $b], array_column($all['auto']['clients'], 'client_id'));
+        $this->assertEqualsCanonicalizing(['client:' . $a, 'client:' . $b, 'location:777'], array_map(static fn (array $r): string => $r['scope'] . ':' . $r['scope_id'], array_filter($all['params']['set'], static fn (array $r): bool => $r['name'] === 'org_key' && $r['scope'] !== 'global')));
+        // the restricted reader sees client B only
+        [$c, $j] = $this->api('GET', ['software_autoinstall'], $this->scoped);
+        $this->assertSame(200, $c);
+        $mine = $find($j);
+        $this->assertSame([$b], array_column($mine['auto']['clients'], 'client_id'));
+        $scopes = array_map(static fn (array $r): string => $r['scope'] . ':' . $r['scope_id'], $mine['params']['set']);
+        $this->assertContains('client:' . $b, $scopes);
+        $this->assertNotContains('client:' . $a, $scopes);
+        $this->assertNotContains('location:777', $scopes, 'a location does not say which client it belongs to');
+        $one = $this->api('GET', ['software_params', (string) $p], $this->scoped)[1];
+        $this->assertNotContains('client:' . $a, array_map(static fn (array $r): string => $r['scope'] . ':' . $r['scope_id'], $one['set']));
+    }
+
     public function testWhoMayDoWhat(): void
     {
         $p = $this->edr();

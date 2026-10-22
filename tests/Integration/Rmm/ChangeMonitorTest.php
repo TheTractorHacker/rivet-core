@@ -32,7 +32,7 @@ final class ChangeMonitorTest extends RemoteTestCase
         $view = [RmmAbility::DEVICE_VIEW, RmmAbility::CHANGE_VIEW];
 
         return new RmmHarness(null, null, ['allow_linux' => true, 'transfer_dir' => $this->transferDir], false, null,
-            new AllowUsersPolicy([1 => true, 10 => $view, 11 => [RmmAbility::DEVICE_VIEW, RmmAbility::JOB_RUN_SAVED], 12 => [RmmAbility::DEVICE_VIEW], 13 => [...$view, RmmAbility::CHANGE_MANAGE], 16 => true]), null, $this->bus);
+            new AllowUsersPolicy([1 => true, 10 => $view, 11 => [RmmAbility::DEVICE_VIEW, RmmAbility::JOB_RUN_SAVED], 12 => [RmmAbility::DEVICE_VIEW], 13 => [...$view, RmmAbility::CHANGE_MANAGE], 14 => [...$view, RmmAbility::SOFTWARE_VIEW], 16 => true]), null, $this->bus);
     }
 
     protected function setUp(): void
@@ -513,7 +513,12 @@ final class ChangeMonitorTest extends RemoteTestCase
         $now = gmdate('Y-m-d H:i:s', time() - 120);
         $this->h->q("INSERT INTO rmm_software_history (device_id, software_key, name, source, change_type, old_version, new_version, publisher, occurred_at) VALUES
             ($this->dev, 'k1', 'AcmeCAD', 'registry', 'added', NULL, '1.2', 'Acme', '$now'), ($this->dev, 'k2', 'Putty', 'registry', 'removed', '0.80', NULL, '', '$now')");
-        [$c, $j] = $this->api('GET', [(string) $this->dev, 'changes', 'timeline'], $this->tech);
+        // rc.31 review F6: a caller who may see changes but not software does not get the software inventory history through the timeline
+        [$c, $plain] = $this->api('GET', [(string) $this->dev, 'changes', 'timeline'], $this->tech);
+        $this->assertSame(200, $c);
+        $this->assertSame(['agent'], array_values(array_unique(array_column($plain['items'], 'source'))));
+        $this->assertNotContains('AcmeCAD', array_column($plain['items'], 'target'));
+        [$c, $j] = $this->api('GET', [(string) $this->dev, 'changes', 'timeline'], new \RivetCore\Rmm\Authz\RmmPrincipal(14, 'ChangesAndSoftware'));
         $this->assertSame(200, $c);
         $sources = array_unique(array_column($j['items'], 'source'));
         sort($sources);

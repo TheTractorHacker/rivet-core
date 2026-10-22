@@ -352,9 +352,10 @@ final class ChangeService
      * newest first, with the people and programs behind them (blank when Windows did not record them) and a per-day count.
      *
      * @param array<string,mixed> $f from, to (default the last 30 days; at most 365)
+     * @param bool $software false leaves the software inventory history out (the caller may see changes but not software)
      * @return array{items:list<array<string,mixed>>,actors:list<array<string,mixed>>,days:list<array<string,mixed>>,from:string,to:string,truncated:bool}
      */
-    public function timeline(int $deviceId, array $f, int $limit = 200): array
+    public function timeline(int $deviceId, array $f, int $limit = 200, bool $software = true): array
     {
         $now = $this->sql->time();
         $to = self::when($f['to'] ?? null, $now);
@@ -366,7 +367,7 @@ final class ChangeService
             WHERE e.device_id = ? AND e.occurred_at BETWEEN ? AND ? ORDER BY e.occurred_at DESC, e.change_id DESC LIMIT $limit", [$deviceId, $a, $b]);
         $items = array_map(self::present(...), $rows);
         try {
-            $soft = $this->sql->all("SELECT * FROM rmm_software_history WHERE device_id = ? AND occurred_at BETWEEN ? AND ? ORDER BY occurred_at DESC, history_id DESC LIMIT $limit", [$deviceId, $a, $b]);
+            $soft = !$software ? [] : $this->sql->all("SELECT * FROM rmm_software_history WHERE device_id = ? AND occurred_at BETWEEN ? AND ? ORDER BY occurred_at DESC, history_id DESC LIMIT $limit", [$deviceId, $a, $b]);
         } catch (\Throwable) {
             $soft = [];   // the inventory tables do not exist yet
         }

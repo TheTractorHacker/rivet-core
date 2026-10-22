@@ -104,7 +104,7 @@ final class ChangeActions
             return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
         }
 
-        return ActionResult::ok('ok', 200, 'ok', ['device_id' => $deviceId, 'hostname' => (string) ($dev['hostname'] ?? '')] + $this->service->timeline($deviceId, $f, $limit));
+        return ActionResult::ok('ok', 200, 'ok', ['device_id' => $deviceId, 'hostname' => (string) ($dev['hostname'] ?? '')] + $this->service->timeline($deviceId, $f, $limit, $this->authz->check($who->userId, RmmAbility::SOFTWARE_VIEW, (int) $dev['client_id']) === null));
     }
 
     /** What one device is told to watch and what its agent last reported about it. */
