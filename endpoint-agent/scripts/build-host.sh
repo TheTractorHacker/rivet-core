@@ -185,7 +185,8 @@ sync_source() { # ref -> sets COMMIT_FULL, SRC
   git -C "$CACHE_REPO" fetch -q --prune --force "$CORE_REPO" '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*' \
     '+refs/remotes/origin/*:refs/remotes/origin/*' >>"$LOG" 2>&1 || die "git fetch from the source repository failed"
   COMMIT_FULL=""
-  for r in "refs/remotes/origin/$ref" "refs/tags/$ref" "refs/heads/$ref"; do
+  # tags first: a branch that happens to carry the name of a release tag must not shadow it (security review F13)
+  for r in "refs/tags/$ref" "refs/remotes/origin/$ref" "refs/heads/$ref"; do
     COMMIT_FULL=$(git -C "$CACHE_REPO" rev-parse --verify -q "$r^{commit}" 2>/dev/null) && break || COMMIT_FULL=""
   done
   [ -n "$COMMIT_FULL" ] || die "ref '$ref' does not exist in the source repository"
