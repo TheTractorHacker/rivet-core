@@ -12,7 +12,8 @@ use RivetCore\Migration\MigrationInterface;
  * `seq` the server has offered and a hash of the configuration body that seq belongs to. Until now `seq` was the `updated_at` time of the settings row, so a database restore or a
  * clock step backwards made every agent that had accepted a higher `seq` refuse all new configurations. See {@see \RivetCore\Rmm\Support\ConfigSequence}.
  *
- * Purely additive and idempotent (CREATE TABLE IF NOT EXISTS, nothing inserted). Code that runs before this migration offers the old `updated_at`-based seq.
+ * It also adds `rmm_hosted_files.verified_fp` (a stat fingerprint of a hosted installer that was hashed and found intact; review F7). Purely additive and idempotent (CREATE TABLE IF NOT
+ * EXISTS, one guarded ADD COLUMN, no row written). Code that runs before this migration offers the old `updated_at`-based seq and hashes a hosted installer on every download.
  *
  * @internal
  */
@@ -26,6 +27,10 @@ final class Migration0038ConfigSeq implements MigrationInterface
     public function up(DatabaseInterface $database): void
     {
         $database->execute(self::table());
+        // rc.31 (review F7): the stat fingerprint of a hosted installer whose SHA-256 was verified, so a download does not re-hash up to 512 MiB on every request
+        if (Migration0015EndpointAgentConverge::hasColumn($database, 'rmm_hosted_files', 'file_id') && !Migration0015EndpointAgentConverge::hasColumn($database, 'rmm_hosted_files', 'verified_fp')) {
+            $database->execute("ALTER TABLE `rmm_hosted_files` ADD COLUMN `verified_fp` varchar(64) NOT NULL DEFAULT ''");
+        }
     }
 
     /** @internal */

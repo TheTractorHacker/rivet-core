@@ -219,11 +219,42 @@ final class HostedFiles
             return null;
         }
         clearstatcache(true, $path);
-        if (!is_file($path) || is_link($path) || !is_readable($path) || (int) filesize($path) !== (int) $f['size_bytes'] || !hash_equals((string) $f['sha256'], (string) hash_file('sha256', $path))) {
+        if (!is_file($path) || is_link($path) || !is_readable($path) || (int) filesize($path) !== (int) $f['size_bytes']) {
             return null;
+        }
+        // The SHA-256 of up to 512 MiB is computed once per version of the file (security review F7), not on every request: the stat fingerprint (inode, size, mtime, ctime) of a
+        // file that was hashed and found intact is kept, and any change to the file changes it. Without migration 0038 (no column) the file is hashed every time, as before.
+        $fp = self::fingerprint($path);
+        $canCache = array_key_exists('verified_fp', $f);
+        if (!$canCache || $fp === '' || !hash_equals((string) $f['verified_fp'], $fp)) {
+            if (!hash_equals((string) $f['sha256'], (string) hash_file('sha256', $path))) {
+                return null;
+            }
+            // Only a file at least two seconds old is remembered: stat times have a one second resolution, so a change in the same second as the check could keep the
+            // fingerprint (the "racy" case); such a file is simply hashed again next time.
+            if ($canCache && $fp !== '' && self::fingerprint($path) === $fp && self::ageSeconds($path) >= 2) {
+                $this->sql->run('UPDATE rmm_hosted_files SET verified_fp = ? WHERE file_id = ?', [$fp, $f['file_id']]);
+            }
         }
 
         return new RmmFileBody($path, (int) $f['size_bytes'], null, (string) $f['sha256']);
+    }
+
+    private static function ageSeconds(string $path): int
+    {
+        clearstatcache(true, $path);
+        $st = @stat($path);
+
+        return $st === false ? 0 : time() - max((int) $st['mtime'], (int) $st['ctime']);
+    }
+
+    /** inode, size, mtime and ctime of a file as one string ('' when it cannot be read). */
+    private static function fingerprint(string $path): string
+    {
+        clearstatcache(true, $path);
+        $st = @stat($path);
+
+        return $st === false ? '' : hash('sha256', implode(':', [$st['ino'], $st['size'], $st['mtime'], $st['ctime']]));
     }
 
     /** Housekeeping: grants of finished jobs are of no further use. */

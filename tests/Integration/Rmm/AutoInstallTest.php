@@ -601,9 +601,40 @@ final class AutoInstallTest extends DeployTestCase
         $name = (string) $this->h->one('SELECT storage_name FROM rmm_hosted_files LIMIT 1');
         $path = $this->h->binaryDir . '/hosted/hosted_' . $name . '.bin';
         $this->assertFileExists($path);
-        file_put_contents($path, 'MZ' . str_repeat('X', 3000));
         $api = $this->h->module->hostedFileApi(static fn (): bool => true);
-        $this->assertSame(404, $api->handle(new RmmRequest('GET', 'agent_software', [$job['job_id'], $secret], [], [], '127.0.0.1', 'a', true, null, null))->status);
+        $get = fn (): int => $api->handle(new RmmRequest('GET', 'agent_software', [$job['job_id'], $secret], [], [], '127.0.0.1', 'a', true, null, null))->status;
+        // rc.31 review F7: an intact file is hashed once; the stat fingerprint of that verified state is kept and later requests do not re-hash it
+        $this->assertSame('', (string) $this->h->one('SELECT verified_fp FROM rmm_hosted_files LIMIT 1'));
+        $this->assertSame(200, $get());
+        $this->assertSame('', (string) $this->h->one('SELECT verified_fp FROM rmm_hosted_files LIMIT 1'), 'a file younger than two seconds is not remembered (stat times are whole seconds)');
+        sleep(2);
+        $this->assertSame(200, $get());
+        $fp = (string) $this->h->one('SELECT verified_fp FROM rmm_hosted_files LIMIT 1');
+        $this->assertSame(64, strlen($fp));
+        $this->assertSame(200, $get());
+        $this->assertSame($fp, (string) $this->h->one('SELECT verified_fp FROM rmm_hosted_files LIMIT 1'));
+        // the same size, different bytes (ctime moves): the fingerprint no longer matches, the file is hashed again and refused
+        clearstatcache();
+        $size = (int) filesize($path);
+        file_put_contents($path, 'MZ' . str_repeat('X', $size - 2));
+        $this->assertSame(404, $get());
+        $this->assertSame(404, $get(), 'and it stays refused');
+    }
+
+    public function testHostedFilesStillWorkBeforeMigration0038(): void
+    {
+        [, $f] = $this->upload('MZ' . random_bytes(3000));
+        $this->h->q('ALTER TABLE rmm_hosted_files DROP COLUMN verified_fp');
+        $p = $this->package('Hosted3');
+        $this->api('POST', ['software_packages', (string) $p, 'versions'], $this->admin, ['version' => '1', 'os' => 'windows', 'fmt' => 'exe', 'hosted_file_id' => $f['file_id'], 'silent_args' => '/S', 'detect_kind' => 'uninstall_name', 'detect_value' => 'H3']);
+        $this->limits(['software_live_install' => 1]);
+        $this->auto($p, ['scope' => 'all']);
+        [$dev, $tok] = $this->enrollNew('W-OLDSCHEMA');
+        $this->pass();
+        $job = $this->jobOf($tok, $dev);
+        $secret = substr((string) $job['params']['url'], -48);
+        $api = $this->h->module->hostedFileApi(static fn (): bool => true);
+        $this->assertSame(200, $api->handle(new RmmRequest('GET', 'agent_software', [$job['job_id'], $secret], [], [], '127.0.0.1', 'a', true, null, null))->status);
     }
 
     // ------------------------------------------------------------------ templates
