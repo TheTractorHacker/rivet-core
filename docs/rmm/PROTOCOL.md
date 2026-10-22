@@ -1038,6 +1038,7 @@ Both files live in `endpoint-agent/testdata/vectors/` and are read by the Go age
 | `agent_change_monitor_vectors.json` | `aa20e416e88f667681f169d26b38ea6dd53a94397a4d1d6012d6bc173df6a50e` |
 | `agent_check_os_vectors.json` | `dfbf0dceb2cc9dbd06d392787d30a2399b26c12299e2f909e7b95b1d533dbaab` |
 | `agent_hypervisor_vectors.json` | `6830b9fec805d857994d518889c0f7bc84f265ab58cdba58b442a69ed6b8148b` |
+| `agent_change_monitor_rc31_vectors.json` | `aadc386bdb3183c1bf69df7f3deec0cb5efba9e7c5636d805abd5fa538078988` |
 
 **Job signing** (`agent_job_signing_vectors.json`). Test key: SHA-256 of the ASCII string RivetIT-agent-TEST-seed (raw 32 bytes); public key `iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=`.
 
@@ -1080,4 +1081,6 @@ Negative cases, every one of which must be rejected (14):
 **Per-OS check targeting** (`agent_check_os_vectors.json`, added in 1.0.0-rc.24; the files above are unchanged): 4 signed check definitions, some carrying the optional `os` member (it is part of the signed object), and the keys delivered to a Windows and to a Linux device. The Go agent replays the file in `internal/agent`: every signature must verify over the object exactly as delivered, and dropping the checks of the other OS from the full list must leave exactly the delivered keys.
 
 **Change monitoring** (`agent_change_monitor_vectors.json`, added in 1.0.0-rc.22; the files above are unchanged): the watch policy's answer for 47 registry keys and 96 file paths (plus 8 with an extra root), the secret-name rule for 30 value names, and one complete signed `config.change` object (domain line, canonical JSON, Ed25519 by the test key). The Go agent replays the file in `internal/change`: its policy must agree on every row, the signature must verify, and one changed character must break it.
+
+**Change monitoring, rc.31** (`agent_change_monitor_rc31_vectors.json`, added in 1.0.0-rc.31; the files above are unchanged): 43 text rows that the agent (Go `Display`) and the server (`ChangeProtocol::redact`) must mask to exactly the same output, and 13 credential-file rows for the watch policy's deny list. The Go agent replays the file in `internal/change`.
 <!-- END GENERATED: vectors -->

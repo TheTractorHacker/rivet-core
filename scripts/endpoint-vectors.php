@@ -492,8 +492,6 @@ function changeMonitorVectors(): string
         '/etc/ppp/chap-secrets', '/etc/mysql/debian.cnf', '/etc/nginx/.htpasswd', '/etc/nginx/server.key', '/etc/apt/auth.conf', '/etc', '/', '/root', '/home', '/home/bob', '/home/bob/.bash_history', '/proc/1/environ', '/var/log/auth.log',
         'etc/hosts', './etc/hosts', '/etc/./hosts', '/etc//hosts', '/etc/hosts/', '/etc/../root/.ssh/id_rsa', '/etc\\hosts', '~root/.ssh', 'file:///etc/hosts', " /etc/hosts", '/etc/hosts ', "/etc/ho\0sts", "/etc/ho\nsts", "/etc/ho\u{200b}sts", '',
         '/etc/shadow.bak', '/etc/shadow~', '/etc/shadow.old', '/etc/gshadow.bak', '/etc/postfix/sasl_passwd', '/etc/samba/smbpasswd', '/etc/ppp/passwd.client', '/etc/wpa_supplicant/wpa_supplicant.conf', '/etc/sssd/sssd.conf',
-        '/etc/rancher/k3s/k3s.yaml', '/etc/rancher/k3s/config.yaml', '/etc/kubernetes/admin.conf', '/etc/kubernetes/manifests/kube-apiserver.yaml', '/home/bob/.kube/config', '/etc/app/token', '/etc/app/api_key',
-        '/etc/app/apikey', '/etc/app/api-keys', '/etc/app/kubeconfig', '/etc/app/deploy.token', '/etc/app/tokens.conf', '/etc/app/tokenizer.conf',
         '/etc/ssh/ssh_host_ed25519_key', '/etc/ssl/foo_key', '/etc/foo/id_ed25519', '/etc/x./y', '/etc/x/y.', '/etc/passwd-', '/etc/sudoers.d/10-ops.',
         '/srv/app/app.conf', '/srv/app/id_rsa', '/srv/app/site.key', '/srv/app', '/srv', '/srv/application/x.conf',
         'C:\\Windows\\System32\\drivers\\etc\\hosts', 'c:\\windows\\system32\\drivers\\etc\\hosts', 'D:\\Windows\\System32\\GroupPolicy\\Machine\\Registry.pol', 'C:\\Windows\\System32\\config\\SAM', 'C:\\Windows\\System32\\config\\SECURITY',
@@ -504,21 +502,6 @@ function changeMonitorVectors(): string
     $names = ['Password', 'DbPassword', 'user_pwd', 'ApiToken', 'api-key', 'ApiKey', 'PrivateKey', 'ClientSecret', 'SharedKey', 'ConnectionString', 'AccessKey', 'SasToken', 'Cookie', 'passphrase', 'Credentials',
         'Start', 'ImagePath', 'ObjectName', 'DisplayName', 'Shell', 'Userinit', 'EnableLUA', 'fDenyTSConnections', 'PortNumber', '(Default)', 'Server', 'KeyboardLayout', 'Monkey', 'Tokenizer', 'Compass'];
     $secret = array_map(static fn (string $n): array => ['name' => $n, 'secret' => \RivetCore\Rmm\Change\ChangeProtocol::secretName($n)], $names);
-
-    // rc.31 (security review F2): the text redaction of a change record. The Go agent's Display() (no extra redactor) and ChangeProtocol::redact() must give
-    // the same output for every row: secrets masked, harmless text (including SSH public keys and long paths) untouched.
-    $redactIn = [
-        'Environment="DB_PASS=s3cret"', 'Environment=DB_PASS=s3cret LANG=C', 'Environment="LANG=C.UTF-8" "REDIS_PW=abc 123" PATH=/usr/bin', 'export ENCRYPTION_KEY=abc123', 'export PATH=/usr/local/bin:$PATH',
-        'SMTP_PASS=hunter2', 'smtp.pass: hunter2', 'REDIS_PASS=hunter2', 'AUTH_KEY=abc', 'LICENSE_KEY="AAAA-BBBB"', 'MASTER_KEY: abc', 'EncryptionKey=abc', 'dbPass=abc', 'DB_PASSWORD=abc',
-        'ExecStart=/usr/bin/app --pass hunter2 --verbose', 'ExecStart=/usr/bin/app --token abc --verbose', 'curl -X POST --api-key abc123 http://x', 'run.sh -password "x y"',
-        'mysql -u root -p hunter2 -e "select 1"', 'sshpass -p hunter2 ssh host', 'psql -h db -p 5432', 'MAILTO=ops@example.com', 'SHELL=/bin/sh', 'LC_ALL=C', 'JAVA_HOME=/usr/lib/jvm/java-21',
-        'FOO=bar', 'DB_PASS=', 'KEY_FILE=/etc/app/key.pem', 'monkey=banana', 'passenger=on', 'compass: north', 'bypass=1', 'keyboard=us', 'pass: ok',
-        'a3f5c9d8e7b6a5f4c3d2e1f0a9b8c7d6e5f4a3b2', 'sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5',
-        'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGl6kqVx0z9u8B2cV7yH5nQe1sT4wXjR3aZpLmKdOfUb alice@host',
-        '/usr/lib/systemd/system-generators/systemd-fstab-generator-with-a-very-long-name-for-testing', 'C:\\Program Files\\Acme\\agent.exe --service', 'registry key: HKLM\\SOFTWARE\\Acme',
-        'user=alice', 'ExecStart=/usr/bin/app --key-file /etc/app/key --port 80',
-    ];
-    $redaction = array_map(static fn (string $in): array => ['input' => $in, 'output' => \RivetCore\Rmm\Change\ChangeProtocol::redact(\RivetCore\Rmm\Change\ChangeProtocol::text($in, 2000))], $redactIn);
 
     $config = ['v' => 1, 'kind' => 'change_config', 'platform' => 'windows', 'interval_s' => 300, 'batch_max' => 100, 'rate_per_min' => 120, 'max_value_bytes' => 256, 'seq' => 1760000000,
         'watches' => [
@@ -540,7 +523,6 @@ function changeMonitorVectors(): string
         'policy' => ['registry' => $decide($policy, 'registry', $registry), 'file' => $decide($policy, 'file', $files),
             'file_extra_root' => ['root' => '/srv/app', 'rows' => $decide($withRoot, 'file', ['/srv/app/app.conf', '/srv/app/id_rsa', '/srv/app/site.key', '/srv/app', '/srv', '/srv/application/x.conf', '/etc/shadow', '/srv/app/../../etc/shadow'])]],
         'secret_names' => $secret,
-        'redaction' => $redaction,
         'signed_config' => ['sign_domain' => \RivetCore\Rmm\Change\ChangeProtocol::SIGN_DOMAIN, 'signed_message' => $message, 'config' => $config, 'expected_watch_ids' => array_column($config['watches'], 'id')],
     ];
 
@@ -636,6 +618,38 @@ function hypervisorVectors(): string
     return json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
 }
 
+/** rc.31 (security review F2 and F15): the change-monitor redaction rules and the credential files added to the watch deny list. A new file: the earlier change-monitor vector file is unchanged. */
+function changeMonitorRc31Vectors(): string
+{
+    $policy = new \RivetCore\Rmm\Change\ChangeWatchPolicy();
+    // The Go agent's Display() (no extra redactor) and ChangeProtocol::redact() must give the same output for every row: secrets masked, harmless text (including SSH public keys and long paths) untouched.
+    $redactIn = [
+        'Environment="DB_PASS=s3cret"', 'Environment=DB_PASS=s3cret LANG=C', 'Environment="LANG=C.UTF-8" "REDIS_PW=abc 123" PATH=/usr/bin', 'export ENCRYPTION_KEY=abc123', 'export PATH=/usr/local/bin:$PATH',
+        'SMTP_PASS=hunter2', 'smtp.pass: hunter2', 'REDIS_PASS=hunter2', 'AUTH_KEY=abc', 'LICENSE_KEY="AAAA-BBBB"', 'MASTER_KEY: abc', 'EncryptionKey=abc', 'dbPass=abc', 'DB_PASSWORD=abc',
+        'ExecStart=/usr/bin/app --pass hunter2 --verbose', 'ExecStart=/usr/bin/app --token abc --verbose', 'curl -X POST --api-key abc123 http://x', 'run.sh -password "x y"',
+        'mysql -u root -p hunter2 -e "select 1"', 'sshpass -p hunter2 ssh host', 'psql -h db -p 5432', 'MAILTO=ops@example.com', 'SHELL=/bin/sh', 'LC_ALL=C', 'JAVA_HOME=/usr/lib/jvm/java-21',
+        'FOO=bar', 'DB_PASS=', 'KEY_FILE=/etc/app/key.pem', 'monkey=banana', 'passenger=on', 'compass: north', 'bypass=1', 'keyboard=us', 'pass: ok',
+        'a3f5c9d8e7b6a5f4c3d2e1f0a9b8c7d6e5f4a3b2', 'sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5',
+        'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGl6kqVx0z9u8B2cV7yH5nQe1sT4wXjR3aZpLmKdOfUb alice@host',
+        '/usr/lib/systemd/system-generators/systemd-fstab-generator-with-a-very-long-name-for-testing', 'C:\\Program Files\\Acme\\agent.exe --service', 'registry key: HKLM\\SOFTWARE\\Acme',
+        'user=alice', 'ExecStart=/usr/bin/app --key-file /etc/app/key --port 80',
+    ];
+    $redaction = array_map(static fn (string $in): array => ['input' => $in, 'output' => \RivetCore\Rmm\Change\ChangeProtocol::redact(\RivetCore\Rmm\Change\ChangeProtocol::text($in, 2000))], $redactIn);
+
+    $files = [
+        '/etc/rancher/k3s/k3s.yaml', '/etc/rancher/k3s/config.yaml', '/etc/kubernetes/admin.conf', '/etc/kubernetes/manifests/kube-apiserver.yaml', '/home/bob/.kube/config', '/etc/app/token', '/etc/app/api_key',
+        '/etc/app/apikey', '/etc/app/api-keys', '/etc/app/kubeconfig', '/etc/app/deploy.token', '/etc/app/tokens.conf', '/etc/app/tokenizer.conf',
+    ];
+    $out = [
+        'format' => 'RIVETIT-CHANGE-MONITOR-RC31-v1',
+        'description' => 'Change monitoring vectors added in 1.0.0-rc.31 (the rc.22 file is unchanged). redaction: for every input, the text a change record keeps after the agent (Go Display with no extra redactor) or the server (ChangeProtocol::redact over ChangeProtocol::text) has masked it; both must give exactly `output`. policy.file: what ChangeWatchPolicy::allows() answers for credential files added to the deny list; the Go agent FileAllowed must agree on every row.',
+        'redaction' => $redaction,
+        'policy' => ['file' => array_map(static fn (string $t): array => ['target' => $t, 'allowed' => $policy->allows('file', $t, 7)], $files)],
+    ];
+
+    return json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
+}
+
 $files = [
     'agent_installer_trailer_vectors.json' => installerTrailerVectors(),
     'agent_job_signing_vectors.json' => jobSigningVectors(),
@@ -644,6 +658,7 @@ $files = [
     'agent_change_monitor_vectors.json' => changeMonitorVectors(),   // rc.22: additive again
     'agent_check_os_vectors.json' => checkOsVectors(),   // rc.24: additive again
     'agent_hypervisor_vectors.json' => hypervisorVectors(),   // rc.29: additive again
+    'agent_change_monitor_rc31_vectors.json' => changeMonitorRc31Vectors(),   // rc.31: redaction and the extra deny-list rows; the rc.22 file is untouched
 ];
 $sums = '';
 foreach ($files as $name => $bytes) {

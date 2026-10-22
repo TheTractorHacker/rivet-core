@@ -22,6 +22,7 @@ final class EndpointVectorFilesTest extends TestCase
         'agent_change_monitor_vectors.json' => 'aa20e416e88f667681f169d26b38ea6dd53a94397a4d1d6012d6bc173df6a50e',   // 1.0.0-rc.22: the change-monitoring watch policy, secret names and a signed configuration
         'agent_check_os_vectors.json' => 'dfbf0dceb2cc9dbd06d392787d30a2399b26c12299e2f909e7b95b1d533dbaab',   // 1.0.0-rc.24: signed check definitions with the optional os member, delivered keys per OS
         'agent_hypervisor_vectors.json' => '6830b9fec805d857994d518889c0f7bc84f265ab58cdba58b442a69ed6b8148b',   // 1.0.0-rc.29: a signed hypervisor configuration and check-in blocks with the server verdict
+        'agent_change_monitor_rc31_vectors.json' => 'aadc386bdb3183c1bf69df7f3deec0cb5efba9e7c5636d805abd5fa538078988',   // 1.0.0-rc.31: change-monitor redaction rows and the extra deny-list rows (the rc.22 file is untouched)
     ];
 
     public function testFilesMatchTheRivetItBaseline(): void

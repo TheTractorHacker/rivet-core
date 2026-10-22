@@ -33,10 +33,6 @@ type vectorFile struct {
 		Name   string `json:"name"`
 		Secret bool   `json:"secret"`
 	} `json:"secret_names"`
-	Redaction []struct {
-		Input  string `json:"input"`
-		Output string `json:"output"`
-	} `json:"redaction"`
 	Signed struct {
 		Domain  string          `json:"sign_domain"`
 		Message string          `json:"signed_message"`
@@ -140,10 +136,34 @@ func TestAConfigurationSignedByTheServerVerifiesAndOneChangedCharacterBreaksIt(t
 	}
 }
 
-// rc.31 (security review F2): the agent's Display() and the server's ChangeProtocol::redact() give the same text for every row, so a secret the agent keeps
-// is a secret the server would have masked too, and harmless text (an SSH public key, a long path, ExecStart=) is never hidden by either.
+// rc.31 (security review F2 and F15): the second vector file. The rc.22 file is unchanged; the redaction rules and the extra deny-list rows live here.
+type vectorFileRC31 struct {
+	Redaction []struct {
+		Input  string `json:"input"`
+		Output string `json:"output"`
+	} `json:"redaction"`
+	Policy struct {
+		File []policyRow `json:"file"`
+	} `json:"policy"`
+}
+
+func loadVectorsRC31(t *testing.T) vectorFileRC31 {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "agent_change_monitor_rc31_vectors.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v vectorFileRC31
+	if err := json.Unmarshal(b, &v); err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// The agent's Display() and the server's ChangeProtocol::redact() give the same text for every row, so a secret the agent keeps is a secret the server would have
+// masked too, and harmless text (an SSH public key, a long path, ExecStart=) is never hidden by either.
 func TestRedactionAgreesWithTheServerOnEveryVector(t *testing.T) {
-	v := loadVectors(t)
+	v := loadVectorsRC31(t)
 	if len(v.Redaction) < 30 {
 		t.Fatalf("the vector file looks truncated: %d redaction rows", len(v.Redaction))
 	}
@@ -151,6 +171,18 @@ func TestRedactionAgreesWithTheServerOnEveryVector(t *testing.T) {
 		got, _, _ := Display(r.Input, 2000, nil)
 		if got != r.Output {
 			t.Errorf("redact %q: agent %q, server %q", r.Input, got, r.Output)
+		}
+	}
+}
+
+func TestTheExtraCredentialFilesAreDeniedLikeTheServer(t *testing.T) {
+	v := loadVectorsRC31(t)
+	if len(v.Policy.File) < 10 {
+		t.Fatalf("the vector file looks truncated: %d policy rows", len(v.Policy.File))
+	}
+	for _, r := range v.Policy.File {
+		if got := FileAllowed(r.Target, nil); got != r.Allowed {
+			t.Errorf("file %q: agent %v, server %v", r.Target, got, r.Allowed)
 		}
 	}
 }

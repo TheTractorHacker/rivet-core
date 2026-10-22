@@ -16,7 +16,7 @@ use RivetCore\Rmm\Crypto\CanonicalJson;
  *
  * Without migration 0038 the table is missing: the caller's legacy value (the settings row's `updated_at`) is returned, which is exactly the previous behaviour.
  *
- * @internal
+ * @api
  */
 final class ConfigSequence
 {

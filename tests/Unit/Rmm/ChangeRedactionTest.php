@@ -9,13 +9,13 @@ use RivetCore\Rmm\Change\ChangeProtocol;
 
 /**
  * rc.31 security review F2 and F4: what a change record's text may keep, and what may reach an alert or a webhook. The redaction rows are the vectors the Go agent
- * replays too (endpoint-agent/testdata/vectors/agent_change_monitor_vectors.json, "redaction").
+ * replays too (endpoint-agent/testdata/vectors/agent_change_monitor_rc31_vectors.json, "redaction").
  */
 final class ChangeRedactionTest extends TestCase
 {
     public function testTheServerGivesTheSameTextAsTheVectorsTheAgentReplays(): void
     {
-        $rows = RmmVectors::load('agent_change_monitor_vectors.json')['redaction'];
+        $rows = RmmVectors::load('agent_change_monitor_rc31_vectors.json')['redaction'];
         $this->assertGreaterThanOrEqual(30, count($rows));
         foreach ($rows as $r) {
             $this->assertSame($r['output'], ChangeProtocol::redact(ChangeProtocol::text($r['input'], 2000)), $r['input']);
