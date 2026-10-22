@@ -80,6 +80,7 @@ final class ChangeProtocol
             $s = preg_replace('/\b(NOPASSWD|PASSWD):/', "$1\u{E000}", $s) ?? $s;   // word boundary: "NOPASSWD:" and "PASSWD:" only, not "xPASSWD:"
         }
         $s = \RivetCore\Rmm\Crypto\Redactor::redact($s);
+        $s = self::harden($s);
         // command-line shapes that carry a password after a switch (best effort: a secret in free text with no marker stays visible)
         foreach ([
             '/(\s-u\s+[^\s:]+:)\S+/i' => '$1' . self::MASK,
@@ -96,12 +97,73 @@ final class ChangeProtocol
         return $sudoers ? str_replace("\u{E000}", ':', $s) : $s;
     }
 
-    /** Control characters become a space, invalid UTF-8 is dropped, the text is trimmed and cut to a character budget. */
+    /** Environment variable names whose values are shown; every other Environment= / export value is masked. Mirrors the agent (redact.go envHarmless). */
+    private const ENV_HARMLESS = ['PATH', 'LANG', 'LANGUAGE', 'TZ', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'PWD', 'TERM', 'EDITOR', 'VISUAL', 'PAGER', 'MAILTO', 'NODE_ENV', 'PYTHONUNBUFFERED',
+        'PYTHONPATH', 'LD_LIBRARY_PATH', 'LD_PRELOAD', 'JAVA_HOME', 'GOPATH', 'GOROOT', 'DISPLAY', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY'];
+
+    private static function envHarmless(string $name): bool
+    {
+        $n = strtoupper($name);
+        if (in_array($n, self::ENV_HARMLESS, true) || str_starts_with($n, 'LC_') || str_starts_with($n, 'XDG_')) {
+            return true;
+        }
+        foreach (['_HOME', '_DIR', '_PATH', '_PORT', '_HOST', '_LEVEL', '_ENV', '_MODE', '_USER', '_USERNAME'] as $suf) {
+            if (str_ends_with($n, $suf)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The rc.31 redaction rules (security review F2), the same as the agent's `hardenRedact` in endpoint-agent/internal/change/redact.go and checked against the same
+     * vectors: PASS / PW tokens and _KEY / CamelCase Key names, a secret in the next word of a switch, `-p <word>` for tools that take it that way, the value of any
+     * Environment= / export assignment not on the harmless list, and long hex / base64 runs (not in an SSH public key line).
+     */
+    public static function harden(string $s): string
+    {
+        $m = self::MASK;
+        $s = preg_replace('/\b((?:[A-Za-z0-9]+[_.-])*(?:pass|pw)(?:[_.-][A-Za-z0-9_.-]*)?|(?:[A-Za-z0-9]+[_.-])+key)(["\']?\s*[:=]\s*["\']?)[^\s"\',;]+/i', '$1$2' . $m, $s) ?? $s;
+        $s = preg_replace('/\b([A-Za-z0-9_.-]*[a-z0-9](?:Key|Pass|Pw))(["\']?\s*[:=]\s*["\']?)[^\s"\',;]+/', '$1$2' . $m, $s) ?? $s;
+        $s = preg_replace('/(\s--?(?:pass(?:word|wd|phrase)?|pwd|pw|secret|token|api-?key|apikey|auth(?:-?token)?|bearer|client-?secret|access-?key|private-?key|credential|key)\s+)(?:"[^"]*"|\'[^\']*\'|\S+)/i', '$1' . $m, $s) ?? $s;
+        $s = preg_replace('/(\b(?:mysql\w*|mariadb\w*|sshpass|mongo\w*)\b[^\n]*?\s-p\s+)\S+/i', '$1' . $m, $s) ?? $s;
+        $assign = '(?:"[A-Za-z_][A-Za-z0-9_]*=[^"]*"|\'[A-Za-z_][A-Za-z0-9_]*=[^\']*\'|[A-Za-z_][A-Za-z0-9_]*=\S*)';
+        $s = preg_replace_callback('/(\bEnvironment\s*=\s*|\bexport\s+)(' . $assign . '(?:\s+' . $assign . ')*)/', static function (array $k) use ($m): string {
+            return $k[1] . preg_replace_callback('/"([A-Za-z_][A-Za-z0-9_]*)=([^"]*)"|\'([A-Za-z_][A-Za-z0-9_]*)=([^\']*)\'|([A-Za-z_][A-Za-z0-9_]*)=(\S*)/', static function (array $a) use ($m): string {
+                if (($a[1] ?? '') !== '' && !self::envHarmless($a[1])) {
+                    return '"' . $a[1] . '=' . $m . '"';
+                }
+                if (($a[3] ?? '') !== '' && !self::envHarmless($a[3])) {
+                    return "'" . $a[3] . '=' . $m . "'";
+                }
+                if (($a[5] ?? '') !== '' && !self::envHarmless($a[5])) {
+                    return $a[5] . '=' . $m;
+                }
+
+                return $a[0];
+            }, $k[2]);
+        }, $s) ?? $s;
+        if (preg_match('/\b(?:ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-\S+|sk-(?:ssh|ecdsa)\S*)\s/i', $s) !== 1) {
+            $s = preg_replace('/\b[0-9A-Fa-f]{32,}\b/', $m, $s) ?? $s;
+            $s = preg_replace('/(^|[\s"\'=:])[A-Za-z0-9+]{40,}={0,2}($|[\s"\',;])/', '$1' . $m . '$2', $s) ?? $s;
+        }
+
+        return $s;
+    }
+
+    /** Control characters, bidi overrides, zero-width marks and line separators become a space, invalid UTF-8 is dropped, the text is trimmed and cut to a character budget. */
     public static function text(string $s, int $max): string
     {
         $s = (string) @iconv('UTF-8', 'UTF-8//IGNORE', $s);
-        $s = (string) preg_replace('/[\x00-\x1f\x7f]+/', ' ', $s);
+        $s = (string) preg_replace('/[\x00-\x1f\x7f\x{80}-\x{9f}\x{200b}-\x{200f}\x{2028}-\x{202e}\x{2066}-\x{2069}\x{feff}]+/u', ' ', $s);
 
         return trim(mb_substr($s, 0, $max));
+    }
+
+    /** The same text made safe for a sentence in an alert or a webhook (HTML, Markdown, chat): angle brackets, quotes and backticks go too (backslashes stay: registry paths need them). Stored values keep everything. */
+    public static function alertText(string $s, int $max = 200): string
+    {
+        return trim(mb_substr((string) preg_replace('/[<>`"\']+/u', ' ', self::text($s, $max * 2)), 0, $max));
     }
 }

@@ -304,14 +304,16 @@ final class ChangeRuleService
     /** @param array<string,mixed> $c */
     private static function sample(array $c): string
     {
-        $where = $c['target'] . ($c['item'] !== '' ? ($c['kind'] === 'group' ? ' ' : ' \\ ') . $c['item'] : '');
+        // everything below came from a device: markup characters, quotes, backticks and bidi marks are removed before it reaches an alert, a ticket or a webhook
+        $t = static fn (mixed $v): string => ChangeProtocol::alertText((string) $v, ChangeProtocol::VALUE_MAX);
+        $where = $t($c['target']) . ($c['item'] !== '' ? ($c['kind'] === 'group' ? ' ' : ' \\ ') . $t($c['item']) : '');
         $what = ChangeProtocol::changeName((int) $c['change']);
         $detail = '';
         if ($c['old'] !== '' || $c['new'] !== '') {
-            $detail = ': ' . ($c['old'] !== '' ? $c['old'] . ' -> ' : '') . ($c['new'] !== '' ? $c['new'] : '(none)');
+            $detail = ': ' . ($c['old'] !== '' ? $t($c['old']) . ' -> ' : '') . ($c['new'] !== '' ? $t($c['new']) : '(none)');
         }
 
-        return $what . ' ' . $where . ($c['summary'] !== '' ? ' (' . $c['summary'] . ')' : '') . $detail;
+        return $what . ' ' . $where . ($c['summary'] !== '' ? ' (' . $t($c['summary']) . ')' : '') . $detail;
     }
 
     /**

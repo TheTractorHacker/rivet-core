@@ -123,8 +123,11 @@ final class ChangeService
             $this->rules?->evaluate($dev, $fresh);
             if ($this->events !== null) {
                 foreach (array_slice($fresh, 0, self::EVENT_CAP) as $r) {
-                    $this->events->emit(RmmEvent::CHANGE_DETECTED, $dev, ['kind' => $r['kind'], 'watch' => $r['watch'], 'change' => ChangeProtocol::changeName($r['change']), 'target' => $r['target'],
-                        'item' => $r['item'], 'old_value' => $r['old'], 'new_value' => $r['new'], 'summary' => $r['summary'], 'actor' => $r['actor'], 'process' => $r['process']]);
+                    // device-supplied text goes into webhooks and tickets: markup characters, quotes and backticks are removed here (the stored record keeps its text, escape it on output)
+                    $t = static fn (string $v, int $max): string => ChangeProtocol::alertText($v, $max);
+                    $this->events->emit(RmmEvent::CHANGE_DETECTED, $dev, ['kind' => $r['kind'], 'watch' => $r['watch'], 'change' => ChangeProtocol::changeName($r['change']), 'target' => $t($r['target'], ChangeProtocol::TARGET_MAX),
+                        'item' => $t($r['item'], ChangeProtocol::ITEM_MAX), 'old_value' => $t($r['old'], ChangeProtocol::VALUE_MAX), 'new_value' => $t($r['new'], ChangeProtocol::VALUE_MAX), 'summary' => $t($r['summary'], ChangeProtocol::SUMMARY_MAX),
+                        'actor' => $t($r['actor'], ChangeProtocol::ACTOR_MAX), 'process' => $t($r['process'], ChangeProtocol::PROCESS_MAX)]);
                 }
             }
         }

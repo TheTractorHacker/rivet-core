@@ -33,6 +33,10 @@ type vectorFile struct {
 		Name   string `json:"name"`
 		Secret bool   `json:"secret"`
 	} `json:"secret_names"`
+	Redaction []struct {
+		Input  string `json:"input"`
+		Output string `json:"output"`
+	} `json:"redaction"`
 	Signed struct {
 		Domain  string          `json:"sign_domain"`
 		Message string          `json:"signed_message"`
@@ -133,5 +137,20 @@ func TestAConfigurationSignedByTheServerVerifiesAndOneChangedCharacterBreaksIt(t
 	sig, _ := m["signature"].(string)
 	if err := ver.VerifyObject(v.Signed.Config, sig); err == nil {
 		t.Error("the signature of a configuration must not verify as a job or a check")
+	}
+}
+
+// rc.31 (security review F2): the agent's Display() and the server's ChangeProtocol::redact() give the same text for every row, so a secret the agent keeps
+// is a secret the server would have masked too, and harmless text (an SSH public key, a long path, ExecStart=) is never hidden by either.
+func TestRedactionAgreesWithTheServerOnEveryVector(t *testing.T) {
+	v := loadVectors(t)
+	if len(v.Redaction) < 30 {
+		t.Fatalf("the vector file looks truncated: %d redaction rows", len(v.Redaction))
+	}
+	for _, r := range v.Redaction {
+		got, _, _ := Display(r.Input, 2000, nil)
+		if got != r.Output {
+			t.Errorf("redact %q: agent %q, server %q", r.Input, got, r.Output)
+		}
 	}
 }

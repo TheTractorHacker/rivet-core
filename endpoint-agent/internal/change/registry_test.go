@@ -138,7 +138,7 @@ func TestSecretPatternsInsideAValueAreRedactedAndKeyedHashed(t *testing.T) {
 
 func TestValueRenderingAndCaps(t *testing.T) {
 	multi := u16("one\x00two\x00three") // u16 appends the final NUL
-	big := strings.Repeat("A", 3000)
+	big := strings.Repeat("A ", 1500)
 	r := newRig(t, "windows")
 	key := `HKLM\SOFTWARE\Acme\Agent`
 	r.reg.set(key, nil, dwordVal("Mode", 3), RegValue{Name: "List", Type: regMultiSZ, Raw: multi, Size: len(multi)}, RegValue{Name: "Blob", Type: regBinary, Raw: []byte{1, 2, 3, 4}, Size: 4},

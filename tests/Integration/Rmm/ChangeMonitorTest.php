@@ -247,7 +247,7 @@ final class ChangeMonitorTest extends RemoteTestCase
     public function testLongValuesAreCutAndFlagged(): void
     {
         $this->enable(limits: ['change_max_value_bytes' => 64]);
-        $this->ship([self::ch(['new' => str_repeat('p', 400), 'old' => 'short'])]);
+        $this->ship([self::ch(['new' => str_repeat('pq ', 200), 'old' => 'short'])]);
         $row = $this->h->rows('SELECT * FROM endpoint_agent_change_records')[0];
         $this->assertSame(64, mb_strlen($row['new_value']));
         $this->assertSame(ChangeProtocol::FLAG_TRUNCATED, (int) $row['flags']);
@@ -600,6 +600,29 @@ final class ChangeMonitorTest extends RemoteTestCase
         $this->assertSame(1, $this->h->module->changeRules()->sweep());
         $this->assertSame('ok', $this->h->one("SELECT status FROM endpoint_agent_checks WHERE device_id=$this->dev AND check_key='$key'"));
         $this->assertArrayHasKey('change_rule_alerts_recovered', $this->h->module->housekeeping()->run());
+    }
+
+    /** rc.31 review F4: device-supplied change text never carries markup into an alert detail or a webhook payload; the stored record keeps what the device sent. */
+    public function testDeviceTextIsMadeSafeInAlertsAndEventsButStoredAsSent(): void
+    {
+        $this->enable();
+        $this->api('POST', ['changes', 'rules', 'recommended'], $this->manager, []);
+        $evil = '<img src=x onerror=alert(1)> `id` "q"';
+        $this->ship([self::ch(['item' => 'Evil', 'new' => $evil, 'summary' => '<b>bold</b>', 'actor' => 'CORP\\<bob>'])]);
+        $this->assertStringContainsString('<img', (string) $this->h->one('SELECT new_value FROM endpoint_agent_change_records LIMIT 1'), 'stored as sent (editions escape on output)');
+        $detail = (string) $this->h->one("SELECT detail FROM endpoint_agent_checks WHERE device_id=$this->dev AND check_key LIKE 'change.%' LIMIT 1");
+        $this->assertStringContainsString('img src=x onerror=alert(1)', $detail);
+        foreach (['<', '>', '`', '"'] as $bad) {
+            $this->assertStringNotContainsString($bad, $detail);
+            foreach ([RmmEvent::CHANGE_DETECTED, RmmEvent::CHANGE_RULE_MATCHED] as $name) {
+                foreach ($this->bus->of($name) as $e) {
+                    foreach (array_intersect_key($e, array_flip(['target', 'item', 'old_value', 'new_value', 'summary', 'actor', 'process', 'sample'])) as $field => $value) {
+                        $this->assertStringNotContainsString($bad, (string) $value, "$name.$field has $bad");
+                    }
+                }
+            }
+        }
+        $this->assertNotEmpty($this->bus->of(RmmEvent::CHANGE_DETECTED));
     }
 
     public function testEventsAreCappedPerBatchAndCarryTheFields(): void

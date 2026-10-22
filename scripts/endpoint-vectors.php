@@ -503,6 +503,21 @@ function changeMonitorVectors(): string
         'Start', 'ImagePath', 'ObjectName', 'DisplayName', 'Shell', 'Userinit', 'EnableLUA', 'fDenyTSConnections', 'PortNumber', '(Default)', 'Server', 'KeyboardLayout', 'Monkey', 'Tokenizer', 'Compass'];
     $secret = array_map(static fn (string $n): array => ['name' => $n, 'secret' => \RivetCore\Rmm\Change\ChangeProtocol::secretName($n)], $names);
 
+    // rc.31 (security review F2): the text redaction of a change record. The Go agent's Display() (no extra redactor) and ChangeProtocol::redact() must give
+    // the same output for every row: secrets masked, harmless text (including SSH public keys and long paths) untouched.
+    $redactIn = [
+        'Environment="DB_PASS=s3cret"', 'Environment=DB_PASS=s3cret LANG=C', 'Environment="LANG=C.UTF-8" "REDIS_PW=abc 123" PATH=/usr/bin', 'export ENCRYPTION_KEY=abc123', 'export PATH=/usr/local/bin:$PATH',
+        'SMTP_PASS=hunter2', 'smtp.pass: hunter2', 'REDIS_PASS=hunter2', 'AUTH_KEY=abc', 'LICENSE_KEY="AAAA-BBBB"', 'MASTER_KEY: abc', 'EncryptionKey=abc', 'dbPass=abc', 'DB_PASSWORD=abc',
+        'ExecStart=/usr/bin/app --pass hunter2 --verbose', 'ExecStart=/usr/bin/app --token abc --verbose', 'curl -X POST --api-key abc123 http://x', 'run.sh -password "x y"',
+        'mysql -u root -p hunter2 -e "select 1"', 'sshpass -p hunter2 ssh host', 'psql -h db -p 5432', 'MAILTO=ops@example.com', 'SHELL=/bin/sh', 'LC_ALL=C', 'JAVA_HOME=/usr/lib/jvm/java-21',
+        'FOO=bar', 'DB_PASS=', 'KEY_FILE=/etc/app/key.pem', 'monkey=banana', 'passenger=on', 'compass: north', 'bypass=1', 'keyboard=us', 'pass: ok',
+        'a3f5c9d8e7b6a5f4c3d2e1f0a9b8c7d6e5f4a3b2', 'sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5',
+        'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGl6kqVx0z9u8B2cV7yH5nQe1sT4wXjR3aZpLmKdOfUb alice@host',
+        '/usr/lib/systemd/system-generators/systemd-fstab-generator-with-a-very-long-name-for-testing', 'C:\\Program Files\\Acme\\agent.exe --service', 'registry key: HKLM\\SOFTWARE\\Acme',
+        'user=alice', 'ExecStart=/usr/bin/app --key-file /etc/app/key --port 80',
+    ];
+    $redaction = array_map(static fn (string $in): array => ['input' => $in, 'output' => \RivetCore\Rmm\Change\ChangeProtocol::redact(\RivetCore\Rmm\Change\ChangeProtocol::text($in, 2000))], $redactIn);
+
     $config = ['v' => 1, 'kind' => 'change_config', 'platform' => 'windows', 'interval_s' => 300, 'batch_max' => 100, 'rate_per_min' => 120, 'max_value_bytes' => 256, 'seq' => 1760000000,
         'watches' => [
             ['id' => 'win.startup', 'kind' => 'registry', 'paths' => [['key' => $run, 'depth' => 0], ['key' => 'HKU\\*\\Software\\Microsoft\\Windows\\CurrentVersion\\Run', 'depth' => 0],
@@ -523,6 +538,7 @@ function changeMonitorVectors(): string
         'policy' => ['registry' => $decide($policy, 'registry', $registry), 'file' => $decide($policy, 'file', $files),
             'file_extra_root' => ['root' => '/srv/app', 'rows' => $decide($withRoot, 'file', ['/srv/app/app.conf', '/srv/app/id_rsa', '/srv/app/site.key', '/srv/app', '/srv', '/srv/application/x.conf', '/etc/shadow', '/srv/app/../../etc/shadow'])]],
         'secret_names' => $secret,
+        'redaction' => $redaction,
         'signed_config' => ['sign_domain' => \RivetCore\Rmm\Change\ChangeProtocol::SIGN_DOMAIN, 'signed_message' => $message, 'config' => $config, 'expected_watch_ids' => array_column($config['watches'], 'id')],
     ];
 

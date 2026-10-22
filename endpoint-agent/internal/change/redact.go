@@ -68,6 +68,74 @@ func Truncate(s string, max int) string {
 // masked on the device BEFORE it is stored in a snapshot, not only when the server sees it.
 var reKeySecret = regexp.MustCompile(`(?i)\b([A-Za-z0-9_.-]*(?:password|passwd|pwd|passphrase|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|client[_-]?secret|credential)[A-Za-z0-9_.-]*)(["']?\s*[:=]\s*["']?)[^\s"',;]+`)
 
+// The rc.31 additions (security review F2), mirrored by Rmm\Change\ChangeProtocol::redact() on the server and checked against the same vectors
+// (testdata/vectors/agent_change_monitor_vectors.json, "redaction"). reKeySecret only knows names that CONTAIN a secret word; these add
+//  - names with a PASS / PW token (DB_PASS, smtp.pass, REDIS_PW) and names ending in _KEY (ENCRYPTION_KEY, LICENSE_KEY, AUTH_KEY) or in CamelCase Key/Pass/Pw (EncryptionKey),
+//  - a secret in the next word of a switch (--pass hunter2, --token abc, -password x),
+//  - -p <word> for the tools that take a password that way (mysql, mariadb, sshpass, mongo; not psql, where -p is the port),
+//  - the value of any Environment= / export assignment whose name is not on the allow-list of harmless names,
+//  - long hex and base64 runs (but never in an SSH public key line, whose blob is the thing a change monitor must show).
+var reKeyToken = regexp.MustCompile(`(?i)\b((?:[A-Za-z0-9]+[_.-])*(?:pass|pw)(?:[_.-][A-Za-z0-9_.-]*)?|(?:[A-Za-z0-9]+[_.-])+key)(["']?\s*[:=]\s*["']?)[^\s"',;]+`)
+var reKeyCamel = regexp.MustCompile(`\b([A-Za-z0-9_.-]*[a-z0-9](?:Key|Pass|Pw))(["']?\s*[:=]\s*["']?)[^\s"',;]+`)
+var reSwitchSecret = regexp.MustCompile(`(?i)(\s--?(?:pass(?:word|wd|phrase)?|pwd|pw|secret|token|api-?key|apikey|auth(?:-?token)?|bearer|client-?secret|access-?key|private-?key|credential|key)\s+)(?:"[^"]*"|'[^']*'|\S+)`)
+var rePSwitch = regexp.MustCompile(`(?i)(\b(?:mysql\w*|mariadb\w*|sshpass|mongo\w*)\b[^\n]*?\s-p\s+)\S+`)
+var reEnvKeyword = regexp.MustCompile(`(\bEnvironment\s*=\s*|\bexport\s+)((?:"[A-Za-z_][A-Za-z0-9_]*=[^"]*"|'[A-Za-z_][A-Za-z0-9_]*=[^']*'|[A-Za-z_][A-Za-z0-9_]*=\S*)(?:\s+(?:"[A-Za-z_][A-Za-z0-9_]*=[^"]*"|'[A-Za-z_][A-Za-z0-9_]*=[^']*'|[A-Za-z_][A-Za-z0-9_]*=\S*))*)`)
+var reEnvAssign = regexp.MustCompile(`"([A-Za-z_][A-Za-z0-9_]*)=([^"]*)"|'([A-Za-z_][A-Za-z0-9_]*)=([^']*)'|([A-Za-z_][A-Za-z0-9_]*)=(\S*)`)
+var reHexRun = regexp.MustCompile(`\b[0-9A-Fa-f]{32,}\b`)
+var reB64Run = regexp.MustCompile(`(^|[\s"'=:])[A-Za-z0-9+]{40,}={0,2}($|[\s"',;])`)
+var reSSHKeyLine = regexp.MustCompile(`(?i)\b(?:ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-\S+|sk-(?:ssh|ecdsa)\S*)\s`)
+
+// envHarmless are environment variable names whose values are shown. Everything else in an Environment= or export assignment is masked (a bare NAME=value line, as in /etc/environment, is only caught by the name rules above: ExecStart= and every other key=value line must stay readable).
+var envHarmless = map[string]bool{"PATH": true, "LANG": true, "LANGUAGE": true, "TZ": true, "HOME": true, "USER": true, "LOGNAME": true, "SHELL": true, "PWD": true, "TERM": true,
+	"EDITOR": true, "VISUAL": true, "PAGER": true, "MAILTO": true, "NODE_ENV": true, "PYTHONUNBUFFERED": true, "PYTHONPATH": true, "LD_LIBRARY_PATH": true, "LD_PRELOAD": true,
+	"JAVA_HOME": true, "GOPATH": true, "GOROOT": true, "DISPLAY": true, "HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true}
+
+func envNameHarmless(name string) bool {
+	n := strings.ToUpper(name)
+	if envHarmless[n] || strings.HasPrefix(n, "LC_") || strings.HasPrefix(n, "XDG_") {
+		return true
+	}
+	for _, suf := range []string{"_HOME", "_DIR", "_PATH", "_PORT", "_HOST", "_LEVEL", "_ENV", "_MODE", "_USER", "_USERNAME"} {
+		if strings.HasSuffix(n, suf) {
+			return true
+		}
+	}
+	return false
+}
+
+// maskEnvAssignments masks the value of every assignment in Environment=, "export" and leading NAME=value text unless its name is harmless.
+func maskEnvAssignments(s string) string {
+	return reEnvKeyword.ReplaceAllStringFunc(s, func(m string) string {
+		sub := reEnvKeyword.FindStringSubmatch(m)
+		return sub[1] + reEnvAssign.ReplaceAllStringFunc(sub[2], func(a string) string {
+			p := reEnvAssign.FindStringSubmatch(a)
+			switch {
+			case p[1] != "" && !envNameHarmless(p[1]):
+				return `"` + p[1] + "=" + Mask + `"`
+			case p[3] != "" && !envNameHarmless(p[3]):
+				return "'" + p[3] + "=" + Mask + "'"
+			case p[5] != "" && !envNameHarmless(p[5]):
+				return p[5] + "=" + Mask
+			}
+			return a
+		})
+	})
+}
+
+// hardenRedact applies the rc.31 rules to an already cleaned single-line text.
+func hardenRedact(c string) string {
+	c = reKeyToken.ReplaceAllString(c, "${1}${2}"+Mask)
+	c = reKeyCamel.ReplaceAllString(c, "${1}${2}"+Mask)
+	c = reSwitchSecret.ReplaceAllString(c, "${1}"+Mask)
+	c = rePSwitch.ReplaceAllString(c, "${1}"+Mask)
+	c = maskEnvAssignments(c)
+	if !reSSHKeyLine.MatchString(c) {
+		c = reHexRun.ReplaceAllString(c, Mask)
+		c = reB64Run.ReplaceAllString(c, "${1}"+Mask+"${2}")
+	}
+	return c
+}
+
 // reCmdSecrets are command-line shapes that carry a password after a switch: curl -u user:pw, mysql -pSECRET, net use /user:x pw, schtasks /RP pw, /p:pw, sshpass -p pw.
 // Best effort by nature (see CHANGE_MONITOR.md section 7): a secret in free text with no marker stays visible.
 var reCmdSecrets = []*regexp.Regexp{
@@ -91,6 +159,9 @@ func Display(raw string, max int, redact func(string) string) (text string, reda
 		}
 	}
 	if r := reKeySecret.ReplaceAllString(c, "${1}${2}"+Mask); r != c {
+		c, redacted = r, true
+	}
+	if r := hardenRedact(c); r != c {
 		c, redacted = r, true
 	}
 	for i, re := range reCmdSecrets {
