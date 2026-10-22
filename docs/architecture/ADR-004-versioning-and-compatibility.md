@@ -83,7 +83,7 @@ RivetCore follows [semantic versioning 2.0.0](https://semver.org/) from `1.0.0`.
 
 | Platform | Supported and tested in CI | Best effort |
 |---|---|---|
-| PHP | 8.2, 8.3, 8.4, 8.5 | any other 8.x not yet end of life |
+| PHP | 8.5 (the minimum from 1.0.0-rc.31) | later 8.x |
 | MariaDB | 10.11, 11 (the `mariadb:11` image) | other 10.x and 11.x |
 | MySQL | 8.0, 8.4 | other 8.x |
 | Redis | 7 (optional everywhere) | 6, 8 |

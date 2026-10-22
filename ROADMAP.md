@@ -96,7 +96,7 @@ Goal: make every later change safe. Nothing user-visible.
 
 | # | Item | Acceptance | Effort |
 |---|---|---|---|
-| 1 | CI matrix: PHP 8.2 to 8.5, MariaDB 10.11 and 11, MySQL 8.0 and 8.4, Redis 7 **Done (0.16.0).** | All combinations green; any MySQL-only or MariaDB-only DDL fixed or documented | M |
+| 1 | CI matrix: PHP 8.5, MariaDB 10.11 and 11, MySQL 8.0 and 8.4, Redis 7 **Done (0.16.0).** | All combinations green; any MySQL-only or MariaDB-only DDL fixed or documented | M |
 | 2 | Static analysis gate **Done (0.16.0).** Level 6 required; the converters keep a baseline. | PHPStan level 6 required on every PR; a baseline file holds the 39 converter findings; zero new findings; level 8 clean outside the converters | M |
 | 3 | Measured coverage **Done (0.16.0).** | pcov in CI; gate at 85% lines outside the converters, report published on every run | S |
 | 4 | Converter corpus and security tests **Done (0.16.0), 34 tests.** | At least 10 DOCX and 10 PDF fixtures including malformed, encrypted, oversized, XXE payload, path-traversal entry names and zip-bomb ratios; each limit asserted | L |
@@ -210,7 +210,7 @@ In rough priority order; each ships as a backward-compatible minor.
 
 | Layer | What | Where |
 |---|---|---|
-| Unit | Pure logic with fakes | Every PR, PHP 8.2 to 8.5 |
+| Unit | Pure logic with fakes | Every PR, PHP 8.5 |
 | Integration | Real MariaDB and MySQL, real Redis, a local HTTP server for webhooks | Every PR |
 | Contract | `DatabaseContractTestCase` run against each edition's adapter | Core CI and each edition's CI |
 | Migration | Fresh install, full upgrade chain, run-twice, concurrent run | Every PR; upgrade chains from the last two releases |

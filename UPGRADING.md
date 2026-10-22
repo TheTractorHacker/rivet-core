@@ -28,7 +28,7 @@ The repository entry stays (Core is not on Packagist, [ADR-006](docs/architectur
 }
 ```
 
-Dependencies Core requires: `php >=8.2`, `guzzlehttp/guzzle ^7.0 || ^8.0`, `predis/predis ^3.5`, `psr/log ^3`, `psr/simple-cache ^3.0`.
+Dependencies Core requires: `php >=8.5`, `guzzlehttp/guzzle ^7.0 || ^8.0`, `predis/predis ^3.5`, `psr/log ^3`, `psr/simple-cache ^3.0`.
 `psr/log` arrived in 0.17.0 and `predis/predis` in 0.2.0; an edition that vendors its dependencies in git must commit the new vendor files.
 
 ### 2. Breaking and behaviour changes since 0.7

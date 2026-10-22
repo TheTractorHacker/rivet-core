@@ -241,7 +241,7 @@ jobs:
 
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: '8.5'
           extensions: mysqli, openssl, mbstring, gd, curl
           tools: composer:v2
 

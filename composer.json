@@ -9,7 +9,7 @@
         "source": "https://github.com/TheTractorHacker/rivet-core"
     },
     "require": {
-        "php": ">=8.2",
+        "php": ">=8.5",
         "ext-openssl": "*",
         "ext-sodium": "*",
         "guzzlehttp/guzzle": "^7.0 || ^8.0",
