@@ -166,7 +166,8 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
             return true;
         }
         foreach (['/ssl/private', '/letsencrypt', '/networkmanager/system-connections', '/wireguard', '/openvpn', '/ppp/chap-secrets', '/ppp/pap-secrets', '/samba/private',
-            '/stunnel', '/davfs2/secrets', '/apt/auth.conf', '/krb5.keytab', '/mysql/debian.cnf', '/ipsec.secrets', '/ipsec.d/private', '/etc/ssh/ssh_host_'] as $needle) {
+            '/stunnel', '/davfs2/secrets', '/apt/auth.conf', '/krb5.keytab', '/mysql/debian.cnf', '/ipsec.secrets', '/ipsec.d/private', '/etc/ssh/ssh_host_',
+            '/etc/rancher/k3s/k3s.yaml', '/etc/kubernetes/', '/.kube/'] as $needle) {   // rc.31 (review F15): cluster credentials
             if (str_contains($lower, $needle) && !($needle === '/etc/ssh/ssh_host_' && str_ends_with($lower, '.pub'))) {
                 return true;   // a host's public key is not a secret
             }
@@ -174,7 +175,7 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
         if (preg_match('#/private(?:/|$)#', $lower) === 1) {
             return true;
         }
-        if (preg_match('/^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?|\.netrc|\.pgpass|\.htpasswd|\.git-credentials|credentials|secrets?(?:\..*)?)$/', $base) === 1) {
+        if (preg_match('/^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?|\.netrc|\.pgpass|\.htpasswd|\.git-credentials|credentials|secrets?(?:\..*)?|tokens?|api_?keys?|kubeconfig|admin\.conf|[^\/]*\.token)$/', $base) === 1) {
             return true;
         }
         if (preg_match('/\.(?:key|pem|p12|pfx|jks|keystore|keytab|kdbx|gpg|asc|secret|secrets)$/', $base) === 1 && !str_ends_with($base, '.pub')) {

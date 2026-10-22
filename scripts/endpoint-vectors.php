@@ -492,6 +492,8 @@ function changeMonitorVectors(): string
         '/etc/ppp/chap-secrets', '/etc/mysql/debian.cnf', '/etc/nginx/.htpasswd', '/etc/nginx/server.key', '/etc/apt/auth.conf', '/etc', '/', '/root', '/home', '/home/bob', '/home/bob/.bash_history', '/proc/1/environ', '/var/log/auth.log',
         'etc/hosts', './etc/hosts', '/etc/./hosts', '/etc//hosts', '/etc/hosts/', '/etc/../root/.ssh/id_rsa', '/etc\\hosts', '~root/.ssh', 'file:///etc/hosts', " /etc/hosts", '/etc/hosts ', "/etc/ho\0sts", "/etc/ho\nsts", "/etc/ho\u{200b}sts", '',
         '/etc/shadow.bak', '/etc/shadow~', '/etc/shadow.old', '/etc/gshadow.bak', '/etc/postfix/sasl_passwd', '/etc/samba/smbpasswd', '/etc/ppp/passwd.client', '/etc/wpa_supplicant/wpa_supplicant.conf', '/etc/sssd/sssd.conf',
+        '/etc/rancher/k3s/k3s.yaml', '/etc/rancher/k3s/config.yaml', '/etc/kubernetes/admin.conf', '/etc/kubernetes/manifests/kube-apiserver.yaml', '/home/bob/.kube/config', '/etc/app/token', '/etc/app/api_key',
+        '/etc/app/apikey', '/etc/app/api-keys', '/etc/app/kubeconfig', '/etc/app/deploy.token', '/etc/app/tokens.conf', '/etc/app/tokenizer.conf',
         '/etc/ssh/ssh_host_ed25519_key', '/etc/ssl/foo_key', '/etc/foo/id_ed25519', '/etc/x./y', '/etc/x/y.', '/etc/passwd-', '/etc/sudoers.d/10-ops.',
         '/srv/app/app.conf', '/srv/app/id_rsa', '/srv/app/site.key', '/srv/app', '/srv', '/srv/application/x.conf',
         'C:\\Windows\\System32\\drivers\\etc\\hosts', 'c:\\windows\\system32\\drivers\\etc\\hosts', 'D:\\Windows\\System32\\GroupPolicy\\Machine\\Registry.pol', 'C:\\Windows\\System32\\config\\SAM', 'C:\\Windows\\System32\\config\\SECURITY',

@@ -473,6 +473,58 @@
                 "allowed": false
             },
             {
+                "target": "/etc/rancher/k3s/k3s.yaml",
+                "allowed": false
+            },
+            {
+                "target": "/etc/rancher/k3s/config.yaml",
+                "allowed": true
+            },
+            {
+                "target": "/etc/kubernetes/admin.conf",
+                "allowed": false
+            },
+            {
+                "target": "/etc/kubernetes/manifests/kube-apiserver.yaml",
+                "allowed": false
+            },
+            {
+                "target": "/home/bob/.kube/config",
+                "allowed": false
+            },
+            {
+                "target": "/etc/app/token",
+                "allowed": false
+            },
+            {
+                "target": "/etc/app/api_key",
+                "allowed": false
+            },
+            {
+                "target": "/etc/app/apikey",
+                "allowed": false
+            },
+            {
+                "target": "/etc/app/api-keys",
+                "allowed": true
+            },
+            {
+                "target": "/etc/app/kubeconfig",
+                "allowed": false
+            },
+            {
+                "target": "/etc/app/deploy.token",
+                "allowed": false
+            },
+            {
+                "target": "/etc/app/tokens.conf",
+                "allowed": true
+            },
+            {
+                "target": "/etc/app/tokenizer.conf",
+                "allowed": true
+            },
+            {
                 "target": "/etc/ssh/ssh_host_ed25519_key",
                 "allowed": false
             },

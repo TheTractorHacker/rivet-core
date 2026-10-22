@@ -76,6 +76,11 @@ func (f *fileReader) walk(logical string, p PathSpec, levels int, top bool) {
 		return
 	}
 	op := f.osPath(logical)
+	if reHomeAuthKeys.MatchString(logical) && !parentIsLiteral(op) {
+		// /home/<user>/.ssh is the user's own to change: a symlink there could make the read land somewhere else (security review F15)
+		f.skipped++
+		return
+	}
 	fi, err := os.Lstat(op)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -311,4 +316,15 @@ func (e *engine) byteBudget() int64 {
 		return e.budgetOverride
 	}
 	return pollByteBudget
+}
+
+// parentIsLiteral reports whether the directory that holds op is reached without following a symbolic link (the file itself is handled by Lstat and O_NOFOLLOW).
+func parentIsLiteral(op string) bool {
+	dir := filepath.Dir(op)
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return true // a missing directory is simply an empty watch
+	}
+	abs, err := filepath.Abs(dir)
+	return err == nil && real == abs
 }

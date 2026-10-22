@@ -463,3 +463,38 @@ func TestABigFileIsNeverHashedInTheClear(t *testing.T) {
 		t.Errorf("%+v", recs)
 	}
 }
+
+// Security review F15: /home/<user>/.ssh belongs to the user; when it is a symbolic link the read could land anywhere, so that file is not read at all.
+func TestAuthorizedKeysBehindASymlinkedDirectoryIsNotRead(t *testing.T) {
+	r := newRig(t, "linux")
+	home, _ := filepath.EvalSymlinks(t.TempDir())
+	r.m.o.MapPath = func(l string) string { return filepath.Join(home, l) }
+	mk := func(rel string) string {
+		p := filepath.Join(home, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	write(t, mk("/home/bob/.ssh/authorized_keys"), "ssh-ed25519 AAAA bob\n", 0o600)
+	elsewhere := mk("/srv/elsewhere/authorized_keys")
+	write(t, elsewhere, "ssh-ed25519 AAAA eve\n", 0o600)
+	if err := os.MkdirAll(filepath.Join(home, "home", "eve"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(elsewhere), filepath.Join(home, "home", "eve", ".ssh")); err != nil {
+		t.Fatal(err)
+	}
+	r.configure("a7a7a7a7a7a7a7a7", fileWatch("lnx.ssh", map[string]any{"path": "/home/bob/.ssh/authorized_keys"}, map[string]any{"path": "/home/eve/.ssh/authorized_keys"}))
+	r.tick()
+	write(t, filepath.Join(home, "home", "bob", ".ssh", "authorized_keys"), "ssh-ed25519 AAAA bob\nssh-ed25519 BBBB mallory\n", 0o600)
+	write(t, elsewhere, "ssh-ed25519 AAAA eve\nssh-ed25519 BBBB mallory\n", 0o600)
+	r.next()
+	var targets []string
+	for _, rec := range r.records() {
+		targets = append(targets, rec.Target)
+	}
+	if len(targets) != 1 || targets[0] != "/home/bob/.ssh/authorized_keys" {
+		t.Errorf("only the real directory is read: %v", targets)
+	}
+}

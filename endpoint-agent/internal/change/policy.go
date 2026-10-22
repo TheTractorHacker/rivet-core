@@ -38,13 +38,15 @@ var (
 	reHomeAuthKeys = regexp.MustCompile(`^/home/[A-Za-z0-9._-]{1,64}/\.ssh/authorized_keys2?$`)
 	reShadow       = regexp.MustCompile(`^/etc/(?:shadow|gshadow)-?(?:/|$)`)
 	rePrivateDir   = regexp.MustCompile(`/private(?:/|$)`)
-	reSecretBase   = regexp.MustCompile(`^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?|\.netrc|\.pgpass|\.htpasswd|\.git-credentials|credentials|secrets?(?:\..*)?)$`)
+	reSecretBase   = regexp.MustCompile(`^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?|\.netrc|\.pgpass|\.htpasswd|\.git-credentials|credentials|secrets?(?:\..*)?|tokens?|api_?keys?|kubeconfig|admin\.conf|[^/]*\.token)$`)
 	reSecretExt    = regexp.MustCompile(`\.(?:key|pem|p12|pfx|jks|keystore|keytab|kdbx|gpg|asc|secret|secrets)$`)
 	reWinSecretExt = regexp.MustCompile(`\.(?:pfx|p12|key|pem|kdbx)$`)
 )
 
 var linuxDeniedNeedles = []string{"/ssl/private", "/letsencrypt", "/networkmanager/system-connections", "/wireguard", "/openvpn", "/ppp/chap-secrets", "/ppp/pap-secrets",
-	"/samba/private", "/stunnel", "/davfs2/secrets", "/apt/auth.conf", "/krb5.keytab", "/mysql/debian.cnf", "/ipsec.secrets", "/ipsec.d/private", "/etc/ssh/ssh_host_"}
+	"/samba/private", "/stunnel", "/davfs2/secrets", "/apt/auth.conf", "/krb5.keytab", "/mysql/debian.cnf", "/ipsec.secrets", "/ipsec.d/private", "/etc/ssh/ssh_host_",
+	// rc.31 (security review F15): cluster credentials
+	"/etc/rancher/k3s/k3s.yaml", "/etc/kubernetes/", "/.kube/"}
 
 // commonOK is the check every target passes first: no control, format or
 // line/paragraph separator character (a zero-width space makes a lookalike), no
