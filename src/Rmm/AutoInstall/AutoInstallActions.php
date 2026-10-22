@@ -290,10 +290,19 @@ final class AutoInstallActions
         return ActionResult::ok('ok', 200, 'ok', ['files' => $this->hosted->files(), 'max_bytes' => $this->hosted->maxBytes()]);
     }
 
+    /**
+     * Who may upload, answered BEFORE any byte of the body is read: the failure to return (403 or the feature switch), or null when the caller may go on. An edition that
+     * receives the body itself must call this first, so a caller who may only view devices cannot make the server write a 512 MiB temporary file for a 403.
+     */
+    public function uploadGate(RmmPrincipal $who): ?ActionResult
+    {
+        return $this->role($who, RmmAbility::SOFTWARE_MANAGE) ?? $this->unrestricted($who) ?? $this->featureOff();
+    }
+
     /** Store an uploaded installer (the edition passes the temporary file of its upload handler). */
     public function uploadFile(RmmPrincipal $who, string $tmpPath, string $originalName): ActionResult
     {
-        if (($e = $this->role($who, RmmAbility::SOFTWARE_MANAGE) ?? $this->unrestricted($who) ?? $this->featureOff()) !== null) {
+        if (($e = $this->uploadGate($who)) !== null) {
             return $e;
         }
         $r = $this->hosted->store($tmpPath, $originalName, $who->userId);

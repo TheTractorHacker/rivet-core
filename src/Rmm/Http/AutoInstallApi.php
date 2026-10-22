@@ -128,6 +128,10 @@ final class AutoInstallApi
 
     private function upload(RmmRequest $req, RmmPrincipal $who): RmmResponse
     {
+        // the ability, the client scope and the feature switch BEFORE the body is touched (security review F5): a caller who cannot upload costs the server no disk
+        if (($denied = $this->actions->uploadGate($who)) !== null) {
+            return self::result($denied);
+        }
         if ($req->bodyStream === null || ($req->declaredLength !== null && $req->declaredLength > $this->maxUploadBytes)) {
             return self::json(413, ['error' => 'The installer is too large or missing.', 'code' => 'too_large']);
         }

@@ -12,6 +12,37 @@ use RivetCore\Tests\Support\AllowUsersPolicy;
 use RivetCore\Tests\Support\DeployTestCase;
 use RivetCore\Tests\Support\RmmHarness;
 
+/** A request body that counts the bytes read from it (it serves endless NUL bytes). */
+final class CountingStream
+{
+    public static int $read = 0;
+    /** @var resource|null */
+    public $context;
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$opened): bool
+    {
+        return true;
+    }
+
+    public function stream_read(int $count): string
+    {
+        self::$read += $count;
+
+        return str_repeat("\0", min($count, 4096));
+    }
+
+    public function stream_eof(): bool
+    {
+        return self::$read > 4096;
+    }
+
+    /** @return array<string,int> */
+    public function stream_stat(): array
+    {
+        return [];
+    }
+}
+
 /** 1.0.0-rc.26: install apps when the agent installs. Policies, vendor parameters, ordering, idempotency, the rules around live installs, two-person, hosted files. */
 final class AutoInstallTest extends DeployTestCase
 {
@@ -37,6 +68,9 @@ final class AutoInstallTest extends DeployTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        if (!in_array('countingstream', stream_get_wrappers(), true)) {
+            stream_wrapper_register('countingstream', CountingStream::class);
+        }
         $this->assertSame([], $this->h->module->settings()->update(['service_url' => 'https://rmm.example.com']));
         $this->allowHost();
     }
@@ -454,6 +488,26 @@ final class AutoInstallTest extends DeployTestCase
         }
 
         return [$r->http, $r->data];
+    }
+
+    /** rc.31 review F5: the upload route checks who may upload before it reads, let alone stores, one byte of the body. */
+    public function testAnUploadByACallerWhoMayNotUploadIsRefusedWithoutReadingTheBody(): void
+    {
+        CountingStream::$read = 0;
+        foreach ([[$this->viewer, 403], [$this->scoped, 403]] as [$who, $status]) {
+            $stream = fopen('countingstream://body', 'rb');
+            $req = new RmmRequest('POST', 'endpoint_devices', ['software_files'], [], ['x-filename' => 'setup.exe'], '127.0.0.1', 'test-agent', true, 50_000_000, $stream);
+            $r = $this->h->module->autoInstallApi()->fleet($req, $who, ['software_files']);
+            $this->assertSame($status, $r->status, (string) $r->body);
+            $this->assertSame(0, CountingStream::$read, 'nothing was read from the request body');
+        }
+        $this->assertSame([], $this->h->module->hostedFiles()->files(), 'and nothing was stored');
+        // a caller who may upload still gets the body read (whatever then becomes of it: here the stream is not an installer)
+        $stream = fopen('countingstream://body', 'rb');
+        $req = new RmmRequest('POST', 'endpoint_devices', ['software_files'], [], ['x-filename' => 'setup.exe'], '127.0.0.1', 'test-agent', true, 4096, $stream);
+        $r = $this->h->module->autoInstallApi()->fleet($req, $this->admin, ['software_files']);
+        $this->assertNotSame(403, $r->status, (string) $r->body);
+        $this->assertGreaterThan(0, CountingStream::$read);
     }
 
     public function testAHostedInstallerIsServedOnlyToTheJobThatWasBuiltForIt(): void
