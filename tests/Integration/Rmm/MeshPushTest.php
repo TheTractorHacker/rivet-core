@@ -200,10 +200,12 @@ final class MeshPushTest extends RemoteTestCase
         $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_jobs WHERE type='mesh_install'"));
         $jobs = $this->offered($tok);
         $this->report($tok, $jobs[0], 'succeeded', '{"v":1,"ok":true,"detail":"installed"}');
-        // the existing check-in member carries the result and the node id maps by itself
+        // the existing check-in member carries the result; the node id it names waits for approval (rc.31 review F1) and is mapped when an administrator confirms it
         [$c, , $ck] = $this->h->checkin($tok, ['mesh_agent' => ['installed' => true, 'version' => '1.2.3', 'node_id' => self::NODE]]);
         $this->assertSame(200, $c, json_encode($ck));
-        $this->assertSame(self::NODE, $this->h->one("SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id=$d"));
+        $this->assertNull($this->h->one("SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id=$d"));
+        $this->assertSame('needs_approval', $this->h->module->meshAgents()->stateFor($d)['map_state']);
+        $this->assertTrue($this->h->module->devices()->setMeshNode($d, self::NODE, 1));
         $this->assertCount(1, $this->bus->of(RmmEvent::MESH_AGENT_INSTALLED), 'the existing rmm.mesh.agent_installed event fires once the check-in reports it');
         $detail = $this->api('GET', [(string) $d], $this->tech)[1];
         $this->assertTrue($detail['mesh_agent']['installed']);

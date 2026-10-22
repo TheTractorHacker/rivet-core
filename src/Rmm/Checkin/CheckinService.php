@@ -563,12 +563,9 @@ final class CheckinService
                 ['os' => $dev['os'] ?? null, 'os_version' => $clean['os_version'] ?? ($dev['os_version'] ?? '')] + $hw));
         }
 
-        if (is_string($meshNode) && DeviceRepository::validMeshNodeId($meshNode)) {
-            $existing = $this->sql->one('SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id = ?', [$deviceId]);
-            // A node an administrator set by hand is never overwritten by what the device claims.
-            if ($existing === null || $existing['source'] === 'agent') {
-                $this->devices->setMeshNode($deviceId, $meshNode, 0, 'agent');
-            }
+        if (is_string($meshNode) && DeviceRepository::validMeshNodeId($meshNode) && $this->meshAgents !== null) {
+            // The same rules as a `mesh_agent` report: what the device says about its own node id never maps it by itself (cross-tenant node claims).
+            $this->meshAgents->claimFromInventory($dev, $meshNode);
         }
 
         return ['hostname' => $clean['hostname'], 'os' => $clean['os'], 'os_version' => $clean['os_version'], 'manufacturer' => $clean['manufacturer'], 'model' => $clean['model'],

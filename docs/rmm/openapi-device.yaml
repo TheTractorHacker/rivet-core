@@ -4413,13 +4413,13 @@ components:
             mesh_mapped: {type: boolean}
             mesh_agent:
               type: object
-              description: 'Additive (1.0.0-rc.12), present only once the device has reported a MeshCentral agent. `map_state`: mapped, conflict (the node is already mapped to another live device, nothing was moved) or kept_manual (a different node was mapped by hand and the overwrite switch is off); `conflict_device_id` only when the other device belongs to the same client.'
+              description: 'Additive (1.0.0-rc.12), present only once the device has reported a MeshCentral agent. `map_state`: mapped, conflict (the node is already mapped to another live device, or to a retired device of another asset; nothing was moved), kept_manual (a different node was mapped by hand and the overwrite switch is off) or needs_approval (rc.31: the device says it owns the node, nothing proves it; an administrator maps it by hand); `conflict_device_id` only when the other device belongs to the same client.'
               properties:
                 installed: {type: boolean}
                 version: {type: [string, 'null']}
                 node_id: {type: [string, 'null']}
                 error: {type: [string, 'null']}
-                map_state: {type: [string, 'null'], enum: [mapped, conflict, kept_manual, null]}
+                map_state: {type: [string, 'null'], enum: [mapped, conflict, kept_manual, needs_approval, null]}
                 conflict_device_id: {type: [integer, 'null']}
                 first_installed_at: {type: [string, 'null'], format: date-time}
                 reported_at: {type: [string, 'null'], format: date-time}

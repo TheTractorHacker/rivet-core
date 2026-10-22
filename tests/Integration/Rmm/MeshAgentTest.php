@@ -76,6 +76,12 @@ final class MeshAgentTest extends RemoteTestCase
         return $j;
     }
 
+    /** What an administrator does for a claim that needs approval: map the node on the device page (a manual mapping). */
+    private function approve(int $dev, string $node): void
+    {
+        $this->assertTrue($this->h->module->devices()->setMeshNode($dev, $node, 1));
+    }
+
     private function nodeOf(int $dev): ?string
     {
         $n = $this->h->one("SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id=$dev");
@@ -365,9 +371,12 @@ final class MeshAgentTest extends RemoteTestCase
         $this->meshOn();
         [$dev, $token] = $this->linked('M1');
         $this->meshReport($token, ['installed' => true, 'version' => '1.1.10', 'node_id' => self::NODE_A]);
+        $this->assertNull($this->nodeOf($dev), 'a device saying which node it is does not map it (rc.31 review F1)');
+        $this->assertSame(1, $this->audit('Mesh Node Needs Approval'));
+        $this->approve($dev, self::NODE_A);
+        $this->meshReport($token, ['installed' => true, 'version' => '1.1.10', 'node_id' => self::NODE_A]);
         $this->assertSame(self::NODE_A, $this->nodeOf($dev));
-        $this->assertSame('agent', $this->h->one("SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id=$dev"));
-        $this->assertSame(1, $this->audit('Mesh Node Mapped'));
+        $this->assertSame('manual', $this->h->one("SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id=$dev"));
         $this->assertSame(1, $this->audit('Mesh Agent Installed'));
         $ev = $this->bus->of(RmmEvent::MESH_AGENT_INSTALLED);
         $this->assertCount(1, $ev);
@@ -375,7 +384,7 @@ final class MeshAgentTest extends RemoteTestCase
         $this->assertSame(self::NODE_A, $this->h->module->mesh()->nodeFor($dev), 'the launch path sees the mapping');
         // repeated, identical reports change nothing and say nothing
         $this->meshReport($token, ['installed' => true, 'version' => '1.1.10', 'node_id' => self::NODE_A]);
-        $this->assertSame([1, 1, 1], [$this->audit('Mesh Node Mapped'), $this->audit('Mesh Agent Installed'), count($this->bus->of(RmmEvent::MESH_AGENT_INSTALLED))]);
+        $this->assertSame([1, 1, 1], [$this->audit('Mesh Node Needs Approval'), $this->audit('Mesh Agent Installed'), count($this->bus->of(RmmEvent::MESH_AGENT_INSTALLED))]);
         // the technician API shows the state, additively
         [$c, $j] = $this->api('GET', [(string) $dev], $this->tech);
         $this->assertSame(200, $c);
@@ -408,10 +417,14 @@ final class MeshAgentTest extends RemoteTestCase
         $this->assertNull($this->nodeOf($dev));
         $this->assertSame(self::NODE_A, $this->h->module->meshAgents()->stateFor($dev)['node_id']);
         $this->assertNull($this->h->module->meshAgents()->stateFor($dev)['map_state']);
-        // switching Mesh on maps it at the next report (the daily one, or the next change)
+        // switching Mesh on evaluates it at the next report (the daily one, or the next change): it waits for approval, it is not mapped
         $this->h->module->settings()->set(['mesh_enabled' => 1]);
         $this->meshReport($token, ['installed' => true, 'node_id' => self::NODE_A]);
-        $this->assertSame(self::NODE_A, $this->nodeOf($dev));
+        $this->assertNull($this->nodeOf($dev));
+        $this->assertSame('needs_approval', $this->h->module->meshAgents()->stateFor($dev)['map_state']);
+        $this->approve($dev, self::NODE_A);
+        $this->meshReport($token, ['installed' => true, 'node_id' => self::NODE_A]);
+        $this->assertSame('mapped', $this->h->module->meshAgents()->stateFor($dev)['map_state']);
     }
 
     public function testAManualMappingIsNeverOverwrittenUnlessTheSettingIsOn(): void
@@ -429,21 +442,25 @@ final class MeshAgentTest extends RemoteTestCase
         $this->meshReport($token, ['installed' => true, 'node_id' => self::NODE_B]);
         $this->assertSame('manual', $this->h->one("SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id=$dev"));
         $this->assertSame('mapped', $this->h->module->meshAgents()->stateFor($dev)['map_state']);
-        // overwrite on: the report replaces it, audited
+        // overwrite on: a device's own claim still does not replace a mapping (rc.31 review F1): it waits for approval, the mapping stays
         $this->assertSame([], $this->h->module->meshAgentSettings()->update(['mesh_auto_map_overwrite' => true], 1));
         $this->meshReport($token, ['installed' => true, 'node_id' => self::NODE_A]);
-        $this->assertSame([self::NODE_A, 'agent'], [$this->nodeOf($dev), $this->h->one("SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id=$dev")]);
-        $this->assertStringContainsString('overwrite is on', json_encode($this->h->audit->records()));
+        $this->assertSame([self::NODE_B, 'manual'], [$this->nodeOf($dev), $this->h->one("SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id=$dev")]);
+        $this->assertSame('needs_approval', $this->h->module->meshAgents()->stateFor($dev)['map_state']);
     }
 
     public function testANodeTheAgentSetEarlierIsReplacedWhenTheMachineGetsANewIdentity(): void
     {
         $this->meshOn();
         [$dev, $token] = $this->linked('M4');
+        $this->h->module->devices()->setMeshNode($dev, self::NODE_A, 0, 'agent');   // a mapping an older release made automatically
         $this->meshReport($token, ['installed' => true, 'node_id' => self::NODE_A]);
+        $this->assertSame('mapped', $this->h->module->meshAgents()->stateFor($dev)['map_state']);
         $this->meshReport($token, ['installed' => true, 'node_id' => self::NODE_B]);
+        $this->assertSame(self::NODE_A, $this->nodeOf($dev), 'a new identity claimed by the device is not taken on its word');
+        $this->assertSame('needs_approval', $this->h->module->meshAgents()->stateFor($dev)['map_state']);
+        $this->approve($dev, self::NODE_B);
         $this->assertSame(self::NODE_B, $this->nodeOf($dev));
-        $this->assertSame(2, $this->audit('Mesh Node Mapped'));
     }
 
     public function testTwoDevicesClaimingOneNodeIsAConflictNothingMovesAndItIsFlagged(): void
@@ -451,6 +468,7 @@ final class MeshAgentTest extends RemoteTestCase
         $this->meshOn();
         [$d1, $t1] = $this->linked('C1');
         [$d2, $t2] = $this->linked('C2');
+        $this->approve($d1, self::NODE_A);
         $this->meshReport($t1, ['installed' => true, 'node_id' => self::NODE_A]);
         $this->meshReport($t2, ['installed' => true, 'node_id' => self::NODE_A]);
         $this->assertSame(self::NODE_A, $this->nodeOf($d1));
@@ -476,8 +494,11 @@ final class MeshAgentTest extends RemoteTestCase
         $this->assertSame($d3, $this->h->module->meshAgents()->stateFor($d4)['conflict_device_id']);
         // the conflict clears when the node is no longer claimed
         $this->assertTrue($this->h->module->devices()->setMeshNode($d1, null, 1));
+        $this->meshReport($t1, ['installed' => false]);   // and the first device no longer reports it
         $this->meshReport($t2, ['installed' => true, 'node_id' => self::NODE_A]);
-        $this->assertSame(self::NODE_A, $this->nodeOf($d2));
+        $this->assertNull($this->nodeOf($d2), 'the node is free again, but still not taken on the device\'s word');
+        $this->approve($d2, self::NODE_A);
+        $this->meshReport($t2, ['installed' => true, 'node_id' => self::NODE_A]);
         $this->assertSame(['mapped', null], [$this->h->module->meshAgents()->stateFor($d2)['map_state'], $this->h->module->meshAgents()->stateFor($d2)['conflict_device_id']]);
         $this->assertNotSame('', $t3 . $t4);
     }
@@ -497,18 +518,20 @@ final class MeshAgentTest extends RemoteTestCase
         [$dev, $token] = $this->linked('H1');
         [$hex, , $canon] = self::freshNode();
         $this->meshReport($token, ['installed' => true, 'node_id' => 'node//' . $hex]);
+        $this->approve($dev, $canon);
+        $this->meshReport($token, ['installed' => true, 'node_id' => 'node//' . $hex]);
         $this->assertSame($canon, $this->nodeOf($dev));
         $this->assertSame($canon, $this->h->one("SELECT node_id FROM endpoint_agent_mesh_agents WHERE device_id=$dev"));
         $this->assertSame($canon, $this->h->module->meshAgents()->stateFor($dev)['node_id']);
         $this->assertSame('mapped', $this->h->module->meshAgents()->stateFor($dev)['map_state']);
         // the same node reported again in the URL form changes nothing
         $this->meshReport($token, ['installed' => true, 'node_id' => $canon]);
-        $this->assertSame([1, $canon], [$this->audit('Mesh Node Mapped'), $this->nodeOf($dev)]);
+        $this->assertSame([1, $canon], [$this->audit('Mesh Node Needs Approval'), $this->nodeOf($dev)]);
         // a pasted MeshCentral address in the report is understood too
         [, $other] = $this->linked('H2');
         [$hex2, $url2, $canon2] = self::freshNode();
         $this->meshReport($other, ['installed' => true, 'node_id' => "https://mesh.example.com/?viewmode=11&gotonode=$url2&="]);
-        $this->assertNotNull($this->h->one("SELECT device_id FROM endpoint_agent_mesh_nodes WHERE mesh_node_id='$canon2'"));
+        $this->assertNotNull($this->h->one("SELECT device_id FROM endpoint_agent_mesh_agents WHERE node_id='$canon2'"), 'the address was understood and recorded as the reported node');
         $this->assertNotSame('', $hex2);
         // the inventory path (mesh_node_id in a check-in inventory) is normalised the same way
         [$d3, $t3] = $this->linked('H3');
@@ -516,7 +539,10 @@ final class MeshAgentTest extends RemoteTestCase
         $inv = ['hostname' => 'H3', 'os' => 'windows', 'os_version' => 'Windows 11', 'serial' => 'SER-H3', 'mesh_node_id' => 'node//' . $hex3];
         [$c] = $this->h->checkin($t3, ['inventory' => $inv]);
         $this->assertSame(200, $c);
-        $this->assertSame($canon3, $this->nodeOf($d3));
+        $this->assertNull($this->nodeOf($d3), 'an inventory claim is not taken on the device\'s word either');
+        $this->approve($d3, $canon3);
+        $this->h->checkin($t3, ['inventory' => $inv]);
+        $this->assertSame([$canon3, 'manual'], [$this->nodeOf($d3), $this->h->one("SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id=$d3")]);
     }
 
     public function testConflictDetectionComparesTheSameNodeAcrossSpellings(): void
@@ -535,7 +561,6 @@ final class MeshAgentTest extends RemoteTestCase
         [$d3, $t3] = $this->linked('X3');
         [$hex4, , $canon4] = self::freshNode();
         $this->meshReport($t3, ['installed' => true, 'node_id' => $canon4]);
-        $this->assertSame($canon4, $this->nodeOf($d3));
         $this->assertTrue($this->h->module->devices()->setMeshNode($d3, $hex4, 1));
         $this->assertSame($canon4, $this->nodeOf($d3), 'a hand-typed hex id is stored canonical');
         $this->assertSame('manual', $this->h->one("SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id=$d3"));
@@ -548,6 +573,7 @@ final class MeshAgentTest extends RemoteTestCase
         $this->meshOn();
         [$a, $ta] = $this->linked('XA', $this->h->clientA);
         [$b, $tb] = $this->linked('XB', $this->h->clientB);
+        $this->approve($a, self::NODE_A);
         $this->meshReport($ta, ['installed' => true, 'node_id' => self::NODE_A]);
         $this->meshReport($tb, ['installed' => true, 'node_id' => self::NODE_A]);
         $this->assertNull($this->nodeOf($b));
@@ -560,17 +586,59 @@ final class MeshAgentTest extends RemoteTestCase
         $this->assertStringContainsString("already mapped to device $a", json_encode($this->h->audit->records()));
     }
 
-    public function testANodeOfARetiredDeviceMovesToTheReEnrolledMachine(): void
+    public function testANodeOfARetiredDeviceMovesOnlyToTheReEnrolledMachineOfTheSameAsset(): void
     {
         $this->meshOn();
         [$old, $to] = $this->linked('R1');
+        $this->approve($old, self::NODE_A);
         $this->meshReport($to, ['installed' => true, 'node_id' => self::NODE_A]);
         $this->assertTrue($this->h->module->technician()->retire($this->admin, $old)->ok);
         [$new, $tn] = $this->linked('R1b');
+        $this->h->q("UPDATE endpoint_agent_devices SET asset_id=" . (int) $this->h->one("SELECT asset_id FROM endpoint_agent_devices WHERE device_id=$old") . " WHERE device_id=$new");
         $this->meshReport($tn, ['installed' => true, 'node_id' => self::NODE_A]);
         $this->assertSame(self::NODE_A, $this->nodeOf($new));
         $this->assertNull($this->nodeOf($old), 'released from the retired device');
         $this->assertSame(1, $this->audit('Mesh Node Moved'));
+    }
+
+    /** rc.31 review F1: a node bound to a retired device is never handed to an unrelated device, in the same client or another one. */
+    public function testANodeOfARetiredDeviceIsNeverTakenByAStranger(): void
+    {
+        $this->meshOn();
+        [$old, $to] = $this->linked('S1', $this->h->clientA);
+        $this->approve($old, self::NODE_A);
+        $this->assertTrue($this->h->module->technician()->retire($this->admin, $old)->ok);
+        [$sameClient, $t1] = $this->linked('S2', $this->h->clientA);   // another asset of the same client
+        [$otherClient, $t2] = $this->linked('S3', $this->h->clientB);
+        foreach ([[$sameClient, $t1], [$otherClient, $t2]] as [$d, $t]) {
+            $this->meshReport($t, ['installed' => true, 'node_id' => self::NODE_A]);
+            $this->assertNull($this->nodeOf($d));
+            $this->assertSame('conflict', $this->h->module->meshAgents()->stateFor($d)['map_state']);
+            $this->assertNull($this->h->module->mesh()->nodeFor($d), 'nothing for a technician to launch into');
+        }
+        $this->assertSame(self::NODE_A, $this->nodeOf($old), 'the retired device keeps its mapping untouched');
+        $this->assertSame(0, $this->audit('Mesh Node Moved'));
+    }
+
+    /** rc.31 review F1: the attacker case. A node nobody has been seen to hold is claimed by a rogue device: not mapped, launch stays unmapped. */
+    public function testAnUnseenNodeClaimedByARogueDeviceIsNotMappedAndNothingLaunches(): void
+    {
+        $this->meshOn();
+        [$rogue, $tr] = $this->linked('ROGUE', $this->h->clientB);
+        $this->meshReport($tr, ['installed' => true, 'node_id' => self::NODE_B]);
+        $this->assertNull($this->nodeOf($rogue));
+        $s = $this->h->module->meshAgents()->stateFor($rogue);
+        $this->assertSame('needs_approval', $s['map_state']);
+        $this->assertSame(1, $this->audit('Mesh Node Needs Approval'));
+        $this->assertSame(0, $this->audit('Mesh Node Mapped'));
+        $this->assertNull($this->h->module->mesh()->nodeFor($rogue), 'launch() reads this mapping and answers "unmapped"');
+        // reporting it again says nothing more
+        $this->meshReport($tr, ['installed' => true, 'node_id' => self::NODE_B]);
+        $this->assertSame(1, $this->audit('Mesh Node Needs Approval'));
+        // two live devices reporting the same unmapped node conflict with each other
+        [$other, $to2] = $this->linked('ROGUE2', $this->h->clientA);
+        $this->meshReport($to2, ['installed' => true, 'node_id' => self::NODE_B]);
+        $this->assertSame(['conflict', $rogue], [$this->h->module->meshAgents()->stateFor($other)['map_state'], (int) $this->h->one("SELECT conflict_device_id FROM endpoint_agent_mesh_agents WHERE device_id=$other")]);
     }
 
     public function testAFailedInstallIsRecordedWithItsErrorAndMapsNothing(): void
@@ -614,7 +682,8 @@ final class MeshAgentTest extends RemoteTestCase
         $this->assertSame(300, strlen($this->h->module->meshAgents()->stateFor($dev)['error']));
         // an oversized body of unrelated junk next to a valid report is the existing 422/413 behaviour, not a new one
         $this->assertSame(200, $this->h->checkin($token, ['mesh_agent' => ['installed' => true, 'node_id' => self::NODE_A], 'unknown_future_member' => ['a' => 1]])[0]);
-        $this->assertSame(self::NODE_A, $this->nodeOf($dev));
+        $this->assertNull($this->nodeOf($dev), 'a well-formed claim still waits for approval');
+        $this->assertSame('needs_approval', $this->h->module->meshAgents()->stateFor($dev)['map_state']);
     }
 
     public function testOneDevicesReportNeverTouchesAnotherDevice(): void

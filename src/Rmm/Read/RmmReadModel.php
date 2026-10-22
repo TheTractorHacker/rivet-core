@@ -338,7 +338,7 @@ final class RmmReadModel
         }
         $out['mesh_mapped'] = $this->sql->val('SELECT 1 FROM endpoint_agent_mesh_nodes WHERE device_id = ?', [$d['device_id']]) !== null;
         // Additive and only present once the device has reported a MeshCentral agent, so the detail of every other device is byte for byte what it was:
-        // {installed, version, node_id, error, map_state (mapped|conflict|kept_manual|null), conflict_device_id, first_installed_at, reported_at}.
+        // {installed, version, node_id, error, map_state (mapped|conflict|kept_manual|needs_approval|null), conflict_device_id, first_installed_at, reported_at}.
         if (($meshAgent = $this->meshAgents?->stateFor((int) $d['device_id'])) !== null) {
             $out['mesh_agent'] = $meshAgent;
         }

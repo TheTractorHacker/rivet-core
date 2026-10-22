@@ -312,13 +312,14 @@ final class CheckinTest extends RmmTestCase
         $this->assertSame('online', $this->h->bridge->link($this->intg, "rivetit:{$this->dev}")['status']);
     }
 
-    public function testAMeshNodeFromTheDeviceNeverOverwritesAManualOne(): void
+    public function testAMeshNodeFromTheDeviceNeverMapsItselfAndNeverOverwritesAManualOne(): void
     {
         $this->linkedDevice();
+        $this->h->module->settings()->set(['mesh_enabled' => 1]);
         $node = 'node//' . str_repeat('A', 24);
         $inv = $this->inventory() + ['mesh_node_id' => $node];
         $this->h->checkin($this->T, ['inventory' => $inv]);
-        $this->assertSame([$node, 'agent'], [$this->h->one("SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id={$this->dev}"), $this->h->one("SELECT source FROM endpoint_agent_mesh_nodes WHERE device_id={$this->dev}")]);
+        $this->assertNull($this->h->one("SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id={$this->dev}"), 'the inventory claim is not taken on the device\'s word (rc.31 review F1)');
         $this->assertTrue($this->h->module->devices()->setMeshNode($this->dev, 'node//' . str_repeat('B', 24), 1));
         $this->h->checkin($this->T, ['inventory' => $inv]);
         $this->assertSame('node//' . str_repeat('B', 24), $this->h->one("SELECT mesh_node_id FROM endpoint_agent_mesh_nodes WHERE device_id={$this->dev}"));

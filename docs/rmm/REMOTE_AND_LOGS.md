@@ -104,7 +104,7 @@ Status: 1.0.0-rc.12, migration `0023_rmm_mesh_agent`; the group id in MeshCentra
 
 **Since 1.0.0-rc.27 the Mesh agent installs after the device is approved** (migration `0034`). The tick-box **Also install the MeshCentral agent (after the device is approved)** no longer puts anything of Mesh (address, device group id, pin) into the installer or the command: the server pushes the sealed `mesh_install` job once the device is linked (matched automatically, or approved by an administrator) and its agent has announced it can. The device page shows "Mesh agent: waiting for approval / queued / installing / installed / skipped: reason / failed: reason". It is skipped, with the reason, when remote tools are off or the Mesh settings are incomplete. Installers issued before rc.27 keep the old install-time behaviour described below (and still carry the group id); issue a new installer to get the new one. The manual `install-linux.sh --install-mesh-agent ...` flags still work for hand use.
 
-Remote desktop, terminal and files use your own MeshCentral server (above). This feature saves you a second install: when you issue a RivetIT installer you can tick **Also install the MeshCentral agent**, and the installer, after the RivetIT agent is in place, pulls the Mesh agent for **your** Mesh server and device group and runs it. Afterwards the device's Mesh node is mapped to it automatically, so "Remote" works without anyone pasting a node id.
+Remote desktop, terminal and files use your own MeshCentral server (above). This feature saves you a second install: when you issue a RivetIT installer you can tick **Also install the MeshCentral agent**, and the installer, after the RivetIT agent is in place, pulls the Mesh agent for **your** Mesh server and device group and runs it. Afterwards the device reports its Mesh node id; since 1.0.0-rc.31 an administrator confirms it once on the device page (see "Where the node id comes from" below) before "Remote" opens a session on it.
 
 What it does **not** do, on purpose:
 
@@ -166,12 +166,13 @@ The RivetIT agent reads the local node id at every start and once a day (only on
 
 | Situation | What happens |
 |---|---|
-| The device has no mapping | mapped (source `agent`), audit `Mesh Node Mapped` |
-| Same node as already mapped | nothing |
-| A different node the agent set earlier | replaced (the machine got a new Mesh identity), audited |
-| A different node an administrator set by hand | **kept**; state `kept_manual`, audit `Mesh Node Differs` once. Turn on `mesh_auto_map_overwrite` to let the agent's node replace it (audited) |
-| The node is already mapped to **another live device** | **refused**; state `conflict`, audit `Mesh Node Conflict`, event `rmm.mesh.node_conflict`. Nothing is moved, even with the overwrite switch on: check which machine really owns the node (a cloned image carries the same node id) |
-| The node is mapped to a **retired or revoked** device | moved to the device that now reports it (a re-enrolled machine), audit `Mesh Node Moved` |
+| The device has no mapping, or reports a node other than the one it has | **not mapped**; state `needs_approval`, audit `Mesh Node Needs Approval` once. The node id is only what the device says: the server cannot ask MeshCentral who owns it, and a rogue device could otherwise claim another machine's node and receive the technician's remote session. Check the node in MeshCentral, then map it on the device page (a manual mapping); the next report confirms it (`mapped`). (Before 1.0.0-rc.31 this case was mapped automatically.) |
+| Same node as already mapped | nothing (`mapped`) |
+| A different node an administrator set by hand | **kept**; state `kept_manual`, audit `Mesh Node Differs` once. With `mesh_auto_map_overwrite` on the report waits for approval like any other (the switch no longer lets a device's own claim replace a mapping) |
+| The node is already mapped to **another live device**, or another live device reports it | **refused**; state `conflict`, audit `Mesh Node Conflict`, event `rmm.mesh.node_conflict`. Nothing is moved, whatever the settings say: check which machine really owns the node (a cloned image carries the same node id) |
+| The node is mapped to a **retired or revoked** device | moved (audit `Mesh Node Moved`) only to a device of the **same client and asset** (a re-enrolled machine an administrator linked to the same asset). Any other device is `conflict`: a retired device's node is never handed to a stranger |
+
+The same rules apply to the older `mesh_node_id` member of a check-in inventory.
 
 ### Troubleshooting
 
