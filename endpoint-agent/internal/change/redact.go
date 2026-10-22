@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"hash"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -33,6 +34,14 @@ func (h Hasher) Keyed(b []byte) string {
 	m := hmac.New(sha256.New, h.Key)
 	m.Write(b)
 	return hex.EncodeToString(m.Sum(nil))
+}
+
+// Stream returns a hash writer for a file read in pieces: keyed when keyed is true, plain otherwise. Sum it with hex.EncodeToString(h.Sum(nil)).
+func (h Hasher) Stream(keyed bool) hash.Hash {
+	if keyed {
+		return hmac.New(sha256.New, h.Key)
+	}
+	return sha256.New()
 }
 
 // Clean removes control characters (newlines and tabs become spaces) and invalid

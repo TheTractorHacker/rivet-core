@@ -2,7 +2,6 @@ package change
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -151,6 +150,7 @@ func (f *fileReader) linkItem(logical, op string) Item {
 	it := Item{Target: logical, Value: text, Hash: f.e.hasher.Plain([]byte("link\x00" + target)), Meta: "link"}
 	if red {
 		it.Flags |= FlagRedacted
+		it.Hash = f.e.hasher.Keyed([]byte("link\x00" + target)) // a link target that held a secret pattern is never hashed in the clear
 	}
 	if cut {
 		it.Flags |= FlagTruncated
@@ -183,13 +183,13 @@ func (f *fileReader) fileItem(logical, op string, lfi os.FileInfo) (Item, bool) 
 	it.Meta = fileMeta(lfi)
 	if len(data) > MaxFileBytes {
 		// bigger than the in-memory part: the WHOLE file is hashed by streaming, within a byte budget per read of the watch; no lines are kept
-		h := sha256.New()
+		h := f.e.hasher.Stream(true)   // keyed: a big file's content is never hashed in the clear (it may hold a secret the line redactor never saw)
 		h.Write(data)
 		want := size - int64(len(data))
 		if want < 0 || want > f.budget {
 			it.Flags |= FlagTruncated // over budget: the first MiB plus the size stand in for the content
 			it.Meta += fmt.Sprintf(" size=%d", size)
-			it.Hash = f.e.hasher.Plain(append(data[:MaxFileBytes:MaxFileBytes], []byte(fmt.Sprintf("\x00%d", size))...))
+			it.Hash = f.e.hasher.Keyed(append(data[:MaxFileBytes:MaxFileBytes], []byte(fmt.Sprintf("\x00%d", size))...))
 			it.Value = fmt.Sprintf("%d bytes (over this poll's byte budget: only the first %d hashed)", size, MaxFileBytes)
 			return it, true
 		}
@@ -202,14 +202,22 @@ func (f *fileReader) fileItem(logical, op string, lfi os.FileInfo) (Item, bool) 
 		it.Value = fmt.Sprintf("%d bytes", size)
 		return it, true
 	}
-	it.Hash = f.e.hasher.Plain(data)
-	if lines, red, ok := f.e.snapshotLines(op, data); ok && f.keepLines {
+	// Plain SHA-256 only for a preset file whose lines were read and held nothing the redactor touched. Everything else (a custom hash-only watch, a file
+	// whose lines were not kept, a file with a redacted secret) gets the device-keyed HMAC: a plain hash of a file with one secret in a known config could be
+	// brute-forced offline from the database or a webhook (security review F3).
+	lines, red, ok := f.e.snapshotLines(op, data)
+	if ok && f.keepLines {
 		it.Lines = lines
 		if red {
 			it.Flags |= FlagRedacted
 		}
 	} else {
 		it.Value = fmt.Sprintf("%d bytes", size)
+	}
+	if ok && f.keepLines && !red {
+		it.Hash = f.e.hasher.Plain(data)
+	} else {
+		it.Hash = f.e.hasher.Keyed(data)
 	}
 	return it, true
 }

@@ -1,6 +1,8 @@
 package change
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -403,5 +405,61 @@ func TestABigFileIsHashedWholeByStreamingAndAChangeBeyondTheFirstMiBIsSeen(t *te
 		if it.Flags&FlagTruncated == 0 {
 			t.Errorf("not flagged: %+v", it)
 		}
+	}
+}
+
+func plainSHA(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
+
+// Security review F3: a plain SHA-256 of a file that holds a secret (or of a hash-only custom watch) could be brute-forced offline from the database or a
+// webhook, so those files get the device-keyed HMAC; only a preset file whose lines were read and held nothing the redactor touched keeps the plain hash.
+func TestFilesWithASecretOrOnACustomWatchAreHashedWithTheDeviceKey(t *testing.T) {
+	const clean = "Port 22\nPermitRootLogin no\n"
+	const cleanAfter = "Port 22\nPermitRootLogin yes\n"
+	const secret = "Port 22\nDB_PASS=hunter2\n"
+	const secretAfter = "Port 22\nDB_PASS=hunter3\n"
+	cases := []struct {
+		name, watch, before, after string
+		plain                      bool
+	}{
+		{"a preset file with nothing to hide keeps the plain hash", "lnx.ssh", clean, cleanAfter, true},
+		{"a preset file with a redacted secret is keyed", "lnx.ssh", secret, secretAfter, false},
+		{"a custom hash-only watch is keyed", "custom.c", clean, cleanAfter, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r, root := fileRig(t)
+			f := filepath.Join(root, "app.conf")
+			write(t, f, c.before, 0o644)
+			r.configure("e1e1e1e1e1e1e1e1", fileWatch(c.watch, map[string]any{"path": f}))
+			r.tick()
+			write(t, f, c.after, 0o644)
+			r.next()
+			recs := r.records()
+			if len(recs) != 1 {
+				t.Fatalf("%+v", recs)
+			}
+			gotPlain := recs[0].OldHash == plainSHA(c.before) && recs[0].NewHash == plainSHA(c.after)
+			if gotPlain != c.plain {
+				t.Errorf("plain hash used = %v, want %v: %+v", gotPlain, c.plain, recs[0])
+			}
+			if len(recs[0].NewHash) != 64 || recs[0].OldHash == recs[0].NewHash {
+				t.Errorf("%+v", recs[0])
+			}
+		})
+	}
+}
+
+func TestABigFileIsNeverHashedInTheClear(t *testing.T) {
+	r, root := fileRig(t)
+	f := filepath.Join(root, "big.conf")
+	big := strings.Repeat("x=1\n", MaxFileBytes/4)
+	write(t, f, big, 0o644)
+	r.configure("e1e1e1e1e1e1e1e2", fileWatch("lnx.ssh", map[string]any{"path": f}))
+	r.tick()
+	write(t, f, big+"y=2\n", 0o644)
+	r.next()
+	recs := r.records()
+	if len(recs) != 1 || recs[0].OldHash == plainSHA(big) || recs[0].NewHash == plainSHA(big+"y=2\n") {
+		t.Errorf("%+v", recs)
 	}
 }
