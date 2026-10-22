@@ -79,11 +79,11 @@ var reKeySecret = regexp.MustCompile(`(?i)\b([A-Za-z0-9_.-]*(?:password|passwd|p
 
 // The rc.31 additions (security review F2), mirrored by Rmm\Change\ChangeProtocol::redact() on the server and checked against the same vectors
 // (testdata/vectors/agent_change_monitor_vectors.json, "redaction"). reKeySecret only knows names that CONTAIN a secret word; these add
-//  - names with a PASS / PW token (DB_PASS, smtp.pass, REDIS_PW) and names ending in _KEY (ENCRYPTION_KEY, LICENSE_KEY, AUTH_KEY) or in CamelCase Key/Pass/Pw (EncryptionKey),
-//  - a secret in the next word of a switch (--pass hunter2, --token abc, -password x),
-//  - -p <word> for the tools that take a password that way (mysql, mariadb, sshpass, mongo; not psql, where -p is the port),
-//  - the value of any Environment= / export assignment whose name is not on the allow-list of harmless names,
-//  - long hex and base64 runs (but never in an SSH public key line, whose blob is the thing a change monitor must show).
+//   - names with a PASS / PW token (DB_PASS, smtp.pass, REDIS_PW) and names ending in _KEY (ENCRYPTION_KEY, LICENSE_KEY, AUTH_KEY) or in CamelCase Key/Pass/Pw (EncryptionKey),
+//   - a secret in the next word of a switch (--pass hunter2, --token abc, -password x),
+//   - -p <word> for the tools that take a password that way (mysql, mariadb, sshpass, mongo; not psql, where -p is the port),
+//   - the value of any Environment= / export assignment whose name is not on the allow-list of harmless names,
+//   - long hex and base64 runs (but never in an SSH public key line, whose blob is the thing a change monitor must show).
 var reKeyToken = regexp.MustCompile(`(?i)\b((?:[A-Za-z0-9]+[_.-])*(?:pass|pw)(?:[_.-][A-Za-z0-9_.-]*)?|(?:[A-Za-z0-9]+[_.-])+key)(["']?\s*[:=]\s*["']?)[^\s"',;]+`)
 var reKeyCamel = regexp.MustCompile(`\b([A-Za-z0-9_.-]*[a-z0-9](?:Key|Pass|Pw))(["']?\s*[:=]\s*["']?)[^\s"',;]+`)
 var reSwitchSecret = regexp.MustCompile(`(?i)(\s--?(?:pass(?:word|wd|phrase)?|pwd|pw|secret|token|api-?key|apikey|auth(?:-?token)?|bearer|client-?secret|access-?key|private-?key|credential|key)\s+)(?:"[^"]*"|'[^']*'|\S+)`)

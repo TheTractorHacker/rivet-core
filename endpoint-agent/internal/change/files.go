@@ -183,7 +183,7 @@ func (f *fileReader) fileItem(logical, op string, lfi os.FileInfo) (Item, bool) 
 	it.Meta = fileMeta(lfi)
 	if len(data) > MaxFileBytes {
 		// bigger than the in-memory part: the WHOLE file is hashed by streaming, within a byte budget per read of the watch; no lines are kept
-		h := f.e.hasher.Stream(true)   // keyed: a big file's content is never hashed in the clear (it may hold a secret the line redactor never saw)
+		h := f.e.hasher.Stream(true) // keyed: a big file's content is never hashed in the clear (it may hold a secret the line redactor never saw)
 		h.Write(data)
 		want := size - int64(len(data))
 		if want < 0 || want > f.budget {
