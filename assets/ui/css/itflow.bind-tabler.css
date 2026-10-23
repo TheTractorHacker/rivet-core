@@ -1,0 +1,203 @@
+/* ============================================================================
+   RivetIT tokens -> Tabler tokens.
+
+   WHY THIS FILE EXISTS
+   Tabler emits essentially no --bs-* custom properties (one in ~800KB of CSS).
+   The per-company accent feature is an inline <style nonce> block in
+   includes/header.php that pins --bs-primary / --bs-primary-rgb / --bs-link-color
+   across three selectors. The moment bootstrap.min.css is dropped in favour of
+   tabler.min.css, every one of those becomes dead and branding silently stops
+   working - no error, the accent just reverts to Tabler's default blue.
+
+   Rather than teach header.php about a second framework, this file is the single
+   seam between "our tokens" and "the framework's tokens". header.php keeps
+   emitting --color-accent / --if-primary and knows nothing about Tabler; this
+   file maps them onto --tblr-*. If the framework is ever swapped again, only this
+   file changes.
+
+   Load order (includes/header.php): tabler.min.css -> bridge -> custom -> design
+   -> THIS FILE -> the inline per-company accent block. It must come after the
+   design layer so the mappings win, and before the inline accent block so a
+   custom accent still overrides the defaults.
+   ============================================================================ */
+
+:root {
+    /* ---- Brand / accent -------------------------------------------------- */
+    /* --color-accent is what includes/header.php actually writes per company;
+       --if-primary aliases it. Bind both ways round so this works whether the
+       accent block has run or not. */
+    --tblr-primary:            var(--if-primary, var(--color-accent, #0d9488));
+    --tblr-primary-rgb:        var(--if-primary-rgb, var(--color-accent-rgb, 13, 148, 136));
+    --tblr-primary-fg:         #ffffff;
+    --tblr-link-color:         var(--if-primary, var(--color-accent, #0d9488));
+    --tblr-link-color-rgb:     var(--if-primary-rgb, var(--color-accent-rgb, 13, 148, 136));
+    --tblr-link-hover-color:   var(--if-primary-hover, var(--color-accent-hover, #0f766e));
+    --tblr-active-bg:          var(--if-primary-soft, var(--color-accent-soft, #ccfbf1));
+
+    /* ---- Surfaces / text / borders --------------------------------------- */
+    --tblr-body-bg:            var(--if-bg, #eef2f2);
+    --tblr-body-color:         var(--if-ink, #16232a);
+    --tblr-bg-surface:         var(--if-surface, #ffffff);
+    --tblr-bg-surface-secondary: var(--if-bg, #eef2f2);
+    --tblr-bg-forms:           var(--if-surface, #ffffff);
+    --tblr-secondary:          var(--if-muted, #5d6f76);
+    --tblr-muted:              var(--if-muted, #5d6f76);
+    --tblr-border-color:       var(--if-border, #e3e9ea);
+    --tblr-border-color-translucent: var(--if-border, #e3e9ea);
+
+    /* ---- Shape ----------------------------------------------------------- */
+    /* Tabler multiplies its whole radius scale by --tblr-border-radius-scale, so
+       the existing per-company card-radius setting keeps working through it. */
+    --tblr-border-radius:      var(--if-radius-sm, 8px);
+    --tblr-border-radius-lg:   var(--if-radius, 12px);
+}
+
+/* Dark mode. Tabler keys off html[data-bs-theme="dark"], which includes/header.php
+   ALREADY server-renders - so this needs no new trigger, and the app's second,
+   non-equivalent trigger (body.dark-mode) becomes redundant for anything Tabler
+   styles. The client portal, which emits no <body> tag and therefore never
+   received .dark-mode, starts rendering dark correctly for free. */
+/* NOTE the selector: [data-bs-theme="dark"], NOT :root[data-bs-theme="dark"].
+   The app's chrome is deliberately always-dark in both app themes, which it achieves by
+   putting data-bs-theme="dark" on the sidebar/navbar element itself rather than on <html>.
+   A :root-scoped dark block cannot match that nested subtree, so Tabler would hand the
+   sidebar dark-theme TEXT colours while the surface tokens stayed light - white on white,
+   an invisible sidebar. Scoping to the attribute wherever it appears fixes both the
+   page-level dark theme and any always-dark chrome island. */
+[data-bs-theme="dark"] {
+    --tblr-body-bg:            var(--if-bg, #0d1417);
+    --tblr-body-color:         var(--if-ink, #e7eeef);
+    --tblr-bg-surface:         var(--if-surface, #14201f);
+    --tblr-bg-surface-secondary: var(--if-bg, #0d1417);
+    /* -tertiary is what Tabler paints a <thead> with. It was missed here, so it
+       kept its own light-dark(#f9fafb, #1f2937) default and every table header
+       came out #1f2937 — a blue-dominant navy (B-G = +14) glued onto the app's
+       teal-charcoal card (#14201f, B-G = -1). Same relationship as light mode,
+       where the header is one shade under its white card. */
+    --tblr-bg-surface-tertiary: var(--if-bg, #0d1417);
+    --tblr-bg-forms:           var(--if-surface, #14201f);
+    --tblr-secondary:          var(--if-muted, #93a6ab);
+    --tblr-muted:              var(--if-muted, #93a6ab);
+    --tblr-border-color:       var(--if-border, #24332f);
+    --tblr-border-color-translucent: var(--if-border, #24332f);
+}
+
+/* The block above reads --if-* to get its dark values, which is right when the
+   attribute is on <html> (itflow_design.css switches --if-* on
+   :root[data-bs-theme="dark"]) and WRONG on a nested always-dark island: inside
+   header.app-header on a light page, --if-ink is still #16232a, so the user
+   menu was handed --tblr-body-color = near-black ink on the chrome's #2b3038
+   surface — 1.21:1, three unreadable ghost rows, verified headless.
+   An island is not :root, so key off exactly that and bind the chrome's own
+   token set (css/itflow_bs5_bridge.css owns those values) instead. Deliberately
+   only the FOREGROUND/border tokens: the page-surface tokens must keep pointing
+   at --if-* so the global-search panel, which lives inside this same header but
+   is drawn on the page surface on purpose, still renders light on a light page. */
+[data-bs-theme="dark"]:not(:root) {
+    --tblr-body-color:         var(--if-chrome-ink, rgba(255, 255, 255, .85));
+    --tblr-secondary:          var(--if-chrome-ink-dim, rgba(255, 255, 255, .55));
+    --tblr-muted:              var(--if-chrome-ink-dim, rgba(255, 255, 255, .55));
+    --tblr-border-color:       var(--if-chrome-border, rgba(255, 255, 255, .08));
+    --tblr-border-color-translucent: var(--if-chrome-border, rgba(255, 255, 255, .08));
+}
+/* .text-muted resolves --if-muted with !important in the design layer, which the
+   token remap above cannot reach. Its only two uses inside the chrome are both
+   in the user menu (the avatar placeholder and the role line under the name),
+   where the light --if-muted measured 2.53:1 on #2b3038. */
+[data-bs-theme="dark"]:not(:root) .text-muted {
+    color: var(--if-chrome-ink-dim, rgba(255, 255, 255, .55)) !important;
+}
+
+/* Tabler squashes a bare .icon to a fixed 20x20 box. This app uses class="icon"
+   on 46 elements that predate Tabler and expect no such constraint - the only
+   genuinely surprising restyling in the whole collision analysis. Neutralise it
+   here rather than editing 46 call sites; new markup should use .ti or an
+   explicit size class instead of relying on this.
+
+   THE .small-box EXCEPTION. A tile's icon is a component that sizes itself:
+   css/itflow.shim-adminlte.css makes it a 70px watermark, and the tile pages
+   that want a chip instead override that with an explicit box (agent/invoices.php
+   and agent/dashboard.php both ask for a 36px circle around a 15px glyph). Those
+   rules are 0,2,0 and this one is 0,4,0, so width/height fell back to auto and
+   the "circle" collapsed to the width of whatever glyph it happened to contain —
+   measured 12.92 / 14.92 / 16.92 / 18.92px across the dashboard's 13 tiles, i.e.
+   a lopsided tinted blob with the icon hanging out of both sides. Excluding tile
+   icons hands sizing back to the component that owns it, whatever it asks for;
+   the watermark pages are unaffected (they say width:auto themselves). */
+.icon:not([class*="ti-"]):not(.icon-sm):not(.icon-lg):not(.small-box .icon) {
+    width: auto;
+    height: auto;
+    font-size: inherit;
+    vertical-align: baseline;
+}
+
+/* Always-dark chrome: bind Tabler's navbar tokens so a data-bs-theme="dark" sidebar or
+   header gets a dark surface as well as dark-theme text. Values track the app's existing
+   chrome colour rather than Tabler's default so the migration is not also a re-skin. */
+[data-bs-theme="dark"].navbar,
+[data-bs-theme="dark"] .navbar-vertical,
+.navbar-vertical[data-bs-theme="dark"] {
+    --tblr-navbar-bg: #2b3038;
+    --tblr-navbar-color: #c2c7d0;
+    --tblr-navbar-active-color: #ffffff;
+    --tblr-navbar-hover-color: #ffffff;
+    --tblr-bg-surface: #2b3038;
+    --tblr-border-color: rgba(255, 255, 255, .08);
+    background-color: #2b3038;
+    color: #c2c7d0;
+}
+[data-bs-theme="dark"] .navbar-vertical .nav-link.active,
+.navbar-vertical[data-bs-theme="dark"] .nav-link.active {
+    background-color: var(--tblr-primary);
+    color: #fff;
+}
+
+/* =============================================================================
+   BOOTSTRAP TOKEN BACKFILL  --bs-*  <-  --tblr-*
+
+   The vendored plugin stylesheets are stock Bootstrap 5 builds and read --bs-*
+   variables directly. Those variables used to be declared by
+   plugins/bootstrap5/css/bootstrap.min.css. The Tabler migration dropped that
+   file (Tabler bundles its own Bootstrap and renames every token to --tblr-*),
+   so all 14 --bs-* variables the plugin CSS still references resolved to
+   nothing, and `background: var(--bs-body-bg)` computed to rgba(0,0,0,0).
+
+   The visible symptom was every TomSelect dropdown rendering with NO background:
+   the option list painted straight over the form behind it, so a department
+   picker inside a modal was unreadable. Measured on the KB article modal:
+   .ts-dropdown background-color = rgba(0, 0, 0, 0). Same failure mode reaches
+   tempus-dominus, simple-datatables and intl-tel-input, which read the same
+   tokens for their own popovers and borders.
+
+   Aliases, never literals: each maps onto the --tblr-* token that already
+   changes with [data-bs-theme="dark"], so dark mode stays correct here for free
+   and there is exactly one source of truth per value. The fallback after each
+   comma is what stock Bootstrap 5.3 ships, so a future Tabler that renames a
+   token degrades to Bootstrap's own value instead of to transparent.
+
+   NOTE on --bs-body-bg: it maps to --tblr-bg-surface (#ffffff), NOT
+   --tblr-body-bg (#eef2f2). In stock Bootstrap the body IS the white surface
+   that dropdowns and popovers sit on, and that is the meaning every consumer of
+   this token expects. Tabler instead paints the page ground grey and keeps
+   surfaces white, so --tblr-bg-surface is the semantic match; --tblr-body-bg
+   would give every dropdown a grey panel.
+
+   The accent tokens (--bs-primary, --bs-link-color and friends) are NOT set
+   here - includes/header.php emits them per-company in a later inline block.
+   ============================================================================= */
+:root {
+    --bs-body-bg:                   var(--tblr-bg-surface, #ffffff);
+    --bs-body-color:                var(--tblr-body-color, #212529);
+    --bs-border-color:              var(--tblr-border-color, #dee2e6);
+    --bs-border-color-translucent:  var(--tblr-border-color-translucent, rgba(0,0,0,.175));
+    --bs-border-radius:             var(--tblr-border-radius, .375rem);
+    --bs-border-radius-lg:          var(--tblr-border-radius-lg, .5rem);
+    --bs-border-radius-sm:          var(--tblr-border-radius-sm, .25rem);
+    --bs-border-width:              var(--tblr-border-width, 1px);
+    --bs-box-shadow-inset:          var(--tblr-box-shadow-inset, inset 0 1px 2px rgba(0,0,0,.075));
+    --bs-form-invalid-color:        var(--tblr-form-invalid-color, #dc3545);
+    --bs-form-valid-color:          var(--tblr-form-valid-color, #198754);
+    --bs-secondary-bg:              var(--tblr-secondary-bg, #e9ecef);
+    --bs-secondary-color:           var(--tblr-secondary-color, rgba(33,37,41,.75));
+    --bs-tertiary-bg:               var(--tblr-tertiary-bg, #f8f9fa);
+}

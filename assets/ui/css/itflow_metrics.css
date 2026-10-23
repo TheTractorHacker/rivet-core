@@ -1,0 +1,287 @@
+/*
+ * Device Performance ("Metrics") pane.
+ *
+ * Scoped entirely under .ifm-* so it cannot leak into the rest of the asset page.
+ * Every colour, radius and shadow is an existing --if-* design token from
+ * css/itflow_design.css, which means this file inherits light/dark and the
+ * per-company accent for free and introduces no colour literals of its own.
+ *
+ * The one exception is the three semantic tints (stale / warn / offline), which are
+ * expressed as rgba() over --if-primary-rgb or as the tokenised muted ink rather
+ * than as new hex values, for exactly the same reason.
+ *
+ * Load order: after css/itflow_design.css, so the tokens exist.
+ */
+
+/* [hidden] has to win over the utility classes Tabler/Bootstrap put on these
+ * elements; the JS toggles el.hidden rather than inline display. */
+.ifm-wrap [hidden] { display: none !important; }
+
+/* ------------------------------------------------------------------- banners */
+
+/* State 3 of 3: "the device is offline", and the collection-disabled notice. These
+ * are deliberately loud and structurally distinct from the quiet empty state that
+ * means "supported, nothing collected yet" - conflating the two is the single
+ * easiest way to make this page lie. */
+.ifm-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: .7rem;
+  padding: .7rem .9rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--if-border);
+  border-left-width: 4px;
+  border-radius: var(--if-radius-sm);
+  background: var(--if-surface);
+  color: var(--if-ink);
+  font-size: .84rem;
+  line-height: 1.45;
+  box-shadow: var(--if-shadow);
+}
+.ifm-banner-icon { margin-top: .15rem; opacity: .8; }
+.ifm-banner-offline { border-left-color: var(--if-muted); }
+.ifm-banner-offline .ifm-banner-icon { color: var(--if-muted); }
+.ifm-banner-warn { border-left-color: var(--if-primary); }
+.ifm-banner-warn .ifm-banner-icon { color: var(--if-primary); }
+
+.ifm-alert {
+  padding: .6rem .85rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--if-border-strong);
+  border-radius: var(--if-radius-sm);
+  background: var(--if-surface);
+  color: var(--if-ink);
+  font-size: .84rem;
+}
+
+/* ------------------------------------------------------------------- toolbar */
+
+.ifm-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .6rem;
+  margin-bottom: 1rem;
+}
+.ifm-toolbar-left,
+.ifm-toolbar-right { display: flex; align-items: center; gap: .6rem; }
+.ifm-toolbar-label {
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--if-muted);
+}
+.ifm-meta {
+  font-size: .74rem;
+  color: var(--if-muted);
+  font-family: var(--if-mono);
+  white-space: nowrap;
+}
+.ifm-mono { font-family: var(--if-mono); }
+
+/* The active range reads as a filled pill rather than Bootstrap's default outline
+ * inversion, so the current window is obvious at a glance across both themes. */
+.ifm-ranges .btn { min-width: 2.9rem; font-variant-numeric: tabular-nums; }
+.ifm-ranges .btn.active {
+  background: var(--if-primary-soft);
+  border-color: var(--if-primary);
+  color: var(--if-primary);
+  font-weight: 600;
+}
+
+/* A refresh in flight dims the numbers instead of blanking them - the previous
+ * reading stays legible while the new one is fetched. */
+.ifm-loading .ifm-cards,
+.ifm-loading .ifm-chart { opacity: .55; transition: opacity .15s ease; }
+
+/* --------------------------------------------------------------- summary tiles */
+
+.ifm-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: .75rem;
+  margin-bottom: 1.25rem;
+}
+
+/* The wrapper owns the card chrome so render_stat_card()'s markup can be reused
+ * verbatim while still carrying an avg/peak footer inside the same border. */
+.ifm-card {
+  background: var(--if-surface);
+  border: 1px solid var(--if-border);
+  border-radius: var(--if-radius);
+  box-shadow: var(--if-shadow);
+  overflow: hidden;
+}
+.ifm-card > .it-stat-card {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding-bottom: .25rem;
+}
+.ifm-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .9rem;
+  /* aligns under .it-stat-body: card padding + icon width + icon gap */
+  padding: 0 1.1rem .8rem calc(1.1rem + 2.5rem + .85rem);
+  font-size: .72rem;
+  color: var(--if-muted);
+}
+.ifm-card-meta b {
+  font-family: var(--if-mono);
+  font-weight: 600;
+  color: var(--if-ink);
+}
+.ifm-card-stale { border-style: dashed; }
+
+.ifm-chip {
+  display: inline-block;
+  padding: 0 .4rem;
+  border-radius: 999px;
+  font-size: .66rem;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  border: 1px solid var(--if-border-strong);
+  color: var(--if-muted);
+}
+.ifm-chip-stale { background: rgba(var(--if-primary-rgb), .07); }
+
+/* -------------------------------------------------------------- chart sections */
+
+.ifm-family {
+  margin: 1.4rem 0 .6rem;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--if-muted);
+}
+.ifm-family:first-of-type { margin-top: 0; }
+
+.ifm-chart {
+  background: var(--if-surface);
+  border: 1px solid var(--if-border);
+  border-radius: var(--if-radius);
+  box-shadow: var(--if-shadow);
+  margin-bottom: .9rem;
+}
+.ifm-chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .5rem;
+  padding: .7rem 1rem .3rem;
+}
+.ifm-chart-title {
+  font-size: .88rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--if-ink);
+}
+.ifm-chart-stats { display: flex; gap: 1.1rem; }
+.ifm-stat { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
+.ifm-stat em {
+  font-style: normal;
+  font-size: .64rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--if-muted);
+}
+.ifm-stat b {
+  font-family: var(--if-mono);
+  font-size: .92rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--if-ink);
+}
+
+/* Chart.js is told maintainAspectRatio:false, so the height lives here. */
+.ifm-chart-body {
+  position: relative;
+  height: 190px;
+  padding: .25rem .6rem .5rem;
+}
+.ifm-chart-body canvas { width: 100% !important; height: 100% !important; }
+
+/* State 2 of 3, per chart: the metric is supported and has history, but not inside
+ * the selected window. Quiet, centred, and never mistaken for a chart that failed. */
+.ifm-chart-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .8rem;
+  color: var(--if-muted);
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 7px,
+    rgba(var(--if-primary-rgb), .035) 7px,
+    rgba(var(--if-primary-rgb), .035) 14px
+  );
+  border-radius: var(--if-radius-sm);
+}
+
+.ifm-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem .9rem;
+  padding: 0 1rem .7rem;
+  font-size: .72rem;
+  color: var(--if-muted);
+}
+.ifm-chart-legend:empty { display: none; }
+.ifm-legend-item { display: inline-flex; align-items: center; gap: .3rem; }
+.ifm-legend-swatch {
+  width: .6rem;
+  height: .6rem;
+  border-radius: 2px;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.ifm-footnote {
+  margin: 1.1rem 0 0;
+  font-size: .74rem;
+  color: var(--if-muted);
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------- narrow view */
+
+@media (max-width: 575.98px) {
+  .ifm-toolbar { align-items: stretch; }
+  .ifm-toolbar-right { justify-content: space-between; }
+  .ifm-chart-head { align-items: flex-start; }
+  .ifm-chart-stats { gap: .8rem; width: 100%; justify-content: space-between; }
+  .ifm-stat { align-items: flex-start; }
+  .ifm-chart-body { height: 165px; }
+  .ifm-card-meta { padding-left: 1.1rem; }
+}
+
+/* Respect a reduced-motion preference: the loading dim is the only transition here,
+ * and it is not worth animating for someone who asked for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  .ifm-loading .ifm-cards,
+  .ifm-loading .ifm-chart { transition: none; }
+}
+
+/* Sparse-series note ("N samples so far"), "no samples in range" link, and the
+   single line that replaces charts for metrics a device never reports. */
+.ifm-chart-note {
+  padding: 0 1rem .7rem;
+  font-size: .72rem;
+  color: var(--if-muted);
+}
+.ifm-chart-note[hidden] { display: none; }
+.ifm-range-link { margin-left: .35rem; font-weight: 600; }
+.ifm-not-reported {
+  margin: 1rem 0 0;
+  font-size: .78rem;
+  color: var(--if-muted);
+}

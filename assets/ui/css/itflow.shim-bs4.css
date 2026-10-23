@@ -1,0 +1,264 @@
+/* =============================================================================
+   RivetIT — BOOTSTRAP 4 MARKUP SHIM
+
+   WHAT THIS IS
+   Bootstrap 5 renamed or deleted a set of BS4 classes without providing an
+   alias. This app still emits the BS4 spellings in bulk:
+
+        .form-group                       1,531 occurrences
+        .input-group-prepend / -append    1,170
+        .form-row                            67 files
+        .media / .media-body                 25 files
+        .thead-light                         21 files
+        .form-inline                          6 files /  8 occurrences
+        .border-left / -right (+ -0)          5 files /  7 occurrences
+        .close, .btn-block, .sr-only, .badge-*, .dropdown-menu-right,
+        .float-left/-right, .text-left/-right, .ml-*, .mr-*, .pl-*, .pr-*,
+        .font-weight-*, .text-monospace, .font-italic
+
+   Restyling those globally here is orders of magnitude cheaper and safer than a
+   codemod across 252 pages, and it is behaviourally identical.
+
+   WHY IT IS A SEPARATE FILE FROM css/itflow.shim-adminlte.css
+   Different end-of-life dates. This one has NO retirement schedule at all:
+   Tabler 1.5 styles none of these selectors (measured — the only seven app-used
+   classes Tabler styles that stock Bootstrap does not are .icon,
+   .btn-outline-purple, .bg-teal, .btn-google, .bg-pink, .mx-n3, .bg-orange), so
+   nothing here collides with the framework and nothing here breaks when the
+   framework changes. It can sit in the stack indefinitely, or be retired one
+   class at a time as pages are swept. The AdminLTE shim, by contrast, dies with
+   the last piece of AdminLTE-era markup.
+
+   TOKEN POLICY
+   No var(--bs-…) reads. Tabler emits essentially no --bs-* custom properties
+   (one in ~800KB), so the old bridge's `var(--bs-primary)` / `var(--bs-warning)`
+   / `var(--bs-font-monospace)` reads resolved to nothing the moment
+   bootstrap.min.css was dropped. Everything below reads --tblr-* or the app's own
+   --if-* with a literal fallback.
+
+   Load order: anywhere after tabler.min.css. Nothing in the app's own layers
+   depends on this file, and this file depends on nothing but tokens.
+   ============================================================================= */
+
+/* ---- Layout / form classes BS5 removed outright ---------------------------- */
+.form-group { margin-bottom: 1rem; }
+
+.form-row { display: flex; flex-wrap: wrap; margin-right: -5px; margin-left: -5px; }
+.form-row > .col,
+.form-row > [class*="col-"] { padding-right: 5px; padding-left: 5px; }
+
+/* BS4's inline form. BS5 deleted .form-inline outright (its answer is a bespoke
+   row of flex utilities per form), so all 8 consumers were rendering as a plain
+   block: every control stretched to the full card width and every button dropped
+   onto its own line — most visibly the two stacked "Choose File → Load Backup" /
+   "Old master key → Decrypt" pairs on admin/credential_restore.php and the filter
+   selects on agent/rmm_assets.php and agent/intune_devices.php, which are
+   authored with .me-2/.me-3 spacing that only means anything in a row.
+   Declarations are BS4's own, with .form-select added to the control rule because
+   BS5 moved <select> onto its own class. */
+.form-inline { display: flex; flex-flow: row wrap; align-items: center; }
+.form-inline label { display: flex; align-items: center; margin-bottom: 0; }
+.form-inline .form-group {
+    display: flex;
+    flex: 0 0 auto;
+    flex-flow: row wrap;
+    align-items: center;
+    margin-bottom: 0;
+}
+.form-inline .form-control,
+.form-inline .form-select { display: inline-block; width: auto; vertical-align: middle; }
+.form-inline .input-group { width: auto; }
+
+/* BS4 wrapped input-group addons in a .input-group-prepend / -append element.
+   BS5 puts .input-group-text as a direct child instead, and its corner-rounding
+   rules therefore never match through the extra wrapper — leaving square-cornered
+   addons welded onto rounded inputs. display:flex keeps the wrapper out of the
+   way; the radius rules restore BS4's own outer-corner behaviour. */
+.input-group-prepend,
+.input-group-append { display: flex; }
+.input-group-prepend > .input-group-text {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.input-group-append > .input-group-text {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+/* BS4 .media object. BS5 deleted it in favour of raw flex utilities. */
+.media { display: flex; align-items: flex-start; }
+.media-body { flex: 1 1 auto; }
+
+/* BS4 .close (BS5 renamed it .btn-close and swapped the "×" glyph for a
+   background-image). Unswept modals still emit <button class="close">×</button>,
+   which without this renders as an unstyled default button in the header. */
+.close {
+    float: right;
+    font-size: 1.4rem;
+    font-weight: 700;
+    line-height: 1;
+    color: inherit;
+    opacity: .5;
+    background: transparent;
+    border: 0;
+    padding: .25rem .5rem;
+    cursor: pointer;
+}
+.close:hover { opacity: .9; }
+
+.btn-block { display: block; width: 100%; }
+.btn-block + .btn-block { margin-top: .5rem; }
+
+.dropdown-menu-right { right: 0; left: auto; }
+
+/* BS5 renamed .sr-only to .visually-hidden. Same declarations. */
+.sr-only {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Table head variants BS5 dropped. Token-driven rather than the old hard-coded
+   #e9ecef / #212529 pair, which inverted badly in dark mode. */
+.thead-light th,
+.thead-light > tr > th {
+    background-color: var(--if-bg, #e9ecef);
+    color: var(--if-ink, #212529);
+}
+.thead-dark th,
+.thead-dark > tr > th {
+    background-color: var(--tblr-dark, #1f2937);
+    color: #fff;
+}
+
+/* ---- BS4 typography / display utilities BS5 renamed ------------------------ */
+.text-monospace { font-family: var(--if-mono, var(--tblr-font-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)) !important; }
+.font-italic    { font-style: italic !important; }
+
+.font-weight-bold   { font-weight: 700 !important; }
+.font-weight-bolder { font-weight: bolder !important; }
+.font-weight-normal { font-weight: 400 !important; }
+.font-weight-light  { font-weight: 300 !important; }
+
+/* ---- BS4 directional utilities (BS5 went logical: start/end) ---------------
+   Kept as physical properties on purpose. The app is LTR-only and these are a
+   transitional bridge, not a design decision; rewriting them as logical
+   properties would change behaviour for the RTL case the app does not have and
+   does not test. */
+.text-left  { text-align: left !important; }
+.text-right { text-align: right !important; }
+.float-left  { float: left !important; }
+.float-right { float: right !important; }
+
+/* .border-left / .border-right (BS5: .border-start / .border-end).
+   Deliberately NOT BS4's `border-left: 1px solid #dee2e6 !important` shorthand.
+   The colour half of that shorthand would beat Tabler's own .border-<variant>
+   utilities — which set only border-color, !important, and load BEFORE this file
+   — and repaint every variant a flat grey. Splitting style from colour lets the
+   variant keep the colour and this rule supply only the missing style/width.
+
+   That split is what the ticket thread needs: agent/ticket.php:1107 marks each
+   reply `border-left border-<dark|warning|secondary|primary|danger|success|info>`
+   with an inline `border-left-width: 8px !important` to colour-code Internal /
+   Public / System / Automation / RMM Alert / Labor replies. The variant class was
+   resolving, the inline width was resolving, but with no border-STYLE anywhere
+   the computed width collapsed to 0 and every reply card looked identical.
+   (css/itflow_custom.css:452 `.ticket-alga-theme .card { border: none }` is what
+   zeroes it, which is also why the width here has to be !important to survive on
+   any other card; the page's own inline !important still outranks it at 8px.)
+   .border-right restores the column rules in admin/backup.php, agent/files.php
+   and agent/modals/service/service_details.php — those carry no variant class, so
+   they need a colour of their own, and it is left un-!important precisely so a
+   variant class can still take it over. Without one the border would fall back to
+   currentColor and draw a full-ink rule instead of a hairline. */
+.border-left  { border-left-style: solid !important;  border-left-width: 1px !important;  border-left-color: var(--if-border, #e3e9ea); }
+.border-right { border-right-style: solid !important; border-right-width: 1px !important; border-right-color: var(--if-border, #e3e9ea); }
+.border-left-0  { border-left: 0 !important; }
+.border-right-0 { border-right: 0 !important; }
+
+.ml-0 { margin-left: 0 !important; }      .mr-0 { margin-right: 0 !important; }
+.ml-1 { margin-left: .25rem !important; } .mr-1 { margin-right: .25rem !important; }
+.ml-2 { margin-left: .5rem !important; }  .mr-2 { margin-right: .5rem !important; }
+.ml-3 { margin-left: 1rem !important; }   .mr-3 { margin-right: 1rem !important; }
+.ml-4 { margin-left: 1.5rem !important; } .mr-4 { margin-right: 1.5rem !important; }
+.ml-5 { margin-left: 3rem !important; }   .mr-5 { margin-right: 3rem !important; }
+.ml-auto { margin-left: auto !important; } .mr-auto { margin-right: auto !important; }
+
+.pl-0 { padding-left: 0 !important; }      .pr-0 { padding-right: 0 !important; }
+.pl-1 { padding-left: .25rem !important; } .pr-1 { padding-right: .25rem !important; }
+.pl-2 { padding-left: .5rem !important; }  .pr-2 { padding-right: .5rem !important; }
+.pl-3 { padding-left: 1rem !important; }   .pr-3 { padding-right: 1rem !important; }
+.pl-4 { padding-left: 1.5rem !important; } .pr-4 { padding-right: 1.5rem !important; }
+.pl-5 { padding-left: 3rem !important; }   .pr-5 { padding-right: 3rem !important; }
+
+/* ---- BS4 .badge-<variant> (BS5 split it into .badge + .text-bg-<variant>) ---
+   The five fixed semantic colours read Tabler's palette so a badge matches the
+   button/alert of the same name.
+
+   .badge-primary deliberately reads --if-primary FIRST, not --tblr-primary.
+   Measured in a headless browser: with NO per-company accent set, dark mode gives
+   --if-primary = #2DD4BF but --tblr-primary = #0D9488. The two disagree because
+   css/itflow_design.css declares --if-primary on `body` (so it can re-resolve
+   against body.dark-mode's --color-accent) while css/itflow.bind-tabler.css reads
+   it on `:root`, one element ABOVE where it is declared — so bind-tabler silently
+   captures the light-mode value. Reading --if-primary directly resolves at the
+   badge itself and gets the right value in both themes. (With a custom accent
+   configured the two agree, because includes/header.php pins --color-accent on
+   :root and body.dark-mode alike, which is why the seam is easy to miss.) */
+.badge-primary   { color: #fff; background-color: var(--if-primary, var(--tblr-primary, #0d9488)) !important; }
+.badge-secondary { color: #fff; background-color: var(--tblr-secondary, #6b7280) !important; }
+.badge-success   { color: #fff; background-color: var(--tblr-success, #2fb344) !important; }
+.badge-danger    { color: #fff; background-color: var(--tblr-danger, #d63939) !important; }
+.badge-warning   { color: #000; background-color: var(--tblr-warning, #f59f00) !important; }
+.badge-info      { color: #000; background-color: var(--tblr-info, #4299e1) !important; }
+.badge-light     { color: #000; background-color: var(--tblr-gray-100, #f8f9fa) !important; }
+.badge-dark      { color: #fff; background-color: var(--tblr-dark, #1f2937) !important; }
+
+/* ---- BS4 data-toggle="buttons" (radio/checkbox styled as a button group) ----
+   BS5 deleted that plugin entirely, INCLUDING the CSS that visually hid the real
+   <input type="radio"|"checkbox"> nested inside each label.btn. Without this the
+   native control renders in front of the label text on every .js-btn-group-toggle
+   group app-wide (e.g. a raw "○" before "Internal"). The JS half of the shim
+   (js/app.js: initButtonGroupToggle) only manages the .active class — it does not
+   and cannot hide the input, so this rule is the whole fix. */
+.js-btn-group-toggle .btn input[type="radio"],
+.js-btn-group-toggle .btn input[type="checkbox"] {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+    pointer-events: none;
+}
+
+/* ---- .alert: legacy markup vs Tabler's flex row ----------------------------
+   Tabler 1.5 makes .alert a flex ROW (display:flex, gap:1rem) with no
+   flex-wrap, on the assumption its children are a couple of deliberate blocks -
+   an icon and a body.
+
+   This app emits Bootstrap-4-shaped alerts: bare text nodes, <strong>, <code>
+   and <br> as direct children. Every one of those becomes its own flex item, and
+   with nowrap they are laid out on a single line that cannot break. Measured on
+   admin/people_import.php: document scrollWidth 3057px against a 1280px
+   viewport - and identical at 1600px, because the row is sized by its intrinsic
+   content and never responds to the viewport at all. 57 files carry this markup.
+
+   flex-wrap:wrap restores line breaking without giving up Tabler's icon+body
+   layout, which still works because a real icon child keeps its own flex slot.
+   align-items:flex-start stops a tall wrapped body from vertically centring the
+   icon against it. Verified on the same page: scrollWidth 3057 -> 1270. */
+.alert {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}

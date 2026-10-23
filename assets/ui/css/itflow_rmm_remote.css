@@ -1,0 +1,29 @@
+/* Remote tab of the asset page (services, processes, files, Mesh) (RivetCore 1.0.0-rc.11). Scoped under .rmm-*, built from the --if-* tokens, loaded after itflow_rmm_automation.css and before itflow.bind-tabler.css (see includes/header.php). */
+
+/* Context line at the top of the tab. */
+.rmm-rem-context { padding: .6rem .75rem; border: 1px solid var(--if-border); border-radius: var(--if-radius-sm); background: var(--if-bg); }
+
+/* Lists scroll inside their own container (the page never scrolls sideways); the header stays visible while the rows scroll. The relative position keeps the
+   visually-hidden captions inside the scroll container, or they widen the page on a phone. */
+.rmm-rem-scroll { position: relative; max-height: 28rem; overflow: auto; }
+.rmm-rem-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--if-bg); }
+.rmm-rem-scroll:focus-visible { outline: 2px solid var(--tblr-primary); outline-offset: -2px; }
+.rmm-rem-sort { color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; min-height: 1.75rem; }
+.rmm-rem-sort:focus-visible { outline: 2px solid var(--tblr-primary); outline-offset: 2px; }
+
+/* The SHA-256 the server verified: shown whole, wrapped. */
+.rmm-rem-hash { display: inline-block; max-width: 20rem; font-size: .72rem; word-break: break-all; }
+
+.rmm-rem-result .rmm-mono { overflow-wrap: anywhere; }
+#rmm-remote-tools .rmm-table-actions .btn { min-height: 2rem; }
+
+@media (max-width: 767.98px) {
+  .rmm-rem-scroll { max-height: 22rem; }
+  .rmm-rem-hash { max-width: 12rem; }
+}
+
+/* Columns keep a readable width; the list scrolls sideways inside its own container instead of squeezing a file name to one letter per line. */
+.rmm-rem-scroll table { min-width: 44rem; }
+#rem-xfer-table td:first-child { min-width: 13rem; }
+#rem-svc-table td:first-child, #rem-proc-table td:nth-child(2) { min-width: 11rem; }
+.rmm-rem-scroll .rmm-table-actions { min-width: 9rem; }

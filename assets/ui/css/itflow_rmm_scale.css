@@ -1,0 +1,23 @@
+/* RMM administration: remote tools, logs and scale settings (RivetCore 1.0.0-rc.11). Scoped under .rmm-*, built from the --if-* tokens, loaded after itflow_rmm_automation.css and before itflow.bind-tabler.css (see includes/header.php). */
+
+/* ---- Administration cards (remote tools, file transfer, log collection, scale settings, partitioning, external metric store) */
+.rmm-scale-card .rmm-wrap { overflow-wrap: anywhere; }
+.rmm-scale-card .rmm-scale-ack { background: var(--if-bg); border-color: var(--if-border) !important; }
+.rmm-scale-card .rmm-scale-row { border: 1px solid var(--if-border); border-radius: var(--if-radius-sm); padding: .6rem .75rem; margin-bottom: .5rem; background: var(--if-bg); }
+.rmm-scale-card .rmm-scale-msg:focus { outline: 2px solid var(--tblr-primary); outline-offset: 2px; }
+.rmm-scale-card .rmm-scale-scroll { max-height: 16rem; overflow: auto; position: relative; }
+.rmm-scale-card fieldset legend { font-weight: 600; }
+.rmm-scale-card .input-group select { min-width: 5.5rem; }
+.rmm-scale-card table .rmm-dl-key { min-width: 10rem; }
+.rmm-scale-card [data-rmm-scale-live] .alert { overflow-wrap: anywhere; }
+
+/* ---- Scale and capacity panel on the Agent fleet page (administrators) */
+#rmm-capacity .rmm-scale-hint { border-left: 4px solid var(--tblr-info); padding: .5rem .75rem; background: var(--if-bg); border-radius: var(--if-radius-sm); }
+#rmm-capacity .rmm-scale-hint.rmm-hint-up { border-left-color: var(--tblr-warning); }
+#rmm-capacity .rmm-scale-hint.rmm-hint-down { border-left-color: var(--tblr-success); }
+#rmm-capacity .rmm-scale-dl th { font-weight: 500; }
+#rmm-capacity .table-responsive { position: relative; }
+
+@media (max-width: 767.98px) {
+  .rmm-scale-card .rmm-scale-row .btn { width: 100%; }
+}

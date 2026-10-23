@@ -1,0 +1,747 @@
+/* =============================================================================
+   css/itflow_motion.css - the motion layer for the whole app.
+
+   LOAD POSITION
+   Linked in all four shells (includes/header.php, client/includes/header.php,
+   guest/includes/guest_header.php, login.php) AFTER css/itflow_design.css and
+   BEFORE css/itflow.bind-tabler.css.
+
+   What that position buys, and what it costs:
+
+     * It is after plugins/tabler/css/tabler.min.css, which is the only thing
+       that matters for the retunes below. Measured live on this install,
+       Tabler/Bootstrap ship:
+           .card       { transition: transform .3s, opacity .3s, box-shadow .3s }
+           .nav-link   { transition: color .3s, background-color .3s }
+           .form-switch .form-check-input { background-color .3s, background-position .3s }
+           .modal.fade .modal-dialog      { transform: translate(0,-1rem); transition: transform .3s ease-out }
+           .collapsing { transition: height .35s ease }
+       Every retune here matches those selectors at equal or higher specificity
+       and wins either on specificity or by being later in the cascade.
+
+     * It is BEFORE css/itflow.compat-color.css, css/itflow_metrics.css and
+       css/itflow.bind-tabler.css. Two of those three declare no transition and
+       no animation at all (verified). The one that does is itflow_metrics.css:
+           .ifm-loading .ifm-cards,
+           .ifm-loading .ifm-chart { opacity: .55; transition: opacity .15s ease }
+       So the one rule in this file that retimes that pair carries an extra
+       [data-asset-metrics] to out-specify it, and holds whichever side of
+       itflow_metrics.css this file ends up on. Nothing else here needs to beat
+       a sheet that loads after it, and the reduced-motion guard at the bottom
+       carries !important for the same reason.
+
+   Tokens consumed from css/itflow_design.css (which loads before this file):
+   --if-border, --if-shadow-md, --if-radius-sm. All are declared for both themes
+   there, so nothing in this file depends on the accent colour.
+   ============================================================================= */
+
+
+/* -----------------------------------------------------------------------------
+   1. TOKENS
+   -------------------------------------------------------------------------- */
+:root {
+  /* ---- Duration. One step per job, not a generic 100/200/300 scale. -------- */
+  --if-dur-press:    90ms;   /* pointer-down acknowledgement                   */
+  --if-dur-ui:      160ms;   /* hover tint, focus ring, dropdown, small swap   */
+  --if-dur-panel:   200ms;   /* submenu, tab pane, fetched-content swap        */
+  --if-dur-overlay: 240ms;   /* modal, backdrop, toast, mobile nav reveal      */
+  --if-dur-page:    280ms;   /* the one full-page entrance                     */
+
+  /* Spinners do not appear until a request has actually been slow. Under this
+     the panel just swaps and the app reads as instant instead of flickering. */
+  --if-delay-spinner: 280ms;
+
+  /* ---- Easing. No bounce, no overshoot, no elastic anywhere in this app. --- */
+  --if-ease-out: cubic-bezier(.22,.61,.36,1);  /* entrances: fast start, settle */
+  --if-ease-in:  cubic-bezier(.4,0,1,1);       /* exits: leaves without a wait  */
+
+  /* ---- Distance. Every motion in the system is one of these four. ---------- */
+  --if-rise:   6px;   /* page entrance                                         */
+  --if-nudge:  4px;   /* panel / menu / swapped content entrance               */
+  --if-lift:  -1px;   /* hover elevation on a clickable card                   */
+  --if-press:  1px;   /* :active depression                                    */
+
+  /* ---- Skeleton (see the loading surfaces) -------------------------------- */
+  --if-skeleton-base:  var(--if-border, #e3e9ea);
+  --if-skeleton-sheen: rgba(255,255,255,.55);
+}
+
+/* Both of this app's non-equivalent dark triggers. In production the two are
+   always set from the same flag - every shell emits html[data-bs-theme] and
+   body.dark-mode together - so this is belt-and-braces rather than a fix, but a
+   sheen that only knew one trigger would be a silent trap for anyone who later
+   toggles the theme client-side from one of them.
+
+   --if-skeleton-base rides --if-border, which itflow_design.css declares dark
+   ONLY under :root[data-bs-theme="dark"], so it follows the root trigger. That
+   is correct here because of the pairing above; if a future toggle ever sets
+   body.dark-mode alone, the base needs its own override next to this line.
+
+   Measured live: base resolves to #24332f dark / #e3e9ea light, and the light
+   .55 sheen would be invisible on the dark base, which is why it steps down. */
+:root[data-bs-theme="dark"],
+body.dark-mode { --if-skeleton-sheen: rgba(255,255,255,.07); }
+
+
+/* -----------------------------------------------------------------------------
+   2. KEYFRAMES
+   Nothing in this system animates anything but transform and opacity, so all
+   eight of these are compositor-only and none can trigger layout.
+   -------------------------------------------------------------------------- */
+@keyframes if-page-in   { from { opacity: 0; transform: translate3d(0, var(--if-rise), 0) }             to { opacity: 1; transform: none } }
+@keyframes if-swap-in   { from { opacity: 0; transform: translate3d(0, var(--if-nudge), 0) }            to { opacity: 1; transform: none } }
+/* These animate the INDEPENDENT `translate` property, never `transform`.
+   Popper positions every .dropdown-menu with an inline `transform: translate(x,y)`,
+   and a running CSS animation outranks inline style - so animating `transform`
+   here replaced Popper's placement for the whole 160ms. Measured on the live
+   clients.php row menu: it painted at x=1418 y=0 while fading to opacity 1, then
+   jumped 712px into place the frame the animation ended. `translate` is a separate
+   property that COMPOSES with `transform` instead of replacing it, so Popper keeps
+   its placement and we keep the directional nudge. */
+@keyframes if-pop-down  { from { opacity: 0; translate: 0 calc(var(--if-nudge) * -1) } to { opacity: 1; translate: none } }
+@keyframes if-pop-up    { from { opacity: 0; translate: 0 var(--if-nudge) }            to { opacity: 1; translate: none } }
+@keyframes if-pop-start { from { opacity: 0; translate: var(--if-nudge) 0 }            to { opacity: 1; translate: none } }
+@keyframes if-pop-end   { from { opacity: 0; translate: calc(var(--if-nudge) * -1) 0 } to { opacity: 1; translate: none } }
+@keyframes if-fade-in   { from { opacity: 0 }                                                           to { opacity: 1 } }
+@keyframes if-shimmer   { from { transform: translate3d(-100%, 0, 0) }                                  to { transform: translate3d(100%, 0, 0) } }
+
+/* HOUSE RULE FOR EVERY ANIMATION IN THIS SYSTEM: animation-fill-mode is
+   `backwards`, never `forwards` and never `both`. This is not style - it is
+   correctness. `both` leaves the final keyframe applied forever, and a
+   to{transform:none} keyframe computes to matrix(1,0,0,1,0,0), which is a
+   transform value and therefore a containing block for every position:fixed
+   descendant. .page-body contains page-local .modal markup on ~every settings
+   page; with `both` those modals stop being viewport-fixed. Verified live: with
+   `backwards` the computed transform after the animation is `none`, and a real
+   ajax modal on clients.php measured position:fixed at 0,0 / 1590x1200 with its
+   540px dialog centred on the 1590px viewport.
+
+   The dropdowns prove the same point from the other side: Popper POSITIONS a
+   reparented row menu with `transform: translate(-96px, 300px)`. Measured on
+   clients.php, that transform is still intact after if-pop-start finishes,
+   because `backwards` retains nothing. `forwards` or `both` would have pinned
+   the menu at the keyframe's `transform: none` and dropped it in the top-left
+   corner of the page.
+   For the same reason, never add will-change to any of these elements. */
+
+
+/* -----------------------------------------------------------------------------
+   3. PAGE / CONTENT ENTRANCE
+   The whole content column below the header fades up 6px once. It is the ONLY
+   entrance on the page - no per-card, no per-tile, no staggered list reveal.
+
+   .page-body is the correct and only hook: every page on this install is
+   body > .page > .page-wrapper > .page-body > .container-xl, and the fixed
+   sidebar and header sit OUTSIDE it, so the chrome stays rock-steady while the
+   content moves. The dashboard has 13 tiles and 4 charts; animating each one on
+   every navigation would put 300ms of choreography in front of the number the
+   user came to read.
+   -------------------------------------------------------------------------- */
+.page-body {
+  animation: if-page-in var(--if-dur-page) var(--if-ease-out) backwards;
+}
+
+
+/* -----------------------------------------------------------------------------
+   4. CARD HOVER - CLICKABLE CARDS ONLY
+   A card that is a link lifts 1px and takes the deeper shadow. A card that is
+   not a link does not move at all: making every .card lift would break the
+   "this is clickable" promise 20 times on a settings page full of static cards.
+   -------------------------------------------------------------------------- */
+
+/* Retune Tabler's own 300ms card transition to the token, app-wide. */
+.card {
+  transition: box-shadow   var(--if-dur-ui) var(--if-ease-out),
+              border-color var(--if-dur-ui) var(--if-ease-out),
+              transform    var(--if-dur-ui) var(--if-ease-out);
+}
+
+/* Only these.
+   `.card.card-link` rather than the bare `.card-link` the spec listed: this
+   Tabler build ships BOTH meanings of that class - the whole-card link pattern
+   (<a class="card card-link card-link-pop">, which is what .card-link-pop and
+   .card-link-rotate modify) and Bootstrap's inline text link inside a card body
+   (.card-link + .card-link { margin-inline-start }). Requiring .card too keeps
+   the hook for the first and cannot lift the second. Neither form exists in the
+   app markup today, so this costs nothing and closes a trap for whoever adds
+   the first one. */
+a.card,
+a.small-box,
+a.it-stat-card,
+a.ticket-stat-box,
+.card.card-link {
+  transition: transform    var(--if-dur-ui) var(--if-ease-out),
+              box-shadow   var(--if-dur-ui) var(--if-ease-out),
+              border-color var(--if-dur-ui) var(--if-ease-out);
+}
+a.card:hover,
+a.small-box:hover,
+a.it-stat-card:hover,
+a.ticket-stat-box:hover,
+.card.card-link:hover {
+  transform: translate3d(0, var(--if-lift), 0);
+  box-shadow: var(--if-shadow-md);
+}
+
+/* 1px, not the usual 4: these tiles sit in tight grids with 1px borders and a
+   4px lift visibly re-spaces the row. --if-shadow-md is declared for both
+   themes in itflow_design.css, so this is accent- and theme-independent.
+
+   agent/tickets.php carries a page-local .ticket-stat-box:hover (translateY(-2px)
+   over .1s with its own shadow) in a <style> block. This rule is (0,2,1) against
+   its (0,2,0) so the system value wins and those seven tiles become -1px/160ms -
+   one lift value app-wide, which is the intended outcome, but it is a silent
+   override of another lane's code. Whoever owns agent/tickets.php should delete
+   that transition and :hover transform so the file stops disagreeing. */
+
+
+/* -----------------------------------------------------------------------------
+   5. BUTTON / NAV-LINK PRESS AND HOVER
+   Nearly every button here posts a form and reloads the page, so there is a
+   real gap between the click and any visible result. The depression is the
+   receipt.
+
+   This same rule is what retimes the sidebar and the tab strip: Tabler ships
+   .navbar-vertical .nav-link and .nav-tabs .nav-link at 300ms, which on a
+   12-to-19 item sidebar leaves three or four links still mid-fade behind a
+   sweeping cursor - a smear rather than a highlight. 160ms lands before the eye
+   has finished moving, so the highlight reads as pinned to the pointer. The
+   press matters more here than on a button: a sidebar link is a full navigation
+   and the page can take a moment, so the depression is the only confirmation
+   the user gets before the screen goes.
+   -------------------------------------------------------------------------- */
+.btn,
+.nav-link,
+.dropdown-item,
+.page-link,
+.list-group-item-action {
+  transition: color            var(--if-dur-ui)    var(--if-ease-out),
+              background-color var(--if-dur-ui)    var(--if-ease-out),
+              border-color     var(--if-dur-ui)    var(--if-ease-out),
+              box-shadow       var(--if-dur-ui)    var(--if-ease-out),
+              transform        var(--if-dur-press) var(--if-ease-out);
+}
+
+/* Asymmetric on purpose: 0s down, 90ms up. transition-duration:0s on :active
+   means the button is already down in the same frame the mouse went down - a
+   90ms ease-in on the way down would read as lag, which is the opposite of what
+   a press is for - while the base rule's 90ms owns the release.
+   1px translate rather than a scale: a scale on a 200px-wide button pulls both
+   edges inward by several px and can slide the target out from under a cursor
+   resting near its edge. */
+.btn:active,
+.nav-link:active,
+.page-link:active,
+a.small-box:active,
+a.it-stat-card:active,
+a.ticket-stat-box:active {
+  transform: translate3d(0, var(--if-press), 0);
+  transition-duration: 0s;
+}
+
+/* A disabled control must not answer a press. Declared after the :active rule
+   so it wins the same-specificity tie against .btn.disabled, which - unlike
+   :disabled - can still match :active. */
+.btn:disabled,
+.btn.disabled,
+fieldset:disabled .btn {
+  transform: none;
+}
+
+
+/* -----------------------------------------------------------------------------
+   6. SIDEBAR SUBMENU EXPAND / COLLAPSE
+   Expand: the panel's contents fade up 4px inside a box that has already taken
+   its full height. Collapse: instant.
+
+   The height change is deliberately NOT animated. Animating it means animating
+   height or grid-template-rows, which relayouts the whole fixed column on every
+   frame, and it would fight js/shell.js's reveal(), which measures
+   getBoundingClientRect() the instant a group opens to scroll a bottom-of-column
+   group into view - a group whose height was still growing would be measured
+   wrong and scrolled to the wrong place. So the box snaps to its height in one
+   reflow and the .dropdown-item rows slide down 4px INTO that already-allocated
+   space. transform does not affect layout, so nothing below moves twice.
+
+   The .is-opening gate is not decoration. The group containing the current page
+   is emitted .show server-side, so keying on .show alone would replay a submenu
+   animation on every single page load, next to the page entrance, forever.
+   js/shell.js owns that class: markOpening() adds it only on a user-initiated
+   expand and a delegated animationend listener removes it. Collapse stays
+   instant because .dropdown-menu:not(.show) is display:none and there is
+   nothing to fade - and because a collapse needs no explaining: the user
+   pointed at the thing they wanted gone.
+   -------------------------------------------------------------------------- */
+
+/* The generic .dropdown-menu rule in section 9 would otherwise catch these -
+   the sidebar groups are .dropdown-menu with position:static (verified live) -
+   and would replay a pop on every page load. Confirmed live: the group holding
+   the current page IS emitted .show server-side, so document.querySelector(
+   '.dropdown-menu.show') on a freshly loaded clients.php returns a SIDEBAR
+   submenu, which measured position:static and animation-name:none.
+   :not(.is-opening) makes this (0,4,0), which beats both the generic rule
+   (0,2,0) and the four direction rules (0,3,0) in section 9, so no placement
+   attribute can ever re-enable a pop on a static sidebar submenu. The
+   .is-opening rule below is the only thing that can animate one. */
+.navbar-vertical .dropdown-menu.show:not(.is-opening) { animation: none; }
+
+.navbar-vertical .dropdown-menu.show.is-opening {
+  animation: if-swap-in var(--if-dur-panel) var(--if-ease-out) backwards;
+}
+
+
+/* -----------------------------------------------------------------------------
+   7. SIDEBAR RAIL COLLAPSE (desktop fold) - DELIBERATELY NOT ANIMATED
+   NO RULE. Do not add a width/margin transition to any of these:
+       aside.navbar-vertical             (256px -> 64px)
+       .page-wrapper                     (margin-inline-start: 256px -> 64px)
+       .navbar-vertical .nav-link-title  (Tabler sets width:0;opacity:0 on fold)
+
+   Folding retargets --tblr-sidebar-width, which drives margin-inline-start on
+   .page-wrapper; transitioning that relayouts the entire content column on every
+   frame for 240ms - on the 200-row tables this app is heading toward that is a
+   guaranteed stutter. A label cross-fade is not available either: Tabler
+   collapses .nav-link-title to width:0 at the same instant, so the text is
+   clipped to nothing before any fade could be seen.
+
+   It also does not need explaining. It is a low-frequency, sticky action
+   (persisted to localStorage under itflow.sidebar.folded) with an unambiguous
+   result the user is looking straight at, and the press feedback from section 5
+   on the toggle already confirms the click landed.
+
+   One piece of motion comes free: shell.js's restoreGroupsAfterUnfold() routes
+   through setGroup(), so unfolding replays the .is-opening reveal on exactly the
+   groups that were open before the fold - the sidebar reads as remembering.
+
+
+   ---- Mobile nav reveal: retune only, and NOT the surface the spec assumed. --
+   The spec called for `aside.navbar-vertical { transition: transform ... }` on
+   the grounds that Tabler slides the aside off-canvas below 992px. Measured on
+   this install that is not what happens, and the rule would have been dead on
+   both sides of the breakpoint:
+
+     * Tabler's `transition: transform .3s` on the aside lives inside
+       @media (min-width:992px) at (0,2,0) - it applies only at DESKTOP, where
+       it out-specifies a bare `aside.navbar-vertical` (0,1,1) anyway, and where
+       the aside is a static layout column that never takes a transform.
+     * Below 992px the sidebar is not off-canvas at all. The markup is
+       <aside class="navbar navbar-vertical navbar-expand-lg">
+         <div class="collapse navbar-collapse" id="sidebar-menu">, i.e. a plain
+       Bootstrap collapse. Toggling it at 800px, sampled every 45ms: the aside's
+       transform stayed `none` for the whole open while #sidebar-menu went
+       .collapsing with transition-property `height` and duration 0.35s, growing
+       104 -> 295 -> 439 -> 526 -> 576 -> 601 -> 608px.
+
+   So the real surface is Bootstrap's height collapse, and the only honest thing
+   to do with it is retime it. Height is Bootstrap's mechanism here, not one
+   this system introduces - there is no transform to swap in without rebuilding
+   the component - and 350ms is both out of family and 110ms more relayout than
+   it needs. Narrowed to the sidebar so the app's other collapses (ticket
+   sidebar cards, settings groups) keep Bootstrap's own timing, and only the
+   duration and the easing are touched, never the property list.
+
+   (0,3,0) against Bootstrap's `.collapsing` (0,1,0), so it holds wherever this
+   file is linked. It can only ever apply below 992px: at desktop Tabler forces
+   .navbar-collapse to display:flex and .collapsing never appears.
+   -------------------------------------------------------------------------- */
+.navbar-vertical .navbar-collapse.collapsing {
+  transition-duration: var(--if-dur-overlay);
+  transition-timing-function: var(--if-ease-out);
+}
+
+
+/* -----------------------------------------------------------------------------
+   8. MODAL ENTER / EXIT
+   A modal is the one place a longer beat is earned - it takes the whole screen
+   away and the user needs a moment to register that the context changed.
+
+   Bootstrap's default here is translate(0,-1rem) over .3s ease-out. 12px plus a
+   barely-there scale gives a "settling into place" read instead of a drop.
+   scale(.99), not .95: this app's modals measure 540px wide and .95 would
+   visibly resize the form fields under the reader's eyes.
+
+   Both halves ride Bootstrap's existing .fade/.show class machinery, so the
+   exit is symmetric for free - the dialog rises back out as the backdrop fades,
+   no extra rule. This also covers the ajax-loaded modals from js/ajax_modal.js,
+   which build their markup with .modal.fade and hand it to bootstrap.Modal.
+   -------------------------------------------------------------------------- */
+.modal.fade { transition: opacity var(--if-dur-overlay) var(--if-ease-out); }
+.modal.fade .modal-dialog {
+  transition: transform var(--if-dur-overlay) var(--if-ease-out);
+  transform: translate3d(0, -12px, 0) scale(.99);
+}
+.modal.show .modal-dialog { transform: none; }
+.modal-backdrop.fade { transition: opacity var(--if-dur-overlay) var(--if-ease-out); }
+
+
+/* -----------------------------------------------------------------------------
+   9. DROPDOWN ENTER / EXIT
+   The menu fades in over 160ms moving 4px AWAY from its trigger, so the eye is
+   handed the connection between the button pressed and the panel that appeared
+   - on a table where ten identical "..." buttons are stacked 83px apart, that
+   link is the whole point.
+
+   All four directions are needed. js/app.js's initTableResponsiveDropdowns()
+   REPARENTS row menus out of .table-responsive onto <body> so they are not
+   clipped, and Popper then stamps them data-popper-placement="left-start".
+   Both the attribute and the Bootstrap wrapper class are matched, because a
+   menu opened with data-bs-display="static" - which is how the row menus render
+   at desktop width on this install, verified: parent <li>, no placement
+   attribute - never gets the attribute at all and must still animate.
+
+   An animation, not a transition, because .dropdown-menu goes display:none ->
+   block and a transition cannot cross that. Exit stays instant: Bootstrap yanks
+   .show and display:none in the same frame, and a closing menu carries no
+   information worth 160ms of waiting for the click underneath it.
+   -------------------------------------------------------------------------- */
+.dropdown-menu.show {
+  animation: if-pop-down var(--if-dur-ui) var(--if-ease-out) backwards;
+}
+.dropdown-menu.show[data-popper-placement^="top"],
+.dropup    .dropdown-menu.show { animation-name: if-pop-up; }
+.dropdown-menu.show[data-popper-placement^="left"],
+.dropstart .dropdown-menu.show { animation-name: if-pop-start; }
+.dropdown-menu.show[data-popper-placement^="right"],
+.dropend   .dropdown-menu.show { animation-name: if-pop-end; }
+
+
+/* -----------------------------------------------------------------------------
+   10. TOAST
+   Positioned toast-top-center, so it belongs coming DOWN from the top edge it
+   arrives at: if-pop-down starts it 4px high and settles it, which reads as
+   entering the screen rather than materialising in it. Covers real toastr
+   (#toast-container > div) and js/app.js's Bootstrap 5 fallback container.
+
+   DEPENDENCY, and the CSS alone will silently do nothing without it: this
+   install loads real toastr (jQuery), configured in
+   includes/inc_alert_feedback.php with showMethod:'fadeIn' / showDuration:300 /
+   hideDuration:1000. jQuery's fadeIn writes an inline style="opacity:..." on
+   every frame, which outranks this animation, and the two fight. Those options
+   need to become:
+
+       "showMethod": "show",    "showDuration": 0,   "showEasing": "linear",
+       "hideMethod": "fadeOut", "hideDuration": 160, "hideEasing": "linear",
+
+   jQuery .show() only sets display, so the CSS entrance then owns the reveal
+   cleanly. Exit stays with jQuery because toastr removes the node when its own
+   callback fires and there is no CSS hook for that - but 1000ms was a full
+   second of a dismissed message still sitting over the page, and 160ms matches
+   --if-dur-ui. It is opacity-only, so it stays honest under reduced motion even
+   though the media query cannot reach a JS animation.
+   -------------------------------------------------------------------------- */
+/* NO RULE for #toast-container > div. Deliberately.
+   toastr manages its own opacity with inline styles: it stamps opacity:0 on the
+   node at creation, animates it with jQuery, and its own stylesheet settles the
+   resting state at .8. A CSS animation cannot win that cleanly - it outranks the
+   inline style only while it runs, so the toast faded in over 240ms and then
+   snapped back to whatever inline value jQuery had left behind. Measured through
+   three attempts: with toastr's default fadeIn, 4 blackout frames mid-entrance;
+   after switching to showMethod:"show" so nothing would fight it, 9 blackout
+   frames, because show() sets display without ever clearing the inline opacity:0.
+   The plugin owns this element's opacity. The right move is not to animate it. */
+.toast-container > .toast {
+  animation: if-pop-down var(--if-dur-overlay) var(--if-ease-out) backwards;
+}
+
+
+/* -----------------------------------------------------------------------------
+   11. TABLE ROW HOVER - DELIBERATELY NOT ANIMATED
+   NO RULE. Leave .table-hover alone.
+     Do NOT write:  .table-hover tbody tr { transition: background-color ... }
+     Do NOT write:  .table tbody tr:hover { transform: ... }
+
+   Two independent reasons, either one sufficient.
+
+   The smear: sweeping a cursor down a 200-row table crosses ten rows in the
+   time a 160ms fade takes to finish one, so a transition leaves a comet-tail of
+   half-lit rows behind the pointer and the user genuinely cannot tell which row
+   is live. Row hover is not a state change that needs explaining - it is
+   pointer tracking, and pointer tracking must be exact.
+
+   The cost: Tabler does not paint this hover with background-color at all; it
+   uses box-shadow: inset 0 0 0 9999px on the td. Transitioning a 9999px inset
+   spread across every visible cell is a per-frame repaint of the whole table
+   for no gain.
+
+   The rows are already instant today (they compute to `transition: all` with no
+   duration, i.e. none), so this is "change nothing" - written down precisely so
+   a later pass does not "fix" it. Row motion belongs to the row's own controls
+   instead: the "..." button and the copy-to-clipboard icon are .btn and pick up
+   press feedback from section 5, and the action menu animates via section 9.
+   -------------------------------------------------------------------------- */
+
+
+/* -----------------------------------------------------------------------------
+   12. TAB SWITCHING
+   The incoming pane fades up 4px. The settings tab strips swap 20 cards between
+   panes and asset_details.php's RMM strip has ten; without motion the swap is a
+   hard cut and the eye has no cue that the region under the strip is what
+   changed rather than the whole page. The 4px rise localises the change.
+
+   .active.show is the correct hook: the panes carry no .fade class, yet
+   clicking a tab lands exactly `tab-pane active show` on the incoming pane and
+   `tab-pane` on the outgoing one. So this fires on the class Bootstrap actually
+   adds, and needs no markup and no JS change. It also self-gates against
+   replaying on load in a useful way - the server-rendered active pane animates
+   once with the page, which is the same single entrance the page already gets.
+
+   No transition on the underline itself: .nav-tabs .nav-link is position:static
+   here, so an animated scaleX underline would mean adding position:relative and
+   swapping the real 2px border-bottom for a pseudo-element - a restyle of a
+   component another lane owns, in exchange for a flourish. The retimed
+   border-color transition in section 5 already fades the accent underline in at
+   160ms.
+   -------------------------------------------------------------------------- */
+.tab-pane.active.show {
+  animation: if-swap-in var(--if-dur-panel) var(--if-ease-out) backwards;
+}
+
+
+/* -----------------------------------------------------------------------------
+   13. FORM FOCUS - retune only. Nothing about a focused field moves.
+   Someone tabbing through thirty fields on a settings page is aiming at a
+   caret; anything that displaces the field displaces the text they are about to
+   read. The ring is enough and it is already there - this only brings Tabler's
+   .15s ease-in-out onto the token so the ring matches everything else.
+   -------------------------------------------------------------------------- */
+.form-control,
+.form-select,
+.form-check-input {
+  transition: border-color     var(--if-dur-ui) var(--if-ease-out),
+              box-shadow       var(--if-dur-ui) var(--if-ease-out),
+              background-color var(--if-dur-ui) var(--if-ease-out);
+}
+
+/* The toggle knob is the one deliberate exception to "transform and opacity
+   only", and it is an exception being RETIMED rather than introduced: Tabler
+   paints the knob as a background-image circle and slides it with
+   background-position at 300ms. Rebuilding it as a transform knob would mean
+   replacing the component's rendering to win a point of purity, on a 32x20px
+   element whose animation is paint-only and cannot trigger layout. 300ms on a
+   switch is the real problem - the RMM settings page has 14 of them and each
+   one lags a third of a second behind the click that flipped it. 160ms makes
+   the switch feel like it moved because you moved it. Flagged for veto: reading
+   the transform/opacity rule literally instead reverts this one block to
+   Tabler's 300ms, and nothing else in the file changes. */
+.form-switch .form-check-input {
+  transition: background-color    var(--if-dur-ui) var(--if-ease-out),
+              background-position var(--if-dur-ui) var(--if-ease-out),
+              border-color        var(--if-dur-ui) var(--if-ease-out),
+              box-shadow          var(--if-dur-ui) var(--if-ease-out);
+}
+
+
+/* -----------------------------------------------------------------------------
+   14. ASYNC PANEL LOADING - RMM device tabs + ajax modal spinner
+   The spinner is withheld for 280ms, then fades in. This is the single
+   highest-value piece of motion in the system and it works by NOT showing
+   something: fill-mode:backwards holds the element at opacity 0 through the
+   delay, so a fetch that returns in 120ms - the common case on a warm RMM
+   connection, and measured as the common case for the ajax modals - never
+   flashes a spinner at all. A spinner that appears and vanishes inside a fifth
+   of a second is pure noise and makes a fast app look busy. Past 280ms the
+   request is genuinely slow, the spinner earns its place, and it fades in.
+
+   The content swap needs no JS either: loadRmmLiveData() reveals the pane with
+   dataDiv.style.display = 'block', and a CSS animation on an element entering
+   display:block starts fresh at that moment. One selector, no callback, no
+   class toggle, nothing for a future edit to forget.
+
+   NOTE for whoever owns js/ajax_modal.js: #modal-loading-spinner is icon-only
+   (<i class="fas fa-spinner fa-spin fa-2x">), and under the reduced-motion
+   guard in section 19 fa-spin stops spinning, leaving a static icon with no
+   text. It needs a visible "Loading..." label. .rdt-loading already has one.
+   -------------------------------------------------------------------------- */
+.rdt-loading,
+#modal-loading-spinner {
+  animation: if-fade-in var(--if-dur-ui) var(--if-ease-out)
+             var(--if-delay-spinner) backwards;
+}
+.rdt-data {
+  animation: if-swap-in var(--if-dur-panel) var(--if-ease-out) backwards;
+}
+
+
+/* -----------------------------------------------------------------------------
+   15. ASYNC PANEL LOADING - device Metrics tab (first load vs refresh)
+   These are two different states and asset_metrics.js already draws the
+   distinction correctly - it just has no visual for the first half.
+
+   On a REFRESH the old charts are deliberately left drawn ("a failed refresh
+   must not wipe a chart that was correct thirty seconds ago"), so dimming to
+   .55 is exactly right: the previous reading stays legible while the new one
+   lands. But on FIRST load .ifm-cards and .ifm-chart-body are empty divs, so
+   the same rule dims nothing and the tab is just blank. The skeleton fills that
+   hole, and because it takes the shape and position of the real charts, the
+   layout does not jump when the data arrives.
+
+   :not([data-window-end]) is the whole mechanism and it costs nothing: the
+   attribute is set by asset_metrics.js only after a successful batch and the
+   server never emits it (verified in agent/includes/asset/metrics_tab.php), so
+   this selector means exactly "loading, and nothing drawn yet" and the skeleton
+   disappears permanently once real data exists - no class to add, no state to
+   track.
+   -------------------------------------------------------------------------- */
+[data-asset-metrics]:not([data-window-end]).ifm-loading .ifm-chart-body,
+[data-asset-metrics]:not([data-window-end]).ifm-loading .ifm-cards {
+  min-height: 6rem;
+  position: relative;
+  overflow: hidden;
+  background: var(--if-skeleton-base);
+  border-radius: var(--if-radius-sm, 8px);
+}
+[data-asset-metrics]:not([data-window-end]).ifm-loading .ifm-chart-body::after,
+[data-asset-metrics]:not([data-window-end]).ifm-loading .ifm-cards::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent,
+                              var(--if-skeleton-sheen), transparent);
+  animation: if-shimmer 1.15s linear infinite;
+}
+
+/* Refresh dim, retimed onto the token. The extra [data-asset-metrics] is what
+   makes this hold no matter which side of css/itflow_metrics.css this file ends
+   up linked on - that sheet owns the same pair at (0,2,0) with .15s ease. Its
+   own prefers-reduced-motion block (itflow_metrics.css ~line 269) is now
+   redundant against section 19 and should be deleted by that file's owner, as
+   should the one in itflow_design.css ~line 527, so the global guard is visibly
+   the only one. */
+[data-asset-metrics].ifm-loading .ifm-cards,
+[data-asset-metrics].ifm-loading .ifm-chart {
+  transition: opacity var(--if-dur-ui) var(--if-ease-out);
+}
+
+
+/* -----------------------------------------------------------------------------
+   16. SKELETON PRIMITIVES (shared)
+   One skeleton implementation for the whole app, so the RMM tabs, the metrics
+   pane and anything added later cannot drift into three different greys and
+   three different shimmer speeds.
+
+   The infinite shimmer is the ONLY looping animation this system permits, and
+   it qualifies: it is a genuine loading indicator on an element that is removed
+   the moment loading ends. It moves by transform only, so it composites. The
+   sheen is tokenised for both themes and both dark triggers and uses no accent
+   colour, so a red-accent install does not get a shimmer that reads as an error.
+
+   Use it only where the final shape is genuinely known - the metrics tab (four
+   stat cards, four fixed-height charts) qualifies; a variable-length result list
+   does not, and should use the delayed spinner in section 14 instead, because a
+   skeleton that guesses wrong makes the layout jump twice.
+
+   Usage - set only the width inline, let the classes own everything else:
+       <div class="if-skeleton if-skeleton-line" style="width:40%"></div>
+       <div class="if-skeleton if-skeleton-line" style="width:80%"></div>
+       <div class="if-skeleton" style="height:120px"></div>
+   -------------------------------------------------------------------------- */
+.if-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--if-skeleton-base);
+  border-radius: var(--if-radius-sm, 8px);
+}
+.if-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent,
+                              var(--if-skeleton-sheen), transparent);
+  animation: if-shimmer 1.15s linear infinite;
+}
+.if-skeleton-line { height: .7rem; margin: .45rem 0; }
+
+
+/* -----------------------------------------------------------------------------
+   17. BADGES, STATUS PILLS, ALERT CHIPS - DELIBERATELY NOT ANIMATED
+   NO RULE. Specifically do not add:
+       .badge { animation: ... }
+       .text-bg-danger, .dash-attention-chip.is-alert { animation: pulse ... }
+
+   The temptation is real - a pulsing red badge on an overdue-ticket count looks
+   like it is doing its job. It is the one thing in this app that would be
+   genuinely unbearable. These are status indicators on a screen someone leaves
+   open all day: the dashboard carries three .dash-attention-chip elements and
+   seven coloured stat tiles, tickets.php carries seven more, and any of them
+   can sit in an alert state for hours. An infinite pulse on ambient status is a
+   fire alarm you cannot switch off, and it violates the no-looping rule for
+   exactly the reason that rule exists. Colour and number already carry the
+   urgency; motion would only add volume, not information.
+   -------------------------------------------------------------------------- */
+
+
+/* -----------------------------------------------------------------------------
+   18. WHAT THIS FILE CANNOT REACH
+   Charts. Chart.js animates every dataset for 1000ms by default, so the
+   dashboard's bars grow out of the floor four times longer than anything else
+   on the page - squarely in "reads as lag to someone who does this 200 times a
+   day". CSS cannot touch canvas rendering, and section 19 physically cannot
+   reach it either, so this is the one place the preference must be read a
+   second time. One central change in js/chart_theme.js, alongside the existing
+   Chart.defaults block, and every chart in the app inherits it:
+
+       var _reduce = window.matchMedia &&
+                     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+       Chart.defaults.animation = _reduce
+           ? false
+           : { duration: 200, easing: 'easeOutQuart' };
+
+   200ms with easeOutQuart is the same shape and family as --if-dur-panel /
+   --if-ease-out, so a chart settles at the same moment its card does.
+
+   Print. A page entrance captured mid-flight prints a faded, offset content
+   column, and print never has anything worth animating - so it is killed
+   outright here rather than left to chance.
+   -------------------------------------------------------------------------- */
+@media print {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+
+/* =============================================================================
+   19. THE global reduced-motion guard.
+   ONE rule, at the very bottom of this file. Nothing else in this system
+   carries its own prefers-reduced-motion block, so no later rule can forget it.
+
+   Two halves, and both are needed:
+
+   1. Zeroing the DISTANCE tokens, not just the durations. A guard that only
+      shortens durations still teleports a card 6px on entrance - the motion
+      just happens in one frame instead of eighteen. With --if-rise / --if-nudge
+      / --if-lift / --if-press at 0 the keyframes and the :active rules become
+      identity transforms and genuinely nothing moves.
+   2. The universal transition/animation neutraliser, which also reaches Tabler,
+      tom-select, litepicker, tempus-dominus, toastr, simple-datatables and Font
+      Awesome's fa-spin - every animation on the page, not only ours. It carries
+      !important precisely so it does not depend on this file's link position.
+
+   1ms, deliberately, not 0s: Bootstrap 5's Modal / Collapse / Tab and
+   js/shell.js's .is-opening cleanup all wait on transitionend / animationend.
+   1ms still fires those events; 0s in some engines does not, and a modal that
+   never emits transitionend never finishes opening. Do not "optimise" it to 0.
+   ============================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --if-dur-press:     1ms;
+    --if-dur-ui:        1ms;
+    --if-dur-panel:     1ms;
+    --if-dur-overlay:   1ms;
+    --if-dur-page:      1ms;
+    --if-delay-spinner: 0ms;
+    --if-rise:  0px;
+    --if-nudge: 0px;
+    --if-lift:  0px;
+    --if-press: 0px;
+  }
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}

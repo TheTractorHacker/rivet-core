@@ -1,0 +1,536 @@
+/* =============================================================================
+   RivetIT — TABLER SHELL GLUE
+   (historical filename: "bs5 bridge". Kept because eight PHP files link it by
+    name — includes/header.php, client/includes/header.php,
+    guest/includes/guest_header.php, guest/outtake_sign.php,
+    guest/worksheet_sign.php, login.php, client/login_reset.php,
+    agent/user/mfa_enforcement.php — and none of them are in this change's
+    ownership. Rename it only together with all eight <link> tags.)
+
+   WHAT IS LEFT IN HERE
+   Only first-party glue for markup the Tabler shell actually emits today:
+
+     1. Accent focus ring on form controls.
+     2. Tom Select + Litepicker theming (vendor widgets Tabler knows nothing of).
+     3. The horizontal top navbar chrome and the live global-search dropdown
+        (includes/top_nav.php).
+     4. The secondary sidebars' brand-area identity blocks — .section-nav-back,
+        .client-nav-back / -header / -avatar / -identity / -name / -type — which
+        agent/includes/client_side_nav.php, agent/includes/client_overview_side_nav.php,
+        agent/reports/includes/reports_side_nav.php,
+        agent/user/includes/user_side_nav.php and admin/includes/side_nav.php all
+        name explicitly in their own comments as coming from this file.
+
+   WHAT MOVED OUT, AND WHERE  (this file was 544 lines doing four unrelated jobs
+   with four different end-of-life dates, which is why nothing in it could ever be
+   safely deleted)
+
+     css/itflow.shim-bs4.css       .form-group, .input-group-prepend/-append,
+                                   .form-row, .media, .close, .btn-block,
+                                   .thead-light/-dark, .sr-only, .dropdown-menu-right,
+                                   .badge-*, .float-* and .text-left|right, .ml-* and .mr-*,
+                                   .pl-* and .pr-*, .font-weight-*, .text-monospace,
+                                   .font-italic, the .js-btn-group-toggle input fix.
+                                   NO retirement date — Tabler styles none of them.
+
+     css/itflow.shim-adminlte.css  .small-box, .info-box (+ bg-* variants),
+                                   .card-tools, .btn-tool, .card-outline,
+                                   .card-header .card-title, the AL3 named
+                                   .text-<colour> utilities. Retires with the last
+                                   AdminLTE-era page. .card-tools / .btn-tool /
+                                   .card-outline got REAL base definitions there;
+                                   this file previously carried only a patch
+                                   (.card-header.py-2 .btn-tool { margin:-.5rem 0 })
+                                   compensating for AdminLTE 4's own margin:-1rem 0,
+                                   which no longer exists to compensate for.
+
+     css/itflow.compat-color.css   The --color-* deprecation shim: --color-* is now
+                                   a pure alias of --if-*, resolving the dark-mode
+                                   token conflict (--color-surface #343a40 vs
+                                   --if-surface #14201f) that made a card header
+                                   render in a different grey from its own body.
+
+   DELETED OUTRIGHT — recorded here so the loss is deliberate and traceable:
+
+     :root / :root[data-bs-theme="dark"] --bs-* MAPPING BLOCK
+       Mapped ~20 Bootstrap 5 custom properties onto --color-*, and hard-coded the
+       AdminLTE greys #2c3034 / #343a40 / #4b5158 for dark mode. Dead: Tabler emits
+       essentially no --bs-* (one in ~800KB) and reads --tblr-* instead, which
+       css/itflow.bind-tabler.css now owns. The hard-coded greys were also one half
+       of the token conflict described above. Only 8 var(--bs-…) reads existed
+       app-wide and every one of them has been rewritten onto --tblr-* / --if-*.
+
+     .app-main / .app-content BACKGROUND
+       Those two wrappers no longer exist. includes/inc_wrapper.php now opens
+       .page-wrapper > .page-body > .container-xl; the page background comes from
+       --tblr-body-bg (bind-tabler) and itflow_design.css's `body`.
+
+     .app-sidebar / .sidebar-brand / .sidebar-wrapper / --lte-sidebar-* BLOCK
+       The primary sidebar is now aside.navbar.navbar-vertical.navbar-expand-lg
+       with data-bs-theme="dark" (agent/includes/side_nav.php:41,
+       admin/includes/side_nav.php:15). Tabler owns its layout, its scroll
+       container and its active/hover states; the AdminLTE-4 overrides fought it.
+
+     .main-sidebar LAYOUT SYSTEM  *** READ THIS BEFORE ASSUMING IT IS UNUSED ***
+       ~90 lines: fixed 250px column, internal scroll, nav-link/nav-header
+       styling, `body:has(.main-sidebar) .app-header { margin-left:250px }`,
+       `body:has(.main-sidebar) .app-main { margin-left:250px }`, and the mobile
+       off-canvas pair
+           @media (max-width:991.98px) {
+             .main-sidebar { margin-left:-250px }
+             .sidebar-open .main-sidebar { margin-left:0 }
+           }
+       WHAT DEPENDED ON IT: the four AdminLTE-3-generation secondary sidebars —
+       client, client-overview, reports, user — reachable from 79 page includes.
+       All four (plus admin) have since been rewritten as Tabler
+       aside.navbar-vertical, so nothing emits .main-sidebar any more. Verified:
+       the only remaining `main-sidebar` string in the repo is setup/index.php:786,
+       which links plugins/adminlte (AdminLTE 3) and does NOT link this file, so it
+       is unaffected either way.
+       CONSEQUENCE FOR js/shell.js: the note in includes/top_nav.php:51 saying the
+       replacement toggle "MUST set the class sidebar-open on <body> exactly" was
+       true only for these rules. With them gone there is no `.sidebar-open`
+       consumer left in any first-party CSS. The five Tabler sidebars each toggle
+       via Bootstrap's own collapse data-api on
+       button.navbar-toggler[data-bs-target="#sidebar-menu"], which
+       bootstrap.bundle.min.js already wires. Setting body.sidebar-open is now
+       harmless but no longer sufficient on its own — if a future change re-adds a
+       CSS-driven off-canvas sidebar, restore this block from git history rather
+       than re-deriving it.
+
+     .btn-close { --bs-btn-close-color }
+       Tabler's .btn-close does not read that property. Dead.
+
+   LOAD ORDER (includes/header.php and the client/guest/login/mfa headers):
+     tabler.min.css
+       -> itflow_bs5_bridge.css (this file)
+       -> itflow.shim-bs4.css
+       -> itflow.shim-adminlte.css
+       -> itflow_custom.css
+       -> itflow_design.css
+       -> itflow.compat-color.css     (MUST be after itflow_custom.css)
+       -> itflow.bind-tabler.css
+       -> the per-company accent <style nonce> block, emitted last so it wins.
+   ============================================================================= */
+
+/* ---- Chrome tokens ---------------------------------------------------------
+   The top navbar carries data-bs-theme="dark" so it stays dark in BOTH app
+   themes, matching the always-dark sidebars. It cannot simply read
+   var(--tblr-bg-surface): css/itflow.bind-tabler.css redefines that on :root as a
+   flat var(--if-surface) (white in light mode) and custom properties inherit, so a
+   dark-scoped descendant would inherit the LIGHT surface and the navbar would
+   render white next to a dark sidebar. Hence an explicit chrome token.
+
+   --if-chrome-bg IS THE SIDEBAR'S COLOUR, LITERALLY. This token used to hold
+   Tabler's --tblr-gray-800 (#1f2937) on the reasoning that Tabler paints a
+   data-bs-theme="dark" surface that colour anyway, "so navbar and sidebar agree
+   by construction". They did not: css/itflow.bind-tabler.css:95-105 pins the
+   always-dark chrome to a hard-coded #2b3038 instead, so the two abutted along
+   the whole x=256 edge in two different hues — #1f2937 is blue-cast, #2b3038 is
+   neutral — with a visible vertical seam at the top-left corner of every page.
+   Keep this value equal to bind-tabler's --tblr-navbar-bg; that file owns the
+   sidebar, this one owns the header, and the band only reads as one surface if
+   they match. Change them together or not at all.
+
+   --if-chrome-band is the height of that band. Both the header and every
+   sidebar's brand box are pinned to it below so their bottom rules land on the
+   same pixel row. */
+:root {
+    --if-chrome-bg:     #2b3038;
+    --if-chrome-band:    60px;
+    --if-chrome-border:  rgba(255, 255, 255, .08);
+    --if-chrome-ink:     rgba(255, 255, 255, .85);
+    --if-chrome-ink-dim: rgba(255, 255, 255, .55);
+}
+
+/* ---- Accent focus ring on form controls ------------------------------------
+   Tabler focuses with its own ring; this keeps the app's slightly wider .2rem
+   accent-tinted ring, which the rest of the design layer matches. */
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+    border-color: var(--if-primary, var(--color-accent, #0d9488));
+    box-shadow: 0 0 0 .2rem rgba(var(--if-primary-rgb, var(--color-accent-rgb, 13, 148, 136)), .2);
+}
+.form-check-input:checked {
+    background-color: var(--if-primary, var(--color-accent, #0d9488));
+    border-color: var(--if-primary, var(--color-accent, #0d9488));
+}
+
+/* ---- Tom Select: read as a themed form control ----------------------------- */
+.ts-wrapper.form-control,
+.ts-wrapper .ts-control {
+    border-radius: var(--if-radius-sm, 8px);
+    border-color: var(--if-border, #e3e9ea);
+    background-color: var(--if-surface, #fff);
+    min-height: calc(1.5em + .75rem + 2px);
+}
+.ts-wrapper.focus .ts-control {
+    border-color: var(--if-primary, var(--color-accent, #0d9488));
+    box-shadow: 0 0 0 .2rem rgba(var(--if-primary-rgb, var(--color-accent-rgb, 13, 148, 136)), .2);
+}
+/* A floating panel needs more contrast than an input's own resting border -
+   --if-border (#e3e9ea) is nearly invisible against the white card surfaces
+   these dropdowns almost always open over, leaving the option list looking
+   like it has no edge at all. Darker border + a real shadow read clearly as
+   "this is floating above the page" regardless of what's behind it. */
+.ts-dropdown {
+    border-color: var(--if-border-strong, #d3dbdc);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .16);
+}
+.ts-dropdown .active {
+    background-color: var(--if-primary-soft, var(--color-accent-soft, #ccfbf1));
+    color: var(--if-ink, #16232a);
+}
+
+/* ---- Litepicker themed to the accent --------------------------------------- */
+.litepicker .container__days .day-item.is-start-date,
+.litepicker .container__days .day-item.is-end-date,
+.litepicker .container__days .day-item.is-in-range {
+    background-color: var(--if-primary, var(--color-accent, #0d9488)) !important;
+    color: #fff;
+}
+.litepicker .container__days .day-item:hover {
+    box-shadow: inset 0 0 0 1px var(--if-primary, var(--color-accent, #0d9488)) !important;
+    color: var(--if-primary, var(--color-accent, #0d9488));
+}
+
+/* =============================================================================
+   TOP NAVBAR  (includes/top_nav.php)
+
+   The markup is <header class="app-header navbar navbar-expand d-print-none"
+   data-bs-theme="dark">. includes/top_nav.php keeps the .app-header class
+   deliberately, and names these rules in its own comment, because Tabler has no
+   equivalent for a horizontal navbar nested inside .page-wrapper — which is where
+   includes/inc_wrapper.php flushes it, to stay clear of Tabler's
+   `.page:has(> [class*=navbar-expand]) > .navbar-vertical { display:none }` layout
+   switch. Do not rename .app-header without editing top_nav.php in the same change.
+   ============================================================================= */
+/* The header is one half of the app's top band; the sidebar's brand box is the
+   other (see SECONDARY-SIDEBAR BRAND AREA below). Pinning the height here rather
+   than letting the tallest nav item decide it is what lets the two halves share a
+   single rule across the whole width: padding is zeroed so the content is centred
+   by the navbar's own align-items:center inside exactly --if-chrome-band, instead
+   of adding 8px on top of a 56px minimum and landing on 70.27px. */
+.app-header.navbar {
+    background-color: var(--if-chrome-bg) !important;
+    border-bottom: 1px solid var(--if-chrome-border);
+    min-height: var(--if-chrome-band);
+    padding-top: 0;
+    padding-bottom: 0;
+}
+.app-header .nav-link { color: var(--if-chrome-ink); }
+.app-header .nav-link:hover { color: #fff; }
+
+.navbar .input-group.input-group-sm {
+    border-radius: var(--if-radius-sm, .375rem);
+    overflow: hidden;
+}
+
+/* The search box is anchored next to the sidebar toggle at a deliberate width —
+   never a flex-stretched element floating in whatever space the other nav groups
+   happen not to claim. */
+.app-header-search {
+    position: relative;
+    width: 280px;
+    max-width: 32vw;
+    margin-inline-start: .25rem;
+}
+
+/* Scoped under .app-header rather than styling .form-control-navbar alone: this
+   file loads BEFORE css/itflow_design.css, whose plain `.form-control` rule has
+   the same one-class specificity and would therefore win on load order and
+   flatten the navbar search into a plain white input instead of the intended
+   translucent-on-dark pill. The extra ancestor buys the specificity. */
+.app-header .form-control-navbar {
+    background-color: rgba(255, 255, 255, .1);
+    border: 1px solid rgba(255, 255, 255, .16);
+    color: #fff;
+}
+.app-header .form-control-navbar::placeholder { color: var(--if-chrome-ink-dim); }
+.app-header .form-control-navbar:focus {
+    background-color: rgba(255, 255, 255, .16);
+    color: #fff;
+    box-shadow: none;
+    border-color: rgba(255, 255, 255, .4);
+}
+.btn-navbar {
+    background-color: rgba(255, 255, 255, .1);
+    border: 1px solid rgba(255, 255, 255, .16);
+    border-left: 0;
+    color: rgba(255, 255, 255, .75);
+}
+.btn-navbar:hover,
+.btn-navbar:focus { background-color: rgba(255, 255, 255, .24); color: #fff; }
+
+.navbar-badge { font-size: .6rem; padding: .2em .4em; }
+
+/* ---- Live global-search dropdown ------------------------------------------
+   Built element-by-element in top_nav.php's nonced inline script; every class
+   name below is assigned there (app-header-search-group / -group-label /
+   -result / -result-title / -result-subtitle / -empty / -seeall). Unlike the
+   navbar chrome above this panel sits on the page surface, not the dark chrome,
+   so it reads normal theme tokens. */
+.app-header-search-results {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    width: max(280px, 100%);
+    max-height: 70vh;
+    overflow-y: auto;
+    background: var(--if-surface, #fff);
+    color: var(--if-ink, #16232a);
+    border: 1px solid var(--if-border-strong, #d3dbdc);
+    border-radius: var(--if-radius-sm, 8px);
+    box-shadow: var(--if-shadow);
+    z-index: 1050;
+    padding: .35rem 0;
+}
+.app-header-search-group-label {
+    padding: .35rem .75rem .15rem;
+    font-size: .7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--if-muted, #5d6f76);
+}
+.app-header-search-result {
+    display: block;
+    padding: .35rem .75rem;
+    color: var(--if-ink, #16232a);
+    text-decoration: none;
+    border-radius: var(--if-radius-sm, 8px);
+}
+.app-header-search-result:hover,
+.app-header-search-result:focus {
+    background: var(--if-bg, #eef2f2);
+    color: var(--if-ink, #16232a);
+}
+.app-header-search-result-title { font-weight: 500; font-size: .875rem; }
+.app-header-search-result-subtitle { font-size: .75rem; color: var(--if-muted, #5d6f76); }
+.app-header-search-empty { padding: .5rem .75rem; font-size: .8rem; color: var(--if-muted, #5d6f76); }
+.app-header-search-seeall {
+    display: block;
+    padding: .5rem .75rem;
+    margin-top: .25rem;
+    border-top: 1px solid var(--if-border, #e3e9ea);
+    font-size: .8rem;
+    text-align: center;
+    color: var(--if-primary, var(--color-accent, #0d9488));
+    text-decoration: none;
+}
+.app-header-search-seeall:hover { text-decoration: underline; }
+
+/* =============================================================================
+   SECONDARY-SIDEBAR BRAND AREA
+
+   Every secondary sidebar now renders as
+       aside.navbar.navbar-vertical.navbar-expand-lg[data-bs-theme="dark"]
+         > .container-fluid
+           > button.navbar-toggler
+           + div.navbar-brand.p-0.w-100.flex-column.align-items-stretch
+           + div.collapse.navbar-collapse#sidebar-menu
+   and each of the five files (agent/includes/client_side_nav.php,
+   agent/includes/client_overview_side_nav.php,
+   agent/reports/includes/reports_side_nav.php,
+   agent/user/includes/user_side_nav.php, admin/includes/side_nav.php) states in
+   its own comment that the brand box is deliberately padding-free (p-0) so THESE
+   rules fill it. They are the contract between this file and those five.
+
+   .section-nav-back is the plain "back to the app" link used by the rails that
+   are a SECTION of the app: Reports, Administration and Account. .client-nav-*
+   is the richer scoped variant - back link stacked over an identity block with a
+   name + avatar, replacing the old cryptic "Back | ABC" abbreviation - and it is
+   used by BOTH record rails, so they read as one system at two scopes:
+   client_side_nav.php names the department it is scoped to, and
+   client_overview_side_nav.php names its scope, "Company-wide". (That second
+   file used to wear .section-nav-back and the label "Department Overview" while
+   listing company-wide records, which is what made the app look like it had two
+   different maps of one department.)
+
+   Colours are literal white/near-white rather than tokens on purpose: the aside
+   is always dark regardless of app theme, and (see the chrome-token note at the
+   top) the --tblr-* and --if-* surface tokens inherit the LIGHT values into it.
+   ============================================================================= */
+
+/* ---- The band: sidebar brand box == header height --------------------------
+   The brand box and the top header sit side by side across the top of every
+   page, and each was sizing itself independently: the header at 70.27px, a
+   .section-nav-back brand at 38.58px, the client sidebar's stacked brand at
+   110.77px, and the main agent sidebar's logo brand at 56.98px with no bottom
+   rule at all. So the app drew two horizontal lines 31.7px apart across one
+   band, and walking Dashboard -> Reports jumped the divider 18px and made a
+   rule appear from nowhere.
+
+   Every sidebar's FIRST horizontal rule is now pinned to --if-chrome-band, the
+   same token the header uses, so the two halves close into one line. The brand
+   box gets the height too (it can only grow past it — the client sidebar's
+   identity row still sits below the band, which is why the border belongs to the
+   back link and not to the box). The main agent sidebar has no back link inside
+   its brand, so it is the one case where the box itself must carry the rule;
+   :has() picks it out rather than a marker class, since side_nav.php is not in
+   this change's ownership. row-gap:0 removes the .5rem Tabler puts between the
+   two stacked children of the client brand, which was floating the identity
+   block away from the rule above it. */
+.navbar-vertical .navbar-brand {
+    min-height: var(--if-chrome-band);
+    row-gap: 0;
+}
+.navbar-vertical .navbar-brand:not(:has(.section-nav-back)):not(:has(.client-nav-back)) {
+    border-bottom: 1px solid var(--if-chrome-border);
+}
+
+.client-nav-back,
+.section-nav-back {
+    min-height: var(--if-chrome-band);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-shrink: 0;
+    width: 100%;
+    padding: .7rem 1rem;
+    color: rgba(255, 255, 255, .6) !important;
+    font-size: .95rem;
+    font-weight: 500;
+    /* the header's own bottom rule, continued: same token, same pixel row */
+    border-bottom: 1px solid var(--if-chrome-border);
+    text-decoration: none;
+    transition: color .15s ease-out, background-color .15s ease-out;
+}
+/* Tabler ships a bare `a:hover { text-decoration: underline }`. The base rule
+   above sets text-decoration:none but has no :hover variant, so these back links
+   were underlined on hover - measured: 'none' at rest, 'underline' on hover.
+   The hover affordance here is already the colour lift plus the background tint
+   and the arrow nudge; an underline on a full-width sidebar band just draws a
+   line across the chrome. Stated on :hover and :focus so keyboard users get the
+   same treatment as the mouse. */
+.client-nav-back:hover,
+.client-nav-back:focus,
+.section-nav-back:hover,
+.section-nav-back:focus {
+    color: #fff !important;
+    background-color: rgba(255, 255, 255, .06);
+    text-decoration: none;
+}
+.client-nav-back i,
+.section-nav-back i { transition: transform .15s ease-out; }
+.client-nav-back:hover i,
+.section-nav-back:hover i { transform: translateX(-2px); }
+
+.client-nav-header {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    flex-shrink: 0;
+    width: 100%;
+    padding: .85rem 1rem;
+    text-decoration: none;
+    border-bottom: 1px solid var(--if-chrome-border);
+}
+.client-nav-avatar {
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: var(--if-radius-sm, 8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--if-primary, var(--color-accent, #0d9488));
+    color: #fff;
+    font-weight: 700;
+    font-size: .85rem;
+    letter-spacing: .02em;
+}
+.client-nav-identity {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.client-nav-name {
+    color: #fff;
+    font-weight: 600;
+    font-size: .92rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.client-nav-type {
+    color: #8a94a6;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+}
+
+/* =============================================================================
+   SECONDARY-SIDEBAR NAV ROWS — COUNT BADGES
+
+   Every vertical rail in this app writes its count chip as the last child of the
+   row link:  <a class="nav-link"> <span.nav-link-icon> <span.nav-link-title>
+   <span class="ms-auto badge">258</span> </a>  — i.e. a flex item that the
+   ms-auto is supposed to push to the end of the row.
+
+   Tabler overrides that. plugins/tabler/css/tabler.min.css ships
+
+       .navbar .navbar-nav .nav-link .badge {
+           position: absolute; inset-inline-end: .5rem; top: .5rem;
+           transform: translate(calc(var(--tblr-dir) * 50%), -50%);
+       }
+
+   which is its notification-DOT pattern for the HORIZONTAL navbar: pin a tiny
+   dot to the corner of the item and let half of it hang outside. Our rails are
+   aside.navbar.navbar-vertical, so the selector matches them too and takes every
+   count chip OUT OF FLOW — ms-auto goes dead (computed margin-left 0px), the
+   chip is pinned to the row's top-right corner and then pushed right by half its
+   own width.
+
+   Measured on the live app at 1600x1100, /agent/contacts.php, 256px rail whose
+   .nav-link box ends at x=248:
+       "3"   -> badge right edge 251.7   (4.3px inside the rail)
+       "258" -> badge right edge 258.8   (2.8px PAST the 256px rail, and the
+                ancestor .navbar-collapse computes overflow-x:auto, so it was
+                shearing the chip's right rounded corner flat)
+   and every chip sat 14px ABOVE its own row's centreline (badge centre 86 vs
+   link centre 100).
+
+   Putting the chip back in the flex row lets the ms-auto that is already in the
+   markup do the job it was written for. Same measurement after: right edge 236
+   for one, two or three digits (20px inside the rail), badge centre == link
+   centre, and a forced 3-digit count on the longest label in the department rail
+   ("Recurring Tickets") still leaves 37.8px of clear space and clips nothing.
+
+   Scope notes:
+   - The child combinator keeps this off any badge nested deeper inside a link.
+   - .dropdown-item badges are untouched; Tabler's rule never matched those.
+   - Only position changes. text-bg-danger / text-bg-warning chips (open tickets,
+     expiring certificates, overdue invoices) keep their colours.
+   - The FOLDED rail is deliberately excluded. At 64px there is no room for a
+     number in the row, and Tabler's corner pin is the right behaviour there;
+     measured folded geometry is byte-identical with and without this rule.
+   ============================================================================= */
+.navbar-vertical:not(.navbar-folded):not(.navbar-folded-hover) .navbar-nav .nav-link > .badge {
+    position: static;
+    transform: none;
+    flex-shrink: 0;
+}
+
+/* ---- Sidebar brand box must not be compressed by its own flex parent ----
+   .navbar-brand is a flex ITEM of .container-fluid with the default
+   `flex: 0 1 auto`, so it is allowed to shrink. In the department and section
+   rails the brand box holds TWO stacked rows - the back link plus the identity
+   header - and their combined height exceeds what the parent was willing to
+   give it: measured 124.5px of box against 134.2px of content.
+
+   The children do not shrink, so the surplus simply overflowed the bottom of
+   the box, and .navbar-collapse - which starts at the box's edge, not its
+   content's - was laid out 1.7px ABOVE where the header actually ended. The
+   department name therefore sat on top of the first nav row ("Overview"),
+   hiding the header's own bottom border and fusing the two into one block.
+
+   flex-shrink:0 is the whole fix: the box then sizes to its content
+   (134.2 = 134.2) and the existing `pt-lg-2` on .navbar-nav supplies the 8px
+   separation it was always meant to. No new spacing value is invented here. */
+.navbar-vertical .navbar-brand {
+    flex-shrink: 0;
+}

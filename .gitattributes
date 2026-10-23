@@ -1,7 +1,11 @@
 /.github        export-ignore
 /tests          export-ignore
 /docs           export-ignore
-/scripts        export-ignore
+# The UI asset installer and checker ship in the package (editions run them from vendor/rivet/rivet-core); every other script stays dev-only.
+/scripts/* export-ignore
+/scripts/install-ui-assets.php -export-ignore
+/scripts/check-ui-assets.php -export-ignore
+/scripts/ui-assets-lib.php -export-ignore
 /endpoint-agent export-ignore
 /phpunit.xml.dist export-ignore
 /phpstan.neon   export-ignore
