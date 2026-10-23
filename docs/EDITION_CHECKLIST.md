@@ -50,6 +50,8 @@ The one-off 0.x to 1.0 steps are in [UPGRADING.md](../UPGRADING.md); the compati
 - [ ] If an interface you implement gained a companion interface, implement it (a new capability never becomes a new method on an existing interface in 1.x).
 - [ ] New modules or features stay **off by default**: add the settings column or flag, default 0, and gate each use of the module.
 - [ ] Do not reference Core internals (`@internal` classes, private constants, table internals beyond what the module page lists).
+- [ ] If the release changes `assets/ui` (the changelog says so), re-run `scripts/install-ui-assets.php --css=css --js=js` and review the `css/` diff, then run
+      `scripts/check-ui-assets.php --css=css --js=js`. Shared files are never edited in the edition; see [ui/DESIGN_ASSETS.md](ui/DESIGN_ASSETS.md).
 
 ## 6. Roll out
 
