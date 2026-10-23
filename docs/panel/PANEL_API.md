@@ -102,7 +102,7 @@ Same shape as the enrollment answer without the token, plus `can_view_tickets`.
  "limit": 20, "offset": 0, "has_more": false, "server_time": "2026-10-23T17:57:22Z"}
 ```
 
-`limit` is clamped to 1..50 (default 20); `offset` to 0..100000; a non-integer is 422. `mine` is true for a ticket this device created.
+`limit` is clamped to 1..50 (default 20); `offset` to 0..100000; a non-integer is 422. `mine` is true for a ticket this device created. The device-created set is the device's 500 most recent tickets (`PanelLimits::$ownedWindow`); a device with a contact also sees every ticket of its contact, whatever its age.
 
 ### POST /panel_tickets
 

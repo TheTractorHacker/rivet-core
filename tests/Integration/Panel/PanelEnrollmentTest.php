@@ -112,6 +112,12 @@ final class PanelEnrollmentTest extends PanelTestCase
         $this->p->rmm->q("INSERT INTO endpoint_agent_enrollment_tokens (token_selector, token_hash, client_id, expires_at, max_uses, kind) VALUES ('$sel', '" . hash('sha256', $sec) . "', {$this->p->clientA}, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), 5, 'panel')");
         [$c, , $j] = $this->p->rmm->enroll("rvte1.$sel.$sec", RmmHarness::device());
         $this->assertSame([401, 'invalid_token'], [$c, $j['code']]);
+        // and an agent-kind row dressed with the panel prefix is refused by the panel enrollment
+        $sel2 = bin2hex(random_bytes(6));
+        $sec2 = bin2hex(random_bytes(20));
+        $this->p->rmm->q("INSERT INTO endpoint_agent_enrollment_tokens (token_selector, token_hash, client_id, expires_at, max_uses, kind) VALUES ('$sel2', '" . hash('sha256', $sec2) . "', {$this->p->clientA}, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), 5, 'agent')");
+        [$c, , $j] = $this->p->enroll("rvtp1.$sel2.$sec2");
+        $this->assertSame([401, 'invalid_token'], [$c, $j['code']]);
     }
 
     public function testEnrollmentFailuresAreRateLimitedPerAddress(): void
