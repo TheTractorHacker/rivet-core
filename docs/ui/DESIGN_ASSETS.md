@@ -64,7 +64,7 @@ edition file when a selector matches the pattern in `scripts/ui-css-split.php` (
 non-matching selectors is an error, so nothing is ever half-moved. Result:
 
 - `itflow_custom.css`: `.client-portal-nav`, `.portal-*` (19 rules, original lines 121 to 338) and `.kb-*` (9 rules, twice, because
-  RivetIT's file repeats lines 1096 to 1900; both copies move) go to `itflow_custom.edition.css`.
+  RivetIT's file contains its lines 1096 to 1852 a second time from line 1853; both copies move) go to `itflow_custom.edition.css`.
 - `itflow_design.css`: the single rule `.client-portal-nav .navbar-brand img, .login-box-branding .brand-logo img` goes to
   `itflow_design.edition.css`.
 - Deliberately **kept shared** although a name suggests otherwise: `.csat-*` and `.google-review-cta` (used by the agent-side ticket
@@ -87,9 +87,9 @@ Proof (run on 2026-10-23, `php scripts/ui-css-split.php verify --src=<RivetIT cs
 - The remainders are not in Core. For RivetIT they are in `/home/sysadmin/worktrees/design-assets-handoff/rivetit-css/`
   (`itflow_custom.edition.css` sha256 `c89050c2...`, `itflow_design.edition.css` sha256 `f36c536c...`).
 
-Known oddity, copied faithfully: RivetIT's `itflow_custom.css` contains two copies of the block from "Dashboard small-box refinements"
-to "Design review fixes" (about 800 lines). Removing one is a behaviour-neutral cleanup, but it is a change to the reference, so it is
-left for a separate, reviewed commit.
+Known oddity, copied faithfully: RivetIT's `itflow_custom.css` contains the 757 lines from "Dashboard small-box refinements" (line 1096)
+a second time from line 1853. The copies are not identical (for example the second leaves `!important` off the `.input-group-append`
+radius rules, and it wins), so removing one is a behaviour decision, not a clean-up. It is left for a separate, reviewed change.
 
 ## Load order
 
@@ -299,4 +299,4 @@ that file, delete the MSP copy), `ticket_view_filters.css` (MSP ticket-view filt
    is possible but moves portal rules past the whole design layer, which the cascade check would have to be re-run for.
 6. **Portal in RivetMSP.** MSP's `itflow_custom.css` has a `.client-portal-nav` rule; the richer RivetIT portal chrome is now in RivetIT's
    override. Whether MSP adopts it (copying RivetIT's override) or keeps a smaller one is a product call.
-7. **Duplicate block in `itflow_custom.css`** (see above): remove in a follow-up.
+7. **Near-duplicate block in `itflow_custom.css`** (see above): decide which copy is intended, then remove the other in a follow-up.

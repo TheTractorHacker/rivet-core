@@ -2,6 +2,17 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## Unreleased (shared design assets; no migration)
+
+Additive. No PHP class, table or migration changes, and no edition changes behaviour until it opts in. Rename this heading to the tag at release (`release.yml` cuts the GitHub Release from the section named like the tag) and run `php scripts/build-ui-manifest.php --core-version=<version>` first.
+
+- **`assets/ui/`: the shared CSS/JS design layer.** Core now carries RivetIT's design layer so every edition renders from the same files: 16 stylesheets copied byte for byte from RivetIT 26.10.68 (Tabler and Bootstrap shims, the BS5 bridge, motion, `--color-*` compat, the `--if-*` to `--tblr-*` seam, metrics, file upload, and the RMM / hypervisor / remote / logs / patches / software / scale / automation sheets), `itflow_custom.css` and `itflow_design.css` with their edition-specific rules cut out (client-portal chrome, KB utility classes, portal/login logo chip; 38 of 1,393 rules), and `js/chart_theme.js`. Training, KB, portal, webhook and billing sheets stay in the editions. `assets/ui/MANIFEST.json` lists every file with SHA-256, size, origin and the load order. Ships in the Composer dist.
+- **`scripts/install-ui-assets.php`** copies the files into an edition (`--css=DIR [--js=DIR] [--dry-run]`), byte for byte, and writes a `.rivet-ui-assets.json` receipt with the Core version and hashes. **`scripts/check-ui-assets.php`** compares an edition's copies with the manifest (exit 1 on a modified or missing shared file); with no arguments it checks Core against its own manifest. **`scripts/build-ui-manifest.php`** regenerates the manifest. The installer, the checker and their library ship in the package (`.gitattributes`); the other scripts still do not.
+- **CI job `ui-assets`** runs the self-check on every push and then installs and re-checks from an extracted `git archive`, so the manifest cannot drift from the files and the shipped scripts cannot go missing.
+- **Maintainer tooling** (not shipped): `scripts/ui-css-split.php` cuts a stylesheet into shared and edition parts by rule and proves the cut (byte-identical merge, and a cascade-order check on every moved rule); `scripts/lib/CssChunker.php`, `scripts/lib/CssCascade.php`.
+- **Docs**: [docs/ui/DESIGN_ASSETS.md](docs/ui/DESIGN_ASSETS.md) (ownership table per file, load order, token contract, install, RivetMSP migration checklist, open decisions) and a step in `docs/EDITION_CHECKLIST.md`.
+- **Tests**: `tests/Unit/UiAssetsTest.php` (manifest, installer, drift detection, path safety, load-order constraints, chunker, cascade check).
+
 ## 1.0.0-rc.33 (CI repair for rc.32; committed composer.lock; dependency audit)
 
 No library behaviour changes. rc.32 was tagged while its own CI was red: migration 0039 (`device_automation_disabled`) added a column the frozen schema baselines did not know about. rc.33 is the same code with the tests fixed.

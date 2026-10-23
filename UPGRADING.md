@@ -76,6 +76,18 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Adopting the shared design assets (unreleased; no migration)
+
+Opt-in. Nothing happens until an edition runs the installer. Full guide and the RivetMSP checklist: [docs/ui/DESIGN_ASSETS.md](docs/ui/DESIGN_ASSETS.md).
+
+1. Update the pin to the release that contains `assets/ui`.
+2. `php vendor/rivet/rivet-core/scripts/install-ui-assets.php --css=css --js=js --dry-run`, review, then run it without `--dry-run`. Commit the copies.
+3. In the header, link the files in the order of `assets/ui/MANIFEST.json` (`load_order`); the two `*.edition.css` links are optional and point at the edition's own override files.
+4. Keep edition-only rules (portal, KB, training, branding) in `css/itflow_custom.edition.css` and `css/itflow_design.edition.css` and never edit a shared file in the edition.
+5. Add `php vendor/rivet/rivet-core/scripts/check-ui-assets.php --css=css --js=js` to the edition's CI and release gate.
+
+RivetIT: its `css/` already equals the shared files except the two split ones; replace those two with the Core copies and move the removed rules into the two override files (kept in the handoff directory). RivetMSP: not safe to drop in yet. Five widgets (icon picker, date range picker, event picker, event rules, webhook wizard) were restyled under new class names together with their scripts, so the CSS and the RivetIT scripts must move together; see section 4 of the guide.
+
 ## Adopting the device header view-model (1.0.0-rc.27)
 
 No migration, nothing is required. To get the short header, render from the new arrays instead of walking `inventory.disks` and `metrics.disk` yourself:
