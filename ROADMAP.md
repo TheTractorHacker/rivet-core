@@ -174,7 +174,7 @@ compatible with already enrolled agents. Design: [docs/design/endpoint-module-ex
 
 Effect on 1.0: the RMM module adds public API, so `1.0.0-rc.N` is re-cut after Phase 0 and the 30-day soak starts from that candidate; Phases 1 to 8 are 1.x minor releases.
 
-### Programme status (updated 2026-10-23, through v1.0.0-rc.33)
+### Programme status (updated 2026-10-23, through v1.0.0-rc.35)
 
 **Shipped since the phase table was last updated**
 
@@ -187,15 +187,15 @@ Effect on 1.0: the RMM module adds public API, so `1.0.0-rc.N` is re-cut after P
 | rc.31 | Security fixes from the rc.21 to rc.30 review (Mesh node claims need approval, change-monitor redaction, config sequence counter, 0038); **PHP 8.5 is the minimum** |
 | rc.32 | Per-device kill switch for scheduled scripts and patch installs (0039). Tagged with CI red, repaired in rc.33 |
 | rc.33 | CI repair, `composer.lock` committed, dependency audit job (`composer audit`, `govulncheck`) |
+| rc.34 | Shared design assets (`assets/ui`): RivetIT is the reference; shared stylesheets, five widget scripts, webhook styles, manifest, installer and CI drift check; accessible muted-text colour |
+| rc.35 | RivetPanel device-token API (`src/Panel`, migration 0040): per-device scoped tickets and chat, revocation, rate limits, audit, idempotent ticket creation |
 
 **In progress**
 
 | Item | State |
 |---|---|
-| Shared design assets: RivetIT is the reference, Core owns the common CSS layer, editions keep a thin override file, drift check in CI | being built in Core; editions opt in afterwards (RivetMSP will see visible changes) |
-| RivetPanel device-token API: reuse the RMM device-enrollment system, per-device scoped tickets and chat endpoints, revocation, rate limits, audit. Decisions: contact optional; client-level devices may create tickets only if a per-client setting (default off) allows it | being built in Core; each edition then adds thin `api/v1/panel_*.php` wrappers and a Deploy page |
 | Mesh auto-pairing without manual approval (a fresh unguessable pairing group per install, verified through MeshCentral) | design written (`docs/design/mesh-auto-pairing.md`, branch `mesh-pairing-design`); needs a read-only check against a live Mesh before building (estimate 4 to 6 days) |
-| Edition adoption of rc.30 to rc.33: hypervisor pages, device type, Mesh Approve button, policy starter pack, install apps, kill switch | edition work, not started in the edition chats |
+| Edition adoption of rc.30 to rc.35 (design assets, Panel API wrappers and Deploy page, hypervisors, device type, Mesh Approve button, policy starter pack, install apps, kill switch): hypervisor pages, device type, Mesh Approve button, policy starter pack, install apps, kill switch | edition work, not started in the edition chats |
 
 **Open**
 
