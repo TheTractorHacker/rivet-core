@@ -213,7 +213,7 @@ final class InstallerDownload
         if (!$well) {
             $this->reject('malformed', $ip, $selector, null);
         }
-        if ($row === null || !$match) {
+        if ($row === null || !$match || ($row['kind'] ?? 'agent') !== 'agent') {   // a RivetPanel enrollment token (kind 'panel') is never an installer token
             $this->reject('invalid_token', $ip, $selector, null);
         }
         if ($row['revoked_at'] !== null) {

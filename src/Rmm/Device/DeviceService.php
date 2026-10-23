@@ -80,7 +80,7 @@ final class DeviceService
         // The credential hash stays so the device is told "revoked" (not just "unknown") on its next call.
         $this->sql->run('UPDATE endpoint_agent_devices SET revoked_at = ?, revoked_reason = ? WHERE device_id = ?', [$this->sql->utcNow(), mb_substr($reason, 0, 100), $deviceId]);
         $this->jobs->cancelAllQueued($deviceId, 'device_revoked');
-        $this->audit->record('Device Revoked', "Device $deviceId revoked by user $userId: " . mb_substr($reason, 0, 100), (int) $dev['client_id'], (int) $dev['asset_id']);
+        $this->audit->record(($dev['kind'] ?? 'agent') === 'panel' ? 'Panel Device Revoked' : 'Device Revoked', "Device $deviceId revoked by user $userId: " . mb_substr($reason, 0, 100), (int) $dev['client_id'], (int) $dev['asset_id']);
         $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
 
         return true;

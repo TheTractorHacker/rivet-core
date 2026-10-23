@@ -222,7 +222,7 @@ final class EnrollmentService
         $stored = (string) ($row['token_hash'] ?? str_repeat('0', 64));
         $given = hash('sha256', $parts[2] ?? '');
         $secretOk = hash_equals($stored, $given);
-        if ($row === null || !$secretOk) {
+        if ($row === null || !$secretOk || ($row['kind'] ?? 'agent') !== 'agent') {   // RivetPanel tokens (kind 'panel') are never RMM enrollment tokens
             $this->recordAttempt($ip, false, 'invalid_token', $selector);
             throw new ApiError(401, 'invalid_token', 'Invalid enrollment token.');
         }
@@ -261,7 +261,7 @@ final class EnrollmentService
         $event = 're-enrolled';
         $crossClient = false;
         if ($dev !== null) {
-            if (!self::sameClient($dev, $token)) {
+            if (!self::sameClient($dev, $token) || ($dev['kind'] ?? 'agent') !== 'agent') {   // another client's row, or a RivetPanel device, is never taken over
                 // install_id is unique, so another client's row cannot be duplicated; and it must not be taken over either.
                 throw new ApiError(409, 'conflict', 'This install id is already bound to a different machine.');
             }
@@ -310,7 +310,7 @@ final class EnrollmentService
 
         // 3. A brand-new device: capacity first, then decide its asset.
         $limit = (int) ($this->settings->get()['max_devices'] ?? 0);
-        if ($limit > 0 && (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_devices WHERE revoked_at IS NULL AND retired_at IS NULL') >= $limit) {
+        if ($limit > 0 && (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_devices WHERE revoked_at IS NULL AND retired_at IS NULL AND link_state <> \'panel\'') >= $limit) {
             throw new ApiError(403, 'device_limit', 'The device limit of this installation has been reached.');
         }
         $match = $crossClient

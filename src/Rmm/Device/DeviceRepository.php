@@ -38,7 +38,7 @@ final class DeviceRepository
         $hash = $token === null ? '' : hash('sha256', $token);
         $dev = $hash === '' ? null : $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE token_hash = ?', [$hash]);
         // Constant-time confirmation of what the index lookup found.
-        if ($dev === null || !hash_equals((string) $dev['token_hash'], $hash)) {
+        if ($dev === null || !hash_equals((string) $dev['token_hash'], $hash) || ($dev['kind'] ?? 'agent') !== 'agent') {   // a RivetPanel credential (kind 'panel') is never an agent credential
             throw new ApiError(401, 'invalid_token', 'Invalid device credential.');
         }
         if ($dev['revoked_at'] !== null || $dev['retired_at'] !== null) {
@@ -86,10 +86,10 @@ final class DeviceRepository
         return $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ?', [$deviceId]);
     }
 
-    /** Devices that count against max_devices: not revoked, not retired. */
+    /** Devices that count against max_devices: not revoked, not retired, and not a RivetPanel device. */
     public function liveCount(): int
     {
-        return (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_devices WHERE revoked_at IS NULL AND retired_at IS NULL');
+        return (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_devices WHERE revoked_at IS NULL AND retired_at IS NULL AND link_state <> \'panel\'');
     }
 
     /** Accepts every spelling of a MeshCentral node id ({@see MeshNodeId}: a pasted address, `node/<domain>/<id>`, the 64-character id, 96 hex) and the legacy `node//<16..100 chars>`. */
