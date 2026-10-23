@@ -127,8 +127,9 @@ paths:
       summary: Create a ticket (POST /tickets)
       description: |
         The ticket is filed under the client and contact of the credential. `client_id`, `contact_id` and every other unknown field are ignored.
-        A client-level device may create only while the client's setting is on. `client_request_id` makes a retry safe: the same id from the same
-        device returns the first ticket (200, `replayed: true`). At most 10 per 60 s and 50 per day per device.
+        A client-level device may create only while the client's setting is on. `client_request_id` makes a retry safe: Core reserves (device, id)
+        before the gateway is called, so concurrent or repeated requests create one ticket. After success the same id returns the first ticket (200, `replayed: true`);
+        while the first request is still running it is 409 `request_in_progress` (`Retry-After: 2`); if the first request failed the reservation is released and the retry creates the ticket. At most 10 per 60 s and 50 per day per device.
       security: [{panelAuth: []}]
       requestBody:
         required: true
@@ -148,6 +149,7 @@ paths:
               schema: {$ref: '#/components/schemas/TicketCreated'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/TicketsForbidden'}
+        '409': {description: 'Another request with the same `client_request_id` is still running (`request_in_progress`); retry after `Retry-After` seconds', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
         '413': {$ref: '#/components/responses/TooLarge'}
         '422': {description: 'Invalid field (`invalid`) or an attachment that is not accepted (`attachment_rejected`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
         '426': {$ref: '#/components/responses/TlsRequired'}
@@ -262,7 +264,7 @@ components:
         error: {type: string}
         code:
           type: string
-          enum: [invalid_token, revoked, expired, forbidden, contact_invalid, client_level_disabled, not_found, invalid, attachment_rejected, too_large, rate_limited, method_not_allowed, tls_required, conflict, ticket_closed, module_disabled, internal]
+          enum: [invalid_token, revoked, expired, forbidden, contact_invalid, client_level_disabled, not_found, invalid, attachment_rejected, too_large, rate_limited, method_not_allowed, tls_required, conflict, ticket_closed, request_in_progress, module_disabled, internal]
         server_time: {type: string, format: date-time}
     EnrollRequest:
       type: object

@@ -112,9 +112,25 @@ Same shape as the enrollment answer without the token, plus `can_view_tickets`.
  "attachments": [{"filename": "screen.png", "content_type": "image/png", "data_base64": "iVBORw0KGgo..."}]}
 ```
 
-201 `{"ticket_id": 1002, "replayed": false, "server_time": "..."}`. A repeat of the same `client_request_id` from the same device answers **200** with the first ticket
-and `"replayed": true` (a safe retry after a dropped connection). `category_id` must be one of this client's categories. Limits: subject 200 characters, body 20000,
+201 `{"ticket_id": 1002, "replayed": false, "server_time": "..."}`. `category_id` must be one of this client's categories. Limits: subject 200 characters, body 20000,
 `display_name` 100, 50 tickets per device per 24 h, 10 per minute.
+
+**Idempotent creation (`client_request_id`).** Send a fresh UUID per user action and reuse it for every retry of that action. Core makes the guarantee itself, whatever the
+edition's gateway does: before the gateway is called it reserves `(device, client_request_id)` in `panel_ticket_owner` under a unique key, so of any number of
+concurrent or repeated requests with the same id at most one reaches the gateway and at most one ticket exists. What a caller sees:
+
+| Situation | Answer |
+|---|---|
+| First request | 201, `replayed: false` |
+| Retry after the first succeeded | **200**, the first ticket, `replayed: true` (no gateway call, still allowed when the daily cap is reached) |
+| Retry while the first is still running | **409** `request_in_progress`, `Retry-After: 2`; retry shortly and you get the 200 above |
+| First request failed (gateway error, 5xx) | the reservation is released; the retry is a fresh attempt and creates the ticket |
+| First request died after reserving (process killed) | the retry gets 409 `request_in_progress` for up to 300 s, then takes the reservation over and creates the ticket |
+| Same id from another device | independent: ids are scoped per device |
+| No `client_request_id` | every request creates a ticket; nothing is merged |
+
+Residual case: a gateway call that takes longer than 300 s can be overtaken by a retry and produce two tickets; Core records both for the device and writes a
+`Panel Ticket Duplicate` audit entry. Reservations count towards the 50-per-day cap while they exist.
 
 ### GET /panel_ticket_chat?ticket_id=1002&after=0&limit=50
 
@@ -186,6 +202,7 @@ Enrollment is limited per address from the database (shared attempt log, salt `p
 | 405 | `method_not_allowed` | `Allow` lists the right methods |
 | 409 | `conflict` | the install id belongs to an RMM agent or another client |
 | 409 | `ticket_closed` | posting to a closed ticket |
+| 409 | `request_in_progress` | a create with the same `client_request_id` is still running; `Retry-After: 2` |
 | 413 | `too_large` | body or attachment over the cap |
 | 422 | `invalid` | a field is missing, mistyped, too long or not UTF-8 |
 | 422 | `attachment_rejected` | extension, type, magic bytes, executable content or count not accepted |
@@ -197,7 +214,7 @@ Enrollment is limited per address from the database (shared attempt log, salt `p
 ## Audit
 
 Through the existing `RmmAuditInterface` (an edition maps it to its audit trail / `AuditChain`): `Panel Enrollment Token Created`, `Panel Enrollment Token Revoked`,
-`Panel Enrolled`, `Panel Enrollment Failed`, `Panel Ticket Created` (client, ticket id, device, contact or client-level, attachment count), `Panel Chat Posted`,
+`Panel Enrolled`, `Panel Enrollment Failed`, `Panel Ticket Created` (client, ticket id, device, contact or client-level, attachment count), `Panel Chat Posted`, `Panel Ticket Duplicate` (rare: a create outlived its 300 s reservation),
 `Panel Device Revoked` (also written by the RMM revoke action when the row is a panel device), `Panel Setting Changed`. Ticket text, tokens and secrets are never put in an audit description.
 
 ## Threat model
@@ -213,7 +230,7 @@ Through the existing `RmmAuditInterface` (an edition maps it to its audit trail 
 | Malicious attachment | allow-list, magic bytes, executable and archive refusal, size and count caps, sanitised filename, never executed or served by Core |
 | Stored/reflected XSS, bidi spoofing | input stripped of invisible/bidi characters, output stripped of tags, `<` `>` entity-encoded |
 | Flooding / ticket spam | per-minute and per-day caps per device, body caps, pagination caps; an administrator can revoke the device |
-| Replay of a create after a dropped connection | `client_request_id` idempotency per device |
+| Replay of a create after a dropped connection, or two concurrent retries | `client_request_id` reserved under a unique key before the gateway call: one ticket, however the retries interleave |
 | Leaver or moved contact | contact re-validated on every request (`contact_invalid`) |
 | Clock-skewed PC | no timestamps are accepted; `server_time` is returned |
 | Information leak in errors | generic 500, no stack traces, no internal notes, no other clients' names |
