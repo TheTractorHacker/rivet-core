@@ -2,7 +2,8 @@
 
 Decision (Blake, 2026-10-23): **RivetCore owns the common CSS/JS design layer. Each edition keeps only a thin override file. RivetMSP
 ends up visually consistent with RivetIT.** RivetIT is the reference: the files here are RivetIT's `css/` files at commit `4a3545c57`
-(release 26.10.68), copied byte for byte, except two that are cut in two (see "Split files").
+(release 26.10.68), copied byte for byte, except two that are cut in two (see "Split files") and the reviewed exceptions listed under
+"Deviations from RivetIT". The shared scripts (`assets/ui/js/`) are RivetIT's `js/` files from the same commit.
 
 Status: **additive, opt-in.** Nothing in Core's PHP changed. An edition that does not run the installer behaves exactly as before.
 
@@ -52,9 +53,32 @@ build host, remote, logs, patches, software, scale, automation, metrics). "Editi
 | `frappe-gantt.css` | 3,186 | edition | stays in the edition | third-party library copy |
 | RivetMSP only: `itflow_rmm_starter.css`, `ticket_view_filters.css`, `admin_update.css` | | not touched | stay in RivetMSP | no RivetIT counterpart to copy; see "Open decisions" |
 | `js/chart_theme.js` | 6,125 | shared, verbatim | `js/chart_theme.js` | identical in both editions; reads the tokens below |
+| `js/icon_picker.js` | 9,604 | shared, verbatim | `js/icon_picker.js` | server half is Core's `Ui\IconCatalog`; catalog URL comes from `data-catalog-url` |
+| `js/date_range_picker.js` | 12,305 | shared, verbatim | `js/date_range_picker.js` | server half is Core's `Ui\DateRange`; no URLs |
+| `js/event_picker.js` | 19,913 | shared, verbatim | `js/event_picker.js` | server half is Core's `Webhooks\EventCatalog`; catalog URL from `data-catalog-url` |
+| `js/webhook_guides.js` | 13,798 | shared, verbatim | `js/webhook_guides.js` | guide hub behaviour; no URLs, no endpoints; guide content is rendered server side |
+| `js/webhook_wizard.js` | 53,336 | shared, **one reviewed change** | `js/webhook_wizard.js` (53,471) | server half is Core's `Webhooks\*`; endpoints come from `data-wz-*`; two page names were hard coded and are now optional attributes (see "Deviations from RivetIT") |
+| `js/event_rules.js` | 53,097 | **edition-owned** | stays in the edition | see "Edition-owned scripts" |
 
 The accent and radius are not a file: each company's accent is an inline `<style>` the edition's header emits last (see Load order), so
 branding stays in the edition by construction.
+
+### Deviations from RivetIT
+
+Everything in `assets/ui` is RivetIT's bytes except the following, each proven by `tests/Unit/UiAssetsTest.php` and by
+`scripts/ui-css-split.php verify` (which puts the edition text back before it compares, so the proof still ends in RivetIT's exact bytes):
+
+1. **`css/itflow_design.css`: `--if-muted` is `#4b5d64`, RivetIT has `#5d6f76`** (Blake, 2026-10-23). `#5d6f76` is 4.19:1 on `--if-bg`,
+   below WCAG AA 4.5:1; RivetMSP already shipped `#4b5d64`. This is exactly one line (the light-theme declaration, line 25 of the shared
+   file); the dark-theme value `#93a6ab` is unchanged. The `var(--if-muted, #5d6f76)` fallbacks in other shared files are not edited: they
+   only apply when the token is undefined, which cannot happen where `itflow_design.css` is loaded, and leaving them keeps the exception
+   to one line. The unit test puts `#5d6f76` back on that line and asserts the result hashes to the verified split of RivetIT's file.
+   Visible effect: **RivetIT's muted text becomes slightly darker** (see UPGRADING.md); RivetMSP does not change.
+2. **`js/webhook_wizard.js`: four edits, no behaviour change for RivetIT.** The wizard hard coded two admin page names, the Internal
+   network access link `settings_webhooks.php#internal-networks` and the edit page `webhook_edit.php?id=...` (used for the "Deliveries"
+   link and the `history.replaceState` after a successful create). It now reads them from the optional attributes `data-wz-networks`
+   and `data-wz-edit` of the `[data-wz]` root and falls back to the same two literals. RivetIT's markup sets neither attribute, so every
+   expression evaluates to exactly the string it did before. The unit test reverses the four edits and asserts RivetIT's SHA-256.
 
 ### Split files
 
@@ -73,7 +97,8 @@ non-matching selectors is an error, so nothing is ever half-moved. Result:
 
 Proof (run on 2026-10-23, `php scripts/ui-css-split.php verify --src=<RivetIT css> --shared=assets/ui/css --edition=<overrides>`):
 
-- 16 verbatim files: SHA-256 equal to RivetIT's, byte identical.
+- 16 verbatim stylesheets: SHA-256 equal to RivetIT's, byte identical. Scripts (`--js-src` / `--js`): 5 byte identical, 1 identical after
+  reversing the wizard exception.
 - `itflow_custom.css`: 1,105 rules = 1,068 shared + 37 edition; merging the two parts back in original order reproduces RivetIT's file
   byte for byte. `itflow_design.css`: 288 = 287 + 1, same result. Within each part the rules keep their original order.
 - One thing does change: the 37 + 1 edition rules now come **after the rest of their parent file** instead of in the middle of it
@@ -230,14 +255,42 @@ the same rule parser (selectors compared by text, so a renamed class counts as r
   Tabler-generation sidebar (`aside.navbar-vertical`: rail, count badges, folded flyouts, brand truncation), breadcrumbs, the CSAT
   and Google-review blocks, the ticket detail stacked sidebar cards and Account Security. This is the largest visible change: **page
   headers, dashboards/stat tiles, lists, sidebar and every card** if MSP's markup uses these classes (`includes/ui/` helpers).
-- **Same selector, different declarations (13):** `:root` (RivetIT `--if-muted: #5d6f76`; MSP `#4b5d64`, commented as a WCAG fix:
-  4.19:1 on `--if-bg` is below AA 4.5:1. See "Open decisions": the reference is lighter, so muted text gets lighter on MSP),
+- **Same selector, different declarations (13):** `:root` (`--if-muted`: RivetIT `#5d6f76`, MSP and now Core `#4b5d64`, the WCAG fix: 4.19:1 on `--if-bg` is below AA 4.5:1; no
+  change for MSP, see "Deviations from RivetIT"),
   `.btn-primary`, `.table-warning/-danger/-success/-info` and their dark variants (row tints), `.modal-content`, `.modal-header`,
   `.breadcrumb`.
 - **Lost (MSP-only, 50 selectors):** `.ticket-stat-box*` (6; the clickable status tiles on the ticket list) and the KB reader
   styles `.kb-chapter*`, `.kb-article-card*`, `.kb-reader-*`, `.kb-prose*`, `.kb-empty` (44). RivetIT keeps no equivalent in
   `itflow_design.css` (its KB lives in `itflow_kb.css` for interactive blocks only). **Carry these into MSP's own
   `itflow_design.edition.css`** or MSP's ticket-list tiles and KB reader pages lose their styling.
+
+### 3b. Shared scripts: which page loads which
+
+All six are plain browser JavaScript with no build step and no library of their own. Load them with `defer` (or at the end of `body`);
+none needs a CSP nonce (they are external files, not inline scripts), but the edition's `script-src` must allow its own origin
+(RivetIT puts a nonce attribute on the `webhook_guides.js` tag because that page already has one at hand; the other tags have none).
+Versioned URLs
+(`?v=<filemtime>`) are the edition's business. **Every one needs the component's markup, which the edition (or Core's PHP helper) emits;
+the script does nothing on a page without it.**
+
+| Script | Loaded by (RivetIT) | Needs on the page | Plugin libraries | Load order |
+|---|---|---|---|---|
+| `icon_picker.js` | global, `includes/footer.php` (every agent/admin page); markup from `iconPickerField()` | `[data-icon-picker]` roots with `data-catalog-url` (an endpoint that returns `RivetCore\Ui\IconCatalog::toJson()`), `data-default`; Font Awesome 5 `fas` classes; styles `.icon-picker__*` in `itflow_custom.css` | none | any; binds by event delegation on `document`, so AJAX-loaded modals work |
+| `date_range_picker.js` | global, footer; markup from `includes/date_range_picker.php` (uses `RivetCore\Ui\DateRange`) | `[data-drp]` roots with `data-drp-default`, `data-drp-auto`, `data-preset`/`data-from`/`data-to` options; writes the hidden `canned_date`, `dtf`, `dtt` inputs; styles `.drp-*` in `itflow_custom.css` | **Litepicker** (`/plugins/litepicker/js/litepicker.js`) for the custom calendar only; without it the presets still work | Litepicker `defer` before or after, either works (looked up when the calendar opens) |
+| `event_picker.js` | global, footer; markup from `includes/event_picker.php` | `[data-event-picker]` roots with `data-name`, `data-mode`, `data-other` and `data-catalog-url` (an endpoint that returns `RivetCore\Webhooks\EventCatalog` JSON); styles `.ep-*` in `itflow_custom.css`; exposes `window.RivetEventPicker.scan(scope)` and observes DOM insertions | none | any; must be present before the webhook wizard uses it (the wizard's Events step embeds the picker markup) |
+| `webhook_wizard.js` | `admin/webhook_new.php` and `admin/webhook_edit.php` only, after the form (deferred, no nonce) | root `[data-wz]` with `data-wz-mode`, `data-wz-action` (POST endpoint taking `csrf_token`, `wh_action=check_url|validate_template|...`; answers JSON from `RivetCore\Webhooks\*`), `data-wz-guide` (guide fragment URL), `data-wz-list`, `data-wz-dest`, `data-wz-dest-name`, `data-wz-id`; optional `data-wz-networks`, `data-wz-edit`; a `csrf_token` input in the form; styles `.wz-*` are **not** in Core (`webhook_form.css`, edition) | none | after `event_picker.js` (the footer loads it on every page) |
+| `webhook_guides.js` | `admin/settings_webhook_guides.php` (RivetIT) only | `#wg-root` and the `data-wg-*` markup of the guide hub; styles `.wg-*` are **not** in Core (`webhook_guides.css`, edition); uses `localStorage` inside try/catch | none | any |
+
+Contract notes. The wizard's POST endpoint and the guide fragment are edition PHP (`modals/webhook/webhook_action.php`,
+`webhook_guide.php`); only their JSON shape and field names are fixed by the script. In an edition without a webhook wizard page,
+loading `webhook_wizard.js` is harmless (it returns at once when `[data-wz]` is missing), and so is `webhook_guides.js` without
+`#wg-root`.
+
+### Edition-owned scripts
+
+| Script | Why it stays in the edition |
+|---|---|
+| `event_rules.js` (RivetIT, 53,097 bytes) | Its server half is not in Core. The script is the front end of `ITFlow\Automation\*` (`RuleEngine`, `ActionRegistry`, `ConditionEvaluator`, `RuleForm`) through `admin/modals/event_rules_api.php`; Core has no event-rules engine or endpoint contract. It also hard codes that engine's vocabulary: the actions that need a ticket (`D.ticketActions`), the `ticket.*` / `catalog.request_*` event families, ticket priority/status and client condition fields, and `#er-pick` sample-record pickers, and it needs the page markup of `admin/event_rules.php` and `admin/includes/event_rules_editor.php` (`#er-data`, `.er-*`). The API URL itself is data driven (`#er-data.api`), so this is not a URL problem but an ownership one: Core would ship a script for an API it does not define. **RivetMSP must port** RivetIT's page, `event_rules_api.php` and the engine side before it can take the script; until then MSP keeps its own `event_rules.js`. It still depends on `itflow_custom.css` (the `.er-*` rules are shared) and on the shared `event_picker.js`; optional Tom Select (`/plugins/tom-select`) improves the condition builder and is detected at run time. |
 
 ### 4. `itflow_custom.css` (2,277 differing lines; RivetIT 656 selectors, MSP 374)
 
@@ -262,8 +315,12 @@ the same rule parser (selectors compared by text, so a renamed class counts as r
   | Webhook wizard and guides (`.wh-*`) | 32 | `js/webhook_form.js` (968), `js/webhook_guides.js` (447) |
   | Other | 2 | (`.text-dark` remap, `.filter-toolbar > .filter-row-nowrap`) |
 
-  **Installing Core's `itflow_custom.css` in MSP without also taking those RivetIT scripts leaves these five widgets unstyled** (the
-  old class names no longer match any rule). They must move together. Core does not yet ship that JavaScript (see "Open decisions").
+  **Installing Core's `itflow_custom.css` in MSP without also taking the matching scripts leaves these widgets unstyled** (the old
+  class names no longer match any rule). They must move together. Core now ships `icon_picker.js`, `date_range_picker.js`,
+  `event_picker.js`, `webhook_wizard.js` and `webhook_guides.js`; `event_rules.js` is edition-owned and MSP must port it (section 3b).
+  Note that MSP's `webhook_form.js` (the old `.wh-*` flow) is replaced by RivetIT's two-page wizard, whose pages and endpoints MSP
+  does not have: `webhook_new.php`, `webhook_edit.php`, `modals/webhook/webhook_action.php`, `webhook_guide.php` and the edition CSS
+  `webhook_form.css`.
 
 ### 5. Files that stay MSP's
 
@@ -282,19 +339,16 @@ that file, delete the MSP copy), `ticket_view_filters.css` (MSP ticket-view filt
 
 ## Open decisions (Blake)
 
-1. **JavaScript scope.** Only `js/chart_theme.js` is shared today (identical in both editions). The widgets named in section 4 need
-   their RivetIT scripts alongside the CSS. Options: extend `assets/ui/js/` with `icon_picker.js`, `date_range_picker.js`,
-   `event_picker.js`, `event_rules.js`, `webhook_form.js`, `webhook_guides.js`, `rivet_dialog.js` and the `rmm_*.js` page scripts
-   (RivetIT is ahead on all of them; they differ from MSP's by 4 to 1,495 lines and some carry edition endpoints), or make MSP take
-   them as a one-off copy. This is the prerequisite for MSP adopting `itflow_custom.css`.
-2. **Webhook stylesheets** (`webhook_form.css`, `webhook_guides.css`): kept in the edition because they are linked only from edition
-   admin pages. If webhook admin UI becomes Core's, they move with the JS.
+1. **JavaScript scope. Decided 2026-10-23:** Core owns the icon picker, date range picker, event picker, webhook wizard and webhook
+   guides scripts; `event_rules.js` stays edition-owned (section 3b). Still open: `rivet_dialog.js` and the `rmm_*.js` page scripts
+   (RivetIT is ahead on all of them; some carry edition endpoints).
+2. **Webhook stylesheets** (`webhook_form.css`, `webhook_guides.css`): still edition files, although their scripts are now Core's. The
+   wizard (`.wz-*`) and the guide hub (`.wg-*`) therefore need an edition sheet that Core does not version. Moving them to Core is
+   mechanical (they are RivetIT's bytes) and would complete the pair; not done because it was not part of the decision.
 3. **MSP-only sheets** (`itflow_rmm_starter.css`, `ticket_view_filters.css`, `admin_update.css`): no RivetIT source to copy, so
    untouched. Starter pack is a Core page and RivetIT has folded it into `itflow_rmm_automation.css`; MSP's copy can then be removed.
-4. **`--if-muted`**: MSP darkened it to `#4b5d64` for WCAG AA; the RivetIT reference still has `#5d6f76`. The shared file is
-   verbatim, so MSP will get the lighter value. A one-line fix in Core (a reviewed change to the reference) would give both editions
-   the accessible value.
-5. **One override file or two.** Edition rules are cut from two files that load at different positions, so there are two override
+4. **`--if-muted`. Decided 2026-10-23:** the shared file carries MSP's `#4b5d64` (see "Deviations from RivetIT"). Closed.
+5. **One override file or two. Decided 2026-10-23: two, as is.** Edition rules are cut from two files that load at different positions, so there are two override
    files (`itflow_custom.edition.css`, `itflow_design.edition.css`). A single `itflow_edition.css` loaded after `itflow_design.css`
    is possible but moves portal rules past the whole design layer, which the cascade check would have to be re-run for.
 6. **Portal in RivetMSP.** MSP's `itflow_custom.css` has a `.client-portal-nav` rule; the richer RivetIT portal chrome is now in RivetIT's
