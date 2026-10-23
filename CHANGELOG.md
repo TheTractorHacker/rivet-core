@@ -4,6 +4,8 @@ All notable changes to RivetCore. Semantic versioning.
 
 ## 1.0.0-rc.34 (shared design assets; no migration)
 
+Includes `webhook_form.css` and `webhook_guides.css` (the `.wz-*` and `.wg-*` styles of the shared webhook scripts), copied from RivetIT unchanged.
+
 Additive. No PHP class, table or migration changes, and no edition changes behaviour until it opts in. Rename this heading to the tag at release (`release.yml` cuts the GitHub Release from the section named like the tag) and run `php scripts/build-ui-manifest.php --core-version=<version>` first.
 
 - **`assets/ui/`: the shared CSS/JS design layer.** Core now carries RivetIT's design layer so every edition renders from the same files: 16 stylesheets copied byte for byte from RivetIT 26.10.68 (Tabler and Bootstrap shims, the BS5 bridge, motion, `--color-*` compat, the `--if-*` to `--tblr-*` seam, metrics, file upload, and the RMM / hypervisor / remote / logs / patches / software / scale / automation sheets), `itflow_custom.css` and `itflow_design.css` with their edition-specific rules cut out (client-portal chrome, KB utility classes, portal/login logo chip; 38 of 1,393 rules), and `js/chart_theme.js`. Training, KB, portal, webhook and billing sheets stay in the editions. `assets/ui/MANIFEST.json` lists every file with SHA-256, size, origin and the load order. Ships in the Composer dist.

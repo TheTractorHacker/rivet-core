@@ -49,7 +49,7 @@ build host, remote, logs, patches, software, scale, automation, metrics). "Editi
 | `itflow_kb.css` | 16,822 | edition | stays in the edition | KB interactive blocks (`.ikb*`) |
 | `itflow_portal.css` | 21,916 | edition | stays in the edition | client portal |
 | `itflow_training*.css`, `training_verify.css` (16 files) | 419,127 total | edition | stays in the edition | training/LMS |
-| `webhook_form.css`, `webhook_guides.css` | 15,872 / 17,098 | edition (**decision**) | stays in the edition | linked only from the webhook admin pages, which are edition code; see "Open decisions" |
+| `webhook_form.css`, `webhook_guides.css` | 15,872 / 17,098 | shared, verbatim | `css/webhook_form.css`, `css/webhook_guides.css` | the `.wz-*` wizard and `.wg-*` guide hub styles that go with the shared `webhook_wizard.js` and `webhook_guides.js`; loaded only on the webhook admin pages, after `itflow_design.css` |
 | `frappe-gantt.css` | 3,186 | edition | stays in the edition | third-party library copy |
 | RivetMSP only: `itflow_rmm_starter.css`, `ticket_view_filters.css`, `admin_update.css` | | not touched | stay in RivetMSP | no RivetIT counterpart to copy; see "Open decisions" |
 | `js/chart_theme.js` | 6,125 | shared, verbatim | `js/chart_theme.js` | identical in both editions; reads the tokens below |
@@ -320,13 +320,12 @@ loading `webhook_wizard.js` is harmless (it returns at once when `[data-wz]` is 
   `event_picker.js`, `webhook_wizard.js` and `webhook_guides.js`; `event_rules.js` is edition-owned and MSP must port it (section 3b).
   Note that MSP's `webhook_form.js` (the old `.wh-*` flow) is replaced by RivetIT's two-page wizard, whose pages and endpoints MSP
   does not have: `webhook_new.php`, `webhook_edit.php`, `modals/webhook/webhook_action.php`, `webhook_guide.php` and the edition CSS
-  `webhook_form.css`.
+  `webhook_form.css` (now shared, see the table above).
 
 ### 5. Files that stay MSP's
 
 `itflow_rmm_starter.css` (starter pack: Core-owned page, but RivetIT has folded it into `itflow_rmm_automation.css`; once MSP takes
 that file, delete the MSP copy), `ticket_view_filters.css` (MSP ticket-view filters; no RivetIT counterpart), `admin_update.css`,
-`webhook_form.css` / `webhook_guides.css` (diverged by 342 / 456 lines from RivetIT's; they follow the webhook JS decision),
 `frappe-gantt.css` (2 lines).
 
 ### 6. Verification after the swap
@@ -342,9 +341,7 @@ that file, delete the MSP copy), `ticket_view_filters.css` (MSP ticket-view filt
 1. **JavaScript scope. Decided 2026-10-23:** Core owns the icon picker, date range picker, event picker, webhook wizard and webhook
    guides scripts; `event_rules.js` stays edition-owned (section 3b). Still open: `rivet_dialog.js` and the `rmm_*.js` page scripts
    (RivetIT is ahead on all of them; some carry edition endpoints).
-2. **Webhook stylesheets** (`webhook_form.css`, `webhook_guides.css`): still edition files, although their scripts are now Core's. The
-   wizard (`.wz-*`) and the guide hub (`.wg-*`) therefore need an edition sheet that Core does not version. Moving them to Core is
-   mechanical (they are RivetIT's bytes) and would complete the pair; not done because it was not part of the decision.
+2. **Webhook stylesheets** (`webhook_form.css`, `webhook_guides.css`): decided and done in rc.34. They are RivetIT's bytes in `assets/ui/css/`, installed with the other shared sheets and linked only from the webhook admin pages, after `itflow_design.css`. RivetMSP's diverged copies (342 / 456 lines different) are replaced by them.
 3. **MSP-only sheets** (`itflow_rmm_starter.css`, `ticket_view_filters.css`, `admin_update.css`): no RivetIT source to copy, so
    untouched. Starter pack is a Core page and RivetIT has folded it into `itflow_rmm_automation.css`; MSP's copy can then be removed.
 4. **`--if-muted`. Decided 2026-10-23:** the shared file carries MSP's `#4b5d64` (see "Deviations from RivetIT"). Closed.

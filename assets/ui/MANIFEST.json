@@ -92,6 +92,16 @@
             "bytes": 20409,
             "origin": "rivetit-verbatim"
         },
+        "css/webhook_form.css": {
+            "sha256": "54d224d7006cfb1725024478b02ddb9bde4f5522a44d6d19f6d57db1ebe31bc5",
+            "bytes": 15872,
+            "origin": "core"
+        },
+        "css/webhook_guides.css": {
+            "sha256": "3ddd81fc6b81d3465808c467ef07e2d04a9ab8325e3b732622a003689f5d700b",
+            "bytes": 17098,
+            "origin": "core"
+        },
         "js/chart_theme.js": {
             "sha256": "070865bb4ceb8e29db408bec92dbc683c8ff350fb77f308b504c30ea0632e7ea",
             "bytes": 6125,
@@ -212,6 +222,16 @@
         {
             "file": "css/itflow_rmm_scale.css",
             "owner": "core"
+        },
+        {
+            "file": "css/webhook_form.css",
+            "owner": "core",
+            "note": "webhook admin pages only (wizard .wz-*), after itflow_design.css"
+        },
+        {
+            "file": "css/webhook_guides.css",
+            "owner": "core",
+            "note": "webhook admin pages only (guide hub .wg-*), after itflow_design.css"
         },
         {
             "file": "css/itflow.bind-tabler.css",
