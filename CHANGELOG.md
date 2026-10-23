@@ -2,7 +2,7 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
-## Unreleased (shared design assets; no migration)
+## 1.0.0-rc.34 (shared design assets; no migration)
 
 Additive. No PHP class, table or migration changes, and no edition changes behaviour until it opts in. Rename this heading to the tag at release (`release.yml` cuts the GitHub Release from the section named like the tag) and run `php scripts/build-ui-manifest.php --core-version=<version>` first.
 

@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "core_version": "unreleased",
+    "core_version": "1.0.0-rc.34",
     "files": {
         "css/file_upload.css": {
             "sha256": "0643d5ce607c9634d8f74bc908136a037b03e5b96ef922f284eaa65e156ff9a7",
