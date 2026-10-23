@@ -62,7 +62,8 @@ final class PanelMigrationTest extends PanelTestCase
         $this->assertCount(4, $rows);
         foreach ($rows as $r) {
             if ($r['COLUMN_NAME'] === 'kind') {
-                $this->assertSame(["'agent'", 'NO'], [$r['COLUMN_DEFAULT'], $r['IS_NULLABLE']]);
+                // MariaDB reports a string default quoted ('agent'), MySQL unquoted (agent).
+                $this->assertSame(['agent', 'NO'], [trim((string) $r['COLUMN_DEFAULT'], "'"), $r['IS_NULLABLE']]);
             } else {
                 $this->assertSame('YES', $r['IS_NULLABLE']);
                 $this->assertContains($r['COLUMN_DEFAULT'], [null, 'NULL']);
