@@ -287,4 +287,109 @@ final class PanelTicketsTest extends PanelTestCase
         $this->assertSame([429, 'rate_limited', '3600'], [$code, $j['code'], $h['Retry-After']]);
         $this->assertCount(2, $small->gateway->created);
     }
+
+    // ------------------------------------------------------------------ idempotent creation
+
+    private const RID = '11111111-2222-4333-8444-555555555555';
+
+    private function owners(): int
+    {
+        return (int) $this->p->rmm->one('SELECT COUNT(*) FROM panel_ticket_owner');
+    }
+
+    public function testARetryAfterSuccessReturnsTheSameTicketWithoutCallingTheGateway(): void
+    {
+        $d = $this->contactDevice();
+        [$c1, , $a] = $this->create($d['token'], ['client_request_id' => self::RID]);
+        [$c2, , $b] = $this->create($d['token'], ['client_request_id' => strtoupper(self::RID)]);
+        $this->assertSame([201, false, 200, true], [$c1, $a['replayed'], $c2, $b['replayed']]);
+        $this->assertSame($a['ticket_id'], $b['ticket_id']);
+        $this->assertCount(1, $this->p->gateway->created);
+        $this->assertSame(1, $this->owners());
+    }
+
+    public function testTwoInterleavedRetriesCreateExactlyOneTicket(): void
+    {
+        $d = $this->contactDevice();
+        $inner = null;
+        $this->p->gateway->duringCreate = function () use ($d, &$inner): void {
+            $this->p->gateway->duringCreate = null;   // only the nested retry runs while the first is "in the gateway"
+            $inner = $this->create($d['token'], ['client_request_id' => self::RID]);
+        };
+        [$c, , $first] = $this->create($d['token'], ['client_request_id' => self::RID]);
+        $this->assertSame(201, $c);
+        $this->assertNotNull($inner);
+        $this->assertSame([409, 'request_in_progress'], [$inner[0], $inner[2]['code']]);
+        $this->assertSame('2', $inner[1]['Retry-After'] ?? null);
+        $this->assertCount(1, $this->p->gateway->created, 'the gateway was called once');
+        // once the first has finished, the same retry is a plain replay of its ticket
+        [$c, , $again] = $this->create($d['token'], ['client_request_id' => self::RID]);
+        $this->assertSame([200, true, $first['ticket_id']], [$c, $again['replayed'], $again['ticket_id']]);
+        $this->assertSame(1, $this->owners());
+    }
+
+    public function testAGatewayFailureReleasesTheClaimSoTheRetryProceeds(): void
+    {
+        $d = $this->contactDevice();
+        $this->p->gateway->duringCreate = static function (): void {
+            throw new \RuntimeException('the ticket store is down');
+        };
+        $this->assertSame(500, $this->create($d['token'], ['client_request_id' => self::RID])[0]);
+        $this->assertSame(0, $this->owners(), 'no orphan reservation is left behind');
+        $this->p->gateway->duringCreate = null;
+        [$c, , $j] = $this->create($d['token'], ['client_request_id' => self::RID]);
+        $this->assertSame([201, false], [$c, $j['replayed']]);
+        $this->assertSame(1, $this->owners());
+        $this->assertCount(1, $this->p->gateway->created);
+    }
+
+    public function testAGatewayThatReturnsNoIdAlsoReleasesTheClaim(): void
+    {
+        $d = $this->contactDevice();
+        $gw = new class extends \RivetCore\Testing\InMemoryPanelTicketGateway {
+            public function createTicket(int $clientId, ?int $contactId, string $subject, string $body, ?int $categoryId, string $requesterHint, array $attachments): int
+            {
+                return 0;
+            }
+        };
+        $h = new \RivetCore\Tests\Support\PanelHarness([], $gw, false);
+        $dev = $h->device_for($h->clientA, $h->gateway->addClientContact($h->clientA, 'Zed'));
+        $this->assertSame(500, $h->call('POST', 'panel_tickets', ['subject' => 's', 'body' => 'b', 'client_request_id' => self::RID], $dev['token'])[0]);
+        $this->assertSame(0, (int) $h->rmm->one('SELECT COUNT(*) FROM panel_ticket_owner'));
+    }
+
+    public function testTheSameRequestIdFromDifferentDevicesDoesNotCollide(): void
+    {
+        $a = $this->contactDevice('Ann');
+        $b = $this->contactDevice('Bob');
+        [$ca, , $ta] = $this->create($a['token'], ['client_request_id' => self::RID]);
+        [$cb, , $tb] = $this->create($b['token'], ['client_request_id' => self::RID]);
+        $this->assertSame([201, 201], [$ca, $cb]);
+        $this->assertNotSame($ta['ticket_id'], $tb['ticket_id']);
+        $this->assertSame($ta['ticket_id'], $this->create($a['token'], ['client_request_id' => self::RID])[2]['ticket_id']);
+        $this->assertSame($tb['ticket_id'], $this->create($b['token'], ['client_request_id' => self::RID])[2]['ticket_id']);
+    }
+
+    public function testAnAbandonedClaimBlocksOnlyUntilItsTtlThenARetryTakesItOver(): void
+    {
+        $d = $this->contactDevice();
+        // a call that died after its claim: pending row, no ticket
+        $this->p->rmm->q("INSERT INTO panel_ticket_owner (ticket_id, device_id, client_id, contact_id, request_id, created_at) VALUES (NULL, {$d['device_id']}, {$this->p->clientA}, {$d['contact']}, '" . self::RID . "', '" . gmdate('Y-m-d H:i:s') . "')");
+        $this->assertSame(409, $this->create($d['token'], ['client_request_id' => self::RID])[0]);
+        $this->p->rmm->q("UPDATE panel_ticket_owner SET created_at = '" . gmdate('Y-m-d H:i:s', time() - 400) . "'");
+        [$c, , $j] = $this->create($d['token'], ['client_request_id' => self::RID]);
+        $this->assertSame([201, false], [$c, $j['replayed']]);
+        $this->assertSame(1, $this->owners());
+        // and the pending row never showed up as a ticket of the device
+        $this->assertSame([$j['ticket_id']], array_column($this->p->call('GET', 'panel_tickets', null, $d['token'])[2]['tickets'], 'ticket_id'));
+    }
+
+    public function testRequestsWithoutAnIdAreNeverMergedAndLeaveNoPendingRows(): void
+    {
+        $d = $this->contactDevice();
+        $one = $this->create($d['token'])[2]['ticket_id'];
+        $two = $this->create($d['token'])[2]['ticket_id'];
+        $this->assertNotSame($one, $two);
+        $this->assertSame(0, (int) $this->p->rmm->one('SELECT COUNT(*) FROM panel_ticket_owner WHERE ticket_id IS NULL'));
+    }
 }

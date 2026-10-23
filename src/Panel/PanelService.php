@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Panel;
 
+use RivetCore\Database\DatabaseException;
 use RivetCore\Panel\Contracts\PanelTicketGatewayInterface;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Contracts\RmmTenancyInterface;
@@ -101,9 +102,9 @@ final class PanelService
                 throw new ApiError(422, 'invalid', 'client_request_id must be a UUID.');
             }
             $requestId = strtolower($body['client_request_id']);
-            $existing = $this->sql->one('SELECT ticket_id FROM panel_ticket_owner WHERE device_id = ? AND request_id = ?', [$p->deviceId, $requestId]);
-            if ($existing !== null) {
-                return ['replayed' => true, 'ticket_id' => (int) $existing['ticket_id']];
+            $done = $this->sql->one('SELECT ticket_id FROM panel_ticket_owner WHERE device_id = ? AND request_id = ? AND ticket_id IS NOT NULL', [$p->deviceId, $requestId]);
+            if ($done !== null) {
+                return ['replayed' => true, 'ticket_id' => (int) $done['ticket_id']];
             }
         }
         $subject = PanelText::input($body['subject'] ?? null, 'subject', $this->limits->subjectMax, false);
@@ -117,12 +118,22 @@ final class PanelService
             throw new ApiError(429, 'rate_limited', 'This device has created too many tickets today.', ['Retry-After' => '3600']);
         }
 
-        $id = $this->gateway->createTicket($p->clientId, $p->contactId, $subject, $text, $category, $hint, $attachments);
-        if ($id <= 0) {
-            throw new \RuntimeException('The ticket gateway returned no ticket id.');
+        // Reserve (device, request id) BEFORE the gateway is called: the unique key lets exactly one of several concurrent retries through.
+        $reservation = $this->reserve($p, $requestId);
+        if (is_int($reservation['replayed'] ?? null)) {
+            return ['replayed' => true, 'ticket_id' => $reservation['replayed']];
         }
-        $this->sql->run('INSERT INTO panel_ticket_owner (ticket_id, device_id, client_id, contact_id, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-            [$id, $p->deviceId, $p->clientId, $p->contactId, $requestId, $this->sql->utcNow()]);
+        $ownerId = (int) $reservation['owner_id'];
+        try {
+            $id = $this->gateway->createTicket($p->clientId, $p->contactId, $subject, $text, $category, $hint, $attachments);
+            if ($id <= 0) {
+                throw new \RuntimeException('The ticket gateway returned no ticket id.');
+            }
+        } catch (\Throwable $e) {
+            $this->release($ownerId);   // nothing was created: a retry must be able to proceed
+            throw $e;
+        }
+        $this->complete($p, $ownerId, $id);
         $this->audit->record('Panel Ticket Created', "Ticket $id created by panel device {$p->deviceId}" . ($p->contactId !== null ? " for contact {$p->contactId}" : ' (client-level)')
             . ($attachments !== [] ? ', ' . count($attachments) . ' attachment(s)' : ''), $p->clientId, $id);
 
@@ -189,6 +200,63 @@ final class PanelService
         return ['ticket_id' => $ticketId, 'message_id' => $id];
     }
 
+    // ------------------------------------------------------------------ idempotent creation
+
+    /**
+     * Claim (device, request id). Returns ['owner_id' => n] when this call won the right to create, or ['replayed' => ticketId] when an earlier call already created it.
+     * A claim still pending (first call in flight) is 409 `request_in_progress`; a claim pending for longer than {@see PanelProtocol::RESERVATION_TTL_S} is taken over
+     * (the first call must have died between the claim and its end), atomically, so two retries still cannot both take it.
+     *
+     * @return array{owner_id?:int,replayed?:int}
+     */
+    private function reserve(PanelPrincipal $p, ?string $requestId): array
+    {
+        $now = $this->sql->utcNow();
+        try {
+            return ['owner_id' => $this->sql->insert('INSERT INTO panel_ticket_owner (ticket_id, device_id, client_id, contact_id, request_id, created_at) VALUES (NULL, ?, ?, ?, ?, ?)',
+                [$p->deviceId, $p->clientId, $p->contactId, $requestId, $now])];
+        } catch (DatabaseException $e) {
+            $row = $requestId === null ? null : $this->sql->one('SELECT owner_id, ticket_id, created_at FROM panel_ticket_owner WHERE device_id = ? AND request_id = ?', [$p->deviceId, $requestId]);
+            if ($row === null) {
+                throw $e;   // not the duplicate key
+            }
+            if ($row['ticket_id'] !== null) {
+                return ['replayed' => (int) $row['ticket_id']];
+            }
+            if ($this->sql->run('UPDATE panel_ticket_owner SET created_at = ? WHERE owner_id = ? AND ticket_id IS NULL AND created_at = ? AND created_at < ?',
+                [$now, $row['owner_id'], $row['created_at'], $this->sql->utcAt(-PanelProtocol::RESERVATION_TTL_S)]) === 1) {
+                return ['owner_id' => (int) $row['owner_id']];
+            }
+            // the other call may have finished between our read and now
+            $again = $this->sql->one('SELECT ticket_id FROM panel_ticket_owner WHERE owner_id = ?', [$row['owner_id']]);
+            if ($again !== null && $again['ticket_id'] !== null) {
+                return ['replayed' => (int) $again['ticket_id']];
+            }
+            throw new ApiError(409, 'request_in_progress', 'A request with this client_request_id is still being processed. Retry shortly.', ['Retry-After' => (string) PanelProtocol::IN_PROGRESS_RETRY_AFTER_S]);
+        }
+    }
+
+    /** Drop a claim whose gateway call failed. Best effort: if even this fails, the claim expires by itself after the TTL. */
+    private function release(int $ownerId): void
+    {
+        try {
+            $this->sql->run('DELETE FROM panel_ticket_owner WHERE owner_id = ? AND ticket_id IS NULL', [$ownerId]);
+        } catch (\Throwable) {
+            // keep the gateway's error as the one that surfaces
+        }
+    }
+
+    /** Attach the created ticket to the claim. If the claim was taken over meanwhile (a call slower than the TTL), the ticket is still recorded so the device can use it. */
+    private function complete(PanelPrincipal $p, int $ownerId, int $ticketId): void
+    {
+        if ($this->sql->run('UPDATE panel_ticket_owner SET ticket_id = ? WHERE owner_id = ? AND ticket_id IS NULL', [$ticketId, $ownerId]) === 1) {
+            return;
+        }
+        $this->sql->run('INSERT INTO panel_ticket_owner (ticket_id, device_id, client_id, contact_id, request_id, created_at) VALUES (?, ?, ?, ?, NULL, ?)',
+            [$ticketId, $p->deviceId, $p->clientId, $p->contactId, $this->sql->utcNow()]);
+        $this->audit->record('Panel Ticket Duplicate', "Ticket $ticketId was created after its request claim expired (panel device {$p->deviceId}); an earlier or later attempt may have created another", $p->clientId, $ticketId);
+    }
+
     // ------------------------------------------------------------------ access rules
 
     /** A device with a contact always may; a client-level device only while the client's setting is on. */
@@ -235,7 +303,7 @@ final class PanelService
     /** @return list<int> */
     private function ownedIds(PanelPrincipal $p): array
     {
-        $rows = $this->sql->all('SELECT ticket_id FROM panel_ticket_owner WHERE device_id = ? AND client_id = ? ORDER BY ticket_id DESC LIMIT ' . $this->limits->ownedWindow, [$p->deviceId, $p->clientId]);
+        $rows = $this->sql->all('SELECT ticket_id FROM panel_ticket_owner WHERE device_id = ? AND client_id = ? AND ticket_id IS NOT NULL ORDER BY ticket_id DESC LIMIT ' . $this->limits->ownedWindow, [$p->deviceId, $p->clientId]);
 
         return array_map(static fn (array $r): int => (int) $r['ticket_id'], $rows);
     }

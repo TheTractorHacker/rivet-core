@@ -88,4 +88,13 @@ final class PanelMigrationTest extends PanelTestCase
         $this->expectException(\mysqli_sql_exception::class);
         $q->query('INSERT INTO panel_ticket_owner (ticket_id, device_id, client_id, request_id) VALUES (5, 1, 1, \'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\')');
     }
+
+    public function testAClaimWithoutATicketIsAllowedOncePerDeviceAndRequestId(): void
+    {
+        $q = $this->p->rmm->mysqli;
+        $q->query('INSERT INTO panel_ticket_owner (ticket_id, device_id, client_id, request_id) VALUES (NULL, 1, 1, \'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\'), (NULL, 1, 1, \'bbbbbbbb-aaaa-4aaa-8aaa-aaaaaaaaaaaa\'), (NULL, 2, 1, \'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\')');
+        $this->assertSame(3, (int) $this->p->rmm->one('SELECT COUNT(*) FROM panel_ticket_owner WHERE ticket_id IS NULL'));
+        $this->expectException(\mysqli_sql_exception::class);
+        $q->query('INSERT INTO panel_ticket_owner (ticket_id, device_id, client_id, request_id) VALUES (NULL, 1, 1, \'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\')');
+    }
 }

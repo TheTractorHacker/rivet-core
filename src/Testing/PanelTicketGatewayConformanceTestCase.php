@@ -14,7 +14,8 @@ use RivetCore\Panel\Contracts\PanelTicketGatewayInterface;
  * Checks: contact() answers only for an active contact of THAT client; ticket() is null for an unknown id and carries the creating client and contact;
  * createTicket() files the ticket under exactly the client and contact it was given (null contact = none); listTickets() never returns another client's ticket and
  * returns a contact's tickets plus the listed owned ids only, newest activity first, honouring limit and offset; messages() returns the requester's message, a
- * staff reply, never an internal note, in order, after a cursor; postMessage() appends to the ticket and returns a new id; nothing throws for unknown ids.
+ * staff reply, never an internal note, in order, after a cursor; postMessage() appends to the ticket and returns a new id; nothing throws for unknown ids;
+ * createTicket() never merges two calls (two identical calls are two tickets: de-duplication of retries is Core's job, see PANEL_API.md "Idempotent creation").
  *
  * @api
  */
@@ -81,6 +82,16 @@ abstract class PanelTicketGatewayConformanceTestCase extends TestCase
         $this->assertSame([$a, null], [$cl['client_id'], $cl['contact_id']]);
         $this->assertNull($this->gateway()->ticket(2_000_000_000));
         $this->assertNull($this->gateway()->ticket(-4));
+    }
+
+    public function testCreateTicketNeverMergesIdenticalCalls(): void
+    {
+        $a = $this->createClient('A ' . bin2hex(random_bytes(3)));
+        $one = $this->gateway()->createTicket($a, null, 'Same', 'same body', null, '', []);
+        $two = $this->gateway()->createTicket($a, null, 'Same', 'same body', null, '', []);
+        $this->assertGreaterThan(0, $one);
+        $this->assertGreaterThan(0, $two);
+        $this->assertNotSame($one, $two, 'Core reserves the client_request_id itself and calls the gateway once per accepted request; the gateway must not de-duplicate by content');
     }
 
     public function testListIsScopedToTheClientTheContactAndTheOwnedIds(): void

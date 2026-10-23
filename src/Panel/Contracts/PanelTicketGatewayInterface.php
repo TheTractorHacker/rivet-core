@@ -37,6 +37,14 @@ interface PanelTicketGatewayInterface
      * (the OS user name the panel reported, possibly empty): show it as "reported as", never as identity. $categoryId has been checked against {@see self::categories()}.
      * Returns the new ticket id.
      *
+     * Idempotency is Core's job, not the gateway's: Core reserves (device, client_request_id) in its own ledger BEFORE this call, so for one accepted request id
+     * it calls this method once (a concurrent retry is answered 409 `request_in_progress` without reaching the gateway; a retry after success replays the stored id).
+     * The gateway must therefore (a) create exactly one ticket per call and never merge calls by content, (b) either create the ticket and return its id, or
+     * throw having created nothing: Core then releases the reservation and a retry creates the ticket. A gateway that creates a ticket and then throws leaves a ticket
+     * Core cannot see, and the retry creates a second one, so do the work in one transaction. The one residual duplicate window is a call that outlives
+     * {@see \RivetCore\Panel\PanelProtocol::RESERVATION_TTL_S} (300 s) and is overtaken by a retry; Core then records both tickets for the device and writes a
+     * `Panel Ticket Duplicate` audit entry.
+     *
      * @param list<array{filename:string,content_type:string,bytes:string}> $attachments already validated by Core
      */
     public function createTicket(int $clientId, ?int $contactId, string $subject, string $body, ?int $categoryId, string $requesterHint, array $attachments): int;

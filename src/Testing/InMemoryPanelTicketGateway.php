@@ -28,6 +28,8 @@ class InMemoryPanelTicketGateway implements PanelTicketGatewayInterface
     public array $created = [];
     /** @var list<array<string,mixed>> every postMessage call, as received */
     public array $posted = [];
+    /** @var (\Closure(): void)|null called at the start of every createTicket (a test uses it to interleave another request, or to throw and simulate a failing store) */
+    public ?\Closure $duringCreate = null;
 
     public function addClientContact(int $clientId, string $name, bool $active = true): int
     {
@@ -92,6 +94,9 @@ class InMemoryPanelTicketGateway implements PanelTicketGatewayInterface
 
     public function createTicket(int $clientId, ?int $contactId, string $subject, string $body, ?int $categoryId, string $requesterHint, array $attachments): int
     {
+        if ($this->duringCreate !== null) {
+            ($this->duringCreate)();
+        }
         $this->created[] = compact('clientId', 'contactId', 'subject', 'body', 'categoryId', 'requesterHint', 'attachments');
 
         return $this->store($clientId, $contactId, $subject, $body, $categoryId, $requesterHint, $attachments);

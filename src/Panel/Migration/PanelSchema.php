@@ -12,6 +12,9 @@ namespace RivetCore\Panel\Migration;
  */
 final class PanelSchema
 {
+    // panel_ticket_owner doubles as the idempotency ledger of ticket creation: a row is RESERVED (ticket_id NULL) before the gateway is called, which makes
+    // the unique (device_id, request_id) key the atomic arbiter between concurrent retries, and is completed with the ticket id afterwards.
+
     /** @return array<string,string> table name => CREATE TABLE IF NOT EXISTS */
     public static function tables(): array
     {
@@ -27,13 +30,15 @@ CREATE TABLE IF NOT EXISTS `panel_client_settings` (
 SQL,
             'panel_ticket_owner' => <<<'SQL'
 CREATE TABLE IF NOT EXISTS `panel_ticket_owner` (
-  `ticket_id` int(11) NOT NULL,
+  `owner_id` int(11) NOT NULL AUTO_INCREMENT,
+  `ticket_id` int(11) DEFAULT NULL,
   `device_id` int(11) NOT NULL,
   `client_id` int(11) NOT NULL,
   `contact_id` int(11) DEFAULT NULL,
   `request_id` char(36) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`ticket_id`),
+  PRIMARY KEY (`owner_id`),
+  UNIQUE KEY `uniq_ticket` (`ticket_id`),
   UNIQUE KEY `uniq_device_request` (`device_id`,`request_id`),
   KEY `idx_device_created` (`device_id`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci

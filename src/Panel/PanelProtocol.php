@@ -29,6 +29,10 @@ final class PanelProtocol
     public const INSTALL_ID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
     public const REQUEST_ID_RE = self::INSTALL_ID_RE;
 
+    /** A ticket-create claim with no ticket after this long is treated as abandoned and may be taken over by a retry; an in-flight claim younger than this answers 409 `request_in_progress` with this Retry-After. */
+    public const RESERVATION_TTL_S = 300;
+    public const IN_PROGRESS_RETRY_AFTER_S = 2;
+
     public const ENROLL_DEFAULT_TTL_H = 24;
     public const ENROLL_MAX_TTL_H = 72;
     public const ENROLL_MAX_BODY = 8192;
