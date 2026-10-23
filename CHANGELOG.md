@@ -2,6 +2,15 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.33 (CI repair for rc.32; committed composer.lock; dependency audit)
+
+No library behaviour changes. rc.32 was tagged while its own CI was red: migration 0039 (`device_automation_disabled`) added a column the frozen schema baselines did not know about. rc.33 is the same code with the tests fixed.
+
+- **Tests.** `device_automation_disabled` is left out of the frozen-reference comparisons (`SchemaDiffTest`, the golden replay projection) and migration 0039 is in the golden edition's migration list. Because 0039 places the column after `retired_at` (not last), `SchemaDiffTest` renumbers column positions after excluding it.
+- **`composer.lock` is now committed** (it was gitignored), so CI installs a repeatable dependency set and repository scanners can read it. Consumers are not affected: a library's lock file is ignored by the projects that require it.
+- **New CI job "dependency audit"**: `composer audit --locked` and `govulncheck ./...` on the Go agent. Both are clean today.
+- Editions: bump the pin from rc.32 to rc.33; there is no migration.
+
 ## 1.0.0-rc.32 (per-device automation kill switch; migration 0039)
 
 - **`device_automation_disabled`: a per-device switch for an asset another tool (a second RMM/patch agent) already manages.** Turning it on excludes the device from every scheduled-script target type ({@see Rmm\Scripts\TargetResolver}: device, tag, group, client, site, policy or "all" alike, and a manual run-on-target bulk action) and stops {@see Rmm\Patch\PatchScheduler::queueInstalls()} from ever queuing a patch install for it. Deliberately narrow: patch scanning/compliance evaluation, monitoring/alerting, software inventory, and a technician's own deliberate single-device "run script now" ({@see Rmm\Technician\ScriptActions::runOnDevice()}, which never goes through `TargetResolver`) or a manual patch install are unaffected - this is a scheduler-only kill switch, not a device-wide automation pause. New `Rmm\Device\DeviceService::setAutomationDisabled()`, `Rmm\Technician\TechnicianActions::setAutomationDisabled()`. Migration 0039 adds the column, default 0 (off): nothing changes for an existing device until an admin turns it on.
