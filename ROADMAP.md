@@ -8,7 +8,7 @@ Written 2026-10-05 from the state of `v0.7.1`; status brought up to date on 2026
 RivetCore 1.0.0 is a promise, not a feature count. It means:
 
 1. **A stable public API.** The contracts, services and tables listed as public are covered by semantic versioning, enforced by a backward-compatibility check in CI.
-2. **A supported platform matrix, tested.** PHP 8.2, 8.3, 8.4 and 8.5; MariaDB 10.11 and 11; MySQL 8.0 and 8.4; Redis 7 (optional everywhere).
+2. **A supported platform matrix, tested.** PHP 8.5 (the minimum from 1.0.0-rc.31; 8.2 to 8.4 were dropped); MariaDB 10.11 and 11; MySQL 8.0 and 8.4; Redis 7 (optional everywhere).
 3. **Production proof.** Both editions run the 1.0 release candidate in production for at least 30 days with every module they use actually exercised, and no open P1 or P2 bug.
 4. **Quality gates that stay green.** Static analysis, measured coverage, dependency audit, and a security review with no open HIGH or MEDIUM finding.
 5. **Documentation an outside developer can use.** How to write an edition adapter, what each module owns and how it fails, how to upgrade, how to report a vulnerability.
@@ -173,6 +173,38 @@ compatible with already enrolled agents. Design: [docs/design/endpoint-module-ex
 | 8b | Change monitoring: registry, configuration file, local group and scheduled-task changes, Security log presets (optional, off by default) | L | - | **built in Core (v1.0.0-rc.22, migration 0030), not adopted by an edition yet**, behind the `change_monitor` sub-switch (off, with a storage warning): a signed watch configuration, presets for Windows and Linux, a watch policy that keeps credential stores out, change records in the same database with retention and caps, a "who changed what" timeline, alert rules and `rmm.change.*` events. **The Windows code has never run on a Windows host.** [CHANGE_MONITOR.md](docs/rmm/CHANGE_MONITOR.md) |
 
 Effect on 1.0: the RMM module adds public API, so `1.0.0-rc.N` is re-cut after Phase 0 and the 30-day soak starts from that candidate; Phases 1 to 8 are 1.x minor releases.
+
+### Programme status (updated 2026-10-23, through v1.0.0-rc.33)
+
+**Shipped since the phase table was last updated**
+
+| Release | What |
+|---|---|
+| rc.23 to rc.25 | Clock-skew detection and notice (migration 0031), check sets per OS (0032), alerting false positives fixed |
+| rc.26 to rc.28 | Auto-install of software with the installer (0033), Mesh agent after approval (0034), device type with an installer option (0035), Linux install that downloads and installs itself, Mesh node retry |
+| rc.29 | Hypervisor visibility for Proxmox and Hyper-V only (0036): hosts, VMs, storage, snapshots, backups, alerts |
+| rc.30 | Agent binaries and releases are per operating system (0037) |
+| rc.31 | Security fixes from the rc.21 to rc.30 review (Mesh node claims need approval, change-monitor redaction, config sequence counter, 0038); **PHP 8.5 is the minimum** |
+| rc.32 | Per-device kill switch for scheduled scripts and patch installs (0039). Tagged with CI red, repaired in rc.33 |
+| rc.33 | CI repair, `composer.lock` committed, dependency audit job (`composer audit`, `govulncheck`) |
+
+**In progress**
+
+| Item | State |
+|---|---|
+| Shared design assets: RivetIT is the reference, Core owns the common CSS layer, editions keep a thin override file, drift check in CI | being built in Core; editions opt in afterwards (RivetMSP will see visible changes) |
+| RivetPanel device-token API: reuse the RMM device-enrollment system, per-device scoped tickets and chat endpoints, revocation, rate limits, audit. Decisions: contact optional; client-level devices may create tickets only if a per-client setting (default off) allows it | being built in Core; each edition then adds thin `api/v1/panel_*.php` wrappers and a Deploy page |
+| Mesh auto-pairing without manual approval (a fresh unguessable pairing group per install, verified through MeshCentral) | design written (`docs/design/mesh-auto-pairing.md`, branch `mesh-pairing-design`); needs a read-only check against a live Mesh before building (estimate 4 to 6 days) |
+| Edition adoption of rc.30 to rc.33: hypervisor pages, device type, Mesh Approve button, policy starter pack, install apps, kill switch | edition work, not started in the edition chats |
+
+**Open**
+
+- Second security review of the newest features (the rc.31 review covered rc.21 to rc.30; the rc.32 kill switch is unreviewed).
+- "Verify against official release" on the build host and an optional customer-certificate signing hook (#75).
+- Measured capacity numbers (#42); PR #58 (`quality-gates-1.0`) merge or close; close the built issues #69 to #74, #76 (hold #72 until patching runs on a real PC).
+- Real-device proof still owed: patch install, Proxmox and Hyper-V collectors, Linux Mesh install, MSI upgrade, repair and uninstall.
+- On hold: GPO template builder (#88) pending compliance.
+- Edition-only requests tracked in the edition chats: ticket Email Templates, RMM tickets as Maintenance with SLA off by default, per-ticket no-email option.
 
 ### 1.0.0-rc.1 and onward (feature freeze and soak)
 
