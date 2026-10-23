@@ -54,6 +54,24 @@ final class UiAssetsTest extends TestCase
         self::assertNotEmpty($manifest['files']);
     }
 
+    /**
+     * The one deliberate deviation from RivetIT's bytes (docs/ui/DESIGN_ASSETS.md, "Deviations from RivetIT"): accessible muted text.
+     * Put RivetIT's value back and the file must hash to what the verified split of RivetIT 26.10.68's itflow_design.css produced
+     * (RivetIT original d619b495...; the split is proven by scripts/ui-css-split.php verify, which applies the same exception).
+     */
+    public function testMutedTextColourIsTheOnlyDeviationInDesignCss(): void
+    {
+        $css = (string) file_get_contents(ui_assets_root() . '/css/itflow_design.css');
+        self::assertSame(1, substr_count($css, "  --if-muted: #4b5d64;\n"), 'light-theme token is the accessible value');
+        self::assertSame(0, substr_count($css, '--if-muted: #5d6f76'), 'RivetIT value is gone from the declaration');
+        $asRivetIt = str_replace("  --if-muted: #4b5d64;\n", "  --if-muted: #5d6f76;\n", $css);
+        self::assertSame(self::DESIGN_CSS_RIVETIT_SPLIT_SHA256, hash('sha256', $asRivetIt));
+        // Exactly one line differs (same line count, one changed line).
+        self::assertSame(substr_count($css, "\n"), substr_count($asRivetIt, "\n"));
+    }
+
+    private const DESIGN_CSS_RIVETIT_SPLIT_SHA256 = '8aaf3030446237b59c7e63a605b8c1abe0688178f997b8de12ed8f142047b33c';
+
     public function testSelfCheckScriptPasses(): void
     {
         [$code, $out] = $this->script('check-ui-assets.php');

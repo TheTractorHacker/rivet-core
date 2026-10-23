@@ -47,6 +47,30 @@ const SPLIT = [
 ];
 
 /**
+ * Deliberate, reviewed deviations from the edition's bytes (docs/ui/DESIGN_ASSETS.md, "Deviations from RivetIT"). Key: file; value: list of
+ * [text in Core, text in the edition]. `split` writes the Core text, `verify` puts the edition text back before it compares, so the
+ * proof still ends in the edition's exact bytes. Each pair must occur exactly once.
+ */
+const DEVIATIONS = [
+    // Blake, 2026-10-23: WCAG AA muted text (4.19:1 on --if-bg is below 4.5:1). RivetMSP already ships #4b5d64.
+    'itflow_design.css' => [['  --if-muted: #4b5d64;', '  --if-muted: #5d6f76;']],
+];
+
+/** Applies DEVIATIONS for $file: $toCore true = edition bytes to Core bytes, false = the way back. */
+function deviate(string $file, string $text, bool $toCore): string
+{
+    foreach (DEVIATIONS[$file] ?? [] as [$core, $ed]) {
+        [$from, $to] = $toCore ? [$ed, $core] : [$core, $ed];
+        if (substr_count($text, $from) !== 1) {
+            fwrite(STDERR, "deviation for $file must match exactly once: " . trim($from) . "\n");
+            exit(1);
+        }
+        $text = str_replace($from, $to, $text);
+    }
+    return $text;
+}
+
+/**
  * Order-sensitive pairs a human looked at and cleared. Key: "<moved selector> | <later selector>"; value: why the order cannot matter.
  */
 const REVIEWED = [
@@ -117,7 +141,7 @@ if ($cmd === 'split') {
         copy("$src/$f", "$shared/$f");
     }
     foreach (SPLIT as $f => $cfg) {
-        $parts = route((string) file_get_contents("$src/$f"), $cfg['pattern']);
+        $parts = route(deviate($f, (string) file_get_contents("$src/$f"), true), $cfg['pattern']);
         file_put_contents("$shared/$f", join_chunks($parts['shared']));
         file_put_contents("$edition/{$cfg['edition']}", join_chunks($parts['edition']));
         printf("%s: %d chunks stay in Core, %d move to %s\n", $f, count($parts['shared']), count($parts['edition']), $cfg['edition']);
@@ -135,7 +159,7 @@ foreach (VERBATIM as $f) {
 foreach (SPLIT as $f => $cfg) {
     $orig = (string) file_get_contents("$src/$f");
     $origChunks = CssChunker::chunks($orig);
-    $sh = CssChunker::chunks((string) file_get_contents("$shared/$f"));
+    $sh = CssChunker::chunks(deviate($f, (string) file_get_contents("$shared/$f"), false));
     $ed = CssChunker::chunks((string) file_get_contents("$edition/{$cfg['edition']}"));
 
     // Merge: walk the original; every original chunk must be the next unread chunk of exactly one part.
