@@ -72,6 +72,7 @@ class InMemoryPanelTicketGateway implements PanelTicketGatewayInterface
         $this->tickets[$ticketId]['status'] = 'Closed';
     }
 
+    /** @return array<string,mixed>|null */
     public function ticketRow(int $ticketId): ?array
     {
         return $this->tickets[$ticketId] ?? null;

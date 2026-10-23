@@ -280,7 +280,7 @@ final class PanelService
         if (!isset($q[$key]) || $q[$key] === '') {
             return $default;
         }
-        if (!is_string($q[$key]) || preg_match('/^\d{1,18}$/', $q[$key]) !== 1) {
+        if (preg_match('/^\d{1,18}$/', $q[$key]) !== 1) {
             throw new ApiError(422, 'invalid', "$key must be a non-negative integer.");
         }
 
