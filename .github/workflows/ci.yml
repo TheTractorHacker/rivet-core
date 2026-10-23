@@ -75,6 +75,26 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           "$(go env GOPATH)/bin/govulncheck" ./...
 
+  ui-assets:
+    name: shared UI assets (manifest self-consistency)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: '8.5' }
+      # assets/ui/MANIFEST.json must describe assets/ui exactly (hashes, sizes, no unlisted file, load order). After editing an asset run
+      # php scripts/build-ui-manifest.php and commit the manifest.
+      - run: php scripts/check-ui-assets.php
+      # What an edition receives is the git archive (Composer dist), not the working tree: run the shipped scripts from an extracted
+      # archive, install into an empty directory and check the result, so .gitattributes cannot silently drop a script or an asset.
+      - name: installer and checker work from the package
+        run: |
+          pkg="$(mktemp -d)"; dest="$(mktemp -d)"
+          git archive HEAD | tar -x -C "$pkg"
+          php "$pkg/scripts/check-ui-assets.php"
+          php "$pkg/scripts/install-ui-assets.php" --css="$dest" --js="$dest"
+          php "$pkg/scripts/check-ui-assets.php" --css="$dest" --js="$dest"
+
   lowest:
     name: lowest supported dependencies
     runs-on: ubuntu-latest
