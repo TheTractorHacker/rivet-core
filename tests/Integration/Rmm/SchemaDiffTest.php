@@ -146,7 +146,7 @@ final class SchemaDiffTest extends TestCase
             foreach ($rows as &$r) {
                 unset($r['updated_at']); // ON UPDATE current_timestamp()
                 // columns the migrations add are not part of what existed before
-                foreach (['ca_pem', 'arch', 'binary_id', 'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices', 'clock_skew_s', 'clock_skew_at', 'clock_offset_s', 'clock_skew_event_at', 'last_reject_reason', 'last_reject_at', 'detected_type', 'os'] as $new) {
+                foreach (['ca_pem', 'arch', 'binary_id', 'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices', 'clock_skew_s', 'clock_skew_at', 'clock_offset_s', 'clock_skew_event_at', 'last_reject_reason', 'last_reject_at', 'detected_type', 'device_automation_disabled', 'os'] as $new) {
                     unset($r[$new]);
                 }
             }
