@@ -146,7 +146,7 @@ final class SchemaDiffTest extends TestCase
             foreach ($rows as &$r) {
                 unset($r['updated_at']); // ON UPDATE current_timestamp()
                 // columns the migrations add are not part of what existed before
-                foreach (['ca_pem', 'arch', 'binary_id', 'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices', 'clock_skew_s', 'clock_skew_at', 'clock_offset_s', 'clock_skew_event_at', 'last_reject_reason', 'last_reject_at', 'detected_type', 'device_automation_disabled', 'os'] as $new) {
+                foreach (['ca_pem', 'arch', 'binary_id', 'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices', 'clock_skew_s', 'clock_skew_at', 'clock_offset_s', 'clock_skew_event_at', 'last_reject_reason', 'last_reject_at', 'detected_type', 'device_automation_disabled', 'os', 'kind', 'contact_id'] as $new) {
                     unset($r[$new]);
                 }
             }
@@ -165,7 +165,8 @@ final class SchemaDiffTest extends TestCase
         $in = "'" . implode("','", array_keys(RmmSchema::tables())) . "'";
         $tables = $db->fetchAll("SELECT TABLE_NAME, ENGINE, TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) ORDER BY TABLE_NAME");
         // The six clock columns are added by migration 0031 (after the reference was frozen); ClockSkewTest covers them, so this comparison leaves them out. They are the LAST columns, so no ordinal moves.
-        $columns = $db->fetchAll("SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) AND NOT (TABLE_NAME = 'endpoint_agent_devices' AND COLUMN_NAME IN ('clock_skew_s','clock_skew_at','clock_offset_s','clock_skew_event_at','last_reject_reason','last_reject_at','detected_type','device_automation_disabled')) ORDER BY TABLE_NAME, ORDINAL_POSITION");
+        $columns = $db->fetchAll("SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) AND NOT (TABLE_NAME = 'endpoint_agent_devices' AND COLUMN_NAME IN ('clock_skew_s','clock_skew_at','clock_offset_s','clock_skew_event_at','last_reject_reason','last_reject_at','detected_type','device_automation_disabled','kind','contact_id')) AND NOT (TABLE_NAME = 'endpoint_agent_enrollment_tokens' AND COLUMN_NAME IN ('kind','contact_id')) ORDER BY TABLE_NAME, ORDINAL_POSITION");
+        // Migration 0040 (RivetPanel) adds kind and contact_id as the LAST columns of the devices and enrollment-token tables; PanelMigrationTest covers them.
         // Migration 0039 puts device_automation_disabled after retired_at (not last), so the columns behind it move up one place. With the excluded columns gone,
         // the remaining ones are renumbered 1..n per table, which still proves their relative order against the frozen reference.
         $seen = [];

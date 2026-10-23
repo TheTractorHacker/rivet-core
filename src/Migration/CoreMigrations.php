@@ -40,6 +40,7 @@ use RivetCore\Rmm\Migration\Migration0035DeviceType;
 use RivetCore\Rmm\Migration\Migration0036Hypervisors;
 use RivetCore\Rmm\Migration\Migration0037AgentOs;
 use RivetCore\Rmm\Migration\Migration0038ConfigSeq;
+use RivetCore\Panel\Migration\Migration0040PanelApi;
 use RivetCore\Rmm\Migration\Migration0039AutomationDisabled;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
@@ -93,6 +94,7 @@ final class CoreMigrations
             new Migration0037AgentOs(),
             new Migration0038ConfigSeq(),
             new Migration0039AutomationDisabled(),
+            new Migration0040PanelApi(),
         ];
     }
 }

@@ -193,7 +193,10 @@ switch ($cmd) {
             while ($r = $res->fetch_assoc()) {
                 if ($t === 'endpoint_agent_devices') {
                     // rc.23 clock columns (migration 0031) and the rc.28 detected_type (migration 0035) are not part of the baseline; left out like the switch columns.
-                    $r = array_diff_key($r, array_flip(['clock_skew_s', 'clock_skew_at', 'clock_offset_s', 'clock_skew_event_at', 'last_reject_reason', 'last_reject_at', 'detected_type', 'device_automation_disabled']));
+                    $r = array_diff_key($r, array_flip(['clock_skew_s', 'clock_skew_at', 'clock_offset_s', 'clock_skew_event_at', 'last_reject_reason', 'last_reject_at', 'detected_type', 'device_automation_disabled', 'kind', 'contact_id']));
+                }
+                if ($t === 'endpoint_agent_enrollment_tokens') {
+                    unset($r['kind'], $r['contact_id']);   // rc.34 (migration 0040, RivetPanel): not part of the baseline
                 }
                 if ($t === 'endpoint_agent_releases' || $t === 'endpoint_agent_binaries') {
                     unset($r['os']);   // rc.30 (migration 0037): not part of the baseline
