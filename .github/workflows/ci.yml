@@ -57,6 +57,24 @@ jobs:
           # The starter pack's Linux proof also runs in a container with common tools installed (about 3 minutes); once is enough.
           RIVETCORE_STARTER_PROOF_TOOLS: ${{ matrix.php == '8.5' && matrix.db == 'mariadb:11' && '1' || '' }}
 
+  dependency-audit:
+    name: dependency audit (composer + govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: '8.5', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
+      # composer.lock is committed so this audit (and any scanner reading the repo) sees the exact dependency set CI tests.
+      - run: composer audit --locked --no-interaction
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: endpoint-agent/go.mod
+      - name: govulncheck
+        working-directory: endpoint-agent
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
   lowest:
     name: lowest supported dependencies
     runs-on: ubuntu-latest
