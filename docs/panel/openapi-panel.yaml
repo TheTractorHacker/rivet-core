@@ -1,0 +1,415 @@
+openapi: 3.1.0
+info:
+  title: RivetCore RivetPanel device-token API
+  version: 1.0.0
+  summary: The endpoints of the RivetPanel desktop helper: enrollment, categories, tickets and ticket chat, authenticated only by a per-device panel token.
+  description: |
+    The server side of RivetPanel (`RivetCore\Panel`), as served by an edition (RivetIT, RivetMSP) under `/api/v1`. The prose document is
+    [PANEL_API.md](PANEL_API.md); this file is its machine-readable form.
+
+    A panel enrolls ONCE with a short-lived, single-use enrollment token an administrator minted for a client and optionally a contact
+    (`rvtp1.<selector>.<secret>`), and receives a per-device credential (`rvpd_` plus 64 hex, shown once, only its SHA-256 is stored).
+    Every other call carries that credential as a bearer. **The server derives the client and the contact from the credential and ignores any
+    `client_id` or `contact_id` the caller sends.** A panel credential never works on an RMM agent endpoint and an RMM agent credential never
+    works here.
+
+    Every JSON answer, errors included, carries `server_time` (RFC 3339 UTC) so the panel can see its clock skew. Nothing a panel sends is a
+    timestamp, so there is no time window to violate. Errors are `{"error", "code", "server_time"}`; the `code` is the contract. All text
+    in a response is plain text with markup neutralised: render it as text and decode only `&lt;` and `&gt;`.
+servers:
+  - url: /api/v1
+    description: Relative to the edition's host
+tags:
+  - name: Enrollment
+  - name: Tickets
+security: []
+paths:
+  /panel_enroll:
+    post:
+      tags: [Enrollment]
+      operationId: panelEnroll
+      summary: Exchange an enrollment token for a per-device credential (no bearer)
+      description: |
+        The same `install_id` enrolling again (with a new enrollment token) keeps the device and rotates the credential. A revoked device is refused
+        until an administrator allows re-enrollment. An RMM enrollment token (`rvte1.`) is not accepted here. Failures are limited per address
+        from the database (10 failures or 60 attempts per 600 s, 429 with `Retry-After: 600`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EnrollRequest'}
+      responses:
+        '201':
+          description: Enrolled
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnrollResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {description: 'The token is used up or the device was revoked/retired (`forbidden`), or the contact the token was issued for is gone (`contact_invalid`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '409': {description: 'The install_id belongs to an RMM agent or another client (`conflict`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+  /panel_me:
+    get:
+      tags: [Enrollment]
+      operationId: panelMe
+      summary: Who this device is and what it may do
+      security: [{panelAuth: []}]
+      responses:
+        '200':
+          description: The device's client, contact (or null), capabilities and limits
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Me'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ContactInvalid'}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+  /panel_categories:
+    get:
+      tags: [Tickets]
+      operationId: panelCategories
+      summary: The ticket categories of the device's client
+      description: Available to every panel device, including a client-level device whose client has not allowed tickets. At most 120 per 60 s per device.
+      security: [{panelAuth: []}]
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [categories, server_time]
+                properties:
+                  categories:
+                    type: array
+                    items: {$ref: '#/components/schemas/Category'}
+                  server_time: {type: string, format: date-time}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ContactInvalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+  /panel_tickets:
+    get:
+      tags: [Tickets]
+      operationId: panelTicketsList
+      summary: List this device's tickets (GET /tickets)
+      description: |
+        A device with a contact lists the tickets of that contact plus the tickets its own device created; a client-level device lists only the ones
+        it created. Always inside the device's own client. 403 `client_level_disabled` for a client-level device while the client's setting is off.
+        At most 120 per 60 s per device.
+      security: [{panelAuth: []}]
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        '200':
+          description: A page of tickets, newest activity first
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketList'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/TicketsForbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+    post:
+      tags: [Tickets]
+      operationId: panelTicketsCreate
+      summary: Create a ticket (POST /tickets)
+      description: |
+        The ticket is filed under the client and contact of the credential. `client_id`, `contact_id` and every other unknown field are ignored.
+        A client-level device may create only while the client's setting is on. `client_request_id` makes a retry safe: the same id from the same
+        device returns the first ticket (200, `replayed: true`). At most 10 per 60 s and 50 per day per device.
+      security: [{panelAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TicketCreate'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketCreated'}
+        '200':
+          description: A replay of an earlier request with the same `client_request_id`
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketCreated'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/TicketsForbidden'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {description: 'Invalid field (`invalid`) or an attachment that is not accepted (`attachment_rejected`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+  /panel_ticket_chat:
+    get:
+      tags: [Tickets]
+      operationId: panelChatRead
+      summary: Read the conversation of a ticket (GET /tickets/{id}/chat)
+      description: |
+        Only tickets this device created, or (device with a contact) tickets of that contact. Any other ticket, and a ticket that does not exist, is the
+        same 404 `not_found`. Internal notes are never returned. Poll with `after` set to the previous `next_after`.
+        The ticket id is the first path segment or the `ticket_id` query value, whichever the edition's wrapper provides.
+      security: [{panelAuth: []}]
+      parameters:
+        - {name: ticket_id, in: query, required: false, schema: {type: integer, minimum: 1}}
+        - {name: after, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200':
+          description: Messages after the cursor, oldest first
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Chat'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/TicketsForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+    post:
+      tags: [Tickets]
+      operationId: panelChatPost
+      summary: Post a message on a ticket (POST /tickets/{id}/chat)
+      description: Same access rule as reading. A closed ticket answers 409 `ticket_closed`. At most 20 per 60 s per device.
+      security: [{panelAuth: []}]
+      parameters:
+        - {name: ticket_id, in: query, required: false, schema: {type: integer, minimum: 1}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChatPost'}
+      responses:
+        '201':
+          description: Posted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ticket_id, message_id, server_time]
+                properties:
+                  ticket_id: {type: integer}
+                  message_id: {type: integer}
+                  server_time: {type: string, format: date-time}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/TicketsForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: 'The ticket is closed (`ticket_closed`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {description: 'Invalid field (`invalid`) or an attachment that is not accepted (`attachment_rejected`)', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '426': {$ref: '#/components/responses/TlsRequired'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/ModuleDisabled'}
+components:
+  securitySchemes:
+    panelAuth:
+      type: http
+      scheme: bearer
+      description: The per-device panel credential issued by POST /panel_enroll (`rvpd_` plus 256 random bits as 64 hex characters, only its SHA-256 stored, revocable and rotatable). Not an RMM agent credential, not a user token.
+  responses:
+    Unauthenticated:
+      description: 'Credential or enrollment token not accepted: `code` is `invalid_token`, `revoked` or `expired`'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    ContactInvalid:
+      description: 'The contact this panel belongs to was archived, deleted or moved (`contact_invalid`)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    TicketsForbidden:
+      description: 'A client-level device while its client has not allowed tickets (`client_level_disabled`), or the contact is gone (`contact_invalid`)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    NotFound:
+      description: 'The ticket does not exist or is outside this device''s scope (`not_found`, the same answer for both)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    MethodNotAllowed:
+      description: Wrong method (`method_not_allowed`; `Allow` lists the right ones)
+      headers: {Allow: {schema: {type: string}}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    TooLarge:
+      description: 'Body or attachment over the cap (`too_large`)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    Invalid:
+      description: 'Invalid body or parameters (`invalid`)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    TlsRequired:
+      description: 'Plain HTTP (`tls_required`)'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    RateLimited:
+      description: 'Over the budget (`rate_limited`); wait `Retry-After` seconds'
+      headers: {Retry-After: {schema: {type: integer}}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    ModuleDisabled:
+      description: 'The panel service is switched off on this server (`module_disabled`, `Retry-After: 3600`)'
+      headers: {Retry-After: {schema: {type: integer}}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+  schemas:
+    Error:
+      type: object
+      required: [error, code, server_time]
+      properties:
+        error: {type: string}
+        code:
+          type: string
+          enum: [invalid_token, revoked, expired, forbidden, contact_invalid, client_level_disabled, not_found, invalid, attachment_rejected, too_large, rate_limited, method_not_allowed, tls_required, conflict, ticket_closed, module_disabled, internal]
+        server_time: {type: string, format: date-time}
+    EnrollRequest:
+      type: object
+      required: [enrollment_token, device]
+      properties:
+        enrollment_token: {type: string, pattern: '^rvtp1\.[0-9a-f]{12}\.[0-9a-f]{40}$'}
+        device:
+          type: object
+          required: [install_id, hostname, os]
+          properties:
+            install_id: {type: string, format: uuid, description: 'Generated once by the panel installation'}
+            hostname: {type: string, minLength: 1, maxLength: 200}
+            os: {type: string, enum: [windows, linux, macos]}
+            os_version: {type: string, maxLength: 200}
+            app_version: {type: string, maxLength: 40}
+    EnrollResponse:
+      type: object
+      required: [device_id, device_token, client, contact, can_create_tickets, limits, server_time]
+      properties:
+        device_id: {type: integer}
+        device_token: {type: string, pattern: '^rvpd_[0-9a-f]{64}$', description: Shown once}
+        client: {$ref: '#/components/schemas/ClientRef'}
+        contact:
+          oneOf:
+            - {type: 'null'}
+            - {$ref: '#/components/schemas/ContactRef'}
+        can_create_tickets: {type: boolean}
+        limits: {$ref: '#/components/schemas/Limits'}
+        server_time: {type: string, format: date-time}
+    Me:
+      type: object
+      required: [device_id, client, contact, can_create_tickets, can_view_tickets, limits, server_time]
+      properties:
+        device_id: {type: integer}
+        client: {$ref: '#/components/schemas/ClientRef'}
+        contact:
+          oneOf:
+            - {type: 'null'}
+            - {$ref: '#/components/schemas/ContactRef'}
+        can_create_tickets: {type: boolean}
+        can_view_tickets: {type: boolean}
+        limits: {$ref: '#/components/schemas/Limits'}
+        server_time: {type: string, format: date-time}
+    ClientRef:
+      type: object
+      properties:
+        client_id: {type: integer}
+        name: {type: string}
+    ContactRef:
+      type: object
+      properties:
+        contact_id: {type: integer}
+        name: {type: string}
+    Limits:
+      type: object
+      properties:
+        subject_max: {type: integer}
+        ticket_body_max: {type: integer}
+        chat_body_max: {type: integer}
+        attachments_max: {type: integer}
+        attachment_bytes_max: {type: integer}
+        attachments_total_max: {type: integer}
+        attachment_extensions: {type: array, items: {type: string}}
+    Category:
+      type: object
+      properties:
+        category_id: {type: integer}
+        name: {type: string}
+    Attachment:
+      type: object
+      required: [filename, content_type, data_base64]
+      properties:
+        filename: {type: string, description: 'Reduced to a safe basename; needs an allowed extension'}
+        content_type: {type: string, description: 'Must be the type the extension maps to'}
+        data_base64: {type: string, contentEncoding: base64}
+    TicketCreate:
+      type: object
+      required: [subject, body]
+      properties:
+        subject: {type: string, minLength: 1, maxLength: 200}
+        body: {type: string, minLength: 1, maxLength: 20000}
+        category_id: {type: [integer, 'null']}
+        display_name: {type: string, maxLength: 100, description: 'The OS user name, a hint shown as "reported as", never an identity'}
+        client_request_id: {type: string, format: uuid}
+        attachments: {type: array, maxItems: 3, items: {$ref: '#/components/schemas/Attachment'}}
+    TicketCreated:
+      type: object
+      required: [ticket_id, replayed, server_time]
+      properties:
+        ticket_id: {type: integer}
+        replayed: {type: boolean}
+        server_time: {type: string, format: date-time}
+    TicketSummary:
+      type: object
+      properties:
+        ticket_id: {type: integer}
+        subject: {type: string}
+        status: {type: string}
+        closed: {type: boolean}
+        category_id: {type: [integer, 'null']}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        mine: {type: boolean, description: 'Created by this device'}
+    TicketList:
+      type: object
+      required: [tickets, limit, offset, has_more, server_time]
+      properties:
+        tickets: {type: array, items: {$ref: '#/components/schemas/TicketSummary'}}
+        limit: {type: integer}
+        offset: {type: integer}
+        has_more: {type: boolean}
+        server_time: {type: string, format: date-time}
+    ChatPost:
+      type: object
+      required: [body]
+      properties:
+        body: {type: string, minLength: 1, maxLength: 5000}
+        display_name: {type: string, maxLength: 100}
+        attachments: {type: array, maxItems: 3, items: {$ref: '#/components/schemas/Attachment'}}
+    Chat:
+      type: object
+      required: [ticket, messages, next_after, server_time]
+      properties:
+        ticket:
+          type: object
+          properties:
+            ticket_id: {type: integer}
+            subject: {type: string}
+            status: {type: string}
+            closed: {type: boolean}
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              message_id: {type: integer}
+              from: {type: string, enum: [you, staff]}
+              author: {type: string}
+              body: {type: string}
+              created_at: {type: string, format: date-time}
+              attachments:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    filename: {type: string}
+                    content_type: {type: string}
+                    size: {type: integer}
+        next_after: {type: integer}
+        server_time: {type: string, format: date-time}
