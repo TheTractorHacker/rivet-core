@@ -54,7 +54,23 @@ const SPLIT = [
 const DEVIATIONS = [
     // Blake, 2026-10-23: WCAG AA muted text (4.19:1 on --if-bg is below 4.5:1). RivetMSP already ships #4b5d64.
     'itflow_design.css' => [['  --if-muted: #4b5d64;', '  --if-muted: #5d6f76;']],
+    // The two page names the webhook wizard linked to (Internal network access, the edit page) are now read from optional
+    // data-wz-networks / data-wz-edit attributes of [data-wz]. Without them the script uses the same literals as before, so RivetIT, which
+    // sets neither attribute, behaves identically.
+    'webhook_wizard.js' => [
+        [
+            "  var webhookId = root.getAttribute('data-wz-id') || '';\n  var networksUrl = root.getAttribute('data-wz-networks') || 'settings_webhooks.php#internal-networks';\n  var editUrl = root.getAttribute('data-wz-edit') || 'webhook_edit.php';\n",
+            "  var webhookId = root.getAttribute('data-wz-id') || '';\n",
+        ],
+        ["a.href = networksUrl;", "a.href = 'settings_webhooks.php#internal-networks';"],
+        ["dl.href = editUrl + '?id=' +", "dl.href = 'webhook_edit.php?id=' +"],
+        ["'', editUrl + '?id=' +", "'', 'webhook_edit.php?id=' +"],
+    ],
 ];
+
+/** Scripts copied to Core unchanged (js/). webhook_wizard.js is the only one with a deviation. */
+const JS_VERBATIM = ['chart_theme.js', 'icon_picker.js', 'date_range_picker.js', 'event_picker.js', 'webhook_guides.js'];
+const JS_DEVIATING = ['webhook_wizard.js'];
 
 /** Applies DEVIATIONS for $file: $toCore true = edition bytes to Core bytes, false = the way back. */
 function deviate(string $file, string $text, bool $toCore): string
@@ -129,6 +145,16 @@ $src = opt('src');
 $shared = opt('shared');
 $edition = opt('edition');
 $fail = 0;
+// Optional: also prove the scripts. --js-src=<edition js dir> --js=assets/ui/js
+$jsSrc = null;
+$jsDir = null;
+foreach ($argv as $a) {
+    if (str_starts_with($a, '--js-src=')) {
+        $jsSrc = rtrim(substr($a, 9), '/');
+    } elseif (str_starts_with($a, '--js=')) {
+        $jsDir = rtrim(substr($a, 5), '/');
+    }
+}
 
 if ($cmd === 'split') {
     foreach ([$shared, $edition] as $d) {
@@ -154,6 +180,17 @@ foreach (VERBATIM as $f) {
     $b = is_file("$shared/$f") ? hash_file('sha256', "$shared/$f") : 'missing';
     printf("%-6s %-28s sha256 %s\n", $a === $b ? 'SAME' : 'DIFF', $f, substr((string) $a, 0, 16));
     $fail += $a === $b ? 0 : 1;
+}
+
+if ($jsSrc !== null && $jsDir !== null) {
+    foreach (array_merge(JS_VERBATIM, JS_DEVIATING) as $f) {
+        $a = hash_file('sha256', "$jsSrc/$f");
+        $core = is_file("$jsDir/$f") ? (string) file_get_contents("$jsDir/$f") : null;
+        $b = $core === null ? 'missing' : hash('sha256', deviate($f, $core, false));
+        $kind = in_array($f, JS_DEVIATING, true) ? 'with the reviewed deviation reversed' : 'verbatim';
+        printf("%-6s js/%-24s sha256 %s (%s)\n", $a === $b ? 'SAME' : 'DIFF', $f, substr((string) $a, 0, 16), $kind);
+        $fail += $a === $b ? 0 : 1;
+    }
 }
 
 foreach (SPLIT as $f => $cfg) {

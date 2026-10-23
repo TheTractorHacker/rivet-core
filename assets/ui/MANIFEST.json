@@ -96,6 +96,31 @@
             "sha256": "070865bb4ceb8e29db408bec92dbc683c8ff350fb77f308b504c30ea0632e7ea",
             "bytes": 6125,
             "origin": "rivetit-verbatim"
+        },
+        "js/date_range_picker.js": {
+            "sha256": "fd0445c9ca151dfbb968c1d262f5a4ea5ebf5e37e6d127425de8960b63700d0e",
+            "bytes": 12305,
+            "origin": "core"
+        },
+        "js/event_picker.js": {
+            "sha256": "4b5da886f94f68343265942092b8dec4dacf440c3f4c7fb21bcd7245b2a04855",
+            "bytes": 19913,
+            "origin": "core"
+        },
+        "js/icon_picker.js": {
+            "sha256": "3dde00674bb3970314aac1c5ffea56461a888ef0f0dba492d3fbba25668e7d0b",
+            "bytes": 9604,
+            "origin": "core"
+        },
+        "js/webhook_guides.js": {
+            "sha256": "7744477f9ea686efe58122dd4bf8021eec898f00e0ecf5a8213a78815e745cd5",
+            "bytes": 13798,
+            "origin": "core"
+        },
+        "js/webhook_wizard.js": {
+            "sha256": "28f6c1efe21e638f8926c485205de65e7839556ae537c27e14554e46ad264771",
+            "bytes": 53471,
+            "origin": "core"
         }
     },
     "load_order": [

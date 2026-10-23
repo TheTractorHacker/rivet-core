@@ -57,6 +57,10 @@ if ($bad !== []) {
 
 $changed = 0;
 $installed = [];
+if ($js === null) {
+    $scripts = count(array_filter(array_keys($manifest['files']), static fn(string $rel): bool => str_starts_with($rel, 'js/')));
+    fwrite(STDERR, "note: --js not given, the $scripts shared scripts were not installed (the picker, wizard and guide pages need them)\n");
+}
 foreach ($manifest['files'] as $rel => $meta) {
     $dir = str_starts_with($rel, 'css/') ? $css : $js;
     if ($dir === null) {

@@ -72,6 +72,57 @@ final class UiAssetsTest extends TestCase
 
     private const DESIGN_CSS_RIVETIT_SPLIT_SHA256 = '8aaf3030446237b59c7e63a605b8c1abe0688178f997b8de12ed8f142047b33c';
 
+    /** SHA-256 of RivetIT 26.10.68's js/<file>; Core's copy must be byte identical (the wizard: after reversing its reviewed deviation). */
+    private const RIVETIT_JS_SHA256 = [
+        'chart_theme.js' => '070865bb4ceb8e29db408bec92dbc683c8ff350fb77f308b504c30ea0632e7ea',
+        'icon_picker.js' => '3dde00674bb3970314aac1c5ffea56461a888ef0f0dba492d3fbba25668e7d0b',
+        'date_range_picker.js' => 'fd0445c9ca151dfbb968c1d262f5a4ea5ebf5e37e6d127425de8960b63700d0e',
+        'event_picker.js' => '4b5da886f94f68343265942092b8dec4dacf440c3f4c7fb21bcd7245b2a04855',
+        'webhook_guides.js' => '7744477f9ea686efe58122dd4bf8021eec898f00e0ecf5a8213a78815e745cd5',
+        'webhook_wizard.js' => '36aa8dd76ef5fda6ab8131d4fa5b2e80a86086f33d420867757c9b91f497a756',
+    ];
+
+    public function testSharedScriptsAreRivetItsBytes(): void
+    {
+        foreach (self::RIVETIT_JS_SHA256 as $file => $sha) {
+            $js = (string) file_get_contents(ui_assets_root() . '/js/' . $file);
+            if ($file === 'webhook_wizard.js') {
+                $js = $this->reverseWizardDeviation($js);
+            }
+            self::assertSame($sha, hash('sha256', $js), $file);
+        }
+        // Edition-owned on purpose (docs/ui/DESIGN_ASSETS.md): Core has no server half for it.
+        self::assertFileDoesNotExist(ui_assets_root() . '/js/event_rules.js');
+    }
+
+    /**
+     * The webhook wizard's only change: the two page names it linked to are read from optional attributes and fall back to the same
+     * literals. The fallbacks must be the original literals, and nothing else may differ.
+     */
+    public function testWebhookWizardDeviationFallsBackToTheOriginalLiterals(): void
+    {
+        $js = (string) file_get_contents(ui_assets_root() . '/js/webhook_wizard.js');
+        self::assertStringContainsString("root.getAttribute('data-wz-networks') || 'settings_webhooks.php#internal-networks'", $js);
+        self::assertStringContainsString("root.getAttribute('data-wz-edit') || 'webhook_edit.php'", $js);
+        self::assertSame(0, substr_count($js, "'webhook_edit.php?id='"), 'no other hard-coded edit page left');
+        self::assertSame(1, substr_count($js, "'settings_webhooks.php#internal-networks'"), 'only the fallback names the networks page');
+    }
+
+    private function reverseWizardDeviation(string $js): string
+    {
+        $pairs = [
+            ["  var networksUrl = root.getAttribute('data-wz-networks') || 'settings_webhooks.php#internal-networks';\n  var editUrl = root.getAttribute('data-wz-edit') || 'webhook_edit.php';\n", ''],
+            ['a.href = networksUrl;', "a.href = 'settings_webhooks.php#internal-networks';"],
+            ["dl.href = editUrl + '?id=' +", "dl.href = 'webhook_edit.php?id=' +"],
+            ["'', editUrl + '?id=' +", "'', 'webhook_edit.php?id=' +"],
+        ];
+        foreach ($pairs as [$from, $to]) {
+            self::assertSame(1, substr_count($js, $from), $from);
+            $js = str_replace($from, $to, $js);
+        }
+        return $js;
+    }
+
     public function testSelfCheckScriptPasses(): void
     {
         [$code, $out] = $this->script('check-ui-assets.php');
@@ -86,6 +137,10 @@ final class UiAssetsTest extends TestCase
         self::assertFileExists($this->tmp . '/css/' . UI_ASSETS_RECEIPT);
         self::assertFileExists($this->tmp . '/css/itflow_design.css');
         self::assertFileDoesNotExist($this->tmp . '/css/itflow_design.edition.css', 'edition overrides are never installed');
+        foreach (['icon_picker.js', 'date_range_picker.js', 'event_picker.js', 'webhook_wizard.js', 'webhook_guides.js', 'chart_theme.js'] as $js) {
+            self::assertFileExists($this->tmp . '/js/' . $js);
+        }
+        self::assertFileDoesNotExist($this->tmp . '/js/event_rules.js');
 
         [$code, $out] = $this->script('check-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
         self::assertSame(0, $code, $out);

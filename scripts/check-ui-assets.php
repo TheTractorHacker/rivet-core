@@ -55,6 +55,9 @@ if ($css === null && $js === null) {
         }
     }
     $problems = ui_assets_verify_edition($manifest, $css, $js);
+    if ($css === null || $js === null) {
+        fwrite(STDERR, 'note: only ' . ($css === null ? '--js' : '--css') . " was checked; pass both to cover every shared file\n");
+    }
     $what = 'edition copies against Core ' . $manifest['core_version'];
     $receipt = ($css ?? $js) . '/' . UI_ASSETS_RECEIPT;
     if (is_file($receipt)) {
