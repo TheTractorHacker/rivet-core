@@ -94,6 +94,9 @@ jobs:
           php "$pkg/scripts/check-ui-assets.php"
           php "$pkg/scripts/install-ui-assets.php" --css="$dest" --js="$dest"
           php "$pkg/scripts/check-ui-assets.php" --css="$dest" --js="$dest"
+          # the shared scripts must be in the package and reach the edition; event_rules.js is edition-owned and must not
+          for f in chart_theme icon_picker date_range_picker event_picker webhook_wizard webhook_guides; do test -s "$dest/$f.js"; done
+          test ! -e "$dest/event_rules.js"
 
   lowest:
     name: lowest supported dependencies
