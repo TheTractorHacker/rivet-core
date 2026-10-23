@@ -166,6 +166,13 @@ final class SchemaDiffTest extends TestCase
         $tables = $db->fetchAll("SELECT TABLE_NAME, ENGINE, TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) ORDER BY TABLE_NAME");
         // The six clock columns are added by migration 0031 (after the reference was frozen); ClockSkewTest covers them, so this comparison leaves them out. They are the LAST columns, so no ordinal moves.
         $columns = $db->fetchAll("SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) AND NOT (TABLE_NAME = 'endpoint_agent_devices' AND COLUMN_NAME IN ('clock_skew_s','clock_skew_at','clock_offset_s','clock_skew_event_at','last_reject_reason','last_reject_at','detected_type','device_automation_disabled')) ORDER BY TABLE_NAME, ORDINAL_POSITION");
+        // Migration 0039 puts device_automation_disabled after retired_at (not last), so the columns behind it move up one place. With the excluded columns gone,
+        // the remaining ones are renumbered 1..n per table, which still proves their relative order against the frozen reference.
+        $seen = [];
+        foreach ($columns as $i => $c) {
+            $seen[$c['TABLE_NAME']] = ($seen[$c['TABLE_NAME']] ?? 0) + 1;
+            $columns[$i]['ORDINAL_POSITION'] = $seen[$c['TABLE_NAME']];
+        }
         $indexes = $db->fetchAll("SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME, SUB_PART FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($in) ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX");
 
         // rc.30 (migration 0037) adds `os` to the binaries and releases tables and to their unique keys; ReleaseOsTest covers it. Here the key is read back under its
