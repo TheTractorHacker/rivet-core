@@ -84,7 +84,9 @@ final class PanelAttachments
             if ($ext === '' || !isset(self::TYPES[$ext]) || !in_array($ext, $limits->allowedExtensions, true)) {
                 throw self::bad("Attachment $n: files of this type are not accepted.");
             }
-            foreach (explode('.', strtolower($name)) as $part) {
+            $parts = explode('.', strtolower($name));
+            array_shift($parts);   // the first part is the name, not an extension ("app.log" is fine)
+            foreach ($parts as $part) {
                 if (in_array($part, self::DANGEROUS, true)) {
                     throw self::bad("Attachment $n: executable, script and markup files are not accepted.");
                 }
@@ -161,8 +163,8 @@ final class PanelAttachments
 
     private static function plainText(string $b): bool
     {
-        if (!mb_check_encoding($b, 'UTF-8') || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1A\x1C-\x1F\x7F]/', $b) === 1) {
-            return false;   // binary, or a stray ESC/NUL
+        if (!mb_check_encoding($b, 'UTF-8') || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $b) === 1) {
+            return false;   // binary, NUL, or terminal escape sequences
         }
 
         return preg_match('/<\s*(script|html|iframe|svg|object|embed|\?php|!doctype)/i', substr($b, 0, 8192)) !== 1;
