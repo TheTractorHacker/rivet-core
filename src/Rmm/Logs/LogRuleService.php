@@ -30,13 +30,17 @@ final class LogRuleService
     /** @var list<array<string,mixed>>|null enabled rules, per instance */
     private ?array $enabled = null;
 
+    private readonly \RivetCore\Rmm\Store\LogStore $logStore;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
         private readonly CheckEvaluator $checks,
         private readonly DeviceRepository $devices,
         private readonly ?RmmEventPublisher $events = null,
+        ?\RivetCore\Rmm\Store\LogStore $store = null,
     ) {
+        $this->logStore = $store ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbLogStore($sql);
     }
 
     // ------------------------------------------------------------------ CRUD
@@ -275,22 +279,8 @@ final class LogRuleService
      */
     private function windowCount(array $dev, array $rule): int
     {
-        $where = ['device_id = ?', 'occurred_at >= ?', 'level <= ?'];
-        $params = [(int) $dev['device_id'], $this->sql->utcAt(-(int) $rule['window_min'] * 60), (int) $rule['min_level']];
-        if ($rule['source_contains'] !== '') {
-            $where[] = "source LIKE ? ESCAPE '!'";
-            $params[] = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], (string) $rule['source_contains']) . '%';
-        }
-        if ($rule['code'] !== null) {
-            $where[] = 'code = ?';
-            $params[] = (int) $rule['code'];
-        }
-        if ($rule['contains'] !== '') {
-            $where[] = "message LIKE ? ESCAPE '!'";
-            $params[] = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], (string) $rule['contains']) . '%';
-        }
-
-        return (int) $this->sql->val('SELECT COUNT(*) FROM (SELECT 1 FROM endpoint_agent_log_events WHERE ' . implode(' AND ', $where) . ' LIMIT ' . ((int) $rule['threshold'] + 1) . ') t', $params);
+        return $this->logStore->countMatching((int) $dev['device_id'], $this->sql->utcAt(-(int) $rule['window_min'] * 60), (int) $rule['min_level'], (string) $rule['source_contains'],
+            $rule['code'] === null ? null : (int) $rule['code'], (string) $rule['contains'], (int) $rule['threshold'] + 1);
     }
 
     // ------------------------------------------------------------------ recovery

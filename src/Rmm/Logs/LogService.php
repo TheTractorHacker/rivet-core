@@ -9,6 +9,9 @@ use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Remote\RemoteSettings;
 use RivetCore\Rmm\RmmProtocol;
+use RivetCore\Rmm\Store\LogCriteria;
+use RivetCore\Rmm\Store\LogStore;
+use RivetCore\Rmm\Store\MariaDb\MariaDbLogStore;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -30,11 +33,15 @@ final class LogService
     /** Rows one housekeeping pass may delete in total. */
     public const PRUNE_RUN_CAP = 100000;
 
+    private readonly LogStore $store;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RemoteSettings $remote,
         private readonly ?LogRuleService $rules = null,
+        ?LogStore $store = null,
     ) {
+        $this->store = $store ?? new MariaDbLogStore($sql);
     }
 
     // ------------------------------------------------------------------ ingest
@@ -72,40 +79,11 @@ final class LogService
             $clean[] = $row;
         }
 
-        $kept = [];
-        $inserted = 0;
-        $this->sql->transaction(function () use ($deviceId, $limits, $now, $clean, &$dropped, &$kept, &$inserted, $agentDropped): void {
-            $this->sql->run('INSERT IGNORE INTO endpoint_agent_log_state (device_id) VALUES (?)', [$deviceId]);
-            $st = $this->sql->one('SELECT * FROM endpoint_agent_log_state WHERE device_id = ? FOR UPDATE', [$deviceId]) ?? [];
-            $budget = $limits['logs_rate_per_min'];
-            $winStart = ($st['window_start'] ?? null) === null ? 0 : Sql::ts((string) $st['window_start']);
-            $winCount = (int) ($st['window_count'] ?? 0);
-            if ($winStart === 0 || $now - $winStart >= 60) {
-                $winStart = $now;
-                $winCount = 0;
-            }
-            $rows = (int) ($st['row_count'] ?? 0);
-            $room = max(0, $budget - $winCount);
-            $deviceRoom = max(0, (int) ceil($limits['logs_device_max_rows'] * 1.2) - $rows);
-            $fleetRoom = max(0, (int) ceil($limits['logs_fleet_max_rows'] * 1.1) - $this->fleetRows());
-            $allow = min(count($clean), $room, $deviceRoom, $fleetRoom);
-            $dropped += count($clean) - $allow;
-            $kept = array_slice($clean, 0, $allow);
-            $nowSql = gmdate('Y-m-d H:i:s', $now);
-            foreach (array_chunk($kept, 100) as $chunk) {
-                $params = [];
-                $sqlRows = [];
-                foreach ($chunk as $r) {
-                    $sqlRows[] = '(?, ?, ?, ?, ?, ?, ?, UNHEX(?))';
-                    array_push($params, $deviceId, gmdate('Y-m-d H:i:s', $r['ts']), $nowSql, $r['level'], $r['source'], $r['code'], $r['message'], $r['hash']);
-                }
-                $inserted += $this->sql->run('INSERT IGNORE INTO endpoint_agent_log_events (device_id, occurred_at, received_at, level, source, code, message, dedupe) VALUES ' . implode(',', $sqlRows), $params);
-            }
-            $last = $kept === [] ? null : gmdate('Y-m-d H:i:s', max(array_column($kept, 'ts')));
-            $this->sql->run('UPDATE endpoint_agent_log_state SET row_count = row_count + ?, dropped_total = dropped_total + ?, last_event_at = IF(? IS NULL, last_event_at, GREATEST(COALESCE(last_event_at, ?), ?)),
-                last_batch_at = ?, window_start = ?, window_count = ? WHERE device_id = ?',
-                [$inserted, $dropped + $agentDropped, $last, $last, $last, $nowSql, gmdate('Y-m-d H:i:s', $winStart), $winCount + $inserted, $deviceId]);
-        });
+        $res = $this->store->admit($deviceId, $clean, ['rate_per_min' => $limits['logs_rate_per_min'], 'device_max_rows' => $limits['logs_device_max_rows'], 'fleet_max_rows' => $limits['logs_fleet_max_rows']],
+            $now, $dropped, $agentDropped);
+        $kept = $res['kept'];
+        $inserted = $res['inserted'];
+        $dropped = $res['dropped'];
         if ($kept !== [] && $this->rules !== null) {
             $this->rules->evaluate($dev, $kept);
         }
@@ -115,7 +93,7 @@ final class LogService
 
     private function fleetRows(): int
     {
-        return (int) $this->sql->val('SELECT COALESCE(SUM(row_count), 0) FROM endpoint_agent_log_state');
+        return $this->store->fleetRowCount();
     }
 
     /**
@@ -183,45 +161,17 @@ final class LogService
         $from = self::when($f['from'] ?? null, max(0, $to - 86400));
         $from = max($from, $to - $span);
         $range = ['from' => gmdate('Y-m-d\TH:i:s\Z', $from), 'to' => gmdate('Y-m-d\TH:i:s\Z', $to)];
-        $where = ['e.occurred_at >= ?', 'e.occurred_at <= ?'];
-        $params = [gmdate('Y-m-d H:i:s', $from), gmdate('Y-m-d H:i:s', $to)];
-        if ($device > 0) {
-            $where[] = 'e.device_id = ?';
-            $params[] = $device;
+        if ($visibleClientIds !== null && $visibleClientIds === []) {
+            return ['items' => [], 'total' => 0] + $range;
         }
-        if (isset($f['client_id']) && is_numeric($f['client_id']) && (int) $f['client_id'] > 0) {
-            $where[] = 'd.client_id = ?';
-            $params[] = (int) $f['client_id'];
-        }
-        if ($visibleClientIds !== null) {
-            if ($visibleClientIds === []) {
-                return ['items' => [], 'total' => 0] + $range;
-            }
-            $where[] = 'd.client_id IN (' . implode(',', array_fill(0, count($visibleClientIds), '?')) . ')';
-            array_push($params, ...$visibleClientIds);
-        }
-        if (isset($f['level']) && is_string($f['level']) && ($n = RemoteProtocol::levelNumber($f['level'])) !== null) {
-            $where[] = 'e.level <= ?';
-            $params[] = $n;
-        }
-        if (isset($f['source']) && is_string($f['source']) && $f['source'] !== '') {
-            $where[] = "e.source LIKE ? ESCAPE '!'";
-            $params[] = '%' . self::like(mb_substr($f['source'], 0, 100)) . '%';
-        }
-        if (isset($f['code']) && is_numeric($f['code'])) {
-            $where[] = 'e.code = ?';
-            $params[] = (int) $f['code'];
-        }
-        if (isset($f['q']) && is_string($f['q']) && $f['q'] !== '') {
-            $where[] = "e.message LIKE ? ESCAPE '!'";
-            $params[] = '%' . self::like(mb_substr($f['q'], 0, 200)) . '%';
-        }
-        $w = implode(' AND ', $where);
-        $limit = max(1, min(500, $limit));
-        $offset = max(0, min(100000, $offset));
-        $rows = $this->sql->all("SELECT e.event_id, e.device_id, d.hostname, d.client_id, e.occurred_at, e.level, e.source, e.code, e.message
-            FROM endpoint_agent_log_events e JOIN endpoint_agent_devices d ON d.device_id = e.device_id WHERE $w ORDER BY e.occurred_at DESC, e.event_id DESC LIMIT $limit OFFSET $offset", $params);
-        $total = (int) $this->sql->val("SELECT COUNT(*) FROM (SELECT 1 FROM endpoint_agent_log_events e JOIN endpoint_agent_devices d ON d.device_id = e.device_id WHERE $w LIMIT 10001) t", $params);
+        $level = isset($f['level']) && is_string($f['level']) ? RemoteProtocol::levelNumber($f['level']) : null;
+        $source = isset($f['source']) && is_string($f['source']) && $f['source'] !== '' ? mb_substr($f['source'], 0, 100) : null;
+        $message = isset($f['q']) && is_string($f['q']) && $f['q'] !== '' ? mb_substr($f['q'], 0, 200) : null;
+        $page = $this->store->search(new LogCriteria(gmdate('Y-m-d H:i:s', $from), gmdate('Y-m-d H:i:s', $to), $device,
+            isset($f['client_id']) && is_numeric($f['client_id']) && (int) $f['client_id'] > 0 ? (int) $f['client_id'] : 0, $visibleClientIds, $level, $source,
+            isset($f['code']) && is_numeric($f['code']) ? (int) $f['code'] : null, $message), $limit, $offset);
+        $rows = $page['rows'];
+        $total = $page['total'];
 
         return [
             'items' => array_map(static fn (array $r): array => ['event_id' => (int) $r['event_id'], 'device_id' => (int) $r['device_id'], 'hostname' => (string) $r['hostname'],
@@ -242,17 +192,12 @@ final class LogService
         $out = ['fleet_rows' => $this->fleetRows(), 'fleet_max_rows' => $l['logs_fleet_max_rows'], 'device_max_rows' => $l['logs_device_max_rows'], 'retention_days' => $l['logs_retention_days'],
             'rate_per_min' => $l['logs_rate_per_min']];
         if ($deviceId !== null) {
-            $s = $this->sql->one('SELECT * FROM endpoint_agent_log_state WHERE device_id = ?', [$deviceId]);
-            $out['device'] = ['device_id' => $deviceId, 'rows' => (int) ($s['row_count'] ?? 0), 'dropped_total' => (int) ($s['dropped_total'] ?? 0),
-                'last_event_at' => Sql::iso(isset($s['last_event_at']) ? (string) $s['last_event_at'] : null), 'last_batch_at' => Sql::iso(isset($s['last_batch_at']) ? (string) $s['last_batch_at'] : null)];
+            $s = $this->store->deviceLedger($deviceId);
+            $out['device'] = ['device_id' => $deviceId, 'rows' => (int) ($s['rows'] ?? 0), 'dropped_total' => (int) ($s['dropped_total'] ?? 0),
+                'last_event_at' => Sql::iso($s['last_event_at'] ?? null), 'last_batch_at' => Sql::iso($s['last_batch_at'] ?? null)];
         }
 
         return $out;
-    }
-
-    private static function like(string $s): string
-    {
-        return str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $s);
     }
 
     private static function when(mixed $v, int $default): int
@@ -277,75 +222,7 @@ final class LogService
     public function prune(?\Closure $pause = null): array
     {
         $l = $this->remote->limits();
-        $budget = self::PRUNE_RUN_CAP;
-        $out = ['retention' => 0, 'device_cap' => 0, 'fleet_cap' => 0];
-        $cut = $this->sql->utcAt(-$l['logs_retention_days'] * 86400);
-        while ($budget > 0) {
-            $n = $this->deleteBatch('e.occurred_at < ?', [$cut], min(self::PRUNE_BATCH, $budget));
-            $out['retention'] += $n;
-            $budget -= $n;
-            if ($n === 0) {
-                break;
-            }
-            if ($pause !== null) {
-                $pause(20000);
-            }
-        }
-        foreach ($this->sql->all('SELECT device_id, row_count FROM endpoint_agent_log_state WHERE row_count > ? ORDER BY row_count DESC LIMIT 200', [$l['logs_device_max_rows']]) as $s) {
-            $excess = (int) $s['row_count'] - $l['logs_device_max_rows'];
-            while ($excess > 0 && $budget > 0) {
-                $n = $this->deleteBatch('e.device_id = ?', [(int) $s['device_id']], min(self::PRUNE_BATCH, $excess, $budget));
-                $out['device_cap'] += $n;
-                $excess -= $n;
-                $budget -= $n;
-                if ($n === 0) {
-                    break;
-                }
-                if ($pause !== null) {
-                    $pause(20000);
-                }
-            }
-        }
-        $excess = $this->fleetRows() - $l['logs_fleet_max_rows'];
-        while ($excess > 0 && $budget > 0) {
-            $n = $this->deleteBatch('1 = 1', [], min(self::PRUNE_BATCH, $excess, $budget));
-            $out['fleet_cap'] += $n;
-            $excess -= $n;
-            $budget -= $n;
-            if ($n === 0) {
-                break;
-            }
-            if ($pause !== null) {
-                $pause(20000);
-            }
-        }
 
-        return $out;
-    }
-
-    /**
-     * Delete one batch of the oldest rows that match, and lower the owners' counters by exactly what was deleted.
-     *
-     * @param list<mixed> $params
-     */
-    private function deleteBatch(string $where, array $params, int $n): int
-    {
-        return (int) $this->sql->transaction(function () use ($where, $params, $n): int {
-            $rows = $this->sql->all("SELECT e.event_id, e.device_id FROM endpoint_agent_log_events e WHERE $where ORDER BY e.occurred_at, e.event_id LIMIT " . max(1, $n) . ' FOR UPDATE', $params);
-            if ($rows === []) {
-                return 0;
-            }
-            $perDevice = [];
-            foreach ($rows as $r) {
-                $perDevice[(int) $r['device_id']] = ($perDevice[(int) $r['device_id']] ?? 0) + 1;
-            }
-            $ids = array_map(static fn (array $r): int => (int) $r['event_id'], $rows);
-            $this->sql->run('DELETE FROM endpoint_agent_log_events WHERE event_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', $ids);
-            foreach ($perDevice as $device => $c) {
-                $this->sql->run('UPDATE endpoint_agent_log_state SET row_count = GREATEST(0, row_count - ?) WHERE device_id = ?', [$c, $device]);
-            }
-
-            return count($ids);
-        });
+        return $this->store->enforceLimits($this->sql->utcAt(-$l['logs_retention_days'] * 86400), $l['logs_device_max_rows'], $l['logs_fleet_max_rows'], self::PRUNE_RUN_CAP, self::PRUNE_BATCH, $pause);
     }
 }
