@@ -76,7 +76,14 @@ func Truncate(s string, max int) string {
 // reKeySecret is the key=value rule of the server's Redactor (Rmm\Crypto\Redactor): a name that CONTAINS password, secret, token, key and the like (db_password,
 // ClientSecret, my-api-key) followed by : or = hides what follows. The agent's job redactor only knows the bare words, so this one is added here: a secret must be
 // masked on the device BEFORE it is stored in a snapshot, not only when the server sees it.
-var reKeySecret = regexp.MustCompile(`(?i)\b([A-Za-z0-9_.-]*(?:password|passwd|pwd|passphrase|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|client[_-]?secret|credential)[A-Za-z0-9_.-]*)(["']?\s*[:=]\s*["']?)[^\s"',;]+`)
+var reKeySecret = regexp.MustCompile(`(?i)\b([A-Za-z0-9_.-]*(?:password|passw[o0]rd|passwd|pwd|passphrase|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|client[_-]?secret|credential|psk)[A-Za-z0-9_.-]*)` + valueRE)
+
+// valueRE is what follows `name=` / `name:` (the PHP side is Rmm\Crypto\Redactor::VALUE): a double- or single-quoted value is masked up to its closing quote (spaces
+// included, a backslash escapes), an unquoted one up to the next space, quote, comma or semicolon. Groups after the name: 2 the separator, 3 and 5 an opening quote,
+// 4 and 6 its closing quote, so pass="a b c" becomes pass="[REDACTED]". Use maskValue as the replacement.
+const valueRE = `(["']?\s*[:=]\s*)(?:(")(?:[^"\\\r\n]|\\.)*("?)|(')(?:[^'\\\r\n]|\\.)*('?)|[^\s"',;]+)`
+
+const maskValue = "${1}${2}${3}${5}" + Mask + "${4}${6}"
 
 // The rc.31 additions (security review F2), mirrored by Rmm\Change\ChangeProtocol::redact() on the server and checked against the same vectors
 // (testdata/vectors/agent_change_monitor_vectors.json, "redaction"). reKeySecret only knows names that CONTAIN a secret word; these add
@@ -85,8 +92,32 @@ var reKeySecret = regexp.MustCompile(`(?i)\b([A-Za-z0-9_.-]*(?:password|passwd|p
 //   - -p <word> for the tools that take a password that way (mysql, mariadb, sshpass, mongo; not psql, where -p is the port),
 //   - the value of any Environment= / export assignment whose name is not on the allow-list of harmless names,
 //   - long hex and base64 runs (but never in an SSH public key line, whose blob is the thing a change monitor must show).
-var reKeyToken = regexp.MustCompile(`(?i)\b((?:[A-Za-z0-9]+[_.-])*(?:pass|pw)(?:[_.-][A-Za-z0-9_.-]*)?|(?:[A-Za-z0-9]+[_.-])+key)(["']?\s*[:=]\s*["']?)[^\s"',;]+`)
-var reKeyCamel = regexp.MustCompile(`\b([A-Za-z0-9_.-]*[a-z0-9](?:Key|Pass|Pw))(["']?\s*[:=]\s*["']?)[^\s"',;]+`)
+var reKeyToken = regexp.MustCompile(`(?i)\b((?:[A-Za-z0-9]+[_.-])*(?:pass|pw|psk|passw[o0]rd)(?:[_.-][A-Za-z0-9_.-]*)?|(?:[A-Za-z0-9]+[_.-])+key)` + valueRE)
+var reKeyCamel = regexp.MustCompile(`\b([A-Za-z0-9_.-]*[a-z0-9](?:Key|Pass|Pw))` + valueRE)
+
+// reDirective is a secret directive written with a space instead of = or : at the start of a line (requirepass x, DB_PASSWORD hunter2, token abc). A PAM control word
+// or a value that starts with = : [ is not a value (see reDirectiveSkip). rc.38, security review L1.
+var reDirective = regexp.MustCompile(`(?mi)^([ \t]*(?:[A-Za-z0-9]+[_.-])*(?:pass|passwd|password|passphrase|passw[o0]rd|pwd|pw|psk|token|secret|requirepass|masterauth|authpass|api[_-]?key|apikey)(?:[_.-][A-Za-z0-9_.-]*)?[ \t]+)("(?:[^"\\\r\n]|\\.)*"?|'(?:[^'\\\r\n]|\\.)*'?|\S+)`)
+var reDirectiveSkip = regexp.MustCompile(`(?i)^(?:[=:\[]|(?:required|requisite|sufficient|optional|include|substack)\b)`)
+
+// reOwnTokens are this product's own credentials in any spelling: the RivetPanel device credential (rvpd_ + hex), the panel and agent enrollment tokens. The
+// generic hex rule cannot see them (an underscore is a word character, so there is no \b before the hex), and rvtp1 is only half masked by it.
+var reOwnTokens = []*regexp.Regexp{
+	regexp.MustCompile(`\brvpd_[0-9A-Za-z]{16,}`),
+	regexp.MustCompile(`\brvtp1\.[0-9A-Za-z]{6,}\.[0-9A-Za-z_-]{8,}`),
+	regexp.MustCompile(`\brvte1\.[0-9A-Za-z]{6,}\.[0-9A-Za-z_-]{8,}`),
+}
+
+func maskDirectives(s string) string {
+	return reDirective.ReplaceAllStringFunc(s, func(m string) string {
+		p := reDirective.FindStringSubmatch(m)
+		if reDirectiveSkip.MatchString(p[2]) {
+			return m
+		}
+		return p[1] + Mask
+	})
+}
+
 var reSwitchSecret = regexp.MustCompile(`(?i)(\s--?(?:pass(?:word|wd|phrase)?|pwd|pw|secret|token|api-?key|apikey|auth(?:-?token)?|bearer|client-?secret|access-?key|private-?key|credential|key)\s+)(?:"[^"]*"|'[^']*'|\S+)`)
 var rePSwitch = regexp.MustCompile(`(?i)(\b(?:mysql\w*|mariadb\w*|sshpass|mongo\w*)\b[^\n]*?\s-p\s+)\S+`)
 var reEnvKeyword = regexp.MustCompile(`(\bEnvironment\s*=\s*|\bexport\s+)((?:"[A-Za-z_][A-Za-z0-9_]*=[^"]*"|'[A-Za-z_][A-Za-z0-9_]*=[^']*'|[A-Za-z_][A-Za-z0-9_]*=\S*)(?:\s+(?:"[A-Za-z_][A-Za-z0-9_]*=[^"]*"|'[A-Za-z_][A-Za-z0-9_]*=[^']*'|[A-Za-z_][A-Za-z0-9_]*=\S*))*)`)
@@ -134,8 +165,12 @@ func maskEnvAssignments(s string) string {
 
 // hardenRedact applies the rc.31 rules to an already cleaned single-line text.
 func hardenRedact(c string) string {
-	c = reKeyToken.ReplaceAllString(c, "${1}${2}"+Mask)
-	c = reKeyCamel.ReplaceAllString(c, "${1}${2}"+Mask)
+	for _, re := range reOwnTokens {
+		c = re.ReplaceAllString(c, Mask)
+	}
+	c = reKeyToken.ReplaceAllString(c, maskValue)
+	c = reKeyCamel.ReplaceAllString(c, maskValue)
+	c = maskDirectives(c)
 	c = reSwitchSecret.ReplaceAllString(c, "${1}"+Mask)
 	c = rePSwitch.ReplaceAllString(c, "${1}"+Mask)
 	c = maskEnvAssignments(c)
@@ -168,7 +203,7 @@ func Display(raw string, max int, redact func(string) string) (text string, reda
 			c, redacted = r, true
 		}
 	}
-	if r := reKeySecret.ReplaceAllString(c, "${1}${2}"+Mask); r != c {
+	if r := reKeySecret.ReplaceAllString(c, maskValue); r != c {
 		c, redacted = r, true
 	}
 	if r := hardenRedact(c); r != c {
