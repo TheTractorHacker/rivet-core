@@ -14,7 +14,11 @@ use RivetCore\Rmm\Http\ApiError;
  *  - the declared content type must be the one the extension maps to,
  *  - the bytes must start with the format's magic number (text types: valid UTF-8, no control bytes, no `#!` shebang, no HTML/script markup near the start),
  *  - executables are recognised by content too (MZ, ELF, Mach-O, shebang, ZIP/OLE containers under a document extension), whatever the name says,
- *  - the stored filename is a sanitised basename; the original is never used as a path.
+ *  - the stored filename is a sanitised basename; the original is never used as a path (rc.38: a Windows device name such as `CON.txt` and a name that starts with `-` are refused),
+ *  - a text-like file (txt, log, csv) must not start with a spreadsheet formula character (`=`, `+`, `-`, `@`, tab or carriage return, after an optional byte-order mark), a CSV
+ *    must not have a cell that starts with `=` or looks like a DDE or function call, and the whole text, not only its start, is searched for markup (security review RC36 L5).
+ *    Active content inside a PNG/GIF/PDF is not scanned: the gateway must store the bytes outside the web root and serve them as a download with
+ *    `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff` (docs/panel/PANEL_API.md, "Serving attachments").
  *
  * @api
  */
@@ -30,7 +34,7 @@ final class PanelAttachments
         'pdf' => ['application/pdf', ['application/pdf'], 'pdf'],
         'txt' => ['text/plain', ['text/plain'], 'text'],
         'log' => ['text/plain', ['text/plain'], 'text'],
-        'csv' => ['text/csv', ['text/csv', 'text/plain', 'application/csv'], 'text'],
+        'csv' => ['text/csv', ['text/csv', 'text/plain', 'application/csv'], 'csv'],
     ];
 
     /** Refused in ANY dot-separated part of a filename. */
@@ -129,6 +133,9 @@ final class PanelAttachments
         if ($s === '' || !str_contains($s, '.')) {
             throw self::bad("Attachment $n needs a filename with an extension.");
         }
+        if ($s[0] === '-' || preg_match('/^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i', $s) === 1) {
+            throw self::bad("Attachment $n: this file name is not accepted.");
+        }
 
         return $s;
     }
@@ -157,6 +164,7 @@ final class PanelAttachments
             'webp' => strlen($b) >= 12 && str_starts_with($b, 'RIFF') && substr($b, 8, 4) === 'WEBP',
             'pdf' => str_starts_with($b, '%PDF-'),
             'text' => self::plainText($b),
+            'csv' => self::plainText($b) && self::csvOk($b),
             default => false,
         };
     }
@@ -166,7 +174,26 @@ final class PanelAttachments
         if (!mb_check_encoding($b, 'UTF-8') || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $b) === 1) {
             return false;   // binary, NUL, or terminal escape sequences
         }
+        // markup anywhere in the file (it used to be the first 8 KiB only)
+        if (preg_match('/<\s*(script|html|iframe|svg|object|embed|\?php|!doctype)/i', $b) === 1) {
+            return false;
+        }
+        // a spreadsheet opens the file as a formula when the first character says so (tab and CR are control characters, but the check above lets a tab and a CR through)
+        $start = str_starts_with($b, "\xEF\xBB\xBF") ? substr($b, 3, 1) : substr($b, 0, 1);
+        if ($start !== '' && strpbrk($start, "=+-@\t\r") !== false) {
+            return false;
+        }
 
-        return preg_match('/<\s*(script|html|iframe|svg|object|embed|\?php|!doctype)/i', substr($b, 0, 8192)) !== 1;
+        return true;
+    }
+
+    /** CSV only: a cell that starts with `=`, a function or DDE call (`+cmd|' /C calc'!A0`, `@SUM(...)`), at the start of the file, a line or after a delimiter. */
+    private static function csvOk(string $b): bool
+    {
+        $cell = '(?:^|[\r\n,;\t])[ ]*';
+
+        return preg_match('/' . $cell . '=/', $b) !== 1
+            && preg_match('/' . $cell . '[+\-@][ ]*[A-Za-z_][A-Za-z0-9_.]*[ ]*\(/', $b) !== 1
+            && preg_match('/' . $cell . '[+\-@=][^,;\r\n]{0,80}\|/', $b) !== 1;
     }
 }
