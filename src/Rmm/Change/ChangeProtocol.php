@@ -119,15 +119,25 @@ final class ChangeProtocol
     /**
      * The rc.31 redaction rules (security review F2), the same as the agent's `hardenRedact` in endpoint-agent/internal/change/redact.go and checked against the same
      * vectors: PASS / PW tokens and _KEY / CamelCase Key names, a secret in the next word of a switch, `-p <word>` for tools that take it that way, the value of any
-     * Environment= / export assignment not on the harmless list, and long hex / base64 runs (not in an SSH public key line).
+     * Environment= / export assignment not on the harmless list, and long hex / base64 runs (not in an SSH public key line). rc.38 (security review RC36 L1): a quoted
+     * value is masked up to its closing quote, a secret directive written with a space (`requirepass x`) is masked, `psk` and `passw0rd` are secret names, and the
+     * product's own tokens (`rvpd_`, `rvtp1.`, `rvte1.`) are masked whole.
      *
      * @internal called by {@see redact()}; public so the shared vectors can reach it
      */
     public static function harden(string $s): string
     {
         $m = self::MASK;
-        $s = preg_replace('/\b((?:[A-Za-z0-9]+[_.-])*(?:pass|pw)(?:[_.-][A-Za-z0-9_.-]*)?|(?:[A-Za-z0-9]+[_.-])+key)(["\']?\s*[:=]\s*["\']?)[^\s"\',;]+/i', '$1$2' . $m, $s) ?? $s;
-        $s = preg_replace('/\b([A-Za-z0-9_.-]*[a-z0-9](?:Key|Pass|Pw))(["\']?\s*[:=]\s*["\']?)[^\s"\',;]+/', '$1$2' . $m, $s) ?? $s;
+        // The product's own credentials in any spelling (see Redactor); here too so the agent's hardenRedact and this method agree row for row.
+        foreach (['/\brvpd_[0-9A-Za-z]{16,}/', '/\brvtp1\.[0-9A-Za-z]{6,}\.[0-9A-Za-z_-]{8,}/', '/\brvte1\.[0-9A-Za-z]{6,}\.[0-9A-Za-z_-]{8,}/'] as $re) {
+            $s = preg_replace($re, $m, $s) ?? $s;
+        }
+        $to = '$1$2$3$5' . $m . '$4$6';   // name, separator, opening quote, [REDACTED], closing quote (see Redactor::VALUE): a quoted value is masked to its closing quote
+        $s = preg_replace('/\b((?:[A-Za-z0-9]+[_.-])*(?:pass|pw|psk|passw[o0]rd)(?:[_.-][A-Za-z0-9_.-]*)?|(?:[A-Za-z0-9]+[_.-])+key)' . \RivetCore\Rmm\Crypto\Redactor::VALUE . '/i', $to, $s) ?? $s;
+        $s = preg_replace('/\b([A-Za-z0-9_.-]*[a-z0-9](?:Key|Pass|Pw))' . \RivetCore\Rmm\Crypto\Redactor::VALUE . '/', $to, $s) ?? $s;
+        // A directive written with a space instead of = or : at the start of a line (`requirepass x`, `DB_PASSWORD hunter2`, `token abc`). The PAM control words
+        // (`password requisite pam_pwquality.so`) and a value that starts with = : [ are not values.
+        $s = preg_replace('/(^|\n)([ \t]*(?:[A-Za-z0-9]+[_.-])*(?:pass|passwd|password|passphrase|passw[o0]rd|pwd|pw|psk|token|secret|requirepass|masterauth|authpass|api[_-]?key|apikey)(?:[_.-][A-Za-z0-9_.-]*)?[ \t]+)(?![=:\[]|(?:required|requisite|sufficient|optional|include|substack)\b)(?:"(?:[^"\\\\\r\n]|\\\\.)*"?|\'(?:[^\'\\\\\r\n]|\\\\.)*\'?|\S+)/i', '$1$2' . $m, $s) ?? $s;
         $s = preg_replace('/(\s--?(?:pass(?:word|wd|phrase)?|pwd|pw|secret|token|api-?key|apikey|auth(?:-?token)?|bearer|client-?secret|access-?key|private-?key|credential|key)\s+)(?:"[^"]*"|\'[^\']*\'|\S+)/i', '$1' . $m, $s) ?? $s;
         $s = preg_replace('/(\b(?:mysql\w*|mariadb\w*|sshpass|mongo\w*)\b[^\n]*?\s-p\s+)\S+/i', '$1' . $m, $s) ?? $s;
         $assign = '(?:"[A-Za-z_][A-Za-z0-9_]*=[^"]*"|\'[A-Za-z_][A-Za-z0-9_]*=[^\']*\'|[A-Za-z_][A-Za-z0-9_]*=\S*)';
@@ -163,9 +173,19 @@ final class ChangeProtocol
         return trim(mb_substr($s, 0, $max));
     }
 
-    /** The same text made safe for a sentence in an alert or a webhook (HTML, Markdown, chat): angle brackets, quotes and backticks go too (backslashes stay: registry paths need them). Stored values keep everything. */
+    /**
+     * The same text made safe for a sentence in an alert or a webhook (HTML, Markdown, chat): angle brackets, quotes and backticks go (backslashes stay: registry paths
+     * need them). rc.38 (security review RC36 L2) also breaks what a Markdown, Teams, Slack or Discord renderer turns into something active: square brackets become
+     * round ones (so `[Reset your password](https://evil)` and `![x](https://evil/p.png)` are no longer links or images), a mass mention (`@everyone`, `@here`,
+     * `@channel`) and any `@name` that is not part of an address (`ops@example.com` stays) loses its `@`, and an HTML entity (`&lt;script&gt;`) is spelled `& lt;`
+     * so a later decoder cannot rebuild a tag. Stored values keep everything. A bare URL is still a URL: the renderer of a webhook must show these values as text.
+     */
     public static function alertText(string $s, int $max = 200): string
     {
-        return trim(mb_substr((string) preg_replace('/[<>`"\']+/u', ' ', self::text($s, $max * 2)), 0, $max));
-    }
-}
+        $t = (string) preg_replace('/[<>`"\']+/u', ' ', self::text($s, $max * 2));
+        $t = strtr($t, ['[' => '(', ']' => ')']);
+        $t = (string) preg_replace('/@(?=(?:everyone|here|channel|group|all)\b)|(?<![A-Za-z0-9_.+-])@/i', '(at)', $t);
+        $t = (string) preg_replace('/&(?=#?[A-Za-z0-9]{1,12};)/', '& ', $t);
+
+        return trim(mb_substr($t, 0, $max));
+    }}

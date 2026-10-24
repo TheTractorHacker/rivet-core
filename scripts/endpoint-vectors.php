@@ -650,6 +650,33 @@ function changeMonitorRc31Vectors(): string
     return json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
 }
 
+/**
+ * rc.38 (security review RC36 L1): redaction rows for what rc.31 still let through, the same contract as the rc.31 file (the Go agent's Display() and ChangeProtocol::redact() give the same
+ * output for every row). A new file: the rc.22 and rc.31 files are unchanged. The panel credential shapes are masked whole; a quoted value is masked up to its closing quote; a secret directive
+ * written with a space is masked unless it is a PAM control word; harmless lines stay as they are.
+ */
+function changeMonitorRc38Vectors(): string
+{
+    $redactIn = [
+        'pass="a b c"', 'PASSWORD="quoted value"', "db.pass 'sp ace d' next", 'secret_key: "a b" tail', 'token="abc def" and more', 'api_key=\'one two\' x', 'DB_PASSWORD="p w" ; user=bob',
+        '{"password": "two words", "user": "bob"}', 'pass="has \\" escaped quote" tail',
+        'DB_PASSWORD hunter2', 'token hunter2value', 'requirepass x', 'masterauth s3cret', 'secret "two words" tail', "  requirepass   spaced",
+        'psk=hunter2hunter2', 'wpa_psk: abc', 'Passw0rd=abc', 'passw0rd: abc def',
+        'rvpd_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', 'device rvpd_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef in text',
+        'enroll rvtp1.0123456789ab.0123456789abcdef0123456789abcdef01234567 now', 'rvte1.0123456789ab.0123456789abcdef0123456789abcdef01234567',
+        'auth required pam_unix.so', 'password requisite pam_pwquality.so retry=3', 'password sufficient pam_unix.so sha512', 'passenger_root /usr/lib/passenger',
+        'ExecStart=/usr/bin/app --port 80', 'Defaults env_keep+="SSH_AUTH_SOCK"', 'user=alice name="Alice Smith"',
+    ];
+    $redaction = array_map(static fn (string $in): array => ['input' => $in, 'output' => \RivetCore\Rmm\Change\ChangeProtocol::redact(\RivetCore\Rmm\Change\ChangeProtocol::text($in, 2000))], $redactIn);
+    $out = [
+        'format' => 'RIVETIT-CHANGE-MONITOR-RC38-v1',
+        'description' => 'Change monitoring redaction vectors added in 1.0.0-rc.38 (the rc.22 and rc.31 files are unchanged). redaction: for every input, the text a change record keeps after the agent (Go Display with no extra redactor) or the server (ChangeProtocol::redact over ChangeProtocol::text) has masked it; both must give exactly `output`.',
+        'redaction' => $redaction,
+    ];
+
+    return json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n";
+}
+
 $files = [
     'agent_installer_trailer_vectors.json' => installerTrailerVectors(),
     'agent_job_signing_vectors.json' => jobSigningVectors(),
@@ -659,6 +686,7 @@ $files = [
     'agent_check_os_vectors.json' => checkOsVectors(),   // rc.24: additive again
     'agent_hypervisor_vectors.json' => hypervisorVectors(),   // rc.29: additive again
     'agent_change_monitor_rc31_vectors.json' => changeMonitorRc31Vectors(),   // rc.31: redaction and the extra deny-list rows; the rc.22 file is untouched
+    'agent_change_monitor_rc38_vectors.json' => changeMonitorRc38Vectors(),   // rc.38: quoted values, directives and the panel credentials; both older change-monitor files are untouched
 ];
 $sums = '';
 foreach ($files as $name => $bytes) {

@@ -1,0 +1,126 @@
+{
+    "format": "RIVETIT-CHANGE-MONITOR-RC38-v1",
+    "description": "Change monitoring redaction vectors added in 1.0.0-rc.38 (the rc.22 and rc.31 files are unchanged). redaction: for every input, the text a change record keeps after the agent (Go Display with no extra redactor) or the server (ChangeProtocol::redact over ChangeProtocol::text) has masked it; both must give exactly `output`.",
+    "redaction": [
+        {
+            "input": "pass=\"a b c\"",
+            "output": "pass=\"[REDACTED]\""
+        },
+        {
+            "input": "PASSWORD=\"quoted value\"",
+            "output": "PASSWORD=\"[REDACTED]\""
+        },
+        {
+            "input": "db.pass 'sp ace d' next",
+            "output": "db.pass [REDACTED] next"
+        },
+        {
+            "input": "secret_key: \"a b\" tail",
+            "output": "secret_key: \"[REDACTED]\" tail"
+        },
+        {
+            "input": "token=\"abc def\" and more",
+            "output": "token=\"[REDACTED]\" and more"
+        },
+        {
+            "input": "api_key='one two' x",
+            "output": "api_key='[REDACTED]' x"
+        },
+        {
+            "input": "DB_PASSWORD=\"p w\" ; user=bob",
+            "output": "DB_PASSWORD=\"[REDACTED]\" ; user=bob"
+        },
+        {
+            "input": "{\"password\": \"two words\", \"user\": \"bob\"}",
+            "output": "{\"password\": \"[REDACTED]\", \"user\": \"bob\"}"
+        },
+        {
+            "input": "pass=\"has \\\" escaped quote\" tail",
+            "output": "pass=\"[REDACTED]\" tail"
+        },
+        {
+            "input": "DB_PASSWORD hunter2",
+            "output": "DB_PASSWORD [REDACTED]"
+        },
+        {
+            "input": "token hunter2value",
+            "output": "token [REDACTED]"
+        },
+        {
+            "input": "requirepass x",
+            "output": "requirepass [REDACTED]"
+        },
+        {
+            "input": "masterauth s3cret",
+            "output": "masterauth [REDACTED]"
+        },
+        {
+            "input": "secret \"two words\" tail",
+            "output": "secret [REDACTED] tail"
+        },
+        {
+            "input": "  requirepass   spaced",
+            "output": "requirepass   [REDACTED]"
+        },
+        {
+            "input": "psk=hunter2hunter2",
+            "output": "psk=[REDACTED]"
+        },
+        {
+            "input": "wpa_psk: abc",
+            "output": "wpa_psk: [REDACTED]"
+        },
+        {
+            "input": "Passw0rd=abc",
+            "output": "Passw0rd=[REDACTED]"
+        },
+        {
+            "input": "passw0rd: abc def",
+            "output": "passw0rd: [REDACTED] def"
+        },
+        {
+            "input": "rvpd_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "output": "[REDACTED]"
+        },
+        {
+            "input": "device rvpd_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef in text",
+            "output": "device [REDACTED] in text"
+        },
+        {
+            "input": "enroll rvtp1.0123456789ab.0123456789abcdef0123456789abcdef01234567 now",
+            "output": "enroll [REDACTED] now"
+        },
+        {
+            "input": "rvte1.0123456789ab.0123456789abcdef0123456789abcdef01234567",
+            "output": "[REDACTED]"
+        },
+        {
+            "input": "auth required pam_unix.so",
+            "output": "auth required pam_unix.so"
+        },
+        {
+            "input": "password requisite pam_pwquality.so retry=3",
+            "output": "password requisite pam_pwquality.so retry=3"
+        },
+        {
+            "input": "password sufficient pam_unix.so sha512",
+            "output": "password sufficient pam_unix.so sha512"
+        },
+        {
+            "input": "passenger_root /usr/lib/passenger",
+            "output": "passenger_root /usr/lib/passenger"
+        },
+        {
+            "input": "ExecStart=/usr/bin/app --port 80",
+            "output": "ExecStart=/usr/bin/app --port 80"
+        },
+        {
+            "input": "Defaults env_keep+=\"SSH_AUTH_SOCK\"",
+            "output": "Defaults env_keep+=\"SSH_AUTH_SOCK\""
+        },
+        {
+            "input": "user=alice name=\"Alice Smith\"",
+            "output": "user=alice name=\"Alice Smith\""
+        }
+    ]
+}

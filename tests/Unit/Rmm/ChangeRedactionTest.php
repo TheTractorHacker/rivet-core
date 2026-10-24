@@ -22,6 +22,71 @@ final class ChangeRedactionTest extends TestCase
         }
     }
 
+    public function testTheServerGivesTheSameTextAsTheRc38VectorsTheAgentReplays(): void
+    {
+        $rows = RmmVectors::load('agent_change_monitor_rc38_vectors.json')['redaction'];
+        $this->assertGreaterThanOrEqual(25, count($rows));
+        foreach ($rows as $r) {
+            $this->assertSame($r['output'], ChangeProtocol::redact(ChangeProtocol::text($r['input'], 2000)), $r['input']);
+        }
+    }
+
+    /** rc.38, security review RC36 L1: the cases the review proved. */
+    public function testQuotedValuesWithSpacesAreMaskedToTheClosingQuote(): void
+    {
+        $this->assertSame('pass="[REDACTED]"', ChangeProtocol::redact('pass="a b c"'));
+        $this->assertSame('PASSWORD="[REDACTED]"', ChangeProtocol::redact('PASSWORD="quoted value"'));
+        $this->assertSame("api_key='[REDACTED]' x", ChangeProtocol::redact("api_key='one two' x"));
+        $this->assertSame('{"password": "[REDACTED]", "user": "bob"}', ChangeProtocol::redact('{"password": "two words", "user": "bob"}'));
+        // an unclosed quote never swallows the next line
+        $this->assertSame("pass=\"[REDACTED]\nnext line stays", ChangeProtocol::redact("pass=\"open ended\nnext line stays"));
+    }
+
+    public function testSpaceSeparatedSecretDirectivesAreMaskedButPamLinesAreNot(): void
+    {
+        foreach (['DB_PASSWORD hunter2' => 'hunter2', 'token hunter2value' => 'hunter2value', 'requirepass x1y2z3' => 'x1y2z3', "masterauth s3cret\nmaxmemory 2gb" => 's3cret', 'psk=hunter2hunter2' => 'hunter2hunter2', 'Passw0rd=abc123' => 'abc123'] as $in => $secret) {
+            $this->assertStringNotContainsString($secret, ChangeProtocol::redact($in), $in);
+        }
+        $this->assertStringContainsString('maxmemory 2gb', ChangeProtocol::redact("masterauth s3cret\nmaxmemory 2gb"));
+        foreach (['auth required pam_unix.so', 'password requisite pam_pwquality.so retry=3', 'password sufficient pam_unix.so sha512', 'passenger_root /usr/lib/passenger'] as $t) {
+            $this->assertSame($t, ChangeProtocol::redact($t), $t);
+        }
+    }
+
+    public function testThePanelAndEnrollmentCredentialsAreMaskedWhole(): void
+    {
+        $dev = 'rvpd_' . str_repeat('0123456789abcdef', 4);
+        $tok = 'rvtp1.0123456789ab.' . str_repeat('0123456789abcdef', 2) . '01234567';
+        $this->assertSame('[REDACTED]', ChangeProtocol::redact($dev));
+        $this->assertSame('x [REDACTED] y', ChangeProtocol::redact("x $dev y"));
+        $this->assertSame('use [REDACTED] now', ChangeProtocol::redact("use $tok now"));
+        $this->assertSame('[REDACTED]', \RivetCore\Rmm\Crypto\Redactor::redact($dev), 'the shared job-output redactor masks it too');
+        $this->assertSame('a [REDACTED] b', \RivetCore\Rmm\Crypto\Redactor::redact("a $tok b"));
+        $this->assertSame('[REDACTED]', \RivetCore\Rmm\Crypto\Redactor::redact('rvte1.0123456789ab.' . str_repeat('0123456789abcdef', 2) . '01234567'));
+    }
+
+    public function testTheSharedRedactorMasksAQuotedPhraseToo(): void
+    {
+        $this->assertSame('PASSWORD="[REDACTED]"', \RivetCore\Rmm\Crypto\Redactor::redact('PASSWORD="quoted value"'));
+        $this->assertSame('Authorization: [REDACTED]', \RivetCore\Rmm\Crypto\Redactor::redact('Authorization: Basic abc123'));
+    }
+
+    public function testAlertTextBreaksMarkdownLinksImagesAndMassMentions(): void
+    {
+        $t = ChangeProtocol::alertText('[Reset your password](https://evil.example/login) and ![i](https://evil/p.png)', 200);
+        $this->assertStringNotContainsString('[', $t);
+        $this->assertStringNotContainsString('](', $t);
+        $this->assertStringNotContainsString('![', $t);
+        foreach (['@everyone urgent', '@here now', '@channel', 'x@everyone', '@Everyone', '@bob please'] as $in) {
+            $this->assertStringNotContainsString('@', ChangeProtocol::alertText($in, 200), $in);
+        }
+        $this->assertStringContainsString('everyone urgent', ChangeProtocol::alertText('@everyone urgent'), 'the words stay readable');
+        $this->assertStringContainsString('ops@example.com', ChangeProtocol::alertText('MAILTO ops@example.com'), 'an address is not a mention');
+        $this->assertStringContainsString('Program Files (x86)', ChangeProtocol::alertText('Program Files (x86)'), 'round brackets stay');
+        $this->assertStringNotContainsString('&lt;', ChangeProtocol::alertText('x&lt;script&gt;'), 'an entity is not rebuilt into a tag by a later decoder');
+        $this->assertStringNotContainsString('<!', ChangeProtocol::alertText('<!channel> go'));
+    }
+
     /** @return array<string,array{0:string,1:string}> */
     public static function secrets(): array
     {

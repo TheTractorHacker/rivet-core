@@ -1039,6 +1039,7 @@ Both files live in `endpoint-agent/testdata/vectors/` and are read by the Go age
 | `agent_check_os_vectors.json` | `dfbf0dceb2cc9dbd06d392787d30a2399b26c12299e2f909e7b95b1d533dbaab` |
 | `agent_hypervisor_vectors.json` | `6830b9fec805d857994d518889c0f7bc84f265ab58cdba58b442a69ed6b8148b` |
 | `agent_change_monitor_rc31_vectors.json` | `aadc386bdb3183c1bf69df7f3deec0cb5efba9e7c5636d805abd5fa538078988` |
+| `agent_change_monitor_rc38_vectors.json` | `b1c7b28f5d46e5d12824b5956531a98cfe92df1a57b25512b8a43c3c8e17b4e2` |
 
 **Job signing** (`agent_job_signing_vectors.json`). Test key: SHA-256 of the ASCII string RivetIT-agent-TEST-seed (raw 32 bytes); public key `iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=`.
 
@@ -1083,4 +1084,6 @@ Negative cases, every one of which must be rejected (14):
 **Change monitoring** (`agent_change_monitor_vectors.json`, added in 1.0.0-rc.22; the files above are unchanged): the watch policy's answer for 47 registry keys and 96 file paths (plus 8 with an extra root), the secret-name rule for 30 value names, and one complete signed `config.change` object (domain line, canonical JSON, Ed25519 by the test key). The Go agent replays the file in `internal/change`: its policy must agree on every row, the signature must verify, and one changed character must break it.
 
 **Change monitoring, rc.31** (`agent_change_monitor_rc31_vectors.json`, added in 1.0.0-rc.31; the files above are unchanged): 43 text rows that the agent (Go `Display`) and the server (`ChangeProtocol::redact`) must mask to exactly the same output, and 13 credential-file rows for the watch policy's deny list. The Go agent replays the file in `internal/change`.
+
+**Change monitoring, rc.38** (`agent_change_monitor_rc38_vectors.json`, added in 1.0.0-rc.38; the files above are unchanged): 30 more text rows for the same contract as rc.31 (agent `Display` and server `ChangeProtocol::redact` give the same output): a quoted value is masked up to its closing quote, a secret directive written with a space (`requirepass x`) is masked, `psk` and `passw0rd` are secret names, and the panel credentials `rvpd_`, `rvtp1.` and `rvte1.` are masked whole. The Go agent replays the file in `internal/change`.
 <!-- END GENERATED: vectors -->

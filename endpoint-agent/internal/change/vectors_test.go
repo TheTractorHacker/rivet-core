@@ -186,3 +186,31 @@ func TestTheExtraCredentialFilesAreDeniedLikeTheServer(t *testing.T) {
 		}
 	}
 }
+
+type vectorFileRC38 struct {
+	Redaction []struct {
+		Input  string `json:"input"`
+		Output string `json:"output"`
+	} `json:"redaction"`
+}
+
+// rc.38 (security review RC36 L1): quoted values with spaces, space-separated secret directives and the panel credentials, in a file of their own.
+func TestRedactionRC38AgreesWithTheServerOnEveryVector(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "agent_change_monitor_rc38_vectors.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v vectorFileRC38
+	if err := json.Unmarshal(b, &v); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Redaction) < 25 {
+		t.Fatalf("the vector file looks truncated: %d redaction rows", len(v.Redaction))
+	}
+	for _, r := range v.Redaction {
+		got, _, _ := Display(r.Input, 2000, nil)
+		if got != r.Output {
+			t.Errorf("redact %q: agent %q, server %q", r.Input, got, r.Output)
+		}
+	}
+}
