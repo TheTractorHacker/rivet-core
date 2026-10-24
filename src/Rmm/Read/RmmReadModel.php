@@ -57,6 +57,9 @@ final class RmmReadModel
     /** Status filter values that mean "by check-in age"; every other accepted value is a link state. */
     public const STATUS_FILTERS = ['online', 'offline', 'stale', 'never'];
 
+    private readonly \RivetCore\Rmm\Store\CheckHistoryStore $checkHistoryStore;
+    private readonly \RivetCore\Rmm\Store\SoftwareHistoryStore $softwareHistoryStore;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
@@ -78,7 +81,11 @@ final class RmmReadModel
         private readonly ?\RivetCore\Rmm\Deploy\DeployReader $deploy = null,
         private readonly ?\RivetCore\Rmm\Change\ChangeService $changeService = null,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfterApproval = null,
+        ?\RivetCore\Rmm\Store\CheckHistoryStore $checkHistory = null,
+        ?\RivetCore\Rmm\Store\SoftwareHistoryStore $softwareHistory = null,
     ) {
+        $this->checkHistoryStore = $checkHistory ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbCheckHistoryStore($sql);
+        $this->softwareHistoryStore = $softwareHistory ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbSoftwareHistoryStore($sql);
     }
 
     // ------------------------------------------------------------------ Phase 4: patch management (reads only; the caller has authorized the device or the scope)
@@ -833,17 +840,10 @@ final class RmmReadModel
      */
     public function softwareHistory(int $deviceId, ?string $name = null, int $limit = 100, int $offset = 0): array
     {
-        $where = 'device_id = ?';
-        $params = [$deviceId];
-        if ($name !== null && trim($name) !== '') {
-            $where .= ' AND name LIKE ?';
-            $params[] = '%' . addcslashes(trim($name), '\\%_') . '%';
-        }
-        $limit = max(1, min(500, $limit));
-        $offset = max(0, $offset);
-        $total = (int) $this->sql->val("SELECT COUNT(*) FROM rmm_software_history WHERE $where", $params);
+        $page = $this->softwareHistoryStore->forDevice($deviceId, $name, $limit, $offset);
+        $total = $page['total'];
         $items = [];
-        foreach ($this->sql->all("SELECT * FROM rmm_software_history WHERE $where ORDER BY occurred_at DESC, history_id DESC LIMIT $limit OFFSET $offset", $params) as $r) {
+        foreach ($page['rows'] as $r) {
             $items[] = ['name' => (string) $r['name'], 'source' => (string) $r['source'], 'change' => (string) $r['change_type'], 'old_version' => $r['old_version'], 'new_version' => $r['new_version'],
                 'publisher' => (string) $r['publisher'] === '' ? null : (string) $r['publisher'], 'at' => Sql::iso((string) $r['occurred_at'])];
         }
@@ -937,10 +937,8 @@ final class RmmReadModel
         $limit = max(1, min(2000, $limit));
         $now = $this->sql->time();
         $since = $now - $hours * 3600;
-        $rows = $this->sql->all('SELECT status, detail, reported_at FROM endpoint_agent_check_history WHERE device_id = ? AND check_key = ? AND reported_at >= ? ORDER BY reported_at, hist_id LIMIT ' . $limit,
-            [$deviceId, $key, gmdate('Y-m-d H:i:s', $since)]);
-        $before = $this->sql->one('SELECT status, reported_at FROM endpoint_agent_check_history WHERE device_id = ? AND check_key = ? AND reported_at < ? ORDER BY reported_at DESC, hist_id DESC LIMIT 1',
-            [$deviceId, $key, gmdate('Y-m-d H:i:s', $since)]);
+        $rows = $this->checkHistoryStore->since($deviceId, $key, gmdate('Y-m-d H:i:s', $since), $limit);
+        $before = $this->checkHistoryStore->lastBefore($deviceId, $key, gmdate('Y-m-d H:i:s', $since));
         $seconds = ['ok' => 0, 'warn' => 0, 'fail' => 0, 'unknown' => 0];
         $points = [];
         $changes = 0;

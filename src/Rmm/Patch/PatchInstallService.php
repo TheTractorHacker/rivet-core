@@ -30,6 +30,8 @@ final class PatchInstallService
     public const RETRY_AFTER_S = 43200;
     public const REBOOT_DELAY_S = 300;
 
+    private readonly \RivetCore\Rmm\Store\PatchHistoryStore $patchHistory;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
@@ -38,7 +40,9 @@ final class PatchInstallService
         private readonly PatchPolicyStore $policies,
         private readonly ?RmmEventPublisher $events = null,
         private readonly ?PatchComplianceService $compliance = null,
+        ?\RivetCore\Rmm\Store\PatchHistoryStore $history = null,
     ) {
+        $this->patchHistory = $history ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbPatchHistoryStore($sql);
     }
 
     /**
@@ -276,8 +280,8 @@ final class PatchInstallService
 
     private function history(int $deviceId, int $client, string $id, string $title, string $action, string $result, string $code, string $detail, string $jobId, ?int $userId, string $at): void
     {
-        $this->sql->run('INSERT INTO rmm_patch_history (device_id, client_id, update_id, title, action, result, code, detail, at, job_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [$deviceId, $client, mb_substr($id, 0, 120), mb_substr($title, 0, 300), $action, $result, mb_substr($code, 0, 40), mb_substr($detail, 0, 200), $at, $jobId, $userId]);
+        $this->patchHistory->record(['device_id' => $deviceId, 'client_id' => $client, 'update_id' => mb_substr($id, 0, 120), 'title' => mb_substr($title, 0, 300), 'action' => $action, 'result' => $result,
+            'code' => mb_substr($code, 0, 40), 'detail' => mb_substr($detail, 0, 200), 'at' => $at, 'job_id' => $jobId, 'user_id' => $userId]);
     }
 
     /**

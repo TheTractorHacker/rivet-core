@@ -11,6 +11,8 @@ use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Support\RmmEventPublisher;
+use RivetCore\Rmm\Store\CheckHistoryStore;
+use RivetCore\Rmm\Store\MariaDb\MariaDbCheckHistoryStore;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -29,6 +31,8 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class CheckEvaluator
 {
+    private readonly CheckHistoryStore $historyStore;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
@@ -36,7 +40,9 @@ final class CheckEvaluator
         private readonly DeviceRepository $devices,
         private readonly ?RmmEventPublisher $events = null,
         private readonly ?AlertingEngine $alerting = null,
+        ?CheckHistoryStore $history = null,
     ) {
+        $this->historyStore = $history ?? new MariaDbCheckHistoryStore($sql);
     }
 
     /**
@@ -164,12 +170,8 @@ final class CheckEvaluator
                 . ' ON DUPLICATE KEY UPDATE status = VALUES(status), detail = VALUES(detail), consecutive_failures = VALUES(consecutive_failures), consecutive_ok = VALUES(consecutive_ok),'
                 . ' episode = VALUES(episode), alert_id = VALUES(alert_id), last_reported_at = VALUES(last_reported_at), last_changed_at = VALUES(last_changed_at)', $params);
         }
-        foreach (array_chunk($history, 200) as $chunk) {
-            $params = [];
-            foreach ($chunk as [$key, $status, $detail, $at]) {
-                array_push($params, $dev['device_id'], $key, $status, $detail, $at);
-            }
-            $this->sql->run('INSERT INTO endpoint_agent_check_history (device_id, check_key, status, detail, reported_at) VALUES ' . implode(',', array_fill(0, count($chunk), '(?, ?, ?, ?, ?)')), $params);
+        if ($history !== []) {
+            $this->historyStore->append((int) $dev['device_id'], array_map(static fn (array $h): array => ['key' => (string) $h[0], 'status' => $h[1], 'detail' => $h[2], 'at' => $h[3]], $history));
         }
     }
 

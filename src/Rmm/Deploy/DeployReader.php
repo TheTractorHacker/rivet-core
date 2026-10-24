@@ -22,8 +22,11 @@ final class DeployReader
     public const GROUPS = ['package', 'client', 'ring', 'device'];
     public const STATES = DeployProtocol::STATES;
 
-    public function __construct(private readonly Sql $sql, private readonly RmmSettings $settings)
+    private readonly \RivetCore\Rmm\Store\DeploymentHistoryStore $deployHistory;
+
+    public function __construct(private readonly Sql $sql, private readonly RmmSettings $settings, ?\RivetCore\Rmm\Store\DeploymentHistoryStore $history = null)
     {
+        $this->deployHistory = $history ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbDeploymentHistoryStore($sql);
     }
 
     /** SQL for the state, over the aliases i (rmm_package_installs) and j (the waiting job, may be NULL). */
@@ -78,11 +81,12 @@ final class DeployReader
      */
     public function history(int $deviceId, int $limit, int $offset): array
     {
-        $rows = $this->sql->all('SELECT h.*, p.name FROM rmm_package_history h LEFT JOIN rmm_packages p ON p.package_id = h.package_id WHERE h.device_id = ? ORDER BY h.id DESC LIMIT ' . max(1, min(500, $limit)) . ' OFFSET ' . max(0, $offset), [$deviceId]);
+        $page = $this->deployHistory->forDevice($deviceId, $limit, $offset);
+        $rows = $page['rows'];
 
         return ['rows' => array_map(static fn (array $r): array => ['package_id' => (int) $r['package_id'], 'package' => (string) ($r['name'] ?? ''), 'action' => (string) $r['action'], 'mode' => (string) $r['mode'],
             'result' => (string) $r['result'], 'code' => (string) $r['code'], 'detail' => (string) $r['detail'], 'version' => (string) $r['version'], 'at' => Sql::iso($r['at']), 'job_id' => $r['job_id'], 'user_id' => $r['user_id'] === null ? null : (int) $r['user_id']], $rows),
-            'total' => (int) $this->sql->val('SELECT COUNT(*) FROM rmm_package_history WHERE device_id = ?', [$deviceId])];
+            'total' => $page['total']];
     }
 
     /**

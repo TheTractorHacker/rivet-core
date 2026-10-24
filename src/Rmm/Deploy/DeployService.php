@@ -28,6 +28,8 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class DeployService
 {
+    private readonly \RivetCore\Rmm\Store\DeploymentHistoryStore $deployHistory;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
@@ -37,7 +39,9 @@ final class DeployService
         private readonly ?RmmEventPublisher $events = null,
         private readonly ?PackageParams $params = null,
         private readonly ?HostedFiles $hosted = null,
+        ?\RivetCore\Rmm\Store\DeploymentHistoryStore $history = null,
     ) {
+        $this->deployHistory = $history ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbDeploymentHistoryStore($sql);
     }
 
     /** @var (\Closure(int,int,array<string,mixed>,string,bool):void)|null */
@@ -412,8 +416,8 @@ final class DeployService
         }
         $isDry = $mode === 'dry_run';
         $okResult = in_array($parsed['result'], DeployProtocol::OK_RESULTS, true) || in_array($parsed['result'], DeployProtocol::DRY_RESULTS, true);
-        $this->sql->run('INSERT INTO rmm_package_history (device_id, client_id, package_id, version_id, action, mode, result, code, detail, version, at, job_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [$deviceId, $client, $packageId, $led['version_id'], $action, $mode, $parsed['result'], $parsed['code'], $parsed['detail'], $parsed['version'], $now, $job['job_id'], $led['created_by']]);
+        $this->deployHistory->record(['device_id' => $deviceId, 'client_id' => $client, 'package_id' => $packageId, 'version_id' => $led['version_id'], 'action' => $action, 'mode' => $mode,
+            'result' => $parsed['result'], 'code' => $parsed['code'], 'detail' => $parsed['detail'], 'version' => $parsed['version'], 'at' => $now, 'job_id' => $job['job_id'], 'user_id' => $led['created_by']]);
         $this->sql->run('INSERT INTO rmm_package_installs (device_id, package_id, client_id, updated_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE updated_at = VALUES(updated_at)', [$deviceId, $packageId, $client, $now]);
         $this->sql->run('UPDATE rmm_package_installs SET last_action = ?, last_result = ?, last_code = ?, last_detail = ?, last_job_id = ? WHERE device_id = ? AND package_id = ?',
             [$action, $parsed['result'], $parsed['code'], $parsed['detail'], $job['job_id'], $deviceId, $packageId]);

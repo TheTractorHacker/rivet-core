@@ -7,6 +7,8 @@ namespace RivetCore\Rmm\Software;
 use RivetCore\Rmm\Device\DeviceState;
 use RivetCore\Rmm\Enrollment\DeviceValidator;
 use RivetCore\Rmm\RmmEvent;
+use RivetCore\Rmm\Store\MariaDb\MariaDbSoftwareHistoryStore;
+use RivetCore\Rmm\Store\SoftwareHistoryStore;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 
@@ -31,8 +33,11 @@ final class SoftwareService
     public const EVENT_CAP = 25;
     private const CHUNK = 250;
 
-    public function __construct(private readonly Sql $sql, private readonly DeviceState $state, private readonly RmmEventPublisher $events)
+    private readonly SoftwareHistoryStore $history;
+
+    public function __construct(private readonly Sql $sql, private readonly DeviceState $state, private readonly RmmEventPublisher $events, ?SoftwareHistoryStore $history = null)
     {
+        $this->history = $history ?? new MariaDbSoftwareHistoryStore($sql);
     }
 
     /**
@@ -188,14 +193,8 @@ final class SoftwareService
                     $events[] = [RmmEvent::SOFTWARE_REMOVED, $item];
                 }
                 if (!$baseline) {
-                    foreach (array_chunk($history, self::CHUNK) as $chunk) {
-                        $params = [];
-                        foreach ($chunk as [$i, $type, $old, $new]) {
-                            array_push($params, $deviceId, $i['key'], $i['name'], $i['source'], $type, $old, $new, $i['publisher'], $now);
-                        }
-                        $this->sql->run('INSERT INTO rmm_software_history (device_id, software_key, name, source, change_type, old_version, new_version, publisher, occurred_at) VALUES '
-                            . implode(',', array_fill(0, count($chunk), '(?, ?, ?, ?, ?, ?, ?, ?, ?)')), $params);
-                    }
+                    $this->history->append($deviceId, array_map(static fn (array $h): array => ['key' => $h[0]['key'], 'name' => $h[0]['name'], 'source' => $h[0]['source'], 'publisher' => $h[0]['publisher'],
+                        'type' => $h[1], 'old' => $h[2], 'new' => $h[3]], $history), $now);
                     foreach (array_slice($events, 0, self::EVENT_CAP) as [$event, $i]) {
                         $this->events->emit($event, $dev, ['name' => $i['name'], 'version' => $i['version'], 'publisher' => $i['publisher'] === '' ? null : $i['publisher'], 'source' => $i['source']]);
                     }

@@ -19,12 +19,16 @@ final class PatchReader
     /** Devices whose effective ring is looked up for the ring distribution; beyond this the distribution is marked approximate. */
     public const RING_SAMPLE = 1000;
 
+    private readonly \RivetCore\Rmm\Store\PatchHistoryStore $patchHistory;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
         private readonly PatchPolicyStore $policies,
         private readonly ?RmmTenancyInterface $tenancy = null,
+        ?\RivetCore\Rmm\Store\PatchHistoryStore $history = null,
     ) {
+        $this->patchHistory = $history ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbPatchHistoryStore($sql);
     }
 
     // ------------------------------------------------------------------ one device
@@ -118,12 +122,12 @@ final class PatchReader
     /** @return array{items:list<array<string,mixed>>,total:int} */
     public function deviceHistory(int $deviceId, int $limit = 100, int $offset = 0): array
     {
-        $limit = max(1, min(500, $limit));
-        $rows = $this->sql->all("SELECT * FROM rmm_patch_history WHERE device_id = ? ORDER BY at DESC, id DESC LIMIT $limit OFFSET " . max(0, $offset), [$deviceId]);
+        $page = $this->patchHistory->forDevice($deviceId, $limit, $offset);
+        $rows = $page['rows'];
 
         return ['items' => array_map(static fn (array $r): array => ['update_id' => (string) $r['update_id'], 'title' => (string) $r['title'], 'action' => (string) $r['action'], 'result' => (string) $r['result'],
             'code' => (string) $r['code'], 'detail' => (string) $r['detail'], 'at' => Sql::iso((string) $r['at']), 'job_id' => $r['job_id'] === null ? null : (string) $r['job_id'], 'user_id' => $r['user_id'] === null ? null : (int) $r['user_id']], $rows),
-            'total' => (int) $this->sql->val('SELECT COUNT(*) FROM rmm_patch_history WHERE device_id = ?', [$deviceId])];
+            'total' => $page['total']];
     }
 
     // ------------------------------------------------------------------ the fleet

@@ -23,11 +23,15 @@ final class HypervisorService
     private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
     private const VM_KEY_RE = '/^(?:(qemu|lxc)\/[1-9][0-9]{0,8}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
+    private readonly \RivetCore\Rmm\Store\HypervisorHistoryStore $vmHistory;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
         private readonly ?HypervisorAlerts $alerts = null,
+        ?\RivetCore\Rmm\Store\HypervisorHistoryStore $history = null,
     ) {
+        $this->vmHistory = $history ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbHypervisorHistoryStore($sql);
     }
 
     // ------------------------------------------------------------------ validation (pure)
@@ -417,11 +421,7 @@ final class HypervisorService
             if ($vmId === 0) {
                 continue;
             }
-            $this->sql->run('INSERT INTO rmm_hypervisor_vm_history (vm_id, device_id, at, from_state, to_state) VALUES (?, ?, ?, ?, ?)', [$vmId, $deviceId, $now, $t['from'], $t['to']]);
-            $cut = $this->sql->val('SELECT history_id FROM rmm_hypervisor_vm_history WHERE vm_id = ? ORDER BY history_id DESC LIMIT 1 OFFSET ' . max(1, $ring), [$vmId]);
-            if ($cut !== null && $cut !== false) {
-                $this->sql->run('DELETE FROM rmm_hypervisor_vm_history WHERE vm_id = ? AND history_id <= ?', [$vmId, (int) $cut]);
-            }
+            $this->vmHistory->recordTransition($vmId, $deviceId, $now, $t['from'], $t['to'], $ring);
         }
     }
 
@@ -469,7 +469,7 @@ final class HypervisorService
         $out['orphans'] = $this->sql->run('DELETE v FROM rmm_hypervisor_vms v LEFT JOIN endpoint_agent_devices d ON d.device_id = v.device_id WHERE d.device_id IS NULL');
         $this->sql->run('DELETE s FROM rmm_hypervisor_storage s LEFT JOIN endpoint_agent_devices d ON d.device_id = s.device_id WHERE d.device_id IS NULL');
         $this->sql->run('DELETE h FROM rmm_hypervisor_hosts h LEFT JOIN endpoint_agent_devices d ON d.device_id = h.device_id WHERE d.device_id IS NULL');
-        $out['history'] = $this->sql->run('DELETE h FROM rmm_hypervisor_vm_history h LEFT JOIN rmm_hypervisor_vms v ON v.vm_id = h.vm_id WHERE v.vm_id IS NULL');
+        $out['history'] = $this->vmHistory->deleteOrphans();
 
         return $out;
     }

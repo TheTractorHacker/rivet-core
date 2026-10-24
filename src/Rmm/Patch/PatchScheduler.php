@@ -27,6 +27,8 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class PatchScheduler
 {
+    private readonly \RivetCore\Rmm\Store\PatchHistoryStore $patchHistory;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
@@ -38,7 +40,9 @@ final class PatchScheduler
         private readonly PatchPolicyStore $policies,
         private readonly ?MaintenanceService $maintenance = null,
         private readonly ?ScheduleGateInterface $gate = null,
+        ?\RivetCore\Rmm\Store\PatchHistoryStore $history = null,
     ) {
+        $this->patchHistory = $history ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbPatchHistoryStore($sql);
     }
 
     /** @return array<string,int> */
@@ -221,7 +225,7 @@ final class PatchScheduler
      */
     private function prune(array $limits): int
     {
-        $n = $this->sql->run('DELETE FROM rmm_patch_history WHERE at < ? LIMIT 5000', [$this->sql->utcAt(-(int) $limits['patch_history_days'] * 86400)]);
+        $n = $this->patchHistory->deleteOlderThan($this->sql->utcAt(-(int) $limits['patch_history_days'] * 86400), 5000);
         $n += $this->sql->run("DELETE FROM rmm_patch_available WHERE status = 'installed' AND status_at < ? LIMIT 5000", [$this->sql->utcAt(-14 * 86400)]);
         $n += $this->sql->run('DELETE FROM rmm_patch_jobs WHERE applied_at IS NOT NULL AND created_at < ? LIMIT 5000', [$this->sql->utcAt(-30 * 86400)]);
         $n += $this->policies->dropOrphanAssignments();

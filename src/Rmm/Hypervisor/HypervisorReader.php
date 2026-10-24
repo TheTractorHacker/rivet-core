@@ -17,8 +17,11 @@ final class HypervisorReader
 {
     public const MAX_LIMIT = 500;
 
-    public function __construct(private readonly Sql $sql, private readonly RmmSettings $settings)
+    private readonly \RivetCore\Rmm\Store\HypervisorHistoryStore $vmHistory;
+
+    public function __construct(private readonly Sql $sql, private readonly RmmSettings $settings, ?\RivetCore\Rmm\Store\HypervisorHistoryStore $history = null)
     {
+        $this->vmHistory = $history ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbHypervisorHistoryStore($sql);
     }
 
     /**
@@ -151,7 +154,7 @@ final class HypervisorReader
         }
         $out = $this->vmRow($row);
         $out['history'] = array_map(static fn (array $h): array => ['at' => Sql::iso((string) $h['at']), 'from' => (string) $h['from_state'], 'to' => (string) $h['to_state']],
-            $this->sql->all('SELECT at, from_state, to_state FROM rmm_hypervisor_vm_history WHERE vm_id = ? ORDER BY history_id DESC LIMIT 100', [$vmId]));
+            $this->vmHistory->recent($vmId, 100));
         $keys = [];
         foreach (['vmdown', 'backup', 'snapshot'] as $kind) {
             $keys[] = HypervisorProtocol::vmCheckKey($kind, (string) $row['vm_key']);
