@@ -115,12 +115,18 @@ final class UiAssetsTest extends TestCase
             ['a.href = networksUrl;', "a.href = 'settings_webhooks.php#internal-networks';"],
             ["dl.href = editUrl + '?id=' +", "dl.href = 'webhook_edit.php?id=' +"],
             ["'', editUrl + '?id=' +", "'', 'webhook_edit.php?id=' +"],
+            // rc.38 (security review L8): the guide sanitiser replaces the DOMParser + importNode lines
+            ["        body.textContent = '';\n        appendGuide(body, String(d.content));\n", "        var doc = new DOMParser().parseFromString('<div>' + d.content + '</div>', 'text/html');\n        \$\$('script, noscript', doc.body).forEach(function (s) { s.remove(); });\n        body.textContent = '';\n        Array.prototype.forEach.call(doc.body.firstChild.childNodes, function (n) { body.appendChild(document.importNode(n, true)); });\n"],
         ];
         foreach ($pairs as [$from, $to]) {
             self::assertSame(1, substr_count($js, $from), $from);
             $js = str_replace($from, $to, $js);
         }
-        return $js;
+        // ... and the sanitiser block itself (everything from its banner comment up to loadGuide())
+        $start = strpos($js, "  // ---- guide sanitiser (rc.38");
+        $end = strpos($js, "  function loadGuide() {");
+        self::assertTrue($start !== false && $end !== false && $start < $end, 'the sanitiser block sits right before loadGuide()');
+        return substr($js, 0, $start) . substr($js, $end);
     }
 
     public function testSelfCheckScriptPasses(): void
@@ -355,5 +361,109 @@ final class UiAssetsTest extends TestCase
         self::assertSame(1, $code2);
         self::assertStringContainsString('do not match their manifest', implode("\n", $out2));
         $this->removeTree($core);
+    }
+
+    // ---- rc.38 hardening (security review RC36: L8, L11, I2, I3) ----
+
+    public function testTheWizardNoLongerImportsServerHtmlIntoThePage(): void
+    {
+        $js = (string) file_get_contents(ui_assets_root() . '/js/webhook_wizard.js');
+        self::assertStringNotContainsString('importNode', $js);
+        self::assertStringNotContainsString('.innerHTML', str_replace("innerHTML = ''", '', $js), 'no server HTML goes through innerHTML');
+        self::assertStringContainsString('appendGuide(body, String(d.content))', $js);
+        // the allow-list: no event-handler, style or form tags can be on it, and links are restricted to http(s) and mailto
+        preg_match("/var GUIDE_TAGS = '([^']+)'/", $js, $m);
+        $tags = preg_split('/\s+/', trim($m[1]));
+        foreach (['script', 'iframe', 'form', 'svg', 'object', 'style', 'input', 'button', 'embed', 'math'] as $bad) {
+            self::assertNotContains($bad, $tags);
+        }
+        self::assertStringContainsString("u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:'", $js);
+        self::assertStringNotContainsString("getAttribute('style')", $js);
+        self::assertStringNotContainsString('setAttribute(a.name', $js, 'attributes are copied by name from a list, never wholesale');
+    }
+
+    public function testInstallerRefusesASymlinkedDestinationAndNeverWritesThroughIt(): void
+    {
+        $victim = $this->tmp . '/victim.txt';
+        file_put_contents($victim, 'precious');
+        symlink($victim, $this->tmp . '/css/itflow_design.css');
+        [$code, $out] = $this->script('install-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
+        self::assertSame(1, $code, $out);
+        self::assertStringContainsString('symlink', $out);
+        self::assertSame('precious', file_get_contents($victim));
+        self::assertTrue(is_link($this->tmp . '/css/itflow_design.css'), 'the link was left alone');
+        self::assertFileDoesNotExist($this->tmp . '/css/itflow_motion.css', 'nothing at all is installed when one destination is refused');
+        self::assertFileDoesNotExist($this->tmp . '/css/' . UI_ASSETS_RECEIPT);
+        // the dry run refuses too
+        [$code] = $this->script('install-ui-assets.php', '--css=' . $this->tmp . '/css', '--dry-run');
+        self::assertSame(1, $code);
+        unlink($this->tmp . '/css/itflow_design.css');
+        unlink($victim);
+    }
+
+    public function testInstallerRefusesASymlinkedReceipt(): void
+    {
+        $victim = $this->tmp . '/victim.json';
+        file_put_contents($victim, 'precious');
+        symlink($victim, $this->tmp . '/css/' . UI_ASSETS_RECEIPT);
+        [$code, $out] = $this->script('install-ui-assets.php', '--css=' . $this->tmp . '/css');
+        self::assertSame(1, $code, $out);
+        self::assertSame('precious', file_get_contents($victim));
+        unlink($this->tmp . '/css/' . UI_ASSETS_RECEIPT);
+        unlink($victim);
+    }
+
+    public function testInstallerLeavesNoTemporaryFileBehindAndInstallsRegularFiles(): void
+    {
+        [$code, $out] = $this->script('install-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
+        self::assertSame(0, $code, $out);
+        self::assertSame([], glob($this->tmp . '/{css,js}/.*.tmp', GLOB_BRACE) ?: []);
+        foreach (glob($this->tmp . '/css/*') ?: [] as $f) {
+            self::assertFalse(is_link($f));
+            self::assertSame(0644, fileperms($f) & 0777, $f);
+        }
+    }
+
+    public function testAManifestPathWithATrailingNewlineIsNotAValidPath(): void
+    {
+        self::assertTrue(ui_assets_valid_path('css/a.css'));
+        self::assertFalse(ui_assets_valid_path("css/a.css\n"));
+        self::assertFalse(ui_assets_valid_path("js/a.js\n"));
+    }
+
+    public function testPromoteRefusesAnEditionSymlinkAndAVendorInstalledCore(): void
+    {
+        $this->script('install-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
+        $real = $this->tmp . '/elsewhere.css';
+        file_put_contents($real, 'x');
+        unlink($this->tmp . '/css/itflow_motion.css');
+        symlink($real, $this->tmp . '/css/itflow_motion.css');
+        [$code, $out] = $this->script('promote-ui-assets.php', '--css=' . $this->tmp . '/css');
+        self::assertSame(2, $code, $out);
+        self::assertStringContainsString('symlink', $out);
+        unlink($this->tmp . '/css/itflow_motion.css');
+        unlink($real);
+
+        // a Core living below a vendor/ directory is a dependency, not a checkout
+        $core = $this->coreCopy();
+        $vendor = $this->tmp . '/vendor/rivet/rivet-core';
+        mkdir(dirname($vendor), 0777, true);
+        rename($core, $vendor);
+        exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($vendor . '/scripts/promote-ui-assets.php') . ' --css=' . escapeshellarg($this->tmp . '/css') . ' 2>&1', $o, $c);
+        self::assertSame(2, $c, implode("\n", $o));
+        self::assertStringContainsString('vendor/', implode("\n", $o));
+        $this->removeTree($vendor);
+        @rmdir(dirname($vendor));
+        @rmdir($this->tmp . '/vendor/rivet');
+        @rmdir($this->tmp . '/vendor');
+    }
+
+    public function testCheckPrintsAHandEditedReceiptVersionWithoutControlCharacters(): void
+    {
+        $this->script('install-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
+        file_put_contents($this->tmp . '/css/' . UI_ASSETS_RECEIPT, json_encode(['schema' => 1, 'core_version' => "9.9\x1b[31mRED", 'files' => []]));
+        [, $out] = $this->script('check-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
+        self::assertStringNotContainsString("\x1b", $out);
+        self::assertStringContainsString('installed from Core 9.9?[31mRED', $out);
     }
 }

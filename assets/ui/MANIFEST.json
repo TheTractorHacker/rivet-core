@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "core_version": "1.0.0-rc.36",
+    "core_version": "1.0.0-rc.38",
     "files": {
         "css/file_upload.css": {
             "sha256": "0643d5ce607c9634d8f74bc908136a037b03e5b96ef922f284eaa65e156ff9a7",
@@ -128,8 +128,8 @@
             "origin": "core"
         },
         "js/webhook_wizard.js": {
-            "sha256": "28f6c1efe21e638f8926c485205de65e7839556ae537c27e14554e46ad264771",
-            "bytes": 53471,
+            "sha256": "64a1b7e820d048ff3d04c143b34283fe7cf6452f8c75b380ad0e649067bc973e",
+            "bytes": 56022,
             "origin": "core"
         }
     },
