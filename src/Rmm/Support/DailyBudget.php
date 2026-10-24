@@ -8,7 +8,7 @@ namespace RivetCore\Rmm\Support;
  * A per-subject, per-UTC-day budget kept in `rmm_daily_budget` ({@see \RivetCore\Rmm\Migration\BudgetSchema}). {@see charge()} is one conditional UPDATE, so two
  * parallel requests can never both spend the last of a budget; the budget is spent BEFORE the work it pays for and handed back with {@see refund()} if the work fails.
  *
- * @internal
+ * @api
  */
 final class DailyBudget
 {

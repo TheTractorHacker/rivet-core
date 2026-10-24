@@ -29,7 +29,7 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class PanelService
 {
-    /** The {@see DailyBudget} scope of a device's chat posts and bytes. */
+    /** @internal The {@see DailyBudget} scope of a device's chat posts and bytes. */
     public const BUDGET_CHAT = 'panel_chat';
 
     private readonly DailyBudget $budget;

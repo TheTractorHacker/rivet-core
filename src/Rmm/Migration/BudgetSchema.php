@@ -17,7 +17,7 @@ namespace RivetCore\Rmm\Migration;
  *  - used_bytes  bytes charged (0 where the scope does not weigh bytes)
  *  - flagged     1 once the first refusal of the day was audited, so a flood writes one audit row, not thousands
  *
- * @api
+ * @internal
  */
 final class BudgetSchema
 {
