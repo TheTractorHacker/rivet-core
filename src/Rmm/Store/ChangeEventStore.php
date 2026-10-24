@@ -18,7 +18,7 @@ interface ChangeEventStore
     /**
      * Admit and store one cleaned batch for a device, atomically with the ledger update.
      *
-     * @param list<array{ts:int,kind:string,watch:string,change:int,target:string,item:string,old:string,new:string,summary:string,old_hash:string,new_hash:string,actor:string,process:string,flags:int,dedupe:string}> $records `dedupe` is the 40 hex characters of the dedupe digest
+     * @param list<array{ts:int,kind:string,watch:string,change:int,target:string,item:string,old:string,new:string,summary:string,old_hash:string,new_hash:string,actor:string,process:string,flags:int,dedupe:string}> $records `dedupe` is the 32 hex characters of the dedupe digest (16 bytes)
      * @param array{rate_per_min:int,device_max_rows:int,fleet_max_rows:int} $caps
      * @param string $configVersion the agent's configuration version (16 hex characters) or '' to leave the stored one
      * @param string|null $monitorJson the agent's status block as JSON, or null to leave the stored one

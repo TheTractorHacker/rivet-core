@@ -22,7 +22,7 @@ interface LogStore
     /**
      * Admit and store one cleaned batch for a device, atomically with the ledger update.
      *
-     * @param list<array{ts:int,level:int,source:string,code:?int,message:string,hash:string}> $entries `hash` is the 40 hex characters of the dedupe digest
+     * @param list<array{ts:int,level:int,source:string,code:?int,message:string,hash:string}> $entries `hash` is the 32 hex characters of the dedupe digest (16 bytes)
      * @param array{rate_per_min:int,device_max_rows:int,fleet_max_rows:int} $caps
      * @param int $rejected entries the caller already dropped as malformed (added to the returned `dropped`)
      * @param int $agentDropped entries the agent says it dropped itself (added to the ledger's dropped total, not to the returned `dropped`)
