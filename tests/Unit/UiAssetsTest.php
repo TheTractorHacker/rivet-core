@@ -277,4 +277,83 @@ final class UiAssetsTest extends TestCase
         self::assertSame([0, 2, 0], \CssCascade::specificity(':not(.a.b)'));
         self::assertSame([0, 2, 1], \CssCascade::specificity('a:hover:focus'));
     }
+
+    /** A throwaway copy of Core's scripts and assets/ui, so a promotion can write without touching the checkout. */
+    private function coreCopy(): string
+    {
+        $dir = $this->tmp . '/core';
+        mkdir($dir . '/scripts', 0777, true);
+        mkdir($dir . '/assets/ui/css', 0777, true);
+        mkdir($dir . '/assets/ui/js', 0777, true);
+        foreach (['ui-assets-lib.php', 'promote-ui-assets.php'] as $f) {
+            copy(__DIR__ . '/../../scripts/' . $f, $dir . '/scripts/' . $f);
+        }
+        copy(ui_assets_root() . '/MANIFEST.json', $dir . '/assets/ui/MANIFEST.json');
+        foreach (glob(ui_assets_root() . '/{css,js}/*', GLOB_BRACE) ?: [] as $f) {
+            copy($f, $dir . '/assets/ui/' . basename(dirname($f)) . '/' . basename($f));
+        }
+        return $dir;
+    }
+
+    private function removeTree(string $dir): void
+    {
+        foreach (glob($dir . '/{*,.[!.]*}', GLOB_BRACE) ?: [] as $f) {
+            is_dir($f) ? $this->removeTree($f) : @unlink($f);
+        }
+        @rmdir($dir);
+    }
+
+    public function testPromoteReportsNothingWhenTheEditionMatchesCore(): void
+    {
+        [$code] = $this->script('install-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
+        self::assertSame(0, $code);
+        [$code, $out] = $this->script('promote-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
+        self::assertSame(0, $code);
+        self::assertStringContainsString('Nothing to promote', $out);
+    }
+
+    public function testPromoteDryRunListsAChangeAndWritesNothing(): void
+    {
+        $this->script('install-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
+        file_put_contents($this->tmp . '/css/itflow_motion.css', "/* edited in the edition */\n", FILE_APPEND);
+        $before = (string) hash_file('sha256', ui_assets_root() . '/css/itflow_motion.css');
+        [$code, $out] = $this->script('promote-ui-assets.php', '--css=' . $this->tmp . '/css');
+        self::assertSame(0, $code);
+        self::assertStringContainsString('css/itflow_motion.css', $out);
+        self::assertStringContainsString('Dry run', $out);
+        self::assertSame($before, hash_file('sha256', ui_assets_root() . '/css/itflow_motion.css'));
+    }
+
+    public function testPromoteApplyCopiesTheChangeAndKeepsCoreConsistent(): void
+    {
+        $this->script('install-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
+        file_put_contents($this->tmp . '/css/itflow_motion.css', "/* edited in the edition */\n", FILE_APPEND);
+        $core = $this->coreCopy();
+        $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($core . '/scripts/promote-ui-assets.php') . ' --css=' . escapeshellarg($this->tmp . '/css') . ' --apply 2>&1';
+        exec($cmd, $out, $code);
+        self::assertSame(0, $code, implode("\n", $out));
+        self::assertSame(hash_file('sha256', $this->tmp . '/css/itflow_motion.css'), hash_file('sha256', $core . '/assets/ui/css/itflow_motion.css'));
+        $manifest = ui_assets_manifest($core . '/assets/ui/MANIFEST.json');
+        self::assertSame([], ui_assets_verify_core($manifest, $core . '/assets/ui'));
+        self::assertSame(hash_file('sha256', $core . '/assets/ui/css/itflow_motion.css'), $manifest['files']['css/itflow_motion.css']['sha256']);
+        $this->removeTree($core);
+    }
+
+    public function testPromoteRefusesANewFileUnlessItIsNamedAndRefusesATamperedCore(): void
+    {
+        $this->script('install-ui-assets.php', '--css=' . $this->tmp . '/css', '--js=' . $this->tmp . '/js');
+        file_put_contents($this->tmp . '/css/brand_new.css', ".x{color:red}\n");
+        [$code, $out] = $this->script('promote-ui-assets.php', '--css=' . $this->tmp . '/css');
+        self::assertSame(0, $code);
+        self::assertStringContainsString('Nothing to promote', $out, 'an unlisted edition sheet is none of the promoter\'s business');
+        [$code] = $this->script('promote-ui-assets.php', '--css=' . $this->tmp . '/css', '--add=css/missing.css');
+        self::assertSame(2, $code);
+        $core = $this->coreCopy();
+        file_put_contents($core . '/assets/ui/css/itflow_motion.css', '/* tampered */', FILE_APPEND);
+        $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($core . '/scripts/promote-ui-assets.php') . ' --css=' . escapeshellarg($this->tmp . '/css') . ' --apply 2>&1';
+        exec($cmd, $out2, $code2);
+        self::assertSame(1, $code2);
+        self::assertStringContainsString('do not match their manifest', implode("\n", $out2));
+        $this->removeTree($core);
+    }
 }

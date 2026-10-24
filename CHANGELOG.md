@@ -2,6 +2,11 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.36 (design changes can be promoted from an edition into Core; no migration)
+
+- **`scripts/promote-ui-assets.php`.** Make a design change in an edition, then promote it: the script compares the edition's copies of the shared files with Core's manifest, lists what differs (dry run), and with `--apply` copies the changes into `assets/ui/` and rebuilds `MANIFEST.json`. A brand-new shared file needs `--add=css/name.css`. It refuses to run if Core's own assets do not match their manifest. Edition-only sheets are never touched. `docs/ui/DESIGN_ASSETS.md` has a new "Changing the design" section: change it in Core first, or try it in an edition and promote it, and which file a rule belongs in.
+- No library behaviour change. Four new unit tests in `UiAssetsTest` (nothing to promote, dry run writes nothing, apply keeps Core consistent, new files and a tampered Core are refused).
+
 ## 1.0.0-rc.35 (RivetPanel device-token API; migration 0040)
 
 Additive. The RMM device protocol is frozen and untouched: an old agent works against this server and the golden replay is identical. A new Core module, `RivetCore\Panel`, is the server side of the RivetPanel desktop helper. It replaces the legacy shared `X-Api-Key` (which acts as the first administrator and trusts a `client_id` / `contact_id` in the body) with a **per-device token**, reusing the RMM enrollment mechanism. Full contract: [docs/panel/PANEL_API.md](docs/panel/PANEL_API.md) and [docs/panel/openapi-panel.yaml](docs/panel/openapi-panel.yaml).

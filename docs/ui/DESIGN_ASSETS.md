@@ -216,6 +216,28 @@ php scripts/check-ui-assets.php --expect-version=1.0.0-rc.34
 `core_version` is `unreleased` until the release step sets it: run the last two commands before tagging (the Core release step). The
 edition side is step 5 of [EDITION_CHECKLIST.md](../EDITION_CHECKLIST.md).
 
+## Changing the design
+
+**Core is the source of truth for the shared files; the editions hold copies.** The drift check fails an edition whose shared file differs from Core's, so a design change has to travel through Core. Two ways, both end in the same place:
+
+**A. Change it in Core first (cleanest for anything both editions should get).**
+1. Edit the file in `assets/ui/` in a rivet-core checkout, then `php scripts/build-ui-manifest.php`.
+2. `composer test`, CHANGELOG entry, release candidate tag.
+3. Each edition pins the new tag and runs `scripts/install-ui-assets.php`, then looks at its pages.
+
+**B. Try it in an edition first (best for a visual fix you want to see live), then promote it.**
+1. In the edition, edit the shared file in its `css/` or `js/` directly and reload the page until it looks right. The edition's drift check will complain while you do this; that is expected until step 3.
+2. In a rivet-core checkout: `php scripts/promote-ui-assets.php --css=/path/to/edition/css --js=/path/to/edition/js` (dry run: lists exactly which shared files differ).
+3. `--apply` copies them into `assets/ui/` and rebuilds the manifest. Review `git diff assets/ui`, run `composer test` (a test that pins a file's expected hash must be updated for a deliberately changed file), add a CHANGELOG entry, tag a release candidate.
+4. Every edition pins that tag and runs the installer. The edition where you made the change now matches Core again; the other edition sees the change, so look at its pages too.
+
+**Which file does the change belong in?**
+- A rule both editions need (tokens, components, shims, RMM and webhook styles): the shared file.
+- A rule only one edition needs (portal chrome, the training sheets, branding): that edition's `*.edition.css` or own sheet. Nothing to promote.
+- A brand-new shared sheet: `--add=css/name.css` on the promote command, then put it in the right place in `load_order` and say which pages load it.
+
+**Do not** fork a shared file inside one edition to fix a one-off: the drift check will fail and the other edition silently keeps the old behaviour. If it only matters to one edition, put the rule in its override file, which loads after the shared sheets.
+
 ## RivetMSP migration checklist
 
 RivetMSP's copies (commit `68d191973`) differ from RivetIT's in the files below. Replacing them changes what MSP shows. Measured with
