@@ -174,7 +174,7 @@ compatible with already enrolled agents. Design: [docs/design/endpoint-module-ex
 
 Effect on 1.0: the RMM module adds public API, so `1.0.0-rc.N` is re-cut after Phase 0 and the 30-day soak starts from that candidate; Phases 1 to 8 are 1.x minor releases.
 
-### Programme status (updated 2026-10-23, through v1.0.0-rc.35)
+### Programme status (updated 2026-10-24, through v1.0.0-rc.38)
 
 **Shipped since the phase table was last updated**
 
@@ -189,6 +189,8 @@ Effect on 1.0: the RMM module adds public API, so `1.0.0-rc.N` is re-cut after P
 | rc.33 | CI repair, `composer.lock` committed, dependency audit job (`composer audit`, `govulncheck`) |
 | rc.34 | Shared design assets (`assets/ui`): RivetIT is the reference; shared stylesheets, five widget scripts, webhook styles, manifest, installer and CI drift check; accessible muted-text colour |
 | rc.35 | RivetPanel device-token API (`src/Panel`, migration 0040): per-device scoped tickets and chat, revocation, rate limits, audit, idempotent ticket creation |
+| rc.36 to rc.37 | `scripts/promote-ui-assets.php`; capped multi-use fleet enrollment tokens for the panel |
+| rc.38 | Security hardening from the rc.31 to rc.36 review (`docs/security/REVIEW_RC36.md`): daily chat budget, ownership by (device, contact), the automation kill switch enforced everywhere and retroactive, redaction and alert-text gaps, Mesh event volume and move rules, attachment formula checks, installer and wizard hardening, pinned CI; migration 0041 |
 
 **In progress**
 
@@ -199,7 +201,7 @@ Effect on 1.0: the RMM module adds public API, so `1.0.0-rc.N` is re-cut after P
 
 **Open**
 
-- Second security review of the newest features (the rc.31 review covered rc.21 to rc.30; the rc.32 kill switch is unreviewed).
+- Edition adoption of the rc.38 fixes (migration 0041, gateway UTC time stamps, Mesh Approve through Core; `docs/security/edition-checklist.md` section I). A review of rc.37 to rc.38 is not done.
 - "Verify against official release" on the build host and an optional customer-certificate signing hook (#75).
 - Measured capacity numbers (#42); PR #58 (`quality-gates-1.0`) merge or close; close the built issues #69 to #74, #76 (hold #72 until patching runs on a real PC).
 - Real-device proof still owed: patch install, Proxmox and Hyper-V collectors, Linux Mesh install, MSI upgrade, repair and uninstall.
