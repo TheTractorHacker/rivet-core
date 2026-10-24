@@ -12,7 +12,11 @@ namespace RivetCore\Panel;
  */
 final class PanelLimits
 {
-    /** Hard ceilings no configuration can exceed. */
+    /**
+     * rc.38 (security review RC36 M1): next to the per-minute chat limit, one device may post at most `chatPostsPerDayMax` chat messages and `chatBytesPerDayMax` bytes
+     * (message text plus decoded attachments) per UTC day; the call that would pass either gets 429 with a Retry-After to the next UTC midnight.
+     *
+     * Hard ceilings no configuration can exceed. */
     public const MAX_ATTACHMENT_BYTES_CEILING = 25 * 1024 * 1024;
     public const MAX_ATTACHMENTS_CEILING = 10;
 
@@ -34,6 +38,8 @@ final class PanelLimits
         public readonly int $ownedWindow = 500,
         public readonly int $enrollMaxTtlH = PanelProtocol::ENROLL_MAX_TTL_H,
         public readonly int $enrollMaxUses = 500,
+        public readonly int $chatPostsPerDayMax = 500,
+        public readonly int $chatBytesPerDayMax = 50 * 1024 * 1024,
     ) {
     }
 
@@ -62,6 +68,8 @@ final class PanelLimits
             $int('ownedWindow', $d->ownedWindow, 1, 5000),
             $int('enrollMaxTtlH', $d->enrollMaxTtlH, 1, 24 * 14),
             $int('enrollMaxUses', $d->enrollMaxUses, 1, 5000),
+            $int('chatPostsPerDayMax', $d->chatPostsPerDayMax, 1, 100000),
+            $int('chatBytesPerDayMax', $d->chatBytesPerDayMax, 1, 1024 * 1024 * 1024),
         );
     }
 

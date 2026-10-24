@@ -392,4 +392,175 @@ final class PanelTicketsTest extends PanelTestCase
         $this->assertNotSame($one, $two);
         $this->assertSame(0, (int) $this->p->rmm->one('SELECT COUNT(*) FROM panel_ticket_owner WHERE ticket_id IS NULL'));
     }
+
+    // ------------------------------------------------------------------ rc.38 (security review RC36 M1 and M2)
+
+    /** M2: an install re-enrolled for another person must not see the first person's tickets or chat. */
+    public function testAReEnrolledDeviceDoesNotSeeTheTicketsOfThePreviousContact(): void
+    {
+        $install = \RivetCore\Tests\Support\RmmHarness::uuid();
+        $jane = $this->p->gateway->addClientContact($this->p->clientA, 'Jane');
+        $joe = $this->p->gateway->addClientContact($this->p->clientA, 'Joe');
+        [, , $a] = $this->p->enroll($this->p->mint($this->p->clientA, $jane)['token'], ['install_id' => $install]);
+        [, , $made] = $this->create($a['device_token'], ['subject' => 'VPN password is hunter2']);
+        $ticket = $made['ticket_id'];
+        $this->assertSame(1, count($this->p->call('GET', 'panel_tickets', null, $a['device_token'])[2]['tickets']));
+
+        // the PC goes to Joe: same install id, a token for his contact
+        [$c, , $b] = $this->p->enroll($this->p->mint($this->p->clientA, $joe)['token'], ['install_id' => $install]);
+        $this->assertSame([201, $a['device_id']], [$c, $b['device_id']], 'the same device row');
+        [$c, , $j] = $this->p->call('GET', 'panel_tickets', null, $b['device_token']);
+        $this->assertSame([200, []], [$c, $j['tickets']], 'the list is empty');
+        $this->assertSame(404, $this->p->call('GET', 'panel_ticket_chat', null, $b['device_token'], [], [(string) $ticket])[0]);
+        $before = count($this->p->gateway->posted);
+        $this->assertSame(404, $this->p->call('POST', 'panel_ticket_chat', ['body' => 'hello'], $b['device_token'], [], [(string) $ticket])[0]);
+        $this->assertCount($before, $this->p->gateway->posted, 'nothing was posted into the previous person\'s ticket');
+        // nothing was deleted: the ledger row is still there
+        $this->assertSame(1, (int) $this->p->rmm->one('SELECT COUNT(*) FROM panel_ticket_owner WHERE ticket_id = ' . $ticket));
+        // Joe's own ticket belongs to Joe only
+        $this->assertSame(201, $this->create($b['device_token'], ['subject' => 'Joe ticket'])[0]);
+        $this->assertCount(1, $this->p->call('GET', 'panel_tickets', null, $b['device_token'])[2]['tickets']);
+        // the old person coming back brings the old tickets back (the identity is the pair)
+        [, , $back] = $this->p->enroll($this->p->mint($this->p->clientA, $jane)['token'], ['install_id' => $install]);
+        $ids = array_column($this->p->call('GET', 'panel_tickets', null, $back['device_token'])[2]['tickets'], 'ticket_id');
+        $this->assertContains($ticket, $ids);
+    }
+
+    public function testAClientLevelDeviceReEnrolledForAContactKeepsNoClaimOnItsOwnEarlierTickets(): void
+    {
+        $install = \RivetCore\Tests\Support\RmmHarness::uuid();
+        $this->p->module->settings()->setAllowClientLevelTickets($this->p->clientA, true, 1);
+        [, , $a] = $this->p->enroll($this->p->mint($this->p->clientA, null)['token'], ['install_id' => $install]);
+        [$c, , $made] = $this->create($a['device_token'], ['subject' => 'shared kiosk issue']);
+        $this->assertSame(201, $c);
+        $jane = $this->p->gateway->addClientContact($this->p->clientA, 'Jane');
+        [, , $b] = $this->p->enroll($this->p->mint($this->p->clientA, $jane)['token'], ['install_id' => $install]);
+        $this->assertSame([], $this->p->call('GET', 'panel_tickets', null, $b['device_token'])[2]['tickets']);
+        $this->assertSame(404, $this->p->call('GET', 'panel_ticket_chat', null, $b['device_token'], [], [(string) $made['ticket_id']])[0]);
+        // and the other way round: a contact's tickets are not visible once the device is client-level again
+        $this->assertSame(201, $this->create($b['device_token'], ['subject' => 'Jane ticket'])[0]);
+        [, , $c2] = $this->p->enroll($this->p->mint($this->p->clientA, null)['token'], ['install_id' => $install]);
+        $subjects = array_column($this->p->call('GET', 'panel_tickets', null, $c2['device_token'])[2]['tickets'], 'subject');
+        $this->assertSame(['shared kiosk issue'], $subjects);
+    }
+
+    public function testARequestIdUsedBeforeAReEnrollmentIsNotReplayedToTheNewContact(): void
+    {
+        $install = \RivetCore\Tests\Support\RmmHarness::uuid();
+        $jane = $this->p->gateway->addClientContact($this->p->clientA, 'Jane');
+        $joe = $this->p->gateway->addClientContact($this->p->clientA, 'Joe');
+        [, , $a] = $this->p->enroll($this->p->mint($this->p->clientA, $jane)['token'], ['install_id' => $install]);
+        $this->assertSame(201, $this->create($a['device_token'], ['client_request_id' => self::RID])[0]);
+        [, , $b] = $this->p->enroll($this->p->mint($this->p->clientA, $joe)['token'], ['install_id' => $install]);
+        [$c, , $j] = $this->create($b['device_token'], ['client_request_id' => self::RID]);
+        $this->assertSame([409, 'conflict'], [$c, $j['code']]);
+        $this->assertCount(1, $this->p->gateway->created, 'the gateway was not called again and no id leaked');
+    }
+
+    private function chatDevice(\RivetCore\Tests\Support\PanelHarness $h): array
+    {
+        $contact = $h->gateway->addClientContact($h->clientA, 'Jane');
+        $d = $h->device_for($h->clientA, $contact);
+        [$c, , $j] = $h->call('POST', 'panel_tickets', ['subject' => 's', 'body' => 'b'], $d['token']);
+        $this->assertSame(201, $c);
+
+        return $d + ['ticket' => $j['ticket_id']];
+    }
+
+    /** M1: a daily count cap, 429 with a Retry-After to the next UTC midnight, the gateway not called after the budget is spent, one audit row. */
+    public function testChatIsCappedPerDeviceAndDayInPosts(): void
+    {
+        $h = new \RivetCore\Tests\Support\PanelHarness(['limits' => ['chatPostsPerDayMax' => 3]]);
+        $d = $this->chatDevice($h);
+        $post = fn () => $h->call('POST', 'panel_ticket_chat', ['body' => 'hi'], $d['token'], [], [(string) $d['ticket']]);
+        for ($i = 0; $i < 3; $i++) {
+            $this->assertSame(201, $post()[0], "post $i");
+        }
+        $posted = count($h->gateway->posted);
+        [$c, $headers, $j] = $post();
+        $this->assertSame([429, 'rate_limited'], [$c, $j['code']]);
+        $this->assertGreaterThanOrEqual(1, (int) $headers['Retry-After']);
+        $this->assertLessThanOrEqual(86400, (int) $headers['Retry-After']);
+        $this->assertSame($posted, count($h->gateway->posted), 'the gateway was not called once the budget was spent');
+        $this->assertSame(429, $post()[0]);
+        $this->assertSame(1, count(array_keys($h->actions(), 'Panel Chat Limit Reached', true)), 'the first refusal of the day is audited, the later ones are not');
+        // reading is not affected
+        $this->assertSame(200, $h->call('GET', 'panel_ticket_chat', null, $d['token'], [], [(string) $d['ticket']])[0]);
+        // another device has its own budget
+        $other = $this->chatDevice($h);
+        $this->assertSame(201, $h->call('POST', 'panel_ticket_chat', ['body' => 'hi'], $other['token'], [], [(string) $other['ticket']])[0]);
+    }
+
+    public function testChatIsCappedPerDeviceAndDayInBytes(): void
+    {
+        $h = new \RivetCore\Tests\Support\PanelHarness(['limits' => ['chatBytesPerDayMax' => 20000, 'chatPostsPerDayMax' => 1000]]);
+        $d = $this->chatDevice($h);
+        $png = ['filename' => 'a.png', 'content_type' => 'image/png', 'data_base64' => base64_encode("\x89PNG\r\n\x1a\n" . str_repeat("\0", 9000))];
+        $post = fn () => $h->call('POST', 'panel_ticket_chat', ['body' => 'x', 'attachments' => [$png]], $d['token'], [], [(string) $d['ticket']]);
+        $this->assertSame(201, $post()[0]);
+        $this->assertSame(201, $post()[0]);
+        $posted = count($h->gateway->posted);
+        $this->assertSame(429, $post()[0], 'about 9 KB each: the third passes 20000');
+        $this->assertSame($posted, count($h->gateway->posted));
+        // a small text message that still fits is accepted
+        $this->assertSame(201, $h->call('POST', 'panel_ticket_chat', ['body' => 'ok'], $d['token'], [], [(string) $d['ticket']])[0]);
+    }
+
+    public function testARejectedOrFailedChatPostDoesNotSpendTheBudget(): void
+    {
+        $h = new \RivetCore\Tests\Support\PanelHarness(['limits' => ['chatPostsPerDayMax' => 2]]);
+        $d = $this->chatDevice($h);
+        $url = [(string) $d['ticket']];
+        $this->assertSame(422, $h->call('POST', 'panel_ticket_chat', ['body' => ''], $d['token'], [], $url)[0]);
+        $this->assertSame(404, $h->call('POST', 'panel_ticket_chat', ['body' => 'x'], $d['token'], [], ['99999'])[0]);
+        $this->assertSame([0, 0], array_values((new \RivetCore\Rmm\Support\DailyBudget($h->module->sql()))->used('panel_chat', $d['device_id'])));
+        $this->assertSame(201, $h->call('POST', 'panel_ticket_chat', ['body' => 'one'], $d['token'], [], $url)[0]);
+        // a ticket closed after the fact is refused before the budget is touched
+        $h->gateway->closeTicket($d['ticket']);
+        $this->assertSame(409, $h->call('POST', 'panel_ticket_chat', ['body' => 'two'], $d['token'], [], $url)[0]);
+        $this->assertSame(1, (new \RivetCore\Rmm\Support\DailyBudget($h->module->sql()))->used('panel_chat', $d['device_id'])['count']);
+    }
+
+    public function testTheChatBudgetIsHandedBackWhenTheGatewayFails(): void
+    {
+        $failing = new class() extends \RivetCore\Testing\InMemoryPanelTicketGateway {
+            public bool $fail = true;
+
+            public function postMessage(int $ticketId, int $clientId, ?int $contactId, string $body, string $requesterHint, array $attachments): int
+            {
+                if ($this->fail) {
+                    throw new \RuntimeException('gateway down');
+                }
+
+                return parent::postMessage($ticketId, $clientId, $contactId, $body, $requesterHint, $attachments);
+            }
+        };
+        $h2 = new \RivetCore\Tests\Support\PanelHarness(['limits' => ['chatPostsPerDayMax' => 1]], $failing);
+        $contact = $failing->addClientContact($h2->clientA, 'Jane');
+        $dev = $h2->device_for($h2->clientA, $contact);
+        $t = $h2->call('POST', 'panel_tickets', ['subject' => 's', 'body' => 'b'], $dev['token'])[2]['ticket_id'];
+        $this->assertSame(500, $h2->call('POST', 'panel_ticket_chat', ['body' => 'x'], $dev['token'], [], [(string) $t])[0]);
+        $failing->fail = false;
+        $this->assertSame(201, $h2->call('POST', 'panel_ticket_chat', ['body' => 'x'], $dev['token'], [], [(string) $t])[0], 'the failed attempt did not use the only post of the day');
+    }
+
+    public function testTheDefaultChatBudgetIsFiveHundredPostsAndFiftyMebibytes(): void
+    {
+        $l = new \RivetCore\Panel\PanelLimits();
+        $this->assertSame([500, 50 * 1024 * 1024], [$l->chatPostsPerDayMax, $l->chatBytesPerDayMax]);
+        $c = \RivetCore\Panel\PanelLimits::fromArray(['chatPostsPerDayMax' => 0, 'chatBytesPerDayMax' => PHP_INT_MAX]);
+        $this->assertSame([1, 1024 * 1024 * 1024], [$c->chatPostsPerDayMax, $c->chatBytesPerDayMax], 'a typo cannot lift the limit into abuse territory');
+        $this->assertSame([500, 50 * 1024 * 1024], [\RivetCore\Panel\PanelLimits::fromArray(['chatPostsPerDayMax' => 'many'])->chatPostsPerDayMax, \RivetCore\Panel\PanelLimits::fromArray([])->chatBytesPerDayMax]);
+    }
+
+    public function testTheBudgetResetsOnTheNextUtcDay(): void
+    {
+        $h = new \RivetCore\Tests\Support\PanelHarness(['limits' => ['chatPostsPerDayMax' => 1]]);
+        $d = $this->chatDevice($h);
+        $url = [(string) $d['ticket']];
+        $this->assertSame(201, $h->call('POST', 'panel_ticket_chat', ['body' => 'x'], $d['token'], [], $url)[0]);
+        $this->assertSame(429, $h->call('POST', 'panel_ticket_chat', ['body' => 'x'], $d['token'], [], $url)[0]);
+        $h->rmm->clock->advance(86400 + 5);
+        $this->assertSame(201, $h->call('POST', 'panel_ticket_chat', ['body' => 'x'], $d['token'], [], $url)[0]);
+    }
 }
