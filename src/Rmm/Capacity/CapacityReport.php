@@ -9,7 +9,10 @@ use RivetCore\Rmm\RmmState;
 use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Storage\PartitionMaintenance;
 use RivetCore\Rmm\Support\RmmCache;
-use RivetCore\Rmm\Storage\StorageState;
+use RivetCore\Rmm\Storage\StorageMaintenance;
+use RivetCore\Rmm\Store\ChangeEventStore;
+use RivetCore\Rmm\Store\MariaDb\MariaDbChangeEventStore;
+use RivetCore\Rmm\Store\StoreMaintenance;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -31,6 +34,9 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class CapacityReport
 {
+    private readonly StoreMaintenance $maintenance;
+    private readonly ChangeEventStore $changeEvents;
+
     public const ROWS_PER_BATCH = 7;
     public const BASE_ROWS = 7;
     public const BASE_STATEMENTS = 12;
@@ -47,7 +53,11 @@ final class CapacityReport
         private readonly ?RmmCache $cache = null,
         private readonly ?HerdControl $herd = null,
         private readonly ?ExternalMetricSink $external = null,
+        ?StoreMaintenance $maintenance = null,
+        ?ChangeEventStore $changeEvents = null,
     ) {
+        $this->maintenance = $maintenance ?? new StorageMaintenance(new PartitionMaintenance($sql), null, $sql);
+        $this->changeEvents = $changeEvents ?? new MariaDbChangeEventStore($sql);
     }
 
     /**
@@ -126,8 +136,9 @@ final class CapacityReport
     public function changeMonitor(): array
     {
         try {
-            $rows = (int) $this->sql->val('SELECT COALESCE(SUM(row_count), 0) FROM endpoint_agent_change_state');
-            $devices = (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_change_state WHERE last_batch_at IS NOT NULL');
+            $totals = $this->changeEvents->ledgerTotals();
+            $rows = $totals['rows'];
+            $devices = $totals['devices'];
             $raw = $this->sql->val('SELECT limits_json FROM endpoint_agent_change_settings WHERE id = 1');
         } catch (\Throwable) {
             return ['available' => false];   // migration 0030 is not applied yet
@@ -249,19 +260,7 @@ final class CapacityReport
      */
     public function storage(array $limits): array
     {
-        $state = new StorageState($this->sql);
-        $wm = $state->rollupWatermark();
-        $pm = new PartitionMaintenance($this->sql, $state);
-        $explicit = $this->settings->explicitLimits();
-        $retention = ['rmm_metric_hourly' => $explicit['metric_hourly_days'] ?? $limits['metric_hourly_days'], 'rmm_metric_daily' => $explicit['metric_daily_days'] ?? $limits['metric_daily_days'],
-            'endpoint_agent_check_history' => max(1, $limits['check_history_days'])];
-        $tables = [];
-        foreach (array_keys(PartitionMaintenance::TABLES) as $t) {
-            $parts = $pm->partitions($t);
-            $tables[$t] = ['partitioned' => $parts !== [], 'partitions' => count($parts), 'retention_days' => $retention[$t]];
-        }
-
-        return ['partitioning_enabled' => $limits['partitioning'] === 1, 'rollup_watermark' => $wm, 'rollup_behind_days' => $wm === null ? null : max(0, intdiv($this->sql->time() - Sql::ts($wm), 86400)), 'tables' => $tables];
+        return $this->maintenance->tiers($limits, $this->settings->explicitLimits());
     }
 
     // ------------------------------------------------------------------ the pure model

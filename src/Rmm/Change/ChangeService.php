@@ -8,6 +8,11 @@ use RivetCore\Rmm\Crypto\Redactor;
 use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\RmmProtocol;
+use RivetCore\Rmm\Store\ChangeCriteria;
+use RivetCore\Rmm\Store\ChangeEventStore;
+use RivetCore\Rmm\Store\MariaDb\MariaDbChangeEventStore;
+use RivetCore\Rmm\Store\SoftwareHistoryStore;
+use RivetCore\Rmm\Store\MariaDb\MariaDbSoftwareHistoryStore;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 
@@ -34,12 +39,19 @@ final class ChangeService
     public const EVENT_CAP = 20;
     private const STATUS_MAX_BYTES = 4096;
 
+    private readonly ChangeEventStore $store;
+    private readonly SoftwareHistoryStore $softwareHistory;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly ChangeSettings $settings,
         private readonly ?ChangeRuleService $rules = null,
         private readonly ?RmmEventPublisher $events = null,
+        ?ChangeEventStore $store = null,
+        ?SoftwareHistoryStore $softwareHistory = null,
     ) {
+        $this->store = $store ?? new MariaDbChangeEventStore($sql);
+        $this->softwareHistory = $softwareHistory ?? new MariaDbSoftwareHistoryStore($sql);
     }
 
     // ------------------------------------------------------------------ ingest
@@ -81,43 +93,11 @@ final class ChangeService
             $clean[] = $row;
         }
 
-        $kept = [];
-        $inserted = 0;
-        $this->sql->transaction(function () use ($deviceId, $limits, $now, $clean, &$dropped, &$kept, &$inserted, $agentDropped, $version, $status): void {
-            $this->sql->run('INSERT IGNORE INTO endpoint_agent_change_state (device_id) VALUES (?)', [$deviceId]);
-            $st = $this->sql->one('SELECT * FROM endpoint_agent_change_state WHERE device_id = ? FOR UPDATE', [$deviceId]) ?? [];
-            $budget = $limits['change_rate_per_min'];
-            $winStart = ($st['window_start'] ?? null) === null ? 0 : Sql::ts((string) $st['window_start']);
-            $winCount = (int) ($st['window_count'] ?? 0);
-            if ($winStart === 0 || $now - $winStart >= 60) {
-                $winStart = $now;
-                $winCount = 0;
-            }
-            $rows = (int) ($st['row_count'] ?? 0);
-            $room = max(0, $budget - $winCount);
-            $deviceRoom = max(0, (int) ceil($limits['change_device_max_rows'] * 1.2) - $rows);
-            $fleetRoom = max(0, (int) ceil($limits['change_fleet_max_rows'] * 1.1) - $this->fleetRows());
-            $allow = min(count($clean), $room, $deviceRoom, $fleetRoom);
-            $dropped += count($clean) - $allow;
-            $kept = array_slice($clean, 0, $allow);
-            $nowSql = gmdate('Y-m-d H:i:s', $now);
-            foreach (array_chunk($kept, 50) as $chunk) {
-                $params = [];
-                $sqlRows = [];
-                foreach ($chunk as $r) {
-                    $sqlRows[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UNHEX(?))';
-                    array_push($params, $deviceId, gmdate('Y-m-d H:i:s', $r['ts']), $nowSql, $r['kind'], $r['watch'], $r['change'], $r['target'], $r['item'], $r['old'], $r['new'],
-                        $r['summary'], $r['old_hash'], $r['new_hash'], $r['actor'], $r['process'], $r['flags'], $r['dedupe']);
-                }
-                $inserted += $this->sql->run('INSERT IGNORE INTO endpoint_agent_change_records (device_id, occurred_at, received_at, kind, watch, change_type, target, item, old_value, new_value, summary, old_hash, new_hash, actor, process, flags, dedupe) VALUES '
-                    . implode(',', $sqlRows), $params);
-            }
-            $last = $kept === [] ? null : gmdate('Y-m-d H:i:s', max(array_column($kept, 'ts')));
-            $this->sql->run('UPDATE endpoint_agent_change_state SET row_count = row_count + ?, dropped_total = dropped_total + ?, last_change_at = IF(? IS NULL, last_change_at, GREATEST(COALESCE(last_change_at, ?), ?)),
-                last_batch_at = ?, window_start = ?, window_count = ?, config_version = IF(? = \'\', config_version, ?), monitor_json = IF(? IS NULL, monitor_json, ?), monitor_at = IF(? IS NULL, monitor_at, ?) WHERE device_id = ?',
-                [$inserted, $dropped + $agentDropped, $last, $last, $last, $nowSql, gmdate('Y-m-d H:i:s', $winStart), $winCount + count($kept), $version, $version,
-                    $status, $status, $status, $nowSql, $deviceId]);
-        });
+        $res = $this->store->admit($deviceId, $clean, ['rate_per_min' => $limits['change_rate_per_min'], 'device_max_rows' => $limits['change_device_max_rows'], 'fleet_max_rows' => $limits['change_fleet_max_rows']],
+            $now, $dropped, $agentDropped, $version, $status);
+        $kept = $res['kept'];
+        $inserted = $res['inserted'];
+        $dropped = $res['dropped'];
         if ($inserted > 0) {   // a resent batch the server already holds raises nothing twice
             $fresh = $inserted === count($kept) ? $kept : $this->onlyNew($deviceId, $kept, gmdate('Y-m-d H:i:s', $now));
             $this->rules?->evaluate($dev, $fresh);
@@ -143,15 +123,9 @@ final class ChangeService
      */
     private function onlyNew(int $deviceId, array $kept, string $nowSql): array
     {
-        $rows = $this->sql->all('SELECT HEX(dedupe) h FROM endpoint_agent_change_records WHERE device_id = ? AND received_at = ? ORDER BY change_id DESC LIMIT 500', [$deviceId, $nowSql]);
-        $new = array_flip(array_map(static fn (array $r): string => strtolower((string) $r['h']), $rows));
+        $new = array_flip($this->store->dedupeKeysReceivedAt($deviceId, $nowSql));
 
         return array_values(array_filter($kept, static fn (array $r): bool => isset($new[$r['dedupe']])));
-    }
-
-    private function fleetRows(): int
-    {
-        return (int) $this->sql->val('SELECT COALESCE(SUM(row_count), 0) FROM endpoint_agent_change_state');
     }
 
     /**
@@ -284,52 +258,18 @@ final class ChangeService
         $span = $device > 0 ? 365 * 86400 : 30 * 86400;
         $from = max(self::when($f['from'] ?? null, max(0, $to - 7 * 86400)), $to - $span);
         $range = ['from' => gmdate('Y-m-d\TH:i:s\Z', $from), 'to' => gmdate('Y-m-d\TH:i:s\Z', $to)];
-        $where = ['e.occurred_at >= ?', 'e.occurred_at <= ?'];
-        $params = [gmdate('Y-m-d H:i:s', $from), gmdate('Y-m-d H:i:s', $to)];
-        if ($device > 0) {
-            $where[] = 'e.device_id = ?';
-            $params[] = $device;
+        if ($visibleClientIds !== null && $visibleClientIds === []) {
+            return ['items' => [], 'total' => 0] + $range;
         }
-        if (isset($f['client_id']) && is_numeric($f['client_id']) && (int) $f['client_id'] > 0) {
-            $where[] = 'd.client_id = ?';
-            $params[] = (int) $f['client_id'];
-        }
-        if ($visibleClientIds !== null) {
-            if ($visibleClientIds === []) {
-                return ['items' => [], 'total' => 0] + $range;
-            }
-            $where[] = 'd.client_id IN (' . implode(',', array_fill(0, count($visibleClientIds), '?')) . ')';
-            array_push($params, ...$visibleClientIds);
-        }
-        if (isset($f['kind']) && is_string($f['kind']) && in_array($f['kind'], ChangeProtocol::KINDS, true)) {
-            $where[] = 'e.kind = ?';
-            $params[] = $f['kind'];
-        }
-        if (isset($f['watch']) && is_string($f['watch']) && preg_match(ChangeProtocol::WATCH_ID_RE, $f['watch']) === 1) {
-            $where[] = 'e.watch = ?';
-            $params[] = $f['watch'];
-        }
-        if (isset($f['change']) && is_string($f['change']) && ($n = ChangeProtocol::changeNumber($f['change'])) !== null) {
-            $where[] = 'e.change_type = ?';
-            $params[] = $n;
-        }
-        foreach (['target' => 'e.target', 'item' => 'e.item', 'actor' => 'e.actor'] as $k => $col) {
-            if (isset($f[$k]) && is_string($f[$k]) && $f[$k] !== '') {
-                $where[] = "$col LIKE ? ESCAPE '!'";
-                $params[] = '%' . self::like(mb_substr($f[$k], 0, 100)) . '%';
-            }
-        }
-        if (isset($f['q']) && is_string($f['q']) && $f['q'] !== '') {
-            $like = '%' . self::like(mb_substr($f['q'], 0, 200)) . '%';
-            $where[] = "(e.target LIKE ? ESCAPE '!' OR e.item LIKE ? ESCAPE '!' OR e.old_value LIKE ? ESCAPE '!' OR e.new_value LIKE ? ESCAPE '!' OR e.summary LIKE ? ESCAPE '!')";
-            array_push($params, $like, $like, $like, $like, $like);
-        }
-        $w = implode(' AND ', $where);
-        $limit = max(1, min(500, $limit));
-        $offset = max(0, min(100000, $offset));
-        $rows = $this->sql->all("SELECT e.*, d.hostname, d.client_id FROM endpoint_agent_change_records e JOIN endpoint_agent_devices d ON d.device_id = e.device_id WHERE $w
-            ORDER BY e.occurred_at DESC, e.change_id DESC LIMIT $limit OFFSET $offset", $params);
-        $total = (int) $this->sql->val("SELECT COUNT(*) FROM (SELECT 1 FROM endpoint_agent_change_records e JOIN endpoint_agent_devices d ON d.device_id = e.device_id WHERE $w LIMIT 10001) t", $params);
+        $text = static fn (string $k, int $max): ?string => isset($f[$k]) && is_string($f[$k]) && $f[$k] !== '' ? mb_substr($f[$k], 0, $max) : null;
+        $page = $this->store->search(new ChangeCriteria(gmdate('Y-m-d H:i:s', $from), gmdate('Y-m-d H:i:s', $to), $device,
+            isset($f['client_id']) && is_numeric($f['client_id']) && (int) $f['client_id'] > 0 ? (int) $f['client_id'] : 0, $visibleClientIds,
+            isset($f['kind']) && is_string($f['kind']) && in_array($f['kind'], ChangeProtocol::KINDS, true) ? $f['kind'] : null,
+            isset($f['watch']) && is_string($f['watch']) && preg_match(ChangeProtocol::WATCH_ID_RE, $f['watch']) === 1 ? $f['watch'] : null,
+            isset($f['change']) && is_string($f['change']) ? ChangeProtocol::changeNumber($f['change']) : null,
+            $text('target', 100), $text('item', 100), $text('actor', 100), $text('q', 200)), $limit, $offset);
+        $rows = $page['rows'];
+        $total = $page['total'];
 
         return ['items' => array_map(self::present(...), $rows), 'total' => $total] + $range;
     }
@@ -363,11 +303,10 @@ final class ChangeService
         $limit = max(1, min(500, $limit));
         $a = gmdate('Y-m-d H:i:s', $from);
         $b = gmdate('Y-m-d H:i:s', $to);
-        $rows = $this->sql->all("SELECT e.*, d.hostname, d.client_id FROM endpoint_agent_change_records e JOIN endpoint_agent_devices d ON d.device_id = e.device_id
-            WHERE e.device_id = ? AND e.occurred_at BETWEEN ? AND ? ORDER BY e.occurred_at DESC, e.change_id DESC LIMIT $limit", [$deviceId, $a, $b]);
-        $items = array_map(self::present(...), $rows);
+        $tl = $this->store->timeline($deviceId, $a, $b, $limit);
+        $items = array_map(self::present(...), $tl['rows']);
         try {
-            $soft = !$software ? [] : $this->sql->all("SELECT * FROM rmm_software_history WHERE device_id = ? AND occurred_at BETWEEN ? AND ? ORDER BY occurred_at DESC, history_id DESC LIMIT $limit", [$deviceId, $a, $b]);
+            $soft = !$software ? [] : $this->softwareHistory->between($deviceId, $a, $b, $limit);
         } catch (\Throwable) {
             $soft = [];   // the inventory tables do not exist yet
         }
@@ -381,10 +320,8 @@ final class ChangeService
         usort($items, static fn (array $x, array $y): int => strcmp((string) $y['occurred_at'], (string) $x['occurred_at']) ?: ((int) $y['change_id'] <=> (int) $x['change_id']));
         $truncated = count($items) > $limit;
         $items = array_slice($items, 0, $limit);
-        $actors = array_map(static fn (array $r): array => ['actor' => (string) $r['actor'], 'count' => (int) $r['c']],
-            $this->sql->all('SELECT actor, COUNT(*) c FROM endpoint_agent_change_records WHERE device_id = ? AND occurred_at BETWEEN ? AND ? GROUP BY actor ORDER BY c DESC LIMIT 20', [$deviceId, $a, $b]));
-        $days = array_map(static fn (array $r): array => ['day' => (string) $r['d'], 'count' => (int) $r['c']],
-            $this->sql->all('SELECT DATE(occurred_at) d, COUNT(*) c FROM endpoint_agent_change_records WHERE device_id = ? AND occurred_at BETWEEN ? AND ? GROUP BY DATE(occurred_at) ORDER BY d DESC LIMIT 400', [$deviceId, $a, $b]));
+        $actors = array_map(static fn (array $r): array => ['actor' => $r['actor'], 'count' => $r['c']], $tl['actors']);
+        $days = array_map(static fn (array $r): array => ['day' => $r['d'], 'count' => $r['c']], $tl['days']);
 
         return ['items' => $items, 'actors' => $actors, 'days' => $days, 'from' => gmdate('Y-m-d\TH:i:s\Z', $from), 'to' => gmdate('Y-m-d\TH:i:s\Z', $to), 'truncated' => $truncated];
     }
@@ -398,31 +335,19 @@ final class ChangeService
     public function stats(?int $deviceId = null, ?array $visibleClientIds = null): array
     {
         $l = $this->settings->limits();
-        if ($visibleClientIds !== null) {
-            $in = $visibleClientIds === [] ? 'NULL' : implode(',', array_map('intval', $visibleClientIds));
-            $rows = (int) $this->sql->val("SELECT COALESCE(SUM(s.row_count), 0) FROM endpoint_agent_change_state s JOIN endpoint_agent_devices d ON d.device_id = s.device_id WHERE d.client_id IN ($in)");
-        }
-        $out = ['fleet_rows' => $visibleClientIds === null ? $this->fleetRows() : $rows, 'fleet_max_rows' => $l['change_fleet_max_rows'], 'device_max_rows' => $l['change_device_max_rows'], 'retention_days' => $l['change_retention_days'],
+        $out = ['fleet_rows' => $this->store->fleetRowCount($visibleClientIds), 'fleet_max_rows' => $l['change_fleet_max_rows'], 'device_max_rows' => $l['change_device_max_rows'], 'retention_days' => $l['change_retention_days'],
             'rate_per_min' => $l['change_rate_per_min'], 'interval_s' => $l['change_interval_s']];
         if ($deviceId !== null) {
-            $s = $this->sql->one('SELECT * FROM endpoint_agent_change_state WHERE device_id = ?', [$deviceId]);
-            $monitor = isset($s['monitor_json']) && is_string($s['monitor_json']) ? json_decode($s['monitor_json'], true) : null;
-            $out['device'] = ['device_id' => $deviceId, 'rows' => (int) ($s['row_count'] ?? 0), 'dropped_total' => (int) ($s['dropped_total'] ?? 0),
-                'last_change_at' => Sql::iso(isset($s['last_change_at']) ? (string) $s['last_change_at'] : null), 'last_batch_at' => Sql::iso(isset($s['last_batch_at']) ? (string) $s['last_batch_at'] : null),
-                'config_version' => (string) ($s['config_version'] ?? ''), 'monitor' => is_array($monitor) ? $monitor : null, 'monitor_at' => Sql::iso(isset($s['monitor_at']) ? (string) $s['monitor_at'] : null)];
+            $s = $this->store->deviceLedger($deviceId);
+            $monitor = isset($s['monitor_json']) ? json_decode($s['monitor_json'], true) : null;
+            $out['device'] = ['device_id' => $deviceId, 'rows' => (int) ($s['rows'] ?? 0), 'dropped_total' => (int) ($s['dropped_total'] ?? 0),
+                'last_change_at' => Sql::iso($s['last_change_at'] ?? null), 'last_batch_at' => Sql::iso($s['last_batch_at'] ?? null),
+                'config_version' => (string) ($s['config_version'] ?? ''), 'monitor' => is_array($monitor) ? $monitor : null, 'monitor_at' => Sql::iso($s['monitor_at'] ?? null)];
         } else {
-            $out['last_24h_by_watch'] = array_map(static fn (array $r): array => ['watch' => (string) $r['watch'], 'count' => (int) $r['c']],
-                $this->sql->all('SELECT e.watch, COUNT(*) c FROM endpoint_agent_change_records e' . ($visibleClientIds === null ? '' : ' JOIN endpoint_agent_devices d ON d.device_id = e.device_id')
-                    . ' WHERE e.occurred_at >= ?' . ($visibleClientIds === null ? '' : ' AND d.client_id IN (' . ($visibleClientIds === [] ? 'NULL' : implode(',', array_map('intval', $visibleClientIds))) . ')')
-                    . ' GROUP BY e.watch ORDER BY c DESC LIMIT 30', [$this->sql->utcAt(-86400)]));
+            $out['last_24h_by_watch'] = array_map(static fn (array $r): array => ['watch' => $r['watch'], 'count' => $r['c']], $this->store->countsByWatch($this->sql->utcAt(-86400), $visibleClientIds));
         }
 
         return $out;
-    }
-
-    private static function like(string $s): string
-    {
-        return str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $s);
     }
 
     private static function when(mixed $v, int $default): int
@@ -447,75 +372,13 @@ final class ChangeService
     public function prune(?\Closure $pause = null): array
     {
         $l = $this->settings->limits();
-        $budget = self::PRUNE_RUN_CAP;
-        $out = ['retention' => 0, 'device_cap' => 0, 'fleet_cap' => 0];
-        $cut = $this->sql->utcAt(-$l['change_retention_days'] * 86400);
-        while ($budget > 0) {
-            $n = $this->deleteBatch('e.occurred_at < ?', [$cut], min(self::PRUNE_BATCH, $budget));
-            $out['retention'] += $n;
-            $budget -= $n;
-            if ($n === 0) {
-                break;
-            }
-            if ($pause !== null) {
-                $pause(20000);
-            }
-        }
-        foreach ($this->sql->all('SELECT device_id, row_count FROM endpoint_agent_change_state WHERE row_count > ? ORDER BY row_count DESC LIMIT 200', [$l['change_device_max_rows']]) as $s) {
-            $excess = (int) $s['row_count'] - $l['change_device_max_rows'];
-            while ($excess > 0 && $budget > 0) {
-                $n = $this->deleteBatch('e.device_id = ?', [(int) $s['device_id']], min(self::PRUNE_BATCH, $excess, $budget));
-                $out['device_cap'] += $n;
-                $excess -= $n;
-                $budget -= $n;
-                if ($n === 0) {
-                    break;
-                }
-                if ($pause !== null) {
-                    $pause(20000);
-                }
-            }
-        }
-        $excess = $this->fleetRows() - $l['change_fleet_max_rows'];
-        while ($excess > 0 && $budget > 0) {
-            $n = $this->deleteBatch('1 = 1', [], min(self::PRUNE_BATCH, $excess, $budget));
-            $out['fleet_cap'] += $n;
-            $excess -= $n;
-            $budget -= $n;
-            if ($n === 0) {
-                break;
-            }
-            if ($pause !== null) {
-                $pause(20000);
-            }
-        }
 
-        return $out;
+        return $this->store->enforceLimits($this->sql->utcAt(-$l['change_retention_days'] * 86400), $l['change_device_max_rows'], $l['change_fleet_max_rows'], self::PRUNE_RUN_CAP, self::PRUNE_BATCH, $pause);
     }
 
-    /**
-     * Delete one batch of the oldest matching rows and lower the owners' counters by exactly what was deleted.
-     *
-     * @param list<mixed> $params
-     */
-    private function deleteBatch(string $where, array $params, int $n): int
+    /** Whether any device has a change ledger (housekeeping keeps pruning after the feature is switched off while this is true). */
+    public function hasRecorded(): bool
     {
-        return (int) $this->sql->transaction(function () use ($where, $params, $n): int {
-            $rows = $this->sql->all("SELECT e.change_id, e.device_id FROM endpoint_agent_change_records e WHERE $where ORDER BY e.occurred_at, e.change_id LIMIT " . max(1, $n) . ' FOR UPDATE', $params);
-            if ($rows === []) {
-                return 0;
-            }
-            $perDevice = [];
-            foreach ($rows as $r) {
-                $perDevice[(int) $r['device_id']] = ($perDevice[(int) $r['device_id']] ?? 0) + 1;
-            }
-            $ids = array_map(static fn (array $r): int => (int) $r['change_id'], $rows);
-            $this->sql->run('DELETE FROM endpoint_agent_change_records WHERE change_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', $ids);
-            foreach ($perDevice as $device => $c) {
-                $this->sql->run('UPDATE endpoint_agent_change_state SET row_count = GREATEST(0, row_count - ?) WHERE device_id = ?', [$c, $device]);
-            }
-
-            return count($ids);
-        });
+        return $this->store->hasLedger();
     }
 }

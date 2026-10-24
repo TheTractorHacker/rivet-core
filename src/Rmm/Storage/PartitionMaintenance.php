@@ -52,6 +52,12 @@ final class PartitionMaintenance
         $this->state = $state ?? new StorageState($sql);
     }
 
+    /** The query helper this instance runs on (the storage status reads the rollup watermark and the clock through it). */
+    public function sql(): Sql
+    {
+        return $this->sql;
+    }
+
     // ------------------------------------------------------------------ the probe
 
     /**

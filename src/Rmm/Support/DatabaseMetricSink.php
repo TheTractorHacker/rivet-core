@@ -6,9 +6,9 @@ namespace RivetCore\Rmm\Support;
 
 use RivetCore\Contracts\ClockInterface;
 use RivetCore\Database\DatabaseInterface;
-use RivetCore\Rmm\Contracts\RmmMetricReaderInterface;
-use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
+use RivetCore\Rmm\Storage\MetricRollup;
 use RivetCore\Rmm\Storage\StorageState;
+use RivetCore\Rmm\Store\MetricStore;
 
 /**
  * A metric sink backed by two Core tables (migration 0018), for editions without a metrics subsystem (RivetMSP): the newest reading of
@@ -21,13 +21,16 @@ use RivetCore\Rmm\Storage\StorageState;
  * {@see ROWS_PER_STATEMENT} rows, so an ingest batch of many check-ins costs a handful of statements. {@see prune()} deletes expired
  * rows in batches and is called by Housekeeping.
  *
+ * This is also the MariaDB / MySQL implementation of {@see MetricStore} (the HOT metric store of #89): the class and its public behaviour are unchanged;
+ * {@see rollUp()} and {@see rollupWatermark()} expose the daily rollup the maintenance job used to reach through {@see MetricRollup} directly.
+ *
  * Rules shared with every sink: a utilization outside 0..100, a negative or non-finite value is dropped, never clamped. A retried
  * delivery of the same samples adds them twice to the rollup; that doubles count and sum together, so the mean is unchanged and the
  * minimum and maximum are unaffected.
  *
  * @api
  */
-final class DatabaseMetricSink implements RmmMetricSinkInterface, RmmMetricReaderInterface
+final class DatabaseMetricSink implements MetricStore
 {
     public const ROWS_PER_STATEMENT = 200;
     public const DEFAULT_RETENTION_DAYS = 14;
@@ -113,6 +116,16 @@ final class DatabaseMetricSink implements RmmMetricSinkInterface, RmmMetricReade
                 . ' ON DUPLICATE KEY UPDATE samples = samples + VALUES(samples), sum_value = sum_value + VALUES(sum_value),'
                 . ' min_value = LEAST(min_value, VALUES(min_value)), max_value = GREATEST(max_value, VALUES(max_value))', $params);
         }
+    }
+
+    public function rollUp(int $budgetSeconds = 20, ?int $maxSlices = null): array
+    {
+        return (new MetricRollup($this->sql, $this->state))->run($budgetSeconds, $maxSlices);
+    }
+
+    public function rollupWatermark(): ?string
+    {
+        return $this->state->rollupWatermark();
     }
 
     public function retentionDays(): int

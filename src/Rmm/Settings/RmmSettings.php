@@ -10,6 +10,9 @@ use RivetCore\Rmm\Crypto\Signer;
 use RivetCore\Rmm\Checks\CheckCatalog;
 use RivetCore\Rmm\Checks\RmmChecks;
 use RivetCore\Rmm\RmmProtocol;
+use RivetCore\Rmm\Store\DataStoreUnavailableException;
+use RivetCore\Rmm\Store\RmmDataStoreFactory;
+use RivetCore\Rmm\Store\RmmDataStoreKind;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -29,7 +32,7 @@ final class RmmSettings
         'job_default_timeout_s', 'job_max_timeout_s', 'job_expiry_s', 'job_ack_timeout_s', 'job_max_attempts', 'enroll_max_ttl_h',
         'unmatched_policy', 'checks_json', 'mesh_enabled', 'mesh_url', 'mesh_domain', 'mesh_login_key_enc', 'mesh_account_template',
         'mesh_policy', 'mesh_token_ttl_s', 'coexistence_policy', 'integration_id', 'ca_pem',
-        'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices',
+        'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices', 'data_store',
     ];
 
     /**
@@ -269,6 +272,17 @@ final class RmmSettings
         return $this->cache;
     }
 
+    /**
+     * Where the HOT RMM tables live: one of {@see RmmDataStoreKind::ALL}. `mariadb` when the column does not exist yet (migration 0042 not applied) or holds
+     * anything else. Only a value this release can run is ever saved by {@see update()}.
+     */
+    public function dataStore(): string
+    {
+        $v = $this->get()['data_store'] ?? RmmDataStoreKind::MARIADB;
+
+        return is_string($v) && in_array($v, RmmDataStoreKind::ALL, true) ? $v : RmmDataStoreKind::MARIADB;
+    }
+
     public function refresh(): void
     {
         $this->cache = null;
@@ -355,6 +369,17 @@ final class RmmSettings
                 $err[] = 'The ingest mode must be sync or queued.';
             } else {
                 $out['ingest_mode'] = $in['ingest_mode'];
+            }
+        }
+        if (array_key_exists('data_store', $in)) {
+            $kind = is_string($in['data_store']) ? $in['data_store'] : '';
+            try {
+                RmmDataStoreFactory::assertAvailable($kind);
+                if (array_key_exists('data_store', $this->get())) {   // an install that has not run migration 0042 yet is on mariadb already: nothing to write
+                    $out['data_store'] = $kind;
+                }
+            } catch (DataStoreUnavailableException $e) {
+                $err[] = $e->getMessage();
             }
         }
         if (array_key_exists('checks_json', $in)) {

@@ -23,4 +23,13 @@ interface StoreMaintenance
      * @return array{rollup:?array<string,mixed>,partitions:array<string,mixed>,partitioned:list<string>,retention:array<string,int>}
      */
     public function run(array $limits, array $explicit, int $hourlyDefault, int $dailyDefault, int $rollupBudgetS = 15): array;
+
+    /**
+     * Where the daily rollup stands and which tiers are partitioned (the figures of the capacity panel).
+     *
+     * @param array<string,int> $limits
+     * @param array<string,int> $explicit
+     * @return array{partitioning_enabled:bool,rollup_watermark:?string,rollup_behind_days:?int,tables:array<string,array{partitioned:bool,partitions:int,retention_days:int}>}
+     */
+    public function tiers(array $limits, array $explicit): array;
 }

@@ -29,13 +29,17 @@ final class ChangeRuleService
     /** @var list<array<string,mixed>>|null */
     private ?array $enabled = null;
 
+    private readonly \RivetCore\Rmm\Store\ChangeEventStore $changeStore;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
         private readonly CheckEvaluator $checks,
         private readonly DeviceRepository $devices,
         private readonly ?RmmEventPublisher $events = null,
+        ?\RivetCore\Rmm\Store\ChangeEventStore $store = null,
     ) {
+        $this->changeStore = $store ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbChangeEventStore($sql);
     }
 
     // ------------------------------------------------------------------ CRUD
@@ -322,26 +326,8 @@ final class ChangeRuleService
      */
     private function windowCount(array $dev, array $rule): int
     {
-        $where = ['device_id = ?', 'occurred_at >= ?'];
-        $params = [(int) $dev['device_id'], $this->sql->utcAt(-(int) $rule['window_min'] * 60)];
-        foreach (['watch' => 'watch', 'kind' => 'kind'] as $k => $col) {
-            if ($rule[$k] !== '') {
-                $where[] = "$col = ?";
-                $params[] = (string) $rule[$k];
-            }
-        }
-        if ((int) $rule['change_type'] !== 0) {
-            $where[] = 'change_type = ?';
-            $params[] = (int) $rule['change_type'];
-        }
-        foreach (['target_contains' => 'target', 'item_contains' => 'item'] as $k => $col) {
-            if ($rule[$k] !== '') {
-                $where[] = "$col LIKE ? ESCAPE '!'";
-                $params[] = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], (string) $rule[$k]) . '%';
-            }
-        }
-
-        return (int) $this->sql->val('SELECT COUNT(*) FROM (SELECT 1 FROM endpoint_agent_change_records WHERE ' . implode(' AND ', $where) . ' LIMIT ' . ((int) $rule['threshold'] + 1) . ') t', $params);
+        return $this->changeStore->countMatching((int) $dev['device_id'], $this->sql->utcAt(-(int) $rule['window_min'] * 60), (string) $rule['watch'], (string) $rule['kind'], (int) $rule['change_type'],
+            (string) $rule['target_contains'], (string) $rule['item_contains'], (int) $rule['threshold'] + 1);
     }
 
     // ------------------------------------------------------------------ recovery
