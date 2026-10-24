@@ -97,6 +97,21 @@ Convention: `RI` = RivetIT, `MSP` = RivetMSP; paths are relative to each repo.
 | H8 | Vault: user wraps use `VaultKeyWrap` with the context `user:<id>`; password change uses `rewrap()`; KDF parameters are the defaults or stronger; DEK and KEK wrap exist for recovery | review | adopt | adopt |
 | H9 | `EnvelopeConformanceTestCase` (for any wrapper) and `RewrapSourceConformanceTestCase` (for each source) run in the edition's CI | CI config | adopt | adopt |
 
+## I. RivetPanel and the RMM device views (added for 1.0.0-rc.38, from the RC36 review)
+
+Not checked against a running edition: these are the items Core assumes and cannot enforce. See [REVIEW_RC36.md](REVIEW_RC36.md).
+
+| # | Check | How to verify | RI | MSP |
+|---|---|---|---|---|
+| I1 | The panel gateway stores attachment bytes outside the web root and serves them only to authorized staff as a download (`Content-Disposition: attachment`, own `Content-Type`, `X-Content-Type-Options: nosniff`) | read the gateway's attachment code and the route that serves them | adopt | adopt |
+| I2 | The gateway writes UTC time stamps (the conformance case `testTimestampsAreUtcAndCurrent` runs in the edition's CI) | CI | RivetIT's gateway adds the UTC offset twice (about +5 h): fix | adopt |
+| I3 | Migration 0041 (`0041_daily_budget`) is run in the edition's own DB step and `Rmm\Migration\BudgetSchema` is mirrored in `db.sql` | `grep rmm_daily_budget db.sql` | adopt | adopt |
+| I4 | Mesh: the Approve button calls a Core method that re-checks the node (today `setMeshNode()` has no check that another live device holds it), and offers `needs_approval` devices; the conflict webhook payload `other_device_id` may be `null` | review | adopt | adopt |
+| I5 | Hostnames, OS and app versions of panel devices, the Mesh and installer error texts, and every `ChangeProtocol` value are escaped wherever the edition prints them (device list, audit viewer, alerts, webhooks); a webhook renderer shows `alertText()` values as text | review the views | adopt | adopt |
+| I6 | The edition's switch for `device_automation_disabled` goes through `DeviceService::setAutomationDisabled()` with the user id, behind `device.manage` for the client | `grep -rn setAutomationDisabled` | adopt | adopt |
+| I7 | The guide fragment endpoint (`data-wz-guide`) returns static or escaped HTML only; the shared wizard script now also sanitises it, but a stored value must still never be put in it unescaped | review | adopt | adopt |
+| I8 | A fleet enrollment token for a mass deployment is client-level, short lived (72 h at most) and revoked when the rollout ends | Deploy page | adopt | adopt |
+
 ## How to use this list
 
 1. Copy the table into the edition's release checklist; keep the "How to verify" commands in CI where they are greps.

@@ -74,11 +74,17 @@ Everything in `assets/ui` is RivetIT's bytes except the following, each proven b
    only apply when the token is undefined, which cannot happen where `itflow_design.css` is loaded, and leaving them keeps the exception
    to one line. The unit test puts `#5d6f76` back on that line and asserts the result hashes to the verified split of RivetIT's file.
    Visible effect: **RivetIT's muted text becomes slightly darker** (see UPGRADING.md); RivetMSP does not change.
-2. **`js/webhook_wizard.js`: four edits, no behaviour change for RivetIT.** The wizard hard coded two admin page names, the Internal
+2. **`js/webhook_wizard.js`: five edits; the first four change nothing for RivetIT, the fifth (rc.38) is a security fix.** The wizard hard coded two admin page names, the Internal
    network access link `settings_webhooks.php#internal-networks` and the edit page `webhook_edit.php?id=...` (used for the "Deliveries"
    link and the `history.replaceState` after a successful create). It now reads them from the optional attributes `data-wz-networks`
    and `data-wz-edit` of the `[data-wz]` root and falls back to the same two literals. RivetIT's markup sets neither attribute, so every
-   expression evaluates to exactly the string it did before. The unit test reverses the four edits and asserts RivetIT's SHA-256.
+   expression evaluates to exactly the string it did before. The fifth edit (1.0.0-rc.38, security review RC36 L8) replaces how the guide slide-over inserts the HTML
+   fragment the edition's `data-wz-guide` endpoint returns: it used to parse it and `importNode()` everything except `script`/`noscript` into the page (event-handler
+   attributes, `javascript:` links, `iframe srcdoc` and forms survived). It now rebuilds the fragment from an allow-list (`appendGuide()`): formatting elements only (headings, paragraphs,
+   lists, tables, `a`, `img`, `code`, `pre`, `details`, ...), the attributes `class` (plain class names), `title`, `colspan`/`rowspan`, an `a href` that is http(s), `mailto:` or page-relative,
+   and an `img src` that is http(s) or page-relative; everything else is dropped, and an element that is not on the list loses its tag but keeps its text. **Visible effect for RivetIT:** a guide
+   that relied on inline `style`, `id` (so `#fragment` links inside the guide), `data-*` attributes or an unlisted element would lose them; plain Bootstrap/Tabler markup (the guides'
+   `h5`, `p`, `ol`, `li`, `code`, `pre`, `a`, `div.alert`) is unchanged. The unit test reverses the five edits (the two replaced lines come back and the sanitiser block is cut out) and asserts RivetIT's SHA-256.
 
 ### Split files
 

@@ -167,12 +167,14 @@ The RivetIT agent reads the local node id at every start and once a day (only on
 | Situation | What happens |
 |---|---|
 | The device has no mapping, or reports a node other than the one it has | **not mapped**; state `needs_approval`, audit `Mesh Node Needs Approval` once. The node id is only what the device says: the server cannot ask MeshCentral who owns it, and a rogue device could otherwise claim another machine's node and receive the technician's remote session. Check the node in MeshCentral, then map it on the device page (a manual mapping); the next report confirms it (`mapped`). (Before 1.0.0-rc.31 this case was mapped automatically.) |
-| Same node as already mapped | nothing (`mapped`) |
+| Same node as already mapped | nothing (`mapped`). This is decided **before** the "another device reports it" test (1.0.0-rc.38): a device that merely reports a node some other device holds can flag itself, never the device that holds it |
 | A different node an administrator set by hand | **kept**; state `kept_manual`, audit `Mesh Node Differs` once. With `mesh_auto_map_overwrite` on the report waits for approval like any other (the switch no longer lets a device's own claim replace a mapping) |
 | The node is already mapped to **another live device**, or another live device reports it | **refused**; state `conflict`, audit `Mesh Node Conflict`, event `rmm.mesh.node_conflict`. Nothing is moved, whatever the settings say: check which machine really owns the node (a cloned image carries the same node id) |
-| The node is mapped to a **retired or revoked** device | moved (audit `Mesh Node Moved`) only to a device of the **same client and asset** (a re-enrolled machine an administrator linked to the same asset). Any other device is `conflict`: a retired device's node is never handed to a stranger |
+| The node is mapped to a **retired or revoked** device | moved (audit `Mesh Node Moved`) only to a device of the **same client and asset** whose asset link an **administrator** made (`match_reason` `approved_by_<user>`). A link the server made by matching a serial or MAC the device reported about itself is not enough (1.0.0-rc.38): that device is `needs_approval`. Any other device is `conflict`: a retired device's node is never handed to a stranger |
 
 The same rules apply to the older `mesh_node_id` member of a check-in inventory.
+
+**Volume (1.0.0-rc.38).** A device that reports a new random node id at every check-in changes its stored state every time but may cause at most `MeshAgentService::EVENTS_PER_DAY` (12) audit rows and webhook events per UTC day (installed, install failed, needs approval, conflict, differs, combined). The first refusal of the day is audited once (`Mesh Events Suppressed`); the state itself is always kept. The `rmm.mesh.node_conflict` event names the other device only when it belongs to the same client (`other_device_id` is `null` otherwise; the audit row, an administrator record, keeps the id).
 
 ### Troubleshooting
 
