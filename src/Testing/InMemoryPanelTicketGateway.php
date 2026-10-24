@@ -30,6 +30,8 @@ class InMemoryPanelTicketGateway implements PanelTicketGatewayInterface
     public array $posted = [];
     /** @var (\Closure(): void)|null called at the start of every createTicket (a test uses it to interleave another request, or to throw and simulate a failing store) */
     public ?\Closure $duringCreate = null;
+    /** @var (\Closure(): int)|null Unix time for the tickets and messages created through createTicket() and postMessage(); null keeps the fixed 2026-10-01 stamps the older tests assert on (the conformance kit sets it, because it checks that the stamps are UTC and current) */
+    public ?\Closure $clock = null;
 
     public function addClientContact(int $clientId, string $name, bool $active = true): int
     {
@@ -136,7 +138,7 @@ class InMemoryPanelTicketGateway implements PanelTicketGatewayInterface
     {
         $this->posted[] = compact('ticketId', 'clientId', 'contactId', 'body', 'requesterHint', 'attachments');
 
-        return $this->push($ticketId, 'requester', $requesterHint !== '' ? $requesterHint : 'Requester', $body, false, $attachments, '2026-10-01 11:00:00');
+        return $this->push($ticketId, 'requester', $requesterHint !== '' ? $requesterHint : 'Requester', $body, false, $attachments, $this->stamp('2026-10-01 11:00:00'));
     }
 
     /**
@@ -145,9 +147,10 @@ class InMemoryPanelTicketGateway implements PanelTicketGatewayInterface
     protected function store(int $clientId, ?int $contactId, string $subject, string $body, ?int $categoryId, string $hint, array $attachments): int
     {
         $id = $this->nextId++;
+        $at = $this->stamp('2026-10-01 09:00:00');
         $this->tickets[$id] = ['ticket_id' => $id, 'client_id' => $clientId, 'contact_id' => $contactId, 'subject' => $subject, 'status' => 'Open', 'closed' => false,
-            'category_id' => $categoryId, 'created_at' => '2026-10-01 09:00:00', 'updated_at' => '2026-10-01 09:00:00'];
-        $this->push($id, 'requester', $hint !== '' ? $hint : 'Requester', $body, false, $attachments, '2026-10-01 09:00:00');
+            'category_id' => $categoryId, 'created_at' => $at, 'updated_at' => $at];
+        $this->push($id, 'requester', $hint !== '' ? $hint : 'Requester', $body, false, $attachments, $at);
 
         return $id;
     }
@@ -164,6 +167,12 @@ class InMemoryPanelTicketGateway implements PanelTicketGatewayInterface
         }
 
         return $id;
+    }
+
+    /** The time stamp for a new ticket or message: the fixed default, or the current UTC time of {@see self::$clock}. */
+    protected function stamp(string $default): string
+    {
+        return $this->clock === null ? $default : gmdate('Y-m-d H:i:s', ($this->clock)());
     }
 
     /**

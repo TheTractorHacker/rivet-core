@@ -18,7 +18,10 @@ final class PanelTicketGatewayKitTest extends PanelTicketGatewayConformanceTestC
 
     private function gw(): InMemoryPanelTicketGateway
     {
-        return $this->gw ??= new InMemoryPanelTicketGateway();
+        $this->gw ??= new InMemoryPanelTicketGateway();
+        $this->gw->clock ??= static fn (): int => time();
+
+        return $this->gw;
     }
 
     protected function gateway(): PanelTicketGatewayInterface
