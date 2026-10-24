@@ -40,7 +40,7 @@ final class PanelEnrollmentTest extends PanelTestCase
 
     public function testAFleetTokenEnrolsUpToItsCapAndEachDeviceGetsItsOwnCredential(): void
     {
-        $contact = $this->p->gateway->addContact($this->p->clientA, 'Jane Doe');
+        $contact = $this->p->gateway->addClientContact($this->p->clientA, 'Jane Doe');
         $tok = $this->p->mint($this->p->clientA, $contact, 24, 3);
         $creds = [];
         for ($i = 0; $i < 3; $i++) {
