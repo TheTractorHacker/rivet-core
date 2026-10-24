@@ -17,18 +17,18 @@ use RivetCore\Panel\Contracts\PanelTicketGatewayInterface;
  * staff reply, never an internal note, in order, after a cursor; postMessage() appends to the ticket and returns a new id; nothing throws for unknown ids;
  * createTicket() never merges two calls (two identical calls are two tickets: de-duplication of retries is Core's job, see PANEL_API.md "Idempotent creation");
  * every time stamp the gateway returns (created_at and updated_at of a ticket, created_at of a message) is UTC and current (rc.38): within {@see self::TIME_TOLERANCE_S}
- * seconds of {@see self::now()} for something that was just created, written as "Y-m-d H:i:s" or as ISO 8601 ending in Z. A gateway that stores local time and labels
+ * seconds of {@see self::conformanceNow()} for something that was just created, written as "Y-m-d H:i:s" or as ISO 8601 ending in Z. A gateway that stores local time and labels
  * it UTC, or applies the UTC offset twice, shows tickets hours in the future or the past to the panel.
  *
  * @api
  */
 abstract class PanelTicketGatewayConformanceTestCase extends TestCase
 {
-    /** How far a stamp of something created a moment ago may be from {@see self::now()}. */
+    /** How far a stamp of something created a moment ago may be from {@see self::conformanceNow()}. */
     public const TIME_TOLERANCE_S = 120;
 
     /** The current Unix time the stamps are compared with. An edition that runs its gateway on a fake clock overrides this with that clock. */
-    protected function now(): int
+    protected function conformanceNow(): int
     {
         return time();
     }
@@ -183,8 +183,8 @@ abstract class PanelTicketGatewayConformanceTestCase extends TestCase
     {
         $t = $this->utcStamp($stamp);
         $this->assertNotNull($t, "$what must be UTC written as 'Y-m-d H:i:s' or ISO 8601 ending in Z, got " . json_encode($stamp));
-        $this->assertLessThanOrEqual(self::TIME_TOLERANCE_S, abs((int) $t - $this->now()),
-            "$what is " . ((int) $t - $this->now()) . ' s away from now: the gateway must write UTC (not local time, and not the UTC offset applied twice)');
+        $this->assertLessThanOrEqual(self::TIME_TOLERANCE_S, abs((int) $t - $this->conformanceNow()),
+            "$what is " . ((int) $t - $this->conformanceNow()) . ' s away from now: the gateway must write UTC (not local time, and not the UTC offset applied twice)');
     }
 
     public function testTimestampsAreUtcAndCurrent(): void

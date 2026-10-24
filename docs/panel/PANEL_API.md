@@ -269,7 +269,7 @@ panel routes, how the gateway escapes plain text into its own HTML, retention of
 
 Every `created_at` / `updated_at` the gateway returns must be **UTC**, written `Y-m-d H:i:s` or as ISO 8601 ending in `Z`; Core turns them into RFC 3339 `Z` for the panel.
 A gateway that stores local time and labels it UTC, or applies the UTC offset twice, makes the panel show tickets hours in the future or the past. Since 1.0.0-rc.38 the
-conformance kit checks it: a ticket or message created a moment ago must be within 120 s of `PanelTicketGatewayConformanceTestCase::now()` (the real clock unless the edition
+conformance kit checks it: a ticket or message created a moment ago must be within 120 s of `PanelTicketGatewayConformanceTestCase::conformanceNow()` (the real clock unless the edition
 overrides it with its test clock).
 
 ## What an edition implements
