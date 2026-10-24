@@ -80,9 +80,9 @@ final class PanelHarness
     }
 
     /** @return array{token_id:int,token:string,expires_at:string} */
-    public function mint(?int $client = null, ?int $contact = null, int $ttlH = 24): array
+    public function mint(?int $client = null, ?int $contact = null, int $ttlH = 24, int $maxUses = 1): array
     {
-        return $this->module->enrollment()->createToken($client ?? $this->clientA, $contact, $ttlH, 'test', 1);
+        return $this->module->enrollment()->createToken($client ?? $this->clientA, $contact, $ttlH, 'test', 1, $maxUses);
     }
 
     /** @param array<string,mixed> $over */

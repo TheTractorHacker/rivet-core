@@ -33,6 +33,7 @@ final class PanelLimits
         public readonly int $chatPageMax = 100,
         public readonly int $ownedWindow = 500,
         public readonly int $enrollMaxTtlH = PanelProtocol::ENROLL_MAX_TTL_H,
+        public readonly int $enrollMaxUses = 500,
     ) {
     }
 
@@ -60,6 +61,7 @@ final class PanelLimits
             $int('chatPageMax', $d->chatPageMax, 1, 500),
             $int('ownedWindow', $d->ownedWindow, 1, 5000),
             $int('enrollMaxTtlH', $d->enrollMaxTtlH, 1, 24 * 14),
+            $int('enrollMaxUses', $d->enrollMaxUses, 1, 5000),
         );
     }
 

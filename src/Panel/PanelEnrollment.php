@@ -36,13 +36,16 @@ final class PanelEnrollment
     // ------------------------------------------------------------------ enrollment tokens (administrator side)
 
     /**
-     * Mint a single-use enrollment token for one machine.
+     * Mint an enrollment token: single use by default (one machine), or a capped multi-use "fleet" token for a mass deployment
+     * (an RMM push of one installer to many PCs). A fleet token is short-lived, scoped to one client (and optionally one contact),
+     * and every device it enrolls is still individually revocable.
      *
      * @param int|null $contactId the person this panel belongs to; null = a client-level device
+     * @param int $maxUses machines this token may enrol (1 = single use), clamped to 1..PanelLimits::$enrollMaxUses
      * @return array{token_id:int,token:string,expires_at:string} the plaintext token is shown once and never stored
      * @throws \InvalidArgumentException when the client does not exist or the contact is not an active contact of the client
      */
-    public function createToken(int $clientId, ?int $contactId, int $ttlHours, string $label, int $userId): array
+    public function createToken(int $clientId, ?int $contactId, int $ttlHours, string $label, int $userId, int $maxUses = 1): array
     {
         if ($this->tenancy->clientName($clientId) === null) {
             throw new \InvalidArgumentException('Choose the client the panel belongs to.');
@@ -51,13 +54,14 @@ final class PanelEnrollment
             throw new \InvalidArgumentException('That contact does not belong to this client.');
         }
         $ttlHours = max(1, min($ttlHours > 0 ? $ttlHours : PanelProtocol::ENROLL_DEFAULT_TTL_H, $this->limits->enrollMaxTtlH));
+        $maxUses = max(1, min($maxUses, $this->limits->enrollMaxUses));
         $selector = bin2hex(random_bytes(6));
         $secret = bin2hex(random_bytes(20));
         $expires = $this->sql->utcAt($ttlHours * 3600);
         $id = $this->sql->insert('INSERT INTO endpoint_agent_enrollment_tokens (token_selector, token_hash, label, client_id, location_id, ring, expires_at, max_uses, created_by, created_at, kind, contact_id)
-            VALUES (?, ?, ?, ?, 0, ?, ?, 1, ?, ?, ?, ?)',
-            [$selector, hash('sha256', $secret), mb_substr(PanelText::output($label, false), 0, 100), $clientId, 'stable', $expires, $userId, $this->sql->utcNow(), PanelProtocol::KIND, $contactId]);
-        $this->audit->record('Panel Enrollment Token Created', "Panel enrollment token $id for client $clientId" . ($contactId !== null ? " and contact $contactId" : ' (client-level)') . " created by user $userId", $clientId, $id);
+            VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)',
+            [$selector, hash('sha256', $secret), mb_substr(PanelText::output($label, false), 0, 100), $clientId, 'stable', $expires, $maxUses, $userId, $this->sql->utcNow(), PanelProtocol::KIND, $contactId]);
+        $this->audit->record('Panel Enrollment Token Created', "Panel enrollment token $id for client $clientId" . ($contactId !== null ? " and contact $contactId" : ' (client-level)') . ($maxUses > 1 ? " (fleet token, up to $maxUses devices)" : '') . " created by user $userId", $clientId, $id);
 
         return ['token_id' => $id, 'token' => PanelProtocol::ENROLL_TOKEN_PREFIX . '.' . $selector . '.' . $secret, 'expires_at' => $expires];
     }

@@ -2,6 +2,10 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.37 (RivetPanel fleet enrollment tokens; no migration)
+
+Additive. `Panel\PanelEnrollment::createToken()` takes an optional trailing `int $maxUses = 1`. The default is unchanged (single use, one machine). A larger value mints a capped multi-use **fleet token** so one RMM push of the installer can enrol many PCs; it is clamped to `PanelLimits::$enrollMaxUses` (default 500, configurable 1..5000), is still short-lived, scoped to one client and optionally one contact, and every device it enrols gets its own credential and is individually revocable. The audit line says "fleet token, up to N devices". No schema change (`max_uses` already existed).
+
 ## 1.0.0-rc.36 (design changes can be promoted from an edition into Core; no migration)
 
 - **`scripts/promote-ui-assets.php`.** Make a design change in an edition, then promote it: the script compares the edition's copies of the shared files with Core's manifest, lists what differs (dry run), and with `--apply` copies the changes into `assets/ui/` and rebuilds `MANIFEST.json`. A brand-new shared file needs `--add=css/name.css`. It refuses to run if Core's own assets do not match their manifest. Edition-only sheets are never touched. `docs/ui/DESIGN_ASSETS.md` has a new "Changing the design" section: change it in Core first, or try it in an edition and promote it, and which file a rule belongs in.

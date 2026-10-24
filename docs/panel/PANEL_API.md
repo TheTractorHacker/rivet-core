@@ -26,7 +26,7 @@ accept the ticket id as a path segment (`/tickets/{id}/chat`) or as `?ticket_id=
 ## Authentication and token kinds
 
 1. An administrator mints a **panel enrollment token** for a client and optionally a contact (`PanelEnrollment::createToken`). Shape `rvtp1.<12 hex>.<40 hex>`,
-   single use, 24 h by default (72 h at most), stored as a SHA-256 in `endpoint_agent_enrollment_tokens` with `kind = 'panel'` and the `contact_id`.
+   single use by default (a capped multi-use fleet token, up to `PanelLimits::$enrollMaxUses` devices, can be minted for an RMM mass deployment), 24 h by default (72 h at most), stored as a SHA-256 in `endpoint_agent_enrollment_tokens` with `kind = 'panel'` and the `contact_id`.
 2. The panel calls `POST /panel_enroll` and receives a **device credential** `rvpd_<64 hex>`, shown once. Only its SHA-256 is stored, in
    `endpoint_agent_devices` with `kind = 'panel'`, `link_state = 'panel'`, no asset, and the token's client and contact. Valid 365 days.
 3. Every other call sends `Authorization: Bearer rvpd_...`. The server looks the credential up, requires `kind = 'panel'`, refuses revoked/retired/expired

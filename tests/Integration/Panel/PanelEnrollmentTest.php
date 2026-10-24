@@ -38,6 +38,32 @@ final class PanelEnrollmentTest extends PanelTestCase
         }
     }
 
+    public function testAFleetTokenEnrolsUpToItsCapAndEachDeviceGetsItsOwnCredential(): void
+    {
+        $contact = $this->p->gateway->addContact($this->p->clientA, 'Jane Doe');
+        $tok = $this->p->mint($this->p->clientA, $contact, 24, 3);
+        $creds = [];
+        for ($i = 0; $i < 3; $i++) {
+            [$c, , $j] = $this->p->enroll($tok['token']);
+            $this->assertSame(201, $c);
+            $creds[] = $j['device_token'];
+        }
+        $this->assertCount(3, array_unique($creds));
+        [$c, , $j] = $this->p->enroll($tok['token']);
+        $this->assertSame([403, 'forbidden'], [$c, $j['code']]);
+        $trow = $this->p->rmm->rows('SELECT * FROM endpoint_agent_enrollment_tokens')[0];
+        $this->assertSame(['3', '3'], [$trow['max_uses'], $trow['use_count']]);
+    }
+
+    public function testAFleetTokenIsCappedAndASingleUseTokenStaysTheDefault(): void
+    {
+        $this->p->mint($this->p->clientA, null, 24, 1000000);
+        $this->p->mint($this->p->clientA, null, 24, 0);
+        $this->p->mint($this->p->clientA, null);
+        $uses = array_map('intval', array_column($this->p->rmm->rows('SELECT max_uses FROM endpoint_agent_enrollment_tokens ORDER BY token_id'), 'max_uses'));
+        $this->assertSame([500, 1, 1], $uses);
+    }
+
     public function testAClientLevelDeviceHasNoContactAndCannotCreateUntilTheSettingIsOn(): void
     {
         [$c, , $j] = $this->p->enroll($this->p->mint($this->p->clientA, null)['token']);
