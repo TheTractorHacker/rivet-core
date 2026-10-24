@@ -57,7 +57,7 @@ build host, remote, logs, patches, software, scale, automation, metrics). "Editi
 | `js/date_range_picker.js` | 12,305 | shared, verbatim | `js/date_range_picker.js` | server half is Core's `Ui\DateRange`; no URLs |
 | `js/event_picker.js` | 19,913 | shared, verbatim | `js/event_picker.js` | server half is Core's `Webhooks\EventCatalog`; catalog URL from `data-catalog-url` |
 | `js/webhook_guides.js` | 13,798 | shared, verbatim | `js/webhook_guides.js` | guide hub behaviour; no URLs, no endpoints; guide content is rendered server side |
-| `js/webhook_wizard.js` | 53,336 | shared, **one reviewed change** | `js/webhook_wizard.js` (53,471) | server half is Core's `Webhooks\*`; endpoints come from `data-wz-*`; two page names were hard coded and are now optional attributes (see "Deviations from RivetIT") |
+| `js/webhook_wizard.js` | 53,336 | shared, **reviewed changes** | `js/webhook_wizard.js` (56,022) | server half is Core's `Webhooks\*`; endpoints come from `data-wz-*`; two page names were hard coded and are now optional attributes, and the guide fragment is sanitised (see "Deviations from RivetIT") |
 | `js/event_rules.js` | 53,097 | **edition-owned** | stays in the edition | see "Edition-owned scripts" |
 
 The accent and radius are not a file: each company's accent is an inline `<style>` the edition's header emits last (see Load order), so
@@ -187,7 +187,7 @@ What the installer does: verifies Core's own files against `MANIFEST.json` (refu
 `--css` / `--js` byte for byte through a temporary file and `rename` (no header is injected into the CSS, because that would break
 the byte-for-byte proof), and writes `css/.rivet-ui-assets.json` recording the Core version and the SHA-256 of what it installed. The
 "version header" is therefore that receipt plus the manifest. It touches nothing else; it never creates directories and never deletes.
-`--dry-run` lists `new` / `update` / `same` per file.
+`--dry-run` lists `new` / `update` / `same` per file. Since 1.0.0-rc.38 it is safe to run as root against a directory another user can write: it refuses (before writing anything) a destination or receipt that is a symlink, creates the temporary file exclusively under a random name, and replaces the destination with `rename()`, which never writes through a link. `promote-ui-assets.php` refuses an edition symlink and a Core installed under `vendor/`.
 
 Edition rules:
 
