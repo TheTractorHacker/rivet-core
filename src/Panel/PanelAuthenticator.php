@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Panel;
 
 use RivetCore\Panel\Contracts\PanelTicketGatewayInterface;
+use RivetCore\Rmm\Contracts\RmmTenancyInterface;
 use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Support\Sql;
 
@@ -13,13 +14,15 @@ use RivetCore\Rmm\Support\Sql;
  * format check, and an agent row reached by any other route fails the kind check, both as the same generic invalid_token.
  *
  * 401 codes: invalid_token (unknown, rotated, or not a panel credential), revoked, expired. 403 contact_invalid: the contact the device is bound to was archived,
- * deleted or moved to another client, so the device stops working until an administrator re-enrolls it.
+ * deleted or moved to another client, so the device stops working until an administrator re-enrolls it. 403 client_invalid (1.0.0-rc.38, security review RC36 L6): the
+ * client of the device no longer exists for the edition (`RmmTenancyInterface::clientName()` is null: deleted or archived), so a client-level device of an offboarded
+ * client cannot go on creating tickets.
  *
  * @api
  */
 final class PanelAuthenticator
 {
-    public function __construct(private readonly Sql $sql, private readonly PanelTicketGatewayInterface $gateway)
+    public function __construct(private readonly Sql $sql, private readonly PanelTicketGatewayInterface $gateway, private readonly ?RmmTenancyInterface $tenancy = null)
     {
     }
 
@@ -43,6 +46,9 @@ final class PanelAuthenticator
         }
         $clientId = (int) $dev['client_id'];
         $contactId = $dev['contact_id'] !== null ? (int) $dev['contact_id'] : null;
+        if ($this->tenancy !== null && $this->tenancy->clientName($clientId) === null) {
+            throw new ApiError(403, 'client_invalid', 'The client this panel belongs to is no longer available.');
+        }
         if ($contactId !== null && $this->gateway->contact($contactId, $clientId) === null) {
             throw new ApiError(403, 'contact_invalid', 'The contact this panel belongs to is no longer available.');
         }

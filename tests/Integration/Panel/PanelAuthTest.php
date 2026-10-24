@@ -115,6 +115,23 @@ final class PanelAuthTest extends PanelTestCase
         $this->assertSame([403, 'contact_invalid'], [$c, $j['code']]);
     }
 
+    /** rc.38 (security review RC36 L6): a client-level device of a client that is gone no longer works. */
+    public function testADeviceOfADeletedOrArchivedClientStopsWorkingEvenWithoutAContact(): void
+    {
+        $client = $this->p->rmm->tenancy->addClient('Offboarded Ltd');
+        $a = $this->p->device_for($client);
+        $this->p->module->settings()->setAllowClientLevelTickets($client, true, 1);
+        $this->assertSame(201, $this->p->call('POST', 'panel_tickets', ['subject' => 's', 'body' => 'b'], $a['token'])[0]);
+        $this->p->rmm->tenancy->removeClient($client);
+        foreach (['GET' => 'panel_me', 'POST' => 'panel_tickets'] as $method => $endpoint) {
+            [$c, , $j] = $this->p->call($method, $endpoint, $method === 'POST' ? ['subject' => 's', 'body' => 'b'] : null, $a['token']);
+            $this->assertSame([403, 'client_invalid'], [$c, $j['code']], $endpoint);
+        }
+        $this->assertCount(1, $this->p->gateway->created, 'nothing more was created');
+        // another client\'s device is untouched
+        $this->assertSame(200, $this->p->call('GET', 'panel_me', null, $this->p->device_for()['token'])[0]);
+    }
+
     public function testPerDeviceRateLimitsAreIndependent(): void
     {
         $c1 = $this->p->gateway->addClientContact($this->p->clientA, 'One');

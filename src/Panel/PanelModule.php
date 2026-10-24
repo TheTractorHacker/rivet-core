@@ -64,7 +64,7 @@ final class PanelModule
 
     public function authenticator(): PanelAuthenticator
     {
-        return new PanelAuthenticator($this->sql(), $this->gateway);
+        return new PanelAuthenticator($this->sql(), $this->gateway, $this->tenancy);
     }
 
     public function service(): PanelService

@@ -29,6 +29,12 @@ class InMemoryRmmTenancy implements RmmTenancyInterface
         return $this->next++;
     }
 
+    /** The client is deleted or archived in the edition: {@see clientName()} answers null for it from now on. */
+    public function removeClient(int $clientId): void
+    {
+        unset($this->clients[$clientId]);
+    }
+
     public function addLocation(int $clientId): int
     {
         $this->locations[$this->next] = $clientId;
