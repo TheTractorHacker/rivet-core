@@ -236,9 +236,26 @@ In rough priority order; each ships as a backward-compatible minor.
 4. **Workflow depth:** task dependencies, approvals, scheduled due dates.
 5. **KB:** media tokens and the HTML importer behind interfaces so both editions can share them.
 6. **A provider interface for accounting and payments**, only if a second edition needs one (see the Stripe discussion: not before).
-7. **PostgreSQL adapter** investigation, only on a concrete requirement (ADR-001).
+7. **PostgreSQL**: see "Enterprise architecture track" below; the whole-app move is rejected (about 10,000 direct MySQL calls in each edition), the RMM hot-table split is a late item there.
 8. **Shared AI-assist pipeline** (summaries, reply drafts, triage) with the same audit and approval rules as MCP tools.
 9. **Audit tamper-evidence** (hash chaining) if compliance work needs it.
+
+### Enterprise architecture track (added 2026-10-24)
+
+What "enterprise" means here, in the order the gaps matter. None of it changes the 1.0 contract; each is a backward-compatible minor or an edition/operations item. Status is "not started" unless noted.
+
+| # | Gap | What closes it | Notes |
+|---|---|---|---|
+| 1 | High availability and disaster recovery | Documented and tested replica/failover for MariaDB and Redis; a restore drill with measured recovery time and data-loss window; backups checked by restoring them | Today there are two backup systems (in-app zip, encrypted `deploy/backup.sh`) and a restore script, but no replica, no failover and no measured RTO/RPO |
+| 2 | More than one web server | Sessions and caches in Redis, uploads and generated files on shared or object storage instead of local disk, no per-host state, a rolling restart that drops no requests | Uploads and attachments are on local disk today; RivetPanel attachments must follow the same rule |
+| 3 | Observability | Health and readiness endpoints (exist), metrics export (Prometheus/OpenTelemetry), structured logs with request and tenant ids, alerting on queue depth, slow queries and failed jobs | RMM already has capacity reports and a metrics subsystem to build on |
+| 4 | Identity | SAML or OIDC single sign-on for every role, SCIM provisioning, enforced MFA policy, service accounts with scoped, expiring keys | Entra OAuth exists in RivetIT; Panel device tokens already follow the scoped-token model |
+| 5 | Tenant isolation | Row-level tenant checks proved by tests across every module (cross-client tests exist for Panel and RMM), a documented threat model per module, optional database-enforced isolation | Postgres row-level security would help here, but only as a second layer behind application checks |
+| 6 | Change safety | Migrations that run without downtime (additive first, destructive later), a rollback story per release, signed releases and a published SBOM | Core migrations are already additive and idempotent; release signing waits on a key |
+| 7 | Compliance evidence | Retention presets, tamper-evident audit (hash chain exists), exportable evidence for ISO 27001, SOC 2, PCI DSS and HIPAA, an external penetration test | Compliance engine exists since 0.9.0; external review is not done |
+| 8 | Data tier for very large RMM fleets | Optional separate store for the hot RMM tables only (metrics and rollups first; then check history and logs), behind the existing external metric sink and the database interface. Control tables (devices, jobs, policies, tokens, alerts) stay in MariaDB because they join with tickets and assets and need transactions with them. Off by default; alert-to-ticket handoff uses an outbox, not a cross-database transaction | **Trigger:** the post-1.0 load test at 10,000 devices shows the hot tables are the bottleneck. Do not build on a guess. Needs a second database in backup, restore and update procedures. New Core code avoids MySQL-only SQL where a portable form exists, so this stays cheap |
+
+Order of work: 1 to 3 first (they decide whether the product can be run as a service), 4 and 6 next, 5 and 7 continuously, 8 only when measured.
 
 ## Test strategy (what runs where)
 
