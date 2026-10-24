@@ -20,7 +20,7 @@ function ui_assets_root(): string
 /** A manifest key is "css/<name>" or "js/<name>": no traversal, no nesting, no odd characters. */
 function ui_assets_valid_path(string $path): bool
 {
-    return preg_match('#^(css|js)/[A-Za-z0-9][A-Za-z0-9._-]*\.(css|js)$#', $path) === 1;
+    return preg_match('#^(css|js)/[A-Za-z0-9][A-Za-z0-9._-]*\.(css|js)\z#', $path) === 1;
 }
 
 /**

@@ -12,6 +12,10 @@ declare(strict_types=1);
  * version and hashes that were installed. It touches nothing else: the edition's own sheets, including its *.edition.css
  * overrides, are left alone. Core's own files are verified first; a Core tree that does not match its manifest is refused.
  * Shared files are overwritten (that is the point); --dry-run lists what would change.
+ *
+ * Safe to run as root against a directory another user can write (1.0.0-rc.38): a destination or receipt that is a symlink is refused before anything is written,
+ * the temporary file is created exclusively (O_EXCL, which never follows a symlink) under an unpredictable name, and the result replaces the destination with
+ * rename(), which replaces a directory entry and never writes through one.
  */
 
 require __DIR__ . '/ui-assets-lib.php';
@@ -55,6 +59,41 @@ if ($bad !== []) {
     exit(1);
 }
 
+/** Write $bytes to $dest without ever following a symlink: exclusive temp file with a random name, then an atomic rename. */
+function install_file(string $dest, string $bytes): bool
+{
+    if (is_link($dest)) {
+        return false;
+    }
+    $tmp = dirname($dest) . '/.' . basename($dest) . '.' . bin2hex(random_bytes(8)) . '.tmp';
+    $h = @fopen($tmp, 'xb');
+    if ($h === false) {
+        return false;
+    }
+    $ok = fwrite($h, $bytes) === strlen($bytes) && fclose($h) && chmod($tmp, 0644) && rename($tmp, $dest);
+    if (!$ok) {
+        @unlink($tmp);
+    }
+
+    return $ok;
+}
+
+// Refuse every symlinked destination (and receipt) up front, so a run never ends half-way because of one.
+$symlinks = [];
+foreach ($manifest['files'] as $rel => $meta) {
+    $dir = str_starts_with($rel, 'css/') ? $css : $js;
+    if ($dir !== null && is_link($dir . '/' . basename($rel))) {
+        $symlinks[] = $dir . '/' . basename($rel);
+    }
+}
+if (is_link("$css/" . UI_ASSETS_RECEIPT)) {
+    $symlinks[] = "$css/" . UI_ASSETS_RECEIPT;
+}
+if ($symlinks !== []) {
+    fwrite(STDERR, "refusing to write through a symlink, nothing installed:\n  - " . implode("\n  - ", $symlinks) . "\n");
+    exit(1);
+}
+
 $changed = 0;
 $installed = [];
 if ($js === null) {
@@ -77,9 +116,8 @@ foreach ($manifest['files'] as $rel => $meta) {
     if ($dry) {
         continue;
     }
-    $tmp = $dest . '.tmp' . getmypid();
-    if (!copy("$root/$rel", $tmp) || !chmod($tmp, 0644) || !rename($tmp, $dest)) {
-        @unlink($tmp);
+    $bytes = file_get_contents("$root/$rel");
+    if ($bytes === false || !install_file($dest, $bytes)) {
         fwrite(STDERR, "cannot write $dest\n");
         exit(1);
     }
@@ -87,7 +125,7 @@ foreach ($manifest['files'] as $rel => $meta) {
 
 if (!$dry) {
     $receipt = json_encode(['schema' => UI_ASSETS_SCHEMA, 'core_version' => $manifest['core_version'], 'files' => $installed], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
-    if (file_put_contents("$css/" . UI_ASSETS_RECEIPT, $receipt) === false) {
+    if (!install_file("$css/" . UI_ASSETS_RECEIPT, $receipt)) {
         fwrite(STDERR, "cannot write the receipt in $css\n");
         exit(1);
     }

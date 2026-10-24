@@ -54,6 +54,10 @@ foreach ($add as $rel) {
 }
 
 $root = ui_assets_root();
+if (str_contains(str_replace('\\', '/', $root), '/vendor/')) {
+    fwrite(STDERR, "refusing to run against a Core installed under vendor/: promotion writes assets/ui, run it from a rivet-core checkout\n");
+    exit(2);
+}
 $manifestPath = $root . '/MANIFEST.json';
 try {
     $manifest = ui_assets_manifest($manifestPath);
@@ -75,6 +79,10 @@ foreach (array_keys($manifest['files']) as $rel) {
         continue;
     }
     $file = $dir . '/' . basename($rel);
+    if (is_link($file)) {
+        fwrite(STDERR, "refusing the edition's symlink $file: promotion reads regular files only\n");
+        exit(2);
+    }
     if (!is_file($file)) {
         $missing[] = $rel;
     } elseif (hash_file('sha256', $file) !== $manifest['files'][$rel]['sha256']) {
@@ -84,8 +92,8 @@ foreach (array_keys($manifest['files']) as $rel) {
 foreach ($add as $rel) {
     $dir = str_starts_with($rel, 'css/') ? $css : $js;
     $file = ($dir ?? '') . '/' . basename($rel);
-    if ($dir === null || !is_file($file)) {
-        fwrite(STDERR, "--add $rel: the edition has no such file\n");
+    if ($dir === null || !is_file($file) || is_link($file)) {
+        fwrite(STDERR, "--add $rel: the edition has no such regular file (a symlink is refused)\n");
         exit(2);
     }
     if (isset($manifest['files'][$rel])) {
@@ -112,8 +120,11 @@ if (!$apply) {
 }
 
 foreach ($changes as $rel => $file) {
-    if (!copy($file, "$root/$rel")) {
-        fwrite(STDERR, "cannot write $root/$rel\n");
+    $dest = "$root/$rel";
+    $tmp = dirname($dest) . '/.' . basename($dest) . '.' . bin2hex(random_bytes(8)) . '.tmp';
+    if (is_link($dest) || !copy($file, $tmp) || !rename($tmp, $dest)) {
+        @unlink($tmp);
+        fwrite(STDERR, "cannot write $dest\n");
         exit(1);
     }
 }

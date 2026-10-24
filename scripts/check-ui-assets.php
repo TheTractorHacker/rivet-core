@@ -63,7 +63,9 @@ if ($css === null && $js === null) {
     if (is_file($receipt)) {
         $r = json_decode((string) file_get_contents($receipt), true);
         if (is_array($r) && ($r['core_version'] ?? '') !== $manifest['core_version']) {
-            fwrite(STDERR, "note: installed from Core {$r['core_version']}, this manifest is {$manifest['core_version']}\n");
+            // the receipt is a hand-editable file: no control character of it reaches the terminal
+            $seen = preg_replace('/[^\x20-\x7e]/', '?', (string) $r['core_version']);
+            fwrite(STDERR, "note: installed from Core $seen, this manifest is {$manifest['core_version']}\n");
         }
     }
 }

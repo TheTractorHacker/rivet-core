@@ -437,6 +437,51 @@
   var slide = $('[data-wz-slideover]'), backdrop = $('[data-wz-backdrop]'), guideLoaded = '';
   var lastHelpTrigger = null;
   var dockMq = window.matchMedia ? window.matchMedia('(min-width: 1500px)') : { matches: false };
+  // ---- guide sanitiser (rc.38, security review L8) --------------------------------------------------------------------
+  // The guide fragment is edition HTML. It is rebuilt from an allow-list instead of imported: only formatting elements survive, an attribute is kept only if it is on
+  // the short list below, a link keeps only an http(s) or mailto target (or a page-relative one), and an element that is not allowed loses its tag but keeps its text.
+  var GUIDE_TAGS = ' a b blockquote br code dd details div dl dt em h1 h2 h3 h4 h5 h6 hr i img kbd li ol p pre samp small span strong sub summary sup table tbody td tfoot th thead tr u ul ';
+  var GUIDE_DROP = ' script noscript style template iframe frame frameset object embed applet form input button select textarea option link meta base svg math audio video source track canvas title head ';
+  function guideUrl(v) {
+    try {
+      var u = new URL(v, window.location.href);
+      return (u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:') ? v : null;
+    } catch (e) { return null; }
+  }
+  function guideCopy(from, into) {
+    Array.prototype.forEach.call(from.childNodes, function (n) {
+      if (n.nodeType === 3) { into.appendChild(document.createTextNode(n.nodeValue)); return; }
+      if (n.nodeType !== 1) { return; }
+      var tag = n.nodeName.toLowerCase();
+      if (GUIDE_DROP.indexOf(' ' + tag + ' ') !== -1) { return; }
+      if (GUIDE_TAGS.indexOf(' ' + tag + ' ') === -1) { guideCopy(n, into); return; }
+      var c = document.createElement(tag);
+      var cls = n.getAttribute('class');
+      if (cls && /^[A-Za-z0-9 _-]+$/.test(cls)) { c.setAttribute('class', cls); }
+      var title = n.getAttribute('title');
+      if (title) { c.setAttribute('title', title); }
+      if (tag === 'a') {
+        var href = n.getAttribute('href'), ok = href ? guideUrl(href) : null;
+        if (ok !== null) {
+          c.setAttribute('href', ok);
+          if (/^https?:/i.test(ok)) { c.setAttribute('target', '_blank'); }
+          c.setAttribute('rel', 'noopener noreferrer');
+        }
+      } else if (tag === 'img') {
+        var src = n.getAttribute('src'), good = src ? guideUrl(src) : null;
+        if (good === null || /^mailto:/i.test(good)) { return; }
+        c.setAttribute('src', good); c.setAttribute('alt', n.getAttribute('alt') || ''); c.setAttribute('loading', 'lazy');
+      } else if (tag === 'td' || tag === 'th') {
+        ['colspan', 'rowspan'].forEach(function (a) { var v = n.getAttribute(a); if (v && /^[0-9]{1,2}$/.test(v)) { c.setAttribute(a, v); } });
+      }
+      guideCopy(n, c);
+      into.appendChild(c);
+    });
+  }
+  function appendGuide(target, html) {
+    var doc = new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html');
+    guideCopy(doc.body.firstChild, target);
+  }
   function loadGuide() {
     var id = destId; if (!id || guideLoaded === id) { return; }
     guideLoaded = id;
@@ -444,10 +489,8 @@
     fetch(root.getAttribute('data-wz-guide') + '?dest=' + encodeURIComponent(id), { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
       .then(function (d) {
-        var doc = new DOMParser().parseFromString('<div>' + d.content + '</div>', 'text/html');
-        $$('script, noscript', doc.body).forEach(function (s) { s.remove(); });
         body.textContent = '';
-        Array.prototype.forEach.call(doc.body.firstChild.childNodes, function (n) { body.appendChild(document.importNode(n, true)); });
+        appendGuide(body, String(d.content));
       }).catch(function (err) { guideLoaded = ''; body.textContent = 'The guide could not be loaded (' + err.message + '). Open the full guide from the Guides page.'; });
   }
   function openGuide(trigger) {
