@@ -9,6 +9,7 @@ use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Enrollment\DeviceValidator;
 use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\DailyBudget;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 
@@ -18,14 +19,21 @@ use RivetCore\Rmm\Support\Sql;
  *
  * Mapping rules (checked in this order, only while Mesh is enabled and the node id passes {@see MeshService::validNodeId()}). The node id is only what the
  * device SAYS: the server has no way to ask MeshCentral who owns it, so a report alone never creates a mapping.
- *  1. The node id is already mapped to ANOTHER live device, or another live device reports it: refused. The device is flagged `conflict` (naming the other
- *     device when it is in the same client), an audit row is written once and `rmm.mesh.node_conflict` is published. Nothing is moved.
- *  2. The node id is mapped to a retired or revoked device: it moves ONLY to a device of the same client and asset (the machine was re-enrolled and an
- *     administrator linked it to the same asset), audited. Any other device is flagged `conflict`: a retired device's node is never handed to a stranger.
- *  3. The device is already mapped to the same node: nothing changes.
+ *  1. The node id is already mapped to ANOTHER live device: refused. The device that CLAIMS it is flagged `conflict` (naming the other device when it is in the
+ *     same client), an audit row is written once and `rmm.mesh.node_conflict` is published. Nothing is moved.
+ *  2. The node id is mapped to a retired or revoked device: it moves ONLY to a device of the same client and asset that an ADMINISTRATOR linked to that asset
+ *     (`match_reason` `approved_by_<user>`: a link made by matching a self-reported serial or MAC is not enough), audited. A device of the same client and asset
+ *     whose link was automatic is flagged `needs_approval`; any other device is flagged `conflict`: a retired device's node is never handed to a stranger.
+ *  3. The device is already mapped to the same node: nothing changes. This comes BEFORE the "another live device reports it" test (rc.38), so a device that
+ *     merely reports a node some other device holds can flag itself, never the device that holds it.
+ *  3b. Another live device reports the same, unmapped node: both are flagged `conflict`.
  *  4. The device is mapped to a different node BY HAND: kept, flagged `kept_manual`, unless the `mesh_auto_map_overwrite` setting is on.
  *  5. Anything else (a node nobody has approved): NOT mapped. The device is flagged `needs_approval` and an audit row is written once; an administrator checks
  *     the node in MeshCentral and maps it on the device page (the same action as a manual mapping).
+ *
+ * Audit rows and `rmm.mesh.*` events caused by a device's own reports are limited to {@see self::EVENTS_PER_DAY} a day per device (security review RC36 L3): a device
+ * that reports a new random node id at every check-in changes its stored state every time but writes at most that many rows; the first row refused each day is
+ * itself audited once ("Mesh Events Suppressed").
  *
  * @api
  */
@@ -38,6 +46,11 @@ final class MeshAgentService
     public const MAP_NEEDS_APPROVAL = 'needs_approval';
     public const MAX_VERSION = 60;
     public const MAX_ERROR = 300;
+    /** @internal audit rows plus events one device may cause through its Mesh reports in a UTC day */
+    public const EVENTS_PER_DAY = 12;
+    private const BUDGET = 'mesh_events';
+
+    private readonly DailyBudget $budget;
 
     public function __construct(
         private readonly Sql $sql,
@@ -47,6 +60,25 @@ final class MeshAgentService
         private readonly RmmAuditInterface $audit,
         private readonly ?RmmEventPublisher $events = null,
     ) {
+        $this->budget = new DailyBudget($sql);
+    }
+
+    /**
+     * True when this device may still cause an audit row and an event today; the first refusal of the day is audited once.
+     *
+     * @param array<string,mixed> $dev
+     */
+    private function mayRecord(array $dev): bool
+    {
+        $id = (int) $dev['device_id'];
+        if ($this->budget->charge(self::BUDGET, $id, 1, 0, self::EVENTS_PER_DAY, PHP_INT_MAX)) {
+            return true;
+        }
+        if ($this->budget->firstRefusalToday(self::BUDGET, $id)) {
+            $this->audit->record('Mesh Events Suppressed', "Device $id reported its MeshCentral agent more than " . self::EVENTS_PER_DAY . ' times today; further Mesh audit rows and events for it are skipped until tomorrow (its state is still kept)', (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+        }
+
+        return false;
     }
 
     // ---------------------------------------------------------------- the installer side
@@ -182,10 +214,14 @@ final class MeshAgentService
                 [(int) $installed, $version, $node, $error, $installed ? $now : null, $now, $now, $deviceId]);
         }
         if ($installed && !$wasInstalled) {
-            $this->audit->record('Mesh Agent Installed', "The MeshCentral agent is installed on device $deviceId" . ($version !== '' ? " (version $version)" : ''), (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
-            $this->events?->emit(RmmEvent::MESH_AGENT_INSTALLED, $dev, ['version' => $version === '' ? null : $version, 'node_id' => $node === '' ? null : $node]);
+            if ($this->mayRecord($dev)) {
+                $this->audit->record('Mesh Agent Installed', "The MeshCentral agent is installed on device $deviceId" . ($version !== '' ? " (version $version)" : ''), (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+                $this->events?->emit(RmmEvent::MESH_AGENT_INSTALLED, $dev, ['version' => $version === '' ? null : $version, 'node_id' => $node === '' ? null : $node]);
+            }
         } elseif (!$installed && $error !== '' && ($old === null || (string) $old['error'] !== $error)) {
-            $this->audit->record('Mesh Agent Install Failed', "The MeshCentral agent could not be installed on device $deviceId: $error", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+            if ($this->mayRecord($dev)) {
+                $this->audit->record('Mesh Agent Install Failed', "The MeshCentral agent could not be installed on device $deviceId: $error", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+            }
         }
         if ($node !== '' && (int) $this->settings->get()['mesh_enabled'] === 1) {
             $this->mapNode($dev, $node, $old);
@@ -221,7 +257,7 @@ final class MeshAgentService
      * asset: the machine was re-enrolled), `needs_approval` (nothing proves the device owns the node: an administrator has to map it).
      *
      * @param array<string,mixed> $dev
-     * @return array{action:string,other:?array<string,mixed>,mine:?array<string,mixed>,conflict_with:?int,why:string}
+     * @return array{action:string,other:?array<string,mixed>,mine:?array<string,mixed>,conflict_with:?int,why:string,conflict_client:?int}
      */
     private function decide(array $dev, string $node): array
     {
@@ -231,25 +267,30 @@ final class MeshAgentService
         $other = $this->sql->one('SELECT m.device_id, d.client_id, d.asset_id, d.revoked_at, d.retired_at FROM endpoint_agent_mesh_nodes m JOIN endpoint_agent_devices d ON d.device_id = m.device_id
             WHERE m.mesh_node_id IN (' . $in . ') AND m.device_id <> ? ORDER BY (d.revoked_at IS NULL AND d.retired_at IS NULL) DESC, m.device_id LIMIT 1', [...$spellings, $deviceId]);
         $mine = $this->sql->one('SELECT mesh_node_id, source FROM endpoint_agent_mesh_nodes WHERE device_id = ?', [$deviceId]);
-        $res = static fn (string $action, ?int $with = null, string $why = ''): array => ['action' => $action, 'other' => $other, 'mine' => $mine, 'conflict_with' => $with, 'why' => $why];
+        $res = static fn (string $action, ?int $with = null, string $why = '', ?int $withClient = null): array => ['action' => $action, 'other' => $other, 'mine' => $mine, 'conflict_with' => $with, 'why' => $why, 'conflict_client' => $withClient];
 
         if ($other !== null && $other['revoked_at'] === null && $other['retired_at'] === null) {
-            return $res('conflict', (int) $other['device_id'], 'already mapped to device ' . (int) $other['device_id']);
+            return $res('conflict', (int) $other['device_id'], 'already mapped to device ' . (int) $other['device_id'], (int) $other['client_id']);
         }
         if ($other !== null) {
             // Bound to a retired or revoked device. It is released only to the re-enrolled machine of the SAME client and asset (an administrator linked the new
             // device to the old one's asset); a node is never taken from a retired device of another client, or of an unrelated asset.
             $sameMachine = (int) $other['client_id'] === (int) $dev['client_id'] && (int) ($dev['asset_id'] ?? 0) !== 0 && (int) $other['asset_id'] === (int) $dev['asset_id'];
-
-            return $sameMachine ? $res('move') : $res('conflict', (int) $other['device_id'], 'still bound to retired device ' . (int) $other['device_id'] . ' (not the same client and asset)');
+            if (!$sameMachine) {
+                return $res('conflict', (int) $other['device_id'], 'still bound to retired device ' . (int) $other['device_id'] . ' (not the same client and asset)', (int) $other['client_id']);
+            }
+            // rc.38 (RC36 L4): the asset link must be one an administrator made. A link made by matching a serial or MAC the device REPORTED about itself proves
+            // nothing, so that device only gets in line for approval.
+            return str_starts_with((string) ($dev['match_reason'] ?? ''), 'approved_by_') ? $res('move') : $res('needs_approval', null, 'the asset link was made from a serial or MAC the device reported, not by an administrator');
         }
-        $rival = $this->sql->one('SELECT a.device_id FROM endpoint_agent_mesh_agents a JOIN endpoint_agent_devices d ON d.device_id = a.device_id
-            WHERE a.installed = 1 AND a.node_id IN (' . $in . ') AND a.device_id <> ? AND d.revoked_at IS NULL AND d.retired_at IS NULL ORDER BY a.device_id LIMIT 1', [...$spellings, $deviceId]);
-        if ($rival !== null) {
-            return $res('conflict', (int) $rival['device_id'], 'also reported by device ' . (int) $rival['device_id']);
-        }
+        // Already mapped to this very node: that is the end of it, whatever any other device says (rc.38, RC36 L3: a rival's report must not flag the holder).
         if ($mine !== null && (MeshNodeId::canonical((string) $mine['mesh_node_id']) ?? (string) $mine['mesh_node_id']) === $node) {
             return $res('same');
+        }
+        $rival = $this->sql->one('SELECT a.device_id, d.client_id FROM endpoint_agent_mesh_agents a JOIN endpoint_agent_devices d ON d.device_id = a.device_id
+            WHERE a.installed = 1 AND a.node_id IN (' . $in . ') AND a.device_id <> ? AND d.revoked_at IS NULL AND d.retired_at IS NULL ORDER BY a.device_id LIMIT 1', [...$spellings, $deviceId]);
+        if ($rival !== null) {
+            return $res('conflict', (int) $rival['device_id'], 'also reported by device ' . (int) $rival['device_id'], (int) $rival['client_id']);
         }
         if ($mine !== null && (string) $mine['source'] !== 'agent' && !$this->meshSettings->get()['auto_map_overwrite']) {
             return $res('kept_manual');
@@ -262,7 +303,7 @@ final class MeshAgentService
      * Carry out a decision that moves or maps a node.
      *
      * @param array<string,mixed> $dev
-     * @param array{action:string,other:?array<string,mixed>,mine:?array<string,mixed>,conflict_with:?int,why:string} $d
+     * @param array{action:string,other:?array<string,mixed>,mine:?array<string,mixed>,conflict_with:?int,why:string,conflict_client:?int} $d
      */
     private function apply(array $dev, string $node, array $d): void
     {
@@ -296,9 +337,10 @@ final class MeshAgentService
             case 'conflict':
                 $state = self::MAP_CONFLICT;
                 $conflictWith = $d['conflict_with'];
-                if ($prevState !== self::MAP_CONFLICT || $prevNode !== $node || $prevConflict !== $conflictWith) {
+                if (($prevState !== self::MAP_CONFLICT || $prevNode !== $node || $prevConflict !== $conflictWith) && $this->mayRecord($dev)) {
                     $this->audit->record('Mesh Node Conflict', "Device $deviceId reported MeshCentral node $node, which is {$d['why']}. Not mapped: check which machine really owns the node.", $client, $asset);
-                    $this->events?->emit(RmmEvent::MESH_NODE_CONFLICT, $dev, ['node_id' => $node, 'other_device_id' => $conflictWith]);
+                    // the event reaches the claimant's client: it never names a device of another client (the audit row, an administrator record, has the id)
+                    $this->events?->emit(RmmEvent::MESH_NODE_CONFLICT, $dev, ['node_id' => $node, 'other_device_id' => ($d['conflict_client'] === null || $d['conflict_client'] === $client) ? $conflictWith : null]);
                 }
                 break;
             case 'same':
@@ -306,7 +348,7 @@ final class MeshAgentService
                 break;
             case 'kept_manual':
                 $state = self::MAP_KEPT_MANUAL;
-                if ($prevState !== self::MAP_KEPT_MANUAL || $prevNode !== $node) {
+                if (($prevState !== self::MAP_KEPT_MANUAL || $prevNode !== $node) && $this->mayRecord($dev)) {
                     $this->audit->record('Mesh Node Differs', "Device $deviceId reported MeshCentral node $node but is mapped by hand to {$d['mine']['mesh_node_id']}. The manual mapping was kept (turn on the automatic overwrite to replace it).", $client, $asset);
                 }
                 break;
@@ -316,7 +358,7 @@ final class MeshAgentService
                 break;
             default:   // needs_approval: the device says it owns the node, nothing proves it
                 $state = self::MAP_NEEDS_APPROVAL;
-                if ($prevState !== self::MAP_NEEDS_APPROVAL || $prevNode !== $node) {
+                if (($prevState !== self::MAP_NEEDS_APPROVAL || $prevNode !== $node) && $this->mayRecord($dev)) {
                     $this->audit->record('Mesh Node Needs Approval', "Device $deviceId reported MeshCentral node $node. It was not mapped because nothing proves the device owns that node: an administrator must check it in MeshCentral and map it on the device page.", $client, $asset);
                 }
         }

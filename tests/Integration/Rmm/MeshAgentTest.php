@@ -594,11 +594,116 @@ final class MeshAgentTest extends RemoteTestCase
         $this->meshReport($to, ['installed' => true, 'node_id' => self::NODE_A]);
         $this->assertTrue($this->h->module->technician()->retire($this->admin, $old)->ok);
         [$new, $tn] = $this->linked('R1b');
-        $this->h->q("UPDATE endpoint_agent_devices SET asset_id=" . (int) $this->h->one("SELECT asset_id FROM endpoint_agent_devices WHERE device_id=$old") . " WHERE device_id=$new");
+        // an administrator linked the re-enrolled machine to the old one's asset (approved_by_<user>, as DeviceService::approve() records it)
+        $this->h->q("UPDATE endpoint_agent_devices SET match_reason='approved_by_1', asset_id=" . (int) $this->h->one("SELECT asset_id FROM endpoint_agent_devices WHERE device_id=$old") . " WHERE device_id=$new");
         $this->meshReport($tn, ['installed' => true, 'node_id' => self::NODE_A]);
         $this->assertSame(self::NODE_A, $this->nodeOf($new));
         $this->assertNull($this->nodeOf($old), 'released from the retired device');
         $this->assertSame(1, $this->audit('Mesh Node Moved'));
+    }
+
+    /** rc.38 (security review RC36 L4): an asset link made from a serial or MAC the device reported about itself does not release the retired device's node. */
+    public function testASelfReportedAssetLinkDoesNotMoveARetiredDevicesNode(): void
+    {
+        $this->meshOn();
+        [$old, $to] = $this->linked('M1');
+        $this->approve($old, self::NODE_A);
+        $this->assertTrue($this->h->module->technician()->retire($this->admin, $old)->ok);
+        [$new, $tn] = $this->linked('M1b');   // auto-linked by serial: match_reason is not approved_by_
+        $this->h->q("UPDATE endpoint_agent_devices SET asset_id=" . (int) $this->h->one("SELECT asset_id FROM endpoint_agent_devices WHERE device_id=$old") . " WHERE device_id=$new");
+        $this->assertStringStartsNotWith('approved_by_', (string) $this->h->one("SELECT match_reason FROM endpoint_agent_devices WHERE device_id=$new"));
+        $this->meshReport($tn, ['installed' => true, 'node_id' => self::NODE_A]);
+        $this->assertNull($this->nodeOf($new), 'not moved on the device\'s word');
+        $this->assertSame(self::NODE_A, $this->nodeOf($old), 'the retired device keeps it');
+        $this->assertSame('needs_approval', $this->h->module->meshAgents()->stateFor($new)['map_state']);
+        $this->assertSame(0, $this->audit('Mesh Node Moved'));
+        $this->assertSame(1, $this->audit('Mesh Node Needs Approval'));
+        // the inventory path (the older mesh_node_id member) cannot do it either
+        $this->h->module->meshAgents()->claimFromInventory($this->h->module->devices()->find($new), self::NODE_A);
+        $this->assertNull($this->nodeOf($new));
+    }
+
+    /** rc.38 (security review RC36 L3): a rival's report of a node never flags the device that holds it. */
+    public function testADeviceReportingAnotherDevicesNodeCannotFlagTheHolderAsConflict(): void
+    {
+        $this->meshOn();
+        [$holder, $th] = $this->linked('H1', $this->h->clientA);
+        [$rogue, $tr] = $this->linked('H2', $this->h->clientB);
+        $this->approve($holder, self::NODE_A);
+        $this->meshReport($th, ['installed' => true, 'node_id' => self::NODE_A]);
+        $this->assertSame('mapped', $this->h->module->meshAgents()->stateFor($holder)['map_state']);
+        $this->meshReport($tr, ['installed' => true, 'node_id' => self::NODE_A]);
+        $this->meshReport($th, ['installed' => true, 'node_id' => self::NODE_A]);
+        $this->meshReport($th, ['installed' => true, 'node_id' => self::NODE_A, 'version' => '1.2.3']);
+        $this->assertSame(['mapped', null], [$this->h->module->meshAgents()->stateFor($holder)['map_state'], $this->h->module->meshAgents()->stateFor($holder)['conflict_device_id']], 'the owner stays mapped');
+        $this->assertSame(self::NODE_A, $this->nodeOf($holder));
+        $this->assertSame('conflict', $this->h->module->meshAgents()->stateFor($rogue)['map_state'], 'the claimant gets the conflict');
+        $this->assertNull($this->nodeOf($rogue));
+        // exactly one conflict row and event, and it is the claimant\'s; the owner\'s client sees no audit row for it
+        $rows = array_values(array_filter($this->h->audit->records(), static fn (array $r): bool => $r['action'] === 'Mesh Node Conflict'));
+        $this->assertCount(1, $rows);
+        $this->assertSame($this->h->clientB, $rows[0]['client_id']);
+        $ev = $this->bus->of(RmmEvent::MESH_NODE_CONFLICT);
+        $this->assertCount(1, $ev);
+        $this->assertSame($rogue, $ev[0]['device_id']);
+        $this->assertNull($ev[0]['other_device_id'], 'a device of another client is not named in the event');
+        $this->assertSame(1, (int) $this->h->module->mesh()->nodeFor($holder) !== null ? 1 : 0, 'launch still works for the owner');
+    }
+
+    public function testASameClientConflictEventStillNamesTheOtherDevice(): void
+    {
+        $this->meshOn();
+        [$d1, $t1] = $this->linked('N1');
+        [$d2, $t2] = $this->linked('N2');
+        $this->approve($d1, self::NODE_A);
+        $this->meshReport($t2, ['installed' => true, 'node_id' => self::NODE_A]);
+        $this->assertSame($d1, $this->bus->of(RmmEvent::MESH_NODE_CONFLICT)[0]['other_device_id']);
+        $this->assertNotSame('', $t1);
+    }
+
+    /** rc.38 (security review RC36 L3): a device that reports a new node id at every check-in cannot flood the audit log or the webhooks. */
+    public function testAFloodOfNewNodeIdsWritesBoundedAuditRowsAndEvents(): void
+    {
+        $this->meshOn();
+        [$d, $t] = $this->linked('F1');
+        for ($i = 0; $i < 28; ++$i) {
+            $this->meshReport($t, ['installed' => true, 'node_id' => self::freshNode()[2]]);
+        }
+        $this->assertSame(\RivetCore\Rmm\Mesh\MeshAgentService::EVENTS_PER_DAY - 1, $this->audit('Mesh Node Needs Approval'), 'the first row of the day was the "installed" one');
+        $this->assertSame(1, $this->audit('Mesh Agent Installed'));
+        $this->assertSame(1, $this->audit('Mesh Events Suppressed'), 'the first refusal of the day is itself audited, once');
+        $this->assertSame('needs_approval', $this->h->module->meshAgents()->stateFor($d)['map_state'], 'the state is still kept');
+        $this->assertLessThanOrEqual(\RivetCore\Rmm\Mesh\MeshAgentService::EVENTS_PER_DAY, $this->audit('Mesh Node Needs Approval') + $this->audit('Mesh Agent Installed'));
+    }
+
+    public function testFlippingInstalledBackAndForthIsBoundedToo(): void
+    {
+        $this->meshOn();
+        [$d, $t] = $this->linked('F2');
+        for ($i = 0; $i < 28; ++$i) {
+            $this->meshReport($t, ['installed' => $i % 2 === 0, 'node_id' => $i % 2 === 0 ? self::NODE_B : null]);
+        }
+        $this->assertLessThanOrEqual(\RivetCore\Rmm\Mesh\MeshAgentService::EVENTS_PER_DAY, $this->audit('Mesh Agent Installed') + $this->audit('Mesh Node Needs Approval'));
+        $this->assertLessThanOrEqual(\RivetCore\Rmm\Mesh\MeshAgentService::EVENTS_PER_DAY, count($this->bus->of(RmmEvent::MESH_AGENT_INSTALLED)));
+        $this->assertSame(1, $this->audit('Mesh Events Suppressed'));
+        $this->assertNotSame('', (string) $d);
+    }
+
+    public function testTheMeshEventBudgetIsPerDeviceAndResetsTheNextDay(): void
+    {
+        $this->meshOn();
+        [$a, $ta] = $this->linked('B1');
+        [$b, $tb] = $this->linked('B2');
+        for ($i = 0; $i < 30; ++$i) {
+            $this->meshReport($ta, ['installed' => true, 'node_id' => self::freshNode()[2]]);
+        }
+        $before = $this->audit('Mesh Node Needs Approval');
+        $this->meshReport($tb, ['installed' => true, 'node_id' => self::freshNode()[2]]);
+        $this->assertSame($before + 1, $this->audit('Mesh Node Needs Approval'), 'another device is not affected');
+        $this->h->clock->advance(86400);
+        $this->meshReport($ta, ['installed' => true, 'node_id' => self::freshNode()[2]]);
+        $this->assertSame($before + 2, $this->audit('Mesh Node Needs Approval'), 'a new UTC day, a new budget');
+        $this->assertNotSame('', $tb . $a . $b);
     }
 
     /** rc.31 review F1: a node bound to a retired device is never handed to an unrelated device, in the same client or another one. */
