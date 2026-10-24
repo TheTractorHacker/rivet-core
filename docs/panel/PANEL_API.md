@@ -26,11 +26,15 @@ accept the ticket id as a path segment (`/tickets/{id}/chat`) or as `?ticket_id=
 ## Authentication and token kinds
 
 1. An administrator mints a **panel enrollment token** for a client and optionally a contact (`PanelEnrollment::createToken`). Shape `rvtp1.<12 hex>.<40 hex>`,
-   single use by default (a capped multi-use fleet token, up to `PanelLimits::$enrollMaxUses` devices, can be minted for an RMM mass deployment), 24 h by default (72 h at most), stored as a SHA-256 in `endpoint_agent_enrollment_tokens` with `kind = 'panel'` and the `contact_id`.
+   single use by default, 24 h by default (72 h at most), stored as a SHA-256 in `endpoint_agent_enrollment_tokens` with `kind = 'panel'` and the `contact_id`.
+   For an RMM mass deployment a capped multi-use **fleet token** can be minted (`$maxUses` > 1, up to `PanelLimits::$enrollMaxUses` devices). Since 1.0.0-rc.38 a fleet token
+   is **client-level only** (a contact together with `$maxUses` > 1 throws `InvalidArgumentException`: every machine would be bound to the same person, and a leaked token
+   would open that person's tickets), lives **72 h at most whatever `enrollMaxTtlH` is**, and the `Panel Enrolled` audit row of each machine says `fleet token: device N of M`.
 2. The panel calls `POST /panel_enroll` and receives a **device credential** `rvpd_<64 hex>`, shown once. Only its SHA-256 is stored, in
    `endpoint_agent_devices` with `kind = 'panel'`, `link_state = 'panel'`, no asset, and the token's client and contact. Valid 365 days.
 3. Every other call sends `Authorization: Bearer rvpd_...`. The server looks the credential up, requires `kind = 'panel'`, refuses revoked/retired/expired
-   devices, and (for a device with a contact) re-checks through the gateway that the contact is still an active contact of that client.
+   devices, re-checks that the client still exists (403 `client_invalid` when the edition's `clientName()` is null: deleted or archived) and, for a device with a contact,
+   re-checks through the gateway that the contact is still an active contact of that client.
 
 **Kind isolation (both ways).** An RMM credential is 64 alphanumerics, a panel credential is `rvpd_` + 64 hex, so neither parses as the other; independently of the
 shape, `DeviceRepository::authenticate()` refuses a row whose kind is not `agent` and `PanelAuthenticator` refuses one whose kind is not `panel`. The same holds for
@@ -48,6 +52,13 @@ client or another person.
 | with a contact | yes | tickets of that contact **plus** the ones this device created, in its own client | the same tickets |
 | client-level (no contact), client setting **on** | yes | only the tickets this device created | only those |
 | client-level, client setting **off** (default) | yes | 403 `client_level_disabled` | 403 `client_level_disabled` |
+
+**Ownership is the pair (device, contact)** (1.0.0-rc.38). A ticket a device created is recorded with the contact the device was bound to at that moment, and it is visible
+to that device only while the device is bound to that same contact (or, for a client-level ticket, while it is client-level). A PC that is re-enrolled for another person
+(same `install_id`, a token for another contact), or between client level and a contact, does **not** see the previous person's tickets or chat, and cannot post into
+them; the list is empty and the ticket answers 404 `not_found`. Nothing is deleted: the ledger rows stay, and re-enrolling for the original contact brings the tickets back.
+The daily ticket count stays per device, so changing identity does not reset it. A `client_request_id` used under the old identity answers 409 `conflict` to the new one
+(an id is never replayed across identities).
 
 The client setting is "allow tickets from client-level devices" (`PanelSettings`, table `panel_client_settings`, default OFF). A ticket outside the device's scope,
 in another client, or that does not exist is the **same** 404 `not_found` (ids cannot be probed). An administrator revokes a panel device with the existing RMM
@@ -147,7 +158,9 @@ download endpoint in this version.
 ### POST /panel_ticket_chat?ticket_id=1002
 
 `{"body": "Thanks!", "display_name": "jsmith", "attachments": [...]}` -> 201 `{"ticket_id": 1002, "message_id": 1005, "server_time": "..."}`. Body limit 5000 characters;
-20 per minute. A closed ticket is 409 `ticket_closed` (it can still be read).
+20 per minute, and a **daily budget per device** (1.0.0-rc.38, `PanelLimits::$chatPostsPerDayMax` = 500 posts and `$chatBytesPerDayMax` = 50 MiB of text plus decoded attachments, per UTC day).
+The call that would pass either gets 429 `rate_limited` with `Retry-After` set to the seconds until the next UTC midnight, **before** the gateway is called; a post that fails
+(validation, closed ticket, gateway error) does not spend any of it. The first refusal of each day writes one `Panel Chat Limit Reached` audit row. A closed ticket is 409 `ticket_closed` (it can still be read).
 
 ## Attachments
 
@@ -158,12 +171,22 @@ Every check is on the server and none trusts the client:
 - the extension must be on the allow-list (default `png jpg jpeg gif webp pdf txt log csv`; configuration can only narrow the built-in table) **and** no later dot-separated
   part of the name may be an executable, script or markup extension (`report.exe.png` is refused),
 - the declared content type must be the one that extension maps to,
-- the **magic bytes** must match (PNG, JPEG, GIF, WebP, PDF); text files must be valid UTF-8 without NUL or control characters, must not start with `#!`, and must not
-  contain HTML/script markup near the start,
+- the **magic bytes** must match (PNG, JPEG, GIF, WebP, PDF); text files (`txt`, `log`, `csv`) must be valid UTF-8 without NUL or control characters, must not start with `#!`, and must not
+  contain HTML/script markup **anywhere** (1.0.0-rc.38; it used to be the first 8 KiB),
+- a text file must not **begin with a spreadsheet formula character** (`=`, `+`, `-`, `@`, a tab or a carriage return, after an optional byte-order mark), and a CSV must not
+  have a cell that starts with `=` or looks like a function or DDE call (`+cmd|' /C calc'!A0`, `@SUM(`) (1.0.0-rc.38; a cell that merely contains `=` or `|`, or a negative number, is fine),
 - executables are recognised by content under any name (MZ, ELF, Mach-O, shebang), and ZIP and OLE containers (so Office documents, jar, apk, msi) are not accepted,
-- the stored filename is a sanitised basename (letters, digits, `. - _ ( ) [ ]` and space, at most 100 characters); the original name is never used as a path.
+- the stored filename is a sanitised basename (letters, digits, `. - _ ( ) [ ]` and space, at most 100 characters); the original name is never used as a path. A Windows
+  device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`..`COM9`, `LPT1`..`LPT9`, with or without an extension) and a name that starts with `-` are refused (1.0.0-rc.38).
 
 A rejected attachment answers 422 `attachment_rejected` (or 413 `too_large`) and creates nothing.
+
+### Serving attachments (what the gateway must do)
+
+Core never writes or serves a file; the gateway stores the bytes. Core checks the type but cannot look inside a PNG, GIF or PDF for active content (`GIF89a<script>`, a PDF with
+`/OpenAction /JavaScript` pass the magic-byte check). So the gateway must (1) store the bytes **outside the web root**, under a name it generates, (2) serve them only to an
+authorized staff user, as a **download**: `Content-Disposition: attachment`, `Content-Type` from its own table (never from the upload), `X-Content-Type-Options: nosniff`, and
+ideally from a cookie-less origin, never inline from the application origin, and (3) remember that a CSV opened in a spreadsheet is the remaining risk Core reduces but cannot remove.
 
 ## Text handling
 
@@ -180,7 +203,7 @@ Per device, through the edition's limiter closure (the same shape and Redis `Rat
 |---|---|---|
 | `panel_read` | 120 per 60 s | me, categories, ticket list, chat read |
 | `panel_create` | 10 per 60 s (and 50 per 24 h, `PanelLimits::$ticketsPerDayMax`) | create ticket |
-| `panel_chat` | 20 per 60 s | chat post |
+| `panel_chat` | 20 per 60 s (and 500 posts / 50 MiB per UTC day, `PanelLimits::$chatPostsPerDayMax` / `$chatBytesPerDayMax`, kept in `rmm_daily_budget`) | chat post |
 | `panel_authfail:<sha1 address>` | 30 per 60 s | failed credential checks per address (a valid call is not counted) |
 
 Enrollment is limited per address from the database (shared attempt log, salt `panel-enroll|`): 10 failures or 60 attempts per 600 s, then 429 with `Retry-After: 600`.
@@ -197,6 +220,7 @@ Enrollment is limited per address from the database (shared attempt log, salt `p
 | 401 | `expired` | the credential (365 d) or the enrollment token expired |
 | 403 | `forbidden` | enrollment token used up; device revoked/retired and not yet allowed to re-enroll |
 | 403 | `contact_invalid` | the contact this device belongs to was archived, deleted or moved to another client |
+| 403 | `client_invalid` | the client of this device no longer exists for the edition (deleted or archived) |
 | 403 | `client_level_disabled` | a client-level device while the client's setting is off |
 | 404 | `not_found` | unknown route, or a ticket that is missing **or outside this device's scope** (same answer) |
 | 405 | `method_not_allowed` | `Allow` lists the right methods |
@@ -214,7 +238,7 @@ Enrollment is limited per address from the database (shared attempt log, salt `p
 ## Audit
 
 Through the existing `RmmAuditInterface` (an edition maps it to its audit trail / `AuditChain`): `Panel Enrollment Token Created`, `Panel Enrollment Token Revoked`,
-`Panel Enrolled`, `Panel Enrollment Failed`, `Panel Ticket Created` (client, ticket id, device, contact or client-level, attachment count), `Panel Chat Posted`, `Panel Ticket Duplicate` (rare: a create outlived its 300 s reservation),
+`Panel Enrolled`, `Panel Enrollment Failed`, `Panel Ticket Created` (client, ticket id, device, contact or client-level, attachment count), `Panel Chat Posted`, `Panel Chat Limit Reached` (once per device and day), `Panel Ticket Duplicate` (rare: a create outlived its 300 s reservation),
 `Panel Device Revoked` (also written by the RMM revoke action when the row is a panel device), `Panel Setting Changed`. Ticket text, tokens and secrets are never put in an audit description.
 
 ## Threat model
@@ -224,12 +248,15 @@ Through the existing `RmmAuditInterface` (an edition maps it to its audit trail 
 | Stolen or guessed enrollment token | 160-bit secret, SHA-256 at rest, single use (atomic `UPDATE ... use_count < max_uses`), short TTL, revocable, constant-time compare, per-address attempt limit |
 | Stolen device credential | 256 bits, SHA-256 at rest, scoped to ONE client and at most one contact, no admin/technician right, revocable at once, expires after 365 d, per-device rate limits |
 | Client or contact spoofing | identity is read from the credential only; body/query values ignored |
-| Cross-client or cross-contact ticket access | every ticket is checked against the device's client and (contact match OR created by this device) in Core, after the gateway answers; a missing and a forbidden ticket are indistinguishable |
+| Cross-client or cross-contact ticket access | every ticket is checked against the device's client and (contact match OR created by this device **as the contact it is bound to now**) in Core, after the gateway answers; a missing and a forbidden ticket are indistinguishable |
+| A PC handed to another person (re-enrolled with the same install id) | the ledger is keyed to (device, contact): the new person sees none of the previous person's tickets or chat |
+| One enrolled device filling storage or the audit log through chat | per-minute limit, a per-device daily budget in posts and bytes charged before the gateway is called, one audit row per day for the refusals |
+| A leaked fleet token | client-level only, 72 h at most, capped uses, each device individually revocable and audited with its position in the count |
 | Using a panel token against the RMM API (command execution, jobs) or the reverse | different token shapes, `kind` checked on both sides, install ids and enrollment tokens not interchangeable |
 | Enumeration / brute force | 256-bit credentials, failure rate limit per address, uniform errors |
 | Malicious attachment | allow-list, magic bytes, executable and archive refusal, size and count caps, sanitised filename, never executed or served by Core |
 | Stored/reflected XSS, bidi spoofing | input stripped of invisible/bidi characters, output stripped of tags, `<` `>` entity-encoded |
-| Flooding / ticket spam | per-minute and per-day caps per device, body caps, pagination caps; an administrator can revoke the device |
+| Flooding / ticket spam | per-minute and per-day caps per device (tickets, and chat posts and bytes), body caps, pagination caps; an administrator can revoke the device |
 | Replay of a create after a dropped connection, or two concurrent retries | `client_request_id` reserved under a unique key before the gateway call: one ticket, however the retries interleave |
 | Leaver or moved contact | contact re-validated on every request (`contact_invalid`) |
 | Clock-skewed PC | no timestamps are accepted; `server_time` is returned |
@@ -238,8 +265,15 @@ Through the existing `RmmAuditInterface` (an edition maps it to its audit trail 
 Not covered here (edition responsibility): TLS termination and the trusted-proxy decision behind `RmmRequest::$secureTransport`, the web-server body-size limit for the
 panel routes, how the gateway escapes plain text into its own HTML, retention of the stored attachments, and malware scanning of attachments if wanted.
 
+## Time stamps
+
+Every `created_at` / `updated_at` the gateway returns must be **UTC**, written `Y-m-d H:i:s` or as ISO 8601 ending in `Z`; Core turns them into RFC 3339 `Z` for the panel.
+A gateway that stores local time and labels it UTC, or applies the UTC offset twice, makes the panel show tickets hours in the future or the past. Since 1.0.0-rc.38 the
+conformance kit checks it: a ticket or message created a moment ago must be within 120 s of `PanelTicketGatewayConformanceTestCase::now()` (the real clock unless the edition
+overrides it with its test clock).
+
 ## What an edition implements
 
 See [UPGRADING.md](../../UPGRADING.md) ("Adopting the RivetPanel API"): the `PanelTicketGatewayInterface` adapter (and the `PanelTicketGatewayConformanceTestCase` kit),
-the thin `api/v1/panel_*.php` wrappers, migration 0040 and the mirrored DDL (`Panel\Migration\PanelSchema`), the Deploy page that mints the enrollment token with an
+the thin `api/v1/panel_*.php` wrappers, migrations 0040 and 0041 and the mirrored DDL (`Panel\Migration\PanelSchema`, `Rmm\Migration\BudgetSchema`), the Deploy page that mints the enrollment token with an
 optional contact, and the per-client "allow tickets from client-level devices" setting.

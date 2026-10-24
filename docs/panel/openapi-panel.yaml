@@ -227,10 +227,10 @@ components:
       description: 'Credential or enrollment token not accepted: `code` is `invalid_token`, `revoked` or `expired`'
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
     ContactInvalid:
-      description: 'The contact this panel belongs to was archived, deleted or moved (`contact_invalid`)'
+      description: 'The contact this panel belongs to was archived, deleted or moved (`contact_invalid`), or its client no longer exists (`client_invalid`)'
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
     TicketsForbidden:
-      description: 'A client-level device while its client has not allowed tickets (`client_level_disabled`), or the contact is gone (`contact_invalid`)'
+      description: 'A client-level device while its client has not allowed tickets (`client_level_disabled`), or the contact is gone (`contact_invalid`), or the client is gone (`client_invalid`)'
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
     NotFound:
       description: 'The ticket does not exist or is outside this device''s scope (`not_found`, the same answer for both)'
@@ -264,7 +264,7 @@ components:
         error: {type: string}
         code:
           type: string
-          enum: [invalid_token, revoked, expired, forbidden, contact_invalid, client_level_disabled, not_found, invalid, attachment_rejected, too_large, rate_limited, method_not_allowed, tls_required, conflict, ticket_closed, request_in_progress, module_disabled, internal]
+          enum: [invalid_token, revoked, expired, forbidden, contact_invalid, client_invalid, client_level_disabled, not_found, invalid, attachment_rejected, too_large, rate_limited, method_not_allowed, tls_required, conflict, ticket_closed, request_in_progress, module_disabled, internal]
         server_time: {type: string, format: date-time}
     EnrollRequest:
       type: object
