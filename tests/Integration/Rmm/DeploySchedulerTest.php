@@ -292,4 +292,59 @@ final class DeploySchedulerTest extends DeployTestCase
         $this->assertGreaterThan(5, count($lines));
         $this->assertSame(403, $this->api('GET', ['software_report', 'csv'], new \RivetCore\Rmm\Authz\RmmPrincipal(99, 'Nobody'))[0]);
     }
+
+    /** rc.38 (security review RC36 M3): the software deployment scheduler leaves a device that is switched out of automation alone, for detection, install and uninstall. */
+    public function testDeviceAutomationDisabledStopsDetectionInstallAndUninstall(): void
+    {
+        $this->assign($this->pkg, 'client', $this->h->clientA);
+        $this->limits(['software_live_install' => 1]);
+        $ds = $this->h->module->deviceService();
+        $this->assertTrue($ds->setAutomationDisabled($this->dev, true, 1));
+        $r = $this->pass();
+        $this->assertSame(0, $r['deploy_evaluated'] + $r['deploy_detects_queued'] + $r['deploy_installs_queued'] + $r['deploy_dry_runs_queued'], json_encode($r));
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_jobs WHERE device_id = {$this->dev}"));
+        // enabled again: detection starts
+        $this->assertTrue($ds->setAutomationDisabled($this->dev, false, 1));
+        $this->assertSame(1, $this->pass()['deploy_detects_queued']);
+        $this->detectMissing($this->tok, $this->pkg);
+        // detected as missing, then switched off: no dry run, no live install
+        $this->assertTrue($ds->setAutomationDisabled($this->dev, true, 1));
+        $r = $this->pass();
+        $this->assertSame(0, $r['deploy_installs_queued'] + $r['deploy_dry_runs_queued'], json_encode($r));
+        $this->assertSame(0, $this->installJobs());
+        $this->assertTrue($ds->setAutomationDisabled($this->dev, false, 1));
+        $this->assertSame(1, $this->pass()['deploy_installs_queued'], 'and it continues where it stopped');
+        // an uninstall by assignment is held back the same way
+        $this->finishInstalled();
+        $this->h->q('DELETE FROM rmm_package_assignments');
+        $this->assign($this->pkg, 'client', $this->h->clientA, 'uninstall');
+        $this->assertTrue($ds->setAutomationDisabled($this->dev, true, 1));
+        $this->pass();
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_package_jobs WHERE action = 'uninstall'"));
+    }
+
+    private function finishInstalled(): void
+    {
+        $job = $this->offeredOne($this->tok, 'software_install');
+        $this->report($this->tok, $job, 'succeeded', self::installOut('installed'));
+        $this->h->q("UPDATE rmm_package_installs SET installed = 1, satisfied = 1, detected_at = UTC_TIMESTAMP() WHERE device_id = {$this->dev}");
+    }
+
+    public function testTurningTheSwitchOnCancelsQueuedSchedulerJobsButNotAManualInstall(): void
+    {
+        $this->assign($this->pkg, 'client', $this->h->clientA);
+        $this->pass();
+        $this->detectMissing($this->tok, $this->pkg);
+        $this->pass();   // a scheduler dry run is queued
+        $queued = $this->h->rows("SELECT j.job_id FROM rmm_package_jobs p JOIN endpoint_agent_jobs j ON j.job_id = p.job_id WHERE p.source = 'scheduler' AND j.state = 'queued'");
+        $this->assertCount(1, $queued);
+        // a technician's own manual detection on the same device stays
+        $dev = $this->h->module->devices()->find($this->dev);
+        $m = $this->h->module->deployService()->queueDetect($dev, 5, 'manual');
+        $this->assertTrue($m['ok'] && !isset($m['skipped']), json_encode($m));
+        $this->assertTrue($this->h->module->deviceService()->setAutomationDisabled($this->dev, true, 5));
+        $this->assertSame('cancelled', $this->h->one("SELECT state FROM endpoint_agent_jobs WHERE job_id = '{$queued[0]['job_id']}'"));
+        $this->assertSame('automation_disabled', $this->h->one("SELECT reason FROM endpoint_agent_jobs WHERE job_id = '{$queued[0]['job_id']}'"));
+        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_jobs j JOIN rmm_package_jobs p ON p.job_id = j.job_id WHERE p.source = 'manual' AND j.state = 'queued'"));
+    }
 }

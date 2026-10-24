@@ -105,6 +105,53 @@ final class SchedulesTest extends AutomationTestCase
         $this->assertCount(1, $this->jobs($this->d2));
     }
 
+    /** rc.38 (security review RC36 M3): the switch is retroactive for what automation queued, leaves a technician's own run alone, and is audited either way. */
+    public function testTurningAutomationOffCancelsQueuedScheduledJobsKeepsAManualRunAndAuditsBothFlips(): void
+    {
+        $this->schedule();
+        $this->hk();   // one scheduled job on each of d1 and d2
+        $manual = $this->h->module->scriptActions()->runOnDevice($this->tech, $this->d1, ['library_script_id' => $this->script['script_id']]);
+        $this->assertTrue($manual->ok, $manual->message);
+        $this->assertCount(2, $this->jobs($this->d1));
+        $running = $this->jobs($this->d2)[0]['job_id'];
+        $this->h->q("UPDATE endpoint_agent_jobs SET state = 'running' WHERE job_id = '$running'");
+        $ds = $this->h->module->deviceService();
+
+        $this->assertTrue($ds->setAutomationDisabled($this->d1, true, 77));
+        $this->assertTrue($ds->setAutomationDisabled($this->d2, true, 77));
+        $states = array_column($this->h->rows("SELECT j.state, j.reason, (e.schedule_id IS NOT NULL AND e.schedule_id > 0) AS sched FROM endpoint_agent_jobs j JOIN rmm_job_extra e ON e.job_id = j.job_id WHERE j.device_id = {$this->d1} ORDER BY j.created_at, j.job_id"), null);
+        $byKind = [];
+        foreach ($states as $r) {
+            $byKind[(int) $r['sched']] = [$r['state'], $r['reason']];
+        }
+        $this->assertSame(['cancelled', 'automation_disabled'], $byKind[1], 'the scheduled job was cancelled');
+        $this->assertSame('queued', $byKind[0][0], "a technician's deliberate run stays queued");
+        $this->assertSame('running', $this->h->one("SELECT state FROM endpoint_agent_jobs WHERE job_id = '$running'"), 'a job that already started is not touched');
+
+        $disabled = array_values(array_filter($this->h->audit->records(), static fn (array $r): bool => $r['action'] === 'Device Automation Disabled'));
+        $this->assertCount(2, $disabled);
+        $this->assertStringContainsString('user 77', $disabled[0]['description']);
+        $this->assertStringContainsString('1 queued automated job(s) cancelled', $disabled[0]['description']);
+        // the same value again changes nothing and writes nothing
+        $this->assertTrue($ds->setAutomationDisabled($this->d1, true, 77));
+        $this->assertCount(2, array_filter($this->h->audit->records(), static fn (array $r): bool => $r['action'] === 'Device Automation Disabled'));
+        // and the way back is audited too
+        $this->assertTrue($ds->setAutomationDisabled($this->d1, false, 77));
+        $enabled = array_values(array_filter($this->h->audit->records(), static fn (array $r): bool => $r['action'] === 'Device Automation Enabled'));
+        $this->assertCount(1, $enabled);
+        $this->assertStringContainsString('user 77', $enabled[0]['description']);
+        $this->assertFalse($ds->setAutomationDisabled(999999, true, 77));
+    }
+
+    public function testTheTechnicianActionPassesTheUserToTheAuditRow(): void
+    {
+        $r = $this->h->module->technician()->setAutomationDisabled($this->admin, $this->d1, true);
+        $this->assertTrue($r->ok, $r->message);
+        $row = array_values(array_filter($this->h->audit->records(), static fn (array $x): bool => $x['action'] === 'Device Automation Disabled'));
+        $this->assertCount(1, $row);
+        $this->assertStringContainsString('user 1', $row[0]['description']);
+    }
+
     public function testAnIdempotencyKeyStopsAReplayedSlot(): void
     {
         $s = $this->schedule();

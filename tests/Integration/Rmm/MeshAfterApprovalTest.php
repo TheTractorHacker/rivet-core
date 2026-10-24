@@ -219,4 +219,18 @@ final class MeshAfterApprovalTest extends RemoteTestCase
         $this->assertSame([], $this->jobs($d));
         $this->assertSame('Mesh agent: installed', $this->line($d));
     }
+
+    /** rc.38 (security review RC36 M3): the Mesh install after approval is automation too and waits while the device is switched out of it. */
+    public function testDeviceAutomationDisabledHoldsBackTheMeshInstallUntilItIsTurnedOffAgain(): void
+    {
+        [$d, $tok] = $this->enrollDevice($this->issue(), 'H1', false);
+        $this->announce($tok, self::caps());
+        $this->assertTrue($this->h->module->deviceService()->setAutomationDisabled($d, true, 1));
+        $this->approve($d);
+        $this->announce($tok, self::caps());
+        $this->assertSame([], $this->jobs($d), 'nothing is pushed to a device another tool manages');
+        $this->assertTrue($this->h->module->deviceService()->setAutomationDisabled($d, false, 1));
+        $this->announce($tok, self::caps());
+        $this->assertCount(1, $this->jobs($d), 'and the plan goes on once it is turned off again');
+    }
 }

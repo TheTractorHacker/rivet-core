@@ -452,6 +452,42 @@ final class AutoInstallTest extends DeployTestCase
         $this->assertSame('skipped', $this->apps($d2)[0]['status']);
     }
 
+    /** rc.38 (security review RC36 M3): a device switched out of automation gets no auto-install, and an approval for one planned by automation does not queue it either. */
+    public function testDeviceAutomationDisabledHoldsBackTheAutoInstallAndAnApprovalForIt(): void
+    {
+        $p = $this->edr();
+        $this->assertSame(200, $this->auto($p, ['scope' => 'all'])[0]);
+        $this->limits(['software_live_install' => 1]);
+        [$dev, $tok] = $this->enrollNew('W-HELD');
+        $ds = $this->h->module->deviceService();
+        $this->assertTrue($ds->setAutomationDisabled($dev, true, 1));
+        $r = $this->pass();
+        $this->assertSame(0, $r['autoinstall_queued'] + $r['autoinstall_dry_runs'] + $r['autoinstall_approvals'], json_encode($r));
+        $this->assertNull($this->jobOf($tok, $dev));
+        $this->assertSame('queued', $this->apps($dev)[0]['status'], 'the plan waits');
+        $this->assertTrue($ds->setAutomationDisabled($dev, false, 1));
+        $this->pass();
+        $job = $this->jobOf($tok, $dev);
+        $this->assertNotNull($job, 're-enabled: the plan goes on');
+        $this->finish($tok, $job);
+
+        // a two-person app waiting for its second person when the switch is flipped is not queued by the approval
+        $this->assertSame(200, $this->auto($p, ['scope' => 'off'])[0]);
+        $two = $this->package('Two', true);
+        $this->exe($two);
+        $this->param($two, 'account_key', self::ACCT);
+        $this->param($two, 'org_key', self::ORG);
+        [$d2, $t2] = $this->enrollNew('W-HELD-2P', $this->installerToken([$two]));
+        $this->pass();
+        $ap = (int) $this->h->one("SELECT approval_id FROM rmm_approvals WHERE kind = 'software' ORDER BY approval_id DESC LIMIT 1");
+        $this->assertTrue($ds->setAutomationDisabled($d2, true, 1));
+        [$c, $j] = $this->api('POST', ['approvals', (string) $ap, 'approve'], $this->second);
+        $this->assertSame(200, $c, json_encode($j));
+        $this->assertNull($this->jobOf($t2, $d2), 'the approval did not queue it on a device that automation leaves alone');
+        $this->assertSame('queued', $this->apps($d2)[0]['status']);
+        $this->assertStringContainsString('paused', $this->apps($d2)[0]['reason']);
+    }
+
     // ------------------------------------------------------------------ authorization
 
     /** rc.31 review F6: a client-restricted reader does not learn other clients' ids from the policy targets or the parameter scopes. */

@@ -102,6 +102,9 @@ final class MeshAfterApproval
         if ((string) $dev['link_state'] !== 'linked' || empty($dev['asset_id'])) {
             return;   // still waiting for approval
         }
+        if ((int) ($dev['device_automation_disabled'] ?? 0) === 1) {
+            return;   // another tool manages this device (rc.38): the plan waits, and goes on if the switch is turned off again
+        }
         if (!$this->settings->featureOn(\RivetCore\Rmm\Remote\RemoteProtocol::FEATURE_REMOTE_TOOLS)) {
             $this->finish($row, 'skipped', 'skipped: remote tools are off', $dev);
 

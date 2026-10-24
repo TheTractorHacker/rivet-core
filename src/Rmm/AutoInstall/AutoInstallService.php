@@ -347,7 +347,7 @@ final class AutoInstallService
         }
         $rows = $this->sql->all("SELECT d.* FROM endpoint_agent_devices d
             JOIN rmm_device_state st ON st.device_id = d.device_id AND st.capabilities_json LIKE '%\"software:install\"%'
-            WHERE d.link_state = 'linked' AND d.revoked_at IS NULL AND d.retired_at IS NULL AND d.last_checkin_at > ?
+            WHERE d.link_state = 'linked' AND d.revoked_at IS NULL AND d.retired_at IS NULL AND d.device_automation_disabled = 0 AND d.last_checkin_at > ?
               AND EXISTS (SELECT 1 FROM rmm_device_apps a WHERE a.device_id = d.device_id AND a.status = 'queued')
               AND NOT EXISTS (SELECT 1 FROM rmm_device_apps a WHERE a.device_id = d.device_id AND a.status IN ('installing','approval'))
             ORDER BY d.device_id LIMIT " . max(1, $batch), [$this->sql->utcAt(-$offline)]);

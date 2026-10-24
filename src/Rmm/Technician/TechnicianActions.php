@@ -291,7 +291,7 @@ final class TechnicianActions
     /** The "another tool already manages this device" switch (see DeviceService::setAutomationDisabled()). */
     public function setAutomationDisabled(RmmPrincipal $who, int $deviceId, bool $disabled): ActionResult
     {
-        return $this->manage($who, $deviceId, fn (): ActionResult => $this->deviceService->setAutomationDisabled($deviceId, $disabled)
+        return $this->manage($who, $deviceId, fn (): ActionResult => $this->deviceService->setAutomationDisabled($deviceId, $disabled, $who->userId)
             ? ActionResult::ok($disabled ? 'Automation disabled for this device.' : 'Automation re-enabled for this device.')
             : ActionResult::fail(404, 'not_found', 'Device not found.'));
     }

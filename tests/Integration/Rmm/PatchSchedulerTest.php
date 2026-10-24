@@ -151,6 +151,19 @@ final class PatchSchedulerTest extends PatchTestCase
         $this->assertSame(1, $r['patch_installs_queued'], 're-enabling it lets the scheduler install the already-approved update');
     }
 
+    /** rc.38 (security review RC36 M3): turning the switch on recalls a patch install the scheduler had already queued. */
+    public function testDeviceAutomationDisabledCancelsAQueuedSchedulerPatchInstall(): void
+    {
+        $this->approvedUpdate();
+        $this->policy(['install_enabled' => true]);
+        $this->limits(['patch_live_install' => 1]);
+        $this->assertSame(1, $this->pass()['patch_installs_queued']);
+        $jobId = (string) $this->h->one("SELECT job_id FROM rmm_patch_jobs WHERE source = 'scheduler' AND mode = 'install'");
+        $this->assertSame('queued', $this->h->one("SELECT state FROM endpoint_agent_jobs WHERE job_id = '$jobId'"));
+        $this->assertTrue($this->h->module->deviceService()->setAutomationDisabled($this->dev, true, 1));
+        $this->assertSame(['cancelled', 'automation_disabled'], array_values((array) $this->h->rows("SELECT state, reason FROM endpoint_agent_jobs WHERE job_id = '$jobId'")[0]));
+    }
+
     public function testADeclinedOrUnapprovedUpdateIsNeverScheduled(): void
     {
         $this->scanWith($this->dev, $this->tok, self::winScan([self::WIN_KB => ['security', 'A'], self::WIN_KB2 => ['security', 'B']]));

@@ -70,6 +70,12 @@ final class DeployApprovalService
             $action = $request['action'] ?? '';
             if ($dev === null || $v === null || !is_string($action) || !in_array($action, DeployProtocol::ACTIONS, true)) {
                 $out['reason'] = 'gone';
+            } elseif ((int) ($dev['device_automation_disabled'] ?? 0) === 1 && $this->waitingForAutoInstall((int) $dev['device_id'], (int) $v['package_id'])) {
+                // rc.38: the second person approved an app that AUTOMATION planned for this device, and the device has since been switched out of automation. A
+                // technician's own deliberate run (no auto-install plan behind it) is not held back.
+                $this->sql->run("UPDATE rmm_device_apps SET status = 'queued', reason = ?, updated_at = ? WHERE device_id = ? AND package_id = ? AND status = 'approval'",
+                    ['paused: automation is switched off for this device', $this->sql->utcNow(), (int) $dev['device_id'], (int) $v['package_id']]);
+                $out['reason'] = 'automation_disabled';
             } else {
                 $mins = is_int($request['max_minutes'] ?? null) ? $request['max_minutes'] : DeployProtocol::MAX_MINUTES_DEFAULT;
                 $r = $this->service->queueInstall($dev, $v, $action, 'run', ['source' => 'manual', 'user_id' => (int) $approval['requested_by'], 'max_minutes' => $mins]);
@@ -84,6 +90,12 @@ final class DeployApprovalService
         $this->approvals->recordResult($approvalId, $out);
 
         return $out;
+    }
+
+    /** An auto-install plan row of this device and package that is waiting for exactly this kind of approval. */
+    private function waitingForAutoInstall(int $deviceId, int $packageId): bool
+    {
+        return $this->sql->one("SELECT 1 AS x FROM rmm_device_apps WHERE device_id = ? AND package_id = ? AND status = 'approval'", [$deviceId, $packageId]) !== null;
     }
 
     /**

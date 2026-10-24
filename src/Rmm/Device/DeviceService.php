@@ -171,18 +171,62 @@ final class DeviceService
 
     /**
      * device_automation_disabled (1.0.0-rc.31): for a device another tool already manages (a second RMM/patch
-     * agent), so RivetCore's own scheduled scripts and patch installs never fire on it - see
-     * {@see \RivetCore\Rmm\Scripts\TargetResolver} and {@see \RivetCore\Rmm\Patch\PatchScheduler::queueInstalls()}.
-     * Monitoring, inventory, patch scanning and a technician's own deliberate "run now" are unaffected.
-     * False for a device that does not exist.
+     * agent), so RivetCore's own automation never fires on it: scheduled and policy scripts and patch installs
+     * ({@see \RivetCore\Rmm\Scripts\TargetResolver}, {@see \RivetCore\Rmm\Patch\PatchScheduler::queueInstalls()}), and since 1.0.0-rc.38 also the software
+     * deployment scheduler (detection, install and uninstall by assignment), the enrollment auto-install and the Mesh install after approval.
+     * Monitoring, inventory, patch scanning and a technician's own deliberate "run now" on one device are unaffected.
+     *
+     * rc.38 (security review RC36 M3): turning the switch ON also cancels the jobs that automation already queued for the device
+     * (see {@see cancelAutomatedQueued()}), and every flip, either way, writes an audit row naming the user. Setting the value it already has changes
+     * nothing and writes nothing. False for a device that does not exist.
+     *
+     * @param int|null $userId who flipped it (for the audit row); null when unknown
      */
-    public function setAutomationDisabled(int $deviceId, bool $disabled): bool
+    public function setAutomationDisabled(int $deviceId, bool $disabled, ?int $userId = null): bool
     {
-        if ($this->devices->find($deviceId) === null) {
+        $dev = $this->devices->find($deviceId);
+        if ($dev === null) {
             return false;
         }
+        $was = (int) ($dev['device_automation_disabled'] ?? 0) === 1;
         $this->sql->run('UPDATE endpoint_agent_devices SET device_automation_disabled = ? WHERE device_id = ?', [$disabled ? 1 : 0, $deviceId]);
+        if ($was === $disabled) {
+            return true;
+        }
+        $by = $userId === null ? 'an administrator' : "user $userId";
+        if ($disabled) {
+            $n = $this->cancelAutomatedQueued($deviceId);
+            $this->audit->record('Device Automation Disabled', "Automation disabled for device $deviceId by $by: scheduled scripts, patch installs and software deployment no longer run on it" . ($n > 0 ? "; $n queued automated job(s) cancelled" : ''),
+                (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+        } else {
+            $this->audit->record('Device Automation Enabled', "Automation re-enabled for device $deviceId by $by", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+        }
 
         return true;
+    }
+
+    /**
+     * Cancel the jobs of this device that are still `queued` and were queued by automation: a scheduled script run (a schedule id on the job), a software install,
+     * uninstall or detect from the deployment scheduler or the enrollment auto-install, a patch install from the patch scheduler. A job a technician queued on purpose
+     * (single run, bulk run, manual software or patch action, an approved run) stays. A job already `running` is not touched. Returns how many were cancelled.
+     */
+    private function cancelAutomatedQueued(int $deviceId): int
+    {
+        $now = $this->sql->utcNow();
+        $total = 0;
+        foreach ([
+            'SELECT job_id FROM rmm_job_extra WHERE device_id = ? AND schedule_id IS NOT NULL AND schedule_id > 0',
+            "SELECT job_id FROM rmm_package_jobs WHERE device_id = ? AND source IN ('scheduler','autoinstall')",
+            "SELECT job_id FROM rmm_patch_jobs WHERE device_id = ? AND source = 'scheduler'",
+        ] as $select) {
+            try {
+                $total += $this->sql->run("UPDATE endpoint_agent_jobs SET state = 'cancelled', reason = 'automation_disabled', finished_at = ? WHERE device_id = ? AND state = 'queued' AND job_id IN ($select)",
+                    [$now, $deviceId, $deviceId]);
+            } catch (\Throwable) {
+                // a module whose table does not exist on this install has queued nothing to cancel
+            }
+        }
+
+        return $total;
     }
 }
