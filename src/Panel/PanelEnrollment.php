@@ -37,24 +37,34 @@ final class PanelEnrollment
 
     /**
      * Mint an enrollment token: single use by default (one machine), or a capped multi-use "fleet" token for a mass deployment
-     * (an RMM push of one installer to many PCs). A fleet token is short-lived, scoped to one client (and optionally one contact),
-     * and every device it enrolls is still individually revocable.
+     * (an RMM push of one installer to many PCs). A fleet token is short-lived (at most {@see PanelProtocol::FLEET_TOKEN_MAX_TTL_H} hours,
+     * whatever `enrollMaxTtlH` allows a single-use token), scoped to one client, and every device it enrolls is still individually revocable
+     * and audited with its position in the token's count.
      *
-     * @param int|null $contactId the person this panel belongs to; null = a client-level device
+     * A fleet token must be CLIENT-LEVEL: every machine it enrolls would otherwise be bound to the same person, and a leaked fleet token
+     * would then open that person's tickets and chat on any machine (security review RC36). Combining `$maxUses` > 1 with a contact is refused.
+     *
+     * @param int|null $contactId the person this panel belongs to; null = a client-level device (required for a fleet token)
      * @param int $maxUses machines this token may enrol (1 = single use), clamped to 1..PanelLimits::$enrollMaxUses
      * @return array{token_id:int,token:string,expires_at:string} the plaintext token is shown once and never stored
-     * @throws \InvalidArgumentException when the client does not exist or the contact is not an active contact of the client
+     * @throws \InvalidArgumentException when the client does not exist, the contact is not an active contact of the client, or a fleet token is asked for with a contact
      */
     public function createToken(int $clientId, ?int $contactId, int $ttlHours, string $label, int $userId, int $maxUses = 1): array
     {
         if ($this->tenancy->clientName($clientId) === null) {
             throw new \InvalidArgumentException('Choose the client the panel belongs to.');
         }
+        if ($maxUses > 1 && $contactId !== null) {
+            throw new \InvalidArgumentException('A token for more than one machine must be client-level (no contact): it would bind every machine to the same person.');
+        }
         if ($contactId !== null && $this->gateway->contact($contactId, $clientId) === null) {
             throw new \InvalidArgumentException('That contact does not belong to this client.');
         }
         $ttlHours = max(1, min($ttlHours > 0 ? $ttlHours : PanelProtocol::ENROLL_DEFAULT_TTL_H, $this->limits->enrollMaxTtlH));
         $maxUses = max(1, min($maxUses, $this->limits->enrollMaxUses));
+        if ($maxUses > 1) {
+            $ttlHours = min($ttlHours, PanelProtocol::FLEET_TOKEN_MAX_TTL_H);
+        }
         $selector = bin2hex(random_bytes(6));
         $secret = bin2hex(random_bytes(20));
         $expires = $this->sql->utcAt($ttlHours * 3600);
@@ -118,6 +128,7 @@ final class PanelEnrollment
         }
 
         try {
+            /** @var array{device_id:int,device_token:string,event:string,use_count:int} $result */
             $result = $this->sql->transaction(function () use ($d, $token, $ip): array {
                 $now = $this->sql->utcNow();
                 $used = $this->sql->run('UPDATE endpoint_agent_enrollment_tokens SET use_count = use_count + 1, last_used_at = ?
@@ -126,7 +137,10 @@ final class PanelEnrollment
                     throw new ApiError(403, 'forbidden', self::EXHAUSTED);
                 }
 
-                return $this->placeDevice($d, $token, $ip);
+                $placed = $this->placeDevice($d, $token, $ip);
+                $placed['use_count'] = (int) $this->sql->val('SELECT use_count FROM endpoint_agent_enrollment_tokens WHERE token_id = ?', [$token['token_id']]);
+
+                return $placed;
             });
         } catch (ApiError $e) {
             $this->recordAttempt($ip, false, $e->errCode === 'forbidden' && $e->getMessage() === self::EXHAUSTED ? 'exhausted' : $e->errCode, $selector);
@@ -134,7 +148,8 @@ final class PanelEnrollment
         }
         $this->recordAttempt($ip, true, $result['event'], $selector);
         $this->audit->record('Panel Enrolled', 'Panel device ' . $result['device_id'] . ' (' . $d['hostname'] . ') ' . $result['event'] . ' with token ' . $selector
-            . ($contactId !== null ? ", contact $contactId" : ', client-level'), $clientId, (int) $result['device_id']);
+            . ($contactId !== null ? ", contact $contactId" : ', client-level')
+            . ((int) $token['max_uses'] > 1 ? ', fleet token: device ' . $result['use_count'] . ' of ' . (int) $token['max_uses'] : ''), $clientId, (int) $result['device_id']);
 
         $allow = $contactId !== null || $this->settings->allowClientLevelTickets($clientId);
 

@@ -40,8 +40,7 @@ final class PanelEnrollmentTest extends PanelTestCase
 
     public function testAFleetTokenEnrolsUpToItsCapAndEachDeviceGetsItsOwnCredential(): void
     {
-        $contact = $this->p->gateway->addClientContact($this->p->clientA, 'Jane Doe');
-        $tok = $this->p->mint($this->p->clientA, $contact, 24, 3);
+        $tok = $this->p->mint($this->p->clientA, null, 24, 3);   // a fleet token is client-level since rc.38
         $creds = [];
         for ($i = 0; $i < 3; $i++) {
             [$c, , $j] = $this->p->enroll($tok['token']);
@@ -266,5 +265,54 @@ final class PanelEnrollmentTest extends PanelTestCase
         $this->assertCount(1, $this->p->module->admin()->tokens($this->p->clientB));
         $this->assertSame(1, $this->p->module->admin()->tokens($this->p->clientB)[0]['use_count']);
         $this->assertSame([], $this->p->module->admin()->devices(424242));
+    }
+
+    /** rc.38 (security review RC36): fleet tokens. */
+    public function testAFleetTokenWithAContactIsRefusedAndNothingIsStored(): void
+    {
+        $contact = $this->p->gateway->addClientContact($this->p->clientA, 'Jane Doe');
+        try {
+            $this->p->mint($this->p->clientA, $contact, 24, 2);
+            $this->fail('expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('client-level', $e->getMessage());
+        }
+        $this->assertSame(0, (int) $this->p->rmm->one('SELECT COUNT(*) FROM endpoint_agent_enrollment_tokens'));
+        // a single-use token with a contact, and a fleet token without one, are both fine
+        $this->assertGreaterThan(0, $this->p->mint($this->p->clientA, $contact, 24, 1)['token_id']);
+        $this->assertGreaterThan(0, $this->p->mint($this->p->clientA, null, 24, 5)['token_id']);
+        // the guard looks at the requested count, so a count that is only clamped later does not slip a contact in
+        $this->expectException(\InvalidArgumentException::class);
+        $this->p->mint($this->p->clientA, $contact, 24, 1000000);
+    }
+
+    public function testAFleetTokenLivesAtMostSeventyTwoHoursWhateverTheLimitIsAndASingleUseTokenKeepsTheLimit(): void
+    {
+        $h = new \RivetCore\Tests\Support\PanelHarness(['limits' => ['enrollMaxTtlH' => 24 * 14]]);
+        $now = $h->rmm->clock->now()->getTimestamp();
+        $hours = static fn (array $t): int => (int) round((\RivetCore\Rmm\Support\Sql::ts($t['expires_at']) - $now) / 3600);
+        $this->assertSame(72, $hours($h->mint($h->clientA, null, 24 * 10, 50)), 'ten days asked for a fleet token');
+        $this->assertSame(72, $hours($h->mint($h->clientA, null, 72, 2)));
+        $this->assertSame(24, $hours($h->mint($h->clientA, null, 24, 2)), 'a shorter ask is kept');
+        $this->assertSame(1, $hours($h->mint($h->clientA, null, 1, 500)));
+        $this->assertSame(24 * 10, $hours($h->mint($h->clientA, null, 24 * 10, 1)), 'a single-use token may use the configured limit');
+        $this->assertSame(24 * 14, $hours($h->mint($h->clientA, null, 24 * 30, 1)));
+    }
+
+    public function testEachEnrolmentOfAFleetTokenAuditsItsPositionInTheCount(): void
+    {
+        $tok = $this->p->mint($this->p->clientA, null, 24, 3);
+        for ($i = 0; $i < 3; $i++) {
+            $this->assertSame(201, $this->p->enroll($tok['token'])[0]);
+        }
+        $rows = array_values(array_filter($this->p->rmm->audit->records(), static fn (array $r): bool => $r['action'] === 'Panel Enrolled'));
+        $this->assertCount(3, $rows);
+        foreach ([1, 2, 3] as $i => $n) {
+            $this->assertStringContainsString("fleet token: device $n of 3", $rows[$i]['description']);
+        }
+        // a single-use token's row does not mention a fleet
+        $this->p->enroll($this->p->mint()['token']);
+        $last = array_values(array_filter($this->p->rmm->audit->records(), static fn (array $r): bool => $r['action'] === 'Panel Enrolled'))[3];
+        $this->assertStringNotContainsString('fleet', $last['description']);
     }
 }

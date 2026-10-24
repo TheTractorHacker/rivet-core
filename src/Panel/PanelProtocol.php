@@ -35,6 +35,8 @@ final class PanelProtocol
 
     public const ENROLL_DEFAULT_TTL_H = 24;
     public const ENROLL_MAX_TTL_H = 72;
+    /** @internal the longest a multi-use (fleet) enrollment token lives, whatever {@see PanelLimits::$enrollMaxTtlH} says (1.0.0-rc.38) */
+    public const FLEET_TOKEN_MAX_TTL_H = 72;
     public const ENROLL_MAX_BODY = 8192;
     public const ENROLL_RATE_SALT = 'panel-enroll|';
     public const ENROLL_RATE_WINDOW_S = 600;
