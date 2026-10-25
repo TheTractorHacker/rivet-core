@@ -281,6 +281,23 @@ final class PostgresConnectionTest extends TestCase
         @rmdir($dir);
     }
 
+    public function testAPlantedFarFutureStateFileCannotHoldTheBreakerOpenLongerThanOneWindow(): void
+    {
+        $dir = sys_get_temp_dir() . '/rc_breaker_' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        $now = 1000.0;
+        $id = 'planted-' . bin2hex(random_bytes(4));
+        $b = new CircuitBreakerConnection($this->db, $id, 15, $dir, function () use (&$now): float {
+            return $now;
+        });
+        file_put_contents($dir . '/rivetcore-pg-breaker-' . substr(hash('sha256', $id), 0, 24), (string) ($now + 999999));
+        $this->assertLessThanOrEqual(15.0, $b->openFor(), 'a value far in the future is cut to one window');
+        $this->assertGreaterThan(0.0, $b->openFor());
+        $b->reset();
+        $this->assertSame(0.0, $b->openFor());
+        @rmdir($dir);
+    }
+
     public function testAStatementErrorDoesNotOpenTheBreaker(): void
     {
         $dir = sys_get_temp_dir() . '/rc_breaker_' . bin2hex(random_bytes(4));

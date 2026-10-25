@@ -95,19 +95,20 @@ final class PostgresPayloadTest extends TestCase
         }
     }
 
-    public function testBytesPostgresCannotStoreAreRefusedWithAClearError(): void
+    public function testBytesPostgresCannotStoreAreReplacedAndTheRestOfTheBatchIsKept(): void
     {
         $store = new PostgresLogStore($this->db);
-        foreach (["bad\0byte", "bad\xC3\x28utf8"] as $i => $msg) {
-            try {
-                $store->admit(1, [['ts' => 1_800_000_000, 'level' => 4, 'source' => 'S', 'code' => null, 'message' => $msg, 'hash' => $this->hash("bad$i")]], self::CAPS, 1_800_000_010, 0, 0, 1);
-                $this->fail('refused');
-            } catch (\Throwable $e) {
-                $this->assertTrue($e instanceof PostgresQueryException || $e instanceof \ValueError || $e instanceof \PDOException || $e instanceof \RivetCore\Database\DatabaseException, get_class($e));
-                $this->assertStringNotContainsString('bad', $e->getMessage(), 'the offending value is not echoed');
-            }
+        $entries = [];
+        foreach (["bad\0byte", "bad\xC3\x28utf8", 'fine'] as $i => $msg) {
+            $entries[] = ['ts' => 1_800_000_000 + $i, 'level' => 4, 'source' => 'S', 'code' => null, 'message' => $msg, 'hash' => $this->hash("bad$i")];
         }
-        $this->assertSame(0, (int) $this->db->value('SELECT COUNT(*) FROM endpoint_agent_log_events'));
+        $this->assertSame(3, $store->admit(1, $entries, self::CAPS, 1_800_000_010, 0, 0, 1)['inserted'], 'one odd entry does not cost the batch');
+        $got = array_column($store->search(new LogCriteria('2027-01-01 00:00:00', '2030-01-01 00:00:00'), 10, 0)['rows'], 'message');
+        $this->assertSame(["fine", "bad?(utf8", "bad\u{FFFD}byte"], $got, 'NUL becomes U+FFFD, an invalid sequence "?", everything else is kept');
+        // the same through the other text paths
+        $h = new PostgresCheckHistoryStore($this->db);
+        $h->append(1, [['key' => 'k', 'status' => 'ok', 'detail' => "a\0b", 'at' => '2027-01-01 00:00:00']]);
+        $this->assertSame("a\u{FFFD}b", $h->since(1, 'k', '2026-01-01 00:00:00', 5)[0]['detail']);
     }
 
     public function testTimesRoundTripAsUtcWallClockAcrossTheOddDates(): void

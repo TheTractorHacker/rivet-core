@@ -49,6 +49,18 @@ try {
                 ++$out['inserted'];
             }
             break;
+        case 'spread':
+            // distinct series (one row each) plus one series upserted over and over, for as long as `count` says
+            $store = new PostgresMetricStore($db, new MutableClock());
+            for ($i = 0; $i < $a['count']; ++$i) {
+                $store->ingest([
+                    ['asset_id' => $a['base'] + $i, 'key' => 'cpu.utilization', 'instance' => null, 'value' => 10, 'at' => new DateTimeImmutable('@' . $a['at']), 'label' => null],
+                    ['asset_id' => $a['base'], 'key' => 'memory.utilization', 'instance' => 'same', 'value' => 20, 'at' => new DateTimeImmutable('@' . $a['at']), 'label' => null],
+                ], 1);
+                ++$out['inserted'];
+                usleep(2000);
+            }
+            break;
         default:
             $out['errors'][] = 'unknown job';
     }

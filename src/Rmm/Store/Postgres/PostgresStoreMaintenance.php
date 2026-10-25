@@ -179,8 +179,8 @@ final class PostgresStoreMaintenance implements StoreMaintenance
             $this->ddl('DROP TABLE ' . self::ident($p['name']));
             ++$res['dropped'];
         }
-        // rows that arrived after the last partition (or before the first) wait in the DEFAULT partition: expire them like the others
-        $this->db->execute("DELETE FROM {$table}_default WHERE $col < ?", [PostgresSql::utc($cutoff)]);
+        // rows that arrived after the last partition (or before the first) wait in the DEFAULT partition: expire them like the others, and with the same guard
+        $this->db->execute("DELETE FROM {$table}_default WHERE $col < ?", [PostgresSql::utc($guardTs === null ? $cutoff : min($cutoff, $guardTs))]);
         $res['status'] = 'ok';
     }
 
@@ -216,8 +216,11 @@ final class PostgresStoreMaintenance implements StoreMaintenance
             $this->db->execute("SET LOCAL lock_timeout = '" . self::LOCK_TIMEOUT . "'");
             $n = self::ident($name);
             $this->db->execute("CREATE TABLE $n (LIKE $table INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES)");
-            $this->db->execute("INSERT INTO $n SELECT * FROM {$table}_default WHERE $col >= ?::timestamptz AND $col < ?::timestamptz", [$a, $b]);
-            $this->db->execute("DELETE FROM {$table}_default WHERE $col >= ?::timestamptz AND $col < ?::timestamptz", [$a, $b]);
+            // Writers that route a row to the DEFAULT partition wait here from now until the commit, so nothing can land in the range between the move and the attach (the
+            // attach would refuse it) and no upsert can touch a row while it is being moved. Writers of other partitions are not blocked.
+            $this->db->execute("LOCK TABLE {$table}_default IN ACCESS EXCLUSIVE MODE");
+            // one statement: the rows leave the DEFAULT partition and enter the new table together, so a row can neither be deleted without being copied nor copied twice
+            $this->db->execute("WITH moved AS (DELETE FROM {$table}_default WHERE $col >= ?::timestamptz AND $col < ?::timestamptz RETURNING *) INSERT INTO $n SELECT * FROM moved", [$a, $b]);
             $this->db->execute("ALTER TABLE $table ATTACH PARTITION $n FOR VALUES FROM ('$a') TO ('$b')");
         });
     }
@@ -254,17 +257,22 @@ final class PostgresStoreMaintenance implements StoreMaintenance
 
             return;
         }
-        $out['partitioned'][] = $table;
-        $segment = match ($table) {
-            'rmm_metric_hourly', 'rmm_metric_daily' => 'asset_id, metric_key, instance',
-            default => 'device_id, check_key',
-        };
-        $col = PostgresSchema::TIME_SERIES[$table];
-        $compressed = (bool) $this->db->value('SELECT compression_enabled FROM timescaledb_information.hypertables WHERE hypertable_schema = current_schema() AND hypertable_name = ?', [$table]);
-        if (!$compressed) {
-            $this->db->execute("ALTER TABLE $table SET (timescaledb.compress, timescaledb.compress_segmentby = '$segment', timescaledb.compress_orderby = '$col DESC')");
+        // Compression is an extra (it needs the community edition and a compatible table); retention is the point. A table that cannot be compressed still gets its chunks dropped,
+        // and the table only counts as managed here once the drop worked, so a failure leaves the caller's row-by-row prune running.
+        try {
+            $segment = match ($table) {
+                'rmm_metric_hourly', 'rmm_metric_daily' => 'asset_id, metric_key, instance',
+                default => 'device_id, check_key',
+            };
+            $col = PostgresSchema::TIME_SERIES[$table];
+            $compressed = (bool) $this->db->value('SELECT compression_enabled FROM timescaledb_information.hypertables WHERE hypertable_schema = current_schema() AND hypertable_name = ?', [$table]);
+            if (!$compressed) {
+                $this->db->execute("ALTER TABLE $table SET (timescaledb.compress, timescaledb.compress_segmentby = '$segment', timescaledb.compress_orderby = '$col DESC')");
+            }
+            $this->db->value('SELECT add_compression_policy(?::regclass, INTERVAL ' . "'" . self::COMPRESS_AFTER . "'" . ', if_not_exists => TRUE)', [$table]);
+        } catch (PostgresQueryException $e) {
+            $res['message'] = trim('Compression is not available for ' . $table . ': ' . mb_substr($e->getMessage(), 0, 150) . ' ' . $res['message']);
         }
-        $this->db->value('SELECT add_compression_policy(?::regclass, INTERVAL ' . "'" . self::COMPRESS_AFTER . "'" . ', if_not_exists => TRUE)', [$table]);
         $now = $this->clock->now()->getTimestamp();
         $cutoff = $now - max(1, $retentionDays[$table] ?? 1) * 86400;
         if (isset($guard[$table])) {
@@ -277,6 +285,7 @@ final class PostgresStoreMaintenance implements StoreMaintenance
         $dropped = $this->db->query('SELECT drop_chunks(?::regclass, older_than => ?::timestamptz) AS chunk', [$table, PostgresSql::utc($cutoff) . '+00']);
         $res['dropped'] = count($dropped);
         $res['status'] = 'ok';
+        $out['partitioned'][] = $table;
     }
 
     private function chunkCount(string $table): int

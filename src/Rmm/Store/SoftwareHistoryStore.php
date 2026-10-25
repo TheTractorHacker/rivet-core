@@ -13,6 +13,13 @@ namespace RivetCore\Rmm\Store;
 interface SoftwareHistoryStore
 {
     /**
+     * Whether {@see append()} runs in the control database's own transaction, so the caller can append inside the transaction that updates the inventory (MariaDB: yes, the
+     * change log and the inventory commit or roll back together). A store in another database cannot: the caller appends after the commit, and the store must tolerate the
+     * same append twice.
+     */
+    public function sharesControlTransaction(): bool;
+
+    /**
      * @param list<array{key:string,name:string,source:string,publisher:string,type:string,old:?string,new:?string}> $changes `type` is installed|upgraded|downgraded|removed
      * @param string $atUtc the UTC database datetime every change of the batch is stamped with
      */

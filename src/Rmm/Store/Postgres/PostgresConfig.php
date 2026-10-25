@@ -31,6 +31,8 @@ final class PostgresConfig
      * @param int $lockTimeoutMs a statement waiting longer for a lock is cancelled (0 = no limit)
      * @param int $transactionRetries how many times a deadlocked transaction is repeated
      * @param int $breakerOpenS seconds a worker stops trying after a connection failure, so an outage costs one connect timeout per worker per window and not one per check-in
+     * @param int $socketTimeoutS seconds after which a connection whose peer stopped answering (a pulled cable, a firewall that drops instead of resetting) is given up: TCP keepalives
+     *        and the user timeout, so a worker is not held for the kernel's quarter of an hour (0 = the operating system's defaults; irrelevant for a unix socket)
      */
     public function __construct(
         public readonly string $database,
@@ -47,6 +49,7 @@ final class PostgresConfig
         public readonly string $applicationName = 'rivetcore-rmm',
         public readonly int $transactionRetries = 2,
         public readonly int $breakerOpenS = 15,
+        public readonly int $socketTimeoutS = 30,
     ) {
         foreach (['database' => $database, 'user' => $user] as $field => $v) {
             if ($v === '' || preg_match('/^[A-Za-z0-9_.\-]{1,63}$/D', $v) !== 1) {
@@ -71,7 +74,7 @@ final class PostgresConfig
         if (preg_match('/^[A-Za-z0-9_.\-]{1,63}$/D', $applicationName) !== 1) {
             throw new \InvalidArgumentException('Postgres application name must be letters, digits, "_", "." or "-".');
         }
-        if ($connectTimeoutS < 1 || $connectTimeoutS > 60 || $statementTimeoutMs < 0 || $lockTimeoutMs < 0 || $transactionRetries < 0 || $transactionRetries > 10 || $breakerOpenS < 0 || $breakerOpenS > 3600) {
+        if ($connectTimeoutS < 1 || $connectTimeoutS > 60 || $statementTimeoutMs < 0 || $lockTimeoutMs < 0 || $transactionRetries < 0 || $transactionRetries > 10 || $breakerOpenS < 0 || $breakerOpenS > 3600 || $socketTimeoutS < 0 || $socketTimeoutS > 3600) {
             throw new \InvalidArgumentException('Postgres timeouts out of range.');
         }
         if (str_contains($password, "\0")) {
@@ -86,9 +89,9 @@ final class PostgresConfig
      *
      * @param array<string,mixed> $c
      */
-    public static function fromArray(array $c): self
+    public static function fromArray(#[\SensitiveParameter] array $c): self
     {
-        $known = ['database', 'user', 'password', 'host', 'port', 'sslmode', 'sslrootcert', 'schema', 'connect_timeout', 'statement_timeout_ms', 'lock_timeout_ms', 'application_name', 'transaction_retries', 'breaker_open_s'];
+        $known = ['database', 'user', 'password', 'host', 'port', 'sslmode', 'sslrootcert', 'schema', 'connect_timeout', 'statement_timeout_ms', 'lock_timeout_ms', 'application_name', 'transaction_retries', 'breaker_open_s', 'socket_timeout_s'];
         $unknown = array_diff(array_keys($c), $known);
         if ($unknown !== []) {
             throw new \InvalidArgumentException('Unknown Postgres setting(s): ' . implode(', ', array_map('strval', $unknown)) . '.');
@@ -103,7 +106,7 @@ final class PostgresConfig
 
         return new self((string) $c['database'], (string) $c['user'], $str('password', ''), $str('host', '127.0.0.1'), $int('port', 5432), $str('sslmode', 'prefer'),
             isset($c['sslrootcert']) && is_string($c['sslrootcert']) ? $c['sslrootcert'] : null, $str('schema', 'public'), $int('connect_timeout', 3), $int('statement_timeout_ms', 30000),
-            $int('lock_timeout_ms', 5000), $str('application_name', 'rivetcore-rmm'), $int('transaction_retries', 2), $int('breaker_open_s', 15));
+            $int('lock_timeout_ms', 5000), $str('application_name', 'rivetcore-rmm'), $int('transaction_retries', 2), $int('breaker_open_s', 15), $int('socket_timeout_s', 30));
     }
 
     /**
@@ -111,7 +114,7 @@ final class PostgresConfig
      *
      * @param array<string,mixed> $c as {@see fromArray()} but with `password_sealed` instead of `password`
      */
-    public static function fromSealed(array $c, SecretBoxInterface $box): self
+    public static function fromSealed(#[\SensitiveParameter] array $c, SecretBoxInterface $box): self
     {
         $sealed = $c['password_sealed'] ?? '';
         unset($c['password_sealed']);
@@ -131,6 +134,9 @@ final class PostgresConfig
     {
         $dsn = 'pgsql:host=' . $this->host . ';port=' . $this->port . ';dbname=' . $this->database . ';connect_timeout=' . $this->connectTimeoutS . ';sslmode=' . $this->sslMode
             . ';application_name=' . $this->applicationName;
+        if ($this->socketTimeoutS > 0 && !str_starts_with($this->host, '/')) {
+            $dsn .= ';keepalives=1;keepalives_idle=' . max(1, intdiv($this->socketTimeoutS, 2)) . ';keepalives_interval=5;keepalives_count=3;tcp_user_timeout=' . ($this->socketTimeoutS * 1000);
+        }
         if ($this->sslRootCert !== null) {
             $dsn .= ';sslrootcert=' . $this->sslRootCert;
         }

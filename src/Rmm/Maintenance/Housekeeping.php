@@ -94,6 +94,7 @@ final class Housekeeping
         ?SoftwareHistoryStore $softwareHistory = null,
         ?MetricStore $metricStore = null,
         ?StoreMaintenance $storeMaintenance = null,
+        private readonly ?\RivetCore\Rmm\Store\RmmDataStores $stores = null,
     ) {
         $this->metrics = $metricStore ?? $metricSink;
         $this->maintenance = $storeMaintenance ?? $storage;
@@ -124,6 +125,9 @@ final class Housekeeping
         $out['pruned_attempts'] = $this->prune('endpoint_agent_enroll_attempts', 'attempted_at < ?', [$this->sql->utcAt(-self::ATTEMPT_RETENTION_DAYS * 86400)]);
         $out['pruned_jobs'] = $this->prune('endpoint_agent_jobs', "state IN ('succeeded','failed','timed_out','cancelled','expired') AND finished_at < ?",
             [$this->sql->utcAt(-(int) $cfg['job_retention_days'] * 86400)]);
+        if ($this->stores !== null && $this->stores->kind() !== \RivetCore\Rmm\Store\RmmDataStoreKind::MARIADB) {
+            $out['client_moves_retried'] = (new \RivetCore\Rmm\Store\ClientMoves($this->sql, $this->stores))->retryPending();   // device moves the hot store could not take when they happened
+        }
         $limits = $this->settings->limits();
         // Scale S5: roll days up and keep the time partitions; a partitioned table is pruned by dropping partitions, every other one by batched DELETE as before.
         $partitioned = [];

@@ -92,7 +92,12 @@ final class LogService
         $inserted = $res['inserted'];
         $dropped = $res['dropped'];
         if ($kept !== [] && $this->rules !== null) {
-            $this->rules->evaluate($dev, $kept);
+            try {
+                $this->rules->evaluate($dev, $kept);
+            } catch (HotStoreUnavailableException) {
+                // The batch is stored; the store went away before the rules could count (they read it). The agent must not resend a stored batch for that: this batch's rules
+                // are skipped, the next batch's counts include it.
+            }
         }
 
         return ['ok' => true, 'accepted' => $inserted, 'dropped' => $dropped, 'duplicates' => count($kept) - $inserted];

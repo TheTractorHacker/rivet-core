@@ -532,8 +532,9 @@ final class EnrollmentService
             if ($row['client_id'] !== (int) $dev['client_id']) {
                 // An explicit administrator choice may cross clients; the device follows the asset's client.
                 $this->sql->run('UPDATE endpoint_agent_devices SET client_id = ? WHERE device_id = ?', [$row['client_id'], $deviceId]);
-                $this->stores?->logs()->reassignClient($deviceId, (int) $row['client_id']);   // the hot stores keep the client with each row
-                $this->stores?->changes()->reassignClient($deviceId, (int) $row['client_id']);
+                if ($this->stores !== null) {
+                    (new \RivetCore\Rmm\Store\ClientMoves($this->sql, $this->stores))->apply($deviceId, (int) $row['client_id']);   // the hot stores keep the client with each row
+                }
             }
         } else {
             return ['ok' => false, 'message' => 'Unknown action.'];

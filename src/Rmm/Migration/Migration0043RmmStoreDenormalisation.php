@@ -15,6 +15,7 @@ use RivetCore\Migration\MigrationInterface;
  *    their visibility; a row that still has NULL (written by an older release during the upgrade) shows to an unscoped reader and to nobody scoped by client.
  *  - `rmm_metric_rollup_state`: the daily rollup watermark, next to the metric tiers it describes (it used to share `rmm_storage_state` with the warm-start state).
  *    The existing row is copied; {@see \RivetCore\Rmm\Storage\StorageState} keeps writing the old row too, so a rollback to the previous release loses nothing.
+ *  - `rmm_pending_client_moves`: a device that changed client while the hot store was unreachable; the housekeeping repeats the move of its history until it works.
  *  - `rmm_hot_store_faults`: what the hot store could not do (writes dropped while a non-MariaDB store was unreachable); empty and unused on MariaDB.
  *
  * Additive and idempotent: nothing existing is altered except the three new nullable columns.
@@ -46,6 +47,13 @@ final class Migration0043RmmStoreDenormalisation implements MigrationInterface
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci');
         $database->execute("INSERT IGNORE INTO `rmm_metric_rollup_state` (`name`, `watermark`, `detail`, `updated_at`)
             SELECT `name`, `watermark`, `detail`, `updated_at` FROM `rmm_storage_state` WHERE `name` = 'metric_daily_rollup'");
+
+        $database->execute('CREATE TABLE IF NOT EXISTS `rmm_pending_client_moves` (
+  `device_id` int(11) NOT NULL,
+  `client_id` int(11) NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`device_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci');
 
         $database->execute('CREATE TABLE IF NOT EXISTS `rmm_hot_store_faults` (
   `store` varchar(32) NOT NULL,

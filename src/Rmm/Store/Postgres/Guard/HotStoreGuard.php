@@ -14,7 +14,7 @@ use RivetCore\Rmm\Store\Postgres\PostgresException;
  * still surfaces, because swallowing it would hide a bug.
  *
  *  - {@see lossy()}: a write on the check-in or job-result path. NEVER throws: the data is dropped, counted ({@see HotStoreFaults}) and logged, and the caller carries on.
- *  - {@see strict()}: a write whose sender can try again (log and change batches). Throws {@see HotStoreUnavailableException}; the service answers a retryable 503.
+ *  - {@see strict()}: a write whose sender can try again (log and change batches) or whose caller records the failure and repeats it ({@see \RivetCore\Rmm\Store\ClientMoves}). Throws {@see HotStoreUnavailableException}; the service answers a retryable 503.
  *  - {@see read()}: a read. Throws {@see HotStoreUnavailableException} with a message an administrator can act on.
  *  - {@see maintenance()}: retention and rollup jobs. Never throws; returns the neutral answer; the failure is counted.
  *

@@ -44,26 +44,26 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
         return new CircuitBreakerConnection(new self($config), $config->identity(), $config->breakerOpenS);
     }
 
-    public function query(string $sql, array $params = []): array
+    public function query(string $sql, #[\SensitiveParameter] array $params = []): array
     {
         return $this->run($sql, $params, static fn (\PDOStatement $st): array => $st->fetchAll(\PDO::FETCH_ASSOC));
     }
 
-    public function queryOne(string $sql, array $params = []): ?array
+    public function queryOne(string $sql, #[\SensitiveParameter] array $params = []): ?array
     {
         $row = $this->run($sql, $params, static fn (\PDOStatement $st): mixed => $st->fetch(\PDO::FETCH_ASSOC));
 
         return is_array($row) ? $row : null;
     }
 
-    public function value(string $sql, array $params = []): mixed
+    public function value(string $sql, #[\SensitiveParameter] array $params = []): mixed
     {
         $row = $this->queryOne($sql, $params);
 
         return $row === null ? null : array_values($row)[0];
     }
 
-    public function execute(string $sql, array $params = []): int
+    public function execute(string $sql, #[\SensitiveParameter] array $params = []): int
     {
         return max(0, (int) $this->run($sql, $params, static fn (\PDOStatement $st): int => $st->rowCount()));
     }
@@ -125,10 +125,6 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
         ++$this->depth;
         try {
             $result = $callback();
-            --$this->depth;
-            $this->exec('RELEASE SAVEPOINT ' . $name);
-
-            return $result;
         } catch (\Throwable $e) {
             --$this->depth;
             try {
@@ -141,6 +137,10 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
             }
             throw $e instanceof \PDOException ? $this->failed($e) : $e;
         }
+        --$this->depth;
+        $this->exec('RELEASE SAVEPOINT ' . $name);
+
+        return $result;
     }
 
     private function rollback(): void
@@ -164,7 +164,7 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
      * @param \Closure(\PDOStatement): T $read what to take from the statement before it is reused
      * @return T
      */
-    private function run(string $sql, array $params, \Closure $read): mixed
+    private function run(string $sql, #[\SensitiveParameter] array $params, \Closure $read): mixed
     {
         $bound = array_map(self::scalar(...), $params);
         $pdo = $this->pdo();
@@ -199,8 +199,12 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
                 if ($attempt === 1 && ($info[0] ?? '') === '0A000' && !$pdo->inTransaction()) {
                     continue;   // "cached plan must not change result type": the table was altered under a cached statement; prepare it again
                 }
+                $mapped = $this->failed($e);
+                if ($attempt === 1 && $mapped->isRetryable() && $this->depth === 0) {
+                    continue;   // a statement of its own that the server rolled back whole (deadlock, a partition attached under it): sending it again is safe
+                }
 
-                throw $this->failed($e);
+                throw $mapped;
             }
         }
     }
@@ -217,11 +221,16 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
 
     private static function scalar(mixed $v): string|int|bool|null
     {
-        if (is_string($v) && str_contains($v, "\0")) {
-            // the driver would cut the value at the NUL byte and store the front half without a word; refuse it instead
-            throw new PostgresQueryException('A query parameter contains a NUL byte, which PostgreSQL cannot store.', '22021');
+        if (is_string($v)) {
+            // PostgreSQL text cannot hold a NUL byte or invalid UTF-8, and the driver would cut a value at the NUL without a word. History is telemetry: one odd byte must
+            // not cost a whole batch, so the byte is replaced (NUL by U+FFFD, an invalid sequence by "?") and the rest of the value is stored.
+            if (!mb_check_encoding($v, 'UTF-8')) {
+                $v = mb_scrub($v, 'UTF-8');
+            }
+
+            return str_contains($v, "\0") ? str_replace("\0", "\u{FFFD}", $v) : $v;
         }
-        if ($v === null || is_bool($v) || is_int($v) || is_string($v)) {
+        if ($v === null || is_bool($v) || is_int($v)) {
             return $v;
         }
         if (is_float($v)) {
@@ -264,7 +273,7 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
         } catch (\PDOException $e) {
             $mapped = PdoErrorMapper::map($e, $this->config->password());
             // a session that cannot be set up is as good as no session, whatever the server called it
-            throw $mapped instanceof PostgresConnectionException ? $mapped : new PostgresConnectionException('PostgreSQL session could not be opened: ' . $mapped->getMessage(), $mapped->sqlState(), $e);
+            throw $mapped instanceof PostgresConnectionException ? $mapped : new PostgresConnectionException('PostgreSQL session could not be opened: ' . $mapped->getMessage(), $mapped->sqlState());
         }
 
         return $this->pdo = $pdo;

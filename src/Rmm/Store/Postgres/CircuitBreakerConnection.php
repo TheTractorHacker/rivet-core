@@ -39,22 +39,22 @@ final class CircuitBreakerConnection implements PostgresConnectionInterface
         $this->now = $now ?? static fn (): float => microtime(true);
     }
 
-    public function query(string $sql, array $params = []): array
+    public function query(string $sql, #[\SensitiveParameter] array $params = []): array
     {
         return $this->guard(fn (): array => $this->inner->query($sql, $params));
     }
 
-    public function queryOne(string $sql, array $params = []): ?array
+    public function queryOne(string $sql, #[\SensitiveParameter] array $params = []): ?array
     {
         return $this->guard(fn (): ?array => $this->inner->queryOne($sql, $params));
     }
 
-    public function value(string $sql, array $params = []): mixed
+    public function value(string $sql, #[\SensitiveParameter] array $params = []): mixed
     {
         return $this->guard(fn (): mixed => $this->inner->value($sql, $params));
     }
 
-    public function execute(string $sql, array $params = []): int
+    public function execute(string $sql, #[\SensitiveParameter] array $params = []): int
     {
         return $this->guard(fn (): int => $this->inner->execute($sql, $params));
     }
@@ -122,6 +122,19 @@ final class CircuitBreakerConnection implements PostgresConnectionInterface
         return $result;
     }
 
+    /** The state file is only believed when it belongs to the user this process runs as (the temp directory is shared; another user could plant one). */
+    private function ownedFile(): bool
+    {
+        if (!is_file($this->file)) {
+            return false;
+        }
+        if (!function_exists('posix_geteuid')) {
+            return true;
+        }
+
+        return @fileowner($this->file) === posix_geteuid();
+    }
+
     private function open(): void
     {
         if ($this->openS <= 0) {
@@ -147,9 +160,11 @@ final class CircuitBreakerConnection implements PostgresConnectionInterface
             return $this->cachedUntil;   // look at the shared file once a second, not once a statement
         }
         $until = self::$local[$this->identity] ?? 0.0;
-        $raw = @file_get_contents($this->file);
+        $raw = $this->ownedFile() ? @file_get_contents($this->file) : false;
         if (is_string($raw) && is_numeric($raw)) {
-            $until = max($until, (float) $raw);
+            // never trust a time further away than one window (a stray or planted value must not hold the breaker open), and spread the workers' retries over the last third
+            // of the window so they do not all reconnect in the same second
+            $until = max($until, min((float) $raw, $now + $this->openS) - ((int) getmypid() % max(1, intdiv($this->openS, 3) + 1)));
         }
         $this->checkedAt = $now;
         $this->cachedUntil = $until;

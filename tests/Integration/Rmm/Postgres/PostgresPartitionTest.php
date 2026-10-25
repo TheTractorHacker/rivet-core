@@ -176,6 +176,28 @@ final class PostgresPartitionTest extends TestCase
         $this->assertSame(400, $t['tables']['rmm_metric_daily']['retention_days']);
     }
 
+    public function testRowsWrittenWhileThePartitionsAreBuiltAreNeitherLostNorDoubled(): void
+    {
+        $today = $this->today();
+        $at = max($today + 60, time() - 3000);
+        // today's rows are still arriving in the DEFAULT partition when partitioning is switched on: a writer runs through three maintenance runs
+        $p = proc_open([PHP_BINARY, dirname(__DIR__, 3) . '/Support/pg_worker.php', 'spread', (string) json_encode(['count' => 250, 'base' => 5000, 'at' => $at])], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        $this->assertIsResource($p);
+        usleep(150000);
+        for ($i = 0; $i < 3; ++$i) {
+            $run = $this->maint->run($this->limits(1, 1, 3), [], 14, 400, 5);
+            $this->assertSame('ok', $run['partitions']['rmm_metric_hourly']['status'], $run['partitions']['rmm_metric_hourly']['message']);
+            usleep(100000);
+        }
+        $out = json_decode(trim((string) stream_get_contents($pipes[1])), true);
+        proc_close($p);
+        $this->assertSame([], $out['errors'], 'the writer was never refused');
+        $this->assertSame(250, $out['inserted']);
+        $this->assertSame(250 + 1, (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly'), 'one row per distinct series, none lost, none copied twice');
+        $this->assertSame(250, (int) $this->db->value("SELECT samples FROM rmm_metric_hourly WHERE asset_id = 5000 AND metric_key = 'memory.utilization'"), 'and the series everyone updated has every update');
+        $this->assertSame(0, (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly_default'));
+    }
+
     public function testTwoMaintenanceRunsAtOnceDoNotCollide(): void
     {
         $other = PostgresTestDatabase::connect();

@@ -54,7 +54,7 @@ final class GuardedLogStore implements LogStore
 
     public function reassignClient(int $deviceId, int $clientId): int
     {
-        return $this->guard->lossy('logs', 'reassignClient', fn (): int => $this->inner->reassignClient($deviceId, $clientId), 0);
+        return $this->guard->strict('logs', 'reassignClient', fn (): int => $this->inner->reassignClient($deviceId, $clientId));
     }
 
     public function enforceLimits(string $cutoffUtc, int $deviceMaxRows, int $fleetMaxRows, int $runCap, int $batch, ?\Closure $pause = null): array

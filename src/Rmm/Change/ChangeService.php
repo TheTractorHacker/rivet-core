@@ -106,8 +106,13 @@ final class ChangeService
         $inserted = $res['inserted'];
         $dropped = $res['dropped'];
         if ($inserted > 0) {   // a resent batch the server already holds raises nothing twice
-            $fresh = $inserted === count($kept) ? $kept : $this->onlyNew($deviceId, $kept, gmdate('Y-m-d H:i:s', $now));
-            $this->rules?->evaluate($dev, $fresh);
+            try {
+                $fresh = $inserted === count($kept) ? $kept : $this->onlyNew($deviceId, $kept, gmdate('Y-m-d H:i:s', $now));
+                $this->rules?->evaluate($dev, $fresh);
+            } catch (HotStoreUnavailableException) {
+                // The batch is stored; the store went away before the rules could count (they read it). Answer as accepted: a resend would only be refused as a duplicate.
+                $fresh = [];
+            }
             if ($this->events !== null) {
                 foreach (array_slice($fresh, 0, self::EVENT_CAP) as $r) {
                     // device-supplied text goes into webhooks and tickets: markup characters, quotes and backticks are removed here (the stored record keeps its text, escape it on output)

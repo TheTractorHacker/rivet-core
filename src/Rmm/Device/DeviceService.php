@@ -153,8 +153,9 @@ final class DeviceService
                 $this->bridge->reassignAlerts($this->settings->integrationId(), (int) $dev['asset_id'], $clientId);
             }
         });
-        $this->stores?->logs()->reassignClient($deviceId, $clientId);   // the hot stores keep the client with each row
-        $this->stores?->changes()->reassignClient($deviceId, $clientId);
+        if ($this->stores !== null) {
+            (new \RivetCore\Rmm\Store\ClientMoves($this->sql, $this->stores))->apply($deviceId, $clientId);   // the hot stores keep the client with each row
+        }
         $this->audit->record('Device Transferred', "Device $deviceId moved from department {$dev['client_id']} to $clientId by user $userId", $clientId, (int) $dev['asset_id']);
         $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
 

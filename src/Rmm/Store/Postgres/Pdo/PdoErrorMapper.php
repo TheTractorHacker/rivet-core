@@ -13,7 +13,8 @@ use RivetCore\Rmm\Store\Postgres\PostgresTimeoutException;
 /**
  * Turns the driver's exception into the library's: the class says what to do (connection: the store is down; timeout; deadlock: retry; query: a bug), the
  * message is the server's primary message only (no DETAIL or CONTEXT line, which carry the data of the failed row) with quoted values masked for data
- * exceptions, and never contains the password.
+ * exceptions, and never contains the password. The driver's exception is NOT kept as `previous`: its message still has the DETAIL line and its trace holds the bound
+ * values, and anything that logs a whole exception chain (an error tracker, a global handler) would write them out.
  *
  * @internal
  */
@@ -38,16 +39,18 @@ final class PdoErrorMapper
         $message = self::clean($text, $state, $secret);
         $class = substr($state, 0, 2);
         if ($class === '08' || in_array($state, self::CONNECTION_STATES, true) || ($state === '' && self::looksLikeConnectionLoss($text)) || ($state === 'HY000' && self::looksLikeConnectionLoss($text))) {
-            return new PostgresConnectionException('PostgreSQL connection failed: ' . $message, $state, $e);
+            return new PostgresConnectionException('PostgreSQL connection failed: ' . $message, $state);
         }
-        if ($state === '40001' || $state === '40P01') {
-            return new PostgresSerializationException('PostgreSQL transaction rolled back (' . $message . ')', $state, $e);
+        // A row routed to the DEFAULT partition just before an ATTACH PARTITION made that range someone else's: the server refuses it with a check violation on the default
+        // partition. Nothing is wrong with the row; sent again, it goes to the new partition. Same treatment as a deadlock.
+        if ($state === '40001' || $state === '40P01' || ($state === '23514' && str_contains($text, 'violates partition constraint'))) {
+            return new PostgresSerializationException('PostgreSQL transaction rolled back (' . $message . ')', $state);
         }
         if ($state === '57014' || $state === '55P03' || $state === '55006') {
-            return new PostgresTimeoutException('PostgreSQL statement timed out or could not get its lock (' . $message . ')', $state, $e);
+            return new PostgresTimeoutException('PostgreSQL statement timed out or could not get its lock (' . $message . ')', $state);
         }
 
-        return new PostgresQueryException('PostgreSQL rejected the statement: ' . $message . ($state === '' ? '' : ' (SQLSTATE ' . $state . ')'), $state, $e);
+        return new PostgresQueryException('PostgreSQL rejected the statement: ' . $message . ($state === '' ? '' : ' (SQLSTATE ' . $state . ')'), $state);
     }
 
     public static function looksLikeConnectionLoss(string $text): bool

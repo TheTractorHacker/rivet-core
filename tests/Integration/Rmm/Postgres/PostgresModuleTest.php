@@ -222,6 +222,133 @@ final class PostgresModuleTest extends RemoteTestCase
         $this->assertSame(1, (int) $this->pg()->value('SELECT COUNT(*) FROM endpoint_agent_log_events'));
     }
 
+    public function testATransferDuringAnOutageIsRecordedAndTheHousekeepingFinishesIt(): void
+    {
+        $this->enableLogs();
+        $good = $this->connection;
+        $this->useStore('postgres');
+        $this->ship('before the move');
+        $this->connection = fn () => PdoPostgresConnection::fromConfig(PostgresTestDatabase::config(['port' => 1, 'connect_timeout' => 1, 'breaker_open_s' => 0]));
+        $this->useStore('postgres');   // a new request: the module resolves the stores again, now against an unreachable server
+        $this->assertTrue($this->h->module->deviceService()->transfer($this->dev, $this->h->clientB, 0, 1), 'the transfer itself succeeds');
+        $this->assertSame($this->h->clientB, (int) $this->h->one("SELECT client_id FROM endpoint_agent_devices WHERE device_id = {$this->dev}"));
+        $this->assertSame([[$this->dev, $this->h->clientB]], array_map(static fn (array $r): array => [(int) $r['device_id'], (int) $r['client_id']], $this->h->rows('SELECT device_id, client_id FROM rmm_pending_client_moves')), 'the move of the history is recorded');
+        $this->assertSame($this->h->clientA, (int) $this->pg()->value('SELECT client_id FROM endpoint_agent_log_events LIMIT 1'), 'the rows still say client A');
+        // the server is back: the next housekeeping run finishes the move
+        $this->connection = $good;
+        $this->useStore('postgres');
+        $out = $this->h->module->housekeeping()->run();
+        $this->assertSame(1, $out['client_moves_retried']);
+        $this->assertSame('0', (string) $this->h->one('SELECT COUNT(*) FROM rmm_pending_client_moves'));
+        $this->assertSame($this->h->clientB, (int) $this->pg()->value('SELECT client_id FROM endpoint_agent_log_events LIMIT 1'));
+        $this->assertSame(1, $this->h->module->logService()->search([], [$this->h->clientB])['total']);
+        $this->assertSame(0, $this->h->module->logService()->search([], [$this->h->clientA])['total']);
+    }
+
+    public function testTheSoftwareInventoryCommitsFirstAndTheHistoryFollowsAndAnOutageOnlyLosesTheHistory(): void
+    {
+        $this->switchOn(['inventory_software']);
+        $good = $this->connection;
+        $this->useStore('postgres');
+        $item = static fn (array $i): array => ['name' => $i[1], 'version' => $i[2], 'publisher' => $i[3], 'source' => $i[0]];
+        $hash = static fn (array $list): string => \RivetCore\Rmm\Software\SoftwareHash::of(array_map(static fn (array $i): array => ['source' => $i[0], 'name' => $i[1], 'version' => $i[2], 'publisher' => $i[3]], $list));
+        $send = fn (array $sw): array => $this->h->checkin($this->devToken, ['platform' => 'windows', 'capabilities' => ['software_inventory'], 'software' => $sw]);
+        $base = [['registry', 'Bash', '5.2', 'GNU'], ['registry', 'Nano', '7.2', 'GNU']];
+        $this->assertSame(200, $send(['mode' => 'full', 'hash' => $hash($base), 'count' => 2, 'truncated' => false, 'items' => array_map($item, $base)])[0]);
+        $after = [['registry', 'Bash', '5.3', 'GNU'], ['registry', 'Git', '2.43', 'Git']];
+        $delta = fn (array $from, array $to, array $changed, array $removed): array => ['mode' => 'delta', 'base_hash' => $hash($from), 'hash' => $hash($to), 'count' => count($to), 'truncated' => false,
+            'items' => array_map($item, $changed), 'removed' => $removed];
+        $this->assertSame(200, $send($delta($base, $after, [$after[0], $after[1]], [['source' => 'registry', 'name' => 'Nano']]))[0]);
+        $this->assertSame(3, (int) $this->pg()->value('SELECT COUNT(*) FROM rmm_software_history'), 'upgraded, installed, removed: in PostgreSQL');
+        $this->assertSame('0', (string) $this->h->one('SELECT COUNT(*) FROM rmm_software_history'), 'and not in MariaDB');
+        // now the server is gone: the inventory (control data) is still updated in full, only the history entry is lost, and the check-in is answered
+        $this->connection = fn () => PdoPostgresConnection::fromConfig(PostgresTestDatabase::config(['port' => 1, 'connect_timeout' => 1, 'breaker_open_s' => 0]));
+        $this->useStore('postgres');
+        $third = [['registry', 'Bash', '5.4', 'GNU'], ['registry', 'Git', '2.43', 'Git']];
+        $this->assertSame(200, $send($delta($after, $third, [$third[0]], []))[0]);
+        $this->assertSame(['Bash@5.4', 'Git@2.43'], array_map(static fn (array $r): string => $r['name'] . '@' . $r['version'], $this->h->rows("SELECT name, version FROM rmm_device_software WHERE device_id = {$this->dev} AND removed_at IS NULL ORDER BY name")));
+        $this->assertSame(3, (int) $this->pg()->value('SELECT COUNT(*) FROM rmm_software_history'), 'the entry for 5.3 > 5.4 could not be written');
+        (new \ReflectionMethod($this->h->module, 'hotStoreFaults'))->invoke($this->h->module)->flush();
+        $this->assertGreaterThanOrEqual(1, $this->h->module->dataStoreHealth()['stores']['software_history']['dropped']);
+        $this->connection = $good;
+    }
+
+    public function testARuleThatCannotCountBecauseTheStoreWentAwayDoesNotFailAStoredBatch(): void
+    {
+        $this->enableLogs();
+        // the server answers the insert and the ledger, then "goes away" for the statement the rule uses to count
+        $this->connection = static function (): PostgresConnectionInterface {
+            $real = PdoPostgresConnection::fromConfig(PostgresTestDatabase::config(['breaker_open_s' => 0]));
+
+            return new class($real) implements PostgresConnectionInterface {
+                public function __construct(private readonly PostgresConnectionInterface $inner)
+                {
+                }
+
+                private function check(string $sql): void
+                {
+                    if (str_contains($sql, 'SELECT 1 FROM endpoint_agent_log_events WHERE device_id')) {
+                        throw new \RivetCore\Rmm\Store\Postgres\PostgresConnectionException('the server went away');
+                    }
+                }
+
+                public function query(string $sql, array $params = []): array
+                {
+                    $this->check($sql);
+
+                    return $this->inner->query($sql, $params);
+                }
+
+                public function queryOne(string $sql, array $params = []): ?array
+                {
+                    $this->check($sql);
+
+                    return $this->inner->queryOne($sql, $params);
+                }
+
+                public function value(string $sql, array $params = []): mixed
+                {
+                    $this->check($sql);
+
+                    return $this->inner->value($sql, $params);
+                }
+
+                public function execute(string $sql, array $params = []): int
+                {
+                    $this->check($sql);
+
+                    return $this->inner->execute($sql, $params);
+                }
+
+                public function transaction(callable $callback): mixed
+                {
+                    return $this->inner->transaction($callback);
+                }
+
+                public function inTransaction(): bool
+                {
+                    return $this->inner->inTransaction();
+                }
+
+                public function serverVersion(): string
+                {
+                    return $this->inner->serverVersion();
+                }
+
+                public function close(): void
+                {
+                    $this->inner->close();
+                }
+            };
+        };
+        $this->useStore('postgres');
+        [$c] = $this->h->tech('POST', ['logs', 'rules'], $this->admin, ['name' => 'Spooler', 'min_level' => 'error', 'contains' => 'spooler', 'severity' => 'fail']);
+        $this->assertContains($c, [200, 201]);
+        [$status, $j] = $this->ship('The Print Spooler service entered the stopped state.');
+        $this->assertSame([200, 1], [$status, $j['accepted']], 'the batch is stored and accepted; only its rule evaluation was skipped');
+        $this->assertSame(1, (int) $this->pg()->value('SELECT COUNT(*) FROM endpoint_agent_log_events'));
+    }
+
     // ------------------------------------------------------------------ PostgreSQL, not configured
 
     public function testPostgresWithoutAConnectionIsRefusedClearlyAndNeverFallsBackToMariadb(): void
