@@ -85,6 +85,22 @@ $module = new RmmModule(/* ... as before ... */, options: [
 
 The option accepts a `PostgresConfig` (opened with the shipped PDO adapter behind a circuit breaker), a `PostgresConnectionInterface` of your own, or a closure returning either. If the password is kept sealed in the edition's settings, `PostgresConfig::fromSealed($row, $secretBox)` decrypts `password_sealed` with the same `SecretBoxInterface` the module already uses for its other secrets; an unreadable value is an error, never an empty password. Phase 3 adds the settings page that stores it that way.
 
+The keys of `PostgresConfig::fromArray()` (unknown keys are refused, so a typo cannot silently fall back to a default):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `database`, `user` | required | letters, digits, `_ . -` only |
+| `password` | empty | never put it on a command line; it is hidden from dumps and traces |
+| `host`, `port` | `127.0.0.1`, 5432 | a host name, an address, or the directory of the unix socket (starts with `/`) |
+| `sslmode`, `sslrootcert` | `prefer`, none | use `verify-full` with a CA file when the connection leaves the machine |
+| `schema` | `public` | the schema the tables live in |
+| `connect_timeout` | 3 s | how long a new connection may take before the server counts as down |
+| `socket_timeout_s` | 30 s | TCP keepalives and user timeout: a peer that stops answering is given up after about this long (not for a unix socket); 0 = the operating system's defaults |
+| `statement_timeout_ms`, `lock_timeout_ms` | 30000, 5000 | per statement; 0 = no limit |
+| `transaction_retries` | 2 | how often a deadlocked transaction is repeated |
+| `breaker_open_s` | 15 s | after a connection failure a worker stops trying for this long (0 = no breaker) |
+| `application_name` | `rivetcore-rmm` | shown in `pg_stat_activity` |
+
 Then set the store. The settings API refuses `postgres` until phase 3 ships its connection test; until then an administrator with database access sets it by hand (`UPDATE endpoint_agent_settings SET data_store = 'postgres'`), **after** the schema exists. Switching does **not** move existing rows: history written so far stays in MariaDB and is no longer shown; use a fresh install, or wait for the migration command. Switching back is the same statement.
 
 ## 6. Size it next to MariaDB and PHP-FPM
@@ -141,7 +157,7 @@ A check-in must never fail because the history store is gone. What happens (the 
 | Reads (log search, change search and timeline, software, patch and deployment history, device history) | The page gets `HotStoreUnavailableException` with a message naming the cause. The **metric** readers (dials and graphs) answer "no data" instead, because every device page asks for them; the fault is counted. |
 | Housekeeping (retention, rollup, partitions) | Reports nothing done and counts the fault; the next run catches up. |
 
-An outage costs **one** connect timeout (default 3 s) per PHP process per 15 s window: after a connection failure the circuit breaker opens, shared by all workers of the host through a tiny file in the temp directory, and every call fails at once until the window is over. If the edition passes no connection at all while the setting says `postgres`, the stores behave the same and the message says exactly that; nothing is ever written to MariaDB in its place, because it would be invisible to the store the administrator chose.
+History writes of a check-in are **held until the control database transaction has committed** (the check-in holds the device row locked from its first statement to the commit, and PostgreSQL's latency or a connect timeout must not be spent inside that lock) and are dropped if it rolls back. An outage costs **one** connect timeout (default 3 s) per PHP process per 15 s window: after a connection failure the circuit breaker opens, shared by all workers of the host through a tiny file in the temp directory, and every call fails at once until the window is over. If the edition passes no connection at all while the setting says `postgres`, the stores behave the same and the message says exactly that; nothing is ever written to MariaDB in its place, because it would be invisible to the store the administrator chose.
 
 ## 11. Security notes
 

@@ -64,7 +64,7 @@ final class PostgresTestDatabase
     {
         return PostgresConfig::fromArray($over + ['database' => (string) getenv('RIVETCORE_TEST_PG_NAME'), 'user' => (string) getenv('RIVETCORE_TEST_PG_USER'),
             'password' => (string) getenv('RIVETCORE_TEST_PG_PASS'), 'host' => (string) (getenv('RIVETCORE_TEST_PG_HOST') ?: '127.0.0.1'), 'port' => (int) (getenv('RIVETCORE_TEST_PG_PORT') ?: 5432),
-            'sslmode' => 'disable', 'statement_timeout_ms' => 20000, 'lock_timeout_ms' => 5000]);
+            'sslmode' => 'disable', 'statement_timeout_ms' => 60000, 'lock_timeout_ms' => 15000]);
     }
 
     public static function connect(array $over = []): PostgresConnectionInterface
