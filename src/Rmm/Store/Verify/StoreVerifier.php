@@ -87,7 +87,10 @@ final class StoreVerifier
         return is_string($v) && in_array($v, RmmDataStoreKind::ALL, true) ? $v : RmmDataStoreKind::MARIADB;
     }
 
-    /** @param list<array<string,mixed>> $findings @param array<string,int> $counts */
+    /**
+     * @param list<array<string,mixed>> $findings
+     * @param array<string,int> $counts
+     */
     private function check(bool $pg, int $gap, int $examples, array &$findings, array &$counts): void
     {
         $hot = fn (string $sql, array $p = []): array => $pg ? $this->postgres->query($sql, $p) : $this->control->fetchAll($sql, $p);
@@ -175,15 +178,14 @@ final class StoreVerifier
             ];
             $c = strtotime($control . ' UTC');
             foreach ($newest as $table => $m) {
-                if ($table === 'endpoint_agent_check_history' && $m === null && $counts['endpoint_agent_check_history'] === 0) {
-                    continue;   // the history ring may be switched off (check_history_days = 0): an empty table is not a gap
+                if (!is_string($m) || $m === '') {
+                    continue;   // an empty table is not a gap: the history ring or the metric tiers may be switched off, or the edition keeps its metrics elsewhere
                 }
-                $h = is_string($m) && $m !== '' ? strtotime($m . ' UTC') : null;
-                $span = $h === null ? null : $c - $h;
-                if (($h === null && $table !== 'endpoint_agent_check_history') || ($span !== null && $span > $gap)) {
+                $span = $c - strtotime($m . ' UTC');
+                $tolerance = $table === 'rmm_metric_hourly' ? $gap + 3600 : $gap;   // a bucket is stamped with the start of its hour
+                if ($span > $tolerance) {
                     $findings[] = ['code' => 'hot_older_than_control', 'severity' => 'warning', 'table' => $table, 'count' => 1, 'gap_seconds' => $span, 'control_newest' => $control, 'hot_newest' => $m,
-                        'detail' => $h === null ? "$table is empty while the control database saw check-ins until $control."
-                            : "The newest row of $table is $m, the control database saw a check-in at $control: history of about " . $span . ' seconds is missing (the hot store was restored from an older dump, or writes were dropped).'];
+                        'detail' => "The newest row of $table is $m, the control database saw a check-in at $control: history of about $span seconds is missing (the hot store was restored from an older dump, or writes were dropped)."];
                 }
             }
         }
