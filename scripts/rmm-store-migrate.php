@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Move the RMM history between MariaDB and PostgreSQL, verify it, cut over, roll back, purge (phase 3 of #89; docs/rmm/POSTGRES.md section "Migrate").
  *
  *   php scripts/rmm-store-migrate.php --bootstrap=/etc/rivetit/rmm-store-bootstrap.php --from=mariadb --to=postgres --dry-run
- *   php scripts/rmm-store-migrate.php --bootstrap=... --from=mariadb --to=postgres [--batch=2000] [--pause-ms=100] [--sample=50|all|0] [--settle=5] [--no-cutover] [--actor=name]
+ *   php scripts/rmm-store-migrate.php --bootstrap=... --from=mariadb --to=postgres [--batch=2000] [--pause-ms=100] [--sample=50|all|0] [--settle=5] [--verify-lag=10] [--no-cutover] [--actor=name]
  *   php scripts/rmm-store-migrate.php --bootstrap=... --to=postgres --resume              continue a stopped run (add --from as in the first call)
  *   php scripts/rmm-store-migrate.php --bootstrap=... --to=postgres --resume --cutover     finish a run that stopped after verification (--no-cutover)
  *   php scripts/rmm-store-migrate.php --bootstrap=... --rollback [--force]                 go back within the rollback period (copies back what was written since)
@@ -44,7 +44,7 @@ if (!class_exists(RmmStoreMigrator::class)) {
 }
 
 $flags = ['dry-run', 'resume', 'cutover', 'no-cutover', 'rollback', 'abort', 'purge-old', 'status', 'yes', 'force'];
-$values = ['bootstrap', 'from', 'to', 'batch', 'pause-ms', 'sample', 'settle', 'actor'];
+$values = ['bootstrap', 'from', 'to', 'batch', 'pause-ms', 'sample', 'settle', 'verify-lag', 'actor'];
 $opt = [];
 foreach (array_slice($argv, 1) as $a) {
     if (preg_match('/^--([a-z-]+)(?:=(.*))?$/D', $a, $m) !== 1 || !in_array($m[1], [...$flags, ...$values], true) || (in_array($m[1], $values, true) && !isset($m[2])) || (in_array($m[1], $flags, true) && isset($m[2]))) {
@@ -87,7 +87,7 @@ $print = static function (array $e): void {
 };
 $sample = $opt['sample'] ?? '50';
 $common = ['batch' => isset($opt['batch']) ? (int) $opt['batch'] : null, 'pause_ms' => isset($opt['pause-ms']) ? (int) $opt['pause-ms'] : null, 'sample' => $sample === 'all' ? -1 : (int) $sample,
-    'settle_s' => isset($opt['settle']) ? (int) $opt['settle'] : null, 'actor' => (string) ($opt['actor'] ?? 'cli')];
+    'settle_s' => isset($opt['settle']) ? (int) $opt['settle'] : null, 'verify_lag_s' => isset($opt['verify-lag']) ? (int) $opt['verify-lag'] : null, 'actor' => (string) ($opt['actor'] ?? 'cli')];
 $common = array_filter($common, static fn ($v): bool => $v !== null);
 
 try {

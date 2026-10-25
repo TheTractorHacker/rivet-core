@@ -1070,6 +1070,15 @@ final class RmmModule
     }
 
     /**
+     * Moves the RMM history between the stores, verifies it, cuts over, rolls back and purges ({@see \RivetCore\Rmm\Store\Migration\RmmStoreMigrator}). The PostgreSQL
+     * connection is the `postgres` option or the one the data store setting stored. Runs in a command or a background job, not in a web request.
+     */
+    public function storeMigrator(): \RivetCore\Rmm\Store\Migration\RmmStoreMigrator
+    {
+        return new \RivetCore\Rmm\Store\Migration\RmmStoreMigrator($this->sql(), $this->settings(), fn (): ?PostgresConnectionInterface => $this->postgresConnection(), $this->audit);
+    }
+
+    /**
      * Choose the RMM data store: connection settings (password sealed), connection test, schema, the setting. The one supported way to select PostgreSQL
      * ({@see RmmSettings::update()} still refuses it). See docs/rmm/POSTGRES.md.
      */
