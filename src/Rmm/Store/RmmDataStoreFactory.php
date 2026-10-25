@@ -6,7 +6,6 @@ namespace RivetCore\Rmm\Store;
 
 use RivetCore\Contracts\ClockInterface;
 use RivetCore\Database\DatabaseInterface;
-use RivetCore\Rmm\Storage\MetricRollup;
 use RivetCore\Rmm\Storage\PartitionMaintenance;
 use RivetCore\Rmm\Storage\StorageMaintenance;
 use RivetCore\Rmm\Store\MariaDb\MariaDbChangeEventStore;
@@ -45,7 +44,7 @@ final class RmmDataStoreFactory
             new MariaDbPatchHistoryStore($sql),
             new MariaDbDeploymentHistoryStore($sql),
             new MariaDbHypervisorHistoryStore($sql),
-            new StorageMaintenance($partitions ?? new PartitionMaintenance($sql), $metrics !== null ? new MetricRollup($sql) : null, $sql),
+            new StorageMaintenance($partitions ?? new PartitionMaintenance($sql), $metrics, $sql),   // the metric store rolls its own days up
             $metrics,
         );
     }

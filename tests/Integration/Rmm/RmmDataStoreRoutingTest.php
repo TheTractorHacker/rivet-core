@@ -83,4 +83,23 @@ final class RmmDataStoreRoutingTest extends RmmTestCase
         $this->assertSame(1, $out['history'], 'the entry of the VM that does not exist is swept, the live VM keeps its history');
         $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_hypervisor_vm_history WHERE vm_id = $vm"));
     }
+
+    public function testTheCapacityPanelReadsTheStorageTiersFromTheMaintenanceStore(): void
+    {
+        $module = $this->h->module;
+        $tiers = $module->capacity()->storage($module->settings()->limits());
+        $this->assertSame(['rmm_metric_hourly', 'rmm_metric_daily', 'endpoint_agent_check_history'], array_keys($tiers['tables']));
+        $this->assertSame([14, 400, 7], array_column($tiers['tables'], 'retention_days'));
+        $module->settings()->update(['limits_json' => ['metric_hourly_days' => 30]]);
+        $tiers = $module->capacity()->storage($module->settings()->limits());
+        $this->assertSame(30, $tiers['tables']['rmm_metric_hourly']['retention_days'], 'an explicit limit wins over the default');
+    }
+
+    public function testTheCapacityPanelCountsTheChangeLedgerThroughTheStore(): void
+    {
+        $this->h->q("INSERT INTO endpoint_agent_change_state (device_id, row_count, last_batch_at) VALUES ({$this->dev}, 7, NOW())");
+        $m = $this->h->module->capacity()->changeMonitor();
+        $this->assertTrue($m['available']);
+        $this->assertSame([7, 1], [$m['rows'], $m['devices_reporting']]);
+    }
 }
