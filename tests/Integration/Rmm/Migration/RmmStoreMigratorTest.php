@@ -267,9 +267,9 @@ final class RmmStoreMigratorTest extends StoreMigrationTestCase
         $now = $this->now();
         $stores = $this->h->module->dataStores();
         $this->assertSame('postgres', $stores->kind());
-        $stores->checkHistory()->append(9, [['key' => 'after', 'status' => 'ok', 'detail' => 'written after the cut-over', 'at' => gmdate('Y-m-d H:i:s', $now + 1)]]);
+        $stores->checkHistory()->append(9, [['key' => 'after', 'status' => 'ok', 'detail' => 'written after the cut-over', 'at' => gmdate('Y-m-d H:i:s', $now - 5)]]);
         $caps = ['rate_per_min' => 100000, 'device_max_rows' => 100000, 'fleet_max_rows' => 1000000];
-        $stores->logs()->admit(9, [['ts' => $now, 'level' => 2, 'source' => 'after', 'code' => 1, 'message' => 'after cutover', 'hash' => md5('after')]], $caps, $now + 1, 0, 0, 1);
+        $stores->logs()->admit(9, [['ts' => $now - 5, 'level' => 2, 'source' => 'after', 'code' => 1, 'message' => 'after cutover', 'hash' => md5('after')]], $caps, $now - 5, 0, 0, 1);
         $this->assertSame('0', (string) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_check_history WHERE check_key = 'after'"), 'MariaDB does not have it yet');
 
         $r = $this->migrator()->rollback(self::opts(), $this->collect());
@@ -361,7 +361,7 @@ final class RmmStoreMigratorTest extends StoreMigrationTestCase
                 for ($i = 0; $i < 6; ++$i) {
                     $entries[] = ['ts' => $now, 'level' => 2, 'source' => 'cap', 'code' => $i, 'message' => "cap $i", 'hash' => md5("cap$i")];
                 }
-                $this->h->module->dataStores()->logs()->admit(7, $entries, $caps, $now, 0, 0, 1);
+                $this->h->module->dataStores()->logs()->admit(99, $entries, $caps, $now, 0, 0, 1);
             }
         });
         $this->migrator()->migrate(self::opts(['to' => 'postgres']), $cb);
@@ -380,7 +380,7 @@ final class RmmStoreMigratorTest extends StoreMigrationTestCase
                 $this->reresolve();
                 $m = $this->h->module->dataStores()->metrics();
                 $this->assertNotNull($m);
-                $m->ingest([['asset_id' => 77, 'key' => 'cpu', 'instance' => '', 'value' => 12.5, 'ts' => $now]], 1);
+                $m->ingest([['asset_id' => 77, 'key' => 'cpu.utilization', 'instance' => '', 'value' => 12.5, 'label' => null, 'at' => new \DateTimeImmutable('@' . $now)]], 1);
             }
         });
         $this->migrator()->migrate(self::opts(['to' => 'postgres']), $cb);
