@@ -48,29 +48,65 @@ final class PostgresMetricStore implements MetricStore
         if ($latest === [] && $hourly === []) {
             return;
         }
+        if ($latest !== [] && $hourly !== [] && count($latest) <= DatabaseMetricSink::ROWS_PER_STATEMENT && count($hourly) <= DatabaseMetricSink::ROWS_PER_STATEMENT) {
+            // The shape of a check-in: one statement, one round trip, atomic by itself (a data-modifying CTE always runs to completion).
+            $this->db->execute('WITH latest AS (' . self::latestSql(count($latest)) . ' RETURNING 1) ' . self::hourlySql(count($hourly)), [...self::latestParams($latest), ...self::hourlyParams($hourly)]);
+
+            return;
+        }
         $this->db->transaction(function () use ($latest, $hourly): void {
             foreach (array_chunk($latest, DatabaseMetricSink::ROWS_PER_STATEMENT) as $chunk) {
-                $params = [];
-                foreach ($chunk as [$asset, $key, $inst, $value, $label, $ts]) {
-                    array_push($params, $asset, $key, $inst, $value, $label, PostgresSql::utc($ts));
-                }
-                $this->db->execute('INSERT INTO rmm_metric_latest (asset_id, metric_key, instance, value, label, sampled_at) VALUES ' . PostgresSql::rows(count($chunk), 6)
-                    . ' ON CONFLICT (asset_id, metric_key, instance) DO UPDATE SET'
-                    . ' value = CASE WHEN EXCLUDED.sampled_at >= rmm_metric_latest.sampled_at THEN EXCLUDED.value ELSE rmm_metric_latest.value END,'
-                    . ' label = CASE WHEN EXCLUDED.sampled_at >= rmm_metric_latest.sampled_at THEN EXCLUDED.label ELSE rmm_metric_latest.label END,'
-                    . ' sampled_at = GREATEST(rmm_metric_latest.sampled_at, EXCLUDED.sampled_at)', $params);
+                $this->db->execute(self::latestSql(count($chunk)), self::latestParams($chunk));
             }
             foreach (array_chunk($hourly, DatabaseMetricSink::ROWS_PER_STATEMENT) as $chunk) {
-                $params = [];
-                foreach ($chunk as [$asset, $key, $inst, $hour, $n, $sum, $min, $max]) {
-                    array_push($params, $asset, $key, $inst, PostgresSql::utc($hour), $n, $sum, $min, $max);
-                }
-                $this->db->execute('INSERT INTO rmm_metric_hourly (asset_id, metric_key, instance, hour_start, samples, sum_value, min_value, max_value) VALUES ' . PostgresSql::rows(count($chunk), 8)
-                    . ' ON CONFLICT (asset_id, metric_key, instance, hour_start) DO UPDATE SET samples = rmm_metric_hourly.samples + EXCLUDED.samples,'
-                    . ' sum_value = rmm_metric_hourly.sum_value + EXCLUDED.sum_value, min_value = LEAST(rmm_metric_hourly.min_value, EXCLUDED.min_value),'
-                    . ' max_value = GREATEST(rmm_metric_hourly.max_value, EXCLUDED.max_value)', $params);
+                $this->db->execute(self::hourlySql(count($chunk)), self::hourlyParams($chunk));
             }
         });
+    }
+
+    private static function latestSql(int $rows): string
+    {
+        return 'INSERT INTO rmm_metric_latest (asset_id, metric_key, instance, value, label, sampled_at) VALUES ' . PostgresSql::rows($rows, 6)
+            . ' ON CONFLICT (asset_id, metric_key, instance) DO UPDATE SET'
+            . ' value = CASE WHEN EXCLUDED.sampled_at >= rmm_metric_latest.sampled_at THEN EXCLUDED.value ELSE rmm_metric_latest.value END,'
+            . ' label = CASE WHEN EXCLUDED.sampled_at >= rmm_metric_latest.sampled_at THEN EXCLUDED.label ELSE rmm_metric_latest.label END,'
+            . ' sampled_at = GREATEST(rmm_metric_latest.sampled_at, EXCLUDED.sampled_at)';
+    }
+
+    private static function hourlySql(int $rows): string
+    {
+        return 'INSERT INTO rmm_metric_hourly (asset_id, metric_key, instance, hour_start, samples, sum_value, min_value, max_value) VALUES ' . PostgresSql::rows($rows, 8)
+            . ' ON CONFLICT (asset_id, metric_key, instance, hour_start) DO UPDATE SET samples = rmm_metric_hourly.samples + EXCLUDED.samples,'
+            . ' sum_value = rmm_metric_hourly.sum_value + EXCLUDED.sum_value, min_value = LEAST(rmm_metric_hourly.min_value, EXCLUDED.min_value),'
+            . ' max_value = GREATEST(rmm_metric_hourly.max_value, EXCLUDED.max_value)';
+    }
+
+    /**
+     * @param list<array{0:int,1:string,2:string,3:float,4:?string,5:int}> $rows
+     * @return list<mixed>
+     */
+    private static function latestParams(array $rows): array
+    {
+        $params = [];
+        foreach ($rows as [$asset, $key, $inst, $value, $label, $ts]) {
+            array_push($params, $asset, $key, $inst, $value, $label, PostgresSql::utc($ts));
+        }
+
+        return $params;
+    }
+
+    /**
+     * @param list<array{0:int,1:string,2:string,3:int,4:int,5:float,6:float,7:float}> $rows
+     * @return list<mixed>
+     */
+    private static function hourlyParams(array $rows): array
+    {
+        $params = [];
+        foreach ($rows as [$asset, $key, $inst, $hour, $n, $sum, $min, $max]) {
+            array_push($params, $asset, $key, $inst, PostgresSql::utc($hour), $n, $sum, $min, $max);
+        }
+
+        return $params;
     }
 
     public function retentionDays(): int
@@ -92,7 +128,7 @@ final class PostgresMetricStore implements MetricStore
                 return [];
             }
             $sql .= ' AND metric_key IN (' . PostgresSql::in(count($keys)) . ')';
-            array_push($params, ...array_values($keys));
+            array_push($params, ...$keys);
         }
         $out = [];
         foreach ($this->db->query($sql . ' ORDER BY ' . self::ORDER_KEY, $params) as $r) {

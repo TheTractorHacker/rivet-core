@@ -91,7 +91,7 @@ final class PostgresChangeEventStore implements ChangeEventStore
                 return ['rows' => [], 'total' => 0];
             }
             $where[] = 'client_id IN (' . PostgresSql::in(count($c->visibleClientIds)) . ')';
-            array_push($params, ...array_values($c->visibleClientIds));
+            array_push($params, ...$c->visibleClientIds);
         }
         if ($c->kind !== null) {
             $where[] = 'kind = ?';
@@ -173,7 +173,7 @@ final class PostgresChangeEventStore implements ChangeEventStore
             return 0;
         }
 
-        return (int) $this->db->value('SELECT COALESCE(SUM(row_count), 0)::bigint FROM endpoint_agent_change_state WHERE client_id IN (' . PostgresSql::in(count($visibleClientIds)) . ')', array_values($visibleClientIds));
+        return (int) $this->db->value('SELECT COALESCE(SUM(row_count), 0)::bigint FROM endpoint_agent_change_state WHERE client_id IN (' . PostgresSql::in(count($visibleClientIds)) . ')', $visibleClientIds);
     }
 
     public function deviceLedger(int $deviceId): ?array
@@ -199,7 +199,7 @@ final class PostgresChangeEventStore implements ChangeEventStore
 
         return array_map(static fn (array $r): array => ['watch' => (string) $r['watch'], 'c' => (int) $r['c']],
             $this->db->query('SELECT watch, COUNT(*)::bigint AS c FROM endpoint_agent_change_records WHERE occurred_at >= ?' . $scope . ' GROUP BY watch ORDER BY c DESC, upper(watch) COLLATE "C", watch COLLATE "C" LIMIT 30',
-                [$sinceUtc, ...($visibleClientIds === null ? [] : array_values($visibleClientIds))]));
+                [$sinceUtc, ...($visibleClientIds ?? [])]));
     }
 
     public function ledgerTotals(): array

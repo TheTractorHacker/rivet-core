@@ -83,7 +83,7 @@ final class PostgresLogStore implements LogStore
                 return ['rows' => [], 'total' => 0];
             }
             $where[] = 'client_id IN (' . PostgresSql::in(count($c->visibleClientIds)) . ')';
-            array_push($params, ...array_values($c->visibleClientIds));
+            array_push($params, ...$c->visibleClientIds);
         }
         if ($c->maxLevel !== null) {
             $where[] = 'level <= ?';

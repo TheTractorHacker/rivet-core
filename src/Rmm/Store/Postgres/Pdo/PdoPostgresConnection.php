@@ -23,8 +23,13 @@ use RivetCore\Rmm\Store\Postgres\PostgresSerializationException;
  */
 final class PdoPostgresConnection implements PostgresConnectionInterface
 {
+    /** Statements kept per session: preparing is a round trip, executing is another, and PDO deallocates a statement it drops with a third. The hot paths repeat a handful of statements. */
+    private const STATEMENT_CACHE = 64;
+
     private ?\PDO $pdo = null;
     private int $depth = 0;
+    /** @var array<string,\PDOStatement> sql => prepared statement of the current session, oldest first */
+    private array $statements = [];
 
     public function __construct(private readonly PostgresConfig $config)
     {
@@ -41,12 +46,12 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
 
     public function query(string $sql, array $params = []): array
     {
-        return $this->run($sql, $params)->fetchAll(\PDO::FETCH_ASSOC);
+        return $this->run($sql, $params, static fn (\PDOStatement $st): array => $st->fetchAll(\PDO::FETCH_ASSOC));
     }
 
     public function queryOne(string $sql, array $params = []): ?array
     {
-        $row = $this->run($sql, $params)->fetch(\PDO::FETCH_ASSOC);
+        $row = $this->run($sql, $params, static fn (\PDOStatement $st): mixed => $st->fetch(\PDO::FETCH_ASSOC));
 
         return is_array($row) ? $row : null;
     }
@@ -60,7 +65,7 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
 
     public function execute(string $sql, array $params = []): int
     {
-        return max(0, $this->run($sql, $params)->rowCount());
+        return max(0, (int) $this->run($sql, $params, static fn (\PDOStatement $st): int => $st->rowCount()));
     }
 
     public function transaction(callable $callback): mixed
@@ -109,6 +114,7 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
     public function close(): void
     {
         $this->pdo = null;
+        $this->statements = [];
         $this->depth = 0;
     }
 
@@ -148,31 +154,54 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
             }
         } catch (\Throwable) {
             $this->pdo = null;   // the session cannot even roll back: drop it, the server rolls the transaction back when it notices
+            $this->statements = [];
         }
     }
 
     /**
+     * @template T
      * @param list<mixed> $params
+     * @param \Closure(\PDOStatement): T $read what to take from the statement before it is reused
+     * @return T
      */
-    private function run(string $sql, array $params): \PDOStatement
+    private function run(string $sql, array $params, \Closure $read): mixed
     {
-        $bound = array_map(self::scalar(...), array_values($params));
+        $bound = array_map(self::scalar(...), $params);
         $pdo = $this->pdo();
-        try {
-            $st = $pdo->prepare($sql);
-            foreach ($bound as $i => $v) {
-                $st->bindValue($i + 1, $v, match (true) {
-                    $v === null => \PDO::PARAM_NULL,
-                    is_bool($v) => \PDO::PARAM_BOOL,
-                    is_int($v) => \PDO::PARAM_INT,
-                    default => \PDO::PARAM_STR,
-                });
-            }
-            $st->execute();
+        for ($attempt = 1;; ++$attempt) {
+            try {
+                $st = $this->statements[$sql] ?? null;
+                if ($st === null) {
+                    $st = $pdo->prepare($sql);
+                } else {
+                    unset($this->statements[$sql]);   // re-inserted below as the newest
+                }
+                foreach ($bound as $i => $v) {
+                    $st->bindValue($i + 1, $v, match (true) {
+                        $v === null => \PDO::PARAM_NULL,
+                        is_bool($v) => \PDO::PARAM_BOOL,
+                        is_int($v) => \PDO::PARAM_INT,
+                        default => \PDO::PARAM_STR,
+                    });
+                }
+                $st->execute();
+                $result = $read($st);
+                $st->closeCursor();
+                $this->statements[$sql] = $st;
+                if (count($this->statements) > self::STATEMENT_CACHE) {
+                    array_shift($this->statements);
+                }
 
-            return $st;
-        } catch (\PDOException $e) {
-            throw $this->failed($e);
+                return $result;
+            } catch (\PDOException $e) {
+                unset($this->statements[$sql]);   // a statement that failed is not trusted again
+                $info = is_array($e->errorInfo) ? $e->errorInfo : [];
+                if ($attempt === 1 && ($info[0] ?? '') === '0A000' && !$pdo->inTransaction()) {
+                    continue;   // "cached plan must not change result type": the table was altered under a cached statement; prepare it again
+                }
+
+                throw $this->failed($e);
+            }
         }
     }
 
@@ -206,6 +235,7 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
         $mapped = PdoErrorMapper::map($e, $this->config->password());
         if ($mapped instanceof PostgresConnectionException) {
             $this->pdo = null;   // reconnect on the next call
+            $this->statements = [];
             $this->depth = 0;
         }
 

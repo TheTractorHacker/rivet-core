@@ -166,8 +166,9 @@ final class PostgresFailureInjectionTest extends TestCase
     public function testAMetricBatchCutBetweenTheLatestAndTheHourlyWriteIsRolledBack(): void
     {
         $at = new \DateTimeImmutable('@' . (intdiv(time(), 3600) * 3600 - 3600 + 5));
-        $samples = [['asset_id' => 55, 'key' => 'cpu.utilization', 'instance' => null, 'value' => 10, 'at' => $at, 'label' => null]];
-        $store = new PostgresMetricStore($this->cutAfter(2), new MutableClock());   // statement 1: latest upsert, statement 2: hourly upsert
+        // 230 series: more than one statement's worth, so the batch takes the multi-statement transaction
+        $samples = array_map(static fn (int $i): array => ['asset_id' => 55, 'key' => 'cpu.utilization', 'instance' => 'i' . $i, 'value' => 10, 'at' => $at, 'label' => null], range(1, 230));
+        $store = new PostgresMetricStore($this->cutAfter(2), new MutableClock());   // statement 1: the first latest chunk, statement 2: the rest of the latest rows
         try {
             $store->ingest($samples, 1);
             $this->fail('cut');
@@ -175,7 +176,71 @@ final class PostgresFailureInjectionTest extends TestCase
         }
         $this->assertSame([0, 0], [(int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_latest'), (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly')], 'latest and hourly are never half written');
         $store->ingest($samples, 1);
-        $this->assertSame([1, 1], [(int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_latest'), (int) $this->db->value('SELECT samples FROM rmm_metric_hourly')]);
+        $this->assertSame([230, 230], [(int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_latest'), (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly')]);
+        // a check-in sized batch is ONE statement (a data-modifying CTE): one round trip, atomic by itself, no transaction to cut
+        $this->db->execute('TRUNCATE rmm_metric_latest, rmm_metric_hourly');
+        $one = [['asset_id' => 56, 'key' => 'cpu.utilization', 'instance' => null, 'value' => 10, 'at' => $at, 'label' => null], ['asset_id' => 56, 'key' => 'memory.utilization', 'instance' => null, 'value' => 20, 'at' => $at, 'label' => null]];
+        $counting = new class($this->db) implements PostgresConnectionInterface {
+            public int $statements = 0;
+            public int $transactions = 0;
+
+            public function __construct(private readonly PostgresConnectionInterface $inner)
+            {
+            }
+
+            public function query(string $sql, array $params = []): array
+            {
+                ++$this->statements;
+
+                return $this->inner->query($sql, $params);
+            }
+
+            public function queryOne(string $sql, array $params = []): ?array
+            {
+                ++$this->statements;
+
+                return $this->inner->queryOne($sql, $params);
+            }
+
+            public function value(string $sql, array $params = []): mixed
+            {
+                ++$this->statements;
+
+                return $this->inner->value($sql, $params);
+            }
+
+            public function execute(string $sql, array $params = []): int
+            {
+                ++$this->statements;
+
+                return $this->inner->execute($sql, $params);
+            }
+
+            public function transaction(callable $callback): mixed
+            {
+                ++$this->transactions;
+
+                return $this->inner->transaction($callback);
+            }
+
+            public function inTransaction(): bool
+            {
+                return $this->inner->inTransaction();
+            }
+
+            public function serverVersion(): string
+            {
+                return $this->inner->serverVersion();
+            }
+
+            public function close(): void
+            {
+                $this->inner->close();
+            }
+        };
+        (new PostgresMetricStore($counting, new MutableClock()))->ingest($one, 1);
+        $this->assertSame([1, 0], [$counting->statements, $counting->transactions]);
+        $this->assertSame([2, 2], [(int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_latest'), (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly')]);
     }
 
     public function testAPruneBatchCutMidWayKeepsTheLedgerEqualToTheRows(): void
