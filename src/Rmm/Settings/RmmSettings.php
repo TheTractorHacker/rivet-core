@@ -388,7 +388,7 @@ final class RmmSettings
         if (array_key_exists('data_store', $in)) {
             $kind = is_string($in['data_store']) ? $in['data_store'] : '';
             try {
-                RmmDataStoreFactory::assertAvailable($kind);
+                RmmDataStoreFactory::assertSelectable($kind);
                 if (array_key_exists('data_store', $this->get())) {   // an install that has not run migration 0042 yet is on mariadb already: nothing to write
                     $out['data_store'] = $kind;
                 }

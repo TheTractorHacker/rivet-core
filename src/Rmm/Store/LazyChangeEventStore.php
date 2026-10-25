@@ -22,9 +22,9 @@ final class LazyChangeEventStore implements ChangeEventStore
         return ($this->resolve)()->changes();
     }
 
-    public function admit(int $deviceId, array $records, array $caps, int $nowTs, int $rejected, int $agentDropped, string $configVersion, ?string $monitorJson): array
+    public function admit(int $deviceId, array $records, array $caps, int $nowTs, int $rejected, int $agentDropped, string $configVersion, ?string $monitorJson, ?int $clientId = null): array
     {
-        return $this->inner()->admit($deviceId, $records, $caps, $nowTs, $rejected, $agentDropped, $configVersion, $monitorJson);
+        return $this->inner()->admit($deviceId, $records, $caps, $nowTs, $rejected, $agentDropped, $configVersion, $monitorJson, $clientId);
     }
 
     public function dedupeKeysReceivedAt(int $deviceId, string $receivedAtUtc): array
@@ -65,6 +65,11 @@ final class LazyChangeEventStore implements ChangeEventStore
     public function ledgerTotals(): array
     {
         return $this->inner()->ledgerTotals();
+    }
+
+    public function reassignClient(int $deviceId, int $clientId): int
+    {
+        return $this->inner()->reassignClient($deviceId, $clientId);
     }
 
     public function hasLedger(): bool

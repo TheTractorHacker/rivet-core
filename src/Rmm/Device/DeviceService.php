@@ -38,6 +38,7 @@ final class DeviceService
         private readonly RmmAuditInterface $audit,
         private readonly EnrollmentService $enrollment,
         private readonly ?RmmCache $cache = null,
+        private readonly ?\RivetCore\Rmm\Store\RmmDataStores $stores = null,
     ) {
     }
 
@@ -152,6 +153,8 @@ final class DeviceService
                 $this->bridge->reassignAlerts($this->settings->integrationId(), (int) $dev['asset_id'], $clientId);
             }
         });
+        $this->stores?->logs()->reassignClient($deviceId, $clientId);   // the hot stores keep the client with each row
+        $this->stores?->changes()->reassignClient($deviceId, $clientId);
         $this->audit->record('Device Transferred', "Device $deviceId moved from department {$dev['client_id']} to $clientId by user $userId", $clientId, (int) $dev['asset_id']);
         $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
 

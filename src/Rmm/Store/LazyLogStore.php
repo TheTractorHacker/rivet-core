@@ -22,9 +22,9 @@ final class LazyLogStore implements LogStore
         return ($this->resolve)()->logs();
     }
 
-    public function admit(int $deviceId, array $entries, array $caps, int $nowTs, int $rejected, int $agentDropped): array
+    public function admit(int $deviceId, array $entries, array $caps, int $nowTs, int $rejected, int $agentDropped, ?int $clientId = null): array
     {
-        return $this->inner()->admit($deviceId, $entries, $caps, $nowTs, $rejected, $agentDropped);
+        return $this->inner()->admit($deviceId, $entries, $caps, $nowTs, $rejected, $agentDropped, $clientId);
     }
 
     public function search(\RivetCore\Rmm\Store\LogCriteria $criteria, int $limit, int $offset): array
@@ -45,6 +45,11 @@ final class LazyLogStore implements LogStore
     public function deviceLedger(int $deviceId): ?array
     {
         return $this->inner()->deviceLedger($deviceId);
+    }
+
+    public function reassignClient(int $deviceId, int $clientId): int
+    {
+        return $this->inner()->reassignClient($deviceId, $clientId);
     }
 
     public function oldestEventAt(?int $deviceId = null): ?string

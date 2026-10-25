@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Store\Postgres\Pdo;
 
+use RivetCore\Rmm\Store\Postgres\CircuitBreakerConnection;
 use RivetCore\Rmm\Store\Postgres\PostgresConfig;
 use RivetCore\Rmm\Store\Postgres\PostgresConnectionException;
 use RivetCore\Rmm\Store\Postgres\PostgresConnectionInterface;
@@ -27,6 +28,15 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
 
     public function __construct(private readonly PostgresConfig $config)
     {
+    }
+
+    /**
+     * The connection an edition should hand to the module: this adapter behind the shared {@see CircuitBreakerConnection}, so an outage costs one connect timeout per
+     * window instead of one per check-in.
+     */
+    public static function fromConfig(PostgresConfig $config): PostgresConnectionInterface
+    {
+        return new CircuitBreakerConnection(new self($config), $config->identity(), $config->breakerOpenS);
     }
 
     public function query(string $sql, array $params = []): array

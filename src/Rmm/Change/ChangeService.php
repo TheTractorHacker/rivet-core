@@ -10,6 +10,8 @@ use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Store\ChangeCriteria;
 use RivetCore\Rmm\Store\ChangeEventStore;
+use RivetCore\Rmm\Store\DeviceNames;
+use RivetCore\Rmm\Store\HotStoreUnavailableException;
 use RivetCore\Rmm\Store\MariaDb\MariaDbChangeEventStore;
 use RivetCore\Rmm\Store\SoftwareHistoryStore;
 use RivetCore\Rmm\Store\MariaDb\MariaDbSoftwareHistoryStore;
@@ -93,8 +95,13 @@ final class ChangeService
             $clean[] = $row;
         }
 
-        $res = $this->store->admit($deviceId, $clean, ['rate_per_min' => $limits['change_rate_per_min'], 'device_max_rows' => $limits['change_device_max_rows'], 'fleet_max_rows' => $limits['change_fleet_max_rows']],
-            $now, $dropped, $agentDropped, $version, $status);
+        try {
+            $res = $this->store->admit($deviceId, $clean, ['rate_per_min' => $limits['change_rate_per_min'], 'device_max_rows' => $limits['change_device_max_rows'], 'fleet_max_rows' => $limits['change_fleet_max_rows']],
+                $now, $dropped, $agentDropped, $version, $status, isset($dev['client_id']) ? (int) $dev['client_id'] : null);
+        } catch (HotStoreUnavailableException) {
+            // the data store is down: the agent keeps its batch and sends it again (the protocol's retryable 503), nothing is lost or counted as dropped
+            throw new ApiError(503, 'unavailable', 'The change store is temporarily unavailable. Try again later.', ['Retry-After' => (string) random_int(60, 180)]);
+        }
         $kept = $res['kept'];
         $inserted = $res['inserted'];
         $dropped = $res['dropped'];
@@ -268,7 +275,7 @@ final class ChangeService
             isset($f['watch']) && is_string($f['watch']) && preg_match(ChangeProtocol::WATCH_ID_RE, $f['watch']) === 1 ? $f['watch'] : null,
             isset($f['change']) && is_string($f['change']) ? ChangeProtocol::changeNumber($f['change']) : null,
             $text('target', 100), $text('item', 100), $text('actor', 100), $text('q', 200)), $limit, $offset);
-        $rows = $page['rows'];
+        $rows = (new DeviceNames($this->sql))->hydrate($page['rows']);
         $total = $page['total'];
 
         return ['items' => array_map(self::present(...), $rows), 'total' => $total] + $range;
@@ -304,7 +311,7 @@ final class ChangeService
         $a = gmdate('Y-m-d H:i:s', $from);
         $b = gmdate('Y-m-d H:i:s', $to);
         $tl = $this->store->timeline($deviceId, $a, $b, $limit);
-        $items = array_map(self::present(...), $tl['rows']);
+        $items = array_map(self::present(...), (new DeviceNames($this->sql))->hydrate($tl['rows']));
         try {
             $soft = !$software ? [] : $this->softwareHistory->between($deviceId, $a, $b, $limit);
         } catch (\Throwable) {

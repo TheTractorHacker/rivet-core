@@ -9,7 +9,7 @@ use RivetCore\Rmm\Support\Sql;
 
 /**
  * {@see DeploymentHistoryStore} on MariaDB / MySQL: the statements the deploy service, the deploy reader and the deploy scheduler ran before the store existed,
- * unchanged. The package name is read with a LEFT JOIN on the catalog table (the same database).
+ * unchanged. The package name is not read here any more (phase 2 of #89): the caller adds it from the catalog.
  *
  * @internal
  */
@@ -27,7 +27,7 @@ final class MariaDbDeploymentHistoryStore implements DeploymentHistoryStore
 
     public function forDevice(int $deviceId, int $limit, int $offset): array
     {
-        return ['rows' => $this->sql->all('SELECT h.*, p.name FROM rmm_package_history h LEFT JOIN rmm_packages p ON p.package_id = h.package_id WHERE h.device_id = ? ORDER BY h.id DESC LIMIT ' . max(1, min(500, $limit)) . ' OFFSET ' . max(0, $offset), [$deviceId]),
+        return ['rows' => $this->sql->all('SELECT * FROM rmm_package_history WHERE device_id = ? ORDER BY id DESC LIMIT ' . max(1, min(500, $limit)) . ' OFFSET ' . max(0, $offset), [$deviceId]),
             'total' => (int) $this->sql->val('SELECT COUNT(*) FROM rmm_package_history WHERE device_id = ?', [$deviceId])];
     }
 

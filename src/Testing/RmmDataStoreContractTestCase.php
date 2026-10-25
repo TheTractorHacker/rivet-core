@@ -43,6 +43,14 @@ abstract class RmmDataStoreContractTestCase extends TestCase
     /** Remove a VM from the control database (its history becomes orphaned). */
     abstract protected function deleteVm(int $vmId): void;
 
+    /**
+     * Which of the given VM ids are still in the control database's inventory (what the caller of {@see \RivetCore\Rmm\Store\HypervisorHistoryStore::deleteOrphans()} passes).
+     *
+     * @param list<int> $vmIds
+     * @return list<int>
+     */
+    abstract protected function existingVms(array $vmIds): array;
+
     /** A fixed point in time well after every retention, so cases can place rows before and after it. */
     private const T = 1_800_000_000;
     private const DAY = 86400;
@@ -364,8 +372,8 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $this->assertCount(5, $page['rows']);
         $first = $page['rows'][0];
         $this->assertSame($pkg + 1000, (int) $first['package_id']);
-        $this->assertNull($first['name'], 'a package that is not in the catalog has no name');
-        $this->assertSame(['Contract Package', '1.3', 'detail 3', 'live', 'job-3', 5], [(string) $page['rows'][1]['name'], (string) $page['rows'][1]['version'], (string) $page['rows'][1]['detail'],
+        $this->assertArrayNotHasKey('name', $first, 'the catalog is control data: the store does not join it, the caller adds the name');
+        $this->assertSame([$pkg, '1.3', 'detail 3', 'live', 'job-3', 5], [(int) $page['rows'][1]['package_id'], (string) $page['rows'][1]['version'], (string) $page['rows'][1]['detail'],
             (string) $page['rows'][1]['mode'], (string) $page['rows'][1]['job_id'], (int) $page['rows'][1]['user_id']]);
         $this->assertSame(['1.3', '1.2'], array_map(static fn (array $r): string => (string) $r['version'], $d->forDevice($dev, 2, 1)['rows']), 'newest first, with an offset');
         $this->assertSame(0, $d->forDevice($dev + 999, 10, 0)['total']);
@@ -396,12 +404,13 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $this->assertCount(2, $h->recent($a, 2));
         $this->assertCount(1, $h->recent($b));
         $this->assertSame([], $h->recent($b + 1000));
-        $this->assertSame(0, $h->deleteOrphans(), 'both VMs still exist');
+        $exists = fn (array $ids): array => $this->existingVms($ids);
+        $this->assertSame(0, $h->deleteOrphans($exists), 'both VMs still exist');
         $this->deleteVm($a);
-        $this->assertSame(3, $h->deleteOrphans());
+        $this->assertSame(3, $h->deleteOrphans($exists));
         $this->assertSame([], $h->recent($a));
         $this->assertCount(1, $h->recent($b), 'the other VM keeps its history');
-        $this->assertSame(0, $h->deleteOrphans());
+        $this->assertSame(0, $h->deleteOrphans($exists));
     }
 
     // ------------------------------------------------------------------ logs
@@ -503,15 +512,16 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $a = $this->device(1, 'LOG-A');
         $b = $this->device(2, 'LOG-B');
         $l->admit($a, [$this->entry(self::T + 10, 1, 'Kernel', 100, 'disk failing'), $this->entry(self::T + 20, 4, 'Service Control', 7036, 'The 100% service entered_the running state'),
-            $this->entry(self::T + 30, 5, 'Debugger', null, 'chatty'), $this->entry(self::T + 40, 2, 'Kernel', 101, 'second kernel')], self::CAPS, self::T + 99, 0, 0);
-        $l->admit($b, [$this->entry(self::T + 25, 3, 'Other', 5, 'warn on b')], self::CAPS, self::T + 99, 0, 0);
+            $this->entry(self::T + 30, 5, 'Debugger', null, 'chatty'), $this->entry(self::T + 40, 2, 'Kernel', 101, 'second kernel')], self::CAPS, self::T + 99, 0, 0, 1);
+        $l->admit($b, [$this->entry(self::T + 25, 3, 'Other', 5, 'warn on b')], self::CAPS, self::T + 99, 0, 0, 2);
         $window = fn (array $over = []): LogCriteria => new LogCriteria(self::utc(self::T), self::utc(self::T + 1000), ...$over);
         $all = $l->search($window(), 100, 0);
         $this->assertSame(5, $all['total']);
         $this->assertSame([self::utc(self::T + 40), self::utc(self::T + 30), self::utc(self::T + 25), self::utc(self::T + 20), self::utc(self::T + 10)], array_map(static fn (array $r): string => (string) $r['occurred_at'], $all['rows']), 'newest first');
         $row = $all['rows'][0];
-        $this->assertSame(['LOG-A', 1, $a, 2, 'Kernel', 101, 'second kernel'], [$row['hostname'], (int) $row['client_id'], (int) $row['device_id'], (int) $row['level'], $row['source'], (int) $row['code'], $row['message']]);
+        $this->assertSame([1, $a, 2, 'Kernel', 101, 'second kernel'], [(int) $row['client_id'], (int) $row['device_id'], (int) $row['level'], $row['source'], (int) $row['code'], $row['message']]);
         $this->assertArrayHasKey('event_id', $row);
+        $this->assertArrayNotHasKey('hostname', $row, 'the host name is control data: the caller adds it');
         $this->assertSame(4, $l->search($window(['clientId' => 1]), 100, 0)['total']);
         $this->assertSame(1, $l->search($window(['clientId' => 2]), 100, 0)['total']);
         $this->assertSame(4, $l->search($window(['deviceId' => $a]), 100, 0)['total']);
@@ -683,14 +693,15 @@ abstract class RmmDataStoreContractTestCase extends TestCase
             $this->record(self::T + 20, 'C:\\Tools\\100%_done.txt', 'file', 1, 'win.tools', 'file', 'bob', 'new', ''),
             $this->record(self::T + 30, 'HKLM\\Run', 'Other', 3, 'win.run', 'registry', 'alice', '', ''),
             $this->record(self::T + 40, 'lnx-group', 'wheel', 2, 'lnx.groups', 'group', '', 'bob', 'sudo membership'),
-        ], self::CHANGE_CAPS, self::T + 99, 0, 0, '', null);
-        $c->admit($b, [$this->record(self::T + 25, 'HKLM\\Run', 'Updater', 2, 'win.run', 'registry', 'carol', 'v3', '')], self::CHANGE_CAPS, self::T + 99, 0, 0, '', null);
+        ], self::CHANGE_CAPS, self::T + 99, 0, 0, '', null, 1);
+        $c->admit($b, [$this->record(self::T + 25, 'HKLM\\Run', 'Updater', 2, 'win.run', 'registry', 'carol', 'v3', '')], self::CHANGE_CAPS, self::T + 99, 0, 0, '', null, 2);
         $q = fn (array $over = []): ChangeCriteria => new ChangeCriteria(self::utc(self::T), self::utc(self::T + 1000), ...$over);
         $all = $c->search($q(), 100, 0);
         $this->assertSame(5, $all['total']);
         $this->assertSame([self::utc(self::T + 40), self::utc(self::T + 30), self::utc(self::T + 25), self::utc(self::T + 20), self::utc(self::T + 10)], array_map(static fn (array $r): string => (string) $r['occurred_at'], $all['rows']), 'newest first');
         $row = $all['rows'][0];
-        $this->assertSame(['CHG-A', 1, $a, 'group', 'lnx.groups', 2, 'lnx-group', 'wheel'], [$row['hostname'], (int) $row['client_id'], (int) $row['device_id'], $row['kind'], $row['watch'], (int) $row['change_type'], $row['target'], $row['item']]);
+        $this->assertSame([1, $a, 'group', 'lnx.groups', 2, 'lnx-group', 'wheel'], [(int) $row['client_id'], (int) $row['device_id'], $row['kind'], $row['watch'], (int) $row['change_type'], $row['target'], $row['item']]);
+        $this->assertArrayNotHasKey('hostname', $row, 'the host name is control data: the caller adds it');
         foreach (['change_id', 'old_value', 'new_value', 'summary', 'old_hash', 'new_hash', 'actor', 'process', 'flags'] as $col) {
             $this->assertArrayHasKey($col, $row);
         }
@@ -728,12 +739,12 @@ abstract class RmmDataStoreContractTestCase extends TestCase
             $this->record($d1 + 200, 'HKLM\\Run', 'Other', 2, 'win.run', 'registry', 'alice'),
             $this->record($d1 + self::DAY + 5, 'C:\\x.txt', 'file', 1, 'win.tools', 'file', 'bob'),
             $this->record($d1 + 3 * self::DAY, 'HKLM\\Run', 'Late', 3, 'win.run', 'registry', ''),
-        ], self::CHANGE_CAPS, $d1 + 4 * self::DAY, 0, 0, '', null);
-        $c->admit($b, [$this->record($d1 + 150, 'HKLM\\Run', 'Updater', 2, 'win.run', 'registry', 'carol')], self::CHANGE_CAPS, $d1 + 4 * self::DAY, 0, 0, '', null);
+        ], self::CHANGE_CAPS, $d1 + 4 * self::DAY, 0, 0, '', null, 1);
+        $c->admit($b, [$this->record($d1 + 150, 'HKLM\\Run', 'Updater', 2, 'win.run', 'registry', 'carol')], self::CHANGE_CAPS, $d1 + 4 * self::DAY, 0, 0, '', null, 2);
         $tl = $c->timeline($a, self::utc($d1), self::utc($d1 + 5 * self::DAY), 100);
         $this->assertCount(4, $tl['rows']);
         $this->assertSame($d1 + 3 * self::DAY, strtotime($tl['rows'][0]['occurred_at'] . ' UTC'), 'newest first');
-        $this->assertSame('CHT-A', $tl['rows'][0]['hostname']);
+        $this->assertSame([$a, 1], [(int) $tl['rows'][0]['device_id'], (int) $tl['rows'][0]['client_id']]);
         $this->assertSame('alice', $tl['actors'][0]['actor'], 'most active first');
         $this->assertSame(2, $tl['actors'][0]['c']);
         $this->assertCount(3, $tl['actors']);
@@ -791,6 +802,54 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $this->assertSame(3, $r['retention'], 'a run cap bounds the whole call');
         $this->assertSame(3, $c->fleetRowCount());
         $this->assertTrue($c->hasLedger(), 'the ledger rows stay');
+    }
+
+    // ------------------------------------------------------------------ the client travels with the rows
+
+    public function testLogEntriesCarryTheirClientAndAMoveFollowsTheDevice(): void
+    {
+        $l = $this->stores()->logs();
+        $a = $this->device(1, 'LC-A');
+        $unknown = $this->device(1, 'LC-B');
+        $l->admit($a, [$this->entry(self::T + 1), $this->entry(self::T + 2)], self::CAPS, self::T + 10, 0, 0, 1);
+        $l->admit($unknown, [$this->entry(self::T + 3)], self::CAPS, self::T + 10, 0, 0);   // written without a client (an older release during the upgrade)
+        $q = fn (array $over = []): LogCriteria => new LogCriteria(self::utc(self::T), self::utc(self::T + 100), ...$over);
+        $rows = $l->search($q(), 10, 0)['rows'];
+        $this->assertSame([null, 1, 1], array_map(static fn (array $r): ?int => $r['client_id'] === null ? null : (int) $r['client_id'], $rows), 'newest first; a row without a client stays NULL');
+        $this->assertSame(3, $l->search($q(), 10, 0)['total'], 'an unscoped reader sees every row');
+        $this->assertSame(2, $l->search($q(['visibleClientIds' => [1]]), 10, 0)['total'], 'a reader scoped to client 1 sees the rows stored with client 1 and not the unknown ones');
+        $this->assertSame(0, $l->search($q(['visibleClientIds' => [2]]), 10, 0)['total']);
+        $this->assertSame(2, $l->reassignClient($a, 2), 'both entries of the device move');
+        $this->assertSame(0, $l->reassignClient($a, 2), 'a second call changes nothing');
+        $this->assertSame(0, $l->search($q(['visibleClientIds' => [1]]), 10, 0)['total']);
+        $this->assertSame(2, $l->search($q(['clientId' => 2]), 10, 0)['total']);
+        $this->assertSame(1, $l->reassignClient($unknown, 1), 'a row without a client gets one');
+        $this->assertSame(1, $l->search($q(['visibleClientIds' => [1]]), 10, 0)['total']);
+        $this->assertSame(2, $this->logLedger($a)['rows'], 'the ledger is not touched');
+    }
+
+    public function testChangeRecordsAndTheirLedgerCarryTheClientAndAMoveFollowsTheDevice(): void
+    {
+        $c = $this->stores()->changes();
+        $a = $this->device(1, 'CC-A');
+        $b = $this->device(2, 'CC-B');
+        $c->admit($a, [$this->record(self::T + 1), $this->record(self::T + 2, 'HKLM\\Two')], self::CHANGE_CAPS, self::T + 10, 0, 0, '', null, 1);
+        $c->admit($b, [$this->record(self::T + 3, 'HKLM\\Three')], self::CHANGE_CAPS, self::T + 10, 0, 0, '', null, 2);
+        $q = fn (array $over = []): ChangeCriteria => new ChangeCriteria(self::utc(self::T), self::utc(self::T + 100), ...$over);
+        $this->assertSame([2, 1], [$c->fleetRowCount([1]), $c->fleetRowCount([2])], 'the scoped fleet count follows the ledger, not a join');
+        $this->assertSame(2, $c->search($q(['visibleClientIds' => [1]]), 10, 0)['total']);
+        $this->assertSame(['win.run' => 2], array_column($c->countsByWatch(self::utc(self::T), [1]), 'c', 'watch'));
+        $this->assertSame(2, $c->reassignClient($a, 2));
+        $this->assertSame(0, $c->reassignClient($a, 2));
+        $this->assertSame([0, 3], [$c->fleetRowCount([1]), $c->fleetRowCount([2])], 'the ledger moved with the records');
+        $this->assertSame(0, $c->search($q(['visibleClientIds' => [1]]), 10, 0)['total']);
+        $this->assertSame(3, $c->search($q(['visibleClientIds' => [2]]), 10, 0)['total']);
+        // a later batch of a device that changed client by itself (the caller passes the current one) updates the ledger
+        $c->admit($b, [$this->record(self::T + 4, 'HKLM\\Four')], self::CHANGE_CAPS, self::T + 20, 0, 0, '', null, 1);
+        $this->assertSame([2, 2], [$c->fleetRowCount([1]), $c->fleetRowCount([2])], 'the ledger row took the new client (the old records keep theirs until reassignClient)');
+        // a batch without a client leaves the ledger's client alone
+        $c->admit($b, [$this->record(self::T + 5, 'HKLM\\Five')], self::CHANGE_CAPS, self::T + 30, 0, 0, '', null);
+        $this->assertSame([3, 2], [$c->fleetRowCount([1]), $c->fleetRowCount([2])]);
     }
 
     // ------------------------------------------------------------------ maintenance

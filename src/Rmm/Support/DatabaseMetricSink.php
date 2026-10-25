@@ -45,7 +45,6 @@ final class DatabaseMetricSink implements MetricStore
      */
     public const ROLLUP_KEYS = ['cpu.utilization', 'memory.utilization', 'disk.utilization', 'disk.free_bytes', 'network.rx_bytes_per_s', 'network.tx_bytes_per_s',
         'memory.used_bytes', 'memory.available_bytes', 'cpu.core.utilization', 'disk.read_iops', 'disk.write_iops', 'disk.queue_length', 'network.errors', 'battery.charge_percent'];
-    private const KEY_RE = '/^[a-z0-9_.]{1,64}$/D';
 
     private readonly Sql $sql;
     private readonly StorageState $state;
@@ -64,38 +63,7 @@ final class DatabaseMetricSink implements MetricStore
 
     public function ingest(array $samples, int $integrationId): void
     {
-        /** @var array<string,array{0:int,1:string,2:string,3:float,4:?string,5:int}> $latest */
-        $latest = [];
-        /** @var array<string,array{0:int,1:string,2:string,3:int,4:int,5:float,6:float,7:float}> $hourly */
-        $hourly = [];
-        foreach ($samples as $s) {
-            $key = $s['key'];
-            $value = $s['value'];
-            $asset = $s['asset_id'];
-            if ($asset <= 0 || preg_match(self::KEY_RE, $key) !== 1 || !is_finite((float) $value) || $value < 0 || (str_ends_with($key, '.utilization') && $value > 100)) {
-                continue;
-            }
-            $inst = $s['instance'] === null ? '' : mb_substr($s['instance'], 0, 64);
-            $ts = $s['at']->getTimestamp();
-            $id = $asset . "\0" . $key . "\0" . $inst;
-            if (!isset($latest[$id]) || $ts >= $latest[$id][5]) {
-                $latest[$id] = [$asset, $key, $inst, (float) $value, $s['label'] === null ? null : mb_substr($s['label'], 0, 64), $ts];
-            }
-            if (in_array($key, self::ROLLUP_KEYS, true)) {
-                $hour = $ts - $ts % 3600;
-                $hid = $id . "\0" . $hour;
-                if (!isset($hourly[$hid])) {
-                    $hourly[$hid] = [$asset, $key, $inst, $hour, 1, (float) $value, (float) $value, (float) $value];
-                } else {
-                    $h = &$hourly[$hid];
-                    ++$h[4];
-                    $h[5] += (float) $value;
-                    $h[6] = min($h[6], (float) $value);
-                    $h[7] = max($h[7], (float) $value);
-                    unset($h);
-                }
-            }
-        }
+        [$latest, $hourly] = MetricMath::fold($samples);
         foreach (array_chunk(array_values($latest), self::ROWS_PER_STATEMENT) as $chunk) {
             $params = [];
             foreach ($chunk as [$asset, $key, $inst, $value, $label, $ts]) {
@@ -128,6 +96,12 @@ final class DatabaseMetricSink implements MetricStore
         return $this->state->rollupWatermark();
     }
 
+    /** Seconds beyond which a window is answered from the daily tier (a store in another database needs the same figure). */
+    public function dailyFromSeconds(): int
+    {
+        return $this->dailyFromSeconds;
+    }
+
     public function retentionDays(): int
     {
         return $this->retentionDays;
@@ -151,8 +125,8 @@ final class DatabaseMetricSink implements MetricStore
         }
         $out = [];
         foreach ($this->sql->all($sql . ' ORDER BY metric_key, instance', $params) as $r) {
-            $out[] = ['key' => (string) $r['metric_key'], 'instance' => $r['instance'] === '' ? null : (string) $r['instance'], 'value' => self::number($r['value']),
-                'at' => self::at((string) $r['sampled_at']), 'label' => $r['label'] === null ? null : (string) $r['label']];
+            $out[] = ['key' => (string) $r['metric_key'], 'instance' => $r['instance'] === '' ? null : (string) $r['instance'], 'value' => MetricMath::number($r['value']),
+                'at' => MetricMath::at((string) $r['sampled_at']), 'label' => $r['label'] === null ? null : (string) $r['label']];
         }
 
         return $out;
@@ -179,25 +153,7 @@ final class DatabaseMetricSink implements MetricStore
         if ($tier !== null) {
             $tiers[] = $tier;
         }
-        if ($tiers === []) {
-            return null;
-        }
-        $n = 0;
-        $total = 0.0;
-        $lo = $tiers[0]['lo'];
-        $hi = $tiers[0]['hi'];
-        $at = $tiers[0]['at'];
-        foreach ($tiers as $t) {
-            $n += $t['n'];
-            $total += $t['total'];
-            $lo = min($lo, $t['lo']);
-            if ($t['hi'] >= $hi) {
-                $hi = $t['hi'];
-                $at = $t['at'];   // on a tie the later tier (more recent data) holds the peak
-            }
-        }
-
-        return ['min' => $lo, 'max' => $hi, 'avg' => $total / $n, 'samples' => $n, 'peak_at' => self::at($at)];
+        return MetricMath::combine($tiers);
     }
 
     /** @return array{n:int,total:float,lo:float,hi:float,at:string}|null */
@@ -230,7 +186,7 @@ final class DatabaseMetricSink implements MetricStore
                 WHERE asset_id = ? AND metric_key = ? AND instance = ? AND day_start >= ? AND day_start < ? AND day_start <= ? ORDER BY day_start LIMIT 4000',
                 [$assetId, $key, $inst, $dayFrom, $split, $to]) as $r) {
                 $c = max(1, (int) $r['samples']);
-                $out[] = ['at' => self::at((string) $r['day_start']), 'min' => (float) $r['min_value'], 'max' => (float) $r['max_value'], 'avg' => (float) $r['sum_value'] / $c, 'samples' => (int) $r['samples']];
+                $out[] = ['at' => MetricMath::at((string) $r['day_start']), 'min' => (float) $r['min_value'], 'max' => (float) $r['max_value'], 'avg' => (float) $r['sum_value'] / $c, 'samples' => (int) $r['samples']];
             }
             $from = max($from, $split);
         }
@@ -239,7 +195,7 @@ final class DatabaseMetricSink implements MetricStore
             [$assetId, $key, $inst, $from, $to]);
         foreach ($rows as $r) {
             $n = max(1, (int) $r['samples']);
-            $out[] = ['at' => self::at((string) $r['hour_start']), 'min' => (float) $r['min_value'], 'max' => (float) $r['max_value'], 'avg' => (float) $r['sum_value'] / $n, 'samples' => (int) $r['samples']];
+            $out[] = ['at' => MetricMath::at((string) $r['hour_start']), 'min' => (float) $r['min_value'], 'max' => (float) $r['max_value'], 'avg' => (float) $r['sum_value'] / $n, 'samples' => (int) $r['samples']];
         }
 
         return $out;
@@ -297,17 +253,5 @@ final class DatabaseMetricSink implements MetricStore
         }
 
         return $total;
-    }
-
-    private static function number(mixed $v): int|float
-    {
-        $f = (float) $v;
-
-        return $f == floor($f) && abs($f) < 9e15 ? (int) $f : $f;
-    }
-
-    private static function at(string $utc): \DateTimeImmutable
-    {
-        return new \DateTimeImmutable($utc, new \DateTimeZone('UTC'));
     }
 }

@@ -32,8 +32,8 @@ final class LazyHypervisorHistoryStore implements HypervisorHistoryStore
         return $this->inner()->recent($vmId, $limit);
     }
 
-    public function deleteOrphans(): int
+    public function deleteOrphans(?\Closure $existingVmIds = null): int
     {
-        return $this->inner()->deleteOrphans();
+        return $this->inner()->deleteOrphans($existingVmIds);
     }
 }

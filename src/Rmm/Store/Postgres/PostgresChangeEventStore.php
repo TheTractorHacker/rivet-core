@@ -132,7 +132,7 @@ final class PostgresChangeEventStore implements ChangeEventStore
         $rows = $this->db->query('SELECT ' . self::COLUMNS . ', ' . PostgresSql::ts('occurred_at', 'occurred_at') . ', ' . PostgresSql::ts('received_at', 'received_at') . ' FROM endpoint_agent_change_records
             WHERE device_id = ? AND occurred_at BETWEEN ? AND ? ORDER BY endpoint_agent_change_records.occurred_at DESC, change_id DESC LIMIT ' . $limit, [$deviceId, $fromUtc, $toUtc]);
         $actors = array_map(static fn (array $r): array => ['actor' => (string) $r['actor'], 'c' => (int) $r['c']],
-            $this->db->query('SELECT actor, COUNT(*)::bigint AS c FROM endpoint_agent_change_records WHERE device_id = ? AND occurred_at BETWEEN ? AND ? GROUP BY actor ORDER BY c DESC, actor COLLATE "C" LIMIT 20', [$deviceId, $fromUtc, $toUtc]));
+            $this->db->query('SELECT actor, COUNT(*)::bigint AS c FROM endpoint_agent_change_records WHERE device_id = ? AND occurred_at BETWEEN ? AND ? GROUP BY actor ORDER BY c DESC, upper(actor) COLLATE "C", actor COLLATE "C" LIMIT 20', [$deviceId, $fromUtc, $toUtc]));
         $days = array_map(static fn (array $r): array => ['d' => (string) $r['d'], 'c' => (int) $r['c']],
             $this->db->query("SELECT to_char((occurred_at AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS d, COUNT(*)::bigint AS c FROM endpoint_agent_change_records
                 WHERE device_id = ? AND occurred_at BETWEEN ? AND ? GROUP BY 1 ORDER BY d DESC LIMIT 400", [$deviceId, $fromUtc, $toUtc]));
@@ -198,7 +198,7 @@ final class PostgresChangeEventStore implements ChangeEventStore
         $scope = $visibleClientIds === null ? '' : ' AND client_id IN (' . PostgresSql::in(count($visibleClientIds)) . ')';
 
         return array_map(static fn (array $r): array => ['watch' => (string) $r['watch'], 'c' => (int) $r['c']],
-            $this->db->query('SELECT watch, COUNT(*)::bigint AS c FROM endpoint_agent_change_records WHERE occurred_at >= ?' . $scope . ' GROUP BY watch ORDER BY c DESC, watch COLLATE "C" LIMIT 30',
+            $this->db->query('SELECT watch, COUNT(*)::bigint AS c FROM endpoint_agent_change_records WHERE occurred_at >= ?' . $scope . ' GROUP BY watch ORDER BY c DESC, upper(watch) COLLATE "C", watch COLLATE "C" LIMIT 30',
                 [$sinceUtc, ...($visibleClientIds === null ? [] : array_values($visibleClientIds))]));
     }
 

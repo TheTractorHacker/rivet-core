@@ -12,8 +12,8 @@ use RivetCore\Testing\RmmDataStoreContractTestCase;
 use RivetCore\Tests\Support\RmmHarness;
 
 /**
- * The shared contract of the HOT RMM stores, run against the MariaDB / MySQL implementation on the scratch database (phase 1 of #89). Phase 2 runs the same cases
- * against the PostgreSQL implementation: only {@see stores()} changes, the control data below always lives in MariaDB.
+ * The shared contract of the HOT RMM stores, run against the MariaDB / MySQL implementation on the scratch database (phase 1 of #89). The PostgreSQL implementation runs the
+ * same cases ({@see \RivetCore\Tests\Integration\Rmm\Postgres\PostgresDataStoreContractTest}): only {@see stores()} changes, the control data below always lives in MariaDB.
  */
 class MariaDbDataStoreContractTest extends RmmDataStoreContractTestCase
 {
@@ -79,5 +79,14 @@ class MariaDbDataStoreContractTest extends RmmDataStoreContractTestCase
     protected function deleteVm(int $vmId): void
     {
         $this->h->q("DELETE FROM rmm_hypervisor_vms WHERE vm_id = $vmId");
+    }
+
+    protected function existingVms(array $vmIds): array
+    {
+        if ($vmIds === []) {
+            return [];
+        }
+
+        return array_map('intval', array_column($this->h->rows('SELECT vm_id FROM rmm_hypervisor_vms WHERE vm_id IN (' . implode(',', array_map('intval', $vmIds)) . ')'), 'vm_id'));
     }
 }

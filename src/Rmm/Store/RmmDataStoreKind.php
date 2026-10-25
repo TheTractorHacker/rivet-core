@@ -11,15 +11,24 @@ namespace RivetCore\Rmm\Store;
  */
 final class RmmDataStoreKind
 {
-    /** MariaDB or MySQL, the same database as everything else. The default, and the only store that exists in this release. */
+    /** MariaDB or MySQL, the same database as everything else. The default. */
     public const MARIADB = 'mariadb';
-    /** PostgreSQL (optionally TimescaleDB). Reserved: selecting it is refused with a clear error until the implementation ships. */
+    /** PostgreSQL (optionally TimescaleDB), a second database the edition passes a connection to (docs/rmm/POSTGRES.md). */
     public const POSTGRES = 'postgres';
 
     public const ALL = [self::MARIADB, self::POSTGRES];
 
-    /** Whether this release can actually run the store. */
+    /** Whether this release can build the store (PostgreSQL needs a connection from the edition on top). */
     public static function available(string $kind): bool
+    {
+        return in_array($kind, self::ALL, true);
+    }
+
+    /**
+     * Whether an administrator may SELECT it through {@see \RivetCore\Rmm\Settings\RmmSettings::update()}. Phase 2 of #89 ships the PostgreSQL stores; choosing them from the
+     * settings (with the connection setup, a connection test and the migration command) is phase 3, so only MariaDB is selectable there for now.
+     */
+    public static function selectable(string $kind): bool
     {
         return $kind === self::MARIADB;
     }

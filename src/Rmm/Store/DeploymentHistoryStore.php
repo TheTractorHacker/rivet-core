@@ -18,9 +18,9 @@ interface DeploymentHistoryStore
     public function record(array $entry): void;
 
     /**
-     * One device's history, newest first. `name` is the package's CURRENT name (the MariaDB store reads it from the catalog; a store in another database must be given a catalog lookup).
+     * One device's history, newest first. The package NAME is not here (the catalog is control data): the caller adds it from `package_id`.
      *
-     * @return array{rows:list<array<string,mixed>>,total:int} rows carry package_id, name, action, mode, result, code, detail, version, at, job_id, user_id
+     * @return array{rows:list<array<string,mixed>>,total:int} rows carry id, device_id, client_id, package_id, version_id, action, mode, result, code, detail, version, at, job_id, user_id
      */
     public function forDevice(int $deviceId, int $limit, int $offset): array;
 

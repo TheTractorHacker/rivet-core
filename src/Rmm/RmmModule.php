@@ -99,7 +99,12 @@ use RivetCore\Rmm\Capacity\HerdControl;
 use RivetCore\Rmm\Capacity\RedisTokenBucketStore;
 use RivetCore\Rmm\Storage\PartitionMaintenance;
 use RivetCore\Rmm\Store\DataStoreUnavailableException;
+use RivetCore\Rmm\Store\LazyMetricStore;
 use RivetCore\Rmm\Store\MetricStore;
+use RivetCore\Rmm\Store\Postgres\Pdo\PdoPostgresConnection;
+use RivetCore\Rmm\Store\Postgres\PostgresConfig;
+use RivetCore\Rmm\Store\Postgres\PostgresConnectionInterface;
+use RivetCore\Rmm\Store\Postgres\UnconfiguredPostgresConnection;
 use RivetCore\Rmm\Store\RmmDataStoreFactory;
 use RivetCore\Rmm\Store\RmmDataStoreKind;
 use RivetCore\Rmm\Store\RmmDataStores;
@@ -251,7 +256,10 @@ final class RmmModule
     private ?\RivetCore\Rmm\Http\HypervisorApi $hypervisorApi = null;
 
     private readonly RmmAuditInterface $audit;
+    /** What the services ingest into and read from: the metric sink the edition passed, routed to the store the `rmm_data_store` setting chose ({@see routedMetrics()}). */
     private readonly RmmMetricSinkInterface $metrics;
+    /** The metric sink exactly as the edition passed it. */
+    private readonly RmmMetricSinkInterface $baseMetrics;
     private readonly RmmEventsInterface $events;
 
     /**
@@ -274,7 +282,8 @@ final class RmmModule
         ?RmmEventsInterface $events = null,
     ) {
         $this->audit = $audit ?? new NullRmmAudit();
-        $this->metrics = $metrics ?? new NullRmmMetricSink();
+        $this->baseMetrics = $metrics ?? new NullRmmMetricSink();
+        $this->metrics = $this->routedMetrics($this->baseMetrics);
         $this->events = $events ?? new NullRmmEvents();
     }
 
@@ -782,7 +791,7 @@ final class RmmModule
     public function enrollment(): EnrollmentService
     {
         if ($this->enrollment === null) {
-            $this->enrollment = new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel(), $this->eventPublisher(), $this->cache(), $this->herd());
+            $this->enrollment = new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel(), $this->eventPublisher(), $this->cache(), $this->herd(), $this->dataStores());
             // Install apps when the agent installs: plan the catalog apps of a device that has just enrolled (a no-op while `software_deploy` is off).
             $this->enrollment->onEnrolled(function (int $deviceId, int $tokenId, string $event): void {
                 if ($this->settings()->featureOn(DeployProtocol::FEATURE) && ($dev = $this->devices()->find($deviceId)) !== null) {
@@ -805,7 +814,7 @@ final class RmmModule
 
     public function deviceService(): DeviceService
     {
-        return new DeviceService($this->sql(), $this->devices(), $this->settings(), $this->jobs(), $this->checks(), $this->linker(), $this->bridge, $this->assets, $this->tenancy, $this->audit, $this->enrollment(), $this->cache());
+        return new DeviceService($this->sql(), $this->devices(), $this->settings(), $this->jobs(), $this->checks(), $this->linker(), $this->bridge, $this->assets, $this->tenancy, $this->audit, $this->enrollment(), $this->cache(), $this->dataStores());
     }
 
     public function checkin(): CheckinService
@@ -928,7 +937,31 @@ final class RmmModule
             $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance());
     }
 
-    /** The metric store ({@see MetricStore}; Core's {@see DatabaseMetricSink} is the MariaDB one), whether it was passed as the sink or inside a {@see CompositeMetricSink}. */
+    /**
+     * A database metric sink (a {@see MetricStore}) is replaced by a lazy store that asks the `rmm_data_store` setting on first use, so one wiring serves MariaDB (the sink
+     * the edition passed, unchanged) and PostgreSQL. Any other sink, and a composite without a database sink, is used as it is.
+     */
+    private function routedMetrics(RmmMetricSinkInterface $sink): RmmMetricSinkInterface
+    {
+        $lazy = new LazyMetricStore(fn (): RmmDataStores => $this->resolvedDataStores());
+        if ($sink instanceof MetricStore) {
+            return $lazy;
+        }
+
+        return $sink instanceof CompositeMetricSink && $sink->find(MetricStore::class) !== null ? $sink->replacing(MetricStore::class, $lazy) : $sink;
+    }
+
+    /** The metric store the edition passed (a {@see MetricStore}; Core's {@see DatabaseMetricSink} is the MariaDB one), whether it was passed as the sink or inside a {@see CompositeMetricSink}. */
+    private function baseMetricStore(): ?MetricStore
+    {
+        if ($this->baseMetrics instanceof MetricStore) {
+            return $this->baseMetrics;
+        }
+
+        return $this->baseMetrics instanceof CompositeMetricSink ? $this->baseMetrics->find(MetricStore::class) : null;
+    }
+
+    /** The metric store the services use (the routed one, see {@see routedMetrics()}), whether it is the sink itself or inside a {@see CompositeMetricSink}. */
     private function metricStore(): ?MetricStore
     {
         if ($this->metrics instanceof MetricStore) {
@@ -953,15 +986,41 @@ final class RmmModule
     {
         if ($this->resolvedStores === null) {
             $kind = $this->settings()->dataStore();
+            $pg = $kind === RmmDataStoreKind::POSTGRES ? $this->postgresConnection() : null;   // MariaDB never builds, let alone opens, the PostgreSQL connection
             try {
-                $this->resolvedStores = RmmDataStoreFactory::create($kind, $this->sql(), $this->metricStore(), $this->partitions());
+                $this->resolvedStores = RmmDataStoreFactory::create($kind, $this->sql(), $this->baseMetricStore(), $this->partitions(), $pg);
             } catch (DataStoreUnavailableException $e) {
-                error_log('rmm data store: ' . $e->getMessage() . ' Using mariadb.');
-                $this->resolvedStores = RmmDataStoreFactory::create(RmmDataStoreKind::MARIADB, $this->sql(), $this->metricStore(), $this->partitions());
+                // The administrator chose PostgreSQL but the edition gave no connection (or the setting is unknown). The data is not in MariaDB, so using it would hide the problem:
+                // run the PostgreSQL stores on a connection that fails with this message. Check-ins keep working, history writes are dropped and counted, see HotStoreGuard.
+                error_log('rmm data store: ' . $e->getMessage());
+                $this->resolvedStores = RmmDataStoreFactory::create(RmmDataStoreKind::POSTGRES, $this->sql(), $this->baseMetricStore(), $this->partitions(), new UnconfiguredPostgresConnection($e->getMessage()));
             }
         }
 
         return $this->resolvedStores;
+    }
+
+    /**
+     * The PostgreSQL connection the edition passed as the `postgres` option: a {@see PostgresConnectionInterface}, a closure that returns one (called once, on first use,
+     * so nothing connects while the store is MariaDB) or a {@see PostgresConfig} (opened with {@see PdoPostgresConnection::fromConfig()}). Null when there is none.
+     */
+    private function postgresConnection(): ?PostgresConnectionInterface
+    {
+        $given = $this->options['postgres'] ?? null;
+        try {
+            if ($given instanceof \Closure) {
+                $given = $given();
+            }
+            if ($given instanceof PostgresConfig) {
+                $given = PdoPostgresConnection::fromConfig($given);
+            }
+        } catch (\Throwable $e) {
+            error_log('rmm data store: the PostgreSQL connection could not be built: ' . get_class($e) . ': ' . mb_substr($e->getMessage(), 0, 200));
+
+            return new UnconfiguredPostgresConnection('The "postgres" module option could not be turned into a connection: ' . mb_substr($e->getMessage(), 0, 200));
+        }
+
+        return $given instanceof PostgresConnectionInterface ? $given : null;
     }
 
     /** The buffer in front of an external metric store (scaling item S4), whether it was passed as the sink or inside a {@see CompositeMetricSink}. */

@@ -38,7 +38,8 @@ final class MariaDbHypervisorHistoryStore implements HypervisorHistoryStore
         return $out;
     }
 
-    public function deleteOrphans(): int
+    /** The inventory is in this database: $existingVmIds is not needed. */
+    public function deleteOrphans(?\Closure $existingVmIds = null): int
     {
         return $this->sql->run('DELETE h FROM rmm_hypervisor_vm_history h LEFT JOIN rmm_hypervisor_vms v ON v.vm_id = h.vm_id WHERE v.vm_id IS NULL');
     }

@@ -46,6 +46,27 @@ final class CompositeMetricSink implements RmmMetricSinkInterface
         return null;
     }
 
+    /**
+     * The same composite with the first member of the given class replaced (the module routes the database metric sink to whichever store the `rmm_data_store` setting chose).
+     *
+     * @param class-string $class
+     */
+    public function replacing(string $class, RmmMetricSinkInterface $with): self
+    {
+        $done = false;
+        $sinks = [];
+        foreach ($this->sinks as [$sink, $primary]) {
+            if (!$done && $sink instanceof $class) {
+                $sinks[] = [$with, $primary];
+                $done = true;
+            } else {
+                $sinks[] = [$sink, $primary];
+            }
+        }
+
+        return new self($sinks);
+    }
+
     public function ingest(array $samples, int $integrationId): void
     {
         $primaryFailure = null;

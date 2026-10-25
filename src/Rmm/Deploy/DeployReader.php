@@ -83,6 +83,14 @@ final class DeployReader
     {
         $page = $this->deployHistory->forDevice($deviceId, $limit, $offset);
         $rows = $page['rows'];
+        $names = [];   // the catalog is control data: the store does not join it
+        $ids = array_values(array_unique(array_map(static fn (array $r): int => (int) $r['package_id'], $rows)));
+        if ($ids !== []) {
+            foreach ($this->sql->all('SELECT package_id, name FROM rmm_packages WHERE package_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', $ids) as $n) {
+                $names[(int) $n['package_id']] = (string) $n['name'];
+            }
+        }
+        $rows = array_map(static fn (array $r): array => $r + ['name' => $names[(int) $r['package_id']] ?? null], $rows);
 
         return ['rows' => array_map(static fn (array $r): array => ['package_id' => (int) $r['package_id'], 'package' => (string) ($r['name'] ?? ''), 'action' => (string) $r['action'], 'mode' => (string) $r['mode'],
             'result' => (string) $r['result'], 'code' => (string) $r['code'], 'detail' => (string) $r['detail'], 'version' => (string) $r['version'], 'at' => Sql::iso($r['at']), 'job_id' => $r['job_id'], 'user_id' => $r['user_id'] === null ? null : (int) $r['user_id']], $rows),

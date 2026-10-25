@@ -10,7 +10,8 @@ use RivetCore\Rmm\Support\Sql;
 
 /**
  * {@see LogStore} on MariaDB / MySQL: the statements the log service and the log rule service ran before the store existed, unchanged (INSERT IGNORE with the
- * UNHEX dedupe key, SELECT ... FOR UPDATE on the ledger row, the join with the device table for client scoping and host names, DELETE of a locked batch).
+ * UNHEX dedupe key, SELECT ... FOR UPDATE on the ledger row, DELETE of a locked batch). Since phase 2 of #89 it no longer joins the device table: the client is stored with each
+ * entry (`client_id`) and the caller adds host names.
  *
  * @internal
  */
@@ -20,12 +21,12 @@ final class MariaDbLogStore implements LogStore
     {
     }
 
-    public function admit(int $deviceId, array $entries, array $caps, int $nowTs, int $rejected, int $agentDropped): array
+    public function admit(int $deviceId, array $entries, array $caps, int $nowTs, int $rejected, int $agentDropped, ?int $clientId = null): array
     {
         $kept = [];
         $inserted = 0;
         $dropped = $rejected;
-        $this->sql->transaction(function () use ($deviceId, $caps, $nowTs, $entries, &$dropped, &$kept, &$inserted, $agentDropped): void {
+        $this->sql->transaction(function () use ($deviceId, $caps, $nowTs, $entries, &$dropped, &$kept, &$inserted, $agentDropped, $clientId): void {
             $this->sql->run('INSERT IGNORE INTO endpoint_agent_log_state (device_id) VALUES (?)', [$deviceId]);
             $st = $this->sql->one('SELECT * FROM endpoint_agent_log_state WHERE device_id = ? FOR UPDATE', [$deviceId]) ?? [];
             $budget = $caps['rate_per_min'];
@@ -47,10 +48,10 @@ final class MariaDbLogStore implements LogStore
                 $params = [];
                 $sqlRows = [];
                 foreach ($chunk as $r) {
-                    $sqlRows[] = '(?, ?, ?, ?, ?, ?, ?, UNHEX(?))';
-                    array_push($params, $deviceId, gmdate('Y-m-d H:i:s', $r['ts']), $nowSql, $r['level'], $r['source'], $r['code'], $r['message'], $r['hash']);
+                    $sqlRows[] = '(?, ?, ?, ?, ?, ?, ?, ?, UNHEX(?))';
+                    array_push($params, $deviceId, $clientId, gmdate('Y-m-d H:i:s', $r['ts']), $nowSql, $r['level'], $r['source'], $r['code'], $r['message'], $r['hash']);
                 }
-                $inserted += $this->sql->run('INSERT IGNORE INTO endpoint_agent_log_events (device_id, occurred_at, received_at, level, source, code, message, dedupe) VALUES ' . implode(',', $sqlRows), $params);
+                $inserted += $this->sql->run('INSERT IGNORE INTO endpoint_agent_log_events (device_id, client_id, occurred_at, received_at, level, source, code, message, dedupe) VALUES ' . implode(',', $sqlRows), $params);
             }
             $last = $kept === [] ? null : gmdate('Y-m-d H:i:s', max(array_column($kept, 'ts')));
             $this->sql->run('UPDATE endpoint_agent_log_state SET row_count = row_count + ?, dropped_total = dropped_total + ?, last_event_at = IF(? IS NULL, last_event_at, GREATEST(COALESCE(last_event_at, ?), ?)),
@@ -70,14 +71,14 @@ final class MariaDbLogStore implements LogStore
             $params[] = $c->deviceId;
         }
         if ($c->clientId > 0) {
-            $where[] = 'd.client_id = ?';
+            $where[] = 'e.client_id = ?';
             $params[] = $c->clientId;
         }
         if ($c->visibleClientIds !== null) {
             if ($c->visibleClientIds === []) {
                 return ['rows' => [], 'total' => 0];
             }
-            $where[] = 'd.client_id IN (' . implode(',', array_fill(0, count($c->visibleClientIds), '?')) . ')';
+            $where[] = 'e.client_id IN (' . implode(',', array_fill(0, count($c->visibleClientIds), '?')) . ')';
             array_push($params, ...$c->visibleClientIds);
         }
         if ($c->maxLevel !== null) {
@@ -99,9 +100,9 @@ final class MariaDbLogStore implements LogStore
         $w = implode(' AND ', $where);
         $limit = max(1, min(500, $limit));
         $offset = max(0, min(100000, $offset));
-        $rows = $this->sql->all("SELECT e.event_id, e.device_id, d.hostname, d.client_id, e.occurred_at, e.level, e.source, e.code, e.message
-            FROM endpoint_agent_log_events e JOIN endpoint_agent_devices d ON d.device_id = e.device_id WHERE $w ORDER BY e.occurred_at DESC, e.event_id DESC LIMIT $limit OFFSET $offset", $params);
-        $total = (int) $this->sql->val("SELECT COUNT(*) FROM (SELECT 1 FROM endpoint_agent_log_events e JOIN endpoint_agent_devices d ON d.device_id = e.device_id WHERE $w LIMIT 10001) t", $params);
+        $rows = $this->sql->all("SELECT e.event_id, e.device_id, e.client_id, e.occurred_at, e.level, e.source, e.code, e.message
+            FROM endpoint_agent_log_events e WHERE $w ORDER BY e.occurred_at DESC, e.event_id DESC LIMIT $limit OFFSET $offset", $params);
+        $total = (int) $this->sql->val("SELECT COUNT(*) FROM (SELECT 1 FROM endpoint_agent_log_events e WHERE $w LIMIT 10001) t", $params);
 
         return ['rows' => $rows, 'total' => $total];
     }
@@ -150,6 +151,11 @@ final class MariaDbLogStore implements LogStore
         return $v === null ? null : (string) $v;
     }
 
+    public function reassignClient(int $deviceId, int $clientId): int
+    {
+        return $this->sql->run('UPDATE endpoint_agent_log_events SET client_id = ? WHERE device_id = ? AND (client_id IS NULL OR client_id <> ?)', [$clientId, $deviceId, $clientId]);
+    }
+
     public function enforceLimits(string $cutoffUtc, int $deviceMaxRows, int $fleetMaxRows, int $runCap, int $batch, ?\Closure $pause = null): array
     {
         $budget = $runCap;
@@ -165,7 +171,7 @@ final class MariaDbLogStore implements LogStore
                 $pause(20000);
             }
         }
-        foreach ($this->sql->all('SELECT device_id, row_count FROM endpoint_agent_log_state WHERE row_count > ? ORDER BY row_count DESC LIMIT 200', [$deviceMaxRows]) as $s) {
+        foreach ($this->sql->all('SELECT device_id, row_count FROM endpoint_agent_log_state WHERE row_count > ? ORDER BY row_count DESC, device_id LIMIT 200', [$deviceMaxRows]) as $s) {
             $excess = (int) $s['row_count'] - $deviceMaxRows;
             while ($excess > 0 && $budget > 0) {
                 $n = $this->deleteBatch('e.device_id = ?', [(int) $s['device_id']], min($batch, $excess, $budget));

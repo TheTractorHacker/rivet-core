@@ -9,6 +9,8 @@ use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Remote\RemoteSettings;
 use RivetCore\Rmm\RmmProtocol;
+use RivetCore\Rmm\Store\DeviceNames;
+use RivetCore\Rmm\Store\HotStoreUnavailableException;
 use RivetCore\Rmm\Store\LogCriteria;
 use RivetCore\Rmm\Store\LogStore;
 use RivetCore\Rmm\Store\MariaDb\MariaDbLogStore;
@@ -79,8 +81,13 @@ final class LogService
             $clean[] = $row;
         }
 
-        $res = $this->store->admit($deviceId, $clean, ['rate_per_min' => $limits['logs_rate_per_min'], 'device_max_rows' => $limits['logs_device_max_rows'], 'fleet_max_rows' => $limits['logs_fleet_max_rows']],
-            $now, $dropped, $agentDropped);
+        try {
+            $res = $this->store->admit($deviceId, $clean, ['rate_per_min' => $limits['logs_rate_per_min'], 'device_max_rows' => $limits['logs_device_max_rows'], 'fleet_max_rows' => $limits['logs_fleet_max_rows']],
+                $now, $dropped, $agentDropped, isset($dev['client_id']) ? (int) $dev['client_id'] : null);
+        } catch (HotStoreUnavailableException) {
+            // the data store is down: the agent keeps its batch and sends it again (the protocol's retryable 503), nothing is lost or counted as dropped
+            throw new ApiError(503, 'unavailable', 'The log store is temporarily unavailable. Try again later.', ['Retry-After' => (string) random_int(60, 180)]);
+        }
         $kept = $res['kept'];
         $inserted = $res['inserted'];
         $dropped = $res['dropped'];
@@ -170,7 +177,7 @@ final class LogService
         $page = $this->store->search(new LogCriteria(gmdate('Y-m-d H:i:s', $from), gmdate('Y-m-d H:i:s', $to), $device,
             isset($f['client_id']) && is_numeric($f['client_id']) && (int) $f['client_id'] > 0 ? (int) $f['client_id'] : 0, $visibleClientIds, $level, $source,
             isset($f['code']) && is_numeric($f['code']) ? (int) $f['code'] : null, $message), $limit, $offset);
-        $rows = $page['rows'];
+        $rows = (new DeviceNames($this->sql))->hydrate($page['rows']);
         $total = $page['total'];
 
         return [
