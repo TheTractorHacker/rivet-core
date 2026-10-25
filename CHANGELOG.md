@@ -2,7 +2,7 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
-## Unreleased: RMM data store interface (phase 1 of #89; no behaviour change)
+## 1.0.0-rc.39 (RMM data store interface, phase 1 of #89; migration 0042; no behaviour change)
 
 Additive. The RMM device protocol is frozen and untouched, the golden replay is identical, and an install that changes nothing behaves exactly as before: the statements the services ran against the hot RMM tables moved, unchanged, behind interfaces. Design and inventory: [docs/design/rmm-data-store.md](docs/design/rmm-data-store.md). Roadmap: "Enterprise architecture track", item 8. New constants, classes and interfaces are `@api` (the interfaces, `RmmDataStores`, `RmmDataStoreFactory`, `RmmDataStoreKind`, `DataStoreUnavailableException`, `LogCriteria`, `ChangeCriteria`, the contract test case) or `@internal` (the `Store\MariaDb\*` implementations, the migration).
 
