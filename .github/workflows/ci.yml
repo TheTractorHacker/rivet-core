@@ -86,7 +86,7 @@ jobs:
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with: { php-version: '8.5', extensions: 'mysqli, pdo_pgsql, zip, dom, mbstring', tools: composer }
       - run: composer install --no-interaction --prefer-dist
-      - run: vendor/bin/phpunit tests/Integration/Rmm/Postgres tests/Integration/Rmm/MariaDbDataStoreContractTest.php tests/Integration/Rmm/MariaDbLazyDataStoreContractTest.php tests/Integration/Rmm/RmmDataStoreRoutingTest.php tests/Integration/Rmm/RmmDataStoreSettingTest.php --display-skipped
+      - run: vendor/bin/phpunit tests/Integration/Rmm/Postgres tests/Integration/Rmm/Migration tests/Integration/Rmm/MariaDbDataStoreContractTest.php tests/Integration/Rmm/MariaDbLazyDataStoreContractTest.php tests/Integration/Rmm/RmmDataStoreRoutingTest.php tests/Integration/Rmm/RmmDataStoreSettingTest.php --display-skipped
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1
           RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
@@ -125,7 +125,7 @@ jobs:
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with: { php-version: '8.5', extensions: 'mysqli, pdo_pgsql, zip, dom, mbstring', tools: composer }
       - run: composer install --no-interaction --prefer-dist
-      - run: vendor/bin/phpunit tests/Integration/Rmm/Postgres --display-skipped
+      - run: vendor/bin/phpunit tests/Integration/Rmm/Postgres tests/Integration/Rmm/Migration --display-skipped
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1
           RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
