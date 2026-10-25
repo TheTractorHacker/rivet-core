@@ -42,6 +42,11 @@ abstract class StoreMigrationTestCase extends RmmTestCase
         $this->events = [];
     }
 
+    protected function makeHarness(): RmmHarness
+    {
+        return new RmmHarness(null, null, ['postgres' => static fn (): PostgresConnectionInterface => PostgresTestDatabase::connect()]);
+    }
+
     protected function migrator(?PostgresConnectionInterface $pg = null): RmmStoreMigrator
     {
         return new RmmStoreMigrator($this->sql, $this->h->module->settings(), $pg ?? $this->pgConn, $this->h->audit, static function (int $us): void {
