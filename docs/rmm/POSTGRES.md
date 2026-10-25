@@ -1,6 +1,6 @@
 # PostgreSQL for the RMM history (optional)
 
-Status: phase 2 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89). The stores exist, are tested against MariaDB and against PostgreSQL 16 (and TimescaleDB 2.31), and an edition can already run them by passing a connection. What is **not** built yet (phase 3): the settings page and the connection test, the guided migration command, the capacity recommendation, and `deploy/backup.sh` coverage. Design and decisions: [docs/design/rmm-data-store.md](../design/rmm-data-store.md).
+Status: phases 2 and 3 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89). The stores exist and are tested against MariaDB and against PostgreSQL 16 (and TimescaleDB 2.31); phase 3 added the setting with its connection test (section 13), the guided migration in both directions with verification, cut-over, rollback and purge (sections 14 and 15), the capacity recommendation (section 16), and backup helpers (section 8). The settings card and the progress page are the editions' (phase 4). Design and decisions: [docs/design/rmm-data-store.md](../design/rmm-data-store.md).
 
 **Nothing changes unless you opt in.** MariaDB / MySQL stays the default and behaves exactly as before; the PostgreSQL code is never loaded, and no connection is ever opened, while the data store is `mariadb`.
 
@@ -83,7 +83,7 @@ $module = new RmmModule(/* ... as before ... */, options: [
 ]);
 ```
 
-The option accepts a `PostgresConfig` (opened with the shipped PDO adapter behind a circuit breaker), a `PostgresConnectionInterface` of your own, or a closure returning either. If the password is kept sealed in the edition's settings, `PostgresConfig::fromSealed($row, $secretBox)` decrypts `password_sealed` with the same `SecretBoxInterface` the module already uses for its other secrets; an unreadable value is an error, never an empty password. Phase 3 adds the settings page that stores it that way.
+The option accepts a `PostgresConfig` (opened with the shipped PDO adapter behind a circuit breaker), a `PostgresConnectionInterface` of your own, or a closure returning either. If the password is kept sealed in the edition's settings, `PostgresConfig::fromSealed($row, $secretBox)` decrypts `password_sealed` with the same `SecretBoxInterface` the module already uses for its other secrets; an unreadable value is an error, never an empty password. `DataStoreSwitch` (section 13) stores the connection that way and the module uses it when the edition passes no `postgres` option.
 
 The keys of `PostgresConfig::fromArray()` (unknown keys are refused, so a typo cannot silently fall back to a default):
 
@@ -101,7 +101,7 @@ The keys of `PostgresConfig::fromArray()` (unknown keys are refused, so a typo c
 | `breaker_open_s` | 15 s | after a connection failure a worker stops trying for this long (0 = no breaker) |
 | `application_name` | `rivetcore-rmm` | shown in `pg_stat_activity` |
 
-Then set the store. The settings API refuses `postgres` until phase 3 ships its connection test; until then an administrator with database access sets it by hand (`UPDATE endpoint_agent_settings SET data_store = 'postgres'`), **after** the schema exists. Switching does **not** move existing rows: history written so far stays in MariaDB and is no longer shown; use a fresh install, or wait for the migration command. Switching back is the same statement.
+Without a `postgres` option the module uses the connection stored by the data store setting (section 13). Choose the store with `DataStoreSwitch` (section 13); `RmmSettings::update()` refuses `postgres` on purpose, and editing `endpoint_agent_settings.data_store` by hand skips the connection test. **Switching does not move existing rows** (section 13); to keep history, migrate (section 14).
 
 ## 6. Size it next to MariaDB and PHP-FPM
 
@@ -131,14 +131,95 @@ Row-level retention (batched deletes by age) works out of the box, exactly like 
 
 ## 8. Backups and restore
 
-PostgreSQL is a second database: **back up both**. Until phase 3 teaches `deploy/backup.sh`, the in-app backup and `restore.sh` about it, take a separate dump on the same schedule, to the same encrypted destination:
+PostgreSQL is a second database: **back up both**, in the same run and to the same encrypted destination. `pg_dump` covers the whole RMM store (all hot tables, the rollup state, the ledgers, the migration ledger). For point-in-time recovery use WAL archiving (`archive_mode`, `pg_basebackup`); that is the standard PostgreSQL procedure and Core does nothing special for it.
+
+Core cannot own an edition's `deploy/backup.sh`, `restore.sh` or in-app backup. It ships the pieces; the edition wires them. Nothing here applies while the data store is `mariadb`: the hot tables are in the control database and the existing backup already covers them.
+
+### 8.1 Pieces Core ships
+
+| Piece | Purpose |
+|---|---|
+| `scripts/rmm-postgres-backup.sh` | `pg_dump` custom format of the RMM database/schema to **STDOUT**. Refuses to run without `RIVETCORE_PG_DATABASE`, `_USER`, `_HOST`, `_PORT` (also `_SSLMODE`, default `prefer`, and `_SCHEMA`, default `public`). The password only through `PGPASSWORD` or `PGPASSFILE`, never an argument. Refuses to write to a terminal. |
+| `scripts/rmm-postgres-restore.sh` | Reads that dump from **STDIN** into the RMM database. Refuses a target schema that holds tables unless `RMM_PG_RESTORE_CLEAN=1` (which drops the schema, so the RMM tables, first). Never touches MariaDB. |
+| `RivetCore\Rmm\Store\BackupHook` | Tells the in-app backup whether a dump is needed and builds the exact command and environment (no password). |
+| `scripts/rmm-store-verify.php` | Read-only reconciliation of the control database with the hot store after a restore. |
+
+`RMM_PG_DUMP`, `RMM_PG_RESTORE`, `RMM_PG_PSQL` override the client binaries. The scripts need `pg_dump`/`pg_restore`/`psql` of PostgreSQL 14 or newer (the major version of the server or newer for `pg_dump`).
+
+### 8.2 deploy/backup.sh (encrypted pipeline)
+
+Run the RMM dump in the same run, to the same encrypted destination as the control database dump. Only when the setting says `postgres` (read it from the control database, or from the edition's config). Placeholders in `<>`:
 
 ```bash
-# daily, as the postgres user or the role (the role needs no superuser rights to dump its own database)
-pg_dump --format=custom --compress=6 --no-owner --file=/var/backups/rivet/rmm-$(date +%F).dump rivet_rmm
+# --- RMM PostgreSQL store (skip when endpoint_agent_settings.data_store = 'mariadb') ---
+if [ "$(mysql -N -e "SELECT data_store FROM endpoint_agent_settings WHERE id = 1" "$DB_NAME")" = "postgres" ]; then
+    export RIVETCORE_PG_DATABASE='<database>' RIVETCORE_PG_USER='<role>' RIVETCORE_PG_HOST='<host or /var/run/postgresql>' \
+           RIVETCORE_PG_PORT='5432' RIVETCORE_PG_SSLMODE='<disable|verify-full>' RIVETCORE_PG_SCHEMA='public'
+    export PGPASSFILE='<path to a 0600 .pgpass owned by the backup user>'      # or PGPASSWORD from the secret store; never a command-line argument
+    "$APP_DIR/vendor/rivet/rivet-core/scripts/rmm-postgres-backup.sh" \
+        | age -r '<age recipient public key>' > "$BACKUP_DIR/rmm-pg-$STAMP.dump.age"
+    # gpg variant:  ... | gpg --batch --encrypt --recipient '<key id>' > "$BACKUP_DIR/rmm-pg-$STAMP.dump.gpg"
+fi
 ```
 
-`pg_dump` covers the whole RMM store (all twelve tables, the rollup state, the ledgers, the migration ledger). Restore order: restore the MariaDB control database first, then `createdb` + `pg_restore --no-owner --role=rivet_rmm --dbname=rivet_rmm file.dump`, then `php scripts/rmm-postgres.php status` (must say nothing pending). The two dumps are not one snapshot: the hot data is append-only and keyed by ids that the control database owns (device, asset, client), so an older PostgreSQL dump with a newer control database loses history for the gap and nothing else; an older control database with a newer PostgreSQL dump leaves history of devices the control database does not know yet, which the pages simply do not show. For point-in-time recovery use WAL archiving (`archive_mode`, `pg_basebackup`); that is the standard PostgreSQL procedure and Core does nothing special for it.
+`set -o pipefail` must be on in `backup.sh`: a failing `pg_dump` must fail the run, not leave an empty encrypted file that looks valid. Keep the dump and the control-database dump in the same retention set.
+
+### 8.3 deploy/restore.sh
+
+```bash
+# 1. restore the MariaDB control database first (as today)
+# 2. the RMM store, only if the restored control database says postgres:
+if [ "$(mysql -N -e "SELECT data_store FROM endpoint_agent_settings WHERE id = 1" "$DB_NAME")" = "postgres" ]; then
+    export RIVETCORE_PG_DATABASE='<database>' RIVETCORE_PG_USER='<role>' RIVETCORE_PG_HOST='<host>' RIVETCORE_PG_PORT='5432' RIVETCORE_PG_SSLMODE='<mode>'
+    export PGPASSFILE='<.pgpass>'
+    age -d -i '<age identity file>' "$BACKUP_DIR/rmm-pg-$STAMP.dump.age" \
+        | "$APP_DIR/vendor/rivet/rivet-core/scripts/rmm-postgres-restore.sh"          # add RMM_PG_RESTORE_CLEAN=1 to replace an existing schema
+    # 3. check the two against each other
+    php "$APP_DIR/vendor/rivet/rivet-core/scripts/rmm-store-verify.php" --bootstrap='<edition bootstrap file>' || echo "review the findings above before opening the site"
+fi
+```
+
+The target database and role must exist (section 3). The restore recreates the schema, so the role needs `CREATE` on the database (for `public`, to own it). After the restore, `php scripts/rmm-postgres.php status --config=...` must report nothing pending.
+
+### 8.4 In-app backup
+
+```php
+use RivetCore\Rmm\Store\BackupHook;
+
+$kind   = $module->settings()->dataStore();
+$config = $kind === 'postgres' ? $postgresConfigFromSettings : null;     // PostgresConfig built from the sealed connection (password not needed here)
+$d = BackupHook::describe($kind, $config);   // ['needs_dump' => bool, 'connection' => host/port/database/user/schema/sslmode, 'env' => [...], ...]
+if ($d['needs_dump']) {
+    $c = BackupHook::command($kind, $config, __DIR__ . '/vendor/rivet/rivet-core');   // ['argv' => [...], 'string' => '...', 'env' => [...]]
+    // run $c['argv'] with $c['env'] plus PGPASSWORD (unsealed by the edition for this process only), capture STDOUT as "rmm-postgres.dump" inside the backup archive
+}
+```
+
+Record the descriptor (without a password) in the archive's manifest so a restore knows a second database is part of it. The in-app restore feeds that member to `scripts/rmm-postgres-restore.sh` on STDIN.
+
+### 8.5 Update ordering (code before migration is safe)
+
+1. Deploy the new code. It runs against the old schema: PostgreSQL stores do not load while the setting is `mariadb`, and the MariaDB stores fall back for columns that migrations 0043/0044 add (code-before-migration safety, phase 2).
+2. Run the MariaDB migrations (`CoreMigrations`, including 0044).
+3. If (and only if) the PostgreSQL store is in use or about to be: `php vendor/rivet/rivet-core/scripts/rmm-postgres.php migrate --config=...`. It is idempotent and serialised by an advisory lock, and must run **after** step 2 and **before** the setting is switched to `postgres` (`DataStoreSwitch::switchTo()` also runs the PostgreSQL migrator itself, idempotently, after its connection test).
+4. Only then enable the switch (Administration > RMM > Data store) or leave it as is.
+
+Rolling back code: the older release ignores the new tables and the `postgres` setting is read by it as an unknown value (it uses MariaDB); switch back to `mariadb` first when the older release should keep serving history.
+
+### 8.6 What "restore" means when the store is PostgreSQL
+
+Two databases, two dumps, not one snapshot (this section). The order is **control database first, then the RMM store, then reconcile**:
+
+1. Restore the control database. It holds the setting (`data_store`), the sealed connection and every device id.
+2. Restore the RMM PostgreSQL dump (section 3).
+3. Run `php scripts/rmm-store-verify.php --bootstrap=FILE [--json]` (read-only; exit 0 clean, 1 findings, 2 usage/setup). It reports:
+   * `orphan_rows`: hot rows of devices the control database does not know (the control dump is older than the hot dump): harmless, the pages do not show them; they age out with retention;
+   * `ledger_drift` / `events_without_ledger`: the per-device ledgers (`endpoint_agent_log_state`, `endpoint_agent_change_state`) disagree with the rows (a dump taken mid-write): the housekeeping's next enforcement pass corrects the counters, or recompute them;
+   * `rollup_no_watermark`, `rollup_daily_beyond_watermark`, `rollup_missing_days`: the daily rollup watermark contradicts the tiers (dumps from different moments): the days named are rolled up again or missing;
+   * `hot_older_than_control`: the hot store is older than the newest check-in in the control database by `gap_seconds`: that much history was lost with the older dump;
+   * `hot_store_unreachable`: the hot store could not be read (connection, role, schema missing).
+
+An older control database with a newer RMM dump leaves history for devices the control database lacks (orphans); a newer control database with an older RMM dump leaves a gap. Neither corrupts anything; the report names them.
 
 ## 9. Monitoring
 
@@ -165,6 +246,7 @@ History writes of a check-in are **held until the control database transaction h
 * Every value goes to the server as a bound parameter of a server-side prepared statement; no SQL is built from device or user text. Table and partition names are generated by Core and checked against a strict pattern before a DDL statement uses them.
 * Error messages carry the server's primary message only: never the `DETAIL` line (it quotes the failing row), a bound value, or the password. `PostgresConfig` hides the password from `var_dump`, `print_r`, `var_export`, `json_encode`, serialization and stack traces.
 * Use `sslmode=verify-full` for any connection that leaves the machine; a unix socket needs none.
+* The stored password (section 13) is sealed with the SecretBox, kept in its own table, and is only reused for the target it was saved for (host, port, user, database unchanged; verified TLS for a remote host). The connection test, the migration, the size report and the scripts read the target from the stored settings only, never from a request or a command line combined with the stored password.
 * Rotating the password: change it in PostgreSQL and in the edition's configuration; the open sessions end at the next request, there is nothing else to restart.
 
 ## 12. Troubleshooting
@@ -178,3 +260,41 @@ History writes of a check-in are **held until the control database transaction h
 | `not trying again for N more seconds` | The circuit breaker is open after a failed connect. Fix the server; it closes by itself after the window, or delete `rivetcore-pg-breaker-*` in the temp directory. |
 | Statement timeout (SQLSTATE `57014`) | A query ran longer than `statement_timeout_ms`; check `pg_stat_activity` for a long transaction or an index that is missing (`\d+ table`). |
 | Rows pile up in `*_default` | Partitioning is off, or the maintenance cannot get its lock (`lock_timeout` reported in the capacity panel); look for a long-running transaction. |
+
+## 13. Choose the store in the settings
+
+Everything below is a service the edition's settings card calls (`$module->dataStoreSwitch()`); Core ships no page.
+
+1. **Save the connection**: `saveConnection(['host' => ..., 'port' => 5432, 'database' => ..., 'user' => ..., 'password' => ..., 'sslmode' => ..., 'schema' => 'public'])`. The password is sealed with the edition's SecretBox and kept in its own table (`rmm_data_store_connection`); it is never shown again, logged, audited or returned. Leave the password blank to keep the stored one **for the same host, port, user and database**; changing any of them requires typing the password again, and reusing a stored password for a remote host needs `sslmode` `verify-full` or `verify-ca` (so a hijacked admin session cannot make the server send the stored secret to another machine).
+2. **Test connection**: `testConnection()` (or `testConnection($formValues)` for values not saved yet). It checks the PHP extension, the connection, server version 14 or newer, a UTC session, the schema, that the role can create objects in it (tried in a rolled-back transaction), warns about a superuser role, and reports TimescaleDB and the schema state. Fix what it names; the message never contains the password.
+3. **Switch**: `switchTo('postgres', ['acknowledge_no_data_move' => true])` tests again, creates or upgrades the PostgreSQL schema and writes the setting, all or nothing. The card must show `DataStoreSwitch::NO_DATA_MOVE_NOTICE` next to the button and require the acknowledgement.
+
+**What the administrator sees after switching without migrating:** the RMM pages read only the new store, so logs, change records, software/patch/deployment history, check history and metric graphs start empty; the old history is still in the old store and is **not shown** (a merged view of two stores was rejected because paging, totals and per-device caps cannot be merged safely). `status()['left_behind']` names what stayed behind; the card should show it with a "Migrate data" button. Switching back to MariaDB (`switchTo('mariadb')`, always allowed) shows the old history again and hides what PostgreSQL received meanwhile, until a migration moves it.
+
+## 14. Migrate the history
+
+`scripts/rmm-store-migrate.php` (or `$module->storeMigrator()->migrate([...], $progress)` from a background job; never inside a web request). It needs the edition's small bootstrap file (`RivetCore\Rmm\Store\Cli\CliBootstrap`: control database, clock, SecretBox, audit) and uses the stored connection.
+
+```bash
+M="php vendor/rivet/rivet-core/scripts/rmm-store-migrate.php --bootstrap=/etc/rivetit/rmm-store-bootstrap.php"
+$M --from=mariadb --to=postgres --dry-run          # rows and batches per table; the target must be empty
+$M --from=mariadb --to=postgres --sample=50        # copy, dual-write, verify, cut over (JSON lines on stdout)
+$M --from=mariadb --to=postgres --resume           # continue a stopped run
+$M --status
+```
+
+What happens, why it is safe, and what is paused: [design note section 13.4](../design/rmm-data-store.md). In short: tables are copied in keyset pages with their ids and a checkpoint; **retention and rollups are paused** until the cut-over; a short **dual-write window** sends new writes to both stores (primary first); the tail is reconciled; the ledgers are rebuilt from the copied rows; row counts and a checksum sample (`--sample=all` for every device) are compared; only a clean verification cuts over, in one transaction. A failed verification leaves everything as it was (dual-write still on, nothing lost): fix the cause and `--resume`, or `--abort`. Throttling: `--batch`, `--pause-ms`, and the command backs off while the load shedder is active; the limits `rmm_store_migrate_batch` and `rmm_store_migrate_pause_ms` are the defaults. The same command runs the other way (`--from=postgres --to=mariadb`).
+
+The progress is one JSON object per line; the last line is `{"summary": ...}`. Exit status 0 done, 1 failed or refused, 2 usage.
+
+## 15. Roll back, purge, abort
+
+* `--rollback` goes back to the previous store within the rollback period (limit `rmm_store_rollback_days`, default 7 days; `--force` after it while the old store still has its data). It first copies back what the new store received since the cut-over (same dual-write and verification), so nothing recorded meanwhile is lost, then flips the setting. The new store is kept.
+* `--purge-old --yes` deletes the history from the store that is **not** active. It is explicit and never automatic; inside the rollback period it also needs `--force` (it removes the way back). A migration into a store that is not empty is refused: purge it first.
+* `--abort` stops a run, turns dual-write off and ends the retention pause; rows already copied stay in the target until purged.
+
+Disk: until you purge, the old store keeps its data and costs its disk.
+
+## 16. When to move: the capacity recommendation
+
+The capacity read model (`$module->capacity()->build()`) carries `store_sizes` (rows and bytes of the hot tables of the active store) and `data_store_recommendation`. While the store is MariaDB the recommendation says **"MariaDB is comfortable up to X devices. You have N. Consider PostgreSQL."** when `N >= 0.8 * X`, or when the hot tables exceed `rmm_pg_recommend_hot_mb` (default 51,200 MiB; 0 turns the size trigger off). `X` is `rmm_pg_recommend_devices` (a limit in `limits_json`, default 5000 until the phase 5 load test sets it from measurements). The panel also shows an estimated growth per day. It is advice only: nothing switches by itself.
