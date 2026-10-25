@@ -200,7 +200,7 @@ Namespace `RivetCore\Rmm\Store`. All interfaces are `@api`; implementations are 
 | `HypervisorHistoryStore` | VM history | `recordTransition`, `recent`, `deleteOrphans` |
 | `StoreMaintenance` | rollup and partitions | `run` (rollup, then partitions, report which tiers were trimmed), `tiers` (the capacity panel figures) |
 
-`RmmDataStores` holds one of each; `RmmDataStoreFactory::create($kind, ...)` builds them; `RmmModule::dataStores()` is the module's instance and reads the `rmm_data_store` setting. `RmmDataStoreKind` has the values (`mariadb`, `postgres`).
+`RmmDataStores` holds one of each; `RmmDataStoreFactory::create($kind, ...)` builds them; `RmmModule::dataStores()` is the module's instance. It is **lazy**: `RmmDataStores::lazy()` hands the services small delegates (`Store\Lazy*`) that read the `rmm_data_store` setting and build the real stores on first use. Building the module must not query the database, because an off module answers a check-in from its state file with zero queries (pinned by `ModuleOffFastPathTest`; the first version of this change broke it by reading the setting while wiring). `RmmDataStoreKind` has the values (`mariadb`, `postgres`).
 
 Design rules that came out of the inventory:
 
@@ -215,7 +215,7 @@ Design rules that came out of the inventory:
 
 ### Contract tests
 
-`RivetCore\Testing\RmmDataStoreContractTestCase` (in `src/Testing`, like the other conformance cases) pins every method of every store. The MariaDB run is `tests/Integration/Rmm/MariaDbDataStoreContractTest.php`. For phase 2, add a subclass that returns a Postgres-backed `RmmDataStores` from `stores()`; the control seeding methods (`device()`, `package()`, `vm()`, `deleteVm()`) stay MariaDB.
+`RivetCore\Testing\RmmDataStoreContractTestCase` (in `src/Testing`, like the other conformance cases) pins every method of every store. The MariaDB runs are `tests/Integration/Rmm/MariaDbDataStoreContractTest.php` (the real stores) and `MariaDbLazyDataStoreContractTest.php` (the same cases through the lazy delegates). `RmmDataStoreRoutingTest` proves the callers reach the stores for the reads and prunes the older suites did not pin; both were written after mutation checks (break the implementation or the routing, see the tests fail) found the gaps. For phase 2, add a subclass that returns a Postgres-backed `RmmDataStores` from `stores()`; the control seeding methods (`device()`, `package()`, `vm()`, `deleteVm()`) stay MariaDB.
 
 ## 9. What phase 2 and 3 must do
 
