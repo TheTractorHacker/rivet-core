@@ -93,6 +93,7 @@ final class RmmStoreMigratorTest extends StoreMigrationTestCase
 
     public function testFiftyThousandRowsBothWays(): void
     {
+        ini_set('memory_limit', '1G');
         $n = array_sum(F::fill($this->maria, $this->now(), 10));
         $this->assertGreaterThan(50000, $n);
         $want = $this->digests($this->maria);

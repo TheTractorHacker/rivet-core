@@ -128,13 +128,16 @@ final class StoreMigrationFixture
     /** A digest of a whole table without its surrogate ids, for "the source was not touched". */
     public static function digest(StoreEndpoint $ep, HotTable $t): string
     {
-        $all = [];
+        $hashes = [];
         $after = null;
-        while (($rows = $ep->readBatch($t, $after, 5000)) !== []) {
-            array_push($all, ...$rows);
+        while (($rows = $ep->readBatch($t, $after, 2000)) !== []) {
+            foreach ($rows as $r) {
+                $hashes[] = md5(\RivetCore\Rmm\Store\Migration\Fingerprint::of($t, $r), true);
+            }
             $after = array_map(static fn (string $k) => end($rows)[$k], $t->key);
         }
+        sort($hashes, SORT_STRING);
 
-        return \RivetCore\Rmm\Store\Migration\Fingerprint::digest($t, $all);
+        return md5(implode('', $hashes));
     }
 }
