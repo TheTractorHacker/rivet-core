@@ -58,6 +58,31 @@ final class PostgresTestDatabase
         return new PdoPostgresConnection(self::config($over));
     }
 
+    /**
+     * Make sure the schema exists in the wanted mode and is EMPTY: a full rebuild when the mode differs or nothing is there, otherwise a TRUNCATE of every table (and
+     * the partitions a test may have created are dropped by the rebuild, so tests that create partitions call {@see reset()}).
+     *
+     * @return array{applied:list<string>,mode:string,timescale_available:bool}|null the migrator's answer when it rebuilt
+     */
+    public static function prepare(PostgresConnectionInterface $db, ?string $mode = null): ?array
+    {
+        $want = $mode ?? ((string) getenv('RIVETCORE_TEST_PG_MODE') ?: PostgresMigrator::MODE_AUTO);
+        $m = new PostgresMigrator($db);
+        $s = $m->status();
+        $have = $s['mode'];
+        $ok = $s['exists'] && $s['pending'] === [] && $have !== null && ($want === PostgresMigrator::MODE_AUTO ? $have === ($s['timescale_available'] ? PostgresSchema::MODE_TIMESCALE : PostgresSchema::MODE_NATIVE) : $have === $want);
+        if ($ok && $have === PostgresSchema::MODE_NATIVE && (int) $db->value("SELECT COUNT(*) FROM pg_inherits i JOIN pg_class p ON p.oid = i.inhparent
+            WHERE p.relname IN ('rmm_metric_hourly', 'rmm_metric_daily', 'endpoint_agent_check_history') AND p.relnamespace = current_schema()::regnamespace") > 3) {
+            $ok = false;   // a test created day partitions: start from the pristine layout
+        }
+        if (!$ok) {
+            return self::reset($db, $want);
+        }
+        $db->execute('TRUNCATE ' . implode(', ', PostgresSchema::TABLES) . ' RESTART IDENTITY');
+
+        return null;
+    }
+
     /** Drop everything the hot store created and build it again; returns the migrator's answer. @return array{applied:list<string>,mode:string,timescale_available:bool} */
     public static function reset(PostgresConnectionInterface $db, ?string $mode = null): array
     {
