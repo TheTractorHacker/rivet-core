@@ -101,6 +101,7 @@ use RivetCore\Rmm\Storage\PartitionMaintenance;
 use RivetCore\Rmm\Store\DataStoreUnavailableException;
 use RivetCore\Rmm\Store\LazyMetricStore;
 use RivetCore\Rmm\Store\Postgres\Guard\HotStoreFaults;
+use RivetCore\Rmm\Store\Postgres\Guard\WriteBehind;
 use RivetCore\Rmm\Store\MetricStore;
 use RivetCore\Rmm\Store\Postgres\Pdo\PdoPostgresConnection;
 use RivetCore\Rmm\Store\Postgres\PostgresConfig;
@@ -118,6 +119,7 @@ use RivetCore\Rmm\Support\NullRmmEvents;
 use RivetCore\Rmm\Support\NullRmmMetricSink;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
+use RivetCore\Rmm\Support\TrackedDatabase;
 use RivetCore\Rmm\Tags\GroupService;
 use RivetCore\Rmm\Tags\TagService;
 use RivetCore\Rmm\Technician\FieldActions;
@@ -257,6 +259,9 @@ final class RmmModule
     private ?\RivetCore\Rmm\Hypervisor\HypervisorActions $hypervisorActions = null;
     private ?\RivetCore\Rmm\Http\HypervisorApi $hypervisorApi = null;
 
+    /** The control database as the services use it: reports its transactions to {@see WriteBehind}, which holds a PostgreSQL store's history writes until the commit. */
+    private readonly DatabaseInterface $tracked;
+    private readonly WriteBehind $writeBehind;
     private readonly RmmAuditInterface $audit;
     /** What the services ingest into and read from: the metric sink the edition passed, routed to the store the `rmm_data_store` setting chose ({@see routedMetrics()}). */
     private readonly RmmMetricSinkInterface $metrics;
@@ -283,6 +288,8 @@ final class RmmModule
         private readonly ?UrlPolicy $urlPolicy = null,
         ?RmmEventsInterface $events = null,
     ) {
+        $this->writeBehind = new WriteBehind();
+        $this->tracked = new TrackedDatabase($this->database, $this->writeBehind);
         $this->audit = $audit ?? new NullRmmAudit();
         $this->baseMetrics = $metrics ?? new NullRmmMetricSink();
         $this->metrics = $this->routedMetrics($this->baseMetrics);
@@ -302,7 +309,7 @@ final class RmmModule
 
     public function sql(): Sql
     {
-        return $this->sql ??= new Sql($this->database, $this->clock);
+        return $this->sql ??= new Sql($this->tracked, $this->clock);
     }
 
     public function settings(): RmmSettings
@@ -866,7 +873,7 @@ final class RmmModule
     /** Queued ingest (`rmm.ingest` jobs on Core's JobQueue): enqueue, batch worker, backlog metric. */
     public function ingestQueue(): IngestQueue
     {
-        return $this->ingestQueue ??= new IngestQueue(new JobQueue($this->database), $this->database, $this->checkin(), $this->metrics, $this->settings(), $this->state());
+        return $this->ingestQueue ??= new IngestQueue(new JobQueue($this->tracked), $this->tracked, $this->checkin(), $this->metrics, $this->settings(), $this->state());
     }
 
     /** The staged load shedder (cron: {@see LoadShedder::evaluate()}; request path: {@see LoadShedder::tick()}). */
@@ -990,12 +997,12 @@ final class RmmModule
             $kind = $this->settings()->dataStore();
             $pg = $kind === RmmDataStoreKind::POSTGRES ? $this->postgresConnection() : null;   // MariaDB never builds, let alone opens, the PostgreSQL connection
             try {
-                $this->resolvedStores = RmmDataStoreFactory::create($kind, $this->sql(), $this->baseMetricStore(), $this->partitions(), $pg, $this->hotStoreFaults());
+                $this->resolvedStores = RmmDataStoreFactory::create($kind, $this->sql(), $this->baseMetricStore(), $this->partitions(), $pg, $this->hotStoreFaults(), $this->writeBehind);
             } catch (DataStoreUnavailableException $e) {
                 // The administrator chose PostgreSQL but the edition gave no connection (or the setting is unknown). The data is not in MariaDB, so using it would hide the problem:
                 // run the PostgreSQL stores on a connection that fails with this message. Check-ins keep working, history writes are dropped and counted, see HotStoreGuard.
                 error_log('rmm data store: ' . $e->getMessage());
-                $this->resolvedStores = RmmDataStoreFactory::create(RmmDataStoreKind::POSTGRES, $this->sql(), $this->baseMetricStore(), $this->partitions(), new UnconfiguredPostgresConnection($e->getMessage()), $this->hotStoreFaults());
+                $this->resolvedStores = RmmDataStoreFactory::create(RmmDataStoreKind::POSTGRES, $this->sql(), $this->baseMetricStore(), $this->partitions(), new UnconfiguredPostgresConnection($e->getMessage()), $this->hotStoreFaults(), $this->writeBehind);
             }
         }
 

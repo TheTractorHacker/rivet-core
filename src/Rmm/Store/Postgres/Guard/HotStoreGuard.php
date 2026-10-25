@@ -14,6 +14,7 @@ use RivetCore\Rmm\Store\Postgres\PostgresException;
  * still surfaces, because swallowing it would hide a bug.
  *
  *  - {@see lossy()}: a write on the check-in or job-result path. NEVER throws: the data is dropped, counted ({@see HotStoreFaults}) and logged, and the caller carries on.
+ *    While a control database transaction is open the write is held until it commits ({@see WriteBehind}), and dropped if it rolls back.
  *  - {@see strict()}: a write whose sender can try again (log and change batches) or whose caller records the failure and repeats it ({@see \RivetCore\Rmm\Store\ClientMoves}). Throws {@see HotStoreUnavailableException}; the service answers a retryable 503.
  *  - {@see read()}: a read. Throws {@see HotStoreUnavailableException} with a message an administrator can act on.
  *  - {@see maintenance()}: retention and rollup jobs. Never throws; returns the neutral answer; the failure is counted.
@@ -27,8 +28,11 @@ final class HotStoreGuard
     /** @var array<string,int> store => time of the last error_log line */
     private array $logged = [];
 
-    /** @param (\Closure(): int)|null $now clock seam for tests */
-    public function __construct(private readonly HotStoreFaults $faults, private readonly ?\Closure $now = null)
+    /**
+     * @param (\Closure(): int)|null $now clock seam for tests
+     * @param WriteBehind|null $behind where {@see lossy()} writes wait while a control database transaction is open (null = they run at once)
+     */
+    public function __construct(private readonly HotStoreFaults $faults, private readonly ?\Closure $now = null, private readonly ?WriteBehind $behind = null)
     {
     }
 
@@ -40,6 +44,14 @@ final class HotStoreGuard
      */
     public function lossy(string $store, string $op, \Closure $do, mixed $onFail = null, int $items = 1): mixed
     {
+        if ($this->behind?->open()) {
+            // a control transaction is open: the write waits for its commit (WriteBehind); the answer of a lossy write is never used
+            $this->behind->defer(function () use ($store, $op, $do, $items): void {
+                $this->lossy($store, $op, $do, null, $items);
+            });
+
+            return $onFail;
+        }
         try {
             return $do();
         } catch (DatabaseException $e) {

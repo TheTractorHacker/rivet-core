@@ -18,11 +18,6 @@ final class GuardedSoftwareHistoryStore implements SoftwareHistoryStore
     {
     }
 
-    public function sharesControlTransaction(): bool
-    {
-        return $this->inner->sharesControlTransaction();
-    }
-
     public function append(int $deviceId, array $changes, string $atUtc): void
     {
         $this->guard->lossy('software_history', 'append', fn () => $this->inner->append($deviceId, $changes, $atUtc), null, count($changes));

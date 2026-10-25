@@ -177,6 +177,12 @@ final class PostgresModuleTest extends RemoteTestCase
         $codes = array_column($this->h->module->capacity()->build()['warnings'], 'code');
         $this->assertContains('data_store', $codes, 'the capacity panel warns');
         $this->assertArrayHasKey('unavailable', $this->h->module->capacity()->storage($this->h->module->settings()->limits()), 'and still renders');
+        // the readers of every device page answer "no data" instead of breaking the page
+        $asset = (int) $this->h->one("SELECT asset_id FROM endpoint_agent_devices WHERE device_id = {$this->dev}");
+        $metrics = $this->h->module->dataStores()->metrics();
+        $this->assertSame([], $metrics->latest($asset));
+        $this->assertNull($metrics->peak($asset, 'cpu.utilization', null, new \DateTimeImmutable('-1 day')));
+        $this->assertSame([], $metrics->series($asset, 'cpu.utilization', null, new \DateTimeImmutable('-1 day'), new \DateTimeImmutable()));
         $this->h->module->clearDataStoreFaults();
         $this->assertSame(0, $this->h->module->dataStoreHealth()['errors']);
     }
@@ -273,6 +279,112 @@ final class PostgresModuleTest extends RemoteTestCase
         $this->connection = $good;
     }
 
+    public function testHistoryWritesWaitForTheControlCommitAndAreDroppedWithARollback(): void
+    {
+        $this->useStore('postgres');
+        $sql = $this->h->module->sql();
+        $stores = $this->h->module->dataStores();
+        $entry = [['key' => 'k', 'status' => 'ok', 'detail' => 'd', 'at' => gmdate('Y-m-d H:i:s')]];
+        $count = fn (): int => (int) $this->pg()->value('SELECT COUNT(*) FROM endpoint_agent_check_history');
+        try {
+            $sql->transaction(function () use ($stores, $entry, $count): void {
+                $stores->checkHistory()->append($this->dev, $entry);
+                $this->assertSame(0, $count(), 'held while the control transaction is open');
+                throw new \RuntimeException('the check-in failed');
+            });
+        } catch (\RuntimeException) {
+        }
+        $this->assertSame(0, $count(), 'and dropped with the rollback: no history for a check-in that did not happen');
+        $sql->transaction(function () use ($stores, $entry, $count): void {
+            $stores->checkHistory()->append($this->dev, $entry);
+            $this->assertSame(0, $count());
+        });
+        $this->assertSame(1, $count(), 'written right after the commit');
+        $stores->checkHistory()->append($this->dev, $entry);
+        $this->assertSame(2, $count(), 'outside a transaction: at once');
+    }
+
+    public function testTheHistoryOfAStoreInAnotherDatabaseIsNeverWrittenWhileTheControlTransactionIsOpen(): void
+    {
+        $this->switchOn(['inventory_software']);
+        $inTransaction = [];
+        $this->connection = function () use (&$inTransaction): PostgresConnectionInterface {
+            $real = PdoPostgresConnection::fromConfig(PostgresTestDatabase::config(['breaker_open_s' => 0]));
+
+            return new class($real, $this->h->mysqli, $inTransaction) implements PostgresConnectionInterface {
+                /** @param list<int> $seen */
+                public function __construct(private readonly PostgresConnectionInterface $inner, private readonly \mysqli $control, private array &$seen)
+                {
+                }
+
+                private function probe(string $sql): void
+                {
+                    if (str_contains($sql, 'rmm_software_history')) {
+                        $this->seen[] = (int) $this->control->query('SELECT @@in_transaction')->fetch_row()[0];
+                    }
+                }
+
+                public function query(string $sql, array $params = []): array
+                {
+                    $this->probe($sql);
+
+                    return $this->inner->query($sql, $params);
+                }
+
+                public function queryOne(string $sql, array $params = []): ?array
+                {
+                    $this->probe($sql);
+
+                    return $this->inner->queryOne($sql, $params);
+                }
+
+                public function value(string $sql, array $params = []): mixed
+                {
+                    $this->probe($sql);
+
+                    return $this->inner->value($sql, $params);
+                }
+
+                public function execute(string $sql, array $params = []): int
+                {
+                    $this->probe($sql);
+
+                    return $this->inner->execute($sql, $params);
+                }
+
+                public function transaction(callable $callback): mixed
+                {
+                    return $this->inner->transaction($callback);
+                }
+
+                public function inTransaction(): bool
+                {
+                    return $this->inner->inTransaction();
+                }
+
+                public function serverVersion(): string
+                {
+                    return $this->inner->serverVersion();
+                }
+
+                public function close(): void
+                {
+                    $this->inner->close();
+                }
+            };
+        };
+        $this->useStore('postgres');
+        $item = static fn (array $i): array => ['name' => $i[1], 'version' => $i[2], 'publisher' => $i[3], 'source' => $i[0]];
+        $hash = static fn (array $list): string => \RivetCore\Rmm\Software\SoftwareHash::of(array_map(static fn (array $i): array => ['source' => $i[0], 'name' => $i[1], 'version' => $i[2], 'publisher' => $i[3]], $list));
+        $send = fn (array $sw): array => $this->h->checkin($this->devToken, ['platform' => 'windows', 'capabilities' => ['software_inventory'], 'software' => $sw]);
+        $base = [['registry', 'Bash', '5.2', 'GNU']];
+        $send(['mode' => 'full', 'hash' => $hash($base), 'count' => 1, 'truncated' => false, 'items' => array_map($item, $base)]);
+        $after = [['registry', 'Bash', '5.3', 'GNU']];
+        $send(['mode' => 'delta', 'base_hash' => $hash($base), 'hash' => $hash($after), 'count' => 1, 'truncated' => false, 'items' => array_map($item, $after), 'removed' => []]);
+        $this->assertNotSame([], $inTransaction, 'the history append happened');
+        $this->assertSame([], array_filter($inTransaction), 'and never while the control database transaction was open');
+    }
+
     public function testARuleThatCannotCountBecauseTheStoreWentAwayDoesNotFailAStoredBatch(): void
     {
         $this->enableLogs();
@@ -342,7 +454,7 @@ final class PostgresModuleTest extends RemoteTestCase
             };
         };
         $this->useStore('postgres');
-        [$c] = $this->h->tech('POST', ['logs', 'rules'], $this->admin, ['name' => 'Spooler', 'min_level' => 'error', 'contains' => 'spooler', 'severity' => 'fail']);
+        [$c] = $this->h->tech('POST', ['logs', 'rules'], $this->admin, ['name' => 'Spooler', 'min_level' => 'error', 'contains' => 'spooler', 'severity' => 'fail', 'threshold' => 3, 'window_min' => 10]);   // a threshold above one counts the window in the store
         $this->assertContains($c, [200, 201]);
         [$status, $j] = $this->ship('The Print Spooler service entered the stopped state.');
         $this->assertSame([200, 1], [$status, $j['accepted']], 'the batch is stored and accepted; only its rule evaluation was skipped');

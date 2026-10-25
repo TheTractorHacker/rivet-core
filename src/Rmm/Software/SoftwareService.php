@@ -112,10 +112,8 @@ final class SoftwareService
         $deviceId = (int) $dev['device_id'];
         $out = ['applied' => false, 'resync' => false, 'installed' => 0, 'upgraded' => 0, 'removed' => 0, 'baseline' => false];
         $this->events->hold();
-        /** @var array{0:list<array<string,mixed>>,1:string}|null $deferred history of a store that is not in the control database: appended after the commit, never while locks are held */
-        $deferred = null;
         try {
-            $this->sql->transaction(function () use ($dev, $deviceId, $report, &$out, &$deferred): void {
+            $this->sql->transaction(function () use ($dev, $deviceId, $report, &$out): void {
                 $this->sql->run('INSERT IGNORE INTO rmm_device_state (device_id) VALUES (?)', [$deviceId]);
                 $st = $this->sql->one('SELECT software_hash, software_full_at FROM rmm_device_state WHERE device_id = ? FOR UPDATE', [$deviceId]) ?? [];
                 $held = $st['software_hash'] ?? null;
@@ -195,13 +193,8 @@ final class SoftwareService
                     $events[] = [RmmEvent::SOFTWARE_REMOVED, $item];
                 }
                 if (!$baseline) {
-                    $historyRows = array_map(static fn (array $h): array => ['key' => $h[0]['key'], 'name' => $h[0]['name'], 'source' => $h[0]['source'], 'publisher' => $h[0]['publisher'],
-                        'type' => $h[1], 'old' => $h[2], 'new' => $h[3]], $history);
-                    if ($this->history->sharesControlTransaction()) {
-                        $this->history->append($deviceId, $historyRows, $now);
-                    } else {
-                        $deferred = [$historyRows, $now];
-                    }
+                    $this->history->append($deviceId, array_map(static fn (array $h): array => ['key' => $h[0]['key'], 'name' => $h[0]['name'], 'source' => $h[0]['source'], 'publisher' => $h[0]['publisher'],
+                        'type' => $h[1], 'old' => $h[2], 'new' => $h[3]], $history), $now);
                     foreach (array_slice($events, 0, self::EVENT_CAP) as [$event, $i]) {
                         $this->events->emit($event, $dev, ['name' => $i['name'], 'version' => $i['version'], 'publisher' => $i['publisher'] === '' ? null : $i['publisher'], 'source' => $i['source']]);
                     }
@@ -224,9 +217,6 @@ final class SoftwareService
             throw $e;
         }
         $this->events->release();
-        if ($deferred !== null) {
-            $this->history->append($deviceId, $deferred[0], $deferred[1]);   // after the commit: the inventory is right whatever happens to the history store (a store in another database never throws here)
-        }
 
         return $out;
     }

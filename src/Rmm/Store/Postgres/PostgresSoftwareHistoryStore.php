@@ -21,11 +21,6 @@ final class PostgresSoftwareHistoryStore implements SoftwareHistoryStore
     {
     }
 
-    public function sharesControlTransaction(): bool
-    {
-        return false;
-    }
-
     public function append(int $deviceId, array $changes, string $atUtc): void
     {
         if ($changes === []) {

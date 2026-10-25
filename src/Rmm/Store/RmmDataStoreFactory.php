@@ -26,6 +26,7 @@ use RivetCore\Rmm\Store\Postgres\Guard\GuardedSoftwareHistoryStore;
 use RivetCore\Rmm\Store\Postgres\Guard\GuardedStoreMaintenance;
 use RivetCore\Rmm\Store\Postgres\Guard\HotStoreFaults;
 use RivetCore\Rmm\Store\Postgres\Guard\HotStoreGuard;
+use RivetCore\Rmm\Store\Postgres\Guard\WriteBehind;
 use RivetCore\Rmm\Store\Postgres\PostgresChangeEventStore;
 use RivetCore\Rmm\Store\Postgres\PostgresCheckHistoryStore;
 use RivetCore\Rmm\Store\Postgres\PostgresConnectionInterface;
@@ -53,14 +54,15 @@ final class RmmDataStoreFactory
      *        retention figures; the PostgreSQL metric store is built here
      * @param ?PartitionMaintenance $partitions the module's partition tool, so the maintenance and the administrator's explicit probe/convert share one instance (MariaDB only)
      * @param ?PostgresConnectionInterface $postgres the PostgreSQL connection (required for `postgres`, ignored for `mariadb`: MariaDB never touches it)
+     * @param ?WriteBehind $behind holds the PostgreSQL history writes of a check-in until the control transaction commits (the module passes the one its {@see \RivetCore\Rmm\Support\TrackedDatabase} reports to)
      * @param ?HotStoreFaults $faults where the PostgreSQL stores record the writes they dropped (default: a new record on the control database; the module passes its own so the capacity panel reads the same one)
      * @throws DataStoreUnavailableException for `postgres` without a connection and for an unknown value
      */
-    public static function create(string $kind, Sql $sql, ?MetricStore $metrics = null, ?PartitionMaintenance $partitions = null, ?PostgresConnectionInterface $postgres = null, ?HotStoreFaults $faults = null): RmmDataStores
+    public static function create(string $kind, Sql $sql, ?MetricStore $metrics = null, ?PartitionMaintenance $partitions = null, ?PostgresConnectionInterface $postgres = null, ?HotStoreFaults $faults = null, ?WriteBehind $behind = null): RmmDataStores
     {
         self::assertAvailable($kind);
         if ($kind === RmmDataStoreKind::POSTGRES) {
-            return self::createPostgres($sql, $metrics, self::requireConnection($postgres), $faults ?? new HotStoreFaults($sql));
+            return self::createPostgres($sql, $metrics, self::requireConnection($postgres), $faults ?? new HotStoreFaults($sql), $behind);
         }
 
         return new RmmDataStores(
@@ -123,9 +125,9 @@ final class RmmDataStoreFactory
             . '(a PostgresConnectionInterface, a Closure that returns one, or a PostgresConfig); see docs/rmm/POSTGRES.md. Nothing is written to MariaDB instead.');
     }
 
-    private static function createPostgres(Sql $sql, ?MetricStore $metrics, PostgresConnectionInterface $pg, HotStoreFaults $faults): RmmDataStores
+    private static function createPostgres(Sql $sql, ?MetricStore $metrics, PostgresConnectionInterface $pg, HotStoreFaults $faults, ?WriteBehind $behind): RmmDataStores
     {
-        $guard = new HotStoreGuard($faults);
+        $guard = new HotStoreGuard($faults, null, $behind);
         $raw = $metrics === null ? null : new PostgresMetricStore($pg, $sql->clock(), $metrics->retentionDays(),
             $metrics instanceof DatabaseMetricSink ? $metrics->dailyFromSeconds() : DatabaseMetricSink::DAILY_FROM_SECONDS, $metrics->dailyRetentionDays());
 

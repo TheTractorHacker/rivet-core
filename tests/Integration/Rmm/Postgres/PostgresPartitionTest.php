@@ -141,6 +141,31 @@ final class PostgresPartitionTest extends TestCase
         $this->assertNotNull($h->lastBefore(1, 'k', $at($today)));
     }
 
+    public function testALateOldRowInTheDefaultPartitionIsKeptUntilTheRollupCoveredItAndThenExpired(): void
+    {
+        $today = $this->today();
+        $retention = ['rmm_metric_hourly' => 14, 'rmm_metric_daily' => 400, 'endpoint_agent_check_history' => 7];
+        $this->maint->maintain(['rmm_metric_hourly' => 400, 'rmm_metric_daily' => 400, 'endpoint_agent_check_history' => 400], 1, 2, true);   // partitions from today on
+        $this->metrics->ingest([$this->sample(1, $today - 20 * self::DAY + 600)], 1);   // an offline device delivers an old hour: it lands in DEFAULT
+        $this->assertSame(1, (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly_default'));
+        $this->maint->maintain($retention, 1, 2, true, ['rmm_metric_hourly' => gmdate('Y-m-d H:i:s', $today - 25 * self::DAY)]);   // the rollup has not reached that day
+        $this->assertSame(1, (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly_default'), 'not yet rolled up: kept, like a partition would be');
+        $this->maint->maintain($retention, 1, 2, true, ['rmm_metric_hourly' => gmdate('Y-m-d H:i:s', $today - 10 * self::DAY)]);   // the rollup passed it
+        $this->assertSame(0, (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly_default'), 'covered and past retention: expired');
+    }
+
+    public function testRowsInsideAGapThatNeedsACatchUpPartitionAreMovedIntoIt(): void
+    {
+        $this->maint->run($this->limits(1, 1, 1), [], 14, 400, 5);
+        $row = time() + 100 * self::DAY;
+        $this->metrics->ingest([$this->sample(1, $row)], 1);   // far ahead of the partitions: DEFAULT
+        $this->assertSame(1, (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly_default'));
+        $this->clock->advance(400 * self::DAY);   // the maintenance did not run for more than a year; the row is now in the past, inside the gap
+        $this->maint->maintain(['rmm_metric_hourly' => 1000, 'rmm_metric_daily' => 1000, 'endpoint_agent_check_history' => 1000], 1, 1, true);
+        $this->assertSame(0, (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly_default'), 'the catch-up partition took the row out of DEFAULT');
+        $this->assertSame(1, (int) $this->db->value('SELECT COUNT(*) FROM rmm_metric_hourly'));
+    }
+
     public function testRowsPastTheLastPartitionWaitInTheDefaultPartitionAndAreNotLost(): void
     {
         $today = $this->today();

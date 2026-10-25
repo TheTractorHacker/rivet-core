@@ -187,6 +187,21 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $this->assertEqualsWithDelta(40.0, $peak['avg'], 1e-9);
     }
 
+    public function testAPeakThatTiesBetweenTheDailyAndTheHourlyTierIsAttributedToTheMoreRecentOne(): void
+    {
+        $m = $this->metrics();
+        $asset = random_int(1_000_000, 2_000_000_000);
+        $today = intdiv(time(), self::DAY) * self::DAY;
+        $m->ingest([$this->sample($asset, 'cpu.utilization', 80, $today - 3 * self::DAY + 3600 * 10 + 5)], 1);
+        $m->rollUp(10);   // that day is now in the daily tier
+        $recent = time() - 120;
+        $m->ingest([$this->sample($asset, 'cpu.utilization', 80, $recent)], 1);   // the same maximum in the newest hour, which is read from the hourly tier
+        $peak = $m->peak($asset, 'cpu.utilization', null, new \DateTimeImmutable('@' . ($today - 9 * self::DAY)));
+        $this->assertNotNull($peak);
+        $this->assertSame([2, 80.0], [$peak['samples'], $peak['max']]);
+        $this->assertSame(self::hourStart($recent), $peak['peak_at']->getTimestamp(), 'on a tie the more recent tier holds the peak');
+    }
+
     public function testARedeliveredBatchDoublesCountAndSumTogether(): void
     {
         $m = $this->metrics();

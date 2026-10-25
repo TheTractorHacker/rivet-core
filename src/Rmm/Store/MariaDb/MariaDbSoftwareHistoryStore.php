@@ -22,11 +22,6 @@ final class MariaDbSoftwareHistoryStore implements SoftwareHistoryStore
     {
     }
 
-    public function sharesControlTransaction(): bool
-    {
-        return true;
-    }
-
     public function append(int $deviceId, array $changes, string $atUtc): void
     {
         foreach (array_chunk($changes, self::CHUNK) as $chunk) {

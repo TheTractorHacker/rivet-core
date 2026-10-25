@@ -22,11 +22,6 @@ final class LazySoftwareHistoryStore implements SoftwareHistoryStore
         return ($this->resolve)()->softwareHistory();
     }
 
-    public function sharesControlTransaction(): bool
-    {
-        return $this->inner()->sharesControlTransaction();
-    }
-
     public function append(int $deviceId, array $changes, string $atUtc): void
     {
         $this->inner()->append($deviceId, $changes, $atUtc);
