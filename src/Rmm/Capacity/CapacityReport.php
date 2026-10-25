@@ -57,6 +57,7 @@ final class CapacityReport
         ?ChangeEventStore $changeEvents = null,
         private readonly ?\RivetCore\Rmm\Store\Postgres\Guard\HotStoreFaults $faults = null,
         private readonly ?\Closure $dataStoreKind = null,
+        private readonly \RivetCore\Rmm\Store\StoreSizes|\Closure|null $storeSizes = null,
     ) {
         $this->maintenance = $maintenance ?? new StorageMaintenance(new PartitionMaintenance($sql), null, $sql);
         $this->changeEvents = $changeEvents ?? new MariaDbChangeEventStore($sql);
@@ -95,6 +96,7 @@ final class CapacityReport
             'ingest_mode' => (string) $cfg['ingest_mode'], 'dead_letter' => $backlog['dead_letter'],
         ];
         $store = $this->dataStore();
+        $sizes = $this->storeSizes();
         if ($store['errors'] > 0) {
             $facts['data_store'] = $store;
         }
@@ -116,6 +118,8 @@ final class CapacityReport
             'change_monitor' => ($features['change_monitor'] ?? false) ? $this->changeMonitor() : null,
             'data_store' => $store,
             'tables' => $this->tables(),
+            'store_sizes' => $sizes,
+            'data_store_recommendation' => \RivetCore\Rmm\Capacity\DataStoreRecommendation::evaluate($store['kind'], $d['active'], $limits['rmm_pg_recommend_devices'], $limits['rmm_pg_recommend_hot_mb'], $sizes, $now),
             'settings' => $inputs + ['max_devices' => (int) $cfg['max_devices']],
             'projection' => $projection,
             'warnings' => self::warnings($facts),
@@ -285,6 +289,25 @@ final class CapacityReport
         $s = $this->faults?->summary() ?? ['dropped' => 0, 'errors' => 0, 'first_at' => null, 'last_at' => null, 'last_error' => '', 'stores' => []];
 
         return ['kind' => $this->dataStoreKind !== null ? ($this->dataStoreKind)() : 'mariadb'] + $s;
+    }
+
+    /**
+     * Rows and bytes of the hot tables of the ACTIVE store (additive to {@see tables()}, which stays the control database's view). Never throws.
+     *
+     * @return array{kind:string,available:bool,error:?string,tables:list<array{table:string,rows:int,bytes:int}>,total_rows:int,total_bytes:int,oldest_at:?string}
+     */
+    public function storeSizes(): array
+    {
+        $kind = $this->dataStoreKind !== null ? ($this->dataStoreKind)() : 'mariadb';
+        $s = $this->storeSizes instanceof \Closure ? ($this->storeSizes)() : $this->storeSizes;
+        if ($s === null) {
+            if ($kind !== 'mariadb') {
+                return ['kind' => $kind, 'available' => false, 'error' => 'No size reader was configured for this store.', 'tables' => [], 'total_rows' => 0, 'total_bytes' => 0, 'oldest_at' => null];
+            }
+            $s = new \RivetCore\Rmm\Store\Sizes\MariaDbStoreSizes($this->sql);
+        }
+
+        return $s->report();
     }
 
     // ------------------------------------------------------------------ the pure model
