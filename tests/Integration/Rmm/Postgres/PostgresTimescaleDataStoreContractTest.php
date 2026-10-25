@@ -19,6 +19,9 @@ final class PostgresTimescaleDataStoreContractTest extends PostgresDataStoreCont
     protected function setUp(): void
     {
         if (PostgresTestDatabase::unavailable() === null && !(new PostgresMigrator(PostgresTestDatabase::connect()))->timescaleInstalled()) {
+            if (getenv('RIVETCORE_TEST_PG_MODE') === 'timescale') {
+                $this->fail('RIVETCORE_TEST_PG_MODE=timescale (the TimescaleDB job) but the extension is not installed in the scratch database.');
+            }
             $this->markTestSkipped('TimescaleDB is not installed in the scratch PostgreSQL (use the timescale/timescaledb image; CI job "postgres / timescaledb").');
         }
         parent::setUp();

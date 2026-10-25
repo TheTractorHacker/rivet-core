@@ -9,11 +9,20 @@ use PHPUnit\Framework\TestCase;
 /**
  * Every RMM type declares its API status: the contracts, value objects, HTTP objects, protocol constants and conformance cases
  * are @api and listed in docs/api-surface.md; migrations, the schema helper, the in-memory reference adapters and the store implementations
- * (`Store\\MariaDb\\*`, the lazy delegates) are @internal and must not be listed.
+ * (`Store\\MariaDb\\*`, `Store\\Postgres\\Postgres*Store` and the guards, the lazy delegates) are @internal and must not be listed.
  */
 final class ApiTagsEndpointTest extends TestCase
 {
-    private const INTERNAL_PREFIXES = ['RivetCore\\Rmm\\Migration\\', 'RivetCore\\Testing\\InMemory', 'RivetCore\\Rmm\\Store\\MariaDb\\', 'RivetCore\\Rmm\\Store\\Lazy'];
+    private const INTERNAL_PREFIXES = ['RivetCore\\Rmm\\Migration\\', 'RivetCore\\Testing\\InMemory', 'RivetCore\\Rmm\\Store\\MariaDb\\', 'RivetCore\\Rmm\\Store\\Lazy', 'RivetCore\\Rmm\\Store\\Postgres\\Guard\\Guarded'];
+    /** Internal by design, one by one: the PostgreSQL store implementations and helpers (the port, the config, the adapter, the breaker, the migrator, the exceptions and the fault record are @api). */
+    private const INTERNAL_CLASSES = [
+        'RivetCore\\Rmm\\Store\\DeviceNames', 'RivetCore\\Rmm\\Support\\MetricMath', 'RivetCore\\Rmm\\Store\\Postgres\\Guard\\HotStoreGuard', 'RivetCore\\Rmm\\Store\\Postgres\\Pdo\\PdoErrorMapper',
+        'RivetCore\\Rmm\\Store\\Postgres\\PostgresMetricStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresCheckHistoryStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresLogStore',
+        'RivetCore\\Rmm\\Store\\Postgres\\PostgresChangeEventStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresSoftwareHistoryStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresPatchHistoryStore',
+        'RivetCore\\Rmm\\Store\\Postgres\\PostgresDeploymentHistoryStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresHypervisorHistoryStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresStoreMaintenance',
+        'RivetCore\\Rmm\\Store\\Postgres\\PostgresSchema', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresSql', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresRollupState',
+        'RivetCore\\Rmm\\Store\\Postgres\\UnconfiguredPostgresConnection',
+    ];
 
     /** @return list<class-string> */
     private function rmmTypes(): array
@@ -44,7 +53,7 @@ final class ApiTagsEndpointTest extends TestCase
             }
         }
 
-        return $fqcn === 'RivetCore\\Testing\\InMemorySecretBox';
+        return $fqcn === 'RivetCore\\Testing\\InMemorySecretBox' || in_array($fqcn, self::INTERNAL_CLASSES, true);
     }
 
     public function testEveryRmmTypeHasExactlyTheExpectedTag(): void

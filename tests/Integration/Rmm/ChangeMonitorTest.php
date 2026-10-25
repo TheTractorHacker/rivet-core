@@ -492,8 +492,8 @@ final class ChangeMonitorTest extends RemoteTestCase
         $this->assertSame(1, $this->h->module->readModel()->changeSearch([], [$this->h->clientB])['total']);
         $this->assertSame(0, $this->h->module->readModel()->changeSearch([], [])['total']);
         $this->assertSame(5, $this->h->module->readModel()->changeStats()['fleet_rows']);
-        // moving a device to another client moves its changes with it (no copy of the client id is stored)
-        $this->h->q("UPDATE endpoint_agent_devices SET client_id = {$this->h->clientB} WHERE device_id = $this->dev");
+        // moving a device to another client moves its changes with it: the client is stored with each record (phase 2 of #89), so the move goes through DeviceService::transfer()
+        $this->assertTrue($this->h->module->deviceService()->transfer($this->dev, $this->h->clientB, 0, 1));
         $this->assertCount(5, $fleet($this->scoped)[1]['items']);
     }
 

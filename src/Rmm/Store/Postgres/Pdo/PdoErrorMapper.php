@@ -70,7 +70,7 @@ final class PdoErrorMapper
             $first = str_replace($secret, '***', $first);
         }
         if (str_starts_with($state, '22')) {
-            $first = (string) preg_replace('/"[^"]*"|\'[^\']*\'/', '"…"', $first);   // a data exception quotes the offending value
+            $first = (string) preg_replace(['/"[^"]*"|\'[^\']*\'/', '/0x[0-9a-fA-F]{2}( 0x[0-9a-fA-F]{2})*/'], ['"…"', '0x…'], $first);   // a data exception quotes the offending value or its bytes
         }
         $first = (string) preg_replace('/[\x00-\x1f\x7f]+/', ' ', $first);
 

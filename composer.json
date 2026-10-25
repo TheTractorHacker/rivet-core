@@ -17,6 +17,9 @@
         "psr/log": "^3",
         "psr/simple-cache": "^3.0"
     },
+    "suggest": {
+        "ext-pdo_pgsql": "Only for the optional PostgreSQL RMM data store (docs/rmm/POSTGRES.md); MariaDB and MySQL installs never need it."
+    },
     "require-dev": {
         "phpstan/phpstan": "^2",
         "phpunit/phpunit": "^11.5"

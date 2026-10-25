@@ -69,7 +69,10 @@ final class ScaleWiringTest extends RmmTestCase
         $m = new \ReflectionMethod($h->module, 'metricReader');
         $this->assertSame($reader, $m->invoke($h->module));
         $m2 = new \ReflectionMethod($this->h->module, 'metricReader');
-        $this->assertInstanceOf(DatabaseMetricSink::class, $m2->invoke($this->h->module), 'without the option the database sink inside the composite is the reader');
+        $fallback = $m2->invoke($this->h->module);
+        $this->assertInstanceOf(\RivetCore\Rmm\Store\MetricStore::class, $fallback, 'without the option the database sink inside the composite is the reader (through the store the data store setting picked)');
+        $this->assertSame($this->h->module->dataStores()->metrics(), $fallback);
+        $this->assertSame([], $fallback->latest(424242), 'and it answers from the sink\'s tables');
     }
 
     public function testWithoutAnExternalSinkThePanelHasNoExternalBlock(): void

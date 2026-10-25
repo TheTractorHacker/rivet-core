@@ -100,6 +100,7 @@ use RivetCore\Rmm\Capacity\RedisTokenBucketStore;
 use RivetCore\Rmm\Storage\PartitionMaintenance;
 use RivetCore\Rmm\Store\DataStoreUnavailableException;
 use RivetCore\Rmm\Store\LazyMetricStore;
+use RivetCore\Rmm\Store\Postgres\Guard\HotStoreFaults;
 use RivetCore\Rmm\Store\MetricStore;
 use RivetCore\Rmm\Store\Postgres\Pdo\PdoPostgresConnection;
 use RivetCore\Rmm\Store\Postgres\PostgresConfig;
@@ -164,6 +165,7 @@ final class RmmModule
     private ?CapacityReport $capacity = null;
     private ?RmmDataStores $dataStores = null;
     private ?RmmDataStores $resolvedStores = null;
+    private ?HotStoreFaults $hotFaults = null;
     private ?RmmCache $cache = null;
     private ?HerdControl $herd = null;
     private ?PartitionMaintenance $partitions = null;
@@ -876,7 +878,7 @@ final class RmmModule
     /** Data of the "Performance and capacity" panel. */
     public function capacity(): CapacityReport
     {
-        return $this->capacity ??= new CapacityReport($this->sql(), $this->settings(), $this->ingestQueue(), $this->state(), $this->shedder(), $this->cache(), $this->herd(), $this->externalSink(), $this->dataStores()->maintenance(), $this->dataStores()->changes());
+        return $this->capacity ??= new CapacityReport($this->sql(), $this->settings(), $this->ingestQueue(), $this->state(), $this->shedder(), $this->cache(), $this->herd(), $this->externalSink(), $this->dataStores()->maintenance(), $this->dataStores()->changes(), $this->hotStoreFaults(), fn (): string => $this->dataStores()->kind());
     }
 
     /**
@@ -988,12 +990,12 @@ final class RmmModule
             $kind = $this->settings()->dataStore();
             $pg = $kind === RmmDataStoreKind::POSTGRES ? $this->postgresConnection() : null;   // MariaDB never builds, let alone opens, the PostgreSQL connection
             try {
-                $this->resolvedStores = RmmDataStoreFactory::create($kind, $this->sql(), $this->baseMetricStore(), $this->partitions(), $pg);
+                $this->resolvedStores = RmmDataStoreFactory::create($kind, $this->sql(), $this->baseMetricStore(), $this->partitions(), $pg, $this->hotStoreFaults());
             } catch (DataStoreUnavailableException $e) {
                 // The administrator chose PostgreSQL but the edition gave no connection (or the setting is unknown). The data is not in MariaDB, so using it would hide the problem:
                 // run the PostgreSQL stores on a connection that fails with this message. Check-ins keep working, history writes are dropped and counted, see HotStoreGuard.
                 error_log('rmm data store: ' . $e->getMessage());
-                $this->resolvedStores = RmmDataStoreFactory::create(RmmDataStoreKind::POSTGRES, $this->sql(), $this->baseMetricStore(), $this->partitions(), new UnconfiguredPostgresConnection($e->getMessage()));
+                $this->resolvedStores = RmmDataStoreFactory::create(RmmDataStoreKind::POSTGRES, $this->sql(), $this->baseMetricStore(), $this->partitions(), new UnconfiguredPostgresConnection($e->getMessage()), $this->hotStoreFaults());
             }
         }
 
@@ -1021,6 +1023,28 @@ final class RmmModule
         }
 
         return $given instanceof PostgresConnectionInterface ? $given : null;
+    }
+
+    /** The record of what the hot store could not do (empty on MariaDB), shown in the capacity panel. */
+    private function hotStoreFaults(): HotStoreFaults
+    {
+        return $this->hotFaults ??= new HotStoreFaults($this->sql());
+    }
+
+    /**
+     * Where the hot tables live and what could not be written there: the figures of the capacity panel's "data store" block ({@see CapacityReport::dataStore()}).
+     *
+     * @return array{kind:string,dropped:int,errors:int,first_at:?string,last_at:?string,last_error:string,stores:array<string,array{dropped:int,errors:int,last_at:string,last_error:string}>}
+     */
+    public function dataStoreHealth(): array
+    {
+        return $this->capacity()->dataStore();
+    }
+
+    /** Forget the recorded hot store faults (an administrator fixed the cause and acknowledged the warning). */
+    public function clearDataStoreFaults(): void
+    {
+        $this->hotStoreFaults()->clear();
     }
 
     /** The buffer in front of an external metric store (scaling item S4), whether it was passed as the sink or inside a {@see CompositeMetricSink}. */

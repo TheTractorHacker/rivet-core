@@ -156,11 +156,12 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
      */
     private function run(string $sql, array $params): \PDOStatement
     {
+        $bound = array_map(self::scalar(...), array_values($params));
         $pdo = $this->pdo();
         try {
             $st = $pdo->prepare($sql);
-            foreach (array_values($params) as $i => $v) {
-                $st->bindValue($i + 1, self::scalar($v), match (true) {
+            foreach ($bound as $i => $v) {
+                $st->bindValue($i + 1, $v, match (true) {
                     $v === null => \PDO::PARAM_NULL,
                     is_bool($v) => \PDO::PARAM_BOOL,
                     is_int($v) => \PDO::PARAM_INT,
@@ -187,6 +188,10 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
 
     private static function scalar(mixed $v): string|int|bool|null
     {
+        if (is_string($v) && str_contains($v, "\0")) {
+            // the driver would cut the value at the NUL byte and store the front half without a word; refuse it instead
+            throw new PostgresQueryException('A query parameter contains a NUL byte, which PostgreSQL cannot store.', '22021');
+        }
         if ($v === null || is_bool($v) || is_int($v) || is_string($v)) {
             return $v;
         }

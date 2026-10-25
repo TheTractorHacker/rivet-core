@@ -55,6 +55,8 @@ final class CapacityReport
         private readonly ?ExternalMetricSink $external = null,
         ?StoreMaintenance $maintenance = null,
         ?ChangeEventStore $changeEvents = null,
+        private readonly ?\RivetCore\Rmm\Store\Postgres\Guard\HotStoreFaults $faults = null,
+        private readonly ?\Closure $dataStoreKind = null,
     ) {
         $this->maintenance = $maintenance ?? new StorageMaintenance(new PartitionMaintenance($sql), null, $sql);
         $this->changeEvents = $changeEvents ?? new MariaDbChangeEventStore($sql);
@@ -92,6 +94,10 @@ final class CapacityReport
             'redis_available' => $env['redis_available'] ?? null, 'projected_storage_gb' => $projection['storage_steady_gb'], 'storage_budget_gb' => $env['storage_budget_gb'] ?? null,
             'ingest_mode' => (string) $cfg['ingest_mode'], 'dead_letter' => $backlog['dead_letter'],
         ];
+        $store = $this->dataStore();
+        if ($store['errors'] > 0) {
+            $facts['data_store'] = $store;
+        }
 
         return [
             'generated_at' => $now,
@@ -108,6 +114,7 @@ final class CapacityReport
             'patching' => $features['patching'] ? $this->patching($limits) : null,
             'software_deploy' => $features['software_deploy'] ? $this->softwareDeploy($limits) : null,
             'change_monitor' => ($features['change_monitor'] ?? false) ? $this->changeMonitor() : null,
+            'data_store' => $store,
             'tables' => $this->tables(),
             'settings' => $inputs + ['max_devices' => (int) $cfg['max_devices']],
             'projection' => $projection,
@@ -260,7 +267,24 @@ final class CapacityReport
      */
     public function storage(array $limits): array
     {
-        return $this->maintenance->tiers($limits, $this->settings->explicitLimits());
+        try {
+            return $this->maintenance->tiers($limits, $this->settings->explicitLimits());
+        } catch (\RivetCore\Rmm\Store\HotStoreUnavailableException $e) {
+            // the hot store is down: the panel still renders, and says why the tiers are missing
+            return ['partitioning_enabled' => false, 'rollup_watermark' => null, 'rollup_behind_days' => null, 'tables' => [], 'unavailable' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Where the hot tables live and what could not be written there (the record {@see \RivetCore\Rmm\Store\Postgres\Guard\HotStoreFaults} keeps in the control database).
+     *
+     * @return array{kind:string,dropped:int,errors:int,first_at:?string,last_at:?string,last_error:string,stores:array<string,array{dropped:int,errors:int,last_at:string,last_error:string}>}
+     */
+    public function dataStore(): array
+    {
+        $s = $this->faults?->summary() ?? ['dropped' => 0, 'errors' => 0, 'first_at' => null, 'last_at' => null, 'last_error' => '', 'stores' => []];
+
+        return ['kind' => $this->dataStoreKind !== null ? ($this->dataStoreKind)() : 'mariadb'] + $s;
     }
 
     // ------------------------------------------------------------------ the pure model
@@ -302,7 +326,7 @@ final class CapacityReport
     /**
      * The warnings of 13.5.
      *
-     * @param array{devices:int,max_devices:int,collect_interval_s:int,retention_days:int,queue_age_s:int,shed_level:int,redis_available:?bool,projected_storage_gb:float,storage_budget_gb:?float,ingest_mode:string,dead_letter:int} $f
+     * @param array{devices:int,max_devices:int,collect_interval_s:int,retention_days:int,queue_age_s:int,shed_level:int,redis_available:?bool,projected_storage_gb:float,storage_budget_gb:?float,ingest_mode:string,dead_letter:int,data_store?:array{kind:string,dropped:int,errors:int,last_at:?string,last_error:string}} $f
      * @return list<array{code:string,message:string}>
      */
     public static function warnings(array $f): array
@@ -331,6 +355,10 @@ final class CapacityReport
         }
         if ($f['storage_budget_gb'] !== null && $f['storage_budget_gb'] > 0 && $f['projected_storage_gb'] > $f['storage_budget_gb']) {
             $w[] = ['code' => 'storage', 'message' => sprintf('Projected raw sample storage %.1f GB exceeds the budget of %.1f GB.', $f['projected_storage_gb'], $f['storage_budget_gb'])];
+        }
+        if (isset($f['data_store']) && $f['data_store']['errors'] > 0) {
+            $w[] = ['code' => 'data_store', 'message' => sprintf('The RMM data store (%s) could not be reached or written %d time(s); %d history write(s) were dropped, the last at %s: %s',
+                $f['data_store']['kind'], $f['data_store']['errors'], $f['data_store']['dropped'], $f['data_store']['last_at'] ?? 'an unknown time', $f['data_store']['last_error'])];
         }
         if ($f['devices'] > 1000 && $f['ingest_mode'] !== 'queued') {
             $w[] = ['code' => 'queued_ingest', 'message' => 'Queued ingest is recommended above 1,000 devices or on slow disks.'];

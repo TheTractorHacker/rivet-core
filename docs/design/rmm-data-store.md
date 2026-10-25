@@ -1,8 +1,8 @@
 # RMM data store: where the hot RMM tables live
 
-Status: phase 1 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89) is implemented (inventory, interfaces, MariaDB implementation, setting that refuses `postgres`). Phases 2 to 5 are not started. Roadmap: "Enterprise architecture track", item 8.
+Status: phases 1 and 2 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89) are implemented. Phase 1: inventory, interfaces, the MariaDB implementation. Phase 2 (section 12): the PostgreSQL implementation (optionally TimescaleDB), its schema and migrator, the degraded behaviour and the contract, equivalence and failure tests. Phases 3 to 5 are not started. Roadmap: "Enterprise architecture track", item 8.
 
-**Behaviour in phase 1 is identical to before.** The same SQL runs against the same tables; it moved behind interfaces. The device protocol is untouched (golden replay unchanged). `rmm_data_store` is `mariadb`, and `postgres` is refused with "not available yet".
+**Behaviour on MariaDB is identical to before.** The same SQL runs against the same tables; it moved behind interfaces (phase 1), and phase 2 added the client id to the event rows so that no store has to join the device table (migration 0043, section 12.2). The device protocol is untouched (golden replay unchanged). `rmm_data_store` is `mariadb` by default; `postgres` is selectable by hand and runs when the edition passes a connection (section 12.6); choosing it in the settings is phase 3.
 
 ## 1. Goal and shape
 
@@ -211,7 +211,7 @@ Design rules that came out of the inventory:
 
 ### Setting
 
-`rmm_data_store` is the column `endpoint_agent_settings.data_store` (`varchar(16) NOT NULL DEFAULT 'mariadb'`, migration `0042_rmm_data_store`, additive and idempotent). `RmmSettings::dataStore()` reads it (and answers `mariadb` on an install that has not run the migration); `RmmSettings::update(['data_store' => ...])` accepts only a value this release can run. `postgres` returns the message `The RMM data store "postgres" is not available yet in this release...` and writes nothing. If the column is hand-edited to `postgres`, `RmmModule::dataStores()` logs the same message and uses MariaDB, because the data is there and check-ins must not fail.
+`rmm_data_store` is the column `endpoint_agent_settings.data_store` (`varchar(16) NOT NULL DEFAULT 'mariadb'`, migration `0042_rmm_data_store`, additive and idempotent). `RmmSettings::dataStore()` reads it (and answers `mariadb` on an install that has not run the migration); `RmmSettings::update(['data_store' => ...])` accepts only a value that can be SELECTED in this release. In phase 1 and phase 2 that is `mariadb`: `postgres` returns `The RMM data store "postgres" cannot be selected in the settings yet...` and writes nothing (phase 3 adds the connection setup and the test that make selecting it safe). Phase 1 answered a hand-edited `postgres` with MariaDB; since phase 2 that would hide the problem (the data is not in MariaDB), so the module runs the PostgreSQL stores instead, on a connection that fails with the precise reason when the edition passed none (section 12.7).
 
 ### Contract tests
 
@@ -219,7 +219,7 @@ Design rules that came out of the inventory:
 
 ## 9. What phase 2 and 3 must do
 
-Phase 2 (Postgres implementation and CI):
+Phase 2 (Postgres implementation and CI) - DONE, see section 12; the list below is what it was asked to do:
 
 1. `Store\Postgres\*` classes for each interface, passing the same contract tests (CI matrix with a Postgres service, and TimescaleDB optional). A `DatabaseInterface` adapter for Postgres is needed; Core ships only the interface (the mysqli adapters live in the editions and in `tests/Support`), so that comes first.
 2. DDL for the hot tables in Postgres (types in section 6), kept by a Postgres migration runner that is separate from `CoreMigrations` (those run on the control database).
@@ -242,7 +242,7 @@ Phase 3 (setting, recommendation, migration command):
 
 Supported. A separate database and role (no superuser), listen on a unix socket or localhost only, conservative `shared_buffers` and `work_mem` so MariaDB and PHP-FPM keep their memory, both data directories on storage with enough IOPS, back up both. For large fleets a separate host is better. Postgres connections are per PHP-FPM worker unless a pooler is used; budget `max_connections` for the number of workers plus the cron jobs.
 
-## 10. Decisions for Blake
+## 10. Decisions for Blake (phase 1; Blake's answers are applied in phase 2, section 12.1)
 
 1. **Device attributes in search results.** Log and change search return host name and client id by joining `endpoint_agent_devices`, and scope by client with the same join. A Postgres store cannot join. Options: (a) denormalise `client_id` and `hostname` into the history rows at write time (stale when a device moves clients), (b) the caller passes the visible device ids (can be long) and hydrates names from MariaDB after the query. The interface and the rows already carry `hostname` and `client_id`, so (b) needs no interface change. Recommendation: (b) for names, (a) for `client_id`.
 2. **Uncertain tables.** `rmm_package_history`, `rmm_hypervisor_vm_history` (small, bounded), `endpoint_agent_checkins` (large but a replay guard), `endpoint_agent_enroll_attempts`, `rmm_schedule_runs`, `rmm_metric_outbox`, `rmm_storage_state`. Phase 1 treats the first two as HOT and the rest as CONTROL.
@@ -255,3 +255,94 @@ Supported. A separate database and role (no superuser), listen on a unix socket 
 * `StorageMaintenance::run()` reports table names (`rmm_metric_hourly`, ...) in `partitioned` and `retention`; `MetricStore::prune(skip:)` takes the same names. They are logical tier names in the interface docs; a Postgres store may use the same strings.
 * `RmmModule::partitions()` and `PartitionMaintenance` stay public and MariaDB-only; the editions call them directly (section 7).
 * No UI for the setting (phase 4).
+
+## 12. Phase 2: the PostgreSQL implementation
+
+Everything in this section is built and tested (contract tests on MariaDB, PostgreSQL 16 and TimescaleDB 2.31, an equivalence test that feeds identical event streams to both stores, concurrency, failure injection, a degraded-module test). The operator guide is [docs/rmm/POSTGRES.md](../rmm/POSTGRES.md).
+
+### 12.1 Blake's decisions on phase 1 and how they were applied
+
+| Decision | Applied as |
+|---|---|
+| 1. A store never joins `endpoint_agent_devices`; the store returns device ids and a denormalised `client_id`, the caller adds host names | Migration `0043_rmm_store_denormalisation` adds a nullable `client_id` to `endpoint_agent_log_events`, `endpoint_agent_change_records` and `endpoint_agent_change_state` (the ledger carries it for the scoped fleet count) and backfills it device by device. `LogStore::admit()` and `ChangeEventStore::admit()` take a trailing `?int $clientId`; their search and timeline rows carry `device_id` and `client_id` and no `hostname`; `Store\DeviceNames` adds the host name (and the current client for a row stored before the column existed) in one query per page, in `LogService::search()`, `ChangeService::search()` and `timeline()`. **Both** stores work this way, so the MariaDB result shape for the callers is unchanged and the contract is one. A device that changes client moves its rows with it: `LogStore::reassignClient()` and `ChangeEventStore::reassignClient()`, called by `DeviceService::transfer()` and by the approval that follows an asset in another client. An edition that moves devices between clients by other means must call them. A row whose client is NULL (written by an older release during the upgrade window) is visible to an unscoped reader and to nobody scoped by client. The same rule removed the package name join from `DeploymentHistoryStore::forDevice()` (`DeployReader::history()` adds the name from the catalog) and made the hypervisor orphan sweep ask the caller which VM ids exist (`deleteOrphans(?Closure $existingVmIds)`). |
+| 2. `rmm_package_history` and `rmm_hypervisor_vm_history` stay HOT, `endpoint_agent_checkins` stays CONTROL | Unchanged. |
+| 3. The rollup watermark leaves `rmm_storage_state` and sits next to the tiers | MariaDB: table `rmm_metric_rollup_state` (migration 0043, the existing row copied); `StorageState` reads it first and falls back to the old row, and writes both, so a rollback to the previous release loses nothing. PostgreSQL: `rmm_metric_rollup_state` in the PostgreSQL database (`name`, `watermark timestamptz`, `detail jsonb`). `rmm_storage_state` keeps the partition probe, the maintenance note and the warm-start state. |
+| 4. Migration 0042's column stays as is | Untouched. |
+
+### 12.2 Connection port and credentials
+
+`Store\Postgres\PostgresConnectionInterface` is the only thing the PostgreSQL stores know: `query`, `queryOne`, `value`, `execute`, `transaction` (nested calls are savepoints; a deadlock or serialization failure of the outermost transaction repeats the callback, at most `transaction_retries` times), `inTransaction`, `serverVersion`, `close`. Placeholders are positional `?`, values go as bound parameters of server-side prepared statements (a `?` inside a value is data), the session is UTC, and statement, lock and idle-in-transaction timeouts apply. Failures are mapped to `PostgresException` subclasses of Core's `DatabaseException`: `PostgresConnectionException` (unreachable, bad credentials, lost session, too many connections, not configured), `PostgresSerializationException` (retryable), `PostgresTimeoutException`, `PostgresQueryException` (everything else: a bug or a missing schema). Messages are the server's primary message only: no `DETAIL` line (it quotes the failing row), no bound value (quoted text and byte sequences of a data exception are masked), no password.
+
+`Pdo\PdoPostgresConnection` is the shipped adapter and the only class in Core that mentions PDO (CI: "Core must not reference PDO outside the PostgreSQL adapter"). It opens its session on first use, drops it after a connection failure so the next call reconnects, and refuses a NUL byte in a parameter (the driver would cut the value there without a word). `CircuitBreakerConnection` wraps any connection: after a connection failure it stays open for `breaker_open_s` (15 s) and fails every call at once, with the state in a small file in the temp directory so all workers of the host share it (one connect timeout per worker per window instead of one per statement or per check-in). `PdoPostgresConnection::fromConfig()` returns the adapter behind the breaker.
+
+`PostgresConfig` is built from the edition's own configuration (`fromArray`, or `fromSealed` with the `SecretBoxInterface` Core already uses for its other secrets). It validates every field (no `;`, quotes or whitespace can reach the connection string), and hides the password from `var_dump`, `print_r`, `var_export`, `json_encode`, serialization and traces (`#[\SensitiveParameter]`, and the value lives in a closure). **Core stores no PostgreSQL credential, in the control database or anywhere else**; phase 3's settings page will store the password sealed with the SecretBox and nowhere else.
+
+### 12.3 Schema
+
+`Store\Postgres\PostgresSchema`, created by `PostgresMigrator` (own ledger `rivet_core_pg_migrations`, own settings `rivet_core_pg_meta`; versioned by id with a checksum of the statements, one migration per transaction, serialized by an advisory lock, idempotent). The tables keep the MariaDB names and columns. Types: `bigint` surrogate ids (identity columns; a sequence on the partitioned table, because identity columns on partitioned tables are not portable across versions), `timestamptz` for every time, `double precision`, `bytea` for the dedupe digest (`CHECK (octet_length(dedupe) = 16)`), `varchar(n)` with the MariaDB sizes (no `char(n)`: PostgreSQL pads it), `text` for the change monitor's status block (the contract returns it byte for byte; `jsonb` would reformat it), `jsonb` for the rollup note. Strings longer than the column are refused, not truncated.
+
+| Table | Layout | Indexes (and why) |
+|---|---|---|
+| `rmm_metric_latest` | plain, PK (asset, key, instance) | B-tree on `sampled_at` (the retention delete) |
+| `rmm_metric_hourly`, `rmm_metric_daily` | native: `PARTITION BY RANGE (hour_start / day_start)`, a DEFAULT partition; timescale: hypertable, 1 day chunks. PK includes the time column | PK B-tree (series lookups); BRIN on the time column (retention and the rollup's time range cost nothing per insert, and the ingest is the hottest path) |
+| `endpoint_agent_check_history` | same as above; PK (`hist_id`, `reported_at`) | B-tree (device, key, time, id) for the page lookups; BRIN on time |
+| `endpoint_agent_log_events` | plain | unique (device, dedupe); (device, time); (time) |
+| `endpoint_agent_log_state` | plain, PK device | the ledger row, locked `FOR UPDATE` in the admit transaction |
+| `endpoint_agent_change_records`, `endpoint_agent_change_state` | plain | as the log tables, plus `client_id` on both |
+| `rmm_software_history` | plain | (device, time, id); BRIN on time; unique over (device, key, type, time, old, new) so a retried append writes nothing twice |
+| `rmm_patch_history`, `rmm_package_history` | plain | (device, time/id), (client, time), (job); BRIN on time |
+| `rmm_hypervisor_vm_history` | plain | (vm, id), (device) |
+| `rmm_metric_rollup_state` | plain | PK name |
+
+The three big time series use the same primary keys and indexes in both modes, because a unique key of a partitioned table or hypertable must contain the partition column. The event tables are **not** partitioned: their retention is the row caps and the ledger, which count rows and must be updated in the same transaction as every delete; dropping a partition would desynchronize the counters.
+
+### 12.4 Partitions, retention and TimescaleDB
+
+`PostgresStoreMaintenance` implements `StoreMaintenance` with the same rollup, the same `run()`/`tiers()` shapes and the same administrator limits as MariaDB; a `partitioning` limit of 0 with no partitions means nothing physical happens and the caller prunes row by row (the contract test pins this for every store).
+
+* **Native:** the day partitions are created ahead (`partition_ahead` spans of `partition_span_days`). A new partition is built in one transaction under a 3 s `lock_timeout`: `CREATE TABLE ... (LIKE parent INCLUDING ALL)`, move the rows the DEFAULT partition holds for that range, `ATTACH PARTITION`. Expired partitions (upper bound not after the retention cutoff) are dropped whole, oldest first, and an hourly partition is never dropped before the daily rollup watermark covered it. A year-long gap creates one wide catch-up partition (at most 100 per run). Rows past the last partition wait in DEFAULT; those past retention are deleted from it. Two runs at once: a session advisory lock; the second reports `busy`.
+* **TimescaleDB:** detected with `SELECT extname FROM pg_extension`, never created, never required. With `partitioning = 1` the run enables compression (segment by series/device, order by time, policy after 7 days) and drops whole chunks past retention with the same rollup guard; with 0 it deletes row by row. **Continuous aggregates were deliberately not used.** The daily tier is an ordinary table written by the same idempotent, watermarked rollup in every store, because a continuous aggregate changes when a day becomes visible, how late data is handled and what the watermark means, and the equivalence test would no longer hold. It can be offered as an experiment in phase 5 if the load test shows the rollup is a bottleneck.
+
+### 12.5 MySQL idioms and their translation
+
+Each construct of section 6 and what the PostgreSQL stores run instead: `ON DUPLICATE KEY UPDATE x = VALUES(x)` / `x = x + VALUES(x)` is `ON CONFLICT (pk) DO UPDATE SET x = EXCLUDED.x` / `t.x + EXCLUDED.x`; `INSERT IGNORE` is `ON CONFLICT DO NOTHING` (the affected rows are the inserted ones, as in MariaDB); `IF()` is `CASE` (or computed in PHP from the locked ledger row); `UNHEX(?)` / `HEX()` is `decode(?, 'hex')` / `encode(..., 'hex')` on `bytea`; `DELETE ... LIMIT n` is a delete joined to a bounded sub-select on the primary key (correct on a partitioned table and on a hypertable; `ctid` would not be); `SELECT ... FOR UPDATE` is the same, with rows locked in one order everywhere; `DELETE h FROM ... LEFT JOIN` is the closure-driven sweep; `LIKE ... ESCAPE '!'` is `ILIKE ... ESCAPE '!'`; `DATE(x)` is `(x AT TIME ZONE 'UTC')::date`; `AUTO_INCREMENT` / `insertId` is identity columns (no store needs the id back); `GET_LOCK` / `RELEASE_LOCK` is `pg_try_advisory_lock`; `information_schema.PARTITIONS` is `pg_inherits` and `pg_get_expr(relpartbound)`; `UNIX_TIMESTAMP` / `FROM_UNIXTIME` never appear in the hot paths (all times are computed in PHP and bound as `Y-m-d H:i:s` UTC strings; reads use `to_char(col AT TIME ZONE 'UTC', ...)`). Per-device counters (`log_state`, `change_state`) keep their same-transaction semantics: the budget, the caps, the insert and the ledger update are one PostgreSQL transaction, and every delete batch moves the counter in the same transaction.
+
+### 12.6 Wiring
+
+`RmmDataStoreFactory::create($kind, $sql, $metrics, $partitions, $postgres)` builds the stores; `postgres` needs the connection and **refuses** (`DataStoreUnavailableException`, naming the module option) without one. `RmmModule` takes the `postgres` option (a connection, a `PostgresConfig`, or a closure returning either; the closure runs once, on first use, and only while the setting is `postgres`, so a MariaDB install never builds, let alone opens, a PostgreSQL connection; `ModuleOffFastPathTest` still pins zero queries for an off module). The metric sink the edition passed is routed by a `LazyMetricStore` to the store of the chosen kind, so one wiring serves both; on `mariadb` the sink is the very object the edition passed. `RmmDataStoreFactory::createMetricStore()` takes the connection for editions that build their own sink.
+
+### 12.7 Degraded behaviour
+
+Design rule: **a check-in never fails because the history store is down, and nothing is ever written to MariaDB in its place.** `Postgres\Guard\HotStoreGuard` wraps every PostgreSQL store (the factory does it; the contract tests run the unwrapped classes through the factory's guards, and the failure tests run both):
+
+| Operation | Behaviour | Why |
+|---|---|---|
+| `MetricStore::ingest`, `CheckHistoryStore::append`, `SoftwareHistoryStore::append`, `PatchHistoryStore::record`, `DeploymentHistoryStore::record`, `HypervisorHistoryStore::recordTransition`, the two `reassignClient()` | never throws; the data is **dropped and counted** | These run on the check-in or job-result path. The control-database part is already right (check state, inventory, jobs); the history entry is a trend dot or a log line. Buffering them would need a durable queue in the control database (the metric outbox exists only for the external metric store and has a different shape), which is exactly the load a PostgreSQL outage should not move onto MariaDB |
+| `LogStore::admit`, `ChangeEventStore::admit` | throws `HotStoreUnavailableException`; `LogService` / `ChangeService` answer **503 `unavailable` with `Retry-After` 60 to 180 s** | The sender can retry (the agent keeps its batch on a 5xx and on the load-shedding 503 that already exists), so nothing is lost and nothing needs counting. The device protocol gains no new status or code |
+| Reads | throw `HotStoreUnavailableException` (message names the store and the cause); the **metric** readers answer "no data" and count the fault | Every device page asks for the dials; a blank dial is better than a broken fleet page. Log, change and history reads are explicit queries and say why they failed |
+| `StoreMaintenance::run`, prunes, `enforceLimits`, rollup | return the neutral answer and count the fault | The cron job must not die on an outage; the next run catches up |
+
+Counting: `rmm_hot_store_faults` (control database, migration 0043; per store: writes dropped, failures, first and last time, last error), flushed with one atomic upsert per store at the end of the process; an `error_log` line at most once a minute per store; the capacity panel's `data_store` block and a `data_store` warning (`CapacityReport::dataStore()`, `RmmModule::dataStoreHealth()`, `clearDataStoreFaults()`). Cost of an outage: the circuit breaker (12.2) bounds it to one connect timeout per process per window. **No connection configured** (the setting says `postgres`, the edition passed none, or its factory threw): the module runs the PostgreSQL stores on `UnconfiguredPostgresConnection`, which fails every call with the precise reason, so the table above applies unchanged; the factory itself refuses with the same text.
+
+### 12.8 Equivalence rules
+
+The equivalence test feeds identical pseudo-random streams (seeds in the failure messages) to both stores and compares every read result. What is **the same**: rollups, peaks, series (hourly and daily tier), latest readings, prune counts, admission decisions (rate, device cap + 20 %, fleet cap + 10 %), ledgers, `kept` lists, searches with every filter and paging, totals, timelines, counts, retention results, `enforceLimits`. What is **allowed to differ**, each written down and pinned:
+
+1. `MetricStore::rollUp()['rows']` counts rows written once on PostgreSQL; MariaDB's affected-rows counts an updated row twice. Nothing reads it.
+2. Comparison of keys is case-sensitive on PostgreSQL and case-insensitive (and ignores trailing spaces) on MariaDB's `utf8mb4_general_ci`. Metric, check and watch keys are validated to a lower-case pattern before they reach a store, so this only shows for `instance` (device-chosen text) and `actor`: `GROUP BY actor` in the change timeline merges `Alice` and `alice` on MariaDB, not on PostgreSQL. Orderings of keys and instances use `upper(x) COLLATE "C"`, which reproduces the MariaDB order for ASCII.
+3. `ILIKE` is case-insensitive but accent-sensitive; MariaDB's collation also folds accents (`e` matches `é`).
+4. Software history `append()` is idempotent on PostgreSQL (the inventory commits in the control database and the history in PostgreSQL, so the control transaction may be retried), not on MariaDB (it shares that transaction).
+5. `HypervisorHistoryStore::deleteOrphans()` on PostgreSQL deletes nothing without the closure that tells it which VMs exist.
+6. Text longer than the column is always refused on PostgreSQL; MariaDB truncates silently under a non-strict `sql_mode`. The services cut text to the column sizes first.
+7. A NUL byte in a text value is refused by the PostgreSQL connection; the services already replace control characters.
+8. Sums of doubles are added in the order the engine chooses; the equivalence test compares to nine significant digits.
+9. Change search rows from MariaDB also carry the raw `dedupe` column; PostgreSQL does not return it (nothing reads it).
+
+### 12.9 What phase 3 must do (updated)
+
+1. Setting and connection: allow `postgres` in `RmmSettings::update()` behind a connection test (`PostgresMigrator::status()` through the configured connection, schema at the latest version, `SHOW server_version`), a settings page for the connection with the password sealed by the SecretBox, and a "storage mode" read-out. Teach the editions to pass the `postgres` option from that setting.
+2. `rmm:data-store:migrate` both ways, as in section 9, with the counts verified per table and per device, the dual-write window, cut over and the rollback period; the ledgers (`log_state`, `change_state`) are copied, not recomputed, and re-verified against the rows. Preserve event ids only where something refers to them (nothing does today).
+3. The capacity recommendation: `CapacityReport::tables()` still reads `information_schema` of the control database; add a store-level size report (`StoreMaintenance::sizes()`), the threshold X, and the "consider PostgreSQL" line.
+4. Backup coverage: `deploy/backup.sh`, the in-app backup and `restore.sh` learn the second database (section 8 of POSTGRES.md is the manual procedure), and the update procedure runs `PostgresMigrator::migrate()` after the MariaDB migrations.
+5. Flip the `partitioning` default for new PostgreSQL installs (the schema starts partitioned with a DEFAULT partition, so it is safe), and decide whether the housekeeping should auto-enable it.
+6. Editions (phase 4): catch `HotStoreUnavailableException` in the pages that read history; call `reassignClient()` wherever a device changes client outside `DeviceService::transfer()`; replace `partitions()->convert()`/`probe()` calls by the interface where the store is PostgreSQL (`RmmModule::partitions()` is MariaDB-only).

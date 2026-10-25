@@ -12,7 +12,7 @@ use RivetCore\Rmm\Store\RmmDataStoreKind;
 use RivetCore\Rmm\Support\DatabaseMetricSink;
 use RivetCore\Tests\Support\RmmTestCase;
 
-/** The `rmm_data_store` setting (phase 1 of #89): default mariadb, postgres refused with a clear message, the migration is additive and idempotent, the wiring follows the setting. */
+/** The `rmm_data_store` setting (#89): default mariadb, postgres cannot be selected in the settings yet (phase 3) but runs when the edition gives a connection, the migration is additive and idempotent, the wiring follows the setting. */
 final class RmmDataStoreSettingTest extends RmmTestCase
 {
     public function testTheDefaultIsMariadbAndTheColumnIsAdditive(): void
@@ -35,7 +35,7 @@ final class RmmDataStoreSettingTest extends RmmTestCase
         $s = $this->h->module->settings();
         $e = $s->update(['data_store' => 'postgres', 'max_devices' => 77]);
         $this->assertCount(1, $e);
-        $this->assertStringContainsString('"postgres" is not available yet', $e[0]);
+        $this->assertStringContainsString('"postgres" cannot be selected in the settings yet', $e[0]);
         $this->assertSame('mariadb', $s->dataStore());
         $this->assertSame(0, (int) $this->h->one('SELECT max_devices FROM endpoint_agent_settings WHERE id = 1'), 'a refused save writes nothing');
     }
@@ -51,7 +51,7 @@ final class RmmDataStoreSettingTest extends RmmTestCase
         $this->assertSame('mariadb', $s->dataStore());
     }
 
-    public function testASettingThisReleaseCannotRunFallsBackToMariadbAndLogsIt(): void
+    public function testAHandEditedPostgresWithoutAConnectionNeverFallsBackToMariadb(): void
     {
         $this->h->q("UPDATE endpoint_agent_settings SET data_store = 'postgres' WHERE id = 1");
         $this->h->module->settings()->refresh();
@@ -64,8 +64,15 @@ final class RmmDataStoreSettingTest extends RmmTestCase
             }
             $this->assertSame('postgres', $module->settings()->dataStore());
             $stores = $module->dataStores();
-            $this->assertSame('mariadb', $stores->kind(), 'the data is in MariaDB, so the module keeps working');
-            $this->assertStringContainsString('not available yet', (string) file_get_contents((string) $log));
+            $this->assertSame('postgres', $stores->kind(), 'the administrator chose postgres: the module does not quietly use MariaDB, which would hide that the history is not where it was put');
+            $this->assertStringContainsString('no PostgreSQL connection was configured', (string) file_get_contents((string) $log));
+            try {
+                $stores->logs()->fleetRowCount();
+                $this->fail('a read says why it cannot be answered');
+            } catch (\RivetCore\Rmm\Store\HotStoreUnavailableException $e) {
+                $this->assertStringContainsString('no PostgreSQL connection was configured', $e->getMessage());
+            }
+            $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_log_state'), 'nothing was written to MariaDB');
         } finally {
             ini_set('error_log', '/dev/null');
             @unlink((string) $log);
@@ -100,28 +107,36 @@ final class RmmDataStoreSettingTest extends RmmTestCase
         $this->assertSame(['varchar(16)', 'NO', 'mariadb'], [$col[0]['COLUMN_TYPE'], $col[0]['IS_NULLABLE'], trim((string) $col[0]['COLUMN_DEFAULT'], "'")]);
     }
 
-    public function testTheFactoryRefusesPostgresAndUnknownKindsAndBuildsEveryMariadbStore(): void
+    public function testTheFactoryRefusesPostgresWithoutAConnectionAndUnknownKindsAndBuildsEveryMariadbStore(): void
     {
         $sql = $this->h->module->sql();
-        foreach (['postgres', 'mysql', ''] as $kind) {
+        foreach (['mysql', ''] as $kind) {
             try {
                 RmmDataStoreFactory::create($kind, $sql);
                 $this->fail("$kind must be refused");
             } catch (DataStoreUnavailableException $e) {
-                $this->assertNotSame('', $e->getMessage());
+                $this->assertStringContainsString('Unknown RMM data store', $e->getMessage());
             }
         }
         try {
-            RmmDataStoreFactory::createMetricStore('postgres', $this->h->db, $this->h->clock);
-            $this->fail('postgres must be refused');
+            RmmDataStoreFactory::create('postgres', $sql);
+            $this->fail('postgres needs a connection');
         } catch (DataStoreUnavailableException $e) {
-            $this->assertStringContainsString('not available yet', $e->getMessage());
+            $this->assertStringContainsString('no PostgreSQL connection was configured', $e->getMessage());
+            $this->assertStringContainsString('"postgres" module option', $e->getMessage());
         }
+        try {
+            RmmDataStoreFactory::createMetricStore('postgres', $this->h->db, $this->h->clock);
+            $this->fail('postgres needs a connection');
+        } catch (DataStoreUnavailableException $e) {
+            $this->assertStringContainsString('no PostgreSQL connection was configured', $e->getMessage());
+        }
+        $this->assertSame([true, true, false], [RmmDataStoreKind::selectable('mariadb'), RmmDataStoreKind::available('postgres'), RmmDataStoreKind::selectable('postgres')]);
         $this->assertInstanceOf(DatabaseMetricSink::class, RmmDataStoreFactory::createMetricStore('mariadb', $this->h->db, $this->h->clock));
         $stores = RmmDataStoreFactory::create('mariadb', $sql);
         $this->assertNull($stores->metrics());
         $this->assertInstanceOf(MariaDbLogStore::class, $stores->logs());
-        $this->assertSame([false, true], [RmmDataStoreKind::available('postgres'), RmmDataStoreKind::available('mariadb')]);
+        $this->assertFalse(RmmDataStoreKind::available('mongo'));
     }
 
     public function testTheModuleServicesUseTheModulesStores(): void

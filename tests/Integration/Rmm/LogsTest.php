@@ -313,8 +313,8 @@ final class LogsTest extends RemoteTestCase
         $this->assertSame(200, $fleet($this->scoped, ['device_id' => (string) $this->b])[0]);
         $this->assertSame(4, $fleet($this->admin, ['client_id' => (string) $this->h->clientA])[1]['total']);
         $this->assertSame(['B only message'], array_column($fleet($this->admin, ['client_id' => (string) $this->h->clientB])[1]['items'], 'message'));
-        // moving a device to another client moves its logs with it (no copy of the client id is stored)
-        $this->h->q("UPDATE endpoint_agent_devices SET client_id = {$this->h->clientB} WHERE device_id = $this->dev");
+        // moving a device to another client moves its logs with it: the client is stored with each entry (phase 2 of #89), so the move goes through DeviceService::transfer(), which updates them
+        $this->assertTrue($this->h->module->deviceService()->transfer($this->dev, $this->h->clientB, 0, 1));
         $this->assertCount(5, $fleet($this->scoped)[1]['items']);
         // the read model for an edition page
         $this->assertSame(5, $this->h->module->readModel()->logSearch([], [$this->h->clientB])['total']);

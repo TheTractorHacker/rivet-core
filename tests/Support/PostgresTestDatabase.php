@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Tests\Support;
 
+use PHPUnit\Framework\Assert;
 use RivetCore\Rmm\Store\Postgres\Pdo\PdoPostgresConnection;
 use RivetCore\Rmm\Store\Postgres\PostgresConfig;
 use RivetCore\Rmm\Store\Postgres\PostgresConnectionInterface;
@@ -21,8 +22,21 @@ final class PostgresTestDatabase
     private static ?string $why = null;
     private static bool $checked = false;
 
-    /** Why the tests cannot run, or null when a scratch PostgreSQL is reachable. */
+    /**
+     * Why the tests cannot run, or null when a scratch PostgreSQL is reachable. Where PostgreSQL is part of the job (CI sets RIVETCORE_TEST_PG_REQUIRED=1) a missing
+     * server FAILS the test instead of skipping it, so a broken service container cannot turn the whole PostgreSQL job green.
+     */
     public static function unavailable(): ?string
+    {
+        $why = self::check();
+        if ($why !== null && getenv('RIVETCORE_TEST_PG_REQUIRED')) {
+            Assert::fail('PostgreSQL is required in this job (RIVETCORE_TEST_PG_REQUIRED) but: ' . $why);
+        }
+
+        return $why;
+    }
+
+    private static function check(): ?string
     {
         if (self::$checked) {
             return self::$why;

@@ -53,13 +53,14 @@ final class RmmDataStoreFactory
      *        retention figures; the PostgreSQL metric store is built here
      * @param ?PartitionMaintenance $partitions the module's partition tool, so the maintenance and the administrator's explicit probe/convert share one instance (MariaDB only)
      * @param ?PostgresConnectionInterface $postgres the PostgreSQL connection (required for `postgres`, ignored for `mariadb`: MariaDB never touches it)
+     * @param ?HotStoreFaults $faults where the PostgreSQL stores record the writes they dropped (default: a new record on the control database; the module passes its own so the capacity panel reads the same one)
      * @throws DataStoreUnavailableException for `postgres` without a connection and for an unknown value
      */
-    public static function create(string $kind, Sql $sql, ?MetricStore $metrics = null, ?PartitionMaintenance $partitions = null, ?PostgresConnectionInterface $postgres = null): RmmDataStores
+    public static function create(string $kind, Sql $sql, ?MetricStore $metrics = null, ?PartitionMaintenance $partitions = null, ?PostgresConnectionInterface $postgres = null, ?HotStoreFaults $faults = null): RmmDataStores
     {
         self::assertAvailable($kind);
         if ($kind === RmmDataStoreKind::POSTGRES) {
-            return self::createPostgres($sql, $metrics, self::requireConnection($postgres));
+            return self::createPostgres($sql, $metrics, self::requireConnection($postgres), $faults ?? new HotStoreFaults($sql));
         }
 
         return new RmmDataStores(
@@ -118,13 +119,13 @@ final class RmmDataStoreFactory
 
     private static function requireConnection(?PostgresConnectionInterface $postgres): PostgresConnectionInterface
     {
-        return $postgres ?? throw new DataStoreUnavailableException('The RMM data store is "postgres" but no PostgreSQL connection was given. The edition passes one as the "postgres" module option '
+        return $postgres ?? throw new DataStoreUnavailableException('The RMM data store is "postgres" but no PostgreSQL connection was configured. The edition passes one as the "postgres" module option '
             . '(a PostgresConnectionInterface, a Closure that returns one, or a PostgresConfig); see docs/rmm/POSTGRES.md. Nothing is written to MariaDB instead.');
     }
 
-    private static function createPostgres(Sql $sql, ?MetricStore $metrics, PostgresConnectionInterface $pg): RmmDataStores
+    private static function createPostgres(Sql $sql, ?MetricStore $metrics, PostgresConnectionInterface $pg, HotStoreFaults $faults): RmmDataStores
     {
-        $guard = new HotStoreGuard(new HotStoreFaults($sql));
+        $guard = new HotStoreGuard($faults);
         $raw = $metrics === null ? null : new PostgresMetricStore($pg, $sql->clock(), $metrics->retentionDays(),
             $metrics instanceof DatabaseMetricSink ? $metrics->dailyFromSeconds() : DatabaseMetricSink::DAILY_FROM_SECONDS, $metrics->dailyRetentionDays());
 
