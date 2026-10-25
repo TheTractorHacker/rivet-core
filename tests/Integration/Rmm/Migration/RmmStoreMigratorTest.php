@@ -356,19 +356,23 @@ final class RmmStoreMigratorTest extends StoreMigrationTestCase
         $cb = $this->collect(function (array $e) use ($now): void {
             if ($e['event'] === 'dual_write_on') {
                 $this->reresolve();
-                $caps = ['rate_per_min' => 2, 'device_max_rows' => 100000, 'fleet_max_rows' => 1000000];   // the primary admits 2 of 6 in this minute
-                $entries = [];
-                for ($i = 0; $i < 6; ++$i) {
-                    $entries[] = ['ts' => $now, 'level' => 2, 'source' => 'cap', 'code' => $i, 'message' => "cap $i", 'hash' => md5("cap$i")];
+                $caps = ['rate_per_min' => 2, 'device_max_rows' => 100000, 'fleet_max_rows' => 1000000];
+                foreach ([7, 99] as $device) {   // 7 has a busy ledger in the source (the primary drops everything), 99 has none (the primary admits 2 of 6)
+                    $entries = [];
+                    for ($i = 0; $i < 6; ++$i) {
+                        $entries[] = ['ts' => $now, 'level' => 2, 'source' => "cap$device", 'code' => $i, 'message' => "cap $i", 'hash' => md5("cap$device$i")];
+                    }
+                    $this->h->module->dataStores()->logs()->admit($device, $entries, $caps, $now, 0, 0, 1);
                 }
-                $this->h->module->dataStores()->logs()->admit(99, $entries, $caps, $now, 0, 0, 1);
             }
         });
         $this->migrator()->migrate(self::opts(['to' => 'postgres']), $cb);
-        $a = (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_log_events WHERE source = 'cap'");
-        $b = (int) $this->pgConn->value("SELECT COUNT(*) FROM endpoint_agent_log_events WHERE source = 'cap'");
-        $this->assertSame(2, $a);
-        $this->assertSame($a, $b, 'the second store did not apply its own (empty) ledger to admit more');
+        foreach (['cap7' => 0, 'cap99' => 2] as $source => $want) {
+            $a = (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_log_events WHERE source = '$source'");
+            $b = (int) $this->pgConn->value("SELECT COUNT(*) FROM endpoint_agent_log_events WHERE source = '$source'");
+            $this->assertSame($want, $a);
+            $this->assertSame($a, $b, 'the second store did not apply its own (still empty) ledger to admit what the primary refused');
+        }
     }
 
     public function testMetricsAreWrittenToBothStoresDuringTheDualWindow(): void
