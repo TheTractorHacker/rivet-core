@@ -76,7 +76,19 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
-## Adopting the RMM data store interface (unreleased; migration 0042; no edition change required)
+## Adopting the PostgreSQL data store (1.0.0-rc.40; migration 0043; optional)
+
+Phase 2 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89). **An edition that changes nothing keeps running on MariaDB exactly as before**, except for the two things in steps 1 and 2.
+
+1. **Run migration 0043 together with the code** (`0043_rmm_store_denormalisation`: nullable `client_id` on the log events, change records and change ledger, backfilled; the new tables `rmm_metric_rollup_state`, `rmm_pending_client_moves`, `rmm_hot_store_faults`). The MariaDB log and change ingest now write `client_id`; until the column exists those two endpoints fail. Mirror the columns and tables in `db.sql`.
+2. **Move devices between clients through `DeviceService::transfer()`.** Log entries and change records carry the device's client (no store joins the device table any more), so an edition that changes `endpoint_agent_devices.client_id` by other means must call `$module->dataStores()->logs()->reassignClient($deviceId, $clientId)` and `->changes()->reassignClient(...)` too. Pages that show log or change rows keep working unchanged: `LogService::search()` / `ChangeService::search()` still return `hostname` (added from the control database).
+3. **Nothing else is required to stay on MariaDB.** The PostgreSQL code is never loaded and no connection is opened.
+4. **To opt in:** install `pdo_pgsql`, create the role and database, run `php scripts/rmm-postgres.php migrate`, pass the connection as the `postgres` module option (a `PostgresConfig`, a connection of your own, or a closure returning either; the closure is only called while the setting is `postgres`), then set `endpoint_agent_settings.data_store = 'postgres'`. Steps, sizing, backups and monitoring: [docs/rmm/POSTGRES.md](docs/rmm/POSTGRES.md). The settings API still refuses `postgres` (phase 3 adds the connection setup and the migration of existing history); switching does not move existing rows.
+5. **Handle `HotStoreUnavailableException`** in pages that read history if you opt in: log, change, software, patch and deployment history reads throw it while the store is unreachable (the metric readers answer "no data"). Check-ins and job results are never affected; log and change batches get the protocol's retryable 503.
+6. **Interfaces changed since rc.39** (no edition implements them): `LogStore::admit()` and `ChangeEventStore::admit()` take a trailing `?int $clientId`; both gained `reassignClient()`; `SoftwareHistoryStore` gained `sharesControlTransaction()`; `HypervisorHistoryStore::deleteOrphans()` takes an optional `?Closure`; log and change search rows no longer carry `hostname`; `DeploymentHistoryStore::forDevice()` rows no longer carry `name`. `RmmDataStoreFactory::assertAvailable()` now only checks that the kind exists; `assertSelectable()` is the settings check.
+7. **Partition tool pages** (`partitions()->probe()/convert()` and the capacity panel's partition table) describe MariaDB. With PostgreSQL use `$module->dataStores()->maintenance()->tiers()`; moving those pages is phase 4.
+
+## Adopting the RMM data store interface (1.0.0-rc.39; migration 0042; no edition change required)
 
 Phase 1 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89). Nothing you call changes behaviour: the hot RMM tables stay in MariaDB/MySQL and the same statements run. See [docs/design/rmm-data-store.md](docs/design/rmm-data-store.md).
 
