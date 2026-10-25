@@ -171,4 +171,29 @@ final class CapacityTest extends RmmTestCase
         $this->assertSame(0, (int) $this->h->one('SELECT shed_level FROM endpoint_agent_settings'));
         $this->assertSame('sync', $this->h->one('SELECT ingest_mode FROM endpoint_agent_settings'));
     }
+
+    public function testStoreSizesAndTheRecommendationAreAdditiveFields(): void
+    {
+        $r = $this->h->module->capacity()->build(['redis_available' => false, 'storage_budget_gb' => null]);
+        $this->assertArrayHasKey('tables', $r, 'the existing field is untouched');
+        $this->assertTrue($r['store_sizes']['available']);
+        $this->assertSame('mariadb', $r['store_sizes']['kind']);
+        $names = array_column($r['store_sizes']['tables'], 'table');
+        $this->assertContains('rmm_metric_hourly', $names);
+        $this->assertContains('endpoint_agent_log_events', $names);
+        $this->assertFalse($r['data_store_recommendation']['recommend']);
+        $this->assertNull($r['data_store_recommendation']['message']);
+        $this->assertSame(5000, $r['data_store_recommendation']['threshold_devices']);
+    }
+
+    public function testATinyThresholdRecommendsPostgres(): void
+    {
+        // the one device in the fleet is 100 % of the threshold
+        $this->h->module->settings()->update(['limits_json' => '{"rmm_pg_recommend_devices":1}']);
+        $tok = $this->h->token();
+        $this->h->enroll($tok, $this->h->device());
+        $r = $this->h->module->capacity()->build();
+        $this->assertTrue($r['data_store_recommendation']['recommend']);
+        $this->assertStringContainsString('Consider PostgreSQL', (string) $r['data_store_recommendation']['message']);
+    }
 }

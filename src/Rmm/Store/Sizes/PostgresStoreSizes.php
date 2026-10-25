@@ -49,7 +49,7 @@ final class PostgresStoreSizes implements StoreSizes
                 }
                 if ($bytes === null) {
                     $bytes = $db->value('SELECT pg_total_relation_size(?::regclass) + COALESCE((SELECT SUM(pg_total_relation_size(i.inhrelid)) FROM pg_inherits i WHERE i.inhparent = ?::regclass), 0)', [$q, $q]);
-                    $rows = $db->value('SELECT GREATEST(c.reltuples, 0)::bigint + COALESCE((SELECT SUM(GREATEST(k.reltuples, 0)) FROM pg_inherits i JOIN pg_class k ON k.oid = i.inhrelid WHERE i.inhparent = c.oid), 0)::bigint FROM pg_class c WHERE c.oid = ?::regclass', [$q]);
+                    $rows = $db->value('SELECT (CASE WHEN c.relkind = \'p\' THEN 0 ELSE GREATEST(c.reltuples, 0) END)::bigint + COALESCE((SELECT SUM(GREATEST(k.reltuples, 0)) FROM pg_inherits i JOIN pg_class k ON k.oid = i.inhrelid WHERE i.inhparent = c.oid), 0)::bigint FROM pg_class c WHERE c.oid = ?::regclass', [$q]);
                 }
                 $tables[] = ['table' => $t, 'rows' => max(0, (int) $rows), 'bytes' => max(0, (int) $bytes)];
                 $tr += max(0, (int) $rows);
