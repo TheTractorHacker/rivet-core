@@ -65,9 +65,40 @@ final class LoadEdition
         $stateDir = (string) getenv('RMM_LOAD_STATE_DIR');
         $this->module = new RmmModule(
             $this->db, $this->clock, $this->tenancy(), $this->assets(), $this->bridge(), new InMemorySecretBox(hash('sha256', self::SECRET_SEED, true)), new InMemoryRmmAudit(), $this->sink(),
-            new \RivetCore\Testing\InMemoryRmmModuleState(true, $stateDir !== '' ? $stateDir : null), ['binary_dir' => $dir, 'allow_insecure_http' => true],
+            new \RivetCore\Testing\InMemoryRmmModuleState(true, $stateDir !== '' ? $stateDir : null), ['binary_dir' => $dir, 'allow_insecure_http' => true] + self::storeOptions(),
         );
         $this->api = $this->module->deviceApi(static fn (string $bucket, int $limit, int $window): bool => $limiter === null || $limiter->hit($bucket, $limit, $window)['allowed']);
+    }
+
+    /** RMM_LOAD_STORE=mariadb|postgres (rmm-store-load.php): run the hot tables on that store. Empty = the original behaviour of this harness. */
+    public static function store(): string
+    {
+        $v = (string) getenv('RMM_LOAD_STORE');
+
+        return in_array($v, ['mariadb', 'postgres'], true) ? $v : '';
+    }
+
+    /** The scratch PostgreSQL of RIVETCORE_TEST_PG_* (the name must contain "scratch"). */
+    public static function pgConfig(): \RivetCore\Rmm\Store\Postgres\PostgresConfig
+    {
+        $name = (string) getenv('RIVETCORE_TEST_PG_NAME');
+        if (!str_contains($name, 'scratch')) {
+            throw new \RuntimeException('Refusing: RIVETCORE_TEST_PG_NAME must name a scratch database');
+        }
+
+        return \RivetCore\Rmm\Store\Postgres\PostgresConfig::fromArray(['database' => $name, 'user' => (string) getenv('RIVETCORE_TEST_PG_USER'), 'password' => (string) getenv('RIVETCORE_TEST_PG_PASS'),
+            'host' => (string) (getenv('RIVETCORE_TEST_PG_HOST') ?: '127.0.0.1'), 'port' => (int) (getenv('RIVETCORE_TEST_PG_PORT') ?: 5432), 'sslmode' => 'disable', 'breaker_open_s' => 0]);
+    }
+
+    public static function pgConnection(): \RivetCore\Rmm\Store\Postgres\PostgresConnectionInterface
+    {
+        return \RivetCore\Rmm\Store\Postgres\Pdo\PdoPostgresConnection::fromConfig(self::pgConfig());
+    }
+
+    /** @return array<string,mixed> extra module options for the chosen store */
+    private static function storeOptions(): array
+    {
+        return self::store() === 'postgres' ? ['postgres' => static fn () => self::pgConfig()] : [];
     }
 
     public static function migrate(DatabaseInterface $db): void
@@ -75,6 +106,12 @@ final class LoadEdition
         foreach ([new \RivetCore\Jobs\Migration\Migration0002IntegrationJobs(), new \RivetCore\Jobs\Migration\Migration0012JobHeartbeat(), new Migration0014EndpointAgent(),
             new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs(), new Migration0023MeshAgent()] as $mig) {
             $mig->up($db);
+        }
+        if (self::store() !== '') {
+            // every Core migration (the hot tables of the later phases, data_store, client_id, rollup state): only when a store is chosen, so the original harness keeps its schema
+            foreach (\RivetCore\Migration\CoreMigrations::all() as $mig) {
+                $mig->up($db);   // every migration is idempotent
+            }
         }
         $db->execute('CREATE TABLE IF NOT EXISTS load_assets (asset_id int AUTO_INCREMENT PRIMARY KEY, client_id int NOT NULL, name varchar(200), serial varchar(100), model varchar(200), make varchar(200), os varchar(200), KEY idx_serial (serial)) ENGINE=InnoDB');
         $db->execute('CREATE TABLE IF NOT EXISTS load_links (integration_id int NOT NULL, asset_id int NOT NULL, agent_key varchar(64) NOT NULL, status varchar(20) NOT NULL DEFAULT \'unknown\', cpu_pct int NULL, ram_pct int NULL, disk_pct int NULL, last_seen datetime NULL, ticks int NOT NULL DEFAULT 0, PRIMARY KEY (integration_id, asset_id), UNIQUE KEY uq_key (integration_id, agent_key)) ENGINE=InnoDB');
@@ -239,7 +276,7 @@ final class LoadEdition
     private function sink(): RmmMetricSinkInterface
     {
         $db = $this->db;
-        if (getenv('RMM_LOAD_SINK') === 'database') {
+        if (getenv('RMM_LOAD_SINK') === 'database' || self::store() !== '') {
             // the real DatabaseMetricSink (latest + hourly rollup upserts) instead of the raw-row stand-in below: what an edition without a metrics subsystem really writes
             return new \RivetCore\Rmm\Support\DatabaseMetricSink($db, $this->clock);
         }
