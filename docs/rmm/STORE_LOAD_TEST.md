@@ -20,6 +20,8 @@ scripts/rmm-load/docker-sampler.sh /tmp/ds.jsonl 5 mariadb-container pg-containe
 php scripts/rmm-store-load.php --store=postgres --devices=200 --duration=60 --docker-stats-file=/tmp/ds.jsonl --out=/tmp/pg.json
 ```
 
+`--docker-stats-file` and `--out` are paths as the PHP process sees them: when PHP runs in a container, put both inside a mounted directory (the sampler runs on the host and writes the same file).
+
 Options: `--devices`, `--duration` (seconds, at least 10), `--interval` (check-in interval of the simulated agents, default `6s`), `--workers`, `--concurrency`, `--mode=sync|queued`. Run the two stores back to back, same options, and compare only those two documents.
 
 ## The JSON
