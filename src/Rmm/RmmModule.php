@@ -168,6 +168,8 @@ final class RmmModule
     private ?RmmDataStores $dataStores = null;
     private ?RmmDataStores $resolvedStores = null;
     private ?HotStoreFaults $hotFaults = null;
+    private ?PostgresConnectionInterface $pgConnection = null;
+    private ?\RivetCore\Rmm\Store\DataStoreSwitch $dataStoreSwitch = null;
     private ?RmmCache $cache = null;
     private ?HerdControl $herd = null;
     private ?PartitionMaintenance $partitions = null;
@@ -885,7 +887,8 @@ final class RmmModule
     /** Data of the "Performance and capacity" panel. */
     public function capacity(): CapacityReport
     {
-        return $this->capacity ??= new CapacityReport($this->sql(), $this->settings(), $this->ingestQueue(), $this->state(), $this->shedder(), $this->cache(), $this->herd(), $this->externalSink(), $this->dataStores()->maintenance(), $this->dataStores()->changes(), $this->hotStoreFaults(), fn (): string => $this->dataStores()->kind());
+        return $this->capacity ??= new CapacityReport($this->sql(), $this->settings(), $this->ingestQueue(), $this->state(), $this->shedder(), $this->cache(), $this->herd(), $this->externalSink(), $this->dataStores()->maintenance(), $this->dataStores()->changes(), $this->hotStoreFaults(), fn (): string => $this->dataStores()->kind(),
+            fn (): ?\RivetCore\Rmm\Store\StoreSizes => $this->dataStores()->kind() === RmmDataStoreKind::POSTGRES ? new \RivetCore\Rmm\Store\Sizes\PostgresStoreSizes(fn (): PostgresConnectionInterface => $this->postgresConnection() ?? new UnconfiguredPostgresConnection('no PostgreSQL connection is configured')) : null);
     }
 
     /**
@@ -1004,21 +1007,55 @@ final class RmmModule
                 error_log('rmm data store: ' . $e->getMessage());
                 $this->resolvedStores = RmmDataStoreFactory::create(RmmDataStoreKind::POSTGRES, $this->sql(), $this->baseMetricStore(), $this->partitions(), new UnconfiguredPostgresConnection($e->getMessage()), $this->hotStoreFaults(), $this->writeBehind);
             }
+            $this->resolvedStores = $this->withMigration($this->resolvedStores, $kind);
         }
 
         return $this->resolvedStores;
     }
 
     /**
-     * The PostgreSQL connection the edition passed as the `postgres` option: a {@see PostgresConnectionInterface}, a closure that returns one (called once, on first use,
-     * so nothing connects while the store is MariaDB) or a {@see PostgresConfig} (opened with {@see PdoPostgresConnection::fromConfig()}). Null when there is none.
+     * While a data store migration runs (the settings row says `copy:<store>` or `dual:<store>`, migration 0044) retention is paused on the active store and, in the dual-write
+     * phase, every write also goes to the other store (docs/design/rmm-data-store.md section 13.4). The phase is read with the settings row the module reads anyway.
+     */
+    private function withMigration(RmmDataStores $stores, string $kind): RmmDataStores
+    {
+        $phase = $this->settings()->get()['data_store_phase'] ?? null;
+        if (!is_string($phase) || preg_match('/^(copy|dual):(mariadb|postgres)$/D', $phase, $m) !== 1) {
+            return $stores;
+        }
+        $second = null;
+        if ($m[1] === 'dual' && $m[2] !== $kind) {
+            try {
+                $second = RmmDataStoreFactory::createUnguarded($m[2], $this->sql(), $this->baseMetricStore(), $this->partitions(), $m[2] === RmmDataStoreKind::POSTGRES ? $this->postgresConnection() : null);
+            } catch (\Throwable $e) {
+                error_log('rmm data store migration: the second store cannot be built, writes go to the active store only (the catch-up pass will repair it): ' . $e->getMessage());
+                try {
+                    $this->sql()->run('UPDATE rmm_store_migration SET dual_faults = dual_faults + 1, last_error = ? WHERE dual_write = 1', [mb_substr($e->getMessage(), 0, 480)]);
+                } catch (\Throwable) {
+                }
+            }
+        }
+
+        return \RivetCore\Rmm\Store\Migration\DualWrite\DualWriteStores::wrap($stores, $second, $this->sql(), $this->writeBehind, $m[2] === RmmDataStoreKind::POSTGRES);
+    }
+
+    /**
+     * The PostgreSQL connection: the `postgres` option the edition passed (a {@see PostgresConnectionInterface}, a closure that returns one, called once on first use so nothing
+     * connects while the store is MariaDB, or a {@see PostgresConfig}), otherwise the connection stored by the data store setting ({@see DataStoreSwitch}, password sealed).
+     * Null when there is none. One connection per module, shared by the stores and the size report.
      */
     private function postgresConnection(): ?PostgresConnectionInterface
     {
+        if ($this->pgConnection !== null) {
+            return $this->pgConnection;
+        }
         $given = $this->options['postgres'] ?? null;
         try {
             if ($given instanceof \Closure) {
                 $given = $given();
+            }
+            if ($given === null) {
+                $given = $this->dataStoreSwitch()->postgresConfig();
             }
             if ($given instanceof PostgresConfig) {
                 $given = PdoPostgresConnection::fromConfig($given);
@@ -1026,10 +1063,19 @@ final class RmmModule
         } catch (\Throwable $e) {
             error_log('rmm data store: the PostgreSQL connection could not be built: ' . get_class($e) . ': ' . mb_substr($e->getMessage(), 0, 200));
 
-            return new UnconfiguredPostgresConnection('The "postgres" module option could not be turned into a connection: ' . mb_substr($e->getMessage(), 0, 200));
+            return $this->pgConnection = new UnconfiguredPostgresConnection('The "postgres" module option could not be turned into a connection: ' . mb_substr($e->getMessage(), 0, 200));
         }
 
-        return $given instanceof PostgresConnectionInterface ? $given : null;
+        return $given instanceof PostgresConnectionInterface ? $this->pgConnection = $given : null;
+    }
+
+    /**
+     * Choose the RMM data store: connection settings (password sealed), connection test, schema, the setting. The one supported way to select PostgreSQL
+     * ({@see RmmSettings::update()} still refuses it). See docs/rmm/POSTGRES.md.
+     */
+    public function dataStoreSwitch(): \RivetCore\Rmm\Store\DataStoreSwitch
+    {
+        return $this->dataStoreSwitch ??= new \RivetCore\Rmm\Store\DataStoreSwitch($this->sql(), $this->settings(), $this->box, $this->audit);
     }
 
     /** The record of what the hot store could not do (empty on MariaDB), shown in the capacity panel. */

@@ -398,8 +398,19 @@ final class DataStoreSwitch
         if ($password !== '') {
             return [$cfg, $this->box->encrypt($password)];
         }
+        $reuse = $stored !== null ? (string) ($stored['password_sealed'] ?? '') : '';
+        if ($reuse !== '') {
+            // The stored password may only ever be sent to the target it was saved for. A form that changes where the connection goes must bring its own password, otherwise
+            // "Test connection" (or a save) would hand the stored secret to whatever host was typed in.
+            if ($cfg['host'] !== (string) $stored['host'] || $cfg['port'] !== (int) $stored['port'] || $cfg['user'] !== (string) $stored['db_user'] || $cfg['database'] !== (string) $stored['db_name']) {
+                throw new \InvalidArgumentException('Enter the password again when changing the host, port, user or database.');
+            }
+            if (!self::isLocalHost($cfg['host']) && !in_array($cfg['sslmode'], ['verify-full', 'verify-ca'], true)) {
+                throw new \InvalidArgumentException('The stored password is only sent to a remote host over a verified TLS connection: set sslmode to verify-full (or verify-ca), or enter the password again.');
+            }
+        }
 
-        return [$cfg, $stored !== null ? (string) ($stored['password_sealed'] ?? '') : ''];
+        return [$cfg, $reuse];
     }
 
     /**
@@ -432,6 +443,11 @@ final class DataStoreSwitch
         } catch (\Throwable) {
             // an audit failure never undoes the switch
         }
+    }
+
+    private static function isLocalHost(string $host): bool
+    {
+        return $host === 'localhost' || $host === '127.0.0.1' || $host === '::1' || $host === '[::1]' || str_starts_with($host, '/');
     }
 
     /** Messages come from the driver (the server's primary message only) and from our own validation; never let a password ride along in one. */
