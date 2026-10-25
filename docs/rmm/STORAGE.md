@@ -2,6 +2,8 @@
 
 This is the storage half of the scale work (SCALING.md item S5, issue #85). It covers the daily metric rollup tier, the opt-in time partitioning of the history tables with its capability probe and its fallback, and the retention settings. Numbers and the load model are in [CAPACITY.md](CAPACITY.md).
 
+Everything below describes the MariaDB / MySQL store, the default. The same tiers, partitions and retention exist on the optional PostgreSQL store with its own mechanics (day partitions or TimescaleDB chunks): [POSTGRES.md](POSTGRES.md).
+
 Everything here is **off by default or free until used**: migration 0021 only adds empty tables; partitioning is `limits_json.partitioning = 0`; the rollup runs from `Housekeeping::run()` only when the edition passed a `DatabaseMetricSink`.
 
 ## 1. The tiers of the database metric sink
