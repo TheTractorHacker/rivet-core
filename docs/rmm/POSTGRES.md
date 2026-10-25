@@ -65,7 +65,7 @@ php vendor/rivet/rivet-core/scripts/rmm-postgres.php status  --config=/etc/rivet
 * `native`: the three big time series (`rmm_metric_hourly`, `rmm_metric_daily`, `endpoint_agent_check_history`) are range-partitioned tables that start with a single DEFAULT partition. Nothing to maintain until you switch partitioning on (section 7).
 * `timescale`: the same three are hypertables with one-day chunks. Chosen by `--mode=auto` (the default) when the extension is installed in the database, or forced with `--mode=timescale` (refused with a clear message if the extension is missing).
 
-Changing the mode of an existing schema is not an in-place operation; it is a migration to a new database (phase 3's command).
+Changing the mode of an existing schema is not an in-place operation. To change it, move the history out and back with the migration command (section 14): migrate to MariaDB (section 14), create a new empty PostgreSQL database, run `scripts/rmm-postgres.php migrate --mode=...` in it, save it as the connection (retype the password: the database changed) and migrate to it.
 
 ## 5. Tell the edition about it
 

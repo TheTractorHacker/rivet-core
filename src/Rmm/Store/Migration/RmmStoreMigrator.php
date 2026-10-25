@@ -315,6 +315,7 @@ final class RmmStoreMigrator
                 break;
             case 'catchup':
                 if (!$delta) {
+                    $passStart = $this->now();
                     for ($pass = 0; $pass < 5; ++$pass) {
                         $passStart = $this->now();
                         $copied = 0;
@@ -328,7 +329,7 @@ final class RmmStoreMigrator
                             break;
                         }
                     }
-                    $ck['hw_at'] = $passStart ?? $this->now();   // the ids of the last pass were read from here on: the tail pass starts at this instant, not after the pass
+                    $ck['hw_at'] = $passStart;   // the ids of the last pass were read from here on: the tail pass starts at this instant, not after the pass
                     // The hourly buckets that closed while copying are immutable now: copy them here so that the seed only has the open one to do in the instant before dual-write.
                     $hourly = HotTables::get('rmm_metric_hourly');
                     $ck['hseed'] = $this->floor($this->now(), 3600);
