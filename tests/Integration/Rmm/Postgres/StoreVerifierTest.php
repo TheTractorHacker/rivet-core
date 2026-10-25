@@ -121,7 +121,9 @@ final class StoreVerifierTest extends RmmTestCase
         $this->assertSame(3, $by['orphan_rows:endpoint_agent_log_events']['rows']);
         $this->assertSame([['device_id' => $this->devs[0], 'ledger' => 7, 'rows' => 2]], $by['ledger_drift:endpoint_agent_log_state']['examples']);
         $this->assertSame([$this->devs[2]], $by['events_without_ledger:endpoint_agent_log_events']['devices']);
-        $this->assertSame($r, $this->verify(), 'reading twice answers the same: the verifier writes nothing');
+        $again = $this->verify();
+        unset($r['checked_at'], $again['checked_at']);   // the time of the check itself differs by a second now and then
+        $this->assertSame($r, $again, 'reading twice answers the same: the verifier writes nothing');
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('kinds')]
