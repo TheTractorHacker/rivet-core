@@ -41,7 +41,10 @@ final class RmmSettings
      *
      * @internal grows with every additive setting
      */
-    public const WRITABLE_ADDED = ['data_store', 'data_store_phase'];
+    public const WRITABLE_ADDED = ['data_store'];
+
+    /** Writable columns added in 1.0.0-rc.41 (kept apart so that {@see WRITABLE_ADDED} keeps its value). @internal */
+    public const WRITABLE_ADDED_RC41 = ['data_store_phase'];
 
     /**
      * Server-side bounds for the intervals agents are told to use (design 13.3). The two floors are a DELIBERATE change from RivetIT's
@@ -165,12 +168,6 @@ final class RmmSettings
         'hypervisor_alert_storage' => [0, 1],
         'hypervisor_alert_pool' => [0, 1],
         'hypervisor_alert_quorum' => [0, 1],
-        // Phase 3 of #89 (RMM data store): when to recommend PostgreSQL, how long the old store is kept after a migration, how fast the migration copies.
-        'rmm_pg_recommend_devices' => [1, 10000000],
-        'rmm_pg_recommend_hot_mb' => [0, 100000000],
-        'rmm_store_rollback_days' => [0, 365],
-        'rmm_store_migrate_batch' => [100, 50000],
-        'rmm_store_migrate_pause_ms' => [0, 60000],
     ];
     /** The default of every limit in {@see self::LIMIT_KEYS}; grows with it. @internal */
     public const LIMIT_DEFAULTS = [
@@ -239,12 +236,42 @@ final class RmmSettings
         'hypervisor_alert_storage' => 1,
         'hypervisor_alert_pool' => 1,
         'hypervisor_alert_quorum' => 1,
+    ];
+
+    /**
+     * Limits added in 1.0.0-rc.41 (the RMM data store: when to recommend PostgreSQL, how long the old store is kept after a migration, how fast the migration copies), kept apart
+     * so that {@see self::LIMIT_KEYS} keeps its value for the backward-compatibility check. Use {@see limitKeys()} for the full table.
+     *
+     * @internal
+     * @var array<string,array{0:int,1:int}>
+     */
+    public const LIMIT_KEYS_RC41 = [
+        'rmm_pg_recommend_devices' => [1, 10000000],
+        'rmm_pg_recommend_hot_mb' => [0, 100000000],
+        'rmm_store_rollback_days' => [0, 365],
+        'rmm_store_migrate_batch' => [100, 50000],
+        'rmm_store_migrate_pause_ms' => [0, 60000],
+    ];
+    /** The defaults of {@see self::LIMIT_KEYS_RC41}. @internal */
+    public const LIMIT_DEFAULTS_RC41 = [
         'rmm_pg_recommend_devices' => 5000,
         'rmm_pg_recommend_hot_mb' => 51200,
         'rmm_store_rollback_days' => 7,
         'rmm_store_migrate_batch' => 2000,
         'rmm_store_migrate_pause_ms' => 100,
     ];
+
+    /** @return array<string,array{0:int,1:int}> every limit with its bounds */
+    public static function limitKeys(): array
+    {
+        return self::LIMIT_KEYS + self::LIMIT_KEYS_RC41;
+    }
+
+    /** @return array<string,int> every limit with its default */
+    public static function limitDefaults(): array
+    {
+        return self::LIMIT_DEFAULTS + self::LIMIT_DEFAULTS_RC41;
+    }
 
     /** @var array<string,mixed>|null */
     private ?array $cache = null;
@@ -315,7 +342,7 @@ final class RmmSettings
     /** @return list<string> every column {@see set()} may write */
     public static function writableColumns(): array
     {
-        return [...self::WRITABLE, ...self::WRITABLE_ADDED];
+        return [...self::WRITABLE, ...self::WRITABLE_ADDED, ...self::WRITABLE_ADDED_RC41];
     }
 
     /**
@@ -545,9 +572,9 @@ final class RmmSettings
     {
         $raw = $this->get()['limits_json'] ?? null;
         $stored = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
-        $out = self::LIMIT_DEFAULTS;
+        $out = self::limitDefaults();
         if (is_array($stored)) {
-            foreach (self::LIMIT_KEYS as $k => [$min, $max]) {
+            foreach (self::limitKeys() as $k => [$min, $max]) {
                 if (isset($stored[$k]) && is_int($stored[$k]) && $stored[$k] >= $min && $stored[$k] <= $max) {
                     $out[$k] = $stored[$k];
                 }
@@ -569,7 +596,7 @@ final class RmmSettings
         $stored = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
         $out = [];
         if (is_array($stored)) {
-            foreach (self::LIMIT_KEYS as $k => [$min, $max]) {
+            foreach (self::limitKeys() as $k => [$min, $max]) {
                 if (isset($stored[$k]) && is_int($stored[$k]) && $stored[$k] >= $min && $stored[$k] <= $max) {
                     $out[$k] = $stored[$k];
                 }
@@ -620,10 +647,10 @@ final class RmmSettings
         $out = [];
         foreach ($d as $k => $v) {
             $k = (string) $k;
-            if (!isset(self::LIMIT_KEYS[$k])) {
+            if (!isset(self::limitKeys()[$k])) {
                 return [null, "Unknown limit $k."];
             }
-            [$min, $max] = self::LIMIT_KEYS[$k];
+            [$min, $max] = self::limitKeys()[$k];
             if (!is_int($v) || $v < $min || $v > $max) {
                 return [null, "Limit $k must be a whole number from $min to $max."];
             }
