@@ -108,6 +108,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
             $this->sample($asset, 'system.uptime_seconds', 99, $t + 60),
         ], 1);
         $m->ingest([$this->sample($asset, 'cpu.utilization', 30, $t + 120), $this->sample($asset, 'cpu.utilization', 5, $t + 30)], 1);   // the older reading must not replace the newer
+        $m->ingest([$this->sample($asset, 'cpu.utilization', 7, $t + 10, null, 'late')], 1);   // a late delivery of an older reading in a batch of its own: the stored one wins, label and time included
         $latest = $m->latest($asset);
         $byKey = [];
         foreach ($latest as $r) {
@@ -116,6 +117,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $this->assertCount(4, $latest);
         $this->assertSame(30, $byKey['cpu.utilization|']['value']);
         $this->assertSame($t + 120, $byKey['cpu.utilization|']['at']->getTimestamp());
+        $this->assertNull($byKey['cpu.utilization|']['label'], 'the late reading\'s label did not replace the newer reading\'s');
         $this->assertNull($byKey['cpu.utilization|']['instance']);
         $this->assertSame('System', $byKey['disk.utilization|C:']['label']);
         $this->assertSame(70, $byKey['disk.utilization|D:']['value']);
@@ -169,6 +171,20 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $this->assertSame($h, $peak['peak_at']->getTimestamp(), 'peak_at is the start of the hour that held the maximum');
         $this->assertNull($m->peak($asset, 'cpu.utilization', 'other', new \DateTimeImmutable('@' . $h)), 'another instance is another series');
         $this->assertNull($m->peak($asset + 1, 'cpu.utilization', null, new \DateTimeImmutable('@' . $h)));
+    }
+
+    public function testTheHourlyRollupAccumulatesAcrossBatches(): void
+    {
+        $m = $this->metrics();
+        $asset = random_int(1_000_000, 2_000_000_000);
+        $h = self::hourStart(time()) - 4 * 3600;
+        $m->ingest([$this->sample($asset, 'cpu.utilization', 40, $h + 5)], 1);
+        $m->ingest([$this->sample($asset, 'cpu.utilization', 10, $h + 6), $this->sample($asset, 'cpu.utilization', 20, $h + 7)], 1);
+        $m->ingest([$this->sample($asset, 'cpu.utilization', 90, $h + 8)], 1);
+        $peak = $m->peak($asset, 'cpu.utilization', null, new \DateTimeImmutable('@' . $h));
+        $this->assertNotNull($peak);
+        $this->assertSame([4, 10.0, 90.0], [$peak['samples'], $peak['min'], $peak['max']], 'count adds up, the minimum keeps the smallest and the maximum the largest of every batch');
+        $this->assertEqualsWithDelta(40.0, $peak['avg'], 1e-9);
     }
 
     public function testARedeliveredBatchDoublesCountAndSumTogether(): void
