@@ -60,6 +60,30 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         return gmdate('Y-m-d H:i:s', $ts);
     }
 
+    private function scopedLogs(): \RivetCore\Rmm\Store\ClientScopedLogStore
+    {
+        $s = $this->stores()->logs();
+        $this->assertInstanceOf(\RivetCore\Rmm\Store\ClientScopedLogStore::class, $s);
+
+        return $s;
+    }
+
+    private function scopedChanges(): \RivetCore\Rmm\Store\ClientScopedChangeEventStore
+    {
+        $s = $this->stores()->changes();
+        $this->assertInstanceOf(\RivetCore\Rmm\Store\ClientScopedChangeEventStore::class, $s);
+
+        return $s;
+    }
+
+    private function inventoryHypervisor(): \RivetCore\Rmm\Store\InventoryAwareHypervisorHistoryStore
+    {
+        $s = $this->stores()->hypervisorHistory();
+        $this->assertInstanceOf(\RivetCore\Rmm\Store\InventoryAwareHypervisorHistoryStore::class, $s);
+
+        return $s;
+    }
+
     public function testTheStoresReportTheirKindAndOfferEveryStore(): void
     {
         $s = $this->stores();
@@ -419,7 +443,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testHypervisorHistoryRingRecentAndOrphans(): void
     {
-        $h = $this->stores()->hypervisorHistory();
+        $h = $this->inventoryHypervisor();
         $dev = $this->device(1, 'HV-1');
         $a = $this->vm($dev);
         $b = $this->vm($dev);
@@ -449,7 +473,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
     /** @return array{rows:int,dropped_total:int,last_event_at:?string,last_batch_at:?string} */
     private function logLedger(int $deviceId): array
     {
-        $l = $this->stores()->logs()->deviceLedger($deviceId);
+        $l = $this->scopedLogs()->deviceLedger($deviceId);
         $this->assertNotNull($l, 'the device has a log ledger');
 
         return $l;
@@ -458,7 +482,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
     /** @return array{rows:int,dropped_total:int,last_change_at:?string,last_batch_at:?string,config_version:string,monitor_json:?string,monitor_at:?string} */
     private function changeLedger(int $deviceId): array
     {
-        $l = $this->stores()->changes()->deviceLedger($deviceId);
+        $l = $this->scopedChanges()->deviceLedger($deviceId);
         $this->assertNotNull($l, 'the device has a change ledger');
 
         return $l;
@@ -474,7 +498,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testLogAdmitStoresEntriesAndKeepsTheLedger(): void
     {
-        $l = $this->stores()->logs();
+        $l = $this->scopedLogs();
         $dev = $this->device(1, 'LG-1');
         $this->assertNull($l->deviceLedger($dev));
         $this->assertSame(0, $l->fleetRowCount());
@@ -497,7 +521,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testLogRepeatedEntriesAreStoredOnce(): void
     {
-        $l = $this->stores()->logs();
+        $l = $this->scopedLogs();
         $dev = $this->device(1, 'LG-2');
         $other = $this->device(1, 'LG-3');
         $e = $this->entry(self::T + 1);
@@ -512,7 +536,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testLogBudgetWindowAndCaps(): void
     {
-        $l = $this->stores()->logs();
+        $l = $this->scopedLogs();
         $dev = $this->device(1, 'LG-4');
         $many = fn (int $n, int $from = 0): array => array_map(fn (int $i): array => $this->entry(self::T + $from + $i, 4, 'S', null, 'm' . $from . '-' . $i), range(0, $n - 1));
         $caps = ['rate_per_min' => 3, 'device_max_rows' => 1000, 'fleet_max_rows' => 100000];
@@ -539,7 +563,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testLogSearchFiltersOrdersPagesAndScopes(): void
     {
-        $l = $this->stores()->logs();
+        $l = $this->scopedLogs();
         $a = $this->device(1, 'LOG-A');
         $b = $this->device(2, 'LOG-B');
         $l->admit($a, [$this->entry(self::T + 10, 1, 'Kernel', 100, 'disk failing'), $this->entry(self::T + 20, 4, 'Service Control', 7036, 'The 100% service entered_the running state'),
@@ -578,7 +602,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testLogCountMatchingStopsAtTheGivenCount(): void
     {
-        $l = $this->stores()->logs();
+        $l = $this->scopedLogs();
         $dev = $this->device(1, 'LG-7');
         $other = $this->device(1, 'LG-8');
         $l->admit($dev, [$this->entry(self::T + 1, 1, 'Kernel', 100, 'disk a'), $this->entry(self::T + 2, 1, 'Kernel', 100, 'disk b'), $this->entry(self::T + 3, 4, 'Kernel', 100, 'disk c'),
@@ -597,7 +621,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testLogOldestEventAndEnforceLimits(): void
     {
-        $l = $this->stores()->logs();
+        $l = $this->scopedLogs();
         $a = $this->device(1, 'LGE-A');
         $b = $this->device(1, 'LGE-B');
         $this->assertNull($l->oldestEventAt());
@@ -649,7 +673,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testChangeAdmitKeepsTheLedgerAndTheAgentStatus(): void
     {
-        $c = $this->stores()->changes();
+        $c = $this->scopedChanges();
         $dev = $this->device(1, 'CG-1');
         $this->assertFalse($c->hasLedger());
         $this->assertNull($c->deviceLedger($dev));
@@ -677,7 +701,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testChangeBudgetAndCaps(): void
     {
-        $c = $this->stores()->changes();
+        $c = $this->scopedChanges();
         $dev = $this->device(1, 'CG-2');
         $many = fn (int $n, int $from = 0): array => array_map(fn (int $i): array => $this->record(self::T + $from + $i, 'HKLM\\K' . $i), range(0, $n - 1));
         $caps = ['rate_per_min' => 3, 'device_max_rows' => 1000, 'fleet_max_rows' => 100000];
@@ -699,7 +723,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testChangeDedupeKeysOfOneInstant(): void
     {
-        $c = $this->stores()->changes();
+        $c = $this->scopedChanges();
         $dev = $this->device(1, 'CG-5');
         $a = $this->record(self::T + 1);
         $b = $this->record(self::T + 2, 'HKLM\\B');
@@ -716,7 +740,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testChangeSearchFiltersOrdersPagesAndScopes(): void
     {
-        $c = $this->stores()->changes();
+        $c = $this->scopedChanges();
         $a = $this->device(1, 'CHG-A');
         $b = $this->device(2, 'CHG-B');
         $c->admit($a, [
@@ -761,7 +785,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testChangeTimelineCountsAndCountMatching(): void
     {
-        $c = $this->stores()->changes();
+        $c = $this->scopedChanges();
         $a = $this->device(1, 'CHT-A');
         $b = $this->device(2, 'CHT-B');
         $d1 = intdiv(self::T, self::DAY) * self::DAY;
@@ -808,7 +832,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testChangeEnforceLimits(): void
     {
-        $c = $this->stores()->changes();
+        $c = $this->scopedChanges();
         $a = $this->device(1, 'CHE-A');
         $b = $this->device(1, 'CHE-B');
         $mk = fn (int $n, int $from): array => array_map(fn (int $i): array => $this->record($from + $i, 'HKLM\\K' . $from . '-' . $i), range(0, $n - 1));
@@ -839,7 +863,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testLogEntriesCarryTheirClientAndAMoveFollowsTheDevice(): void
     {
-        $l = $this->stores()->logs();
+        $l = $this->scopedLogs();
         $a = $this->device(1, 'LC-A');
         $unknown = $this->device(1, 'LC-B');
         $l->admit($a, [$this->entry(self::T + 1), $this->entry(self::T + 2)], self::CAPS, self::T + 10, 0, 0, 1);
@@ -861,7 +885,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     public function testChangeRecordsAndTheirLedgerCarryTheClientAndAMoveFollowsTheDevice(): void
     {
-        $c = $this->stores()->changes();
+        $c = $this->scopedChanges();
         $a = $this->device(1, 'CC-A');
         $b = $this->device(2, 'CC-B');
         $c->admit($a, [$this->record(self::T + 1), $this->record(self::T + 2, 'HKLM\\Two')], self::CHANGE_CAPS, self::T + 10, 0, 0, '', null, 1);

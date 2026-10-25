@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Store\MariaDb;
 
-use RivetCore\Rmm\Store\HypervisorHistoryStore;
+use RivetCore\Rmm\Store\InventoryAwareHypervisorHistoryStore;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -13,7 +13,7 @@ use RivetCore\Rmm\Support\Sql;
  *
  * @internal
  */
-final class MariaDbHypervisorHistoryStore implements HypervisorHistoryStore
+final class MariaDbHypervisorHistoryStore implements InventoryAwareHypervisorHistoryStore
 {
     public function __construct(private readonly Sql $sql)
     {

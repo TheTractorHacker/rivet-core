@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Store\Postgres;
 
-use RivetCore\Rmm\Store\HypervisorHistoryStore;
+use RivetCore\Rmm\Store\InventoryAwareHypervisorHistoryStore;
 
 /**
  * {@see HypervisorHistoryStore} on PostgreSQL (`rmm_hypervisor_vm_history`). The VM inventory is in the control database, so the orphan sweep asks the caller which
@@ -12,7 +12,7 @@ use RivetCore\Rmm\Store\HypervisorHistoryStore;
  *
  * @internal
  */
-final class PostgresHypervisorHistoryStore implements HypervisorHistoryStore
+final class PostgresHypervisorHistoryStore implements InventoryAwareHypervisorHistoryStore
 {
     private const SWEEP_CHUNK = 500;
 

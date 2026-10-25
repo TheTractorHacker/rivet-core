@@ -22,11 +22,6 @@ interface HypervisorHistoryStore
      */
     public function recent(int $vmId, int $limit = 100): array;
 
-    /**
-     * Delete the history of VMs that no longer exist in the inventory. Returns the rows deleted.
-     *
-     * @param (\Closure(list<int>):list<int>)|null $existingVmIds given some VM ids, answers which of them are still in the inventory. A store in the control database
-     *        looks the inventory up itself and ignores it; a store in another database needs it, and without it deletes nothing (it cannot tell an orphan from a VM it does not know)
-     */
-    public function deleteOrphans(?\Closure $existingVmIds = null): int;
+    /** Delete the history of VMs that no longer exist in the inventory. Returns the rows deleted. */
+    public function deleteOrphans(): int;
 }

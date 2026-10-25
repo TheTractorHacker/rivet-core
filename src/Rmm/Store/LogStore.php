@@ -12,7 +12,7 @@ namespace RivetCore\Rmm\Store;
  * Admission rules (checked by the contract test): an entry past the per-minute budget, the device's row cap (plus 20 %) or the fleet's row cap (plus 10 %)
  * is counted, not stored; an entry that repeats (same device, time, level, source, code and text) is stored once and is not an error.
  *
- * A store never joins the control table `endpoint_agent_devices`: scoping by client uses the `client_id` stored with each entry (given to {@see admit()}), and the
+ * (Since rc.40 a store that also implements {@see ClientScopedLogStore} stores the client with each entry.) A store never joins the control table `endpoint_agent_devices`: scoping by client uses the `client_id` stored with each entry, and the
  * caller adds host names to the rows it gets back.
  *
  * @api
@@ -26,11 +26,9 @@ interface LogStore
      * @param array{rate_per_min:int,device_max_rows:int,fleet_max_rows:int} $caps
      * @param int $rejected entries the caller already dropped as malformed (added to the returned `dropped`)
      * @param int $agentDropped entries the agent says it dropped itself (added to the ledger's dropped total, not to the returned `dropped`)
-     * @param int|null $clientId the device's client, stored with every entry so a search can be scoped by client without a join (null = unknown: the rows are visible
-     *        to an unscoped reader only)
      * @return array{inserted:int,dropped:int,kept:list<array{ts:int,level:int,source:string,code:?int,message:string,hash:string}>} `kept` are the entries admitted (some may have been duplicates)
      */
-    public function admit(int $deviceId, array $entries, array $caps, int $nowTs, int $rejected, int $agentDropped, ?int $clientId = null): array;
+    public function admit(int $deviceId, array $entries, array $caps, int $nowTs, int $rejected, int $agentDropped): array;
 
     /**
      * @return array{rows:list<array<string,mixed>>,total:int} newest first; rows carry event_id, device_id, client_id (as stored with the entry; null for a row written
@@ -58,9 +56,6 @@ interface LogStore
 
     /** The occurred_at (UTC database datetime) of the oldest stored entry, of one device or of the fleet; null when there is none. */
     public function oldestEventAt(?int $deviceId = null): ?string;
-
-    /** The device moved to another client: give its stored entries the new one. Returns the entries changed. */
-    public function reassignClient(int $deviceId, int $clientId): int;
 
     /**
      * Delete what is past retention, then trim every device above its cap, then the fleet above its cap, in batches (each batch with its ledger update, atomically).

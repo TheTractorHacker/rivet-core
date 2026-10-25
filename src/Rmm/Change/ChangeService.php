@@ -10,6 +10,7 @@ use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Store\ChangeCriteria;
 use RivetCore\Rmm\Store\ChangeEventStore;
+use RivetCore\Rmm\Store\ClientScopedChangeEventStore;
 use RivetCore\Rmm\Store\DeviceNames;
 use RivetCore\Rmm\Store\HotStoreUnavailableException;
 use RivetCore\Rmm\Store\MariaDb\MariaDbChangeEventStore;
@@ -96,8 +97,9 @@ final class ChangeService
         }
 
         try {
-            $res = $this->store->admit($deviceId, $clean, ['rate_per_min' => $limits['change_rate_per_min'], 'device_max_rows' => $limits['change_device_max_rows'], 'fleet_max_rows' => $limits['change_fleet_max_rows']],
-                $now, $dropped, $agentDropped, $version, $status, isset($dev['client_id']) ? (int) $dev['client_id'] : null);
+            $caps = ['rate_per_min' => $limits['change_rate_per_min'], 'device_max_rows' => $limits['change_device_max_rows'], 'fleet_max_rows' => $limits['change_fleet_max_rows']];
+            $res = $this->store instanceof ClientScopedChangeEventStore ? $this->store->admit($deviceId, $clean, $caps, $now, $dropped, $agentDropped, $version, $status, isset($dev['client_id']) ? (int) $dev['client_id'] : null)
+                : $this->store->admit($deviceId, $clean, $caps, $now, $dropped, $agentDropped, $version, $status);
         } catch (HotStoreUnavailableException) {
             // the data store is down: the agent keeps its batch and sends it again (the protocol's retryable 503), nothing is lost or counted as dropped
             throw new ApiError(503, 'unavailable', 'The change store is temporarily unavailable. Try again later.', ['Retry-After' => (string) random_int(60, 180)]);

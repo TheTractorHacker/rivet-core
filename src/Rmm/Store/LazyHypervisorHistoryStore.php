@@ -10,7 +10,7 @@ namespace RivetCore\Rmm\Store;
  *
  * @internal
  */
-final class LazyHypervisorHistoryStore implements HypervisorHistoryStore
+final class LazyHypervisorHistoryStore implements InventoryAwareHypervisorHistoryStore
 {
     /** @param \Closure(): RmmDataStores $resolve */
     public function __construct(private readonly \Closure $resolve)
@@ -34,6 +34,8 @@ final class LazyHypervisorHistoryStore implements HypervisorHistoryStore
 
     public function deleteOrphans(?\Closure $existingVmIds = null): int
     {
-        return $this->inner()->deleteOrphans($existingVmIds);
+        $s = $this->inner();
+
+        return $s instanceof InventoryAwareHypervisorHistoryStore ? $s->deleteOrphans($existingVmIds) : $s->deleteOrphans();
     }
 }

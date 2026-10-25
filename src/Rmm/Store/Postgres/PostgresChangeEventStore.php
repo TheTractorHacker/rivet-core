@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Store\Postgres;
 
 use RivetCore\Rmm\Store\ChangeCriteria;
-use RivetCore\Rmm\Store\ChangeEventStore;
+use RivetCore\Rmm\Store\ClientScopedChangeEventStore;
 
 /**
  * {@see ChangeEventStore} on PostgreSQL: the rules and the ledger of {@see \RivetCore\Rmm\Store\MariaDb\MariaDbChangeEventStore} in one PostgreSQL transaction per
@@ -13,7 +13,7 @@ use RivetCore\Rmm\Store\ChangeEventStore;
  *
  * @internal
  */
-final class PostgresChangeEventStore implements ChangeEventStore
+final class PostgresChangeEventStore implements ClientScopedChangeEventStore
 {
     private const COLUMNS = 'change_id, device_id, client_id, kind, watch, change_type, target, item, old_value, new_value, summary, old_hash, new_hash, actor, process, flags';
 

@@ -10,7 +10,7 @@ namespace RivetCore\Rmm\Store;
  *
  * @internal
  */
-final class LazyLogStore implements LogStore
+final class LazyLogStore implements ClientScopedLogStore
 {
     /** @param \Closure(): RmmDataStores $resolve */
     public function __construct(private readonly \Closure $resolve)
@@ -24,7 +24,9 @@ final class LazyLogStore implements LogStore
 
     public function admit(int $deviceId, array $entries, array $caps, int $nowTs, int $rejected, int $agentDropped, ?int $clientId = null): array
     {
-        return $this->inner()->admit($deviceId, $entries, $caps, $nowTs, $rejected, $agentDropped, $clientId);
+        $s = $this->inner();
+
+        return $s instanceof ClientScopedLogStore ? $s->admit($deviceId, $entries, $caps, $nowTs, $rejected, $agentDropped, $clientId) : $s->admit($deviceId, $entries, $caps, $nowTs, $rejected, $agentDropped);
     }
 
     public function search(\RivetCore\Rmm\Store\LogCriteria $criteria, int $limit, int $offset): array
@@ -49,7 +51,9 @@ final class LazyLogStore implements LogStore
 
     public function reassignClient(int $deviceId, int $clientId): int
     {
-        return $this->inner()->reassignClient($deviceId, $clientId);
+        $s = $this->inner();
+
+        return $s instanceof ClientScopedLogStore ? $s->reassignClient($deviceId, $clientId) : 0;   // a store that keeps no client with its rows has nothing to move
     }
 
     public function oldestEventAt(?int $deviceId = null): ?string

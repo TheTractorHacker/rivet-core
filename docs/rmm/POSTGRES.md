@@ -14,7 +14,7 @@ Use it when the hot tables dominate the load: a large fleet, long retention, log
 
 | | |
 |---|---|
-| PostgreSQL | 14 or newer (tested on 16). Declarative partitioning with partitioned primary keys and `ON CONFLICT` on partitioned tables (11+) is what the schema needs. |
+| PostgreSQL | Tested on 16; 14 and newer are expected to work but are not tested. Declarative partitioning with partitioned primary keys and `ON CONFLICT` on partitioned tables (11+) is what the schema needs. |
 | TimescaleDB | optional, 2.x (tested 2.31 on PostgreSQL 16). Never required, never installed by Core. |
 | PHP | the `pdo_pgsql` extension in the PHP that runs the web requests **and** the cron jobs (`php -m \| grep pdo_pgsql`). |
 | Role | one role that owns one database (or one schema). No superuser. |

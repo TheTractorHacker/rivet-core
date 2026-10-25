@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Store\MariaDb;
 
 use RivetCore\Rmm\Store\LogCriteria;
-use RivetCore\Rmm\Store\LogStore;
+use RivetCore\Rmm\Store\ClientScopedLogStore;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -15,7 +15,7 @@ use RivetCore\Rmm\Support\Sql;
  *
  * @internal
  */
-final class MariaDbLogStore implements LogStore
+final class MariaDbLogStore implements ClientScopedLogStore
 {
     public function __construct(private readonly Sql $sql)
     {
@@ -51,7 +51,10 @@ final class MariaDbLogStore implements LogStore
                     $sqlRows[] = '(?, ?, ?, ?, ?, ?, ?, ?, UNHEX(?))';
                     array_push($params, $deviceId, $clientId, gmdate('Y-m-d H:i:s', $r['ts']), $nowSql, $r['level'], $r['source'], $r['code'], $r['message'], $r['hash']);
                 }
-                $inserted += $this->sql->run('INSERT IGNORE INTO endpoint_agent_log_events (device_id, client_id, occurred_at, received_at, level, source, code, message, dedupe) VALUES ' . implode(',', $sqlRows), $params);
+                $inserted += ClientColumn::run(fn (bool $has): int => $has
+                    ? $this->sql->run('INSERT IGNORE INTO endpoint_agent_log_events (device_id, client_id, occurred_at, received_at, level, source, code, message, dedupe) VALUES ' . implode(',', $sqlRows), $params)
+                    : $this->sql->run('INSERT IGNORE INTO endpoint_agent_log_events (device_id, occurred_at, received_at, level, source, code, message, dedupe) VALUES ' . implode(',', array_fill(0, count($chunk), '(?, ?, ?, ?, ?, ?, ?, UNHEX(?))')),
+                        array_merge(...array_map(static fn (array $r): array => [$deviceId, gmdate('Y-m-d H:i:s', $r['ts']), $nowSql, $r['level'], $r['source'], $r['code'], $r['message'], $r['hash']], $chunk))));
             }
             $last = $kept === [] ? null : gmdate('Y-m-d H:i:s', max(array_column($kept, 'ts')));
             $this->sql->run('UPDATE endpoint_agent_log_state SET row_count = row_count + ?, dropped_total = dropped_total + ?, last_event_at = IF(? IS NULL, last_event_at, GREATEST(COALESCE(last_event_at, ?), ?)),
@@ -64,6 +67,14 @@ final class MariaDbLogStore implements LogStore
 
     public function search(LogCriteria $c, int $limit, int $offset): array
     {
+        return ClientColumn::run(fn (bool $has): array => $this->searchWith($c, $limit, $offset));
+    }
+
+    /** The search, with the client taken from the row ({@see ClientColumn::expr()}: its own column, or the device table while migration 0043 has not run). */
+    /** @return array{rows:list<array<string,mixed>>,total:int} */
+    private function searchWith(LogCriteria $c, int $limit, int $offset): array
+    {
+        $client = ClientColumn::expr('e');
         $where = ['e.occurred_at >= ?', 'e.occurred_at <= ?'];
         $params = [$c->fromUtc, $c->toUtc];
         if ($c->deviceId > 0) {
@@ -71,14 +82,14 @@ final class MariaDbLogStore implements LogStore
             $params[] = $c->deviceId;
         }
         if ($c->clientId > 0) {
-            $where[] = 'e.client_id = ?';
+            $where[] = "$client = ?";
             $params[] = $c->clientId;
         }
         if ($c->visibleClientIds !== null) {
             if ($c->visibleClientIds === []) {
                 return ['rows' => [], 'total' => 0];
             }
-            $where[] = 'e.client_id IN (' . implode(',', array_fill(0, count($c->visibleClientIds), '?')) . ')';
+            $where[] = "$client IN (" . implode(',', array_fill(0, count($c->visibleClientIds), '?')) . ')';
             array_push($params, ...$c->visibleClientIds);
         }
         if ($c->maxLevel !== null) {
@@ -100,7 +111,7 @@ final class MariaDbLogStore implements LogStore
         $w = implode(' AND ', $where);
         $limit = max(1, min(500, $limit));
         $offset = max(0, min(100000, $offset));
-        $rows = $this->sql->all("SELECT e.event_id, e.device_id, e.client_id, e.occurred_at, e.level, e.source, e.code, e.message
+        $rows = $this->sql->all("SELECT e.event_id, e.device_id, $client AS client_id, e.occurred_at, e.level, e.source, e.code, e.message
             FROM endpoint_agent_log_events e WHERE $w ORDER BY e.occurred_at DESC, e.event_id DESC LIMIT $limit OFFSET $offset", $params);
         $total = (int) $this->sql->val("SELECT COUNT(*) FROM (SELECT 1 FROM endpoint_agent_log_events e WHERE $w LIMIT 10001) t", $params);
 
@@ -153,7 +164,11 @@ final class MariaDbLogStore implements LogStore
 
     public function reassignClient(int $deviceId, int $clientId): int
     {
-        return $this->sql->run('UPDATE endpoint_agent_log_events SET client_id = ? WHERE device_id = ? AND (client_id IS NULL OR client_id <> ?)', [$clientId, $deviceId, $clientId]);
+        if (!ClientColumn::present()) {
+            return 0;
+        }
+
+        return ClientColumn::run(fn (bool $has): int => !$has ? 0 : $this->sql->run('UPDATE endpoint_agent_log_events SET client_id = ? WHERE device_id = ? AND (client_id IS NULL OR client_id <> ?)', [$clientId, $deviceId, $clientId]));
     }
 
     public function enforceLimits(string $cutoffUtc, int $deviceMaxRows, int $fleetMaxRows, int $runCap, int $batch, ?\Closure $pause = null): array

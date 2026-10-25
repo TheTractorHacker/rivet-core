@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace RivetCore\Rmm\Store\Postgres\Guard;
 
-use RivetCore\Rmm\Store\HypervisorHistoryStore;
+use RivetCore\Rmm\Store\InventoryAwareHypervisorHistoryStore;
 
 /**
  * {@see HypervisorHistoryStore} with the degraded behaviour of {@see HotStoreGuard}: a transition that cannot be recorded is dropped and counted.
  *
  * @internal
  */
-final class GuardedHypervisorHistoryStore implements HypervisorHistoryStore
+final class GuardedHypervisorHistoryStore implements InventoryAwareHypervisorHistoryStore
 {
-    public function __construct(private readonly HypervisorHistoryStore $inner, private readonly HotStoreGuard $guard)
+    public function __construct(private readonly InventoryAwareHypervisorHistoryStore $inner, private readonly HotStoreGuard $guard)
     {
     }
 

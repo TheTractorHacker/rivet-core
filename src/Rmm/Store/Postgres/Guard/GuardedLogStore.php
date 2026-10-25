@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Store\Postgres\Guard;
 
 use RivetCore\Rmm\Store\LogCriteria;
-use RivetCore\Rmm\Store\LogStore;
+use RivetCore\Rmm\Store\ClientScopedLogStore;
 
 /**
  * {@see LogStore} with the degraded behaviour of {@see HotStoreGuard}: an admit that fails throws {@see \RivetCore\Rmm\Store\HotStoreUnavailableException}, which the
@@ -14,11 +14,11 @@ use RivetCore\Rmm\Store\LogStore;
  *
  * @internal
  */
-final class GuardedLogStore implements LogStore
+final class GuardedLogStore implements ClientScopedLogStore
 {
     private const ZERO = ['retention' => 0, 'device_cap' => 0, 'fleet_cap' => 0];
 
-    public function __construct(private readonly LogStore $inner, private readonly HotStoreGuard $guard)
+    public function __construct(private readonly ClientScopedLogStore $inner, private readonly HotStoreGuard $guard)
     {
     }
 

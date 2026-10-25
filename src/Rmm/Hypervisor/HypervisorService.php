@@ -469,13 +469,14 @@ final class HypervisorService
         $out['orphans'] = $this->sql->run('DELETE v FROM rmm_hypervisor_vms v LEFT JOIN endpoint_agent_devices d ON d.device_id = v.device_id WHERE d.device_id IS NULL');
         $this->sql->run('DELETE s FROM rmm_hypervisor_storage s LEFT JOIN endpoint_agent_devices d ON d.device_id = s.device_id WHERE d.device_id IS NULL');
         $this->sql->run('DELETE h FROM rmm_hypervisor_hosts h LEFT JOIN endpoint_agent_devices d ON d.device_id = h.device_id WHERE d.device_id IS NULL');
-        $out['history'] = $this->vmHistory->deleteOrphans(function (array $ids): array {
+        $exists = function (array $ids): array {
             if ($ids === []) {
                 return [];
             }
 
             return array_map(static fn (array $r): int => (int) $r['vm_id'], $this->sql->all('SELECT vm_id FROM rmm_hypervisor_vms WHERE vm_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', $ids));
-        });
+        };
+        $out['history'] = $this->vmHistory instanceof \RivetCore\Rmm\Store\InventoryAwareHypervisorHistoryStore ? $this->vmHistory->deleteOrphans($exists) : $this->vmHistory->deleteOrphans();
 
         return $out;
     }

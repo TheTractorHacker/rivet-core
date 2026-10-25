@@ -24,8 +24,7 @@ final class ClientMoves
     public function apply(int $deviceId, int $clientId): void
     {
         try {
-            $this->stores->logs()->reassignClient($deviceId, $clientId);
-            $this->stores->changes()->reassignClient($deviceId, $clientId);
+            $this->move($deviceId, $clientId);
         } catch (HotStoreUnavailableException) {
             try {
                 $this->sql->run('INSERT INTO rmm_pending_client_moves (device_id, client_id, created_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE client_id = VALUES(client_id), created_at = VALUES(created_at)',
@@ -33,6 +32,18 @@ final class ClientMoves
             } catch (\Throwable $e) {
                 error_log('rmm client move not recorded (migration 0043 not applied?): ' . get_class($e) . ': ' . mb_substr($e->getMessage(), 0, 200));
             }
+        }
+    }
+
+    private function move(int $deviceId, int $clientId): void
+    {
+        $logs = $this->stores->logs();
+        $changes = $this->stores->changes();
+        if ($logs instanceof ClientScopedLogStore) {
+            $logs->reassignClient($deviceId, $clientId);
+        }
+        if ($changes instanceof ClientScopedChangeEventStore) {
+            $changes->reassignClient($deviceId, $clientId);
         }
     }
 
@@ -51,8 +62,7 @@ final class ClientMoves
         $done = 0;
         foreach ($rows as $r) {
             try {
-                $this->stores->logs()->reassignClient((int) $r['device_id'], (int) $r['client_id']);
-                $this->stores->changes()->reassignClient((int) $r['device_id'], (int) $r['client_id']);
+                $this->move((int) $r['device_id'], (int) $r['client_id']);
             } catch (HotStoreUnavailableException) {
                 break;   // still down: the next run tries again; the others would only fail the same way
             }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Store\Postgres\Guard;
 
 use RivetCore\Rmm\Store\ChangeCriteria;
-use RivetCore\Rmm\Store\ChangeEventStore;
+use RivetCore\Rmm\Store\ClientScopedChangeEventStore;
 
 /**
  * {@see ChangeEventStore} with the degraded behaviour of {@see HotStoreGuard}: an admit that fails throws {@see \RivetCore\Rmm\Store\HotStoreUnavailableException}
@@ -13,11 +13,11 @@ use RivetCore\Rmm\Store\ChangeEventStore;
  *
  * @internal
  */
-final class GuardedChangeEventStore implements ChangeEventStore
+final class GuardedChangeEventStore implements ClientScopedChangeEventStore
 {
     private const ZERO = ['retention' => 0, 'device_cap' => 0, 'fleet_cap' => 0];
 
-    public function __construct(private readonly ChangeEventStore $inner, private readonly HotStoreGuard $guard)
+    public function __construct(private readonly ClientScopedChangeEventStore $inner, private readonly HotStoreGuard $guard)
     {
     }
 

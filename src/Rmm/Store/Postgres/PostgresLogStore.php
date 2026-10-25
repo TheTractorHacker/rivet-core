@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Store\Postgres;
 
 use RivetCore\Rmm\Store\LogCriteria;
-use RivetCore\Rmm\Store\LogStore;
+use RivetCore\Rmm\Store\ClientScopedLogStore;
 
 /**
  * {@see LogStore} on PostgreSQL: the same admission rules and ledger as {@see \RivetCore\Rmm\Store\MariaDb\MariaDbLogStore}, in one PostgreSQL transaction per batch
@@ -14,7 +14,7 @@ use RivetCore\Rmm\Store\LogStore;
  *
  * @internal
  */
-final class PostgresLogStore implements LogStore
+final class PostgresLogStore implements ClientScopedLogStore
 {
     private const COLUMNS = 'device_id, client_id, level, source, code, message';
 

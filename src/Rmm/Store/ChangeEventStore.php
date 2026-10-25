@@ -22,10 +22,9 @@ interface ChangeEventStore
      * @param array{rate_per_min:int,device_max_rows:int,fleet_max_rows:int} $caps
      * @param string $configVersion the agent's configuration version (16 hex characters) or '' to leave the stored one
      * @param string|null $monitorJson the agent's status block as JSON, or null to leave the stored one
-     * @param int|null $clientId the device's client, stored with every record and in the ledger so a search and the scoped fleet count need no join (null = unknown)
      * @return array{inserted:int,dropped:int,kept:list<array<string,mixed>>} `kept` are the records admitted (some may have been duplicates)
      */
-    public function admit(int $deviceId, array $records, array $caps, int $nowTs, int $rejected, int $agentDropped, string $configVersion, ?string $monitorJson, ?int $clientId = null): array;
+    public function admit(int $deviceId, array $records, array $caps, int $nowTs, int $rejected, int $agentDropped, string $configVersion, ?string $monitorJson): array;
 
     /**
      * Of a device's records received at exactly $receivedAtUtc, the dedupe digests (lower-case hex, at most 500): tells a resent batch from a new one.
@@ -83,9 +82,6 @@ interface ChangeEventStore
      * @return array{rows:int,devices:int}
      */
     public function ledgerTotals(): array;
-
-    /** The device moved to another client: give its stored records and its ledger the new one. Returns the records changed. */
-    public function reassignClient(int $deviceId, int $clientId): int;
 
     /** Whether any device has a ledger (the housekeeping keeps pruning after the feature is switched off while this is true). */
     public function hasLedger(): bool;

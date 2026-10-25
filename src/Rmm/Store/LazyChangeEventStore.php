@@ -10,7 +10,7 @@ namespace RivetCore\Rmm\Store;
  *
  * @internal
  */
-final class LazyChangeEventStore implements ChangeEventStore
+final class LazyChangeEventStore implements ClientScopedChangeEventStore
 {
     /** @param \Closure(): RmmDataStores $resolve */
     public function __construct(private readonly \Closure $resolve)
@@ -24,7 +24,10 @@ final class LazyChangeEventStore implements ChangeEventStore
 
     public function admit(int $deviceId, array $records, array $caps, int $nowTs, int $rejected, int $agentDropped, string $configVersion, ?string $monitorJson, ?int $clientId = null): array
     {
-        return $this->inner()->admit($deviceId, $records, $caps, $nowTs, $rejected, $agentDropped, $configVersion, $monitorJson, $clientId);
+        $s = $this->inner();
+
+        return $s instanceof ClientScopedChangeEventStore ? $s->admit($deviceId, $records, $caps, $nowTs, $rejected, $agentDropped, $configVersion, $monitorJson, $clientId)
+            : $s->admit($deviceId, $records, $caps, $nowTs, $rejected, $agentDropped, $configVersion, $monitorJson);
     }
 
     public function dedupeKeysReceivedAt(int $deviceId, string $receivedAtUtc): array
@@ -69,7 +72,9 @@ final class LazyChangeEventStore implements ChangeEventStore
 
     public function reassignClient(int $deviceId, int $clientId): int
     {
-        return $this->inner()->reassignClient($deviceId, $clientId);
+        $s = $this->inner();
+
+        return $s instanceof ClientScopedChangeEventStore ? $s->reassignClient($deviceId, $clientId) : 0;
     }
 
     public function hasLedger(): bool

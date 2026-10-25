@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Store\MariaDb;
 
 use RivetCore\Rmm\Store\ChangeCriteria;
-use RivetCore\Rmm\Store\ChangeEventStore;
+use RivetCore\Rmm\Store\ClientScopedChangeEventStore;
 use RivetCore\Rmm\Support\Sql;
 
 /**
@@ -15,7 +15,7 @@ use RivetCore\Rmm\Support\Sql;
  *
  * @internal
  */
-final class MariaDbChangeEventStore implements ChangeEventStore
+final class MariaDbChangeEventStore implements ClientScopedChangeEventStore
 {
     public function __construct(private readonly Sql $sql)
     {
@@ -52,14 +52,15 @@ final class MariaDbChangeEventStore implements ChangeEventStore
                     array_push($params, $deviceId, $clientId, gmdate('Y-m-d H:i:s', $r['ts']), $nowSql, $r['kind'], $r['watch'], $r['change'], $r['target'], $r['item'], $r['old'], $r['new'],
                         $r['summary'], $r['old_hash'], $r['new_hash'], $r['actor'], $r['process'], $r['flags'], $r['dedupe']);
                 }
-                $inserted += $this->sql->run('INSERT IGNORE INTO endpoint_agent_change_records (device_id, client_id, occurred_at, received_at, kind, watch, change_type, target, item, old_value, new_value, summary, old_hash, new_hash, actor, process, flags, dedupe) VALUES '
-                    . implode(',', $sqlRows), $params);
+                $inserted += ClientColumn::run(fn (bool $has): int => $has
+                    ? $this->sql->run('INSERT IGNORE INTO endpoint_agent_change_records (device_id, client_id, occurred_at, received_at, kind, watch, change_type, target, item, old_value, new_value, summary, old_hash, new_hash, actor, process, flags, dedupe) VALUES ' . implode(',', $sqlRows), $params)
+                    : $this->sql->run('INSERT IGNORE INTO endpoint_agent_change_records (device_id, occurred_at, received_at, kind, watch, change_type, target, item, old_value, new_value, summary, old_hash, new_hash, actor, process, flags, dedupe) VALUES ' . implode(',', array_fill(0, count($chunk), '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UNHEX(?))')),
+                        array_merge(...array_map(static fn (array $row): array => [$row[0], ...array_slice($row, 2)], array_chunk($params, 18)))));
             }
             $last = $kept === [] ? null : gmdate('Y-m-d H:i:s', max(array_column($kept, 'ts')));
-            $this->sql->run('UPDATE endpoint_agent_change_state SET client_id = COALESCE(?, client_id), row_count = row_count + ?, dropped_total = dropped_total + ?, last_change_at = IF(? IS NULL, last_change_at, GREATEST(COALESCE(last_change_at, ?), ?)),
-                last_batch_at = ?, window_start = ?, window_count = ?, config_version = IF(? = \'\', config_version, ?), monitor_json = IF(? IS NULL, monitor_json, ?), monitor_at = IF(? IS NULL, monitor_at, ?) WHERE device_id = ?',
-                [$clientId, $inserted, $dropped + $agentDropped, $last, $last, $last, $nowSql, gmdate('Y-m-d H:i:s', $winStart), $winCount + count($kept), $configVersion, $configVersion,
-                    $monitorJson, $monitorJson, $monitorJson, $nowSql, $deviceId]);
+            $ledgerParams = [$inserted, $dropped + $agentDropped, $last, $last, $last, $nowSql, gmdate('Y-m-d H:i:s', $winStart), $winCount + count($kept), $configVersion, $configVersion, $monitorJson, $monitorJson, $monitorJson, $nowSql, $deviceId];
+            ClientColumn::run(fn (bool $has): int => $this->sql->run(str_replace('%CLIENT%', $has ? 'client_id = COALESCE(?, client_id), ' : '', 'UPDATE endpoint_agent_change_state SET %CLIENT%row_count = row_count + ?, dropped_total = dropped_total + ?, last_change_at = IF(? IS NULL, last_change_at, GREATEST(COALESCE(last_change_at, ?), ?)),
+                last_batch_at = ?, window_start = ?, window_count = ?, config_version = IF(? = \'\', config_version, ?), monitor_json = IF(? IS NULL, monitor_json, ?), monitor_at = IF(? IS NULL, monitor_at, ?) WHERE device_id = ?'), $has ? [$clientId, ...$ledgerParams] : $ledgerParams));
         });
 
         return ['inserted' => $inserted, 'dropped' => $dropped, 'kept' => $kept];
@@ -74,6 +75,14 @@ final class MariaDbChangeEventStore implements ChangeEventStore
 
     public function search(ChangeCriteria $c, int $limit, int $offset): array
     {
+        return ClientColumn::run(fn (bool $has): array => $this->searchWith($c, $limit, $offset));
+    }
+
+    /** @return array{rows:list<array<string,mixed>>,total:int} */
+    private function searchWith(ChangeCriteria $c, int $limit, int $offset): array
+    {
+        $client = ClientColumn::expr('e');
+        $extra = ClientColumn::present() ? '' : ", $client AS client_id";
         $where = ['e.occurred_at >= ?', 'e.occurred_at <= ?'];
         $params = [$c->fromUtc, $c->toUtc];
         if ($c->deviceId > 0) {
@@ -81,14 +90,14 @@ final class MariaDbChangeEventStore implements ChangeEventStore
             $params[] = $c->deviceId;
         }
         if ($c->clientId > 0) {
-            $where[] = 'e.client_id = ?';
+            $where[] = "$client = ?";
             $params[] = $c->clientId;
         }
         if ($c->visibleClientIds !== null) {
             if ($c->visibleClientIds === []) {
                 return ['rows' => [], 'total' => 0];
             }
-            $where[] = 'e.client_id IN (' . implode(',', array_fill(0, count($c->visibleClientIds), '?')) . ')';
+            $where[] = "$client IN (" . implode(',', array_fill(0, count($c->visibleClientIds), '?')) . ')';
             array_push($params, ...$c->visibleClientIds);
         }
         if ($c->kind !== null) {
@@ -117,7 +126,7 @@ final class MariaDbChangeEventStore implements ChangeEventStore
         $w = implode(' AND ', $where);
         $limit = max(1, min(500, $limit));
         $offset = max(0, min(100000, $offset));
-        $rows = $this->sql->all("SELECT e.* FROM endpoint_agent_change_records e WHERE $w
+        $rows = $this->sql->all("SELECT e.*$extra FROM endpoint_agent_change_records e WHERE $w
             ORDER BY e.occurred_at DESC, e.change_id DESC LIMIT $limit OFFSET $offset", $params);
         $total = (int) $this->sql->val("SELECT COUNT(*) FROM (SELECT 1 FROM endpoint_agent_change_records e WHERE $w LIMIT 10001) t", $params);
 
@@ -127,7 +136,8 @@ final class MariaDbChangeEventStore implements ChangeEventStore
     public function timeline(int $deviceId, string $fromUtc, string $toUtc, int $limit): array
     {
         $limit = max(1, min(500, $limit));
-        $rows = $this->sql->all("SELECT e.* FROM endpoint_agent_change_records e
+        $extra = ClientColumn::present() ? '' : ', ' . ClientColumn::expr('e') . ' AS client_id';
+        $rows = $this->sql->all("SELECT e.*$extra FROM endpoint_agent_change_records e
             WHERE e.device_id = ? AND e.occurred_at BETWEEN ? AND ? ORDER BY e.occurred_at DESC, e.change_id DESC LIMIT $limit", [$deviceId, $fromUtc, $toUtc]);
         $actors = array_map(static fn (array $r): array => ['actor' => (string) $r['actor'], 'c' => (int) $r['c']],
             $this->sql->all('SELECT actor, COUNT(*) c FROM endpoint_agent_change_records WHERE device_id = ? AND occurred_at BETWEEN ? AND ? GROUP BY actor ORDER BY c DESC, actor LIMIT 20', [$deviceId, $fromUtc, $toUtc]));
@@ -168,7 +178,8 @@ final class MariaDbChangeEventStore implements ChangeEventStore
         }
         $in = $visibleClientIds === [] ? 'NULL' : implode(',', array_map('intval', $visibleClientIds));
 
-        return (int) $this->sql->val("SELECT COALESCE(SUM(row_count), 0) FROM endpoint_agent_change_state WHERE client_id IN ($in)");
+        return (int) ClientColumn::run(fn (bool $has): mixed => $this->sql->val($has ? "SELECT COALESCE(SUM(row_count), 0) FROM endpoint_agent_change_state WHERE client_id IN ($in)"
+            : "SELECT COALESCE(SUM(s.row_count), 0) FROM endpoint_agent_change_state s JOIN endpoint_agent_devices d ON d.device_id = s.device_id WHERE d.client_id IN ($in)"));
     }
 
     public function deviceLedger(int $deviceId): ?array
@@ -186,9 +197,18 @@ final class MariaDbChangeEventStore implements ChangeEventStore
 
     public function countsByWatch(string $sinceUtc, ?array $visibleClientIds = null): array
     {
+        return ClientColumn::run(fn (bool $has): array => $this->countsByWatchWith($sinceUtc, $visibleClientIds));
+    }
+
+    /**
+     * @param list<int>|null $visibleClientIds
+     * @return list<array{watch:string,c:int}>
+     */
+    private function countsByWatchWith(string $sinceUtc, ?array $visibleClientIds): array
+    {
         return array_map(static fn (array $r): array => ['watch' => (string) $r['watch'], 'c' => (int) $r['c']],
             $this->sql->all('SELECT e.watch, COUNT(*) c FROM endpoint_agent_change_records e WHERE e.occurred_at >= ?'
-                . ($visibleClientIds === null ? '' : ' AND e.client_id IN (' . ($visibleClientIds === [] ? 'NULL' : implode(',', array_map('intval', $visibleClientIds))) . ')')
+                . ($visibleClientIds === null ? '' : ' AND ' . ClientColumn::expr('e') . ' IN (' . ($visibleClientIds === [] ? 'NULL' : implode(',', array_map('intval', $visibleClientIds))) . ')')
                 . ' GROUP BY e.watch ORDER BY c DESC, e.watch LIMIT 30', [$sinceUtc]));
     }
 
@@ -205,6 +225,10 @@ final class MariaDbChangeEventStore implements ChangeEventStore
 
     public function reassignClient(int $deviceId, int $clientId): int
     {
+        if (!ClientColumn::present()) {
+            return 0;
+        }
+
         return (int) $this->sql->transaction(function () use ($deviceId, $clientId): int {
             $this->sql->run('UPDATE endpoint_agent_change_state SET client_id = ? WHERE device_id = ? AND (client_id IS NULL OR client_id <> ?)', [$clientId, $deviceId, $clientId]);
 
