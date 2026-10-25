@@ -25,6 +25,7 @@ $conc = (int) ($o['concurrency'] ?? 32);
 $port = (int) ($o['port'] ?? random_int(8700, 8799));
 $root = dirname(__DIR__, 2);
 $sim = $o['sim'] ?? "$root/endpoint-agent/dist/rmm-sim";
+require $root . '/vendor/autoload.php';
 if (!str_contains((string) getenv('RIVETCORE_TEST_DB_NAME'), 'scratch')) {
     fwrite(STDERR, "Refusing: RIVETCORE_TEST_DB_NAME must name a scratch database\n");
     exit(2);

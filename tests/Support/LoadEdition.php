@@ -65,7 +65,7 @@ final class LoadEdition
         $stateDir = (string) getenv('RMM_LOAD_STATE_DIR');
         $this->module = new RmmModule(
             $this->db, $this->clock, $this->tenancy(), $this->assets(), $this->bridge(), new InMemorySecretBox(hash('sha256', self::SECRET_SEED, true)), new InMemoryRmmAudit(), $this->sink(),
-            new \RivetCore\Testing\InMemoryRmmModuleState(true, $stateDir !== '' ? $stateDir : null), ['binary_dir' => $dir, 'allow_insecure_http' => true],
+            new \RivetCore\Testing\InMemoryRmmModuleState(true, $stateDir !== '' ? $stateDir : null), ['binary_dir' => $dir, 'allow_insecure_http' => true] + self::storeOptions(),
         );
         $this->api = $this->module->deviceApi(static fn (string $bucket, int $limit, int $window): bool => $limiter === null || $limiter->hit($bucket, $limit, $window)['allowed']);
     }
