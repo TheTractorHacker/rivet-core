@@ -41,7 +41,7 @@ final class RmmSettings
      *
      * @internal grows with every additive setting
      */
-    public const WRITABLE_ADDED = ['data_store'];
+    public const WRITABLE_ADDED = ['data_store', 'data_store_phase'];
 
     /**
      * Server-side bounds for the intervals agents are told to use (design 13.3). The two floors are a DELIBERATE change from RivetIT's

@@ -8,8 +8,10 @@ use RivetCore\Database\DatabaseInterface;
 use RivetCore\Migration\MigrationInterface;
 
 /**
- * Phase 3 of #89: what switching the RMM data store needs in the control database. Two new tables, nothing existing is altered; additive and idempotent.
+ * Phase 3 of #89: what switching the RMM data store needs in the control database. One new nullable column and two new tables; additive and idempotent.
  *
+ *  - `endpoint_agent_settings.data_store_phase`: NULL normally; `copy:<store>` while a migration copies history to <store> (retention is paused), `dual:<store>` while
+ *    new writes go to both stores. The module reads it with the settings row it reads anyway, so no extra query is needed to know a migration is running.
  *  - `rmm_data_store_connection`: the one-row PostgreSQL connection of the data store setting (host, port, database, role, sslmode, schema and the password SEALED
  *    with the edition's SecretBox). Kept apart from `endpoint_agent_settings` on purpose: that row is read whole (`SELECT *`) and handed to the edition's pages,
  *    and a credential must never travel with it.
@@ -27,6 +29,10 @@ final class Migration0044RmmStoreSwitch implements MigrationInterface
 
     public function up(DatabaseInterface $database): void
     {
+        if (!Migration0015EndpointAgentConverge::hasColumn($database, 'endpoint_agent_settings', 'data_store_phase')) {
+            $database->execute('ALTER TABLE `endpoint_agent_settings` ADD COLUMN `data_store_phase` varchar(32) DEFAULT NULL');
+        }
+
         $database->execute('CREATE TABLE IF NOT EXISTS `rmm_data_store_connection` (
   `id` tinyint(4) NOT NULL,
   `host` varchar(255) NOT NULL DEFAULT \'127.0.0.1\',

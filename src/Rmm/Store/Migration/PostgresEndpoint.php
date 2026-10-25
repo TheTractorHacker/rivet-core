@@ -247,7 +247,7 @@ final class PostgresEndpoint implements StoreEndpoint
 
         return match ($type) {
             'i' => (int) $v,
-            'f' => (string) (float) $v,
+            'f' => var_export((float) $v, true),   // (string) would round to the 'precision' ini setting; var_export keeps every digit
             default => (string) $v,
         };
     }
