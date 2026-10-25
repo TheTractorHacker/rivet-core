@@ -43,7 +43,7 @@ final class DataStoreSwitch
     private readonly MigrationRuns $runs;
 
     /**
-     * @param ?\Closure(PostgresConfig): PostgresConnectionInterface $connect how a connection is opened (default: the PDO adapter without the circuit breaker, so a test says what is wrong now)
+     * @param ?\Closure(PostgresConfig): PostgresConnectionInterface $connect how a connection is opened (default: the shipped PostgreSQL adapter without the circuit breaker, so a test says what is wrong now)
      */
     public function __construct(
         private readonly Sql $sql,
@@ -152,8 +152,8 @@ final class DataStoreSwitch
         } catch (\InvalidArgumentException $e) {
             return $fail('settings', $e->getMessage());
         }
-        if (!extension_loaded('pdo_pgsql') && $this->defaultConnect) {
-            return $fail('extension', 'The PHP extension pdo_pgsql is not installed for the PHP that runs this page. Install php-pgsql for the web server PHP and for the command line PHP, then reload PHP-FPM.');
+        if ($this->defaultConnect && !PdoPostgresConnection::driverAvailable()) {
+            return $fail('extension', PdoPostgresConnection::driverMissingMessage());
         }
         try {
             $db = ($this->connect)($config);

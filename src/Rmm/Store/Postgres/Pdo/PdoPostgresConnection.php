@@ -39,6 +39,17 @@ final class PdoPostgresConnection implements PostgresConnectionInterface
      * The connection an edition should hand to the module: this adapter behind the shared {@see CircuitBreakerConnection}, so an outage costs one connect timeout per
      * window instead of one per check-in.
      */
+    /** Whether the PHP PostgreSQL driver is loaded in this PHP. */
+    public static function driverAvailable(): bool
+    {
+        return extension_loaded('pdo_pgsql');
+    }
+
+    public static function driverMissingMessage(): string
+    {
+        return 'The PHP extension pdo_pgsql is not installed for the PHP that runs this page. Install php-pgsql for the web server PHP and for the command line PHP, then reload PHP-FPM.';
+    }
+
     public static function fromConfig(PostgresConfig $config): PostgresConnectionInterface
     {
         return new CircuitBreakerConnection(new self($config), $config->identity(), $config->breakerOpenS);
