@@ -126,7 +126,7 @@ final class RmmDataStoreFactory
     }
 
     /**
-     * Whether an administrator may choose this store through the settings (phase 3 of #89 opens `postgres`).
+     * Whether {@see \RivetCore\Rmm\Settings\RmmSettings::update()} accepts this store. `postgres` goes through {@see DataStoreSwitch} instead (connection test, schema, all-or-nothing).
      *
      * @throws DataStoreUnavailableException
      */
@@ -134,8 +134,8 @@ final class RmmDataStoreFactory
     {
         self::assertAvailable($kind);
         if (!RmmDataStoreKind::selectable($kind)) {
-            throw new DataStoreUnavailableException('The RMM data store "' . $kind . '" cannot be selected in the settings yet: the connection setup, the connection test and the migration command arrive with phase 3 of #89. '
-                . 'An edition that passes a PostgreSQL connection to the module can run it already (docs/rmm/POSTGRES.md).');
+            throw new DataStoreUnavailableException('The RMM data store "' . $kind . '" cannot be selected in the settings yet: choosing it needs the connection test and the schema setup, which '
+                . 'only DataStoreSwitch::switchTo() performs (docs/rmm/POSTGRES.md). RmmSettings::update() deliberately keeps refusing it.');
         }
     }
 

@@ -122,4 +122,24 @@ final class DataStoreSwitchTest extends RmmTestCase
         $this->assertSame('mariadb', $this->h->module->settings()->dataStore());
         $this->assertNull($this->sw->connectionSettings(), 'a failed switch stores nothing');
     }
+
+    public function testAfterTheSwitchTheModuleUsesTheStoredConnectionAndTheCapacityPanelReadsPostgres(): void
+    {
+        $r = $this->sw->switchTo('postgres', ['acknowledge_no_data_move' => true, 'connection' => $this->form()]);
+        $this->assertTrue($r['ok'], json_encode($r));
+        $m = $this->h->module;
+        $m->settings()->refresh();
+        foreach (['dataStores', 'resolvedStores', 'pgConnection'] as $prop) {
+            (new \ReflectionProperty($m, $prop))->setValue($m, null);
+        }
+        $stores = $m->dataStores();
+        $this->assertSame('postgres', $stores->kind());
+        $stores->checkHistory()->append(3, [['key' => 'k', 'status' => 'ok', 'detail' => 'through the stored connection', 'at' => gmdate('Y-m-d H:i:s')]]);
+        $this->assertSame('1', (string) PostgresTestDatabase::connect()->value("SELECT COUNT(*) FROM endpoint_agent_check_history WHERE detail = 'through the stored connection'"));
+        $panel = $m->capacity();
+        $sizes = $panel->storeSizes();
+        $this->assertSame('postgres', $sizes['kind']);
+        $this->assertTrue($sizes['available']);
+        $this->assertSame('0', (string) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_check_history WHERE detail = 'through the stored connection'"), 'MariaDB has none');
+    }
 }

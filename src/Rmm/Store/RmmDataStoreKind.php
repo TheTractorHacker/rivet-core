@@ -25,8 +25,8 @@ final class RmmDataStoreKind
     }
 
     /**
-     * Whether an administrator may SELECT it through {@see \RivetCore\Rmm\Settings\RmmSettings::update()}. Phase 2 of #89 ships the PostgreSQL stores; choosing them from the
-     * settings (with the connection setup, a connection test and the migration command) is phase 3, so only MariaDB is selectable there for now.
+     * Whether {@see \RivetCore\Rmm\Settings\RmmSettings::update()} accepts the value. Only MariaDB: PostgreSQL is chosen through {@see DataStoreSwitch::switchTo()}, which tests the
+     * connection and creates the schema first (phase 3 of #89).
      */
     public static function selectable(string $kind): bool
     {
