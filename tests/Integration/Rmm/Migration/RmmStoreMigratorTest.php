@@ -46,7 +46,7 @@ final class RmmStoreMigratorTest extends StoreMigrationTestCase
         $actions = array_column($this->h->audit->records(), 'action');
         $this->assertContains('rmm.store_migration.start', $actions);
         $this->assertContains('rmm.store_migration.cutover', $actions);
-        $this->assertStringNotContainsString(PostgresTestDatabase::config()->password(), json_encode($this->events));
+        $this->assertNoSecret(json_encode($this->events));
     }
 
     public function testDryRunWritesNothingAndTheTargetMustBeEmpty(): void
@@ -167,10 +167,12 @@ final class RmmStoreMigratorTest extends StoreMigrationTestCase
     public function testWritesDuringTheMigrationGoToBothStoresInOrderAndALaggardIsRepaired(): void
     {
         F::fill($this->maria, $this->now());
-        $now = $this->now();
         $atTail = null;
-        $cb = $this->collect(function (array $e) use ($now, &$atTail): void {
+        $cb = $this->collect(function (array $e) use (&$atTail): void {
             if ($e['event'] === 'dual_write_on') {
+                // Stamped when the callback runs (not when the test started: a slow machine would put the row before the tail window) and 10 s back (the tail pass leaves rows
+                // younger than 2 s to the dual write: with the default settle of 5 s no worker can still be writing to one store only by then).
+                $now = $this->now() - 10;
                 $this->reresolve();
                 $stores = $this->h->module->dataStores();
                 $this->assertSame('mariadb', $stores->kind());

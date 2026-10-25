@@ -911,7 +911,7 @@ final class RmmStoreMigrator
 
     private function lock(): void
     {
-        if ((int) $this->sql->val("SELECT GET_LOCK('rivetcore_rmm_store_migration', 0)") !== 1) {
+        if ((int) $this->sql->val("SELECT GET_LOCK(CONCAT('rivetcore_rmm_store_migration:', DATABASE()), 0)") !== 1) {
             throw new MigrationException('Another process is running a data store migration right now.');
         }
         $this->lockHeld = true;
@@ -922,7 +922,7 @@ final class RmmStoreMigrator
         if ($this->lockHeld) {
             $this->lockHeld = false;
             try {
-                $this->sql->val("SELECT RELEASE_LOCK('rivetcore_rmm_store_migration')");
+                $this->sql->val("SELECT RELEASE_LOCK(CONCAT('rivetcore_rmm_store_migration:', DATABASE()))");
             } catch (\Throwable) {
             }
         }

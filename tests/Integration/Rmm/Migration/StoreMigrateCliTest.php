@@ -40,7 +40,7 @@ final class StoreMigrateCliTest extends StoreMigrationTestCase
         $this->assertContains('batch', $events);
         $this->assertContains('cutover', $events);
         $this->assertSame(F::counts($this->maria), F::counts($this->pg));
-        $this->assertStringNotContainsString(\RivetCore\Tests\Support\PostgresTestDatabase::config()->password(), json_encode($lines));
+        $this->assertNoSecret(json_encode($lines));
 
         [$code, $lines] = $this->cli('--status');
         $this->assertSame(0, $code);

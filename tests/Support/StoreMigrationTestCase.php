@@ -48,6 +48,23 @@ abstract class StoreMigrationTestCase extends RmmTestCase
             new \RivetCore\Rmm\Support\DatabaseMetricSink(new MysqliDatabase(ScratchDb::connect()), new MutableClock()));
     }
 
+    protected function tearDown(): void
+    {
+        if (!isset($this->maria, $this->pg)) {   // setUp skipped the test
+            parent::tearDown();
+
+            return;
+        }
+        // The Postgres directory runs against one shared scratch database in CI: leave both stores empty.
+        foreach (HotTables::all() as $t) {
+            $this->maria->truncate($t);
+            $this->pg->truncate($t);
+        }
+        $this->h->q('DELETE FROM rmm_store_migration');
+        $this->h->q("UPDATE endpoint_agent_settings SET data_store = 'mariadb', data_store_phase = NULL WHERE id = 1");
+        parent::tearDown();
+    }
+
     protected function migrator(?PostgresConnectionInterface $pg = null): RmmStoreMigrator
     {
         return new RmmStoreMigrator($this->sql, $this->h->module->settings(), $pg ?? $this->pgConn, $this->h->audit, static function (int $us): void {
@@ -85,5 +102,16 @@ abstract class StoreMigrationTestCase extends RmmTestCase
     protected static function opts(array $over = []): array
     {
         return $over + ['settle_s' => 0, 'verify_lag_s' => 0, 'sample' => -1, 'batch' => 500, 'pause_ms' => 0, 'actor' => 'test'];
+    }
+
+    /** The database password must not appear in the text. A short CI password ("rivet") is a substring of ordinary words, so only a password long enough to be unique is searched for. */
+    protected function assertNoSecret(string $text): void
+    {
+        $pw = PostgresTestDatabase::config()->password();
+        if (strlen($pw) >= 12) {
+            $this->assertStringNotContainsString($pw, $text);
+        } else {
+            $this->addToAssertionCount(1);
+        }
     }
 }

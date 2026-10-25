@@ -31,6 +31,19 @@ final class DataStoreSwitchTest extends RmmTestCase
         });
     }
 
+    protected function tearDown(): void
+    {
+        if (!isset($this->sw)) {
+            parent::tearDown();
+
+            return;
+        }
+        $this->h->q('DELETE FROM rmm_data_store_connection');
+        $this->h->q('DELETE FROM rmm_store_migration');
+        $this->h->q("UPDATE endpoint_agent_settings SET data_store = 'mariadb', data_store_phase = NULL WHERE id = 1");
+        parent::tearDown();
+    }
+
     /** @return array<string,mixed> */
     private function form(array $over = []): array
     {
@@ -41,16 +54,18 @@ final class DataStoreSwitchTest extends RmmTestCase
 
     public function testThePasswordIsSealedAndNeverReturned(): void
     {
-        $this->assertSame([], $this->sw->saveConnection($this->form()));
+        $pw = 'S3cr3t-' . bin2hex(random_bytes(8));   // unique: the password of the CI database (for example "rivet") is a substring of other text
+        $this->assertSame([], $this->sw->saveConnection($this->form(['password' => $pw])));
         $raw = (string) $this->h->one('SELECT password_sealed FROM rmm_data_store_connection WHERE id = 1');
         $this->assertNotSame('', $raw);
-        $this->assertStringNotContainsString($this->form()['password'], $raw);
-        $this->assertStringNotContainsString($raw, json_encode($this->sw->status()));
-        $this->assertStringNotContainsString($this->form()['password'], json_encode($this->sw->status()));
+        $this->assertStringNotContainsString($pw, $raw);
+        $status = json_encode($this->sw->status());
+        $this->assertStringNotContainsString($raw, $status);
+        $this->assertStringNotContainsString($pw, $status);
         $this->assertTrue($this->sw->connectionSettings()['password_set']);
-        $this->assertSame($this->form()['password'], $this->sw->postgresConfig()?->password());
+        $this->assertSame($pw, $this->sw->postgresConfig()?->password());
         foreach ($this->h->audit->records() as $r) {
-            $this->assertStringNotContainsString($this->form()['password'], json_encode($r));
+            $this->assertStringNotContainsString($pw, json_encode($r));
         }
     }
 
