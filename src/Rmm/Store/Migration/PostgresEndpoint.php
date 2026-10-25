@@ -153,6 +153,20 @@ final class PostgresEndpoint implements StoreEndpoint
         return $out;
     }
 
+    /** @param list<int> $devices @return array<int,int> */
+    public function countsFor(HotTable $table, array $devices): array
+    {
+        $col = $table->deviceCol ?? 'device_id';
+        $out = [];
+        foreach (array_chunk($devices, 1000) as $chunk) {
+            foreach ($this->db->query('SELECT ' . $col . ' AS d, COUNT(*) AS n FROM ' . $table->name . ' WHERE ' . $col . ' IN (' . implode(',', array_fill(0, count($chunk), '?')) . ') GROUP BY ' . $col, $chunk) as $r) {
+                $out[(int) $r['d']] = (int) $r['n'];
+            }
+        }
+
+        return $out;
+    }
+
     /** @return list<int> */
     public function owners(HotTable $table, int $limit): array
     {

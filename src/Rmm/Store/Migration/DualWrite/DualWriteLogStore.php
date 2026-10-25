@@ -19,8 +19,10 @@ final class DualWriteLogStore implements ClientScopedLogStore
     {
         $result = self::admitOn($this->primary, $deviceId, $entries, $caps, $nowTs, $rejected, $agentDropped, $clientId);
         if ($this->secondary !== null) {
-            // The second store decides by its own ledger; what it decides is not used (the answer is the primary's) and a difference is what the verification looks for.
-            $this->ctx->secondary('log_events.admit', fn () => self::admitOn($this->secondary, $deviceId, $entries, $caps, $nowTs, $rejected, $agentDropped, $clientId));
+            // The second store receives exactly what the primary KEPT and no caps of its own: its ledger is still being built, so its own admission could keep rows the
+            // primary dropped. A duplicate in `kept` is harmless (the dedupe key).
+            $open = ['rate_per_min' => 1000000000, 'device_max_rows' => 1000000000, 'fleet_max_rows' => 1000000000];
+            $this->ctx->secondary('log_events.admit', fn () => self::admitOn($this->secondary, $deviceId, $result['kept'], $open, $nowTs, 0, $agentDropped, $clientId));
         }
 
         return $result;

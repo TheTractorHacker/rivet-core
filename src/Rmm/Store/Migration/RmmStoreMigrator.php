@@ -118,6 +118,7 @@ final class RmmStoreMigrator
                 $run = $this->runs->get($runId);
             } else {
                 $run = $active;
+                $this->settings->set(['data_store_phase' => ($run['dual_write'] ? 'dual:' : 'copy:') . $to]);   // the flag may not have been written if the first process died right after creating the run
                 $this->emit(['event' => 'resume', 'run' => $run['run_id'], 'phase' => $run['checkpoints']['phase'] ?? 'bulk']);
             }
 
@@ -273,6 +274,7 @@ final class RmmStoreMigrator
 
                     return ['ok' => true, 'state' => MigrationRuns::VERIFIED, 'run' => $runId, 'cutover' => false, 'summary' => $ck['summary'] ?? []];
                 }
+                $this->assertActive($runId);
                 $ck['phase'] = $ph;
                 $this->runs->update($runId, ['checkpoints' => $ck]);
                 $this->emit(['event' => 'phase', 'phase' => $ph, 'run' => $runId]);
@@ -314,6 +316,7 @@ final class RmmStoreMigrator
             case 'catchup':
                 if (!$delta) {
                     for ($pass = 0; $pass < 5; ++$pass) {
+                        $passStart = $this->now();
                         $copied = 0;
                         foreach (HotTables::all() as $t) {
                             if ($t->kind === HotTable::ID) {
@@ -325,7 +328,11 @@ final class RmmStoreMigrator
                             break;
                         }
                     }
-                    $ck['hw_at'] = $this->now();
+                    $ck['hw_at'] = $passStart ?? $this->now();   // the ids of the last pass were read from here on: the tail pass starts at this instant, not after the pass
+                    // The hourly buckets that closed while copying are immutable now: copy them here so that the seed only has the open one to do in the instant before dual-write.
+                    $hourly = HotTables::get('rmm_metric_hourly');
+                    $ck['hseed'] = $this->floor($this->now(), 3600);
+                    $this->copyRange($hourly, $o, $src, $tgt, 'overwrite', $this->utc((int) ($ck['hb'] ?? $ck['hseed'])), $this->utc((int) $ck['hseed']));
                 }
                 break;
             case 'seed':
@@ -345,8 +352,27 @@ final class RmmStoreMigrator
                 $this->runs->update($runId, ['state' => MigrationRuns::VERIFIED, 'checkpoints' => $ck, 'summary' => $ck['summary'] ?? []]);
                 break;
             case 'cutover':
+                $tgt->ping();
+                $faults = (int) ($this->runs->get($runId)['dual_faults'] ?? 0);
+                if ($faults > (int) ($ck['faults_seen'] ?? 0) || $this->now() - (int) ($ck['verified_at'] ?? 0) > 120) {
+                    // The verification is older than a couple of minutes (a run that stopped with --no-cutover, or a slow cut-over), or second-store writes failed since: check again first.
+                    $this->emit(['event' => 'reverify', 'reason' => $faults > (int) ($ck['faults_seen'] ?? 0) ? 'writes to the second store failed since the last check' : 'the last check is old']);
+                    $ck['faults_seen'] = $faults;
+                    $this->repairWindow($ck, $o, $src, $tgt);
+                    $this->finalize($ck, $o, $src, $tgt);
+                    $this->verifyWithRepair($runId, $ck, $o, $src, $tgt);
+                }
                 $this->cutover($runId, $run, $ck);
                 break;
+        }
+    }
+
+    /** @throws MigrationException when the run was aborted (or the data store switched back) while this process was working */
+    private function assertActive(int $runId, bool $lock = false): void
+    {
+        $r = $lock ? $this->sql->one('SELECT state FROM rmm_store_migration WHERE run_id = ? FOR UPDATE', [$runId]) : $this->sql->one('SELECT state FROM rmm_store_migration WHERE run_id = ?', [$runId]);
+        if ($r === null || !in_array((string) $r['state'], [...MigrationRuns::ACTIVE], true)) {
+            throw new MigrationException('The migration (run ' . $runId . ') was aborted or replaced while it was running; this process stops without changing anything more.');
         }
     }
 
@@ -433,13 +459,14 @@ final class RmmStoreMigrator
                 $tgt->raiseNextId($t, ((int) ($ck['t'][$t->name]['hw'] ?? 0)) + 1);
             }
             if ($t->name === 'rmm_metric_hourly') {
-                $from = $this->utc($this->floor($delta ? $since : (int) ($ck['hb'] ?? $this->floor($since, 3600)), 3600));
+                $from = $this->utc($this->floor($delta ? $since : (int) ($ck['hseed'] ?? $ck['hb'] ?? $this->floor($since, 3600)), 3600));
                 $this->copyRange($t, $o, $src, $tgt, 'overwrite', $from);
             } elseif ($t->kind === HotTable::LATEST) {
                 $this->copyRange($t, $o, $src, $tgt, 'newer', $this->utc($since - self::SEED_SLACK_S));
             }
         }
         $ck['dual_start'] = $this->now();
+        $ck['phase'] = 'settle';   // saved in the same transaction as the flag, so a resume never runs the seed (an overwrite) again while dual-write is on
         $this->sql->database()->transaction(function () use ($runId, $run, &$ck): void {
             $this->runs->update($runId, ['state' => MigrationRuns::DUAL, 'dual_write' => 1, 'checkpoints' => $ck + []]);
             $this->settings->set(['data_store_phase' => 'dual:' . $run['to_store']]);
@@ -491,6 +518,14 @@ final class RmmStoreMigrator
                 $this->reconcile($t, $since, $until, $o, $src, $tgt);
             } elseif ($t->kind === HotTable::LATEST) {
                 $this->copyRange($t, $o, $src, $tgt, 'newer', $this->utc($since));
+            } elseif ($t->name === 'rmm_metric_hourly') {
+                // A failed dual write of samples leaves a bucket short. Buckets that are closed now are not written any more (a late sample is the only exception), so they can be set from
+                // the source; the bucket that is open stays as it is (its difference is the documented limit).
+                $closedFrom = $this->floor($ck['since'] !== null ? (int) $ck['since'] : (int) ($ck['dual_start'] ?? $since), 3600);
+                $closedTo = $this->floor($this->now(), 3600);
+                if ($closedTo > $closedFrom) {
+                    $this->copyRange($t, $o, $src, $tgt, 'overwrite', $this->utc($closedFrom), $this->utc($closedTo));
+                }
             }
         }
     }
@@ -504,8 +539,8 @@ final class RmmStoreMigrator
     {
         $inserted = 0;
         for ($s = $this->floor($since, self::SLICE_S); $s < $until; $s += self::SLICE_S) {
-            $from = $this->utc($s);
-            $to = $this->utc($s + self::SLICE_S);
+            $from = $this->utc(max($s, $since));
+            $to = $this->utc(min($s + self::SLICE_S, $until));   // never past $until: a row younger than that may be between its two dual writes
             $have = [];
             $after = null;
             while (($rows = $tgt->readBatch($t, $after, 5000, null, $to, $from)) !== []) {
@@ -548,7 +583,16 @@ final class RmmStoreMigrator
     {
         $since = $ck['since'] !== null ? (int) $ck['since'] : (int) $ck['bulk_start'];
         $daily = HotTables::get('rmm_metric_daily');
-        $this->copyRange($daily, $o, $src, $tgt, 'overwrite', $this->utc($this->floor($since, 86400) - 3 * 86400));
+        $dailyFrom = $this->floor($since, 86400) - 3 * 86400;
+        if ($ck['since'] !== null) {
+            // Going back: the old store's rollup stopped at its own watermark when it was cut over; every day after that was rolled up in the new store, however long ago.
+            foreach ($tgt->readBatch(HotTables::get('rmm_metric_rollup_state'), null, 10) as $st) {
+                if ($st['watermark'] !== null) {
+                    $dailyFrom = min($dailyFrom, self::epoch((string) $st['watermark']) - 86400);
+                }
+            }
+        }
+        $this->copyRange($daily, $o, $src, $tgt, 'overwrite', $this->utc($dailyFrom));
         $state = HotTables::get('rmm_metric_rollup_state');
         $this->copyRange($state, $o, $src, $tgt, 'overwrite', null);
         foreach (HotTables::all() as $t) {
@@ -556,10 +600,10 @@ final class RmmStoreMigrator
                 continue;
             }
             $events = HotTables::get((string) $t->ledgerOf);
-            $counts = $tgt->countsByDevice($events);
             $after = null;
             $n = 0;
             while (($rows = $src->readBatch($t, $after, $o['batch'])) !== []) {
+                $counts = $tgt->countsFor($events, array_map(static fn (array $r): int => (int) $r['device_id'], $rows));   // this batch only: the count is as fresh as the write that follows
                 foreach ($rows as &$r) {
                     $r['row_count'] = $counts[(int) $r['device_id']] ?? 0;
                 }
@@ -592,6 +636,9 @@ final class RmmStoreMigrator
             $ck['summary'] = $report;
             $this->emit(['event' => 'verify', 'attempt' => $attempt, 'ok' => $problems === [], 'problems' => $problems]);
             if ($problems === []) {
+                $ck['verified_at'] = $this->now();
+                $ck['faults_seen'] = $faults;
+
                 return;
             }
             if ($attempt < $o['verify_attempts']) {
@@ -668,7 +715,7 @@ final class RmmStoreMigrator
      */
     private function sample(HotTable $t, ?string $before, ?string $from, array $o, StoreEndpoint $src, StoreEndpoint $tgt): array
     {
-        $owners = $src->owners($t, 5000);
+        $owners = $src->owners($t, $o['sample'] < 0 ? 5000000 : 100000);
         if ($o['sample'] > 0 && count($owners) > $o['sample']) {
             usort($owners, static fn (int $x, int $y): int => crc32('s' . $x) <=> crc32('s' . $y));
             $owners = array_slice($owners, 0, $o['sample']);
@@ -677,6 +724,13 @@ final class RmmStoreMigrator
         foreach ($owners as $owner) {
             $a = $this->ownerRows($t, $src, $owner, $before, $from);
             $b = $this->ownerRows($t, $tgt, $owner, $before, $from);
+            if (count($a) >= self::MAX_SAMPLE_ROWS && $t->timeCol !== null) {
+                // More rows than one read returns: compare what both stores certainly returned in full, the rows older than the last time seen (the ids differ between the stores, so
+                // the cut inside one second would not be the same rows).
+                $limit = (string) end($a)[$t->timeCol];
+                $a = array_values(array_filter($a, static fn (array $r): bool => (string) $r[$t->timeCol] < $limit));
+                $b = array_values(array_filter($b, static fn (array $r): bool => (string) $r[$t->timeCol] < $limit));
+            }
             if (count($a) !== count($b) || Fingerprint::digest($t, $a) !== Fingerprint::digest($t, $b)) {
                 $problems[] = ['table' => $t->name, 'what' => 'checksum', 'owner' => $owner, 'source_rows' => count($a), 'target_rows' => count($b)];
             }
@@ -708,6 +762,7 @@ final class RmmStoreMigrator
         $delta = $run['mode'] === 'delta';
         $days = (int) ($this->settings->limits()['rmm_store_rollback_days'] ?? 7);
         $this->sql->database()->transaction(function () use ($runId, $run, $now, $days, $delta): void {
+            $this->assertActive($runId, true);
             $this->settings->set(['data_store' => $run['to_store'], 'data_store_phase' => null]);
             $this->runs->update($runId, ['state' => MigrationRuns::CUTOVER, 'dual_write' => 0, 'cutover_at' => $this->utc($now), 'finished_at' => $this->utc($now),
                 'rollback_until' => $delta ? null : $this->utc($now + $days * 86400)]);

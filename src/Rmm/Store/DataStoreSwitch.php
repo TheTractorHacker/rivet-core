@@ -106,9 +106,14 @@ final class DataStoreSwitch
     public function saveConnection(#[\SensitiveParameter] array $in): array
     {
         try {
+            if ($this->runs->active() !== null) {
+                return ['A data store migration is in progress; the connection cannot be changed until it is finished or aborted.'];
+            }
             [$cfg, $sealed] = $this->prepare($in);
         } catch (\InvalidArgumentException $e) {
             return [$this->clean($e->getMessage())];
+        } catch (DatabaseException) {
+            return ['The connection could not be saved: the database is missing the data store tables (run the Core migrations up to 0044).'];
         }
         try {
             $this->store($cfg, $sealed);
@@ -246,7 +251,9 @@ final class DataStoreSwitch
             }
             if ($current !== RmmDataStoreKind::MARIADB || $active !== null) {
                 $this->settings->set(['data_store' => RmmDataStoreKind::MARIADB, 'data_store_phase' => null]);
-                $this->runs->create($current, RmmDataStoreKind::MARIADB, 'none', MigrationRuns::SWITCHED_ONLY, $actor);
+                if ($current !== RmmDataStoreKind::MARIADB) {
+                    $this->runs->create($current, RmmDataStoreKind::MARIADB, 'none', MigrationRuns::SWITCHED_ONLY, $actor);
+                }
                 $this->note('rmm.data_store.switch', 'RMM data store switched to MariaDB. History written to PostgreSQL meanwhile stays there and is not shown.');
             }
 

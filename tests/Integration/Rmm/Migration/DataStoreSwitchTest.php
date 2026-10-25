@@ -142,4 +142,20 @@ final class DataStoreSwitchTest extends RmmTestCase
         $this->assertTrue($sizes['available']);
         $this->assertSame('0', (string) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_check_history WHERE detail = 'through the stored connection'"), 'MariaDB has none');
     }
+
+    public function testTheConnectionCannotBeChangedWhileAMigrationRuns(): void
+    {
+        $this->sw->saveConnection($this->form());
+        $this->h->q("INSERT INTO rmm_store_migration (from_store, to_store, mode, state, started_at, updated_at) VALUES ('mariadb', 'postgres', 'full', 'copying', NOW(), NOW())");
+        $e = $this->sw->saveConnection($this->form(['host' => 'elsewhere.example', 'password' => 'x']));
+        $this->assertStringContainsString('migration is in progress', $e[0]);
+        $this->assertSame($this->form()['host'], $this->sw->connectionSettings()['host']);
+        $this->h->q("DELETE FROM rmm_store_migration");
+    }
+
+    public function testSwitchingBackOnAMariadbInstallLeavesNoFalseBanner(): void
+    {
+        $this->assertTrue($this->sw->switchTo('mariadb')['ok']);
+        $this->assertNull($this->sw->status()['left_behind']);
+    }
 }

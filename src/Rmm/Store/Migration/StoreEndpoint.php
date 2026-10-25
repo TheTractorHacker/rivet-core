@@ -66,6 +66,14 @@ interface StoreEndpoint
     public function countsByDevice(HotTable $table): array;
 
     /**
+     * Row counts of an event table for some devices only.
+     *
+     * @param list<int> $devices
+     * @return array<int,int> device id => rows (a device without rows is absent)
+     */
+    public function countsFor(HotTable $table, array $devices): array;
+
+    /**
      * Distinct owners (device or asset ids) that have rows, for sampling.
      *
      * @return list<int>

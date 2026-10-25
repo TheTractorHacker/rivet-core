@@ -348,4 +348,76 @@ final class RmmStoreMigratorTest extends StoreMigrationTestCase
         $this->assertNull($this->h->module->settings()->get(true)['data_store_phase']);
         $this->assertSame('aborted', $this->runs()->current()['state']);
     }
+
+    public function testTheSecondStoreGetsWhatThePrimaryKeptAndNotMore(): void
+    {
+        F::fill($this->maria, $this->now());
+        $now = $this->now();
+        $cb = $this->collect(function (array $e) use ($now): void {
+            if ($e['event'] === 'dual_write_on') {
+                $this->reresolve();
+                $caps = ['rate_per_min' => 2, 'device_max_rows' => 100000, 'fleet_max_rows' => 1000000];   // the primary admits 2 of 6 in this minute
+                $entries = [];
+                for ($i = 0; $i < 6; ++$i) {
+                    $entries[] = ['ts' => $now, 'level' => 2, 'source' => 'cap', 'code' => $i, 'message' => "cap $i", 'hash' => md5("cap$i")];
+                }
+                $this->h->module->dataStores()->logs()->admit(7, $entries, $caps, $now, 0, 0, 1);
+            }
+        });
+        $this->migrator()->migrate(self::opts(['to' => 'postgres']), $cb);
+        $a = (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_log_events WHERE source = 'cap'");
+        $b = (int) $this->pgConn->value("SELECT COUNT(*) FROM endpoint_agent_log_events WHERE source = 'cap'");
+        $this->assertSame(2, $a);
+        $this->assertSame($a, $b, 'the second store did not apply its own (empty) ledger to admit more');
+    }
+
+    public function testMetricsAreWrittenToBothStoresDuringTheDualWindow(): void
+    {
+        F::fill($this->maria, $this->now());
+        $now = $this->now();
+        $cb = $this->collect(function (array $e) use ($now): void {
+            if ($e['event'] === 'dual_write_on') {
+                $this->reresolve();
+                $m = $this->h->module->dataStores()->metrics();
+                $this->assertNotNull($m);
+                $m->ingest([['asset_id' => 77, 'key' => 'cpu', 'instance' => '', 'value' => 12.5, 'ts' => $now]], 1);
+            }
+        });
+        $this->migrator()->migrate(self::opts(['to' => 'postgres']), $cb);
+        $this->assertSame('1', (string) $this->h->one('SELECT samples FROM rmm_metric_hourly WHERE asset_id = 77'));
+        $this->assertSame('1', (string) $this->pgConn->value('SELECT samples FROM rmm_metric_hourly WHERE asset_id = 77'));
+    }
+
+    public function testARunThatWasAbortedWhileWorkingStopsAndSwitchesNothing(): void
+    {
+        F::fill($this->maria, $this->now());
+        $cb = $this->collect(function (array $e): void {
+            if ($e['event'] === 'phase' && $e['phase'] === 'catchup') {
+                $this->migrator()->abort('someone else');
+            }
+        });
+        try {
+            $this->migrator()->migrate(self::opts(['to' => 'postgres']), $cb);
+            $this->fail('the run must notice the abort');
+        } catch (MigrationException $e) {
+            $this->assertStringContainsString('aborted or replaced', $e->getMessage());
+        }
+        $this->assertSame('mariadb', $this->h->module->settings()->dataStore());
+        $this->assertNull($this->h->module->settings()->get(true)['data_store_phase']);
+        $this->assertContains($this->runs()->current()['state'], ['aborted', 'failed'], 'the state is not turned back into a live one');
+    }
+
+    public function testAStoppedRunIsCheckedAgainBeforeItCutsOver(): void
+    {
+        F::fill($this->maria, $this->now());
+        $r = $this->migrator()->migrate(self::opts(['to' => 'postgres', 'cutover' => false]), $this->collect());
+        $this->assertSame('verified', $r['state']);
+        $this->assertSame('mariadb', $this->h->module->settings()->dataStore());
+        $this->h->q('UPDATE rmm_store_migration SET dual_faults = dual_faults + 3');   // writes to the second store failed while the run waited
+        $this->events = [];
+        $r = $this->migrator()->migrate(self::opts(['to' => 'postgres', 'resume' => true]), $this->collect());
+        $this->assertTrue($r['ok']);
+        $this->assertContains('reverify', array_column($this->events, 'event'), 'the old verification is not trusted');
+        $this->assertSame('postgres', $this->h->module->settings()->dataStore());
+    }
 }

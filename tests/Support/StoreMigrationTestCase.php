@@ -44,7 +44,8 @@ abstract class StoreMigrationTestCase extends RmmTestCase
 
     protected function makeHarness(): RmmHarness
     {
-        return new RmmHarness(null, null, ['postgres' => static fn (): PostgresConnectionInterface => PostgresTestDatabase::connect()]);
+        return new RmmHarness(null, null, ['postgres' => static fn (): PostgresConnectionInterface => PostgresTestDatabase::connect()], false,
+            new \RivetCore\Rmm\Support\DatabaseMetricSink(new MysqliDatabase(ScratchDb::connect()), new MutableClock()));
     }
 
     protected function migrator(?PostgresConnectionInterface $pg = null): RmmStoreMigrator

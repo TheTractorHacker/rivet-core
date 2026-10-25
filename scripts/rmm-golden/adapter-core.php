@@ -208,8 +208,8 @@ switch ($cmd) {
         $res = $q('SELECT reason, success, COUNT(*) n FROM endpoint_agent_enroll_attempts GROUP BY reason, success ORDER BY reason, success');
         $out['endpoint_agent_enroll_attempts_by_reason'] = $res->fetch_all(MYSQLI_ASSOC);
         $settings = $q('SELECT * FROM endpoint_agent_settings WHERE id=1')->fetch_assoc();
-        // 'data_store' is migration 0042 (#89 phase 1): not part of the baseline either.
-        foreach (['features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices', 'data_store'] as $newColumn) {
+        // 'data_store' is migration 0042 and 'data_store_phase' migration 0044 (#89): not part of the baseline either.
+        foreach (['features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices', 'data_store', 'data_store_phase'] as $newColumn) {
             unset($settings[$newColumn]);
         }
         $out['endpoint_agent_settings'] = $settings;

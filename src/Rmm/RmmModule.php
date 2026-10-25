@@ -888,7 +888,7 @@ final class RmmModule
     public function capacity(): CapacityReport
     {
         return $this->capacity ??= new CapacityReport($this->sql(), $this->settings(), $this->ingestQueue(), $this->state(), $this->shedder(), $this->cache(), $this->herd(), $this->externalSink(), $this->dataStores()->maintenance(), $this->dataStores()->changes(), $this->hotStoreFaults(), fn (): string => $this->dataStores()->kind(),
-            fn (): ?\RivetCore\Rmm\Store\StoreSizes => $this->dataStores()->kind() === RmmDataStoreKind::POSTGRES ? new \RivetCore\Rmm\Store\Sizes\PostgresStoreSizes(fn (): PostgresConnectionInterface => $this->postgresConnection() ?? new UnconfiguredPostgresConnection('no PostgreSQL connection is configured')) : null);
+            fn (): ?\RivetCore\Rmm\Store\StoreSizes => $this->dataStores()->kind() === RmmDataStoreKind::POSTGRES ? new \RivetCore\Rmm\Store\Sizes\PostgresStoreSizes(fn (): PostgresConnectionInterface => $this->pgConnection ?? $this->postgresConnection() ?? new UnconfiguredPostgresConnection('no PostgreSQL connection is configured')) : null);
     }
 
     /**
@@ -999,6 +999,7 @@ final class RmmModule
         if ($this->resolvedStores === null) {
             $kind = $this->settings()->dataStore();
             $pg = $kind === RmmDataStoreKind::POSTGRES ? $this->postgresConnection() : null;   // MariaDB never builds, let alone opens, the PostgreSQL connection
+            $this->pgConnection = $pg;
             try {
                 $this->resolvedStores = RmmDataStoreFactory::create($kind, $this->sql(), $this->baseMetricStore(), $this->partitions(), $pg, $this->hotStoreFaults(), $this->writeBehind);
             } catch (DataStoreUnavailableException $e) {
@@ -1042,13 +1043,10 @@ final class RmmModule
     /**
      * The PostgreSQL connection: the `postgres` option the edition passed (a {@see PostgresConnectionInterface}, a closure that returns one, called once on first use so nothing
      * connects while the store is MariaDB, or a {@see PostgresConfig}), otherwise the connection stored by the data store setting ({@see DataStoreSwitch}, password sealed).
-     * Null when there is none. One connection per module, shared by the stores and the size report.
+     * Null when there is none.
      */
     private function postgresConnection(): ?PostgresConnectionInterface
     {
-        if ($this->pgConnection !== null) {
-            return $this->pgConnection;
-        }
         $given = $this->options['postgres'] ?? null;
         try {
             if ($given instanceof \Closure) {
@@ -1063,10 +1061,10 @@ final class RmmModule
         } catch (\Throwable $e) {
             error_log('rmm data store: the PostgreSQL connection could not be built: ' . get_class($e) . ': ' . mb_substr($e->getMessage(), 0, 200));
 
-            return $this->pgConnection = new UnconfiguredPostgresConnection('The "postgres" module option could not be turned into a connection: ' . mb_substr($e->getMessage(), 0, 200));
+            return new UnconfiguredPostgresConnection('The "postgres" module option could not be turned into a connection: ' . mb_substr($e->getMessage(), 0, 200));
         }
 
-        return $given instanceof PostgresConnectionInterface ? $this->pgConnection = $given : null;
+        return $given instanceof PostgresConnectionInterface ? $given : null;
     }
 
     /**

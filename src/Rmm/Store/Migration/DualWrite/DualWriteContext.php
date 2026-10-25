@@ -21,6 +21,8 @@ use RivetCore\Rmm\Support\Sql;
 final class DualWriteContext
 {
     private int $logged = 0;
+    private int $unflushed = 0;
+    private int $flushedAt = 0;
 
     /**
      * @param bool $paused retention, row caps and rollups do not run (a migration is copying)
@@ -59,9 +61,13 @@ final class DualWriteContext
     private function fault(string $what, \Throwable $e): void
     {
         $msg = mb_substr($what . ': ' . ($e instanceof DatabaseException ? rtrim($e->getMessage(), '. ') : get_class($e)), 0, 480);
-        if ($this->control !== null) {
+        ++$this->unflushed;
+        if ($this->control !== null && $this->flushedAt + 5 <= time()) {
+            $this->flushedAt = time();
+            $n = $this->unflushed;
+            $this->unflushed = 0;
             try {
-                $this->control->run('UPDATE rmm_store_migration SET dual_faults = dual_faults + 1, last_error = ? WHERE dual_write = 1', [$msg]);
+                $this->control->run('UPDATE rmm_store_migration SET dual_faults = dual_faults + ?, last_error = ? WHERE dual_write = 1', [$n, $msg]);
             } catch (\Throwable) {
                 // the counter is best effort; the error_log line below still names it
             }
@@ -69,6 +75,18 @@ final class DualWriteContext
         if ($this->logged + 60 <= time()) {
             $this->logged = time();
             error_log('rmm store migration: a write to the second store failed (the catch-up pass will repair it): ' . $msg);
+        }
+    }
+
+    /** Faults counted since the last write to the migration row are written when the request ends. */
+    public function __destruct()
+    {
+        if ($this->unflushed > 0 && $this->control !== null) {
+            try {
+                $this->control->run('UPDATE rmm_store_migration SET dual_faults = dual_faults + ? WHERE dual_write = 1', [$this->unflushed]);
+            } catch (\Throwable) {
+            }
+            $this->unflushed = 0;
         }
     }
 }

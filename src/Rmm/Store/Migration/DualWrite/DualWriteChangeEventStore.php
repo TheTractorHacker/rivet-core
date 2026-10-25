@@ -19,7 +19,8 @@ final class DualWriteChangeEventStore implements ClientScopedChangeEventStore
     {
         $result = self::admitOn($this->primary, $deviceId, $records, $caps, $nowTs, $rejected, $agentDropped, $configVersion, $monitorJson, $clientId);
         if ($this->secondary !== null) {
-            $this->ctx->secondary('change_records.admit', fn () => self::admitOn($this->secondary, $deviceId, $records, $caps, $nowTs, $rejected, $agentDropped, $configVersion, $monitorJson, $clientId));
+            $open = ['rate_per_min' => 1000000000, 'device_max_rows' => 1000000000, 'fleet_max_rows' => 1000000000];   // exactly what the primary kept, no caps of its own (see DualWriteLogStore)
+            $this->ctx->secondary('change_records.admit', fn () => self::admitOn($this->secondary, $deviceId, $result['kept'], $open, $nowTs, 0, $agentDropped, $configVersion, $monitorJson, $clientId));
         }
 
         return $result;
