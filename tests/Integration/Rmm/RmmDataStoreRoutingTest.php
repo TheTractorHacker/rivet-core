@@ -102,4 +102,17 @@ final class RmmDataStoreRoutingTest extends RmmTestCase
         $this->assertTrue($m['available']);
         $this->assertSame([7, 1], [$m['rows'], $m['devices_reporting']]);
     }
+
+    public function testHousekeepingKeepsPruningChangeRecordsAfterTheSwitchIsOffWhileALedgerExists(): void
+    {
+        $this->assertFalse($this->h->module->settings()->featureOn('change_monitor'));
+        $record = ['ts' => time() - 400 * 86400, 'kind' => 'registry', 'watch' => 'win.run', 'change' => 2, 'target' => 'HKLM\\Run', 'item' => 'x', 'old' => '', 'new' => 'y', 'summary' => '', 'old_hash' => '', 'new_hash' => '',
+            'actor' => '', 'process' => '', 'flags' => 0, 'dedupe' => str_repeat('ab', 16)];
+        $this->h->module->dataStores()->changes()->admit($this->dev, [$record], ['rate_per_min' => 100, 'device_max_rows' => 100, 'fleet_max_rows' => 100], time(), 0, 0, '', null);
+        $this->assertSame(1, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_change_records'));
+        $out = $this->h->module->housekeeping()->run();
+        $this->assertGreaterThanOrEqual(1, $out['pruned_changes_retention'] ?? 0);
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_change_records'));
+        $this->assertSame(0, (int) $this->h->one('SELECT row_count FROM endpoint_agent_change_state WHERE device_id = ' . $this->dev), 'the ledger followed the delete');
+    }
 }
