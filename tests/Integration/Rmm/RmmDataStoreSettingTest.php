@@ -96,7 +96,8 @@ final class RmmDataStoreSettingTest extends RmmTestCase
         $m->up($this->h->db);
         $this->assertSame('12', (string) $this->h->one('SELECT max_devices FROM endpoint_agent_settings WHERE id = 1'));
         $col = $this->h->rows("SELECT COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'endpoint_agent_settings' AND COLUMN_NAME = 'data_store'");
-        $this->assertSame(['varchar(16)', 'NO', "'mariadb'"], [$col[0]['COLUMN_TYPE'], $col[0]['IS_NULLABLE'], $col[0]['COLUMN_DEFAULT']]);
+        // MariaDB reports a string default quoted ('mariadb'), MySQL unquoted (mariadb).
+        $this->assertSame(['varchar(16)', 'NO', 'mariadb'], [$col[0]['COLUMN_TYPE'], $col[0]['IS_NULLABLE'], trim((string) $col[0]['COLUMN_DEFAULT'], "'")]);
     }
 
     public function testTheFactoryRefusesPostgresAndUnknownKindsAndBuildsEveryMariadbStore(): void

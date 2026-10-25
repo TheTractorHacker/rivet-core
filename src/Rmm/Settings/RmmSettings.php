@@ -25,7 +25,11 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class RmmSettings
 {
-    /** Columns {@see set()} may write. Key material is written only by {@see generateSigningKey()}. */
+    /**
+     * Columns {@see set()} may write. Key material is written only by {@see generateSigningKey()}.
+     *
+     * @internal the list grows with every additive setting; callers must not depend on its exact contents
+     */
     public const WRITABLE = [
         'enabled', 'service_url', 'check_in_interval_s', 'collect_interval_s', 'offline_after_s', 'stale_after_s',
         'failure_debounce', 'recovery_debounce', 'retention_days', 'job_retention_days', 'job_output_max_bytes',

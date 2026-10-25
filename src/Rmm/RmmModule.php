@@ -922,10 +922,10 @@ final class RmmModule
     public function housekeeping(): Housekeeping
     {
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
-            $this->metricStore(), $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
-            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->dataStores()->maintenance(), $this->cache(), $this->externalSink(),
+            null, $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
+            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), null, $this->cache(), $this->externalSink(),
             $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules(), $this->hypervisorService(),
-            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory());
+            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance());
     }
 
     /** The metric store ({@see MetricStore}; Core's {@see DatabaseMetricSink} is the MariaDB one), whether it was passed as the sink or inside a {@see CompositeMetricSink}. */

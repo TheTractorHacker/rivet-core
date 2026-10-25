@@ -27,7 +27,9 @@ use RivetCore\Rmm\Store\MariaDb\MariaDbCheckHistoryStore;
 use RivetCore\Rmm\Store\MariaDb\MariaDbSoftwareHistoryStore;
 use RivetCore\Rmm\Store\MetricStore;
 use RivetCore\Rmm\Store\SoftwareHistoryStore;
+use RivetCore\Rmm\Storage\StorageMaintenance;
 use RivetCore\Rmm\Store\StoreMaintenance;
+use RivetCore\Rmm\Support\DatabaseMetricSink;
 use RivetCore\Rmm\Support\RmmCache;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
@@ -53,6 +55,9 @@ final class Housekeeping
     private \Closure $pause;
     private readonly CheckHistoryStore $checkHistory;
     private readonly SoftwareHistoryStore $softwareHistory;
+    /** The metric store in use: the one passed as $metricStore (any implementation), else the legacy $metricSink argument. */
+    private readonly ?MetricStore $metrics;
+    private readonly ?StoreMaintenance $maintenance;
 
     /**
      * @param (\Closure(int):void)|null $pause called between delete batches with the microseconds to wait (default usleep)
@@ -67,14 +72,14 @@ final class Housekeeping
         private readonly ?IngestQueue $ingest = null,
         private readonly ?RmmEventPublisher $events = null,
         private readonly ?DeviceState $deviceState = null,
-        private readonly ?MetricStore $metricSink = null,
+        private readonly ?DatabaseMetricSink $metricSink = null,
         private readonly ?ScheduleRunner $schedules = null,
         private readonly ?ApprovalService $approvals = null,
         private readonly ?ApprovedRunExecutor $approvedRuns = null,
         private readonly ?JobExtras $extras = null,
         private readonly ?PolicyStore $policies = null,
         private readonly ?AlertingHousekeeping $alerting = null,
-        private readonly ?StoreMaintenance $storage = null,
+        private readonly ?StorageMaintenance $storage = null,
         private readonly ?RmmCache $cache = null,
         private readonly ?ExternalMetricSink $external = null,
         private readonly ?LogService $logs = null,
@@ -87,7 +92,11 @@ final class Housekeeping
         private readonly ?\RivetCore\Rmm\Hypervisor\HypervisorService $hypervisor = null,
         ?CheckHistoryStore $checkHistory = null,
         ?SoftwareHistoryStore $softwareHistory = null,
+        ?MetricStore $metricStore = null,
+        ?StoreMaintenance $storeMaintenance = null,
     ) {
+        $this->metrics = $metricStore ?? $metricSink;
+        $this->maintenance = $storeMaintenance ?? $storage;
         $this->checkHistory = $checkHistory ?? new MariaDbCheckHistoryStore($sql);
         $this->softwareHistory = $softwareHistory ?? new MariaDbSoftwareHistoryStore($sql);
         $this->pause = $pause ?? static function (int $us): void {
@@ -118,8 +127,8 @@ final class Housekeeping
         $limits = $this->settings->limits();
         // Scale S5: roll days up and keep the time partitions; a partitioned table is pruned by dropping partitions, every other one by batched DELETE as before.
         $partitioned = [];
-        if ($this->storage !== null) {
-            $st = $this->storage->run($limits, $this->settings->explicitLimits(), $this->metricSink?->retentionDays() ?? 14, $this->metricSink?->dailyRetentionDays() ?? 400);
+        if ($this->maintenance !== null) {
+            $st = $this->maintenance->run($limits, $this->settings->explicitLimits(), $this->metrics?->retentionDays() ?? 14, $this->metrics?->dailyRetentionDays() ?? 400);
             $partitioned = $st['partitioned'];
             $out['rollup_days'] = (int) ($st['rollup']['days'] ?? 0);
             $out['rollup_behind_days'] = (int) ($st['rollup']['behind_days'] ?? 0);
@@ -131,9 +140,9 @@ final class Housekeeping
         $softwareBefore = $this->sql->utcAt(-$limits['software_history_days'] * 86400);
         $out['pruned_software_history'] = $this->pruneStore(fn (int $n): int => $this->softwareHistory->deleteOlderThan($softwareBefore, $n));
         $out['pruned_software_removed'] = $this->prune('rmm_device_software', 'removed_at IS NOT NULL AND removed_at < ?', [$softwareBefore]);
-        if ($this->metricSink !== null) {
+        if ($this->metrics !== null) {
             $explicit = $this->settings->explicitLimits();
-            $out['pruned_metrics'] = $this->metricSink->prune(self::PRUNE_RUN_CAP, $this->pause, $explicit['metric_hourly_days'] ?? null, $explicit['metric_daily_days'] ?? null, $partitioned);
+            $out['pruned_metrics'] = $this->metrics->prune(self::PRUNE_RUN_CAP, $this->pause, $explicit['metric_hourly_days'] ?? null, $explicit['metric_daily_days'] ?? null, $partitioned);
         }
         if ($this->cache !== null) {
             $out['pruned_cache'] = $this->cache->prune();
