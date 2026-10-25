@@ -16,7 +16,7 @@ final class ApiTagsEndpointTest extends TestCase
     private const INTERNAL_PREFIXES = ['RivetCore\\Rmm\\Migration\\', 'RivetCore\\Testing\\InMemory', 'RivetCore\\Rmm\\Store\\MariaDb\\', 'RivetCore\\Rmm\\Store\\Lazy', 'RivetCore\\Rmm\\Store\\Postgres\\Guard\\Guarded'];
     /** Internal by design, one by one: the PostgreSQL store implementations and helpers (the port, the config, the adapter, the breaker, the migrator, the exceptions and the fault record are @api). */
     private const INTERNAL_CLASSES = [
-        'RivetCore\\Rmm\\Store\\DeviceNames', 'RivetCore\\Rmm\\Support\\MetricMath', 'RivetCore\\Rmm\\Store\\Postgres\\Guard\\HotStoreGuard', 'RivetCore\\Rmm\\Store\\Postgres\\Pdo\\PdoErrorMapper',
+        'RivetCore\\Rmm\\Store\\DeviceNames', 'RivetCore\\Rmm\\Store\\ClientMoves', 'RivetCore\\Rmm\\Support\\MetricMath', 'RivetCore\\Rmm\\Store\\Postgres\\Guard\\HotStoreGuard', 'RivetCore\\Rmm\\Store\\Postgres\\Pdo\\PdoErrorMapper',
         'RivetCore\\Rmm\\Store\\Postgres\\PostgresMetricStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresCheckHistoryStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresLogStore',
         'RivetCore\\Rmm\\Store\\Postgres\\PostgresChangeEventStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresSoftwareHistoryStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresPatchHistoryStore',
         'RivetCore\\Rmm\\Store\\Postgres\\PostgresDeploymentHistoryStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresHypervisorHistoryStore', 'RivetCore\\Rmm\\Store\\Postgres\\PostgresStoreMaintenance',
