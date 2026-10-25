@@ -80,6 +80,26 @@ final class RmmDataStoreFactory
     }
 
     /**
+     * The stores of a kind WITHOUT the failure guards: a PostgreSQL failure reaches the caller as an exception instead of being dropped and counted. Used by the data store
+     * migration (docs/design/rmm-data-store.md section 13), which must see a failed write to the second store; the services never use it.
+     *
+     * @throws DataStoreUnavailableException for `postgres` without a connection and for an unknown value
+     */
+    public static function createUnguarded(string $kind, Sql $sql, ?MetricStore $metrics = null, ?PartitionMaintenance $partitions = null, ?PostgresConnectionInterface $postgres = null): RmmDataStores
+    {
+        self::assertAvailable($kind);
+        if ($kind !== RmmDataStoreKind::POSTGRES) {
+            return self::create($kind, $sql, $metrics, $partitions);
+        }
+        $pg = self::requireConnection($postgres);
+        $raw = $metrics === null ? null : new PostgresMetricStore($pg, $sql->clock(), $metrics->retentionDays(),
+            $metrics instanceof DatabaseMetricSink ? $metrics->dailyFromSeconds() : DatabaseMetricSink::DAILY_FROM_SECONDS, $metrics->dailyRetentionDays());
+
+        return new RmmDataStores(RmmDataStoreKind::POSTGRES, new PostgresCheckHistoryStore($pg), new PostgresLogStore($pg), new PostgresChangeEventStore($pg), new PostgresSoftwareHistoryStore($pg),
+            new PostgresPatchHistoryStore($pg), new PostgresDeploymentHistoryStore($pg), new PostgresHypervisorHistoryStore($pg), new PostgresStoreMaintenance($pg, $sql->clock(), $raw), $raw);
+    }
+
+    /**
      * The metric store an edition without a metrics subsystem of its own passes to the module as its sink (RivetMSP does this with {@see DatabaseMetricSink}).
      *
      * @throws DataStoreUnavailableException for `postgres` without a connection and for an unknown value
