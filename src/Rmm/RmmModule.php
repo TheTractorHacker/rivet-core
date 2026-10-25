@@ -103,7 +103,7 @@ use RivetCore\Rmm\Store\MetricStore;
 use RivetCore\Rmm\Store\RmmDataStoreFactory;
 use RivetCore\Rmm\Store\RmmDataStoreKind;
 use RivetCore\Rmm\Store\RmmDataStores;
-use RivetCore\Rmm\Store\StoreMaintenance;
+use RivetCore\Rmm\Storage\StorageMaintenance;
 use RivetCore\Rmm\Support\DatabaseMetricSink;
 use RivetCore\Rmm\Support\RmmCache;
 use RivetCore\Rmm\Support\NullRmmAudit;
@@ -157,8 +157,8 @@ final class RmmModule
     private ?IngestQueue $ingestQueue = null;
     private ?LoadShedder $shedder = null;
     private ?CapacityReport $capacity = null;
-    private ?StoreMaintenance $storage = null;
     private ?RmmDataStores $dataStores = null;
+    private ?RmmDataStores $resolvedStores = null;
     private ?RmmCache $cache = null;
     private ?HerdControl $herd = null;
     private ?PartitionMaintenance $partitions = null;
@@ -923,7 +923,7 @@ final class RmmModule
     {
         return new Housekeeping($this->sql(), $this->settings(), $this->bridge, $this->jobs(), null, $this->shedder(), $this->ingestQueue(), $this->eventPublisher(), $this->deviceState(),
             $this->metricStore(), $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
-            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->storage(), $this->cache(), $this->externalSink(),
+            new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), $this->dataStores()->maintenance(), $this->cache(), $this->externalSink(),
             $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules(), $this->hypervisorService(),
             $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory());
     }
@@ -940,22 +940,28 @@ final class RmmModule
 
     /**
      * The HOT RMM stores, chosen by the `rmm_data_store` setting (docs/design/rmm-data-store.md). Phase 1 of #89 has one implementation, MariaDB / MySQL, which runs
-     * exactly the statements the services ran before the stores existed. A setting this release cannot run (a hand-edited `postgres`) is logged and answered with
-     * MariaDB, which is where the data is: the module never refuses check-ins over it.
+     * exactly the statements the services ran before the stores existed. The stores resolve on first use, so building the module still reads nothing from the
+     * database (an off module answers from its state file with zero queries). A setting this release cannot run (a hand-edited `postgres`) is logged and answered
+     * with MariaDB, which is where the data is: the module never refuses check-ins over it.
      */
     public function dataStores(): RmmDataStores
     {
-        if ($this->dataStores === null) {
+        return $this->dataStores ??= RmmDataStores::lazy(fn (): RmmDataStores => $this->resolvedDataStores(), $this->metricStore());
+    }
+
+    private function resolvedDataStores(): RmmDataStores
+    {
+        if ($this->resolvedStores === null) {
             $kind = $this->settings()->dataStore();
             try {
-                $this->dataStores = RmmDataStoreFactory::create($kind, $this->sql(), $this->metricStore(), $this->partitions());
+                $this->resolvedStores = RmmDataStoreFactory::create($kind, $this->sql(), $this->metricStore(), $this->partitions());
             } catch (DataStoreUnavailableException $e) {
                 error_log('rmm data store: ' . $e->getMessage() . ' Using mariadb.');
-                $this->dataStores = RmmDataStoreFactory::create(RmmDataStoreKind::MARIADB, $this->sql(), $this->metricStore(), $this->partitions());
+                $this->resolvedStores = RmmDataStoreFactory::create(RmmDataStoreKind::MARIADB, $this->sql(), $this->metricStore(), $this->partitions());
             }
         }
 
-        return $this->dataStores;
+        return $this->resolvedStores;
     }
 
     /** The buffer in front of an external metric store (scaling item S4), whether it was passed as the sink or inside a {@see CompositeMetricSink}. */
@@ -989,9 +995,14 @@ final class RmmModule
      * Scale S5: the daily metric rollup (only with a {@see DatabaseMetricSink}) and the time partitions of the history tables. Called by {@see housekeeping()};
      * also the entry point for an administrator's explicit probe or conversion (`partitions()->probe()`, `partitions()->convert()`).
      */
-    public function storage(): StoreMaintenance
+    public function storage(): StorageMaintenance
     {
-        return $this->storage ??= $this->dataStores()->maintenance();
+        $maintenance = $this->resolvedDataStores()->maintenance();
+        if (!$maintenance instanceof StorageMaintenance) {
+            throw new \LogicException('storage() is the MariaDB maintenance; use dataStores()->maintenance() with other stores.');
+        }
+
+        return $maintenance;
     }
 
     /**

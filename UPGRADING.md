@@ -76,6 +76,16 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Adopting the RMM data store interface (unreleased; migration 0042; no edition change required)
+
+Phase 1 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89). Nothing you call changes behaviour: the hot RMM tables stay in MariaDB/MySQL and the same statements run. See [docs/design/rmm-data-store.md](docs/design/rmm-data-store.md).
+
+1. **Pin** the release that contains this change when it is tagged.
+2. **Migration 0042.** Run the Core migrations (`0042_rmm_data_store`, one `ALTER TABLE endpoint_agent_settings ADD COLUMN data_store varchar(16) NOT NULL DEFAULT 'mariadb'`, guarded and idempotent) in your own DB step and mirror the column in `db.sql`. Nothing breaks without it: `RmmSettings::dataStore()` answers `mariadb` on an install that has not run it, and phase 1 accepts no other value.
+3. **Nothing else is required.** `RmmModule` builds the stores itself. `RmmModule::storage()` still returns `StorageMaintenance`; `RmmModule::dataStores()->maintenance()` is the interface-typed way to the same object.
+4. **Optional, recommended before phase 2:** an edition without a metrics subsystem (RivetMSP) can build its metric store with `RmmDataStoreFactory::createMetricStore('mariadb', $db, $clock)` instead of `new DatabaseMetricSink(...)`; both are the same class today.
+5. **Edition code that a later phase must move to the interfaces** (nothing to do now). Direct SQL on a hot table: `includes/rmm_log_ui.php` in both editions (`SELECT MIN(occurred_at) FROM endpoint_agent_log_events`, now `LogStore::oldestEventAt()`). MariaDB partition tool and its table names: `admin/post/settings_endpoint_agent.php`, `admin/settings_endpoint_agent.php`, `includes/rmm_scale_admin.php`, `includes/rmm_ui_render.php` in both editions. Metric store construction: RivetMSP `includes/rmm_bootstrap.php`. Totals: 5 files in RivetIT, 6 in RivetMSP.
+
 ## Adopting the shared design assets (unreleased; no migration)
 
 Opt-in. Nothing happens until an edition runs the installer. Full guide and the RivetMSP checklist: [docs/ui/DESIGN_ASSETS.md](docs/ui/DESIGN_ASSETS.md).

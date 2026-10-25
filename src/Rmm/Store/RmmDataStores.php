@@ -15,8 +15,14 @@ namespace RivetCore\Rmm\Store;
  */
 final class RmmDataStores
 {
+    /** @var string|\Closure(): string */
+    private readonly string|\Closure $kind;
+
+    /**
+     * @param string|\Closure(): string $kind the kind, or a closure that answers it on first use
+     */
     public function __construct(
-        private readonly string $kind,
+        string|\Closure $kind,
         private readonly CheckHistoryStore $checkHistory,
         private readonly LogStore $logs,
         private readonly ChangeEventStore $changes,
@@ -27,12 +33,35 @@ final class RmmDataStores
         private readonly StoreMaintenance $maintenance,
         private readonly ?MetricStore $metrics = null,
     ) {
+        $this->kind = $kind;
+    }
+
+    /**
+     * Stores that pick the real implementation on first use. The module builds its services (and so these) without touching the database, because an off module
+     * answers a check-in from its state file with zero queries; the setting is read when the first store is used.
+     *
+     * @param \Closure(): RmmDataStores $resolve builds the real stores (called once by the caller's own memo; this object calls it on every use, so memoize it)
+     */
+    public static function lazy(\Closure $resolve, ?MetricStore $metrics = null): self
+    {
+        return new self(
+            static fn (): string => $resolve()->kind(),
+            new LazyCheckHistoryStore($resolve),
+            new LazyLogStore($resolve),
+            new LazyChangeEventStore($resolve),
+            new LazySoftwareHistoryStore($resolve),
+            new LazyPatchHistoryStore($resolve),
+            new LazyDeploymentHistoryStore($resolve),
+            new LazyHypervisorHistoryStore($resolve),
+            new LazyStoreMaintenance($resolve),
+            $metrics,
+        );
     }
 
     /** One of {@see RmmDataStoreKind::ALL}. */
     public function kind(): string
     {
-        return $this->kind;
+        return $this->kind instanceof \Closure ? ($this->kind)() : $this->kind;
     }
 
     public function checkHistory(): CheckHistoryStore

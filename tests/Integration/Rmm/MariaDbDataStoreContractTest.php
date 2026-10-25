@@ -15,10 +15,10 @@ use RivetCore\Tests\Support\RmmHarness;
  * The shared contract of the HOT RMM stores, run against the MariaDB / MySQL implementation on the scratch database (phase 1 of #89). Phase 2 runs the same cases
  * against the PostgreSQL implementation: only {@see stores()} changes, the control data below always lives in MariaDB.
  */
-final class MariaDbDataStoreContractTest extends RmmDataStoreContractTestCase
+class MariaDbDataStoreContractTest extends RmmDataStoreContractTestCase
 {
-    private ?RmmHarness $h = null;
-    private ?RmmDataStores $stores = null;
+    protected ?RmmHarness $h = null;
+    protected ?RmmDataStores $stores = null;
     private string $previousLog = '';
 
     protected function setUp(): void

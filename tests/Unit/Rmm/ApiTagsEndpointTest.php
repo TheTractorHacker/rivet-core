@@ -8,12 +8,12 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Every RMM type declares its API status: the contracts, value objects, HTTP objects, protocol constants and conformance cases
- * are @api and listed in docs/api-surface.md; migrations, the schema helper and the in-memory reference adapters are @internal
- * and must not be listed.
+ * are @api and listed in docs/api-surface.md; migrations, the schema helper, the in-memory reference adapters and the store implementations
+ * (`Store\\MariaDb\\*`, the lazy delegates) are @internal and must not be listed.
  */
 final class ApiTagsEndpointTest extends TestCase
 {
-    private const INTERNAL_PREFIXES = ['RivetCore\\Rmm\\Migration\\', 'RivetCore\\Testing\\InMemory'];
+    private const INTERNAL_PREFIXES = ['RivetCore\\Rmm\\Migration\\', 'RivetCore\\Testing\\InMemory', 'RivetCore\\Rmm\\Store\\MariaDb\\', 'RivetCore\\Rmm\\Store\\Lazy'];
 
     /** @return list<class-string> */
     private function rmmTypes(): array

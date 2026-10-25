@@ -57,14 +57,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $s = $this->stores();
         $this->assertSame($this->expectedKind(), $s->kind());
         $this->assertInstanceOf(MetricStore::class, $s->metrics());
-        $this->assertNotNull($s->checkHistory());
-        $this->assertNotNull($s->logs());
-        $this->assertNotNull($s->changes());
-        $this->assertNotNull($s->softwareHistory());
-        $this->assertNotNull($s->patchHistory());
-        $this->assertNotNull($s->deploymentHistory());
-        $this->assertNotNull($s->hypervisorHistory());
-        $this->assertNotNull($s->maintenance());
+        $this->assertInstanceOf(\RivetCore\Rmm\Store\StoreMaintenance::class, $s->maintenance());
     }
 
     // ------------------------------------------------------------------ metrics
@@ -413,6 +406,24 @@ abstract class RmmDataStoreContractTestCase extends TestCase
 
     // ------------------------------------------------------------------ logs
 
+    /** @return array{rows:int,dropped_total:int,last_event_at:?string,last_batch_at:?string} */
+    private function logLedger(int $deviceId): array
+    {
+        $l = $this->stores()->logs()->deviceLedger($deviceId);
+        $this->assertNotNull($l, 'the device has a log ledger');
+
+        return $l;
+    }
+
+    /** @return array{rows:int,dropped_total:int,last_change_at:?string,last_batch_at:?string,config_version:string,monitor_json:?string,monitor_at:?string} */
+    private function changeLedger(int $deviceId): array
+    {
+        $l = $this->stores()->changes()->deviceLedger($deviceId);
+        $this->assertNotNull($l, 'the device has a change ledger');
+
+        return $l;
+    }
+
     private const CAPS = ['rate_per_min' => 1000, 'device_max_rows' => 1000, 'fleet_max_rows' => 100000];
 
     /** @return array{ts:int,level:int,source:string,code:?int,message:string,hash:string} */
@@ -431,8 +442,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $this->assertSame(3, $r['inserted']);
         $this->assertSame(2, $r['dropped'], 'the entries the caller already rejected are part of the answer');
         $this->assertCount(3, $r['kept']);
-        $ledger = $l->deviceLedger($dev);
-        $this->assertNotNull($ledger);
+        $ledger = $this->logLedger($dev);
         $this->assertSame(3, $ledger['rows']);
         $this->assertSame(2 + 7, $ledger['dropped_total'], 'rejected plus what the agent dropped itself');
         $this->assertSame(self::utc(self::T + 9), $ledger['last_event_at']);
@@ -440,8 +450,8 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $this->assertSame(3, $l->fleetRowCount());
         $r2 = $l->admit($dev, [$this->entry(self::T + 3)], self::CAPS, self::T + 200, 0, 0);
         $this->assertSame(1, $r2['inserted']);
-        $this->assertSame(self::utc(self::T + 9), $l->deviceLedger($dev)['last_event_at'] ?? null, 'the last event time never goes backwards');
-        $this->assertSame(4, $l->deviceLedger($dev)['rows'] ?? null);
+        $this->assertSame(self::utc(self::T + 9), $this->logLedger($dev)['last_event_at'], 'the last event time never goes backwards');
+        $this->assertSame(4, $this->logLedger($dev)['rows']);
         $this->assertSame(['inserted' => 0, 'dropped' => 0, 'kept' => []], $l->admit($dev, [], self::CAPS, self::T + 300, 0, 0));
     }
 
@@ -456,7 +466,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $this->assertCount(3, $r['kept'], 'kept is what the budgets admitted; the difference to inserted is the number of duplicates');
         $r = $l->admit($dev, [$e], self::CAPS, self::T + 20, 0, 0);
         $this->assertSame(0, $r['inserted'], 'a resent batch adds nothing');
-        $this->assertSame(2, $l->deviceLedger($dev)['rows'] ?? null, 'the ledger counts stored rows only');
+        $this->assertSame(2, $this->logLedger($dev)['rows'], 'the ledger counts stored rows only');
         $this->assertSame(1, $l->admit($other, [$e], self::CAPS, self::T + 30, 0, 0)['inserted'], 'the same entry of another device is another entry');
     }
 
@@ -468,7 +478,7 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $caps = ['rate_per_min' => 3, 'device_max_rows' => 1000, 'fleet_max_rows' => 100000];
         $r = $l->admit($dev, $many(5), $caps, self::T + 1000, 1, 4);
         $this->assertSame([3, 3], [$r['inserted'], $r['dropped']], 'three fit the minute; two are over budget, one was rejected by the caller');
-        $this->assertSame(1 + 2 + 4, $l->deviceLedger($dev)['dropped_total'] ?? null);
+        $this->assertSame(1 + 2 + 4, $this->logLedger($dev)['dropped_total']);
         $r = $l->admit($dev, $many(2, 100), $caps, self::T + 1030, 0, 0);
         $this->assertSame([0, 2], [$r['inserted'], $r['dropped']], 'the budget of the minute is used up');
         $r = $l->admit($dev, $many(2, 200), $caps, self::T + 1061, 0, 0);
@@ -565,14 +575,14 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $r = $l->enforceLimits(self::utc(self::T - 5 * self::DAY), 1000, 1000, 100, 2, $pause);
         $this->assertSame(['retention' => 4, 'device_cap' => 0, 'fleet_cap' => 0], $r);
         $this->assertNotSame([], $pauses, 'the pause is called between batches');
-        $this->assertSame(8, $l->deviceLedger($a)['rows'] ?? null, 'the ledger follows the deletes');
+        $this->assertSame(8, $this->logLedger($a)['rows'], 'the ledger follows the deletes');
         $this->assertSame(11, $l->fleetRowCount());
         $this->assertSame(self::utc(self::T), $l->oldestEventAt($a));
         // the device cap trims the oldest entries of the device above it
         $r = $l->enforceLimits(self::utc(self::T - 5 * self::DAY), 5, 1000, 100, 2);
         $this->assertSame(['retention' => 0, 'device_cap' => 3, 'fleet_cap' => 0], $r);
-        $this->assertSame(5, $l->deviceLedger($a)['rows'] ?? null);
-        $this->assertSame(3, $l->deviceLedger($b)['rows'] ?? null, 'a device under its cap is left alone');
+        $this->assertSame(5, $this->logLedger($a)['rows']);
+        $this->assertSame(3, $this->logLedger($b)['rows'], 'a device under its cap is left alone');
         $this->assertSame(self::utc(self::T + 3), $l->oldestEventAt($a), 'the oldest went first');
         // the fleet cap trims the oldest entries of the fleet
         $r = $l->enforceLimits(self::utc(self::T - 5 * self::DAY), 1000, 6, 100, 100);
@@ -607,22 +617,21 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $this->assertSame([3, 1], [$r['inserted'], $r['dropped']]);
         $this->assertCount(3, $r['kept']);
         $this->assertTrue($c->hasLedger());
-        $ledger = $c->deviceLedger($dev);
-        $this->assertNotNull($ledger);
+        $ledger = $this->changeLedger($dev);
         $this->assertSame([3, 1 + 6, self::utc(self::T + 9), self::utc(self::T + 100), 'aaaaaaaaaaaaaaaa', '{"ok":true}', self::utc(self::T + 100)],
             [$ledger['rows'], $ledger['dropped_total'], $ledger['last_change_at'], $ledger['last_batch_at'], $ledger['config_version'], $ledger['monitor_json'], $ledger['monitor_at']]);
         $this->assertSame(['rows' => 3, 'devices' => 1], $c->ledgerTotals());
         // an empty version and a null status leave what is stored
         $c->admit($dev, [$this->record(self::T + 20, 'HKLM\\Fourth')], self::CHANGE_CAPS, self::T + 200, 0, 0, '', null);
-        $ledger = $c->deviceLedger($dev);
-        $this->assertSame(['aaaaaaaaaaaaaaaa', '{"ok":true}', self::utc(self::T + 100), 4], [$ledger['config_version'] ?? null, $ledger['monitor_json'] ?? null, $ledger['monitor_at'] ?? null, $ledger['rows'] ?? null]);
+        $ledger = $this->changeLedger($dev);
+        $this->assertSame(['aaaaaaaaaaaaaaaa', '{"ok":true}', self::utc(self::T + 100), 4], [$ledger['config_version'], $ledger['monitor_json'], $ledger['monitor_at'], $ledger['rows']]);
         $c->admit($dev, [], self::CHANGE_CAPS, self::T + 300, 0, 0, 'bbbbbbbbbbbbbbbb', '{"ok":false}');
-        $ledger = $c->deviceLedger($dev);
-        $this->assertSame(['bbbbbbbbbbbbbbbb', '{"ok":false}', self::utc(self::T + 300)], [$ledger['config_version'] ?? null, $ledger['monitor_json'] ?? null, $ledger['monitor_at'] ?? null]);
+        $ledger = $this->changeLedger($dev);
+        $this->assertSame(['bbbbbbbbbbbbbbbb', '{"ok":false}', self::utc(self::T + 300)], [$ledger['config_version'], $ledger['monitor_json'], $ledger['monitor_at']]);
         // a repeated record is stored once
         $again = $c->admit($dev, [$this->record(self::T + 1)], self::CHANGE_CAPS, self::T + 400, 0, 0, '', null);
         $this->assertSame([0, 1], [$again['inserted'], count($again['kept'])]);
-        $this->assertSame(4, $c->deviceLedger($dev)['rows'] ?? null);
+        $this->assertSame(4, $this->changeLedger($dev)['rows']);
     }
 
     public function testChangeBudgetAndCaps(): void
@@ -770,11 +779,11 @@ abstract class RmmDataStoreContractTestCase extends TestCase
         $r = $c->enforceLimits(self::utc(self::T - 5 * self::DAY), 1000, 1000, 100, 2, $pause);
         $this->assertSame(['retention' => 4, 'device_cap' => 0, 'fleet_cap' => 0], $r);
         $this->assertNotSame([], $pauses);
-        $this->assertSame(8, $c->deviceLedger($a)['rows'] ?? null, 'the ledger follows the deletes');
+        $this->assertSame(8, $this->changeLedger($a)['rows'], 'the ledger follows the deletes');
         $this->assertSame(11, $c->fleetRowCount());
         $r = $c->enforceLimits(self::utc(self::T - 5 * self::DAY), 5, 1000, 100, 2);
         $this->assertSame(['retention' => 0, 'device_cap' => 3, 'fleet_cap' => 0], $r);
-        $this->assertSame([5, 3], [$c->deviceLedger($a)['rows'] ?? null, $c->deviceLedger($b)['rows'] ?? null]);
+        $this->assertSame([5, 3], [$this->changeLedger($a)['rows'], $this->changeLedger($b)['rows']]);
         $r = $c->enforceLimits(self::utc(self::T - 5 * self::DAY), 1000, 6, 100, 100);
         $this->assertSame(['retention' => 0, 'device_cap' => 0, 'fleet_cap' => 2], $r);
         $this->assertSame(6, $c->fleetRowCount());

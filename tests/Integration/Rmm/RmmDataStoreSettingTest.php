@@ -60,7 +60,9 @@ final class RmmDataStoreSettingTest extends RmmTestCase
         ini_set('error_log', (string) $log);
         try {
             $module = $this->h->module;
-            (new \ReflectionProperty($module, 'dataStores'))->setValue($module, null);   // the harness already built the stores before the row was edited
+            foreach (['dataStores', 'resolvedStores'] as $prop) {
+                (new \ReflectionProperty($module, $prop))->setValue($module, null);   // the harness may have resolved the stores before the row was edited
+            }
             $this->assertSame('postgres', $module->settings()->dataStore());
             $stores = $module->dataStores();
             $this->assertSame('mariadb', $stores->kind(), 'the data is in MariaDB, so the module keeps working');
@@ -131,6 +133,6 @@ final class RmmDataStoreSettingTest extends RmmTestCase
         $this->assertSame($module->dataStores()->changes(), $r->getValue($module->changeService()));
         $r = new \ReflectionProperty($module->software(), 'history');
         $this->assertSame($module->dataStores()->softwareHistory(), $r->getValue($module->software()));
-        $this->assertSame($module->dataStores()->maintenance(), $module->storage());
+        $this->assertInstanceOf(\RivetCore\Rmm\Storage\StorageMaintenance::class, $module->storage(), 'the MariaDB maintenance behind the lazy delegate');
     }
 }
