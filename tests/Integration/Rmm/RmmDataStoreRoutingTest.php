@@ -60,4 +60,27 @@ final class RmmDataStoreRoutingTest extends RmmTestCase
         $deploy = $this->h->module->deployReader()->history($this->dev, 10, 0);
         $this->assertSame([1, 'Routed Package', '2.0'], [$deploy['total'], $deploy['rows'][0]['package'], $deploy['rows'][0]['version']]);
     }
+
+    public function testTheSchedulersPruneTheirHistoryThroughTheStores(): void
+    {
+        $this->h->module->settings()->update(['features_json' => ['monitoring' => true, 'metrics' => true, 'jobs' => true, 'updates' => true, 'patching' => true, 'software_deploy' => true]]);
+        $old = gmdate('Y-m-d H:i:s', time() - 800 * 86400);
+        $new = gmdate('Y-m-d H:i:s', time() - 60);
+        $this->h->q("INSERT INTO rmm_package_history (device_id, client_id, package_id, version_id, action, mode, result, code, detail, version, at, job_id, user_id) VALUES
+            ({$this->dev}, 1, 1, NULL, 'install', 'live', 'installed', '', '', '1', '$old', NULL, NULL), ({$this->dev}, 1, 1, NULL, 'install', 'live', 'installed', '', '', '2', '$new', NULL, NULL)");
+        $r = $this->h->module->deployScheduler()->run();
+        $this->assertGreaterThanOrEqual(1, $r['deploy_pruned']);
+        $this->assertSame(1, (int) $this->h->one('SELECT COUNT(*) FROM rmm_package_history'));
+        $this->assertSame('2', $this->h->one('SELECT version FROM rmm_package_history'), 'the recent entry stays');
+    }
+
+    public function testTheHypervisorPruneSweepsTheHistoryOfVmsThatAreGone(): void
+    {
+        $this->h->q("INSERT INTO rmm_hypervisor_vms (device_id, vm_key, first_seen_at, last_seen_at) VALUES ({$this->dev}, 'qemu/101', NOW(), NOW())");
+        $vm = (int) $this->h->mysqli->insert_id;
+        $this->h->q("INSERT INTO rmm_hypervisor_vm_history (vm_id, device_id, at, from_state, to_state) VALUES ($vm, {$this->dev}, NOW(), 'running', 'stopped'), (999999, {$this->dev}, NOW(), 'running', 'stopped')");
+        $out = $this->h->module->hypervisorService()->prune();
+        $this->assertSame(1, $out['history'], 'the entry of the VM that does not exist is swept, the live VM keeps its history');
+        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_hypervisor_vm_history WHERE vm_id = $vm"));
+    }
 }
