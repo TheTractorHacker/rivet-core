@@ -42,7 +42,7 @@ if ($stateDir !== '') {
 }
 $env = array_merge(getenv(), ['PHP_CLI_SERVER_WORKERS' => (string) $workers, 'RMM_LOAD_TRUST_SIM_IP' => '1', 'RMM_LOAD_STATE_DIR' => $stateDir]);
 $srv = proc_open([PHP_BINARY, '-d', 'display_errors=0', '-d', 'opcache.enable_cli=1', '-d', 'opcache.jit=off', '-S', "127.0.0.1:$port", "$root/scripts/rmm-load/router.php"],
-    [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'a'], 2 => ['file', "/tmp/claude-1000/t9/server_$port.log", 'a']], $p1, $root, $env);
+    [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'a'], 2 => ['file', is_dir('/tmp/claude-1000/t9') ? "/tmp/claude-1000/t9/server_$port.log" : '/dev/null', 'a']], $p1, $root, $env);
 for ($i = 0; $i < 100 && !@fsockopen('127.0.0.1', $port); ++$i) {
     usleep(100000);
 }
@@ -180,6 +180,18 @@ $out = [
         return $out;
     })($timeline, $devices),
 ];
+if (\RivetCore\Tests\Support\LoadEdition::store() !== '') {
+    // rmm-store-load.php: which store the hot tables were on, and PostgreSQL's own counters (transactions, not statements: no pg_stat_statements needed)
+    $out['store'] = \RivetCore\Tests\Support\LoadEdition::store();
+    if (isset($c1['pg'], $c0['pg'])) {
+        $pd = static fn (string $k): int => (int) ($c1['pg'][$k] ?? 0) - (int) ($c0['pg'][$k] ?? 0);
+        $out['postgres_per_s'] = ['transactions' => round($pd('xact_commit') / $secs, 1), 'tuples_inserted' => round($pd('tup_inserted') / $secs, 1), 'tuples_updated' => round($pd('tup_updated') / $secs, 1),
+            'tuples_deleted' => round($pd('tup_deleted') / $secs, 1)];
+        $out['postgres_per_checkin'] = ['transactions' => round($pd('xact_commit') / $accepted, 2), 'tuples_inserted' => round($pd('tup_inserted') / $accepted, 1), 'tuples_updated' => round($pd('tup_updated') / $accepted, 1)];
+        $out['postgres_cache_hit_pct'] = ($pd('blks_hit') + $pd('blks_read')) > 0 ? round(100 * $pd('blks_hit') / ($pd('blks_hit') + $pd('blks_read')), 2) : null;
+    }
+    $out['hot_rows_after'] = json_decode(trim($php([$load, 'hotrows'])), true);
+}
 echo json_encode($out, JSON_PRETTY_PRINT), "\n";
 if (!isset($o['no-teardown'])) {
     proc_terminate($srv, 15);

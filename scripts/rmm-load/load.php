@@ -26,6 +26,17 @@ switch ($cmd) {
         LoadEdition::wipe($e->db);
         $s = $e->module->settings();
         $s->enable();
+        if (LoadEdition::store() === 'postgres') {
+            // the PostgreSQL schema, emptied, and the setting set by hand (update() refuses it; docs/rmm/POSTGRES.md)
+            $pg = LoadEdition::pgConnection();
+            (new \RivetCore\Rmm\Store\Postgres\PostgresMigrator($pg))->migrate();
+            foreach (\RivetCore\Rmm\Store\Postgres\PostgresSchema::TABLES as $t) {
+                $pg->execute('TRUNCATE TABLE ' . $t);
+            }
+            $s->set(['data_store' => 'postgres']);
+        } elseif (LoadEdition::store() === 'mariadb') {
+            $s->set(['data_store' => 'mariadb']);
+        }
         $settings = ['unmatched_policy' => 'auto_create', 'ingest_mode' => ($argv[3] ?? 'sync')];
         $settings += json_decode($argv[4] ?? '{}', true) ?: [];
         $err = $s->update($settings);
@@ -39,6 +50,23 @@ switch ($cmd) {
             $tokens[] = $e->module->enrollment()->createToken(1, 0, 'stable', 24, min(5000, $left), 'load', 1)['token'];
         }
         echo implode(',', $tokens), "\n";
+        break;
+    case 'hotrows':
+        // rows in the hot tables of the chosen store (rmm-store-load.php)
+        $out = [];
+        $tables = ['rmm_metric_latest', 'rmm_metric_hourly', 'endpoint_agent_check_history'];
+        if (LoadEdition::store() === 'postgres') {
+            $pg = LoadEdition::pgConnection();
+            foreach ($tables as $t) {
+                $out[$t] = (int) $pg->value('SELECT count(*) FROM ' . $t);
+            }
+            $out['bytes'] = (int) $pg->value("SELECT coalesce(sum(pg_total_relation_size(c.oid)), 0) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relkind IN ('r', 'p') AND (c.relname LIKE 'rmm\\_%' OR c.relname LIKE 'endpoint\\_agent\\_%') AND NOT c.relispartition");
+        } else {
+            foreach ($tables as $t) {
+                $out[$t] = (int) $e->db->fetchOne("SELECT COUNT(*) AS c FROM `$t`")['c'];
+            }
+        }
+        echo json_encode($out), "\n";
         break;
     case 'worker':
         $until = time() + (int) ($argv[2] ?? 60);
@@ -82,6 +110,10 @@ switch ($cmd) {
         $out = [];
         foreach ($e->db->fetchAll("SHOW GLOBAL STATUS WHERE Variable_name IN ('Questions','Com_select','Com_insert','Com_update','Com_delete','Com_commit','Handler_write','Handler_update','Handler_delete','Connections','Threads_connected')") as $r) {
             $out[$r['Variable_name']] = (int) $r['Value'];
+        }
+        if (LoadEdition::store() === 'postgres') {
+            $r = LoadEdition::pgConnection()->queryOne('SELECT xact_commit, xact_rollback, tup_inserted, tup_updated, tup_deleted, tup_returned, numbackends, blks_read, blks_hit FROM pg_stat_database WHERE datname = current_database()') ?? [];
+            $out['pg'] = array_map('intval', $r);
         }
         echo json_encode($out), "\n";
         break;
