@@ -560,11 +560,10 @@ final class RmmStoreMigrator
         $problems = [];
         for ($attempt = 1; $attempt <= $o['verify_attempts']; ++$attempt) {
             $this->sleepSeconds($o['verify_lag_s']);
-            $faults0 = (int) ($this->runs->get($runId)['dual_faults'] ?? 0);
             [$report, $problems] = $this->verify($ck, $o, $src, $tgt);
             $faults = (int) ($this->runs->get($runId)['dual_faults'] ?? 0);
-            if ($faults !== (int) ($ck['faults_seen'] ?? 0) && $faults !== $faults0 + 0) {
-                $problems[] = ['table' => '*', 'what' => 'dual_faults', 'detail' => 'writes to the second store failed during verification'];
+            if ($faults > (int) ($ck['faults_seen'] ?? 0)) {
+                $problems[] = ['table' => '*', 'what' => 'dual_faults', 'detail' => 'writes to the second store failed since the last repair pass'];
             }
             $ck['summary'] = $report;
             $this->emit(['event' => 'verify', 'attempt' => $attempt, 'ok' => $problems === [], 'problems' => $problems]);

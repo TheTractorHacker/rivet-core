@@ -24,6 +24,7 @@ final class Fingerprint
                 'i' => (string) (int) $v,
                 's' => self::text((string) $v),
                 'x' => strtolower((string) $v),
+                'j' => (string) json_encode(json_decode((string) $v, true)),   // jsonb re-spaces the text; the content is what counts
                 default => (string) $v,
             };
         }
