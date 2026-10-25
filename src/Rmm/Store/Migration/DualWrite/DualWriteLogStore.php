@@ -26,6 +26,11 @@ final class DualWriteLogStore implements ClientScopedLogStore
         return $result;
     }
 
+    /**
+     * @param list<array<string,mixed>> $entries
+     * @param array<string,int> $caps
+     * @return array{inserted:int,dropped:int,kept:list<array<string,mixed>>}
+     */
     private static function admitOn(LogStore $s, int $deviceId, array $entries, array $caps, int $nowTs, int $rejected, int $agentDropped, ?int $clientId): array
     {
         return $s instanceof ClientScopedLogStore ? $s->admit($deviceId, $entries, $caps, $nowTs, $rejected, $agentDropped, $clientId) : $s->admit($deviceId, $entries, $caps, $nowTs, $rejected, $agentDropped);

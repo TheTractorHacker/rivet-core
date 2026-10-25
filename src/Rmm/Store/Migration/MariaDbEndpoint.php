@@ -47,6 +47,7 @@ final class MariaDbEndpoint implements StoreEndpoint
         return $id === null ? 0 : (int) $this->sql->val('SELECT COALESCE(MAX(`' . $id . '`), 0) FROM `' . $table->name . '`');
     }
 
+    /** @param ?list<mixed> $after */
     public function readBatch(HotTable $table, ?array $after, int $limit, ?int $upToId = null, ?string $timeBefore = null, ?string $timeFrom = null): array
     {
         $conds = [];
@@ -123,6 +124,7 @@ final class MariaDbEndpoint implements StoreEndpoint
         $this->sql->run('TRUNCATE TABLE `' . $table->name . '`');
     }
 
+    /** @return array<int,int> */
     public function countsByDevice(HotTable $table): array
     {
         $col = $table->deviceCol ?? 'device_id';
@@ -134,6 +136,7 @@ final class MariaDbEndpoint implements StoreEndpoint
         return $out;
     }
 
+    /** @return list<int> */
     public function owners(HotTable $table, int $limit): array
     {
         $col = $table->deviceCol;

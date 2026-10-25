@@ -25,6 +25,11 @@ final class DualWriteChangeEventStore implements ClientScopedChangeEventStore
         return $result;
     }
 
+    /**
+     * @param list<array<string,mixed>> $records
+     * @param array<string,int> $caps
+     * @return array{inserted:int,dropped:int,kept:list<array<string,mixed>>}
+     */
     private static function admitOn(ChangeEventStore $s, int $deviceId, array $records, array $caps, int $nowTs, int $rejected, int $agentDropped, string $configVersion, ?string $monitorJson, ?int $clientId): array
     {
         return $s instanceof ClientScopedChangeEventStore ? $s->admit($deviceId, $records, $caps, $nowTs, $rejected, $agentDropped, $configVersion, $monitorJson, $clientId)

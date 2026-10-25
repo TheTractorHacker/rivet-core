@@ -256,6 +256,7 @@ final class RmmStoreMigrator
     {
         $runId = (int) $run['run_id'];
         $delta = $run['mode'] === 'delta';
+        /** @var array<string,mixed> $ck */
         $ck = $run['checkpoints'] ?: [];
         $ck['phase'] ??= 'bulk';
         $ck['bulk_start'] ??= $delta ? (int) $run['params']['since'] : $this->now();
@@ -351,7 +352,10 @@ final class RmmStoreMigrator
 
     // ------------------------------------------------------------------ copy
 
-    /** @param array<string,mixed> $ck @param array<string,mixed> $o */
+    /**
+     * @param array<string,mixed> $ck
+     * @param array<string,mixed> $o
+     */
     private function bulk(HotTable $t, int $runId, array &$ck, array $o, StoreEndpoint $src, StoreEndpoint $tgt): void
     {
         if (in_array($t->kind, [HotTable::LEDGER, HotTable::STATE], true)) {
@@ -415,7 +419,11 @@ final class RmmStoreMigrator
         return $copied;
     }
 
-    /** @param array<string,mixed> $run @param array<string,mixed> $ck @param array<string,mixed> $o */
+    /**
+     * @param array<string,mixed> $run
+     * @param array<string,mixed> $ck
+     * @param array<string,mixed> $o
+     */
     private function seed(int $runId, array $run, array &$ck, array $o, StoreEndpoint $src, StoreEndpoint $tgt): void
     {
         $delta = $run['mode'] === 'delta';
@@ -439,7 +447,9 @@ final class RmmStoreMigrator
         $this->emit(['event' => 'dual_write_on', 'run' => $runId]);
     }
 
-    /** @param array<string,mixed> $o */
+    /**
+     * @param array<string,mixed> $o
+     */
     private function copyRange(HotTable $t, array $o, StoreEndpoint $src, StoreEndpoint $tgt, string $mode, ?string $timeFrom, ?string $timeBefore = null): int
     {
         $after = null;
@@ -455,7 +465,10 @@ final class RmmStoreMigrator
         return $n;
     }
 
-    /** @param array<string,mixed> $ck @param array<string,mixed> $o */
+    /**
+     * @param array<string,mixed> $ck
+     * @param array<string,mixed> $o
+     */
     private function tail(array &$ck, array $o, StoreEndpoint $src, StoreEndpoint $tgt, int $runId): void
     {
         $run = $this->runs->get($runId) ?? [];
@@ -463,7 +476,12 @@ final class RmmStoreMigrator
         $this->repairWindow($ck, $o, $src, $tgt);
     }
 
-    /** Compare the rows of the window around the dual-write start as multisets and insert what the target lacks. @param array<string,mixed> $ck @param array<string,mixed> $o */
+    /**
+     * Compare the rows of the window around the dual-write start as multisets and insert what the target lacks.
+     *
+     * @param array<string,mixed> $ck
+     * @param array<string,mixed> $o
+     */
     private function repairWindow(array $ck, array $o, StoreEndpoint $src, StoreEndpoint $tgt): void
     {
         $since = $ck['since'] !== null ? (int) $ck['since'] : min((int) ($ck['hw_at'] ?? $ck['dual_start']), (int) $ck['dual_start']) - self::SEED_SLACK_S;
@@ -522,7 +540,10 @@ final class RmmStoreMigrator
         return $inserted;
     }
 
-    /** @param array<string,mixed> $ck @param array<string,mixed> $o */
+    /**
+     * @param array<string,mixed> $ck
+     * @param array<string,mixed> $o
+     */
     private function finalize(array &$ck, array $o, StoreEndpoint $src, StoreEndpoint $tgt): void
     {
         $since = $ck['since'] !== null ? (int) $ck['since'] : (int) $ck['bulk_start'];
@@ -554,7 +575,10 @@ final class RmmStoreMigrator
 
     // ------------------------------------------------------------------ verification
 
-    /** @param array<string,mixed> $ck @param array<string,mixed> $o */
+    /**
+     * @param array<string,mixed> $ck
+     * @param array<string,mixed> $o
+     */
     private function verifyWithRepair(int $runId, array &$ck, array $o, StoreEndpoint $src, StoreEndpoint $tgt): void
     {
         $problems = [];
@@ -674,7 +698,10 @@ final class RmmStoreMigrator
 
     // ------------------------------------------------------------------ cut-over
 
-    /** @param array<string,mixed> $run @param array<string,mixed> $ck */
+    /**
+     * @param array<string,mixed> $run
+     * @param array<string,mixed> $ck
+     */
     private function cutover(int $runId, array $run, array $ck): void
     {
         $now = $this->now();
@@ -695,7 +722,10 @@ final class RmmStoreMigrator
 
     // ------------------------------------------------------------------ preflight
 
-    /** @param array<string,mixed> $o @return array<string,mixed> */
+    /**
+     * @param array<string,mixed> $o
+     * @return array<string,mixed>
+     */
     private function dryRun(StoreEndpoint $src, StoreEndpoint $tgt, array $o): array
     {
         $tables = [];
@@ -800,7 +830,11 @@ final class RmmStoreMigrator
         ];
     }
 
-    /** Between two batches: the configured pause, and a longer one while the load shedder is active. @param array<string,mixed> $o */
+    /**
+     * Between two batches: the configured pause, and a longer one while the load shedder is active.
+     *
+     * @param array<string,mixed> $o
+     */
     private function throttle(array $o): void
     {
         if ($o['pause_ms'] > 0) {
@@ -858,7 +892,9 @@ final class RmmStoreMigrator
         return $ts - $ts % $span;
     }
 
-    /** @param array<string,mixed> $event */
+    /**
+     * @param array<string,mixed> $event
+     */
     private function emit(array $event): void
     {
         if ($this->progress !== null) {

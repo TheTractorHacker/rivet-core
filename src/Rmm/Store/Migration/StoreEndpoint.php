@@ -30,6 +30,7 @@ interface StoreEndpoint
     /**
      * Keyset page: the rows after $after (the key values of the last row read, in key order; null = from the start), ordered by key.
      *
+     * @param ?list<mixed> $after
      * @param ?int $upToId for an id table: only ids up to and including this one
      * @return list<array<string,mixed>>
      */
@@ -57,10 +58,18 @@ interface StoreEndpoint
     /** Remove every row of the table. */
     public function truncate(HotTable $table): void;
 
-    /** Per-device row counts of an event table: device id => rows. */
+    /**
+     * Per-device row counts of an event table.
+     *
+     * @return array<int,int> device id => rows
+     */
     public function countsByDevice(HotTable $table): array;
 
-    /** Distinct owners (device or asset ids) that have rows, for sampling. @return list<int> */
+    /**
+     * Distinct owners (device or asset ids) that have rows, for sampling.
+     *
+     * @return list<int>
+     */
     public function owners(HotTable $table, int $limit): array;
 
     public function transaction(\Closure $work): mixed;

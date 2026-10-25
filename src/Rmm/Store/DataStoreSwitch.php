@@ -181,7 +181,10 @@ final class DataStoreSwitch
                     $db->execute('CREATE TABLE "' . $schema . '"."' . $probe . '" (i integer)');
                     throw new ProbeRollback();
                 });
-            } catch (ProbeRollback) {
+            } catch (\Throwable $probeEnd) {
+                if (!$probeEnd instanceof ProbeRollback) {
+                    throw $probeEnd;   // a real failure (no privilege): the caller's catch reports it
+                }
                 // the table never existed: the transaction was rolled back, which is the point
             }
             $out['checks'][] = ['name' => 'create', 'ok' => true, 'message' => 'The role can create tables in the schema "' . $schema . '".'];
@@ -191,7 +194,7 @@ final class DataStoreSwitch
             $migrator = new PostgresMigrator($db);
             $out['timescale'] = $migrator->timescaleInstalled();
             $st = $migrator->status();
-            $out['schema'] = ['exists' => (bool) $st['exists'], 'pending' => array_values($st['pending'])];
+            $out['schema'] = ['exists' => (bool) $st['exists'], 'pending' => $st['pending']];
             $out['storage_mode'] = $st['mode'] ?? ($out['timescale'] ? 'timescale' : 'native');
             $out['checks'][] = ['name' => 'schema', 'ok' => true, 'message' => $st['exists'] ? ($st['pending'] === [] ? 'The schema is up to date.' : 'The schema exists; ' . count($st['pending']) . ' migration(s) will be applied on switching.')
                 : 'The schema will be created on switching (' . ($out['timescale'] ? 'TimescaleDB found: hypertables' : 'native partitioning') . ').'];
@@ -263,7 +266,7 @@ final class DataStoreSwitch
             return $res;
         }
         // 1. validate and test (nothing is stored yet when a connection is passed)
-        $given = isset($options['connection']) && is_array($options['connection']) ? $options['connection'] : null;
+        $given = $options['connection'] ?? null;
         $test = $this->testConnection($given);
         $res['test'] = $test;
         if (!$test['ok']) {
