@@ -45,6 +45,7 @@ use RivetCore\Rmm\Migration\Migration0039AutomationDisabled;
 use RivetCore\Rmm\Migration\Migration0041DailyBudget;
 use RivetCore\Rmm\Migration\Migration0042RmmDataStore;
 use RivetCore\Rmm\Migration\Migration0043RmmStoreDenormalisation;
+use RivetCore\Rmm\Migration\Migration0044RmmStoreSwitch;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
 
@@ -101,6 +102,7 @@ final class CoreMigrations
             new Migration0041DailyBudget(),
             new Migration0042RmmDataStore(),
             new Migration0043RmmStoreDenormalisation(),
+            new Migration0044RmmStoreSwitch(),
         ];
     }
 }

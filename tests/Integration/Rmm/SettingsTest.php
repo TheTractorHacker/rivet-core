@@ -145,7 +145,7 @@ final class SettingsTest extends RmmTestCase
         $this->assertSame(['max_checkins_per_min' => 0, 'retry_after_min_s' => 30, 'retry_after_max_s' => 120, 'shed_retry_min_s' => 60, 'shed_retry_max_s' => 300,
             'shed_backlog_l1' => 500, 'shed_backlog_l2' => 2000, 'shed_backlog_l3' => 8000, 'shed_db_ms_l1' => 100, 'shed_db_ms_l2' => 300, 'shed_db_ms_l3' => 1000, 'shed_rate_per_min' => 0,
             'check_history_days' => 7, 'check_history_gap_s' => 3600, 'software_history_days' => 365,
-            'approval_bulk_threshold' => 0, 'approval_expiry_h' => 48, 'schedule_batch' => 200, 'bulk_run_max' => 1000, 'clock_skew_alert_s' => 120, 'metrics_extended' => 1], array_diff_key(array_filter($this->s()->limits(), static fn (string $k): bool => !str_starts_with($k, 'hypervisor_'), ARRAY_FILTER_USE_KEY), array_flip($scale)));
+            'approval_bulk_threshold' => 0, 'approval_expiry_h' => 48, 'schedule_batch' => 200, 'bulk_run_max' => 1000, 'clock_skew_alert_s' => 120, 'metrics_extended' => 1], array_diff_key(array_filter($this->s()->limits(), static fn (string $k): bool => !str_starts_with($k, 'hypervisor_') && !str_starts_with($k, 'rmm_'), ARRAY_FILTER_USE_KEY), array_flip($scale)));
         $this->assertSame([], $this->s()->update(['limits_json' => '{"max_checkins_per_min":200,"retry_after_min_s":10}']));
         $l = $this->s()->limits();
         $this->assertSame([200, 10, 120], [$l['max_checkins_per_min'], $l['retry_after_min_s'], $l['retry_after_max_s']]);

@@ -165,6 +165,12 @@ final class RmmSettings
         'hypervisor_alert_storage' => [0, 1],
         'hypervisor_alert_pool' => [0, 1],
         'hypervisor_alert_quorum' => [0, 1],
+        // Phase 3 of #89 (RMM data store): when to recommend PostgreSQL, how long the old store is kept after a migration, how fast the migration copies.
+        'rmm_pg_recommend_devices' => [1, 10000000],
+        'rmm_pg_recommend_hot_mb' => [0, 100000000],
+        'rmm_store_rollback_days' => [0, 365],
+        'rmm_store_migrate_batch' => [100, 50000],
+        'rmm_store_migrate_pause_ms' => [0, 60000],
     ];
     /** The default of every limit in {@see self::LIMIT_KEYS}; grows with it. @internal */
     public const LIMIT_DEFAULTS = [
@@ -233,6 +239,11 @@ final class RmmSettings
         'hypervisor_alert_storage' => 1,
         'hypervisor_alert_pool' => 1,
         'hypervisor_alert_quorum' => 1,
+        'rmm_pg_recommend_devices' => 5000,
+        'rmm_pg_recommend_hot_mb' => 51200,
+        'rmm_store_rollback_days' => 7,
+        'rmm_store_migrate_batch' => 2000,
+        'rmm_store_migrate_pause_ms' => 100,
     ];
 
     /** @var array<string,mixed>|null */
