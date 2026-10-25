@@ -13,7 +13,7 @@ use RivetCore\Rmm\Store\MetricStore;
 /**
  * A metric sink backed by two Core tables (migration 0018), for editions without a metrics subsystem (RivetMSP): the newest reading of
  * every (asset, key, instance) in `rmm_metric_latest` and one rollup row per (asset, key, instance, hour) in `rmm_metric_hourly`
- * (sample count, sum, minimum and maximum). It implements {@see RmmMetricReaderInterface}, so the pages can show a 24 hour peak and
+ * (sample count, sum, minimum and maximum). It implements {@see \RivetCore\Rmm\Contracts\RmmMetricReaderInterface}, so the pages can show a 24 hour peak and
  * sparklines without any extra store.
  *
  * Cost and bounds: raw samples are never stored, so a device adds at most one row per metric instance per hour (about 12 rows an hour

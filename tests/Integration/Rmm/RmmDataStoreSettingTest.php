@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace RivetCore\Tests\Integration\Rmm;
 
-use RivetCore\Migration\MigrationRunner;
 use RivetCore\Rmm\Migration\Migration0042RmmDataStore;
 use RivetCore\Rmm\Store\DataStoreUnavailableException;
 use RivetCore\Rmm\Store\MariaDb\MariaDbLogStore;
