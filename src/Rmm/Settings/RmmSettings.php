@@ -25,19 +25,23 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class RmmSettings
 {
-    /**
-     * Columns {@see set()} may write. Key material is written only by {@see generateSigningKey()}.
-     *
-     * @internal the list grows with every additive setting; callers must not depend on its exact contents
-     */
+    /** Columns {@see set()} may write. Key material is written only by {@see generateSigningKey()}. Frozen: later additions go in {@see WRITABLE_ADDED}. */
     public const WRITABLE = [
         'enabled', 'service_url', 'check_in_interval_s', 'collect_interval_s', 'offline_after_s', 'stale_after_s',
         'failure_debounce', 'recovery_debounce', 'retention_days', 'job_retention_days', 'job_output_max_bytes',
         'job_default_timeout_s', 'job_max_timeout_s', 'job_expiry_s', 'job_ack_timeout_s', 'job_max_attempts', 'enroll_max_ttl_h',
         'unmatched_policy', 'checks_json', 'mesh_enabled', 'mesh_url', 'mesh_domain', 'mesh_login_key_enc', 'mesh_account_template',
         'mesh_policy', 'mesh_token_ttl_s', 'coexistence_policy', 'integration_id', 'ca_pem',
-        'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices', 'data_store',
+        'features_json', 'limits_json', 'shed_level', 'ingest_mode', 'max_devices',
     ];
+
+    /**
+     * Writable columns added after 1.0.0-rc.38, so that {@see WRITABLE} keeps its value (the backward-compatibility check treats a changed constant value as a break).
+     * {@see set()} accepts both lists; use {@see writableColumns()} when you need the full set.
+     *
+     * @internal grows with every additive setting
+     */
+    public const WRITABLE_ADDED = ['data_store'];
 
     /**
      * Server-side bounds for the intervals agents are told to use (design 13.3). The two floors are a DELIBERATE change from RivetIT's
@@ -297,6 +301,12 @@ final class RmmSettings
         return (int) ($this->get()['enabled'] ?? 0) === 1;
     }
 
+    /** @return list<string> every column {@see set()} may write */
+    public static function writableColumns(): array
+    {
+        return [...self::WRITABLE, ...self::WRITABLE_ADDED];
+    }
+
     /**
      * @param array<string,mixed> $values
      * @throws \InvalidArgumentException for a column that is not writable here
@@ -306,7 +316,7 @@ final class RmmSettings
         $sets = [];
         $params = [];
         foreach ($values as $k => $v) {
-            if (!in_array($k, self::WRITABLE, true)) {
+            if (!in_array($k, self::writableColumns(), true)) {
                 throw new \InvalidArgumentException("unknown setting $k");
             }
             $sets[] = "`$k` = ?";

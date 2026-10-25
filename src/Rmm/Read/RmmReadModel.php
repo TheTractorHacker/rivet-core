@@ -1229,7 +1229,7 @@ final class RmmReadModel
     {
         $c = $this->settings->get(true);
         $out = [];
-        foreach (RmmSettings::WRITABLE as $k) {
+        foreach (RmmSettings::writableColumns() as $k) {
             if (array_key_exists($k, $c) && $k !== 'mesh_login_key_enc') {
                 $out[$k] = $c[$k];
             }
