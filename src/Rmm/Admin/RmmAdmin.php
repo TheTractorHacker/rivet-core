@@ -194,6 +194,10 @@ final class RmmAdmin
         }
         $install = [];
         $warnings = [];
+        if ($vals['mesh_enabled'] === 1 && !str_contains($account, '{user_id}') && !str_contains($account, '{username}')) {
+            // One shared Mesh account means every technician is the same Mesh user: Core's per-ability and per-client limits do not bind the Mesh session (CORE-12).
+            $warnings[] = 'The MeshCentral account name has no {user_id} or {username}, so every technician signs in to the same Mesh account. Use a per-technician account and give each Mesh account rights only to the device groups of the clients that technician may reach; Core cannot enforce that inside MeshCentral.';
+        }
         if ($this->meshSettings !== null) {
             $install = array_intersect_key($in, array_flip(['mesh_group_id', 'mesh_server_cert_pin', 'mesh_auto_map_overwrite', 'mesh_agent_ids', 'mesh_install_args', 'mesh_hide', 'mesh_hide_tools']));
             if ($install !== []) {
@@ -201,7 +205,7 @@ final class RmmAdmin
                 if ($errors !== []) {
                     return ActionResult::fail(422, 'invalid', implode(' ', $errors));
                 }
-                $warnings = $this->meshSettings->lastWarnings();
+                $warnings = array_merge($warnings, $this->meshSettings->lastWarnings());
             }
         }
         $this->settings->set($vals);
