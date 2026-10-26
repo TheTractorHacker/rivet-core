@@ -319,7 +319,7 @@ final class RmmModule
     {
         if ($this->settings === null) {
             $this->settings = new RmmSettings($this->sql(), $this->box, $this->bridge, $this->options['integration_name'] ?? RmmProtocol::DEFAULT_INTEGRATION_NAME, $this->options['allow_insecure_http'] ?? false);
-            $this->settings->setRetentionFloors($this->options['retention_floors'] ?? null);   // compliance framework minimums (rc.45); absent = unchanged
+            $this->settings->setRetentionFloors($this->options['retention_floors'] ?? null);   // compliance framework minimums (rc.44); absent = unchanged
             // Every change of a mirrored setting rewrites the zero-database state file in the same request.
             $this->settings->onStateChange(function (): void {
                 $this->state()->sync();
