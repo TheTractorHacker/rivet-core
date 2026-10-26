@@ -182,7 +182,10 @@ final class DataStoreInfo
 
     // ------------------------------------------------------------------ internals
 
-    /** @param array<string,mixed> $pg */
+    /**
+     * @param array<string,mixed> $pg
+     * @param array<string,mixed> $info
+     */
     private static function pgFacts(array $pg, array $info, bool $withVersion = true): string
     {
         if (empty($pg['reachable'])) {
@@ -214,9 +217,9 @@ final class DataStoreInfo
     }
 
     /**
-     * @return array{postgres:array<string,mixed>,checked_at:string,cached:bool,error:?string}|null
+     * @return array{postgres:array<string,mixed>,checked_at:string,cached:bool,error:?string}
      */
-    private function liveOrCached(PostgresConnectionInterface $conn, ?PostgresConfig $cfg, bool $inUse, bool $tables): ?array
+    private function liveOrCached(PostgresConnectionInterface $conn, ?PostgresConfig $cfg, bool $inUse, bool $tables): array
     {
         $compute = function () use ($conn, $cfg, $inUse, $tables): array {
             return $this->live($conn, $cfg, $inUse, $tables);
