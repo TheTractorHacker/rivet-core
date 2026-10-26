@@ -26,7 +26,7 @@ final class ReportingView
      * @param list<array{0:string,1:string,2:string}> $columns name, logical type, meaning; in the order of the view (MariaDB / MySQL)
      * @param list<string> $keys the columns that identify a row (the first is the primary key of the grain), then foreign keys
      * @param list<string> $postgresOmit columns that the PostgreSQL variant does not have (the hot table there has no device table to join); empty when the same
-     * @param list<string> $related "column -> view.column" relationships for the data dictionary
+     * @param array<string,string> $related column => "view.column" (or a description) relationships for the data dictionary
      */
     public function __construct(
         public readonly string $name,
