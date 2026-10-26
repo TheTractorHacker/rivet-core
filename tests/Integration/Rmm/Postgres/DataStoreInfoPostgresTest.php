@@ -115,7 +115,7 @@ final class DataStoreInfoPostgresTest extends RmmTestCase
         $this->assertSame(PostgresTestDatabase::config()->host, $pg['host']);
         $this->assertSame(PostgresTestDatabase::config()->port, $pg['port']);
         $migrator = new PostgresMigrator($this->ownConnection());
-        $this->assertSame(['exists' => true, 'applied' => [$migrator->latest()], 'pending' => [], 'changed' => [], 'current' => $migrator->latest(), 'up_to_date' => true], $pg['schema']);
+        $this->assertSame(['exists' => true, 'applied' => $this->shippedIds(), 'pending' => [], 'changed' => [], 'current' => $migrator->latest(), 'up_to_date' => true], $pg['schema']);
         $this->assertGreaterThan(0, $pg['database_size_bytes']);
         $this->assertArrayNotHasKey('tables', $pg, 'tables only when asked');
         $this->assertSame('PostgreSQL ' . $pg['server_version'] . ' (' . $pg['storage_mode'] . ($pg['timescale_version'] !== null ? ' ' . $pg['timescale_version'] : '') . ') - schema ' . $migrator->latest() . ', up to date', DataStoreInfo::summaryLine($r));
@@ -125,6 +125,16 @@ final class DataStoreInfoPostgresTest extends RmmTestCase
         $this->assertNotEmpty($t['tables']);
         $this->assertSame(array_sum(array_column($t['tables'], 'bytes')), $t['total_bytes']);
         $this->assertNoSecrets($this->h->module->dataStoreInfo()->report(false, true));
+    }
+
+    /** @return list<string> the ids of every PostgreSQL migration the library ships, in order (the list grows: 0001_hot_tables, 0002_reporting_views, ...) */
+    private function shippedIds(): array
+    {
+        $p = new \ReflectionProperty(PostgresMigrator::class, 'migrations');
+        $ids = array_map(static fn (array $m): string => $m['id'], $p->getValue(new PostgresMigrator($this->ownConnection())));
+        $this->assertNotSame([], $ids);
+
+        return $ids;
     }
 
     public function testAPendingAndAChangedMigrationAreShown(): void
@@ -141,11 +151,11 @@ final class DataStoreInfoPostgresTest extends RmmTestCase
 
         $own->execute('DELETE FROM rivet_core_pg_migrations');
         $pending = $this->h->module->dataStoreInfo()->report();
-        $this->assertSame([$latest], $pending['postgres']['schema']['pending']);
+        $this->assertSame($this->shippedIds(), $pending['postgres']['schema']['pending']);
         $this->assertSame([], $pending['postgres']['schema']['applied']);
         $this->assertNull($pending['postgres']['schema']['current']);
         $this->assertFalse($pending['postgres']['schema']['up_to_date']);
-        $this->assertStringContainsString('1 pending', DataStoreInfo::summaryLine($pending));
+        $this->assertStringContainsString(count($this->shippedIds()) . ' pending', DataStoreInfo::summaryLine($pending));
         $own->close();
     }
 
@@ -157,7 +167,7 @@ final class DataStoreInfoPostgresTest extends RmmTestCase
         $r = $this->h->module->dataStoreInfo()->report();
         $this->assertTrue($r['postgres']['reachable']);
         $this->assertFalse($r['postgres']['schema']['exists']);
-        $this->assertSame(['0001_hot_tables'], $r['postgres']['schema']['pending']);
+        $this->assertSame($this->shippedIds(), $r['postgres']['schema']['pending']);
         $this->assertStringEndsWith('schema not created', DataStoreInfo::summaryLine($r));
     }
 
