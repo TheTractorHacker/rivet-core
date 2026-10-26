@@ -2,7 +2,7 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
-## 1.0.0-rc.44 (RMM data store info for update pages; no migration)
+## 1.0.0-rc.43 (RMM data store info for update pages; no migration)
 
 Additive. No migration, no schema change, no changed signature or constant value. An edition that does nothing behaves exactly as before; the golden replay and the device protocol are unchanged.
 

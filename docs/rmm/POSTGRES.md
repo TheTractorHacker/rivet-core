@@ -320,7 +320,7 @@ Either way nothing changes in the edition: the same `PostgresConfig` keys, the s
 
 ## 18. Showing the data store on an Update page
 
-An administrator looking at the Update or Server page sees the MariaDB version; since 1.0.0-rc.44 Core can also say which RMM data store is in use and, for PostgreSQL, its version, mode, schema state and size. `$module->dataStoreInfo()->report()` returns a plain array and **never throws**; `DataStoreInfo::summaryLine($info)` turns it into the one line for a tile. Nothing is required: an edition that does not call it behaves exactly as before.
+An administrator looking at the Update or Server page sees the MariaDB version; since 1.0.0-rc.43 Core can also say which RMM data store is in use and, for PostgreSQL, its version, mode, schema state and size. `$module->dataStoreInfo()->report()` returns a plain array and **never throws**; `DataStoreInfo::summaryLine($info)` turns it into the one line for a tile. Nothing is required: an edition that does not call it behaves exactly as before.
 
 What it does and does not do:
 
