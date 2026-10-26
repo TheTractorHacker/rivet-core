@@ -176,3 +176,7 @@ paths = ['''(^|/)tests/Security/AuditSurfaceTest\.php$''']
 [[allowlists]]
 description = "Historical path of endpoint-agent/internal/jobs/executor_test.go: ghp_-shaped redaction string with an invalid length and CRC32 checksum."
 paths = ['''(^|/)internal/jobs/executor_test\.go$''']
+
+[[allowlists]]
+description = "Redactor tests feed obviously fake credentials (hunter22hunter, base64:abc123...) to prove they are masked; none is a real value."
+paths = ['''(^|/)tests/Unit/Rmm/RedactorHardeningTest\.php$''']

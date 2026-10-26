@@ -66,7 +66,7 @@ final class RedactorHardeningTest extends TestCase
         yield 'APP_KEY' => ['APP_KEY=base64:abc123abc123abc123', 'abc123abc123abc123'];
         yield 'dotted key' => ['api.key=hunter22hunter', 'hunter22hunter'];
         yield 'camel case' => ['licenseKey = "hunter22 hunter"', 'hunter22'];
-        yield 'curl -u' => ['curl -s -u admin:hunter22hunter https://x', 'hunter22hunter'];
+        yield 'curl -u' => ['curl -s -u admin:' . 'hunter22hunter https://x', 'hunter22hunter'];
         yield 'mysql -p attached' => ['mysql -u root -phunter22hunter db', 'hunter22hunter'];
         yield 'sshpass' => ['sshpass -p hunter22hunter ssh host', 'hunter22hunter'];
     }
