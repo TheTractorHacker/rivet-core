@@ -136,7 +136,8 @@ final class DataStoreInfoPostgresTest extends RmmTestCase
         $changed = $this->h->module->dataStoreInfo()->report();
         $this->assertSame([$latest], $changed['postgres']['schema']['changed']);
         $this->assertFalse($changed['postgres']['schema']['up_to_date']);
-        $this->assertSame('PostgreSQL ' . $changed['postgres']['server_version'] . ' (' . $changed['postgres']['storage_mode'] . ') - schema ' . $latest . ', 1 changed', DataStoreInfo::summaryLine($changed));
+        $mode = $changed['postgres']['storage_mode'] . ($changed['postgres']['timescale_version'] !== null && $changed['postgres']['storage_mode'] === 'timescale' ? ' ' . $changed['postgres']['timescale_version'] : '');   // summaryLine adds the TimescaleDB version in timescale mode
+        $this->assertSame('PostgreSQL ' . $changed['postgres']['server_version'] . ' (' . $mode . ') - schema ' . $latest . ', 1 changed', DataStoreInfo::summaryLine($changed));
 
         $own->execute('DELETE FROM rivet_core_pg_migrations');
         $pending = $this->h->module->dataStoreInfo()->report();
