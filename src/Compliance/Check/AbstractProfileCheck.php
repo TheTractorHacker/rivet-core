@@ -71,22 +71,23 @@ abstract class AbstractProfileCheck implements CheckInterface
         return $at->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i') . ' UTC';
     }
 
-    /** "3 days 4 hours", "5 hours 10 minutes", "12 minutes". */
+    /** "3 days 4 hours", "5 hours 10 minutes", "1 hour", "12 minutes". */
     protected static function span(int $seconds): string
     {
         $seconds = max(0, $seconds);
+        $unit = static fn (int $n, string $word): string => $n . ' ' . $word . ($n === 1 ? '' : 's');
         if ($seconds >= 2 * 86400) {
             $h = intdiv($seconds % 86400, 3600);
 
-            return intdiv($seconds, 86400) . ' days' . ($h > 0 ? ' ' . $h . ' hours' : '');
+            return $unit(intdiv($seconds, 86400), 'day') . ($h > 0 ? ' ' . $unit($h, 'hour') : '');
         }
         if ($seconds >= 3600) {
             $m = intdiv($seconds % 3600, 60);
 
-            return intdiv($seconds, 3600) . ' hours' . ($m > 0 ? ' ' . $m . ' minutes' : '');
+            return $unit(intdiv($seconds, 3600), 'hour') . ($m > 0 ? ' ' . $unit($m, 'minute') : '');
         }
 
-        return max(1, intdiv($seconds, 60)) . ' minutes';
+        return $unit(max(1, intdiv($seconds, 60)), 'minute');
     }
 
     /** The indicative control references shared by every backup check, keyed by framework. */

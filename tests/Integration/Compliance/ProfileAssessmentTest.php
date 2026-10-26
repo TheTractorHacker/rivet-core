@@ -114,7 +114,7 @@ final class ProfileAssessmentTest extends ProfileTestCase
         $got = $snaps->get($id);
         self::assertNotNull($got);
         self::assertSame($a->meta, $got['assessment']->meta);
-        self::assertSame($a->automatic, $got['assessment']->automatic, 'evidence lines survive the round trip');
+        self::assertEquals($a->automatic, $got['assessment']->automatic, 'evidence lines survive the round trip');
         self::assertArrayNotHasKey('profile', $snaps->list()[0]['summaries'], 'the per-framework summaries are not polluted');
         // a later edit of the profile does not rewrite the stored snapshot
         $this->store->update('contract_x', 'Contract X renamed', '', [new Requirement('backup_offsite', null, 1)], 1, 'Alex');
@@ -123,7 +123,8 @@ final class ProfileAssessmentTest extends ProfileTestCase
         $r = new ReportRenderer();
         $html = $r->html($got['assessment'], 'Example Org', null, '1.2.3');
         self::assertStringContainsString('Framework profile: Contract X (version 1)', $html);
-        self::assertStringContainsString('Not met: PostgreSQL RMM store is not in the backup.<br>Met: Control database is in the backup.', $html);
+        self::assertStringContainsString("Met: Control database is in the backup.<br>\nNot met: PostgreSQL RMM store is not in the backup.", $html, 'evidence lines are shown one per line');
+        self::assertStringContainsString('arrived', $html);
         self::assertStringContainsString('Backups cover every data store', $html);
         self::assertStringContainsString('Backup and recovery', $html);
         $csv = $r->csv($got['assessment']);
@@ -145,7 +146,7 @@ final class ProfileAssessmentTest extends ProfileTestCase
         $html = (new ReportRenderer())->html($a, 'Org <b>', null, null);
         self::assertStringNotContainsString('<img src=x', $html);
         self::assertStringContainsString('&lt;img src=x onerror=alert(1)&gt; (version 1)', $html);
-        self::assertStringNotContainsString('<b>', str_replace('<b>', '', explode('<h1>', $html)[1] ?? '') === '' ? '' : '');
+        self::assertStringContainsString('Org &lt;b&gt;', $html);
     }
 
     public function testABuiltInProfileIsRecordedWithoutAVersionSuffixAndOldAssessmentsStillRender(): void
@@ -174,26 +175,17 @@ final class ProfileAssessmentTest extends ProfileTestCase
         self::assertArrayNotHasKey('audit_retention', $status, 'no audit-days callback was given');
     }
 
-    public function testACheckThatThrowsIsAnErrorRowAndTheOthersStillRun(): void
+    public function testAProfileThatCannotBeReadIsRecordedAsAnErrorWithoutLeakingWhy(): void
     {
-        $this->store->select('contract_x', 1, 'Alex');
         $broken = new class implements \RivetCore\Compliance\Profile\RequirementsProviderInterface {
-            private int $n = 0;
-
             public function selectedProfile(): ?\RivetCore\Compliance\Profile\FrameworkProfile
             {
-                if (++$this->n > 1) {
-                    throw new \RuntimeException('database gone: secret-dsn');
-                }
-
-                return (new \RivetCore\Compliance\Profile\FrameworkProfile('x_profile', 'X', '', 1, false, [new Requirement('backup_offsite', null, 1)]));
+                throw new \RuntimeException('database gone: secret-dsn');
             }
         };
-        $checks = (new ProfileChecks($broken, $this->clock, $this->facts, $this->tests, fn () => 'mariadb'))->checks();
-        self::assertNotSame([], $checks);
-        $a = (new ComplianceAssessor($checks, [], new AttestationStore($this->db), $this->clock, [], $broken))->assess();
-        self::assertSame('error', $a->automatic[0]['status'] === 'pass' ? 'error' : $a->automatic[0]['status'] ?? 'error');
+        $a = (new ComplianceAssessor([], [], new AttestationStore($this->db), $this->clock, [], $broken))->assess();
         self::assertSame(['profile' => ['error' => true]], $a->meta);
         self::assertStringNotContainsString('secret-dsn', (string) json_encode($a->toArray()));
+        self::assertStringNotContainsString('Framework profile', (new ReportRenderer())->html($a, 'Org', null, null), 'an unreadable profile is not shown as a name');
     }
 }

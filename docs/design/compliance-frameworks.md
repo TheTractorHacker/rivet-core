@@ -1,6 +1,6 @@
 # Customizable compliance frameworks (phases 1 and 2 of #92)
 
-Status: phases 1 and 2 built in 1.0.0-rc.45 (migration 0046). Phase 3 (integrity chain for hot data) and phase 4 (editions: settings page, backup integration, report page) are not built. Issue: [#92](https://github.com/TheTractorHacker/rivet-core/issues/92). Related: [#89](https://github.com/TheTractorHacker/rivet-core/issues/89) (the PostgreSQL RMM data store whose hot tables are not in the app's backup), the module guide [docs/modules/compliance.md](../modules/compliance.md), the edition prompts [compliance-edition-prompts.md](compliance-edition-prompts.md).
+Status: phases 1 and 2 built in 1.0.0-rc.44 (migration 0046). Phase 3 (integrity chain for hot data) and phase 4 (editions: settings page, backup integration, report page) are not built. Issue: [#92](https://github.com/TheTractorHacker/rivet-core/issues/92). Related: [#89](https://github.com/TheTractorHacker/rivet-core/issues/89) (the PostgreSQL RMM data store whose hot tables are not in the app's backup), the module guide [docs/modules/compliance.md](../modules/compliance.md), the edition prompts [compliance-edition-prompts.md](compliance-edition-prompts.md).
 
 ## 1. Goal
 

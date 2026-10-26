@@ -12,6 +12,7 @@ What it owns (migrations `0008` to `0011`, run through `Migration\MigrationRunne
 | `0009_compliance_shared_report` | `compliance_shared_report` (one row, `shared_id = 1`: the published snapshot) |
 | `0010_compliance_subjects` | adds `subject_id` (default 0) to the two tables above; creates `compliance_subjects` (frameworks and shared snapshot per subject) |
 | `0011_compliance_responsibilities` | `compliance_responsibilities` (who owns a section or an item) |
+| `0046_compliance_framework_profiles` | `compliance_profiles`, `compliance_profile_versions`, `compliance_profile_requirements`, `compliance_profile_selection`, `compliance_profile_selection_log`, `compliance_restore_tests` (customizable frameworks, below) |
 
 `subject_id = 0` means the installation itself; any other value is a subject the edition defines, such as an MSP customer id. `AttestationStore` and `SnapshotStore` always filter on `subject_id`, so every installation needs migration `0010`, not only multi-subject ones.
 
@@ -164,6 +165,87 @@ RetentionPolicy::floorDaysFor('soc2', RetentionPolicy::KIND_JOBS);   // 30: deli
 
 `Check\AuditTrailRecordingCheck($database, bool $recordingEnabled, string $settingsPath)` (id `audit_trail_recording`): fails when recording is off, warns when `audit_events` has no row in the last 30 days, otherwise passes. `Check\RetentionMeetsPresetCheck($profile, $logDays, $auditDays, $settingsPath)` (id `log_retention`): warns when no preset is chosen, fails when either horizon is below the floor.
 
+## Customizable frameworks (1.0.0-rc.44; migration 0046; opt-in)
+
+A framework is data: a list of requirements an administrator can create, copy from a built-in, edit (every change is a new version), export and import. Core checks each requirement with evidence, enforces the retention ones in the RMM settings, and reports through the assessor, snapshots and reports above. Nothing changes until an edition selects a profile. Design, data model, JSON schema and decisions: [docs/design/compliance-frameworks.md](../design/compliance-frameworks.md). Edition prompts: [docs/design/compliance-edition-prompts.md](../design/compliance-edition-prompts.md).
+
+### Profiles: `Compliance\Profile`
+
+| Class | What it is |
+|---|---|
+| `DataClass` | ids of the data classes: `audit_events`, `rmm_logs`, `change_records`, `check_history`, `software_history`, `patch_history`, `deployment_history`, `metrics_hourly`, `metrics_daily`, `backups` |
+| `RequirementType` | `retention_min` (days, per data class), `backup_rpo_max` (hours), `backup_covers_all_stores`, `backup_offsite`, `backup_encrypted` (yes/no), `restore_test_max_age` (days), `tamper_evidence` (yes/no, per class; reported "not available" until phase 3) |
+| `Requirement`, `FrameworkProfile` | immutable, always valid; the constructor refuses what the type does not allow |
+| `BuiltInProfiles` | the five built-ins, derived on every call from `Framework::LABELS` and `RetentionPolicy::PROFILES` (one requirement: `retention_min` on `audit_events`); read-only |
+| `FrameworkProfileStore` | custom profiles in the database: `list`, `get($key, $version)`, `create`, `copy`, `update` (new version only when the content changed; `expectedVersion` refuses a stale edit), `revertTo`, `archive`, `unarchive`, `delete` (only a never-selected profile), `history`, `diff`, `select`/`selectedProfile`/`selectedKey`/`selectionLog`, `retentionFloors`, `export`, `import` |
+| `ProfileCodec` | the strict JSON codec behind export/import (unknown keys, types, bounds, sizes, secrets) |
+| `RetentionFloors` | the selected profile's retention minimums for the RMM settings |
+
+```php
+use RivetCore\Compliance\Profile\{FrameworkProfileStore, Requirement, RequirementType};
+
+$profiles = new FrameworkProfileStore($db, $clock, fn (string $action, array $details) => $audit->log(/* ... */));
+$profiles->copy('hipaa', 'hipaa_plus', 'HIPAA plus backups', $userId, $userName);
+$profiles->update('hipaa_plus', 'HIPAA plus backups', '', [
+    new Requirement(RequirementType::RETENTION_MIN, 'audit_events', 2190),
+    new Requirement(RequirementType::BACKUP_ENCRYPTED, null, 1),
+    new Requirement(RequirementType::RESTORE_TEST_MAX_AGE, null, 365),
+], $userId, $userName, 'Added backup requirements');
+$profiles->select('hipaa_plus', $userId, $userName);       // null clears the selection
+$json = $profiles->export('hipaa_plus');                    // share it
+$profiles->import($json, $userId, $userName, 'hipaa_plus_copy');   // throws ProfileValidationException with every problem found
+```
+
+Every writing method needs a user name (attribution) and throws `ProfileValidationException` (an `\InvalidArgumentException`; `errors()` lists all messages, safe to show) for a built-in, an unknown profile, an existing key, a stale edit, a selected profile that cannot be archived or deleted, or invalid content. **Core has no permissions: the edition must gate every call behind its highest administrative permission.**
+
+### Checks and facts
+
+`Check\ProfileChecks` builds the checks the selected profile asks for (none when no profile is selected). Add them to the assessor and pass the store as the last argument so snapshots record the profile name and version:
+
+```php
+use RivetCore\Compliance\Check\ProfileChecks;
+
+$checks = (new ProfileChecks($profiles, $clock, $backupFacts, $restoreTests, fn () => $module->settings()->dataStore(),
+    $module->dataStores(), $module->settings(), $module->remoteSettings(), $module->changeSettings(), fn () => $auditDays, '/admin/compliance'))->checks();
+$assessor = new ComplianceAssessor([...$editionChecks, ...$checks], $manualItems, $attestations, $clock, $responsible, $profiles);
+```
+
+| Check id | Requirement | Fails when |
+|---|---|---|
+| `backup_coverage` | `backup_covers_all_stores` | the newest successful backup lacks the control database, or the PostgreSQL RMM store while `data_store` is `postgres` |
+| `backup_recency` | `backup_rpo_max` | the newest successful backup is older than the limit (late by less than 10 %, at least an hour, is a warning) |
+| `backup_encrypted` | `backup_encrypted` | the newest backup is not encrypted (unknown is a warning) |
+| `backup_offsite` | `backup_offsite` | no off-site copy arrived, or it is older than the RPO |
+| `backup_retention` | `retention_min` on `backups` | backup sets are kept fewer days |
+| `restore_test_recency` | `restore_test_max_age` | no test, a failed newest test, or one too old; warns for a test without matching row counts or without the PostgreSQL store |
+| `data_store_retention` | `retention_min` on an RMM class | an RMM history of the ACTIVE store is kept fewer days; warns for a nearly full row cap, unreadable store, or minimums not enforced by the settings |
+| `audit_retention` | `retention_min` on `audit_events` | audit events are kept fewer days |
+| `integrity_chain` | `tamper_evidence` | always, with "Not available: not implemented in this release" (phase 3) |
+
+Results carry evidence lines (`Met:`, `Not met:`, `Evidence:`, `Caveat:`) in `detail`. With no profile, or a profile that does not ask for a check, the check is "not applicable" and left out of the score.
+
+**`Backup\BackupFactsProviderInterface`** (`@api`, the edition implements it): `backupFacts(): BackupFacts` reports what the newest successful backup did: `lastSuccessAt`, `includedStores` (`BackupStore::CONTROL_DB`, `RMM_POSTGRES`), `destinations` (`local`, `offsite`), `lastOffsiteSuccessAt`, `encrypted`, `encryptionMethod`, `retentionDays`, and optionally `lastRestoreTest`. Read it from the backup's own record (a log row, a manifest, the last exit status), never from configuration; never throw (return `BackupFacts::unavailable()`); never include a secret. `Backup\UnavailableBackupFactsProvider` is the honest default. Run `Testing\BackupFactsProviderConformanceTestCase` in the edition's tests.
+
+### Restore tests
+
+```php
+use RivetCore\Compliance\Backup\{BackupStore, RestoreTestStore, RowCounts};
+
+$tests = new RestoreTestStore($db, $clock);
+$before = RowCounts::control($db, ['audit_events', 'compliance_snapshots']);          // on the source, around the backup
+// ... restore into a scratch copy, then count again there:
+$after = RowCounts::control($scratch, ['audit_events', 'compliance_snapshots']);
+$verify = RestoreTestStore::verifySummary(file_get_contents('rmm-store-verify.json')); // output of scripts/rmm-store-verify.php --json
+$tests->record(new \DateTimeImmutable('now'), true, [BackupStore::CONTROL_DB, BackupStore::RMM_POSTGRES], 'postgres', $backupTakenAt,
+    [...RestoreTestStore::pairCounts('control_db', $before, $after), ...RestoreTestStore::pairCounts('rmm_postgres', $pgBefore, $pgAfter)], $verify, 420, 'Restored on a scratch VM', $userId, $userName);
+```
+
+`record()` refuses a passed test whose row counts differ, a count for a store that was not tested, a future date, an invalid table name (counts only cover tables Core knows) and a note with a secret. Records are append-only.
+
+### Retention enforcement
+
+Give the module the option `retention_floors` (`RetentionFloors::fromStore($profiles)`). Then `RmmSettings::update()`, `RemoteSettings::update()` and `ChangeSettings::update()` refuse a retention below the selected framework's minimum with a message that names the framework and the requirement, `limits()` never answers less than the minimum, and the housekeeping (including the metric tiers, `RmmSettings::effectiveExplicitLimits()`) never deletes younger rows. For the audit trail call `RetentionFloors::effectiveDays('audit_events', $days)` before `RetentionService::prune()`. Without the option nothing changes. A minimum above a setting's own maximum applies over it (design note 4.4).
+
 ## Configuration
 
 Core has no configuration keys for this module. The edition decides which frameworks to offer, which checks and manual items exist, how often snapshots are taken (`trigger` `scheduled` is for cron), and where the "fix" links point. `ManualItem::$intervalDays` is per item. The retention preset is an edition setting passed to `RetentionPolicy`/`RetentionService`.
@@ -200,6 +282,6 @@ RivetMSP (`/home/sysadmin/rivetmsp-beta`):
 
 ## Links
 
-- [CHANGELOG](../../CHANGELOG.md): 0.8.0 (`RetentionPolicy`), 0.9.0 (engine, migration 0008), 0.10.0 (`SharedReport`), 0.11.0 (`SubjectCompliance`, `ClientChecklist`), 0.12.0 (NIST 800-171, `Nist171Map`), 0.13.0 (`nist171` retention preset), 0.14.0 (`ResponsibilityStore`), 0.18.1 (`RetentionService` floors).
+- [CHANGELOG](../../CHANGELOG.md): 0.8.0 (`RetentionPolicy`), 0.9.0 (engine, migration 0008), 0.10.0 (`SharedReport`), 0.11.0 (`SubjectCompliance`, `ClientChecklist`), 0.12.0 (NIST 800-171, `Nist171Map`), 0.13.0 (`nist171` retention preset), 0.14.0 (`ResponsibilityStore`), 0.18.1 (`RetentionService` floors), 1.0.0-rc.44 (customizable frameworks, migration 0046).
 - [Writing an edition adapter](../adapters.md), [modules overview](README.md), [ROADMAP](../../ROADMAP.md).
-- Tests: `tests/Unit/ComplianceEngineTest.php`, `tests/Unit/Nist171Test.php`, `tests/Unit/RetentionPolicyTest.php`, `tests/Integration/ComplianceStoreTest.php`, `tests/Integration/SubjectComplianceTest.php`.
+- Tests: `tests/Unit/Compliance/` (profiles, codec, built-in golden, backup checks), `tests/Integration/Compliance/` (store, restore tests, retention enforcement, MariaDB retention check, assessor/snapshot/report), `tests/Integration/Rmm/Postgres/DataStoreRetentionPostgresTest.php`, `tests/Conformance/BackupFactsKitTest.php`, `tests/Unit/ComplianceEngineTest.php`, `tests/Unit/Nist171Test.php`, `tests/Unit/RetentionPolicyTest.php`, `tests/Integration/ComplianceStoreTest.php`, `tests/Integration/SubjectComplianceTest.php`.
