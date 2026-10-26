@@ -27,7 +27,7 @@ final class PostgresSchemaTest extends TestCase
     public function testTheMigratorCreatesEveryHotTableAndIsIdempotent(): void
     {
         $first = PostgresTestDatabase::reset($this->db);
-        $this->assertSame(['0001_hot_tables'], $first['applied']);
+        $this->assertSame(['0001_hot_tables', '0002_reporting_views'], $first['applied']);
         foreach (PostgresSchema::TABLES as $t) {
             $this->assertTrue((bool) $this->db->value('SELECT to_regclass(?) IS NOT NULL', [$t]), "$t exists");
         }
@@ -175,9 +175,9 @@ final class PostgresSchemaTest extends TestCase
             $applied[] = json_decode((string) stream_get_contents($outs[$i][1]), true);
             proc_close($p);
         }
-        $this->assertCount(1, array_filter($applied, static fn ($a): bool => $a === ['0001_hot_tables']), 'exactly one updater applied the migration: ' . json_encode($applied));
+        $this->assertCount(1, array_filter($applied, static fn ($a): bool => $a === ['0001_hot_tables', '0002_reporting_views']), 'exactly one updater applied the migration: ' . json_encode($applied));
         $this->assertCount(2, array_filter($applied, static fn ($a): bool => $a === []));
-        $this->assertSame(1, (int) $this->db->value('SELECT COUNT(*) FROM ' . PostgresMigrator::LEDGER));
+        $this->assertSame(2, (int) $this->db->value('SELECT COUNT(*) FROM ' . PostgresMigrator::LEDGER));
     }
 
     /** @return list<string> */
