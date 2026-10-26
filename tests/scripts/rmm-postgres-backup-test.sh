@@ -8,7 +8,7 @@ src=${RIVETCORE_TEST_PG_NAME:-}
 if ! command -v docker >/dev/null 2>&1 || [ -z "$src" ] || [[ $src != *scratch* ]]; then echo "SKIP: docker or a scratch RIVETCORE_TEST_PG_NAME missing"; exit 0; fi
 host=${RIVETCORE_TEST_PG_HOST:-127.0.0.1}; port=${RIVETCORE_TEST_PG_PORT:-5432}; user=${RIVETCORE_TEST_PG_USER:-rivet}
 export PGPASSWORD=${RIVETCORE_TEST_PG_PASS:-}
-img=${RMM_TEST_PG_IMAGE:-postgres:16}
+img=${RMM_TEST_PG_IMAGE:-postgres:18}
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 for t in pg_dump pg_restore psql; do
     printf '#!/usr/bin/env bash\nexec docker run --rm -i --network host -e PGPASSWORD -e PGSSLMODE %s %s "$@"\n' "$img" "$t" > "$tmp/$t"; chmod +x "$tmp/$t"

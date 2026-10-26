@@ -33,6 +33,9 @@ final class DataStoreSwitch
 {
     public const MIN_POSTGRES_MAJOR = 14;
 
+    /** The version new installs should run (the one the CI and the docs treat as primary); older supported versions get a non-blocking note. */
+    public const RECOMMENDED_POSTGRES_MAJOR = 18;
+
     /** What the edition must show next to the "Switch" button. */
     public const NO_DATA_MOVE_NOTICE = 'Switching the data store does not move existing history. Everything the RMM recorded so far stays in the current store and is no longer shown; '
         . 'new data is written to the new one. Use "Migrate data" to copy the history first (recommended), or accept that it stays behind. Switching back makes the old history visible again.';
@@ -166,6 +169,9 @@ final class DataStoreSwitch
                 return $fail('version', 'PostgreSQL ' . $version . ' is too old; ' . self::MIN_POSTGRES_MAJOR . ' or newer is required.') + $out;
             }
             $out['checks'][] = ['name' => 'version', 'ok' => true, 'message' => 'PostgreSQL ' . $version . '.'];
+            if ($major < self::RECOMMENDED_POSTGRES_MAJOR) {
+                $out['warnings'][] = 'PostgreSQL ' . self::RECOMMENDED_POSTGRES_MAJOR . ' is the recommended version (this server runs ' . $version . '; it is supported).';
+            }
             $tz = (string) $db->value("SELECT current_setting('TimeZone')");
             $off = (string) $db->value("SELECT (EXTRACT(TIMEZONE FROM now()))::int");
             if (!in_array(strtoupper($tz), ['UTC', 'ETC/UTC'], true) || $off !== '0') {

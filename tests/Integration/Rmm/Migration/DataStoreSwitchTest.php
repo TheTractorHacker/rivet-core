@@ -7,6 +7,7 @@ namespace RivetCore\Tests\Integration\Rmm\Migration;
 use RivetCore\Rmm\Store\DataStoreSwitch;
 use RivetCore\Rmm\Store\Postgres\Pdo\PdoPostgresConnection;
 use RivetCore\Rmm\Store\Postgres\PostgresConfig;
+use RivetCore\Rmm\Store\Postgres\PostgresConnectionInterface;
 use RivetCore\Tests\Support\PostgresTestDatabase;
 use RivetCore\Tests\Support\RmmTestCase;
 
@@ -114,6 +115,86 @@ final class DataStoreSwitchTest extends RmmTestCase
         $this->assertFalse($r['ok']);
         $this->assertStringContainsString('does not move existing history', $r['errors'][0]);
         $this->assertSame('mariadb', $this->h->module->settings()->dataStore());
+    }
+
+    /** A connection that reports another server version and is otherwise the real one. */
+    private function versionSwitch(string $reported): DataStoreSwitch
+    {
+        return new DataStoreSwitch($this->h->module->sql(), $this->h->module->settings(), $this->h->box, $this->h->audit, static function (PostgresConfig $c) use ($reported): PostgresConnectionInterface {
+            $inner = new PdoPostgresConnection($c);
+
+            return new class ($inner, $reported) implements PostgresConnectionInterface {
+                public function __construct(private readonly PostgresConnectionInterface $inner, private readonly string $version)
+                {
+                }
+
+                public function query(string $sql, array $params = []): array
+                {
+                    return $this->inner->query($sql, $params);
+                }
+
+                public function queryOne(string $sql, array $params = []): ?array
+                {
+                    return $this->inner->queryOne($sql, $params);
+                }
+
+                public function value(string $sql, array $params = []): mixed
+                {
+                    return $this->inner->value($sql, $params);
+                }
+
+                public function execute(string $sql, array $params = []): int
+                {
+                    return $this->inner->execute($sql, $params);
+                }
+
+                public function transaction(callable $callback): mixed
+                {
+                    return $this->inner->transaction($callback);
+                }
+
+                public function inTransaction(): bool
+                {
+                    return $this->inner->inTransaction();
+                }
+
+                public function serverVersion(): string
+                {
+                    return $this->version;
+                }
+
+                public function close(): void
+                {
+                    $this->inner->close();
+                }
+            };
+        });
+    }
+
+    public function testTheConnectionTestShowsTheExactServerVersion(): void
+    {
+        $t = $this->sw->testConnection($this->form());
+        $this->assertTrue($t['ok'], json_encode($t));
+        $this->assertNotSame('', (string) $t['server_version']);
+        $messages = array_column(array_filter($t['checks'], static fn (array $c): bool => $c['name'] === 'version'), 'message');
+        $this->assertSame(['PostgreSQL ' . $t['server_version'] . '.'], array_values($messages));
+    }
+
+    public function testAServerBelowTheRecommendedVersionGetsANonBlockingNoteAndOldOnesAreRefused(): void
+    {
+        $t = $this->versionSwitch('16.4 (Debian 16.4-1)')->testConnection($this->form());
+        $this->assertTrue($t['ok'], json_encode($t));
+        $this->assertSame('16.4 (Debian 16.4-1)', $t['server_version']);
+        $this->assertCount(1, array_filter($t['warnings'], static fn (string $w): bool => str_contains($w, 'PostgreSQL 18 is the recommended version')));
+
+        $t = $this->versionSwitch('18.6 (Debian 18.6-1)')->testConnection($this->form());
+        $this->assertTrue($t['ok'], json_encode($t));
+        $this->assertSame([], array_filter($t['warnings'], static fn (string $w): bool => str_contains($w, 'recommended version')));
+
+        $t = $this->versionSwitch('13.14')->testConnection($this->form());
+        $this->assertFalse($t['ok']);
+        $this->assertSame('13.14', $t['server_version']);
+        $this->assertStringContainsString('too old', json_encode($t));
     }
 
     public function testASuccessfulSwitchTestsMigratesTheSchemaAndWritesTheSetting(): void
