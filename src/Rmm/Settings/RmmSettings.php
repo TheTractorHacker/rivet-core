@@ -276,6 +276,8 @@ final class RmmSettings
     /** @var array<string,mixed>|null */
     private ?array $cache = null;
 
+    private ?RetentionFloorsInterface $floors = null;
+
     /** @var (\Closure(): void)|null called after a write that touches a column the state file mirrors */
     private ?\Closure $stateListener = null;
 
@@ -337,6 +339,21 @@ final class RmmSettings
     public function enabled(): bool
     {
         return (int) ($this->get()['enabled'] ?? 0) === 1;
+    }
+
+    /**
+     * Minimum retention imposed from outside (the selected compliance framework, {@see RetentionFloorsInterface}). With one set, {@see update()} refuses a
+     * retention limit below its floor (and names the framework) and {@see limits()} / {@see explicitLimits()} never answer less than the floor, so housekeeping
+     * cannot delete younger rows. Null (the default) changes nothing.
+     */
+    public function setRetentionFloors(?RetentionFloorsInterface $floors): void
+    {
+        $this->floors = $floors;
+    }
+
+    public function retentionFloors(): ?RetentionFloorsInterface
+    {
+        return $this->floors;
     }
 
     /** @return list<string> every column {@see set()} may write */
@@ -457,8 +474,17 @@ final class RmmSettings
         }
         if (array_key_exists('limits_json', $in)) {
             [$l, $e] = self::validateLimits($in['limits_json']);
+            if ($e === null && $l !== null && $this->floors !== null) {
+                $below = RetentionClasses::violations((array) json_decode($l, true), RetentionClasses::SOURCE_RMM, $this->floors);
+                if ($below !== []) {
+                    array_push($err, ...$below);
+                    $e = $below[0];
+                }
+            }
             if ($e !== null) {
-                $err[] = $e;
+                if (!in_array($e, $err, true)) {
+                    $err[] = $e;
+                }
             } else {
                 $out['limits_json'] = $l;
             }
@@ -581,7 +607,7 @@ final class RmmSettings
             }
         }
 
-        return $out;
+        return RetentionClasses::raise($out, RetentionClasses::SOURCE_RMM, $this->floors);
     }
 
     /**
@@ -603,7 +629,7 @@ final class RmmSettings
             }
         }
 
-        return $out;
+        return RetentionClasses::raise($out, RetentionClasses::SOURCE_RMM, $this->floors);
     }
 
     /**

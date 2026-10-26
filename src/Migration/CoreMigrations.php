@@ -12,6 +12,7 @@ use RivetCore\Compliance\Migration\Migration0008Compliance;
 use RivetCore\Compliance\Migration\Migration0009SharedReport;
 use RivetCore\Compliance\Migration\Migration0010Subjects;
 use RivetCore\Compliance\Migration\Migration0011Responsibilities;
+use RivetCore\Compliance\Migration\Migration0046FrameworkProfiles;
 use RivetCore\ITSM\Migration\Migration0004ProblemsAndChanges;
 use RivetCore\Mcp\Migration\Migration0003McpUnlinkedIdentities;
 use RivetCore\Mcp\Migration\Migration0017McpIdentityBinaryCollation;
@@ -103,6 +104,7 @@ final class CoreMigrations
             new Migration0042RmmDataStore(),
             new Migration0043RmmStoreDenormalisation(),
             new Migration0044RmmStoreSwitch(),
+            new Migration0046FrameworkProfiles(),
         ];
     }
 }

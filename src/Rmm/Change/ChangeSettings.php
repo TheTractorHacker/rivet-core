@@ -48,6 +48,7 @@ final class ChangeSettings
 
     /** @var array<string,mixed>|null */
     private ?array $cache = null;
+    private ?\RivetCore\Rmm\Settings\RetentionFloorsInterface $floors = null;
     /** @var array<string,list<array<string,mixed>>> */
     private array $watchCache = [];
 
@@ -83,6 +84,21 @@ final class ChangeSettings
 
     /** @return array<string,int> */
     public function limits(): array
+    {
+        return \RivetCore\Rmm\Settings\RetentionClasses::raise($this->storedLimits(), \RivetCore\Rmm\Settings\RetentionClasses::SOURCE_CHANGE, $this->floors);
+    }
+
+    /**
+     * Minimum retention imposed from outside (the selected compliance framework): {@see update()} refuses a change-record retention below it and
+     * {@see limits()} never answers less. Null (the default) changes nothing.
+     */
+    public function setRetentionFloors(?\RivetCore\Rmm\Settings\RetentionFloorsInterface $floors): void
+    {
+        $this->floors = $floors;
+    }
+
+    /** @return array<string,int> the limits as stored, without any floor (what {@see update()} merges into) */
+    private function storedLimits(): array
     {
         $out = array_map(static fn (array $l): int => $l[2], self::LIMITS);
         $raw = $this->row()['limits_json'] ?? null;
@@ -348,11 +364,12 @@ final class ChangeSettings
         }
         $limits = null;
         if (array_key_exists('limits', $in)) {
-            $limits = $this->limits();
+            $limits = $this->storedLimits();
             $d = $in['limits'];
             if (!is_array($d)) {
                 $err[] = 'limits must be an object of limit name to whole number.';
             } else {
+                array_push($err, ...\RivetCore\Rmm\Settings\RetentionClasses::violations($d, \RivetCore\Rmm\Settings\RetentionClasses::SOURCE_CHANGE, $this->floors));
                 foreach ($d as $k => $v) {
                     $k = (string) $k;
                     if (!isset(self::LIMITS[$k])) {

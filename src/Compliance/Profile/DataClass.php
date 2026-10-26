@@ -8,8 +8,8 @@ namespace RivetCore\Compliance\Profile;
  * The classes of data a compliance profile can set requirements for. The ids are stored in profiles and exported files: never rename or reuse one.
  *
  * `scope` says who owns the data: `control` (Core's own tables: the audit trail), `rmm_hot` (the hot RMM tables, in whichever store is active) or `backup`
- * (the backup set the edition produces). For `rmm_hot` classes `source` and `key` name the retention setting that governs the class
- * (`rmm` = RmmSettings limits, `remote` = RemoteSettings limits, `change` = ChangeSettings limits); {@see \RivetCore\Rmm\Settings\RetentionClasses} binds them.
+ * (the backup set the edition produces). `tables` are the tables the class lives in. The retention setting that governs an `rmm_hot` class is bound in
+ * {@see \RivetCore\Rmm\Settings\RetentionClasses}, so this model does not depend on the RMM module.
  *
  * @api
  */
@@ -30,24 +30,20 @@ final class DataClass
     public const SCOPE_RMM_HOT = 'rmm_hot';
     public const SCOPE_BACKUP = 'backup';
 
-    public const SOURCE_RMM = 'rmm';
-    public const SOURCE_REMOTE = 'remote';
-    public const SOURCE_CHANGE = 'change';
-
     /**
-     * @var array<string, array{label:string, scope:string, source:?string, key:?string, tables:list<string>}>
+     * @var array<string, array{label:string, scope:string, tables:list<string>}>
      */
     public const ALL = [
-        self::AUDIT_EVENTS => ['label' => 'Audit events', 'scope' => self::SCOPE_CONTROL, 'source' => null, 'key' => null, 'tables' => ['audit_events']],
-        self::RMM_LOGS => ['label' => 'RMM logs', 'scope' => self::SCOPE_RMM_HOT, 'source' => self::SOURCE_REMOTE, 'key' => 'logs_retention_days', 'tables' => ['endpoint_agent_log_events']],
-        self::CHANGE_RECORDS => ['label' => 'Change records', 'scope' => self::SCOPE_RMM_HOT, 'source' => self::SOURCE_CHANGE, 'key' => 'change_retention_days', 'tables' => ['endpoint_agent_change_records']],
-        self::CHECK_HISTORY => ['label' => 'Check history', 'scope' => self::SCOPE_RMM_HOT, 'source' => self::SOURCE_RMM, 'key' => 'check_history_days', 'tables' => ['endpoint_agent_check_history']],
-        self::SOFTWARE_HISTORY => ['label' => 'Software history', 'scope' => self::SCOPE_RMM_HOT, 'source' => self::SOURCE_RMM, 'key' => 'software_history_days', 'tables' => ['rmm_software_history']],
-        self::PATCH_HISTORY => ['label' => 'Patch history', 'scope' => self::SCOPE_RMM_HOT, 'source' => self::SOURCE_RMM, 'key' => 'patch_history_days', 'tables' => ['rmm_patch_history']],
-        self::DEPLOYMENT_HISTORY => ['label' => 'Software deployment history', 'scope' => self::SCOPE_RMM_HOT, 'source' => self::SOURCE_RMM, 'key' => 'software_deploy_history_days', 'tables' => ['rmm_package_history']],
-        self::METRICS_HOURLY => ['label' => 'Metrics (hourly)', 'scope' => self::SCOPE_RMM_HOT, 'source' => self::SOURCE_RMM, 'key' => 'metric_hourly_days', 'tables' => ['rmm_metric_hourly']],
-        self::METRICS_DAILY => ['label' => 'Metrics (daily)', 'scope' => self::SCOPE_RMM_HOT, 'source' => self::SOURCE_RMM, 'key' => 'metric_daily_days', 'tables' => ['rmm_metric_daily']],
-        self::BACKUPS => ['label' => 'Backups', 'scope' => self::SCOPE_BACKUP, 'source' => null, 'key' => null, 'tables' => []],
+        self::AUDIT_EVENTS => ['label' => 'Audit events', 'scope' => self::SCOPE_CONTROL, 'tables' => ['audit_events']],
+        self::RMM_LOGS => ['label' => 'RMM logs', 'scope' => self::SCOPE_RMM_HOT, 'tables' => ['endpoint_agent_log_events']],
+        self::CHANGE_RECORDS => ['label' => 'Change records', 'scope' => self::SCOPE_RMM_HOT, 'tables' => ['endpoint_agent_change_records']],
+        self::CHECK_HISTORY => ['label' => 'Check history', 'scope' => self::SCOPE_RMM_HOT, 'tables' => ['endpoint_agent_check_history']],
+        self::SOFTWARE_HISTORY => ['label' => 'Software history', 'scope' => self::SCOPE_RMM_HOT, 'tables' => ['rmm_software_history']],
+        self::PATCH_HISTORY => ['label' => 'Patch history', 'scope' => self::SCOPE_RMM_HOT, 'tables' => ['rmm_patch_history']],
+        self::DEPLOYMENT_HISTORY => ['label' => 'Software deployment history', 'scope' => self::SCOPE_RMM_HOT, 'tables' => ['rmm_package_history']],
+        self::METRICS_HOURLY => ['label' => 'Metrics (hourly)', 'scope' => self::SCOPE_RMM_HOT, 'tables' => ['rmm_metric_hourly']],
+        self::METRICS_DAILY => ['label' => 'Metrics (daily)', 'scope' => self::SCOPE_RMM_HOT, 'tables' => ['rmm_metric_daily']],
+        self::BACKUPS => ['label' => 'Backups', 'scope' => self::SCOPE_BACKUP, 'tables' => []],
     ];
 
     /** Longest minimum a profile may ask for: 100 years. */
