@@ -103,7 +103,11 @@ final class RedisConnectionConfig implements \JsonSerializable
         return null;
     }
 
-    /** The password never leaves through json_encode(). @return array<string,mixed> */
+    /**
+     * The password never leaves through json_encode().
+     *
+     * @return array<string,mixed>
+     */
     public function jsonSerialize(): array
     {
         return [
