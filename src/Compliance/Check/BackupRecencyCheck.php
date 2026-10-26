@@ -52,7 +52,7 @@ final class BackupRecencyCheck extends AbstractBackupCheck
         if ($facts->lastSuccessAt === null) {
             return $this->noBackup();
         }
-        $hours = $profile->requirement(RequirementType::BACKUP_RPO_MAX)?->value ?? 24;
+        $hours = $profile->requirement(RequirementType::BACKUP_RPO_MAX)->value ?? 24;
         $limit = $hours * 3600;
         $age = $this->ageSeconds($facts->lastSuccessAt);
         $m = ['age_hours' => round($age / 3600, 1), 'max_hours' => $hours];

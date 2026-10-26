@@ -135,7 +135,8 @@ final class RetentionEnforcementTest extends RmmTestCase
         self::assertSame(14, $this->h->module->settings()->explicitLimits()['check_history_days']);
         $this->select('check_history', 90);
         self::assertSame(90, $this->h->module->settings()->limits()['check_history_days']);
-        self::assertSame(90, $this->h->module->settings()->explicitLimits()['check_history_days'], 'explicit limits feed the housekeeping too');
+        self::assertSame(14, $this->h->module->settings()->explicitLimits()['check_history_days'], 'the stored explicit value is untouched');
+        self::assertSame(90, $this->h->module->settings()->effectiveExplicitLimits(14, 400)['check_history_days'], 'the housekeeping applies the minimum');
         self::assertSame(200, $this->h->module->settings()->limits()['metric_daily_days'], 'a class without a minimum is untouched');
         $row = json_decode((string) $this->h->one('SELECT limits_json FROM endpoint_agent_settings WHERE id = 1'), true);
         self::assertSame(14, $row['check_history_days'], 'the database row still holds what the administrator saved');

@@ -69,7 +69,7 @@ final class RowCounts
     {
         $known = self::tables();
         foreach ($tables as $t) {
-            if (!is_string($t) || !in_array($t, $known, true)) {
+            if (!in_array($t, $known, true)) {
                 throw new \InvalidArgumentException('That table cannot be counted.');
             }
         }

@@ -62,7 +62,11 @@ final class ProfileChecks
         return array_values(array_filter($this->build($source), static fn (AbstractProfileCheck $c): bool => $c->appliesTo($profile)));
     }
 
-    /** Every check, whether or not the profile asks for it (each answers "not applicable" when it does not). @return list<\RivetCore\Compliance\CheckInterface> */
+    /**
+     * Every check, whether or not the profile asks for it (each answers "not applicable" when it does not).
+     *
+     * @return list<\RivetCore\Compliance\CheckInterface>
+     */
     public function all(): array
     {
         return $this->build($this->profiles);

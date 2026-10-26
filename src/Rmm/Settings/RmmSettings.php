@@ -343,8 +343,8 @@ final class RmmSettings
 
     /**
      * Minimum retention imposed from outside (the selected compliance framework, {@see RetentionFloorsInterface}). With one set, {@see update()} refuses a
-     * retention limit below its floor (and names the framework) and {@see limits()} / {@see explicitLimits()} never answer less than the floor, so housekeeping
-     * cannot delete younger rows. Null (the default) changes nothing.
+     * retention limit below its floor (and names the framework) and {@see limits()} never answers less than the floor, so housekeeping
+     * cannot delete younger rows ({@see effectiveExplicitLimits()} covers the metric tiers). Null (the default) changes nothing.
      */
     public function setRetentionFloors(?RetentionFloorsInterface $floors): void
     {
@@ -629,7 +629,32 @@ final class RmmSettings
             }
         }
 
-        return RetentionClasses::raise($out, RetentionClasses::SOURCE_RMM, $this->floors);
+        return $out;
+    }
+
+    /**
+     * {@see explicitLimits()} as the housekeeping must apply it: with the selected framework's minimums (see {@see setRetentionFloors()}) raised over what is
+     * stored, and over what the metric store keeps when the administrator stored nothing for a metric tier (`$hourlyDefault` / `$dailyDefault` are that store's
+     * own retention). A retention that is already at or above its minimum is left exactly as it was, so without floors this IS {@see explicitLimits()}.
+     *
+     * @return array<string,int>
+     */
+    public function effectiveExplicitLimits(int $hourlyDefault, int $dailyDefault): array
+    {
+        $out = $this->explicitLimits();
+        if ($this->floors === null) {
+            return $out;
+        }
+        $metricDefaults = ['metric_hourly_days' => $hourlyDefault, 'metric_daily_days' => $dailyDefault];
+        foreach (RetentionClasses::classesOf(RetentionClasses::SOURCE_RMM) as $key => $class) {
+            $floor = $this->floors->floorDays($class);
+            $current = $out[$key] ?? $metricDefaults[$key] ?? null;
+            if ($floor > 0 && $current !== null && $current < $floor) {
+                $out[$key] = $floor;
+            }
+        }
+
+        return $out;
     }
 
     /**

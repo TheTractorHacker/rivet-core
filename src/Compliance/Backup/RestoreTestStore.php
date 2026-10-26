@@ -65,7 +65,7 @@ final class RestoreTestStore
             throw new \InvalidArgumentException('Say which data stores were restored.');
         }
         foreach ($stores as $s) {
-            if (!is_string($s) || !BackupStore::isValid($s)) {
+            if (!BackupStore::isValid($s)) {
                 throw new \InvalidArgumentException('Unknown data store.');
             }
         }

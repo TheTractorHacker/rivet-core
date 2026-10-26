@@ -75,6 +75,7 @@ final class ProfileCodec
      */
     public static function fromArray(mixed $doc): FrameworkProfile
     {
+        /** @var list<string> $errors */
         $errors = [];
         if (!is_array($doc) || ($doc !== [] && array_is_list($doc))) {
             throw new ProfileValidationException(['The file must be a JSON object.']);

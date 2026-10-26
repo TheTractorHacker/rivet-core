@@ -101,11 +101,10 @@ abstract class BackupFactsProviderConformanceTestCase extends TestCase
 
     public function testNoTextFieldCarriesASecret(): void
     {
-        $text = (string) json_encode([$f = $this->facts()->toArray()]);
+        $text = (string) json_encode($this->facts()->toArray());
         self::assertDoesNotMatchRegularExpression('/-----BEGIN [A-Z ]*(KEY|CERTIFICATE)/', $text);
         self::assertDoesNotMatchRegularExpression('/\b(password|passwd|secret|token|api[_-]?key|passphrase)\b\s*[:=]\s*\S+/i', $text);
         self::assertDoesNotMatchRegularExpression('/:\/\/[^\/\s:@"]+:[^\/\s@"]+@/', $text);
         self::assertDoesNotMatchRegularExpression('/\b[A-Za-z0-9+\/_-]{40,}={0,2}/', $text);
-        self::assertIsArray($f);
     }
 }

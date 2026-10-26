@@ -49,7 +49,7 @@ final readonly class BackupFacts
         public string $reason = '',
     ) {
         foreach ($includedStores as $s) {
-            if (!is_string($s) || !BackupStore::isValid($s)) {
+            if (!BackupStore::isValid($s)) {
                 throw new \InvalidArgumentException('Unknown backup store in the backup facts.');
             }
         }
@@ -70,7 +70,7 @@ final readonly class BackupFacts
             }
         }
         foreach ($includedTables as $t) {
-            if (!is_string($t) || preg_match('/^[A-Za-z0-9_.]{1,64}\z/D', $t) !== 1) {
+            if (preg_match('/^[A-Za-z0-9_.]{1,64}\z/D', $t) !== 1) {
                 throw new \InvalidArgumentException('A table name in the backup facts is not valid.');
             }
         }

@@ -22,7 +22,10 @@ final class ProfileText
         '/:\/\/[^\/\s:@]+:[^\/\s@]+@/',
     ];
 
-    /** @return string|null the cleaned text, or null with the reason added to $errors */
+    /**
+     * @param list<string> $errors
+     * @return string|null the cleaned text, or null with the reason added to $errors
+     */
     public static function clean(mixed $value, string $field, int $min, int $max, bool $multiline, array &$errors): ?string
     {
         if (!is_string($value)) {

@@ -19,7 +19,7 @@ final readonly class RestoreTestFact
     public function __construct(public \DateTimeImmutable $testedAt, public bool $passed, public array $stores = [], public ?bool $rowCountsMatch = null)
     {
         foreach ($stores as $s) {
-            if (!is_string($s) || !BackupStore::isValid($s)) {
+            if (!BackupStore::isValid($s)) {
                 throw new \InvalidArgumentException('Unknown backup store in a restore test fact.');
             }
         }

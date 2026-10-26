@@ -132,7 +132,7 @@ final class Housekeeping
         // Scale S5: roll days up and keep the time partitions; a partitioned table is pruned by dropping partitions, every other one by batched DELETE as before.
         $partitioned = [];
         if ($this->maintenance !== null) {
-            $st = $this->maintenance->run($limits, $this->settings->explicitLimits(), $this->metrics?->retentionDays() ?? 14, $this->metrics?->dailyRetentionDays() ?? 400);
+            $st = $this->maintenance->run($limits, $this->settings->effectiveExplicitLimits($this->metrics?->retentionDays() ?? 14, $this->metrics?->dailyRetentionDays() ?? 400), $this->metrics?->retentionDays() ?? 14, $this->metrics?->dailyRetentionDays() ?? 400);
             $partitioned = $st['partitioned'];
             $out['rollup_days'] = (int) ($st['rollup']['days'] ?? 0);
             $out['rollup_behind_days'] = (int) ($st['rollup']['behind_days'] ?? 0);
@@ -145,7 +145,7 @@ final class Housekeeping
         $out['pruned_software_history'] = $this->pruneStore(fn (int $n): int => $this->softwareHistory->deleteOlderThan($softwareBefore, $n));
         $out['pruned_software_removed'] = $this->prune('rmm_device_software', 'removed_at IS NOT NULL AND removed_at < ?', [$softwareBefore]);
         if ($this->metrics !== null) {
-            $explicit = $this->settings->explicitLimits();
+            $explicit = $this->settings->effectiveExplicitLimits($this->metrics->retentionDays(), $this->metrics->dailyRetentionDays());
             $out['pruned_metrics'] = $this->metrics->prune(self::PRUNE_RUN_CAP, $this->pause, $explicit['metric_hourly_days'] ?? null, $explicit['metric_daily_days'] ?? null, $partitioned);
         }
         if ($this->cache !== null) {

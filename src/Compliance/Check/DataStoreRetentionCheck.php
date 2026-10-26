@@ -92,7 +92,7 @@ final class DataStoreRetentionCheck extends AbstractProfileCheck
         $kind = $this->stores->kind();
         $storeName = $kind === RmmDataStoreKind::POSTGRES ? 'PostgreSQL' : 'MariaDB';
         $limits = $this->settings->limits();
-        $explicit = $this->settings->explicitLimits();
+        $explicit = $this->settings->effectiveExplicitLimits($this->stores->metrics()?->retentionDays() ?? 14, $this->stores->metrics()?->dailyRetentionDays() ?? 400);
         $remote = $this->remote->limits();
         $change = $this->change->limits();
 

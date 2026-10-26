@@ -51,7 +51,11 @@ final class RetentionClasses
         return $out;
     }
 
-    /** The smallest and largest value the class's own setting accepts (read from the setting, so it cannot drift), or null for a class with no such setting. @return array{0:int,1:int}|null */
+    /**
+     * The smallest and largest value the class's own setting accepts (read from the setting, so it cannot drift), or null for a class with no such setting.
+     *
+     * @return array{0:int,1:int}|null
+     */
     public static function bounds(string $class): ?array
     {
         $m = self::MAP[$class] ?? null;
@@ -59,12 +63,13 @@ final class RetentionClasses
             return null;
         }
         [$src, $key] = $m;
-        $b = match ($src) {
-            self::SOURCE_RMM => RmmSettings::limitKeys()[$key] ?? null,
-            self::SOURCE_REMOTE => RemoteSettings::LIMITS[$key] ?? null,
-            self::SOURCE_CHANGE => ChangeSettings::LIMITS[$key] ?? null,
-            default => null,
-        };
+        if ($src === self::SOURCE_RMM) {
+            $b = RmmSettings::limitKeys()[$key] ?? null;
+        } elseif ($src === self::SOURCE_REMOTE) {
+            $b = RemoteSettings::LIMITS[$key] ?? null;
+        } else {
+            $b = ChangeSettings::LIMITS[$key] ?? null;
+        }
 
         return $b === null ? null : [(int) $b[0], (int) $b[1]];
     }

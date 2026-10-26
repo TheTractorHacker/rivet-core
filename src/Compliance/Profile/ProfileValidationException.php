@@ -20,7 +20,7 @@ final class ProfileValidationException extends \InvalidArgumentException
     /** @param list<string> $errors */
     public function __construct(array $errors)
     {
-        $this->errors = array_slice(array_values($errors === [] ? ['The profile is not valid.'] : $errors), 0, self::MAX_ERRORS);
+        $this->errors = array_slice($errors === [] ? ['The profile is not valid.'] : $errors, 0, self::MAX_ERRORS);
         parent::__construct($this->errors[0]);
     }
 

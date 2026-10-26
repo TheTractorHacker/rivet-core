@@ -62,7 +62,7 @@ final class RestoreTestRecencyCheck extends AbstractProfileCheck
 
     protected function evaluate(FrameworkProfile $profile): CheckResult
     {
-        $days = $profile->requirement(RequirementType::RESTORE_TEST_MAX_AGE)?->value ?? 90;
+        $days = $profile->requirement(RequirementType::RESTORE_TEST_MAX_AGE)->value ?? 90;
         $latest = $this->latest();
         if ($latest === null) {
             return CheckResult::fail('No restore test has been recorded.', 'Not met: the framework requires a restore test every ' . $days . ' days and none is on record.', $this->settingsPath ?: null, ['required_days' => $days]);
