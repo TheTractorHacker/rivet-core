@@ -169,13 +169,14 @@ final class JobsTest extends RmmTestCase
     {
         $id = $this->queue($this->A, 'noisy');
         $this->fetch($this->TA);
-        $secrets = ['Bearer abcdefghijklmnop1234567890', 'password=Sup3rS3cret!', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U',
+        [$jwt, $jwtSignature] = \RivetCore\Tests\Unit\Rmm\RedactorTest::fixtureJwt();
+        $secrets = ['Bearer abcdefghijklmnop1234567890', 'password=Sup3rS3cret!', $jwt,
             str_repeat('ab', 32), "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----", 'ConvertTo-SecureString "hunter2hunter2" -AsPlainText',
             'api_key: AKIAIOSFODNN7EXAMPLE', 'client_secret=zzzzzzzz', 'rvte1.' . str_repeat('a', 12) . '.' . str_repeat('b', 40)];
         $noisy = "start\n" . implode("\n", $secrets) . "\nend\n" . str_repeat("line of output\n", 12000);
         $this->report($this->TA, ['job_id' => $id, 'attempt' => 1, 'state' => 'succeeded', 'exit_code' => 0, 'output' => $noisy]);
         $stored = (string) $this->h->one("SELECT output FROM endpoint_agent_jobs WHERE job_id='$id'");
-        foreach (['abcdefghijklmnop1234567890', 'Sup3rS3cret', 'dozjgNryP4J3jVmNHl0w5N', str_repeat('ab', 32), 'MIIEvQIBADANBg', 'hunter2hunter2', 'AKIAIOSFODNN7EXAMPLE', 'zzzzzzzz', str_repeat('b', 40)] as $needle) {
+        foreach (['abcdefghijklmnop1234567890', 'Sup3rS3cret', $jwtSignature, str_repeat('ab', 32), 'MIIEvQIBADANBg', 'hunter2hunter2', 'AKIAIOSFODNN7EXAMPLE', 'zzzzzzzz', str_repeat('b', 40)] as $needle) {
             $this->assertStringNotContainsString($needle, $stored);
         }
         $this->assertStringContainsString('[REDACTED]', $stored);

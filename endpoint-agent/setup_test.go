@@ -19,7 +19,7 @@ import (
 	"rivetit-agent/internal/embed"
 )
 
-const setupToken = "rvte1.selabc.SECRETsecret123"
+const setupToken = "rvte1.selabc.fixturepart123"
 
 var fakeExeBytes = bytes.Repeat([]byte("MZ-pretend-agent-"), 200)
 
@@ -163,7 +163,7 @@ func TestSetupInstallsStrippedBinary(t *testing.T) {
 	if !bytes.Contains(src, []byte(setupToken)) {
 		t.Fatal("test premise: stamped file holds the token")
 	}
-	noTokenAnywhere(t, e.state, setupToken, "SECRETsecret123", embed.Magic)
+	noTokenAnywhere(t, e.state, setupToken, "fixturepart123", embed.Magic)
 	if _, err := os.Stat(filepath.Join(e.state, "install.log")); err != nil {
 		t.Fatal("install.log missing")
 	}
@@ -277,9 +277,9 @@ func TestSetupExitCodes(t *testing.T) {
 		if c != exitRejected {
 			t.Fatal(c)
 		}
-		noTokenAnywhere(t, e.state, setupToken, "SECRETsecret123")
+		noTokenAnywhere(t, e.state, setupToken, "fixturepart123")
 		for _, m := range e.msgs {
-			if strings.Contains(m, "SECRETsecret123") {
+			if strings.Contains(m, "fixturepart123") {
 				t.Fatal("message box leaks token")
 			}
 		}

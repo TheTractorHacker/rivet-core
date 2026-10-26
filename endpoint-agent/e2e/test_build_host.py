@@ -12,7 +12,7 @@ sys.path.insert(0, HERE)
 import mock_build_host_server as M  # noqa: E402
 
 SCRIPT = os.path.join(HERE, "..", "scripts", "build-host.sh")
-TOKEN = "tok_SECRET_0123456789abcdef"
+TOKEN = "tok_fixture_build_host_value"
 
 
 class Args:

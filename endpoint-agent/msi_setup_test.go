@@ -77,7 +77,7 @@ func TestSetupFromMSIReadsThePayloadFromTheMSIFile(t *testing.T) {
 	if !strings.Contains(string(cfg), "Sales") {
 		t.Fatalf("department from the payload not saved: %s", cfg)
 	}
-	noTokenAnywhere(t, e.state, setupToken, "SECRETsecret123", embed.Magic)
+	noTokenAnywhere(t, e.state, setupToken, "fixturepart123", embed.Magic)
 	// the .msi itself is never modified by setup
 	after, _ := os.ReadFile(msi)
 	if !bytes.HasPrefix(after, oleHeader) {
@@ -166,7 +166,7 @@ func TestSetupFromMSIPublicProperties(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(e.state, "ca.pem")); err != nil {
 			t.Fatal("CA not saved")
 		}
-		noTokenAnywhere(t, e.state, setupToken, "SECRETsecret123")
+		noTokenAnywhere(t, e.state, setupToken, "fixturepart123")
 	})
 	t.Run("token from a file; the empty values msiexec formats for properties that were not given are ignored", func(t *testing.T) {
 		e := newEnv(t)

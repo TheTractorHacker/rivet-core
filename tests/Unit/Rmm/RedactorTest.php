@@ -22,6 +22,20 @@ final class RedactorTest extends TestCase
         }
     }
 
+    /**
+     * A synthetic JWT built at run time from public strings (HS256 with the key "rivetcore-fixture-jwt-not-a-secret"): the source holds no
+     * token literal, so secret scanners have nothing to flag and nobody has to wonder whether it was ever a real one.
+     *
+     * @return array{0:string,1:string} [the token, its signature segment]
+     */
+    public static function fixtureJwt(): array
+    {
+        $b64 = static fn(string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
+        $signed = $b64('{"alg":"HS256","typ":"JWT"}') . '.' . $b64('{"sub":"fixture-user","iat":0}');
+        $signature = $b64(hash_hmac('sha256', $signed, 'rivetcore-fixture-jwt-not-a-secret', true));
+        return [$signed . '.' . $signature, $signature];
+    }
+
     /** @return array<string,array{0:string,1:string}> [input, needle that must be gone] */
     public static function secrets(): array
     {
@@ -29,7 +43,7 @@ final class RedactorTest extends TestCase
             'bearer' => ['Bearer abcdefghijklmnop1234567890', 'abcdefghijklmnop1234567890'],
             'bearer lower case' => ['bearer abcdefgh12345678', 'abcdefgh12345678'],
             'password kv' => ['password=Sup3rS3cret!', 'Sup3rS3cret'],
-            'jwt' => ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U', 'dozjgNryP4J3jVmNHl0w5N'],
+            'jwt' => self::fixtureJwt(),
             'sha256 hex' => [str_repeat('ab', 32), str_repeat('ab', 32)],
             'pem' => ["-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----", 'MIIEvQIBADANBg'],
             'pem rsa unterminated' => ["-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA", 'MIIEowIBAAKCAQEA'],
@@ -39,7 +53,7 @@ final class RedactorTest extends TestCase
             'aws key bare' => ['id AKIAIOSFODNN7EXAMPLE end', 'AKIAIOSFODNN7EXAMPLE'],
             'client secret' => ['client_secret=zzzzzzzz', 'zzzzzzzz'],
             'github token' => ['ghp_' . 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7', 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7'],
-            'slack token' => ['xoxb-1234567890-abcdefghij', '1234567890-abcdefghij'],
+            'slack token' => ['xo' . 'xb-1234567890-abcdefghij', '1234567890-abcdefghij'],
             'enroll token' => ['rvte1.' . 'abcdef012345' . '.' . str_repeat('b', 40), str_repeat('b', 40)],
             'authorization header' => ['Authorization: Basic dXNlcjpwYXNz', 'dXNlcjpwYXNz'],
             'proxy authorization' => ['Proxy-Authorization = NTLM TlRMTVNTUA', 'TlRMTVNTUA'],

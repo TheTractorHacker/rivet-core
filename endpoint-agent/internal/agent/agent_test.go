@@ -101,7 +101,7 @@ func TestInstallIDStableAndReenrollRotates(t *testing.T) {
 	r := newRig(t)
 	r.enroll()
 	st1, _ := r.st.LoadState()
-	r.s.token = "devtok_ROTATED_fedcba9876"
+	r.s.token = "devtok_rotated_fixture"
 	a2 := r.newAgent() // restart
 	if _, err := a2.Enroll(context.Background(), "enr2"); err != nil {
 		t.Fatal(err)
@@ -113,7 +113,7 @@ func TestInstallIDStableAndReenrollRotates(t *testing.T) {
 	if r.s.enrollReqs[0].Device.InstallID != r.s.enrollReqs[1].Device.InstallID {
 		t.Fatal("re-enrollment sent a different install_id")
 	}
-	if tok, _ := r.st.LoadToken(); tok != "devtok_ROTATED_fedcba9876" {
+	if tok, _ := r.st.LoadToken(); tok != "devtok_rotated_fixture" {
 		t.Fatal("credential not rotated")
 	}
 	if st2.Seq != st1.Seq {
