@@ -14,7 +14,7 @@ final class RedisConnectionConfigTest extends TestCase
     {
         $c = RedisConnectionConfig::fromArray(['host' => '127.0.0.1', 'port' => 6380, 'db' => 2, 'password' => 'pw']);
         $this->assertSame(
-            ['scheme' => 'tcp', 'host' => '127.0.0.1', 'port' => 6380, 'database' => 2, 'timeout' => 1.0, 'password' => 'pw'],
+            ['scheme' => 'tcp', 'host' => '127.0.0.1', 'port' => 6380, 'database' => 2, 'timeout' => 1.0, 'read_write_timeout' => 1.0, 'password' => 'pw'],
             $c->toPredisParameters()
         );
         $this->assertSame(0.5, $c->toPredisParameters(0.5)['timeout']);

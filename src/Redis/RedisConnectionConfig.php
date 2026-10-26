@@ -15,7 +15,7 @@ namespace RivetCore\Redis;
  *
  * @api
  */
-final class RedisConnectionConfig
+final class RedisConnectionConfig implements \JsonSerializable
 {
     public function __construct(
         public readonly string $host,
@@ -103,6 +103,22 @@ final class RedisConnectionConfig
         return null;
     }
 
+    /** The password never leaves through json_encode(). @return array<string,mixed> */
+    public function jsonSerialize(): array
+    {
+        return [
+            'host' => $this->host, 'port' => $this->port, 'db' => $this->db, 'password' => $this->password === null ? null : '********',
+            'username' => $this->username, 'tls' => $this->tls, 'verify_peer' => $this->verifyPeer,
+            'ca_file' => $this->caFile, 'cert_file' => $this->certFile, 'key_file' => $this->keyFile,
+        ];
+    }
+
+    /** Serialising would write the password into a cache or session; rebuild the object from the settings instead. */
+    public function __serialize(): array
+    {
+        throw new \LogicException('A RedisConnectionConfig holds the password and must not be serialised.');
+    }
+
     /**
      * Parameters for `new Predis\Client(...)`.
      *
@@ -116,6 +132,9 @@ final class RedisConnectionConfig
             'port' => $this->port,
             'database' => $this->db,
             'timeout' => $timeout,
+            // Predis applies 'timeout' to the connect only; without this a Redis that accepts and never answers blocks each call for
+            // default_socket_timeout (60 s) and the "fail open" arrives a minute late (CORE-04).
+            'read_write_timeout' => $timeout,
         ];
         if ($this->password !== null) {
             $parameters['password'] = $this->password;
