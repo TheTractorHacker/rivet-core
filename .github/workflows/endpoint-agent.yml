@@ -54,12 +54,13 @@ jobs:
         run: |
           if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
             v="${VERSION_INPUT}"
-            if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then echo "bad version: $v" >&2; exit 1; fi
           elif [[ "${GITHUB_REF}" == refs/tags/agent-v* ]]; then
             v="${GITHUB_REF#refs/tags/agent-v}"
           else
             v="0.0.0-dev.${GITHUB_SHA::7}"
           fi
+          # Every source (manual input, pushed tag name, dev build) is checked: the value is later written into make command lines.
+          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then echo "bad version" >&2; exit 1; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "commit=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
@@ -171,12 +172,13 @@ jobs:
         run: |
           if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
             v="${VERSION_INPUT}"
-            if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then echo "bad version: $v" >&2; exit 1; fi
           elif [[ "${GITHUB_REF}" == refs/tags/agent-v* ]]; then
             v="${GITHUB_REF#refs/tags/agent-v}"
           else
             v="0.0.0-dev.${GITHUB_SHA::7}"
           fi
+          # Every source (manual input, pushed tag name, dev build) is checked: the value is later written into make command lines.
+          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then echo "bad version" >&2; exit 1; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "commit=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 

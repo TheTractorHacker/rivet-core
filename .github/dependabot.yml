@@ -7,3 +7,11 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: monthly }
+  # The Go agent: a vulnerable module or a new patch of the toolchain should open a pull request, not wait for a manual govulncheck.
+  - package-ecosystem: gomod
+    directory: /endpoint-agent
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: docker
+    directory: /endpoint-agent/packaging/msi
+    schedule: { interval: monthly }
