@@ -170,6 +170,7 @@ final class RmmModule
     private ?HotStoreFaults $hotFaults = null;
     private ?PostgresConnectionInterface $pgConnection = null;
     private ?\RivetCore\Rmm\Store\DataStoreSwitch $dataStoreSwitch = null;
+    private ?\RivetCore\Rmm\Store\DataStoreInfo $dataStoreInfo = null;
     private ?RmmCache $cache = null;
     private ?HerdControl $herd = null;
     private ?PartitionMaintenance $partitions = null;
@@ -1083,6 +1084,37 @@ final class RmmModule
     public function dataStoreSwitch(): \RivetCore\Rmm\Store\DataStoreSwitch
     {
         return $this->dataStoreSwitch ??= new \RivetCore\Rmm\Store\DataStoreSwitch($this->sql(), $this->settings(), $this->box, $this->audit);
+    }
+
+    /**
+     * What to show about the RMM data store on an Update or Server page: the store in use and, for PostgreSQL, its version, mode, schema state and size
+     * ({@see \RivetCore\Rmm\Store\DataStoreInfo::report()}). Never throws; makes no PostgreSQL connection while the store is MariaDB unless asked. See docs/rmm/POSTGRES.md.
+     */
+    public function dataStoreInfo(): \RivetCore\Rmm\Store\DataStoreInfo
+    {
+        return $this->dataStoreInfo ??= new \RivetCore\Rmm\Store\DataStoreInfo($this->dataStoreSwitch(), $this->settings(), fn (): array => $this->infoTarget(),
+            ($this->options['postgres'] ?? null) !== null, $this->cache());
+    }
+
+    /**
+     * The PostgreSQL a status check asks, built only when it is asked: the connection the edition supplied, or the saved one (with its own short timeouts).
+     *
+     * @return array{0:?PostgresConnectionInterface,1:?PostgresConfig}
+     */
+    private function infoTarget(): array
+    {
+        $given = $this->options['postgres'] ?? null;
+        if ($given instanceof \Closure) {
+            $given = $this->pgConnection ?? $given();
+        }
+        if ($given === null) {
+            $given = $this->dataStoreSwitch()->postgresConfig();
+        }
+        if ($given instanceof PostgresConfig) {
+            return [\RivetCore\Rmm\Store\DataStoreInfo::connectionFor($given), $given];
+        }
+
+        return [$given instanceof PostgresConnectionInterface ? $given : null, null];
     }
 
     /** The record of what the hot store could not do (empty on MariaDB), shown in the capacity panel. */
