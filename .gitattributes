@@ -1,6 +1,7 @@
 /.github        export-ignore
 /tests          export-ignore
-/docs           export-ignore
+# docs/ ships in the package: UPGRADING.md tells editions to read docs/design/*.md and docs/rmm/POSTGRES.md before adopting a feature,
+# and those files are only useful if they are actually in vendor/rivet/rivet-core, not just in a dev checkout of this repo.
 # The UI asset installer/checker and the RMM data store CLI scripts ship in the package (editions run them from vendor/rivet/rivet-core,
 # docs/rmm/POSTGRES.md and UPGRADING.md "Adopting the data store setting and migration"); every other script (bench/load harnesses, etc.) stays dev-only.
 /scripts/* export-ignore
