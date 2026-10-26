@@ -34,7 +34,7 @@ final class PostgresTimescaleTest extends TestCase
             if (getenv('RIVETCORE_TEST_PG_MODE') === 'timescale') {
                 $this->fail('RIVETCORE_TEST_PG_MODE=timescale but the extension is not installed in the scratch database.');
             }
-            $this->markTestSkipped('TimescaleDB is not installed in the scratch PostgreSQL (CI job "postgres 18 + TimescaleDB").');
+            $this->markTestSkipped('TimescaleDB is not installed in the scratch PostgreSQL (CI jobs "postgres 18 + TimescaleDB" and "postgres 16 + TimescaleDB").');
         }
         $this->assertSame(PostgresSchema::MODE_TIMESCALE, PostgresTestDatabase::reset($this->db, PostgresSchema::MODE_TIMESCALE)['mode']);
         $this->clock = new MutableClock();

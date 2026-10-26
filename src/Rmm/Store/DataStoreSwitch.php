@@ -33,8 +33,8 @@ final class DataStoreSwitch
 {
     public const MIN_POSTGRES_MAJOR = 14;
 
-    /** The only PostgreSQL major version Rivet is tested on and supports; an older server may work (nothing in the SQL is 18-only) but is unsupported and gets a prominent, non-blocking warning. */
-    public const SUPPORTED_POSTGRES_MAJOR = 18;
+    /** The version new installs should run (the one the CI and the docs treat as primary); older supported versions get a non-blocking note. */
+    public const RECOMMENDED_POSTGRES_MAJOR = 18;
 
     /** What the edition must show next to the "Switch" button. */
     public const NO_DATA_MOVE_NOTICE = 'Switching the data store does not move existing history. Everything the RMM recorded so far stays in the current store and is no longer shown; '
@@ -131,7 +131,7 @@ final class DataStoreSwitch
     // ------------------------------------------------------------------ the test
 
     /**
-     * Test a connection without changing anything but the "tested" mark of the stored one: connect, server version (14 or newer is required; only 18 is supported, an older one gets a warning), UTC, the role can create objects in its schema
+     * Test a connection without changing anything but the "tested" mark of the stored one: connect, server version (14 or newer), UTC, the role can create objects in its schema
      * (tried inside a transaction that is rolled back), TimescaleDB, what the schema looks like. Unsaved values (`$in`) are tested as they are and are NOT stored.
      *
      * @param ?array<string,mixed> $in null = the stored connection
@@ -169,8 +169,8 @@ final class DataStoreSwitch
                 return $fail('version', 'PostgreSQL ' . $version . ' is too old; ' . self::MIN_POSTGRES_MAJOR . ' or newer is required.') + $out;
             }
             $out['checks'][] = ['name' => 'version', 'ok' => true, 'message' => 'PostgreSQL ' . $version . '.'];
-            if ($major < self::SUPPORTED_POSTGRES_MAJOR) {
-                $out['warnings'][] = 'This PostgreSQL version is not supported; Rivet is tested only on PostgreSQL ' . self::SUPPORTED_POSTGRES_MAJOR . ' (this server runs ' . $version . ').';
+            if ($major < self::RECOMMENDED_POSTGRES_MAJOR) {
+                $out['warnings'][] = 'PostgreSQL ' . self::RECOMMENDED_POSTGRES_MAJOR . ' is the recommended version (this server runs ' . $version . '; it is supported).';
             }
             $tz = (string) $db->value("SELECT current_setting('TimeZone')");
             $off = (string) $db->value("SELECT (EXTRACT(TIMEZONE FROM now()))::int");

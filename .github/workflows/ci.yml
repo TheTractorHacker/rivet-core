@@ -64,7 +64,7 @@ jobs:
   postgres:
     name: postgres 18 (RMM data store)
     # The RMM data store contract on PostgreSQL, the MariaDB-versus-PostgreSQL equivalence test, partitions, concurrency, failure injection and the degraded module.
-    # PostgreSQL 18 is the only supported version (docs/rmm/POSTGRES.md). Named here, not enforced by branch protection (there is none): treat it as required.
+    # PostgreSQL 18 is the primary, recommended version (docs/rmm/POSTGRES.md). Named here, not enforced by branch protection (there is none): treat it as required.
     runs-on: ubuntu-latest
     services:
       database:
@@ -115,6 +115,84 @@ jobs:
           --health-interval=5s --health-timeout=5s --health-retries=20
       postgres:
         image: timescale/timescaledb:2.31.0-pg18
+        env: { POSTGRES_USER: rivet, POSTGRES_PASSWORD: rivet, POSTGRES_DB: rivetcore_scratch_pg }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U rivet -d rivetcore_scratch_pg"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, pdo_pgsql, zip, dom, mbstring', tools: composer }
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit tests/Integration/Rmm/Postgres tests/Integration/Rmm/Migration --display-skipped
+        env:
+          RIVETCORE_TEST_DB_HOST: 127.0.0.1
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
+          RIVETCORE_TEST_DB_USER: root
+          RIVETCORE_TEST_DB_PASS: root
+          RIVETCORE_TEST_PG_HOST: 127.0.0.1
+          RIVETCORE_TEST_PG_PORT: '5432'
+          RIVETCORE_TEST_PG_NAME: rivetcore_scratch_pg
+          RIVETCORE_TEST_PG_USER: rivet
+          RIVETCORE_TEST_PG_PASS: rivet
+          RIVETCORE_TEST_PG_REQUIRED: '1'
+          RIVETCORE_TEST_PG_MODE: timescale
+
+  postgres-16:
+    name: postgres 16 (RMM data store)
+    # PostgreSQL 16, kept so an install that started on 16 does not regress (18 is the primary version, see the job above). The RMM data store contract on PostgreSQL, the MariaDB-versus-PostgreSQL equivalence test, partitions, concurrency, failure injection and the degraded module.
+    # Named here, not enforced by branch protection (there is none): treat it as required.
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_scratch_test }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: rivet, POSTGRES_PASSWORD: rivet, POSTGRES_DB: rivetcore_scratch_pg }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U rivet -d rivetcore_scratch_pg"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, pdo_pgsql, zip, dom, mbstring', tools: composer }
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit tests/Integration/Rmm/Postgres tests/Integration/Rmm/Migration tests/Integration/Rmm/MariaDbDataStoreContractTest.php tests/Integration/Rmm/MariaDbLazyDataStoreContractTest.php tests/Integration/Rmm/RmmDataStoreRoutingTest.php tests/Integration/Rmm/RmmDataStoreSettingTest.php --display-skipped
+        env:
+          RIVETCORE_TEST_DB_HOST: 127.0.0.1
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
+          RIVETCORE_TEST_DB_USER: root
+          RIVETCORE_TEST_DB_PASS: root
+          RIVETCORE_TEST_PG_HOST: 127.0.0.1
+          RIVETCORE_TEST_PG_PORT: '5432'
+          RIVETCORE_TEST_PG_NAME: rivetcore_scratch_pg
+          RIVETCORE_TEST_PG_USER: rivet
+          RIVETCORE_TEST_PG_PASS: rivet
+          RIVETCORE_TEST_PG_REQUIRED: '1'
+          RIVETCORE_TEST_PG_MODE: native
+
+  postgres-timescaledb-16:
+    name: postgres 16 + TimescaleDB (RMM data store, optional)
+    # The same cases on TimescaleDB hypertables. Optional: the data store never requires the extension, so a failure here does not block a release, but it is looked at.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      database:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_scratch_test }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      postgres:
+        image: timescale/timescaledb:2.31.0-pg16
         env: { POSTGRES_USER: rivet, POSTGRES_PASSWORD: rivet, POSTGRES_DB: rivetcore_scratch_pg }
         ports: ['5432:5432']
         options: >-

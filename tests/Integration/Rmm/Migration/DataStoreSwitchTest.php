@@ -180,16 +180,16 @@ final class DataStoreSwitchTest extends RmmTestCase
         $this->assertSame(['PostgreSQL ' . $t['server_version'] . '.'], array_values($messages));
     }
 
-    public function testAServerBelowTheSupportedVersionGetsAProminentNonBlockingWarningAndOldOnesAreRefused(): void
+    public function testAServerBelowTheRecommendedVersionGetsANonBlockingNoteAndOldOnesAreRefused(): void
     {
         $t = $this->versionSwitch('16.4 (Debian 16.4-1)')->testConnection($this->form());
         $this->assertTrue($t['ok'], json_encode($t));
         $this->assertSame('16.4 (Debian 16.4-1)', $t['server_version']);
-        $this->assertCount(1, array_filter($t['warnings'], static fn (string $w): bool => str_contains($w, 'This PostgreSQL version is not supported; Rivet is tested only on PostgreSQL 18')));
+        $this->assertCount(1, array_filter($t['warnings'], static fn (string $w): bool => str_contains($w, 'PostgreSQL 18 is the recommended version')));
 
         $t = $this->versionSwitch('18.6 (Debian 18.6-1)')->testConnection($this->form());
         $this->assertTrue($t['ok'], json_encode($t));
-        $this->assertSame([], array_filter($t['warnings'], static fn (string $w): bool => str_contains($w, 'not supported')));
+        $this->assertSame([], array_filter($t['warnings'], static fn (string $w): bool => str_contains($w, 'recommended version')));
 
         $t = $this->versionSwitch('13.14')->testConnection($this->form());
         $this->assertFalse($t['ok']);
