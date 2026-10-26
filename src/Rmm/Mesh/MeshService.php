@@ -158,7 +158,7 @@ final class MeshService
             return self::POLICY_REFUSAL;
         }
         $url = rtrim($base, '/') . '/health.ashx';
-        $ch = curl_init($url);
+        $ch = curl_init(\RivetCore\Webhooks\WebhookDispatcher::pinnedUrl($url, $target));   // the host spelling the pin is keyed on
         if ($ch === false) {
             return self::UNREACHABLE;
         }
@@ -211,7 +211,7 @@ final class MeshService
         if ($target === null) {
             return ['ok' => false, 'error' => self::POLICY_REFUSAL];
         }
-        $ch = curl_init(rtrim($norm, '/') . '/health.ashx');
+        $ch = curl_init(\RivetCore\Webhooks\WebhookDispatcher::pinnedUrl(rtrim($norm, '/') . '/health.ashx', $target));
         if ($ch === false) {
             return ['ok' => false, 'error' => self::UNREACHABLE];
         }
@@ -264,7 +264,7 @@ final class MeshService
      */
     private function verifiesWithSystemRoots(string $norm, array $target): bool
     {
-        $ch = curl_init(rtrim($norm, '/') . '/health.ashx');
+        $ch = curl_init(\RivetCore\Webhooks\WebhookDispatcher::pinnedUrl(rtrim($norm, '/') . '/health.ashx', $target));
         if ($ch === false) {
             return false;
         }
