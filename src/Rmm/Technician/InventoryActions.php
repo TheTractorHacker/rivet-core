@@ -42,6 +42,13 @@ final class InventoryActions
         return $why === null ? null : ActionResult::fail(403, 'forbidden', $why);
     }
 
+    /** Tags and groups are shared by every client: changing or deleting one changes policy scopes and run targets everywhere (CORE-03). */
+    private function fleetWide(int $userId): ?ActionResult
+    {
+        return $this->authz->visibleClientIds($userId) === null ? null
+            : ActionResult::fail(403, 'forbidden', 'Tags and groups are shared by every client; ask an administrator whose access is not limited to some clients.');
+    }
+
     /**
      * @return array{0:?array<string,mixed>,1:?ActionResult}
      */
@@ -120,6 +127,9 @@ final class InventoryActions
         if (($err = $this->role($who->userId, RmmAbility::DEVICE_MANAGE)) !== null) {
             return $err;
         }
+        if (($err = $this->fleetWide($who->userId)) !== null) {
+            return $err;
+        }
         if ($this->tags->find($tagId) === null) {
             return ActionResult::fail(404, 'not_found', 'Tag not found.');
         }
@@ -136,6 +146,9 @@ final class InventoryActions
     public function deleteTag(RmmPrincipal $who, int $tagId): ActionResult
     {
         if (($err = $this->role($who->userId, RmmAbility::DEVICE_MANAGE)) !== null) {
+            return $err;
+        }
+        if (($err = $this->fleetWide($who->userId)) !== null) {
             return $err;
         }
         if (!$this->tags->delete($tagId)) {
@@ -170,6 +183,9 @@ final class InventoryActions
         if (($err = $this->role($who->userId, RmmAbility::DEVICE_MANAGE)) !== null) {
             return $err;
         }
+        if (($err = $this->fleetWide($who->userId)) !== null) {
+            return $err;
+        }
         if ($this->groups->find($groupId) === null) {
             return ActionResult::fail(404, 'not_found', 'Group not found.');
         }
@@ -186,6 +202,9 @@ final class InventoryActions
     public function deleteGroup(RmmPrincipal $who, int $groupId): ActionResult
     {
         if (($err = $this->role($who->userId, RmmAbility::DEVICE_MANAGE)) !== null) {
+            return $err;
+        }
+        if (($err = $this->fleetWide($who->userId)) !== null) {
             return $err;
         }
         if (!$this->groups->delete($groupId)) {
@@ -253,6 +272,9 @@ final class InventoryActions
     public function setGroupTags(RmmPrincipal $who, int $groupId, array $tagIds): ActionResult
     {
         if (($err = $this->role($who->userId, RmmAbility::DEVICE_MANAGE)) !== null) {
+            return $err;
+        }
+        if (($err = $this->fleetWide($who->userId)) !== null) {
             return $err;
         }
         $ids = [];

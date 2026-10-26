@@ -251,7 +251,15 @@ final class TechnicianActions
      */
     public function resolvePending(RmmPrincipal $who, int $deviceId, string $action, ?int $assetId = null): ActionResult
     {
-        return $this->manage($who, $deviceId, function () use ($deviceId, $action, $assetId, $who): ActionResult {
+        return $this->manage($who, $deviceId, function (array $dev) use ($deviceId, $action, $assetId, $who): ActionResult {
+            if ($action === 'link' && $assetId !== null && $assetId > 0) {
+                // Linking moves the device to the asset's client: the caller must be allowed to manage devices there too (CORE-02).
+                $assetClient = $this->enrollment->assetClientId($assetId);
+                if ($assetClient !== null && $assetClient !== (int) $dev['client_id']
+                    && ($this->authz->check($who->userId, RmmAbility::DEVICE_MANAGE, $assetClient, false) !== null || !$this->authz->clientOk($who->userId, $assetClient))) {
+                    return ActionResult::fail(404, 'not_found', 'That asset does not exist or is archived.');
+                }
+            }
             $r = $this->enrollment->resolvePending($deviceId, $action, $assetId, $who->userId);
 
             return $r['ok'] ? ActionResult::ok($r['message']) : ActionResult::fail(409, 'conflict', $r['message']);
@@ -309,7 +317,7 @@ final class TechnicianActions
     public function transfer(RmmPrincipal $who, int $deviceId, int $clientId, int $locationId = 0): ActionResult
     {
         return $this->manage($who, $deviceId, function () use ($who, $deviceId, $clientId, $locationId): ActionResult {
-            if (!$this->authz->clientOk($who->userId, $clientId)) {
+            if (!$this->authz->clientOk($who->userId, $clientId) || $this->authz->check($who->userId, RmmAbility::DEVICE_MANAGE, $clientId, false) !== null) {
                 return ActionResult::fail(403, 'forbidden', 'You do not have access to that ' . $this->clientLabel . '.');
             }
 

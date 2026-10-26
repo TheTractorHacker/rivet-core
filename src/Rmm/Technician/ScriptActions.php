@@ -76,6 +76,13 @@ final class ScriptActions
         return $why === null ? null : ActionResult::fail(403, 'forbidden', $why);
     }
 
+    /** Library scripts are shared by every client and get signed with the instance key: a user limited to some clients may run them, not change them (CORE-03). */
+    private function fleetWide(int $userId): ?ActionResult
+    {
+        return $this->authz->visibleClientIds($userId) === null ? null
+            : ActionResult::fail(403, 'forbidden', 'Library scripts are shared by every client; ask an administrator whose access is not limited to some clients.');
+    }
+
     // ------------------------------------------------------------------ the library
 
     /**
@@ -104,6 +111,9 @@ final class ScriptActions
         if (($e = $this->role($who->userId, RmmAbility::JOB_RUN_SCRIPT)) !== null) {
             return $e;
         }
+        if (($e = $this->fleetWide($who->userId)) !== null) {
+            return $e;
+        }
         $before = $this->scripts->get($scriptId);
         if ($before === null) {
             return ActionResult::fail(404, 'not_found', 'Script not found.');
@@ -121,6 +131,9 @@ final class ScriptActions
     public function retireScript(RmmPrincipal $who, int $scriptId, bool $retire = true): ActionResult
     {
         if (($e = $this->role($who->userId, RmmAbility::JOB_RUN_SCRIPT)) !== null) {
+            return $e;
+        }
+        if (($e = $this->fleetWide($who->userId)) !== null) {
             return $e;
         }
         if (!$this->scripts->setRetired($scriptId, $retire)) {

@@ -497,6 +497,14 @@ final class EnrollmentService
 
     // ------------------------------------------------------------------ admin decisions on pending devices
 
+    /** The client an asset belongs to, or null when it does not exist (used to authorise a cross-client link before resolvePending() runs). */
+    public function assetClientId(int $assetId): ?int
+    {
+        $row = $this->assets->find($assetId);
+
+        return $row === null ? null : (int) $row['client_id'];
+    }
+
     /**
      * @param string $action link | create_asset | reject
      * @return array{ok:bool,message:string}
