@@ -28,6 +28,10 @@ security fixes and their severity (Low/Medium/High as defined in the review repo
   Core (authorisation, tenancy, key storage, JWT validation, output encoding, process isolation).
 * [docs/security/review-2026-10.md](docs/security/review-2026-10.md): the second security review before 1.0.0-rc.1, with
   every finding, its severity and status.
+* [docs/security/REVIEW_RC30.md](docs/security/REVIEW_RC30.md) and [REVIEW_RC36.md](docs/security/REVIEW_RC36.md): the RMM and
+  Panel reviews; [CORE_SECURITY_AUDIT.md](docs/security/CORE_SECURITY_AUDIT.md), [CORE_REMEDIATION.md](docs/security/CORE_REMEDIATION.md)
+  and [COMPATIBILITY_RESULTS.md](docs/security/COMPATIBILITY_RESULTS.md): the Core audit of 2026-10 (secret detection, findings,
+  fixes, edition impact).
 
 A report that depends on something Core documents as the edition's responsibility (for example "an unauthenticated caller can
 call `JobRunner::start()`") is an edition issue; send it to the edition, and to us if the documentation is unclear.
@@ -41,7 +45,15 @@ In scope: this library (`src/`, including the migration classes under `src/*/Mig
 * the Redis lock, rate-limit, admin and TLS configuration helpers;
 * the MCP pipeline (`TokenClaimsGuard`, `ToolPipeline`, identity linking);
 * audit redaction and the shared compliance report (what a portal user can see);
-* the job queue, cron runner and migration runner.
+* the job queue, cron runner and migration runner;
+* the RMM and Panel server code (`src/Rmm`, `src/Panel`): enrollment and device tokens, job signing, tenancy and ability checks,
+  the PostgreSQL data store and its connection handling;
+* the Go endpoint agent (`endpoint-agent/`): update and install integrity, job verification, redaction, state-directory
+  permissions, and the build-host script (`endpoint-agent/scripts/`), the repository scripts (`scripts/`) and the CI workflows.
+
+A secret scanner may report test values in this repository. Every intentional fixture is listed with its reason in
+`secret-scan-allowlist.json` and in the fixture file itself; if you find a value that is not on that list and looks real, report
+it privately as above and do not publish it.
 
 Out of scope: the editions themselves (report those to RivetIT / RivetMSP), third-party dependencies (report upstream; we track
 them with `composer audit` and Dependabot), poppler and libxml vulnerabilities as such (report upstream; we do want to hear
