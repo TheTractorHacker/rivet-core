@@ -1,6 +1,6 @@
 # Reporting and Power BI: stable views, a read-only account, a feed, an edition page
 
-Status: **phases 1 and 2 of [#91](https://github.com/TheTractorHacker/rivet-core/issues/91) are implemented** (1.0.0-rc.43, migration 0045 and PostgreSQL migration `0002_reporting_views`). Phases 3 to 5 are planned below. Related: [#89](https://github.com/TheTractorHacker/rivet-core/issues/89) ([rmm-data-store.md](rmm-data-store.md)). Operator guide: [../reporting/POWER_BI.md](../reporting/POWER_BI.md). Data dictionary: [../reporting/DATA_DICTIONARY.md](../reporting/DATA_DICTIONARY.md).
+Status: **phases 1 and 2 of [#91](https://github.com/TheTractorHacker/rivet-core/issues/91) are implemented** (1.0.0-rc.44, migration 0045 and PostgreSQL migration `0002_reporting_views`). Phases 3 to 5 are planned below. Related: [#89](https://github.com/TheTractorHacker/rivet-core/issues/89) ([rmm-data-store.md](rmm-data-store.md)). Operator guide: [../reporting/POWER_BI.md](../reporting/POWER_BI.md). Data dictionary: [../reporting/DATA_DICTIONARY.md](../reporting/DATA_DICTIONARY.md).
 
 ## 1. Goal
 

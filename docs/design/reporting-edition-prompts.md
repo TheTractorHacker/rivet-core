@@ -1,11 +1,11 @@
 # Phase 4 of #91: ready-to-paste prompts for the editions (Reporting / Power BI settings page)
 
-Phases 1 and 2 (RivetCore 1.0.0-rc.43) ship the reporting views, the read-only account SQL, the documents and the Power BI samples. Each edition now needs the **Reporting / Power BI** settings page, its own views (clients, sites, assets, tickets, SLA, alert-to-ticket) and their tests. Paste one prompt into the chat of the edition. **Beta only; never production** (production deploys stay yours). Read RivetCore `UPGRADING.md` "Adopting the reporting views (1.0.0-rc.43; migration 0045; optional)", `docs/design/reporting.md` and `docs/reporting/POWER_BI.md` first.
+Phases 1 and 2 (RivetCore 1.0.0-rc.44) ship the reporting views, the read-only account SQL, the documents and the Power BI samples. Each edition now needs the **Reporting / Power BI** settings page, its own views (clients, sites, assets, tickets, SLA, alert-to-ticket) and their tests. Paste one prompt into the chat of the edition. **Beta only; never production** (production deploys stay yours). Read RivetCore `UPGRADING.md` "Adopting the reporting views (1.0.0-rc.44; migration 0045; optional)", `docs/design/reporting.md` and `docs/reporting/POWER_BI.md` first.
 
 Checklist of #91:
 
-- [x] Phase 1: guide, data dictionary, Power Query and DAX samples, starter report layout (rc.43)
-- [x] Phase 2: `rpt_` views for MariaDB / MySQL and PostgreSQL, migration 0045 + PostgreSQL `0002_reporting_views`, `ReportingRole`, contract / secrets / tenant / role / EXPLAIN tests (rc.43)
+- [x] Phase 1: guide, data dictionary, Power Query and DAX samples, starter report layout (rc.44)
+- [x] Phase 2: `rpt_` views for MariaDB / MySQL and PostgreSQL, migration 0045 + PostgreSQL `0002_reporting_views`, `ReportingRole`, contract / secrets / tenant / role / EXPLAIN tests (rc.44)
 - [ ] Phase 3: reporting feed with scoped, expiring tokens (Core)
 - [ ] Phase 4 RivetIT beta: settings page, edition views, tests
 - [ ] Phase 4 RivetMSP beta: same
@@ -19,9 +19,9 @@ Checklist of #91:
 ```
 Implement phase 4 of RivetCore issue #91 (Power BI / BI reporting) in RivetIT, BETA ONLY (mw-itflow.foleyit.com). Do not touch production, do not run tests against the live DB, do not push/tag/release; deploys to beta follow our usual beta procedure.
 
-Read first: RivetCore UPGRADING.md "Adopting the reporting views (1.0.0-rc.43; migration 0045; optional)", docs/design/reporting.md (sections 3, 5 and 7), docs/reporting/POWER_BI.md, docs/reporting/DATA_DICTIONARY.md, src/Reporting/*.php.
+Read first: RivetCore UPGRADING.md "Adopting the reporting views (1.0.0-rc.44; migration 0045; optional)", docs/design/reporting.md (sections 3, 5 and 7), docs/reporting/POWER_BI.md, docs/reporting/DATA_DICTIONARY.md, src/Reporting/*.php.
 
-1. Adopt rivet/rivet-core 1.0.0-rc.43 (composer pin, real composer install). Run Core migration 0045 on the BETA database through our normal DB-update step (it needs CREATE VIEW; it creates the 17 rpt_ views and nothing else). Mirror it in db.sql WITHOUT a user-specific DEFINER (mysqldump writes DEFINER=`user`@`host`; a fresh install must create the views as whoever installs). A fresh install and an upgraded one must have identical view definitions (watch the collation and the trailing-newline traps from the release procedure). If data_store = postgres on this install, also run `php vendor/rivet/rivet-core/scripts/rmm-postgres.php migrate` (applies 0002_reporting_views).
+1. Adopt rivet/rivet-core 1.0.0-rc.44 (composer pin, real composer install). Run Core migration 0045 on the BETA database through our normal DB-update step (it needs CREATE VIEW; it creates the 17 rpt_ views and nothing else). Mirror it in db.sql WITHOUT a user-specific DEFINER (mysqldump writes DEFINER=`user`@`host`; a fresh install must create the views as whoever installs). A fresh install and an upgraded one must have identical view definitions (watch the collation and the trailing-newline traps from the release procedure). If data_store = postgres on this install, also run `php vendor/rivet/rivet-core/scripts/rmm-postgres.php migrate` (applies 0002_reporting_views).
 2. Edition views (RivetCore cannot own these tables): create rpt_clients, rpt_sites, rpt_assets, rpt_tickets, rpt_alert_tickets and rpt_sla exactly as proposed in docs/design/reporting.md section 7, after CHECKING every column against this edition's db.sql. Rules: an allow-list of columns, no ticket subject / details / replies / contact / billing / vendor columns, no alert message or raw_data_json, client_id on every row, stable names, and UTC timestamps (if the database server's time zone is not UTC, convert in the view with CONVERT_TZ and a named zone, and prove it in a test). Add them to an edition migration (DB-update step + db.sql), a frozen-column fixture (like RivetCore's tests/Fixtures/reporting_views.json) and a deny-list/no-secrets test like RivetCore's ReportingContractTest, a tenant test (two clients; a query filtered to one returns only its rows), and extend the reporting account's grants with SELECT on these views (append GRANT lines after ReportingRole::mariadbStatements()).
 3. Page Administration > Reporting / Power BI (admins with access to ALL clients only; CSRF token; no GET side effects):
    a. Status: the list of views from ReportingCatalog::views() (name, grain, purpose, client-scoped yes/no, store), whether each exists in the database (information_schema.VIEWS), whether the PostgreSQL store has its six (when data_store = postgres), the edition views, and the Core migration level.
@@ -41,7 +41,7 @@ Read first: RivetCore UPGRADING.md "Adopting the reporting views (1.0.0-rc.43; m
 ```
 Implement phase 4 of RivetCore issue #91 (Power BI / BI reporting) in RivetMSP, BETA ONLY (rivetmsp-beta). Do not touch production or any live DB, do not push/tag/release.
 
-Read first: RivetCore UPGRADING.md "Adopting the reporting views (1.0.0-rc.43; migration 0045; optional)", docs/design/reporting.md (sections 3, 5 and 7), docs/reporting/POWER_BI.md, docs/reporting/DATA_DICTIONARY.md, src/Reporting/*.php.
+Read first: RivetCore UPGRADING.md "Adopting the reporting views (1.0.0-rc.44; migration 0045; optional)", docs/design/reporting.md (sections 3, 5 and 7), docs/reporting/POWER_BI.md, docs/reporting/DATA_DICTIONARY.md, src/Reporting/*.php.
 
 Do the same as the RivetIT prompt (docs/design/reporting-edition-prompts.md), against this edition's schema, with these differences:
 - RivetMSP is multi-tenant by design: technicians are scoped to clients. The Reporting / Power BI page is for administrators with access to every client only. Show the per-client scoping help prominently and the warning that a reporting account sees ALL clients; the per-client tokens of phase 3 are the real boundary and are not built yet, so do not offer per-client accounts or tokens.

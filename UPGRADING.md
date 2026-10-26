@@ -80,7 +80,7 @@ If a release candidate breaks something that this guide did not warn about, that
 
 Optional, additive, no migration. `$rmm->dataStoreInfo()->report()` returns the RMM data store in use and, for PostgreSQL, its version, storage mode, schema state and size (never throws; no PostgreSQL connection on a MariaDB install); `DataStoreInfo::summaryLine($info)` is the one line for a tile. To show it, paste the snippet from [docs/rmm/POSTGRES.md](docs/rmm/POSTGRES.md) section 18 into `update.php` and the server status page and escape the output. Pass a cache (`cache` module option) if you want the live check kept for 30 seconds; the check is already bounded by 2 second timeouts and the data store's circuit breaker. No public signature or constant value changed; new: `DataStoreInfo`, `RmmModule::dataStoreInfo()`.
 
-## Adopting the reporting views (1.0.0-rc.43; migration 0045; optional)
+## Adopting the reporting views (1.0.0-rc.44; migration 0045; optional)
 
 Phases 1 and 2 of [#91](https://github.com/TheTractorHacker/rivet-core/issues/91). **An edition that changes nothing keeps running exactly as before.** The migration only creates 17 views (`rpt_*`); no table, column or row changes, and code before the migration is safe. Roll back with `DROP VIEW`.
 
