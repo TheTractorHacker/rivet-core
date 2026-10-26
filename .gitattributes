@@ -1,11 +1,17 @@
 /.github        export-ignore
 /tests          export-ignore
 /docs           export-ignore
-# The UI asset installer and checker ship in the package (editions run them from vendor/rivet/rivet-core); every other script stays dev-only.
+# The UI asset installer/checker and the RMM data store CLI scripts ship in the package (editions run them from vendor/rivet/rivet-core,
+# docs/rmm/POSTGRES.md and UPGRADING.md "Adopting the data store setting and migration"); every other script (bench/load harnesses, etc.) stays dev-only.
 /scripts/* export-ignore
 /scripts/install-ui-assets.php -export-ignore
 /scripts/check-ui-assets.php -export-ignore
 /scripts/ui-assets-lib.php -export-ignore
+/scripts/rmm-postgres.php -export-ignore
+/scripts/rmm-postgres-backup.sh -export-ignore
+/scripts/rmm-postgres-restore.sh -export-ignore
+/scripts/rmm-store-migrate.php -export-ignore
+/scripts/rmm-store-verify.php -export-ignore
 /endpoint-agent export-ignore
 /phpunit.xml.dist export-ignore
 /phpstan.neon   export-ignore
