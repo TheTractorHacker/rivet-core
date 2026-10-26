@@ -439,3 +439,16 @@ The command prints one JSON object per line (events: `start`, `phase`, `batch`, 
 ### 13.8 How this was checked
 
 See the CHANGELOG entry of 1.0.0-rc.41 for the exact figures of the tests, the mutation checks and the compatibility check.
+
+## 14. PostgreSQL 18 (1.0.0-rc.42)
+
+PostgreSQL 18 is the recommended and primary tested version; 16 is also tested; 14 is the minimum, expected and untested. The reason to verify instead of assuming: 18 changed defaults (data checksums on, asynchronous I/O), `reltuples` has been `-1` for never-analysed tables since 14, and TimescaleDB ships per-major images.
+
+**What was checked and found.** The full PostgreSQL, migration, MariaDB-contract and equivalence directories ran on `postgres:18` (18.6), `timescale/timescaledb:2.31.0-pg18`, `postgres:16` (16.15) and `timescale/timescaledb:2.31.0-pg16` (266 tests each, green; the skips are the mode-specific cases). No Core change was needed for behaviour: declarative partitions with a DEFAULT partition and the move-out under lock, BRIN and btree indexes, `timestamptz` in a UTC session, `jsonb`, `ON CONFLICT` on partitioned and hypertable tables, session advisory locks (the migrator's and the maintenance key), `statement_timeout` / `lock_timeout` / `idle_in_transaction_session_timeout`, the SQLSTATE mapping in `PdoErrorMapper`, extension detection through `pg_extension`, hypertable creation, compression policy, `drop_chunks` and `hypertable_size` all behave as on 16. `StoreSizes`: `reltuples` is `-1` on a partitioned table and its never-analysed partitions on 18, and the query already clamps with `GREATEST(reltuples, 0)`; a partitioned parent counts as 0 and its children are summed (probed directly on 18). `rmm-postgres-backup.sh` / `restore.sh` round trip (`tests/scripts/rmm-postgres-backup-test.sh`) passes with the 18 client tools. The harness server settings of 18 that matter to operators (data checksums on, `io_method = worker`) are in operator guide section 6; Core needs no setting from them.
+
+**Version messaging.** `DataStoreSwitch::testConnection()` already reported the exact `SHOW server_version` string; it now adds the non-blocking warning for a server below `DataStoreSwitch::RECOMMENDED_POSTGRES_MAJOR` (18). `MIN_POSTGRES_MAJOR` stays 14 and a lower server is refused as before. No signature changed; the new constant is additive.
+
+**Measured (smoke, noisy shared host, 18 then 16 back to back, 200 devices, 60 s, `scripts/rmm-store-load.php`):** 18.6: 32.8 check-ins/s, p50 61 ms, p95 252 ms, p99 1,463 ms. 16.15: 30.6 check-ins/s, p50 98 ms, p95 744 ms, p99 2,690 ms. Both are limited by the control MariaDB on the same disk; the figures say there is no regression on 18 and nothing more.
+
+**Decision recorded.** New installs and every example use 18; installs that started on 16 are not asked to move (operator guide section 17 gives both paths when they want to).
+
