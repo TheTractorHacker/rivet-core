@@ -1,6 +1,6 @@
 # PostgreSQL for the RMM history (optional)
 
-Status: phases 2 and 3 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89). The stores exist and are tested against MariaDB and against PostgreSQL 16 (and TimescaleDB 2.31); phase 3 added the setting with its connection test (section 13), the guided migration in both directions with verification, cut-over, rollback and purge (sections 14 and 15), the capacity recommendation (section 16), and backup helpers (section 8). The settings card and the progress page are the editions' (phase 4). Design and decisions: [docs/design/rmm-data-store.md](../design/rmm-data-store.md).
+Status: phases 2 and 3 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89). The stores exist and are tested against MariaDB and against PostgreSQL 18 (the primary, recommended version) and 16 (and TimescaleDB 2.31 on both); phase 3 added the setting with its connection test (section 13), the guided migration in both directions with verification, cut-over, rollback and purge (sections 14 and 15), the capacity recommendation (section 16), and backup helpers (section 8). The settings card and the progress page are the editions' (phase 4). Design and decisions: [docs/design/rmm-data-store.md](../design/rmm-data-store.md).
 
 **Nothing changes unless you opt in.** MariaDB / MySQL stays the default and behaves exactly as before; the PostgreSQL code is never loaded, and no connection is ever opened, while the data store is `mariadb`.
 
@@ -14,8 +14,8 @@ Use it when the hot tables dominate the load: a large fleet, long retention, log
 
 | | |
 |---|---|
-| PostgreSQL | Tested on 16; 14 and newer are expected to work but are not tested. Declarative partitioning with partitioned primary keys and `ON CONFLICT` on partitioned tables (11+) is what the schema needs. |
-| TimescaleDB | optional, 2.x (tested 2.31 on PostgreSQL 16). Never required, never installed by Core. |
+| PostgreSQL | **18 is the recommended version and the primary tested one** (use it for every new install). 16 is also tested and stays supported for installs that started on 16. 14 and 15 are the minimum and are expected to work but are **not tested**; below 14 is refused by the connection test. Declarative partitioning with partitioned primary keys and `ON CONFLICT` on partitioned tables (11+) is what the schema needs. The connection test shows the exact server version and adds a non-blocking note when it is below 18. |
+| TimescaleDB | optional, 2.x (tested 2.31.0 on PostgreSQL 18 and on 16). Never required, never installed by Core. |
 | PHP | the `pdo_pgsql` extension in the PHP that runs the web requests **and** the cron jobs (`php -m \| grep pdo_pgsql`). |
 | Role | one role that owns one database (or one schema). No superuser. |
 
@@ -23,8 +23,14 @@ Use it when the hot tables dominate the load: a large fleet, long retention, log
 
 The supported small setup: PostgreSQL next to MariaDB and PHP-FPM on one machine.
 
+On Ubuntu 26.04 LTS the distribution package is PostgreSQL 18, so the plain packages are the recommended version:
+
 ```bash
-sudo apt install postgresql postgresql-contrib php8.5-pgsql          # package names differ per distribution
+sudo apt update
+sudo apt install postgresql-18 postgresql-contrib php8.5-pgsql      # Ubuntu 26.04; php8.5-pgsql is the pdo_pgsql extension for PHP 8.5
+psql --version                                                       # psql (PostgreSQL) 18.x
+sudo systemctl reload php8.5-fpm                                     # PHP-FPM must reload to load the extension; also restart the cron PHP if it is a different binary
+php -m | grep pdo_pgsql                                              # check the PHP that runs the web requests AND the cron jobs
 sudo -u postgres psql <<'SQL'
 CREATE ROLE rivet_rmm LOGIN PASSWORD 'generate-a-long-random-one' NOSUPERUSER NOCREATEDB NOCREATEROLE;
 CREATE DATABASE rivet_rmm OWNER rivet_rmm ENCODING 'UTF8' LC_COLLATE 'C.UTF-8' LC_CTYPE 'C.UTF-8' TEMPLATE template0;
@@ -33,6 +39,8 @@ REVOKE ALL ON SCHEMA public FROM PUBLIC;
 GRANT ALL ON SCHEMA public TO rivet_rmm;
 SQL
 ```
+
+On another distribution use the PostgreSQL project's apt or yum repository (`postgresql-18`) or an official image, e.g. `docker run -d --name rivet-pg -e POSTGRES_USER=rivet_rmm -e POSTGRES_PASSWORD=... -e POSTGRES_DB=rivet_rmm -p 127.0.0.1:5432:5432 postgres:18` (never `latest`: pin the major, and bind to loopback). The `postgres:18` image keeps its data under `/var/lib/postgresql` (a volume mounted there, not at `/var/lib/postgresql/data`); the TimescaleDB image is `timescale/timescaledb:2.31.0-pg18`. The Debian and Ubuntu packages create the cluster for you (`pg_lsclusters`), listening on port 5432.
 
 Optional, once, as the superuser, **only if you want TimescaleDB** (and have installed its package): `sudo -u postgres psql -d rivet_rmm -c 'CREATE EXTENSION IF NOT EXISTS timescaledb'`. Core detects the extension with `SELECT extname FROM pg_extension`; without it the native partitioned mode is used.
 
@@ -43,7 +51,7 @@ local   rivet_rmm   rivet_rmm                    scram-sha-256
 host    rivet_rmm   rivet_rmm   127.0.0.1/32     scram-sha-256
 ```
 
-Reload (`systemctl reload postgresql`). Use `password_encryption = scram-sha-256` (the default since PostgreSQL 14). PHP-FPM and the cron user connect over the socket: set the connection `host` to the socket directory (`/var/run/postgresql`) and, if the PHP user is not the role, keep the password; or create the role with the PHP user's name and use `peer` authentication (then no password is stored anywhere).
+Set `listen_addresses` before the first start of a cluster that other machines must reach; the packages default to `localhost`. Reload (`systemctl reload postgresql`) after `pg_hba.conf`; `listen_addresses` needs a restart. Use `password_encryption = scram-sha-256` (the default since PostgreSQL 14). PHP-FPM and the cron user connect over the socket: set the connection `host` to the socket directory (`/var/run/postgresql`) and, if the PHP user is not the role, keep the password; or create the role with the PHP user's name and use `peer` authentication (then no password is stored anywhere).
 
 A **separate database host** is recommended for large fleets (the 10,000 device target of #89): set `host` to it, require TLS (`sslmode` `verify-full`, `sslrootcert` the CA file) and restrict `pg_hba.conf` to the web hosts' addresses.
 
@@ -117,6 +125,8 @@ On one box, the three compete for RAM. PostgreSQL's defaults are tiny, MariaDB's
 | `autovacuum` | on (default); `autovacuum_vacuum_scale_factor = 0.05` for the ledger tables if they churn | the two ledgers (`endpoint_agent_log_state`, `endpoint_agent_change_state`) are updated on every batch |
 | `synchronous_commit` | `on` (default) | `off` is a legitimate speed-up for history data (a crash loses at most the last fraction of a second, never corrupts), but it is your decision, not ours |
 | `wal` / checkpoints | `max_wal_size = 4GB`, `checkpoint_timeout = 15min` | fewer checkpoint spikes under constant small inserts |
+
+**PostgreSQL 18 notes.** `initdb` enables **data checksums by default** on 18 (the official image does; on a packaged cluster check `SHOW data_checksums`): a small CPU cost on writes, and a page that fails its checksum is reported instead of silently read. Nothing to configure. Two consequences: a cluster created on 16 without checksums cannot be upgraded in place by `pg_upgrade` into an 18 cluster that has them (initialise the new cluster with `--no-data-checksums`, or use dump and restore, see section 17); and `pg_checksums` can enable them offline on an old cluster. The new asynchronous I/O subsystem (`io_method`, default `worker`; `io_workers` default 3, `io_method = io_uring` needs a Linux kernel and build that support it) speeds up sequential scans and vacuum; the RMM's hot path is small point writes and indexed reads, so **keep the defaults**; raise `io_workers` (to 6 to 8) only if a large fleet shows scans waiting on I/O. Everything above (`shared_buffers`, `work_mem`, autovacuum, WAL) means the same on 16 and 18.
 
 Put the PostgreSQL data directory and MariaDB's on storage with enough IOPS for both; the hot tables are write-heavy. The connection opened by Core sets, per session: `TIME ZONE 'UTC'`, `statement_timeout` (30 s), `lock_timeout` (5 s), `idle_in_transaction_session_timeout` (60 s), `search_path` and `application_name = rivetcore-rmm` (so `pg_stat_activity` shows who is who). All are keys of `PostgresConfig`.
 
@@ -266,7 +276,7 @@ History writes of a check-in are **held until the control database transaction h
 Everything below is a service the edition's settings card calls (`$module->dataStoreSwitch()`); Core ships no page.
 
 1. **Save the connection**: `saveConnection(['host' => ..., 'port' => 5432, 'database' => ..., 'user' => ..., 'password' => ..., 'sslmode' => ..., 'schema' => 'public'])`. The password is sealed with the edition's SecretBox and kept in its own table (`rmm_data_store_connection`); it is never shown again, logged, audited or returned. Leave the password blank to keep the stored one **for the same host, port, user and database**; changing any of them requires typing the password again, and reusing a stored password for a remote host needs `sslmode` `verify-full` or `verify-ca` (so a hijacked admin session cannot make the server send the stored secret to another machine).
-2. **Test connection**: `testConnection()` (or `testConnection($formValues)` for values not saved yet). It checks the PHP extension, the connection, server version 14 or newer, a UTC session, the schema, that the role can create objects in it (tried in a rolled-back transaction), warns about a superuser role, and reports TimescaleDB and the schema state. Fix what it names; the message never contains the password.
+2. **Test connection**: `testConnection()` (or `testConnection($formValues)` for values not saved yet). It checks the PHP extension, the connection, server version (14 or newer is required; the exact version is shown, and below 18 a non-blocking note says that PostgreSQL 18 is the recommended version), a UTC session, the schema, that the role can create objects in it (tried in a rolled-back transaction), warns about a superuser role, and reports TimescaleDB and the schema state. Fix what it names; the message never contains the password.
 3. **Switch**: `switchTo('postgres', ['acknowledge_no_data_move' => true])` tests again, creates or upgrades the PostgreSQL schema and writes the setting, all or nothing. The card must show `DataStoreSwitch::NO_DATA_MOVE_NOTICE` next to the button and require the acknowledgement.
 
 **What the administrator sees after switching without migrating:** the RMM pages read only the new store, so logs, change records, software/patch/deployment history, check history and metric graphs start empty; the old history is still in the old store and is **not shown** (a merged view of two stores was rejected because paging, totals and per-device caps cannot be merged safely). `status()['left_behind']` names what stayed behind; the card should show it with a "Migrate data" button. Switching back to MariaDB (`switchTo('mariadb')`, always allowed) shows the old history again and hides what PostgreSQL received meanwhile, until a migration moves it.
@@ -298,3 +308,12 @@ Disk: until you purge, the old store keeps its data and costs its disk.
 ## 16. When to move: the capacity recommendation
 
 The capacity read model (`$module->capacity()->build()`) carries `store_sizes` (rows and bytes of the hot tables of the active store) and `data_store_recommendation`. While the store is MariaDB the recommendation says **"MariaDB is comfortable up to X devices. You have N. Consider PostgreSQL."** when `N >= 0.8 * X`, or when the hot tables exceed `rmm_pg_recommend_hot_mb` (default 51,200 MiB; 0 turns the size trigger off). `X` is `rmm_pg_recommend_devices` (a limit in `limits_json`, default 5000 until the phase 5 load test sets it from measurements). The panel also shows an estimated growth per day. It is advice only: nothing switches by itself.
+
+## 17. Moving from PostgreSQL 16 to 18
+
+Installs that started on 16 keep working: 16 is tested and supported. Moving to 18 is optional and never needed for Core, because the schema and the SQL are the same on both. Core stores **only the RMM history** in this database (no control data), so there are two equally valid ways:
+
+* **Dump and restore (simplest, works across any versions).** Stop check-ins from writing (switch the module off, or accept a short gap, the agents retry), take a backup with `scripts/rmm-postgres-backup.sh`, install PostgreSQL 18 next to 16 (a second cluster on another port: `pg_createcluster 18 rmm --port=5433` on Debian and Ubuntu), create the role and database there (section 3), restore with `scripts/rmm-postgres-restore.sh`, run `php scripts/rmm-postgres.php migrate` and `status` (nothing should be pending), change the connection (host, port) in the settings, test it (the test shows the exact server version) and switch the module back on. Keep the 16 cluster until you have looked at the history. The storage mode of a dump is whatever the schema was (native or TimescaleDB): install the same TimescaleDB 2.x for 18 first when the schema uses hypertables.
+* **`pg_upgrade`.** `pg_upgradecluster 16 main` (Debian and Ubuntu) or `pg_upgrade --old-datadir ... --new-datadir ... --link`. Data checksums must match on both sides: 18 enables them by default and 16 usually has them off, so create the new cluster with `initdb --no-data-checksums` (or turn them on in the old cluster first with `pg_checksums --enable` while it is stopped). Run `ANALYZE` (or `vacuumdb --all --analyze-in-stages`) afterwards: `pg_upgrade` does not carry planner statistics over, and until the tables are analysed the row estimates in the capacity panel read 0. With TimescaleDB, upgrade the extension first as its documentation describes.
+
+Either way nothing changes in the edition: the same `PostgresConfig` keys, the same schema, no Core migration.
