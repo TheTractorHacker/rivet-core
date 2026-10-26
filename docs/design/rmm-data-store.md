@@ -240,7 +240,7 @@ Phase 3 (setting, recommendation, migration command):
 
 ### Same-server PostgreSQL notes
 
-Supported. A separate database and role (no superuser), listen on a unix socket or localhost only, conservative `shared_buffers` and `work_mem` so MariaDB and PHP-FPM keep their memory, both data directories on storage with enough IOPS, back up both. For large fleets a separate host is better. Postgres connections are per PHP-FPM worker unless a pooler is used; budget `max_connections` for the number of workers plus the cron jobs.
+Supported (PostgreSQL 18 recommended, Ubuntu 26.04 ships it as `postgresql-18`; operator steps in docs/rmm/POSTGRES.md). A separate database and role (no superuser), listen on a unix socket or localhost only, conservative `shared_buffers` and `work_mem` so MariaDB and PHP-FPM keep their memory, both data directories on storage with enough IOPS, back up both. For large fleets a separate host is better. Postgres connections are per PHP-FPM worker unless a pooler is used; budget `max_connections` for the number of workers plus the cron jobs.
 
 ## 10. Decisions for Blake (phase 1; Blake's answers are applied in phase 2, section 12.1)
 
@@ -258,7 +258,7 @@ Supported. A separate database and role (no superuser), listen on a unix socket 
 
 ## 12. Phase 2: the PostgreSQL implementation
 
-Everything in this section is built and tested (contract tests on MariaDB, PostgreSQL 16 and TimescaleDB 2.31, an equivalence test that feeds identical event streams to both stores, concurrency, failure injection, a degraded-module test). The operator guide is [docs/rmm/POSTGRES.md](../rmm/POSTGRES.md).
+Everything in this section is built and tested (contract tests on MariaDB, PostgreSQL 18 and 16 and TimescaleDB 2.31 on both (18 is the primary version since 1.0.0-rc.42; section 14), an equivalence test that feeds identical event streams to both stores, concurrency, failure injection, a degraded-module test). The operator guide is [docs/rmm/POSTGRES.md](../rmm/POSTGRES.md).
 
 ### 12.1 Blake's decisions on phase 1 and how they were applied
 

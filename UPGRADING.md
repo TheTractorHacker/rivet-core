@@ -76,6 +76,10 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## PostgreSQL 18 verified (1.0.0-rc.42; nothing required)
+
+**Nothing is required of an edition.** No migration, no new option, no changed signature or constant value; an install on MariaDB is untouched. Optional: in the new-install text of your own settings card or docs, recommend PostgreSQL 18 (the connection test already says "PostgreSQL 18 is the recommended version" in `testConnection()['warnings']` for an older server; show `warnings` if you do not already) and, in your throwaway test containers, use `postgres:18` (and `timescale/timescaledb:2.31.0-pg18`). PostgreSQL 16 stays tested and supported; see docs/rmm/POSTGRES.md sections 2, 3 and 17.
+
 ## Adopting the data store setting and migration (1.0.0-rc.41; migration 0044; optional)
 
 Phase 3 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89). **An edition that changes nothing keeps running on MariaDB exactly as before** (no PostgreSQL code is loaded, no connection opened). To offer PostgreSQL to administrators, implement the items below in a **beta** first.
