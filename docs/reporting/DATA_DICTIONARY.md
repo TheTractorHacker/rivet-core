@@ -138,7 +138,7 @@ The device register: who owns it, what it runs, whether it is reachable, and the
 * **Grain:** one row per enrolled device (current state).
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live (read from the control tables at query time).
-* **Keys:** `device_id`, `client_id`, `site_id`, `asset_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `device_id`, `client_id`, `site_id`, `asset_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `asset_id` relates to the edition's assets table; `client_id` relates to the edition's clients table; `site_id` relates to the edition's locations table.
 * **Client scope:** `client_id` on every row.
 
@@ -180,7 +180,7 @@ Static group membership (a device can be in several groups). Use it to slice any
 * **Grain:** one row per device per group it belongs to.
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live.
-* **Keys:** `device_id`, `group_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `device_id`, `group_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -198,7 +198,7 @@ Tags on devices (manual or automatic). Use it to slice any device view by tag.
 * **Grain:** one row per device per tag.
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live.
-* **Keys:** `device_id`, `tag_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `device_id`, `tag_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -217,7 +217,7 @@ Hourly roll-up of the numeric metrics (cpu.utilization, memory.utilization, disk
 * **Grain:** one row per asset, metric, instance and UTC hour.
 * **Store:** control database; also the PostgreSQL store when `data_store` = `postgres` (that copy is the live one then).
 * **Refresh:** every check-in (the roll-up is written as samples arrive).
-* **Keys:** `asset_id`, `metric_name`, `instance`, `hour_start` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `asset_id`, `metric_name`, `instance`, `hour_start` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`; `asset_id` relates to `rpt_devices.asset_id`.
 * **Client scope:** `client_id` on every row in the control database; the PostgreSQL copy has no `client_id` (relate `device_id` or `asset_id` to `rpt_devices` and scope there).
 
@@ -242,7 +242,7 @@ Daily roll-up of the same metrics (from the hourly tier). Kept 400 days by defau
 * **Grain:** one row per asset, metric, instance and UTC day.
 * **Store:** control database; also the PostgreSQL store when `data_store` = `postgres` (that copy is the live one then).
 * **Refresh:** daily roll-up job (housekeeping); the last day is complete after the next run.
-* **Keys:** `asset_id`, `metric_name`, `instance`, `day_start` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `asset_id`, `metric_name`, `instance`, `day_start` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`; `asset_id` relates to `rpt_devices.asset_id`.
 * **Client scope:** `client_id` on every row in the control database; the PostgreSQL copy has no `client_id` (relate `device_id` or `asset_id` to `rpt_devices` and scope there).
 
@@ -267,7 +267,7 @@ Every alert the alerting engine raised, open or resolved, with its timings. The 
 * **Grain:** one row per alert episode (open and history).
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live; resolved rows are pruned by the alerting housekeeping.
-* **Keys:** `alert_row_id`, `alert_id`, `device_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `alert_row_id`, `alert_id`, `device_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -296,7 +296,7 @@ The current result of every check on every device, with the alerting engine's ti
 * **Grain:** one row per device and check (current state).
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live.
-* **Keys:** `device_id`, `check_name` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `device_id`, `check_name` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -321,7 +321,7 @@ The raw check history (every status change report), limited to the last 31 days.
 * **Grain:** one row per recorded check result.
 * **Store:** control database; also the PostgreSQL store when `data_store` = `postgres` (that copy is the live one then).
 * **Refresh:** every check-in.
-* **Keys:** `result_id`, `device_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `result_id`, `device_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row in the control database; the PostgreSQL copy has no `client_id` (relate `device_id` or `asset_id` to `rpt_devices` and scope there).
 
@@ -341,7 +341,7 @@ Patch state per device: the last scan, how many updates are missing by kind, how
 * **Grain:** one row per device that has been (or should be) scanned for updates.
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live; the scan runs on the patch scan interval (default daily).
-* **Keys:** `device_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `device_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -373,7 +373,7 @@ The updates the scans found, with their approval status. Titles are the public u
 * **Grain:** one row per device and update that is or was available.
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live; installed rows are pruned after 14 days.
-* **Keys:** `patch_row_id`, `device_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `patch_row_id`, `device_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -403,7 +403,7 @@ What the patching module did (approve, install, ...) and the result code. The re
 * **Grain:** one row per patch action recorded.
 * **Store:** control database; also the PostgreSQL store when `data_store` = `postgres` (that copy is the live one then).
 * **Refresh:** when the action is recorded.
-* **Keys:** `patch_history_id`, `device_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `patch_history_id`, `device_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -426,7 +426,7 @@ What is installed now. Removed items are not listed (see rpt_software_changes).
 * **Grain:** one row per device and installed software item (current).
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live; refreshed when a device reports a changed inventory.
-* **Keys:** `device_id`, `software_name`, `source` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `device_id`, `software_name`, `source` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -449,7 +449,7 @@ The software change log. Kept 365 days by default.
 * **Grain:** one row per software install, removal or version change.
 * **Store:** control database; also the PostgreSQL store when `data_store` = `postgres` (that copy is the live one then).
 * **Refresh:** when a device reports a changed inventory.
-* **Keys:** `software_change_id`, `device_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `software_change_id`, `device_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row in the control database; the PostgreSQL copy has no `client_id` (relate `device_id` or `asset_id` to `rpt_devices` and scope there).
 
@@ -473,7 +473,7 @@ Proxmox / Hyper-V hosts that report through the agent. The error text is not exp
 * **Grain:** one row per hypervisor host device.
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live; the host reports on its collection interval.
-* **Keys:** `device_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `device_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -499,7 +499,7 @@ The VM inventory of every hypervisor host with its state, size, snapshots and ba
 * **Grain:** one row per virtual machine (current state).
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live; the host reports on its collection interval.
-* **Keys:** `vm_id`, `host_device_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `vm_id`, `host_device_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `host_device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -540,7 +540,7 @@ The change monitor's records as counts and types only: which watch fired, what k
 * **Grain:** one row per recorded configuration change.
 * **Store:** control database; also the PostgreSQL store when `data_store` = `postgres` (that copy is the live one then).
 * **Refresh:** when a device reports changes.
-* **Keys:** `change_id`, `device_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `change_id`, `device_id` (the columns that identify a row come first, then the foreign keys).
 * **Relationships:** `device_id` relates to `rpt_devices.device_id`.
 * **Client scope:** `client_id` on every row.
 
@@ -564,7 +564,7 @@ WHO-did-WHAT-WHEN at the level of event type and action. The summary, metadata, 
 * **Grain:** one row per audit event (summary only).
 * **Store:** control database (MariaDB / MySQL).
 * **Refresh:** live.
-* **Keys:** `audit_id` (the first columns identify a row; the others are foreign keys).
+* **Keys:** `audit_id` (the columns that identify a row come first, then the foreign keys).
 * **Client scope:** none, the view has no `client_id` and must not be granted to a per-client account.
 * **Note:** No client_id: audit events are global.
 

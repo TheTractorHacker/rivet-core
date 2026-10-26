@@ -60,7 +60,7 @@ final class ReportingDocs
             $o[] = '* **Grain:** ' . $v->grain . '.';
             $o[] = '* **Store:** ' . self::storeText($v) . '.';
             $o[] = '* **Refresh:** ' . $v->refresh . '.';
-            $o[] = '* **Keys:** ' . implode(', ', array_map(static fn (string $k): string => '`' . $k . '`', $v->keys)) . ' (the first columns identify a row; the others are foreign keys).';
+            $o[] = '* **Keys:** ' . implode(', ', array_map(static fn (string $k): string => '`' . $k . '`', $v->keys)) . ' (the columns that identify a row come first, then the foreign keys).';
             if ($v->related !== []) {
                 $r = [];
                 foreach ($v->related as $col => $to) {
