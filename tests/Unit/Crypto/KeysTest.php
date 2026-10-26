@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test value, not a credential: the known-answer key is the byte sequence 01..20 (hex counting). See secret-scan-allowlist.json.
 namespace RivetCore\Tests\Unit\Crypto;
 
 use PHPUnit\Framework\TestCase;

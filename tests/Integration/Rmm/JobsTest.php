@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test values, not credentials: secret-looking strings fed to the job-output redactor; the JWT is built at run time from the public key string rivetcore-fixture-jwt-not-a-secret. See secret-scan-allowlist.json.
 namespace RivetCore\Tests\Integration\Rmm;
 
 use RivetCore\Rmm\Crypto\Redactor;

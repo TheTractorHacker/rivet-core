@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Fixture note (secret scan): synthetic test value, not a credential: the mock build-host server accepts only the string the test gives it. See secret-scan-allowlist.json.
 """Tests that need no Docker: the mock server's validation, and the parts of build-host.sh that act before any build
 (https-only, config permissions, ref allowlist refusal reported as failed, lock, token never printed).
 Run: python3 -m unittest endpoint-agent/e2e/test_build_host.py"""

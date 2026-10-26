@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test values, not credentials: settings key derived from the public string rivetcore-fixture-settings-key (SHA-256); master key, password and TOTP samples are the literals below. See secret-scan-allowlist.json.
 /**
  * Regenerates legacy_samples.json from the editions' own function bodies (LegacyEditionFunctions.php). Fixed secrets, random IVs/salts,
  * so the output differs run to run; the committed file is one run. Each sample is checked against the editions' own reader before it is

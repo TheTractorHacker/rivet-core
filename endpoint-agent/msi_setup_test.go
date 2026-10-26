@@ -1,3 +1,5 @@
+// Fixture note (secret scan): synthetic test value, not a credential: same fixture token and documentation UUID as setup_test.go. See secret-scan-allowlist.json at the repository root.
+
 package main
 
 import (

@@ -148,3 +148,35 @@ paths = ['''(^|/)scripts/secret\-scan\.php$''']
 [[allowlists]]
 description = "Generator of .gitleaks.toml and .semgrepignore."
 paths = ['''(^|/)scripts/secret\-scan\-sync\.php$''']
+
+[[allowlists]]
+description = "Historical path (before the agent moved under endpoint-agent/): rotated-credential round-trip test value."
+paths = ['''(^|/)internal/agent/agent_test\.go$''']
+
+[[allowlists]]
+description = "Historical path: mock server test token."
+paths = ['''(^|/)internal/agent/helpers_test\.go$''']
+
+[[allowlists]]
+description = "Historical path: installer-trailer test token of the wrong shape for a real one."
+paths = ['''(^|/)internal/embed/embed_test\.go$''']
+
+[[allowlists]]
+description = "Historical path of the frozen signing vectors: public TEST key derived from SHA-256 of RivetIT-agent-TEST-seed."
+paths = ['''(^|/)internal/jobs/testdata/agent_job_signing_vectors\.json$''']
+
+[[allowlists]]
+description = "Historical path (repository root) of endpoint-agent/setup_test.go: synthetic setup token of the wrong shape for a real one."
+paths = ['''(^|/)setup_test\.go$''']
+
+[[allowlists]]
+description = "Branch compliance (not yet on main): false positive, a data-class registry entry whose 'key' is an identifier string (deployment_history style), not a key."
+paths = ['''(^|/)src/Compliance/Profile/DataClass\.php$''']
+
+[[allowlists]]
+description = "Branch quality-gates-1.0 (never merged): metadata redaction test with placeholder values v1..v9 and word-like names."
+paths = ['''(^|/)tests/Security/AuditSurfaceTest\.php$''']
+
+[[allowlists]]
+description = "Historical path of endpoint-agent/internal/jobs/executor_test.go: ghp_-shaped redaction string with an invalid length and CRC32 checksum."
+paths = ['''(^|/)internal/jobs/executor_test\.go$''']

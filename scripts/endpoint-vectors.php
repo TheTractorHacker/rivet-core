@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test values, not credentials: the enrollment token secret is the hex counting sequence, the signing key derives from SHA-256 of the public string RivetIT-agent-TEST-seed. See secret-scan-allowlist.json.
 /*
  * Regenerates the endpoint agent test vectors shared with the Go agent, from the fixed TEST key (no database needed):
  *

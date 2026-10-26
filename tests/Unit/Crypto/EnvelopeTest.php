@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test values, not credentials: the McGrew and Viega GCM specification test case 16 vector (public). See secret-scan-allowlist.json.
 namespace RivetCore\Tests\Unit\Crypto;
 
 use PHPUnit\Framework\Attributes\DataProvider;

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test value, not a credential: hex counting sequence, used by this unit test only. See secret-scan-allowlist.json.
 namespace RivetCore\Tests\Unit\Rmm;
 
 use PHPUnit\Framework\TestCase;

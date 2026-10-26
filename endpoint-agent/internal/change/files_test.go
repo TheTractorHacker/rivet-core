@@ -1,3 +1,5 @@
+// Fixture note (secret scan): synthetic test values, not credentials: a PEM block whose body is the word SECRETKEYBODYLINE2, bob:tok3n123@host and similar strings that must come back masked. See secret-scan-allowlist.json at the repository root.
+
 package change
 
 import (

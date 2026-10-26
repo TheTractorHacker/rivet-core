@@ -1,3 +1,5 @@
+// Fixture note (secret scan): synthetic test value, not a credential: rvte1.selabc.fixturepart123 has the wrong shape for a real enrollment token (6-character selector, 13-character secret); the installer id is the standard documentation UUID. See secret-scan-allowlist.json at the repository root.
+
 package main
 
 import (

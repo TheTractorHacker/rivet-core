@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test value, not a credential: the wrong-password string is rejected by design and unknown to every real server. See secret-scan-allowlist.json.
 namespace RivetCore\Tests\Integration\Rmm\Postgres;
 
 use PHPUnit\Framework\TestCase;

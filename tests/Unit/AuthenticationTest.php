@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test values, not credentials: short throwaway strings (tk_abc.DEF-123, p:ss w0rd) for header validation. See secret-scan-allowlist.json.
 namespace RivetCore\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\DataProvider;

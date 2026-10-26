@@ -1,5 +1,7 @@
 //go:build !windows
 
+// Fixture note (secret scan): synthetic test value, not a credential: the ghp_ string has a 36-character alphabet-run body and an invalid CRC32 checksum, so it cannot be a GitHub token. See secret-scan-allowlist.json at the repository root.
+
 package jobs
 
 import (

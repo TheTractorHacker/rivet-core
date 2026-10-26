@@ -99,3 +99,27 @@
 
 # Branch store-info (not yet on main): throwaway password constant for a scratch Postgres in a test.
 /tests/Integration/Rmm/DataStoreInfoTest.php
+
+# Historical path (before the agent moved under endpoint-agent/): rotated-credential round-trip test value.
+/internal/agent/agent_test.go
+
+# Historical path: mock server test token.
+/internal/agent/helpers_test.go
+
+# Historical path: installer-trailer test token of the wrong shape for a real one.
+/internal/embed/embed_test.go
+
+# Historical path of the frozen signing vectors: public TEST key derived from SHA-256 of RivetIT-agent-TEST-seed.
+/internal/jobs/testdata/agent_job_signing_vectors.json
+
+# Historical path (repository root) of endpoint-agent/setup_test.go: synthetic setup token of the wrong shape for a real one.
+/setup_test.go
+
+# Branch compliance (not yet on main): false positive, a data-class registry entry whose 'key' is an identifier string (deployment_history style), not a key.
+/src/Compliance/Profile/DataClass.php
+
+# Branch quality-gates-1.0 (never merged): metadata redaction test with placeholder values v1..v9 and word-like names.
+/tests/Security/AuditSurfaceTest.php
+
+# Historical path of endpoint-agent/internal/jobs/executor_test.go: ghp_-shaped redaction string with an invalid length and CRC32 checksum.
+/internal/jobs/executor_test.go

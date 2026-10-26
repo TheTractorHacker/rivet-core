@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test values, not credentials: sequential or documented-example strings (AWS documentation example id, ghp_/xoxb- strings with invalid length or shape); the JWT is built at run time from the public key string rivetcore-fixture-jwt-not-a-secret. See secret-scan-allowlist.json.
 namespace RivetCore\Tests\Unit\Rmm;
 
 use PHPUnit\Framework\Attributes\DataProvider;

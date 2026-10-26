@@ -7,6 +7,7 @@ declare(strict_types=1);
  *
  *   php scripts/secret-scan.php                 scan every tracked file in the working tree
  *   php scripts/secret-scan.php --history       also scan every line ever added on any ref (git log --all -p)
+ *   php scripts/secret-scan.php --history --rev=HEAD   limit the history scan to the commits reachable from a revision (CI: other branches are not this change's business)
  *   php scripts/secret-scan.php --path=src      limit the working-tree scan to a path prefix (repeatable)
  *   php scripts/secret-scan.php --no-allowlist  show the allowlisted fixtures too (audit mode)
  *
@@ -137,7 +138,7 @@ function secret_scan_allowed(array $allow, string $path, string $rule): bool
 if (PHP_SAPI === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FILE__) {
     $root = dirname(__DIR__);
     chdir($root);
-    $opts = getopt('', ['history', 'no-allowlist', 'path::']);
+    $opts = getopt('', ['history', 'no-allowlist', 'path::', 'rev::']);
     $allow = isset($opts['no-allowlist']) ? ['rules' => []] : secret_scan_load_allowlist($root . '/secret-scan-allowlist.json');
     $prefixes = isset($opts['path']) ? (array) $opts['path'] : [];
     $bad = 0;
@@ -178,7 +179,8 @@ if (PHP_SAPI === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FILE__) {
     }
 
     if (isset($opts['history'])) {
-        $p = popen('git log --all --no-color --no-ext-diff --unified=0 --format="@@commit %h" -p', 'r');
+        $scope = isset($opts['rev']) ? escapeshellarg((string) $opts['rev']) : '--all';
+        $p = popen('git log ' . $scope . ' --no-color --no-ext-diff --unified=0 --format="@@commit %h" -p', 'r');
         $commit = '';
         $file = '';
         $ln = 0;

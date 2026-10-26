@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 /**
  * Fixed, public test fixtures shared by golden.php (the driver) and adapter-rivetit.php (the edition seeder).
- * Nothing here is a secret: the signing key is the test key already committed in agent_job_signing_vectors.json
- * (seed = SHA-256 of the ASCII string "RivetIT-agent-TEST-seed"); every token is a throwaway value that only ever exists in a scratch database.
+ * Fixture note (secret scan): synthetic test values, not credentials, derived from public strings. Nothing here is a secret: the signing key is the test key already committed in agent_job_signing_vectors.json
+ * (seed = SHA-256 of the ASCII string "RivetIT-agent-TEST-seed"); every enrollment secret is one repeated character, the admin API token is the hex counting sequence, and every token is a throwaway value that only ever exists in a scratch database.
  */
 return [
     // Instance signing key installed into the scratch database (libsodium 64-byte secret, base64) and its public half.

@@ -1,3 +1,5 @@
+// Fixture note (secret scan): synthetic test value, not a credential: wrong shape for a real enrollment token. See secret-scan-allowlist.json at the repository root.
+
 package embed
 
 import (

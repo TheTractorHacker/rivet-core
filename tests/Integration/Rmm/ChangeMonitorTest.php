@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test values, not credentials: bob:tok3n123@host, /p:pw1234 and similar fake strings that must come back masked. See secret-scan-allowlist.json.
 namespace RivetCore\Tests\Integration\Rmm;
 
 use RivetCore\Rmm\Authz\RmmAbility;

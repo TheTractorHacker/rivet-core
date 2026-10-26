@@ -1,3 +1,5 @@
+// Fixture note (secret scan): synthetic test value, not a credential: token accepted only by the in-test httptest server. See secret-scan-allowlist.json at the repository root.
+
 package agent
 
 import (

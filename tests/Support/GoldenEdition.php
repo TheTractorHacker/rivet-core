@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// Fixture note (secret scan): synthetic test value, not a credential: SECRET_BOX_KEY_SEED is five readable words, used only for the scratch golden-replay database. See secret-scan-allowlist.json.
 namespace RivetCore\Tests\Support;
 
 use RivetCore\Contracts\ClockInterface;
