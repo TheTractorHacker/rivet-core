@@ -101,7 +101,7 @@ final class Migration0046FrameworkProfiles implements MigrationInterface
                 `recorded_by` int(11) DEFAULT NULL,
                 `recorded_by_name` varchar(200) NOT NULL,
                 `result` varchar(10) NOT NULL,
-                `scope` varchar(20) NOT NULL,
+                `stores` varchar(80) NOT NULL,
                 `data_store` varchar(10) NOT NULL,
                 `backup_taken_at` datetime DEFAULT NULL,
                 `duration_s` int(11) DEFAULT NULL,

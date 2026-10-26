@@ -78,6 +78,14 @@ final class KitMutationTest extends TestCase
             [AccessPolicyKitTest::class, 'nondeterministic', ['testTheSameQuestionGetsTheSameAnswer']],
             [AccessPolicyKitTest::class, 'ignores_user', ['testTheEditionsSampleDecisionsHold']],
             [AccessPolicyKitTest::class, 'allow_all', ['testUnknownAbilitiesAreDeniedForEveryUser', 'testTheEditionsSampleDecisionsHold']],
+            // Backup facts (customizable compliance frameworks)
+            [BackupFactsKitTest::class, 'future', ['testNoTimestampIsInTheFuture']],
+            [BackupFactsKitTest::class, 'claims_without_success', ['testNothingIsClaimedWithoutASuccessfulBackup']],
+            [BackupFactsKitTest::class, 'unavailable_claims', ['testUnavailableFactsClaimNothingAtAll']],
+            [BackupFactsKitTest::class, 'offsite_without_destination', ['testAnOffsiteArrivalNeedsAnOffsiteDestination']],
+            [BackupFactsKitTest::class, 'secret_text', ['testNoTextFieldCarriesASecret']],
+            [BackupFactsKitTest::class, 'unstable', ['testTwoCallsAgree']],
+            [BackupFactsKitTest::class, 'throws', ['testFactsAreReturnedAndNeverThrow']],
             // Attestations
             [AttestationKitTest::class, 'first_wins', ['testTheLastReviewRecordedWins', 'testItemsAreIndependentAndOnePerItem']],
             [AttestationKitTest::class, 'max_date_wins', ['testTwoReviewsOnTheSameDayStillPickTheLastRecorded']],

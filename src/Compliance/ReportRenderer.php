@@ -56,7 +56,12 @@ final class ReportRenderer
     public function csv(Assessment $a, ?string $framework = null): string
     {
         $out = "\xEF\xBB\xBF";
-        $meta = [['Compliance status report'], ['Generated', $a->generatedAt->format('Y-m-d H:i:s')], ['Framework', $framework !== null && Framework::isValid($framework) ? Framework::LABELS[$framework] : 'All frameworks'], ['Note', self::DISCLAIMER], []];
+        $meta = [['Compliance status report'], ['Generated', $a->generatedAt->format('Y-m-d H:i:s')], ['Framework', $framework !== null && Framework::isValid($framework) ? Framework::LABELS[$framework] : 'All frameworks']];
+        if (($profile = self::profileText($a)) !== null) {
+            $meta[] = ['Framework profile', $profile];
+        }
+        $meta[] = ['Note', self::DISCLAIMER];
+        $meta[] = [];
         foreach (array_merge($meta, $this->rows($a, $framework)) as $row) {
             $out .= implode(',', array_map([self::class, 'csvCell'], $row)) . "\r\n";
         }
@@ -86,6 +91,9 @@ final class ReportRenderer
             . 'table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #ccc;padding:5px 7px;text-align:left;vertical-align:top}th{background:#f2f2f2}.s-pass,.s-current{color:#116329}.s-warn,.s-due_soon{color:#8a5a00}.s-fail,.s-overdue,.s-never,.s-error{color:#a40e26}.s-na{color:#555}'
             . '.note{background:#f7f7f7;border:1px solid #ddd;padding:8px 10px;font-size:12px}.score{font-size:28px;font-weight:600}@media print{body{margin:0}tr{break-inside:avoid}}</style></head><body>';
         $h .= '<h1>Compliance status report</h1><div>' . $e($orgName) . ' &middot; ' . $e($fw !== null ? Framework::LABELS[$fw] : 'All frameworks') . ' &middot; generated ' . $e($a->generatedAt->format('Y-m-d H:i')) . ($appVersion ? ' &middot; version ' . $e($appVersion) : '') . '</div>';
+        if (($profile = self::profileText($a)) !== null) {
+            $h .= '<div>Framework profile: ' . $e($profile) . '</div>';
+        }
         $h .= '<p class="note">' . $e(self::DISCLAIMER) . '</p>';
         $h .= '<h2>Summary</h2><div class="score">' . $e($score) . '</div><div>Share of listed controls with evidence (pass = 1, needs attention = 0.5).</div>';
         $h .= '<table><tr><th>Framework</th><th>Score</th><th>Pass</th><th>Attention</th><th>Fail / error</th><th>Manual current</th><th>Manual overdue / never</th></tr>';
@@ -101,7 +109,7 @@ final class ReportRenderer
             if (!self::inFramework($r['controls'], $fw)) {
                 continue;
             }
-            $h .= '<tr><td>' . $e((string) $r['category']) . '</td><td>' . $e((string) $r['title']) . '<br><small>' . $e((string) $r['why']) . '</small></td><td class="s-' . $e((string) $r['status']) . '">' . $e((string) $r['status_label']) . '</td><td>' . $e((string) $r['summary']) . ($r['detail'] ? '<br><small>' . $e((string) $r['detail']) . '</small>' : '') . '</td><td>' . $e(self::controlsText($r['controls'], $fw)) . '</td>' . ($wp ? '<td>' . $e((string) ($r['responsible'] ?? 'Internal')) . '</td>' : '') . '</tr>';
+            $h .= '<tr><td>' . $e((string) $r['category']) . '</td><td>' . $e((string) $r['title']) . '<br><small>' . $e((string) $r['why']) . '</small></td><td class="s-' . $e((string) $r['status']) . '">' . $e((string) $r['status_label']) . '</td><td>' . $e((string) $r['summary']) . ($r['detail'] ? '<br><small>' . nl2br($e((string) $r['detail']), false) . '</small>' : '') . '</td><td>' . $e(self::controlsText($r['controls'], $fw)) . '</td>' . ($wp ? '<td>' . $e((string) ($r['responsible'] ?? 'Internal')) . '</td>' : '') . '</tr>';
         }
         $h .= '</table><h2>Manual checklist</h2><table><tr><th>Category</th><th>Item</th><th>State</th><th>Last review</th><th>Reviewer</th><th>Next due</th><th>Controls</th>' . ($wp ? '<th>Responsible</th>' : '') . '</tr>';
         foreach ($a->manual as $r) {
@@ -112,6 +120,17 @@ final class ReportRenderer
         }
 
         return $h . '</table></body></html>';
+    }
+
+    /** The framework profile the assessment was made against ("Contract X (version 3)"), or null when it was made without one. */
+    private static function profileText(Assessment $a): ?string
+    {
+        $p = $a->meta['profile'] ?? null;
+        if (!is_array($p) || !isset($p['label']) || !is_string($p['label'])) {
+            return null;
+        }
+
+        return $p['label'] . (empty($p['built_in']) && isset($p['version']) ? ' (version ' . (int) $p['version'] . ')' : '');
     }
 
     /** @param array<string,list<string>> $controls */
