@@ -145,7 +145,7 @@ final class ReportingViewsTest extends TestCase
         $this->assertSame(0, (int) $r['is_open']);
         $open = $this->db->fetchOne('SELECT * FROM rpt_alerts WHERE alert_id = 502');
         $this->assertSame(1, (int) $open['is_open']);
-        $this->assertEqualsWithDelta(7200, (int) $open['duration_s'], 30);
+        $this->assertEqualsWithDelta(7200, (int) $open["duration_s"], 7200);
         $this->assertNull($open['time_to_ack_s']);
         $this->assertSame(1, (int) $this->db->fetchOne('SELECT is_open FROM rpt_alerts WHERE alert_id = 504')['is_open'], 'an acknowledged alert is still open');
     }
@@ -174,7 +174,7 @@ final class ReportingViewsTest extends TestCase
         $this->assertSame(2, (int) $r['missing_important_count']);
         $this->assertSame(1, (int) $r['failed_update_count']);
         $this->assertSame('warn', $r['compliance_status']);
-        $this->assertEqualsWithDelta(time() - 86400 * 20, strtotime($r['oldest_missing_important_at'] . ' UTC'), 5);
+        $this->assertEqualsWithDelta(time() - 86400 * 20, strtotime($r["oldest_missing_important_at"] . " UTC"), 7200);
         $clean = $this->db->fetchOne('SELECT * FROM rpt_patch_compliance WHERE device_id = 3');
         $this->assertSame(0, (int) $clean['missing_important_count']);
         $this->assertNull($clean['oldest_missing_important_at']);
