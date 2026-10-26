@@ -48,6 +48,12 @@ final class VictoriaMetricsStore implements ExternalMetricStoreInterface
     private readonly string $readBase;
     private readonly int $maxPointsPerRequest;
 
+    /** Dumps show where the store points, never the credentials. @return array<string,mixed> */
+    public function __debugInfo(): array
+    {
+        return ['writeBase' => $this->writeBase, 'readBase' => $this->readBase, 'auth' => $this->bearerToken !== null ? 'bearer (hidden)' : ($this->basicAuth !== null ? 'basic (hidden)' : 'none')];
+    }
+
     /**
      * @param array{0:string,1:string}|null $basicAuth [user, password]; mutually exclusive with $bearerToken
      */
@@ -56,8 +62,8 @@ final class VictoriaMetricsStore implements ExternalMetricStoreInterface
         private readonly UrlPolicy $urlPolicy,
         ?HttpTransportInterface $transport = null,
         ?string $readUrl = null,
-        private readonly ?string $bearerToken = null,
-        private readonly ?array $basicAuth = null,
+        #[\SensitiveParameter] private readonly ?string $bearerToken = null,
+        #[\SensitiveParameter] private readonly ?array $basicAuth = null,
         private readonly int $timeoutSeconds = 10,
         private readonly bool $allowInsecureHttp = false,
         int $maxPointsPerRequest = self::DEFAULT_POINTS_PER_REQUEST,

@@ -80,7 +80,8 @@ final class PostgresConfig
         if (str_contains($password, "\0")) {
             throw new \InvalidArgumentException('Postgres password must not contain a NUL byte.');
         }
-        $this->secret = static fn (): string => $password;   // a closure, so var_export / print_r / json_encode / var_dump never show the value
+        $holder = new \RivetCore\Support\SecretString($password);   // an opaque holder inside a closure: var_export / print_r / json_encode / var_dump and (array) casts never show the value
+        $this->secret = static fn (): string => $holder->reveal();
     }
 
     /**
