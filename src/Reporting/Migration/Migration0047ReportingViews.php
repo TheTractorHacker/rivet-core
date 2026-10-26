@@ -16,11 +16,11 @@ use RivetCore\Reporting\ReportingSchema;
  *
  * @internal
  */
-final class Migration0045ReportingViews implements MigrationInterface
+final class Migration0047ReportingViews implements MigrationInterface
 {
     public function id(): string
     {
-        return '0045_reporting_views';
+        return '0047_reporting_views';
     }
 
     public function up(DatabaseInterface $database): void

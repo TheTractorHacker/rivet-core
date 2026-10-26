@@ -1,6 +1,6 @@
 # Reporting and Power BI: stable views, a read-only account, a feed, an edition page
 
-Status: **phases 1 and 2 of [#91](https://github.com/TheTractorHacker/rivet-core/issues/91) are implemented** (1.0.0-rc.44, migration 0045 and PostgreSQL migration `0002_reporting_views`). Phases 3 to 5 are planned below. Related: [#89](https://github.com/TheTractorHacker/rivet-core/issues/89) ([rmm-data-store.md](rmm-data-store.md)). Operator guide: [../reporting/POWER_BI.md](../reporting/POWER_BI.md). Data dictionary: [../reporting/DATA_DICTIONARY.md](../reporting/DATA_DICTIONARY.md).
+Status: **phases 1 and 2 of [#91](https://github.com/TheTractorHacker/rivet-core/issues/91) are implemented** (1.0.0-rc.45, migration 0047 and PostgreSQL migration `0002_reporting_views`). Phases 3 to 5 are planned below. Related: [#89](https://github.com/TheTractorHacker/rivet-core/issues/89) ([rmm-data-store.md](rmm-data-store.md)). Operator guide: [../reporting/POWER_BI.md](../reporting/POWER_BI.md). Data dictionary: [../reporting/DATA_DICTIONARY.md](../reporting/DATA_DICTIONARY.md).
 
 ## 1. Goal
 
@@ -137,4 +137,4 @@ The edition adds the same contract tests (frozen columns fixture, deny-list, cli
 2. `rpt_audit_events` is the one unscoped view. Keep it in Core (administrators), or move it to the edition's settings page only. Default: keep, never granted to per-client accounts by the page.
 3. MariaDB / MySQL have no per-account statement timeout; the guide recommends a server-wide limit. Phase 3's feed adds its own.
 4. Whether `rpt_log_events` (counts per level and day, no text) is wanted. Not built.
-5. The migration number: 0045 here; if another change took 0045 first, renumber (the class name and `id()`), update `CoreMigrations::all()` and `tests/Integration/MigrationAndAuditTest.php`.
+5. The migration number: 0047 here; if another change took 0047 first, renumber (the class name and `id()`), update `CoreMigrations::all()` and `tests/Integration/MigrationAndAuditTest.php`.

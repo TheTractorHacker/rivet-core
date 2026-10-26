@@ -6,7 +6,7 @@ namespace RivetCore\Tests\Integration\Reporting;
 
 use PHPUnit\Framework\TestCase;
 use RivetCore\Database\DatabaseInterface;
-use RivetCore\Reporting\Migration\Migration0045ReportingViews;
+use RivetCore\Reporting\Migration\Migration0047ReportingViews;
 use RivetCore\Reporting\ReportingCatalog;
 use RivetCore\Reporting\ReportingView;
 use RivetCore\Tests\Support\ReportingSeed;
@@ -51,8 +51,8 @@ final class ReportingViewsTest extends TestCase
     public function testTheMigrationIsIdempotentAndChangesNoColumn(): void
     {
         $before = $this->columnsOfAllViews();
-        (new Migration0045ReportingViews())->up($this->db);
-        (new Migration0045ReportingViews())->up($this->db);
+        (new Migration0047ReportingViews())->up($this->db);
+        (new Migration0047ReportingViews())->up($this->db);
         $this->assertSame($before, $this->columnsOfAllViews());
         $this->assertSame(17, count($before));
     }
