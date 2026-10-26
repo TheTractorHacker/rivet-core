@@ -119,6 +119,22 @@ final class ReportingPostgresViewsTest extends TestCase
         }
     }
 
+    /** The SQL that Power BI folds a sample into: the typed column list, and for a history view the RangeStart / RangeEnd filter. */
+    public function testTheSqlBehindEverySampleRuns(): void
+    {
+        require_once __DIR__ . '/../../../../scripts/lib/ReportingDocs.php';
+        foreach (ReportingCatalog::views() as $v) {
+            if (!$v->inPostgres()) {
+                continue;
+            }
+            $cols = implode(', ', array_map(static fn (string $c): string => '"' . $c . '"', $v->columnNames('postgres')));
+            $this->db->query("SELECT $cols FROM {$v->name} LIMIT 100");
+            $col = \ReportingDocs::INCREMENTAL[$v->name];
+            $this->assertNotEmpty($this->db->query("SELECT $cols FROM {$v->name} WHERE \"$col\" >= ? AND \"$col\" < ?", [gmdate('Y-m-d H:i:s', time() - 86400 * 400) . '+00', gmdate('Y-m-d H:i:s', time() + 86400) . '+00']), $v->name);
+            $this->assertSame([], $this->db->query("SELECT $cols FROM {$v->name} WHERE \"$col\" >= ? AND \"$col\" < ?", ['2000-01-01 00:00:00+00', '2000-01-02 00:00:00+00']));
+        }
+    }
+
     public function testTimestampsAreUtcWhateverTheSessionZone(): void
     {
         $this->db->execute("SET TIME ZONE 'America/Chicago'");
