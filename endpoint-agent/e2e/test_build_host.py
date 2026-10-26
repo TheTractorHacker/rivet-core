@@ -236,6 +236,7 @@ class ShippedFiles(unittest.TestCase):
         text = open(SCRIPT).read()
         self.assertIn('find "$OUT" -maxdepth 2 -type l', text)
         self.assertIn("rm -f -- SHA256SUMS", text)
+        self.assertIn('docker pull -q "$GO_IMAGE"', text)
 
 
 if __name__ == "__main__":

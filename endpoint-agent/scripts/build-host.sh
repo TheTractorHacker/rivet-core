@@ -261,6 +261,9 @@ build_job() { # version ref targets msi(true|false) linux(true|false|"") -> file
     gov=$(awk '/^go /{print $2; exit}' "$SRC/endpoint-agent/go.mod"); [ -n "$gov" ] || die "cannot read the Go version from go.mod"
     GO_IMAGE="golang:$gov"
   fi
+  # A floating tag such as golang:1.27 is never refreshed by `docker run`: pull it so the build uses the current patch release of the toolchain, which
+  # carries the standard-library security fixes (CORE-14). Best effort: an offline host keeps the image it has, and the Go version built with is reported.
+  docker pull -q "$GO_IMAGE" >>"$LOG" 2>&1 || log "could not refresh $GO_IMAGE; using the local image"
   mkdir -p "$WORKDIR/gomod"
   if [ "$(id -u)" = 0 ]; then BUILD_UID=10001 BUILD_GID=10001; chown -R "$BUILD_UID:$BUILD_GID" "$SRC" "$WORKDIR/gomod"
   else BUILD_UID=$(id -u) BUILD_GID=$(id -g); fi
