@@ -70,7 +70,12 @@ final class UiAssetsTest extends TestCase
         self::assertSame(substr_count($css, "\n"), substr_count($asRivetIt, "\n"));
     }
 
-    private const DESIGN_CSS_RIVETIT_SPLIT_SHA256 = '8aaf3030446237b59c7e63a605b8c1abe0688178f997b8de12ed8f142047b33c';
+    /**
+     * Pinned hash of the shared design CSS with the muted-text exception reverted. It changed once on purpose after the split (commit f64d0a6,
+     * 'outline-primary buttons use one colour': the label follows the theme accent). Any further change to this file must update this value
+     * and say why; promote edition changes with scripts/promote-ui-assets.php so the manifest is rebuilt in the same step.
+     */
+    private const DESIGN_CSS_RIVETIT_SPLIT_SHA256 = '42a5e5601a8c6fea2dab93caa661083dd42df4a3b6ed5234f3e2cd47fdbea67f';
 
     /** SHA-256 of RivetIT 26.10.68's js/<file>; Core's copy must be byte identical (the wizard: after reversing its reviewed deviation). */
     private const RIVETIT_JS_SHA256 = [
