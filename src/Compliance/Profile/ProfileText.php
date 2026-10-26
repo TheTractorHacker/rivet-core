@@ -18,7 +18,7 @@ final class ProfileText
         '/\bAKIA[0-9A-Z]{16}\b/',
         '/\b(ghp|gho|ghs|ghu|github_pat|glpat|xox[abprs]|sk_live|rk_live)[_-][A-Za-z0-9_-]{10,}/',
         '/\b[A-Fa-f0-9]{32,}\b/',
-        '/[A-Za-z0-9+\/_-]{40,}={0,2}/',
+        '/(?=[A-Za-z0-9+\/_-]*[A-Z])(?=[A-Za-z0-9+\/_-]*[a-z])(?=[A-Za-z0-9+\/_-]*\d)[A-Za-z0-9+\/_-]{40,}={0,2}/',
         '/:\/\/[^\/\s:@]+:[^\/\s@]+@/',
     ];
 

@@ -169,6 +169,13 @@ final class ProfileCodecTest extends TestCase
         ProfileCodec::parse($deep);
     }
 
+    public function testALongSlugOrUrlPathInANoteIsNotMistakenForASecret(): void
+    {
+        $d = self::doc();
+        $d['profile']['requirements'][0]['note'] = 'see /policies/data-retention-and-backup-schedule-for-contract-x-v2';
+        self::assertSame(1, ProfileCodec::fromArray($d)->version);
+    }
+
     public function testAByteOrderMarkIsTolerated(): void
     {
         self::assertSame('contract_x', ProfileCodec::parse("\xEF\xBB\xBF" . ProfileCodec::export(self::contractX()))->key);

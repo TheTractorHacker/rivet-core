@@ -254,8 +254,11 @@ final class FrameworkProfileStore implements RequirementsProviderInterface
      */
     public function revertTo(string $key, int $version, ?int $userId, string $userName): FrameworkProfile
     {
+        if (BuiltInProfiles::isBuiltIn($key)) {
+            throw new ProfileValidationException(['A built-in framework cannot be changed. Copy it to make your own.']);
+        }
         $old = $this->get($key, $version);
-        if ($old === null || $old->builtin) {
+        if ($old === null) {
             throw new ProfileValidationException(['That version does not exist.']);
         }
 

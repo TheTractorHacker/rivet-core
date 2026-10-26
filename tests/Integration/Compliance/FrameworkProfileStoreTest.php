@@ -50,8 +50,8 @@ final class FrameworkProfileStoreTest extends ProfileTestCase
                 try {
                     $op();
                     self::fail("changed built-in $k");
-                } catch (ProfileValidationException) {
-                    self::addToAssertionCount(1);
+                } catch (ProfileValidationException $e) {
+                    self::assertTrue(str_contains($e->getMessage(), 'built-in') || str_contains($e->getMessage(), 'reserved'), $k . ': ' . $e->getMessage());
                 }
             }
         }
