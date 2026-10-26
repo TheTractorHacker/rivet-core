@@ -78,7 +78,7 @@ final class ReportingPostgresRoleTest extends TestCase
 
         foreach (['SELECT * FROM endpoint_agent_check_history', 'SELECT * FROM rmm_metric_hourly', 'SELECT * FROM endpoint_agent_change_records', 'SELECT * FROM rivet_core_pg_meta', 'SELECT * FROM rivet_core_pg_migrations',
             "INSERT INTO rmm_metric_hourly (asset_id, metric_key, hour_start, min_value, max_value) VALUES (1, 'x', now(), 0, 0)", 'UPDATE rmm_patch_history SET result = \'x\'', 'DELETE FROM rmm_patch_history', 'TRUNCATE rmm_patch_history',
-            "INSERT INTO rpt_patch_history (patch_history_id) VALUES (1)", 'UPDATE rpt_patch_history SET result = \'x\'', 'DELETE FROM rpt_change_events', 'DROP VIEW rpt_patch_history', 'CREATE TABLE rpt_probe (a int)',
+            "INSERT INTO rpt_patch_history (result) VALUES ('x')", 'UPDATE rpt_patch_history SET result = \'x\'', 'DELETE FROM rpt_change_events', 'DROP VIEW rpt_patch_history', 'CREATE TABLE rpt_probe (a int)',
             'CREATE VIEW rpt_probe AS SELECT 1', 'ALTER TABLE rmm_metric_hourly ADD COLUMN z int', 'CREATE ROLE rpt_other', 'GRANT SELECT ON rmm_metric_hourly TO PUBLIC'] as $sql) {
             $this->refused($c, $sql);
         }

@@ -93,7 +93,9 @@ final class ReportingRoleTest extends TestCase
             $this->assertContains($c->errno, [1142, 1143, 1044, 1045], $sql . ' => ' . $c->error);
         }
         // not even through a view
-        foreach (["UPDATE rpt_devices SET hostname = 'x'", 'DELETE FROM rpt_devices', "INSERT INTO rpt_device_tags (device_id, tag_id) VALUES (1, 1)", 'DROP VIEW rpt_devices',
+        // (single-table views such as rpt_audit_events and rpt_patch_history are updatable in principle; the account simply has no such privilege)
+        foreach (["UPDATE rpt_audit_events SET action = 'x'", 'DELETE FROM rpt_audit_events', "INSERT INTO rpt_audit_events (event_type, action) VALUES ('a', 'b')", "UPDATE rpt_patch_history SET result = 'x'", 'DELETE FROM rpt_patch_history',
+            "UPDATE rpt_devices SET hostname = 'x'", 'DELETE FROM rpt_devices', "INSERT INTO rpt_device_tags (device_id, tag_id) VALUES (1, 1)", 'DROP VIEW rpt_devices',
             'CREATE TABLE rpt_probe (a int)', 'CREATE VIEW rpt_probe AS SELECT 1', 'ALTER VIEW rpt_devices AS SELECT 1', 'CREATE USER x@y IDENTIFIED BY \'zzzzzzzzzzzzzzzzzzzz\'', 'GRANT SELECT ON *.* TO x@y'] as $sql) {
             $this->assertFalse($c->query($sql), 'must be refused: ' . $sql);
         }
