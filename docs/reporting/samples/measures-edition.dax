@@ -33,6 +33,9 @@ DIVIDE ( [SLA Resolution Breaches], [Tickets With SLA] )
 SLA Response Breach Rate =
 DIVIDE ( CALCULATE ( COUNTROWS ( rpt_tickets ), rpt_tickets[sla_response_met] = 0 ), CALCULATE ( COUNTROWS ( rpt_tickets ), NOT ISBLANK ( rpt_tickets[sla_response_due_at] ) ) )
 
-// Ties alerts to tickets: alerts that became a ticket (rpt_alerts[alert_id] is the edition's alert / ticket id).
+// Ties alerts to tickets: the edition's rpt_alert_tickets (alert_id, ticket_id) related to rpt_alerts[alert_id] (many to one) and to rpt_tickets[ticket_id].
 Alerts With Ticket =
-CALCULATE ( COUNTROWS ( rpt_alerts ), NOT ISBLANK ( rpt_alerts[alert_id] ) )
+COUNTROWS ( rpt_alert_tickets )
+
+Alert Ticket Rate =
+DIVIDE ( [Alerts With Ticket], [Alerts] )

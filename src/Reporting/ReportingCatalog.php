@@ -191,7 +191,7 @@ FROM rmm_metric_daily m',
                 'live; resolved rows are pruned by the alerting housekeeping', true,
                 [
                     ['alert_row_id', 'int', 'Primary key of the episode.'],
-                    ['alert_id', 'int', 'The edition\'s alert / ticket id for this episode (relate to the edition\'s tickets).'],
+                    ['alert_id', 'int', 'The edition\'s alert id for this episode (RivetIT: rmm_alerts.id, which links the alert to its ticket). Relate to the edition\'s alert-to-ticket view.'],
                     ['device_id', 'int', 'Device the alert is about.'],
                     ['client_id', 'int', 'Client of the device when the alert opened.'],
                     ['check_name', 'text', 'The check that alerted (cpu.utilization, disk.c, patch.compliance, ...).'],

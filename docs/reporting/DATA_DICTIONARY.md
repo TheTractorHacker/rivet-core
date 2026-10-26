@@ -102,6 +102,7 @@ RivetCore owns the RMM data, the audit log and the ITIL change/problem records. 
 | `rpt_assets` | `asset_id`, `client_id`, asset type name, name | `rpt_devices.asset_id` |
 | `rpt_tickets` | one row per ticket: client, asset, created / first response / resolved / closed times, priority, status, SLA due times and met flags | `client_id`, `asset_id`, `rpt_alerts.alert_id` |
 | `rpt_sla` | SLA policy targets per priority | `rpt_tickets` |
+| `rpt_alert_tickets` | which ticket an alert became | `rpt_alerts.alert_id`, `rpt_tickets.ticket_id` |
 
 Until the edition ships them, the report can still name a client by typing a small lookup table into Power BI (`Enter data`: `client_id`, `client_name`), and tickets-per-device, SLA and ticket-resolution measures are not available. The measures that need them are in [samples/measures-edition.dax](samples/measures-edition.dax).
 
@@ -272,7 +273,7 @@ Every alert the alerting engine raised, open or resolved, with its timings. The 
 | # | Column | Type | Meaning |
 |---|---|---|---|
 | 1 | `alert_row_id` | int | Primary key of the episode. |
-| 2 | `alert_id` | int | The edition's alert / ticket id for this episode (relate to the edition's tickets). |
+| 2 | `alert_id` | int | The edition's alert id for this episode (RivetIT: rmm_alerts.id, which links the alert to its ticket). Relate to the edition's alert-to-ticket view. |
 | 3 | `device_id` | int | Device the alert is about. |
 | 4 | `client_id` | int | Client of the device when the alert opened. |
 | 5 | `check_name` | text | The check that alerted (cpu.utilization, disk.c, patch.compliance, ...). |

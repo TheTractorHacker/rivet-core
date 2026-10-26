@@ -195,7 +195,7 @@ final class ReportingSamplesTest extends TestCase
         $mine = self::measures($edition);
         preg_match_all('/\b(rpt_[a-z_]+)\[([a-z_]+)\]/', $edition, $refs, PREG_SET_ORDER);
         foreach ($refs as [, $view, $col]) {
-            if ($view === 'rpt_tickets') {
+            if (in_array($view, ['rpt_tickets', 'rpt_alert_tickets'], true)) {
                 continue;   // the edition's view (proposed columns, see docs/design/reporting.md)
             }
             $this->assertContains($col, ReportingCatalog::get($view)->columnNames(), "{$view}[{$col}]");
