@@ -76,6 +76,10 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Showing the data store on an Update page (1.0.0-rc.44; nothing required)
+
+Optional, additive, no migration. `$rmm->dataStoreInfo()->report()` returns the RMM data store in use and, for PostgreSQL, its version, storage mode, schema state and size (never throws; no PostgreSQL connection on a MariaDB install); `DataStoreInfo::summaryLine($info)` is the one line for a tile. To show it, paste the snippet from [docs/rmm/POSTGRES.md](docs/rmm/POSTGRES.md) section 18 into `update.php` and the server status page and escape the output. Pass a cache (`cache` module option) if you want the live check kept for 30 seconds; the check is already bounded by 2 second timeouts and the data store's circuit breaker. No public signature or constant value changed; new: `DataStoreInfo`, `RmmModule::dataStoreInfo()`.
+
 ## PostgreSQL 18 verified (1.0.0-rc.42; nothing required)
 
 **Nothing is required of an edition.** No migration, no new option, no changed signature or constant value; an install on MariaDB is untouched. Optional: in the new-install text of your own settings card or docs, recommend PostgreSQL 18 (the connection test already says "PostgreSQL 18 is the recommended version" in `testConnection()['warnings']` for an older server; show `warnings` if you do not already) and, in your throwaway test containers, use `postgres:18` (and `timescale/timescaledb:2.31.0-pg18`). PostgreSQL 16 stays tested and supported; see docs/rmm/POSTGRES.md sections 2, 3 and 17.

@@ -317,3 +317,68 @@ Installs that started on 16 keep working: 16 is tested and supported. Moving to 
 * **`pg_upgrade`.** `pg_upgradecluster 16 main` (Debian and Ubuntu) or `pg_upgrade --old-datadir ... --new-datadir ... --link`. Data checksums must match on both sides: 18 enables them by default and 16 usually has them off, so create the new cluster with `initdb --no-data-checksums` (or turn them on in the old cluster first with `pg_checksums --enable` while it is stopped). Run `ANALYZE` (or `vacuumdb --all --analyze-in-stages`) afterwards: `pg_upgrade` does not carry planner statistics over, and until the tables are analysed the row estimates in the capacity panel read 0. With TimescaleDB, upgrade the extension first as its documentation describes.
 
 Either way nothing changes in the edition: the same `PostgresConfig` keys, the same schema, no Core migration.
+
+## 18. Showing the data store on an Update page
+
+An administrator looking at the Update or Server page sees the MariaDB version; since 1.0.0-rc.44 Core can also say which RMM data store is in use and, for PostgreSQL, its version, mode, schema state and size. `$module->dataStoreInfo()->report()` returns a plain array and **never throws**; `DataStoreInfo::summaryLine($info)` turns it into the one line for a tile. Nothing is required: an edition that does not call it behaves exactly as before.
+
+What it does and does not do:
+
+* **MariaDB install**: no PostgreSQL connection and no PostgreSQL query. It reads the settings row and the saved connection row, so a page can say "PostgreSQL configured but not in use". Pass `report(true)` only on an explicit "Check PostgreSQL" action: that asks the saved server (and calls your `postgres` module option closure, if you pass one).
+* **PostgreSQL install**: a live check with its own session, a 2 second connect timeout and a 2 second statement timeout, behind the same circuit breaker as the data store (a recorded outage is believed at once, so a dead server costs one timeout per breaker window, not one per page load). With a shared cache (the `cache` module option, for example Redis) the live answer is kept for 30 seconds; without one every page load asks the server (a handful of catalog reads, a few milliseconds on the same host).
+* **No secrets**: the answer has host, port and database name but never the role, a password, the sealed value or a connection string. `error` is one of a fixed set of short sentences ("connection refused", "authentication failed", "connection timed out", "connection attempts are paused after a recent failure (retry in 12 s)", ...), never the driver's text.
+
+The array (keys are only ever added):
+
+| Key | Meaning |
+|---|---|
+| `store` | `mariadb` or `postgres` |
+| `active` | `true` (the setting is in effect) |
+| `phase` | a migration in progress (`copy:postgres`, `dual:mariadb`) or `null` |
+| `configured` | a PostgreSQL connection is saved or supplied by the edition |
+| `probed` | PostgreSQL was asked just now (always for `postgres`) |
+| `saved` | host, port, database, `tested_at`, `test_ok`, `storage_mode`, `server_version` of the saved connection, or `null` |
+| `postgres` | `null` when not probed, otherwise `in_use`, `reachable`, `host`, `port`, `database`, `server_version` (`18.6`), `server_version_full`, `version_major`, `version_minor`, `storage_mode` (`native` or `timescale`), `timescale_version`, `schema` (`exists`, `applied`, `pending`, `changed`, `current`, `up_to_date`), `database_size_bytes`; with `report(false, true)` also `tables` (`table`, `rows`, `bytes`), `total_rows`, `total_bytes` |
+| `checked_at` | UTC time of the live check |
+| `cached` | the live part came from the cache |
+| `error` | short sanitised sentence, or `null` |
+
+Summary lines: `PostgreSQL 18.6 (native) - schema 0001_hot_tables, up to date`, `PostgreSQL 18.6 (timescale 2.31.0) - schema 0001_hot_tables, 1 pending`, `PostgreSQL unreachable: connection refused`, `MariaDB (PostgreSQL not in use)`, `MariaDB (PostgreSQL configured but not in use)`. The text is plain, not HTML: escape it.
+
+**Update page tile** (next to the MariaDB version in `update.php`; `$rmm` is however your edition reaches the `RmmModule`):
+
+```php
+<?php
+$store = $rmm->dataStoreInfo()->report();               // cheap: no PostgreSQL on a MariaDB install
+$line  = \RivetCore\Rmm\Store\DataStoreInfo::summaryLine($store);
+$bad   = $store['store'] === 'postgres' && empty($store['postgres']['reachable']);
+$warn  = $store['store'] === 'postgres' && !$bad && empty($store['postgres']['schema']['up_to_date']);   // a pending or changed schema migration
+?>
+<div class="card"><div class="card-body">
+  <div class="text-muted">RMM data store</div>
+  <div class="<?= $bad ? 'text-danger' : ($warn ? 'text-warning' : '') ?>"><?= htmlspecialchars($line, ENT_QUOTES, 'UTF-8') ?></div>
+  <?php if (!empty($store['postgres']['database_size_bytes'])): ?>
+    <div class="small text-muted"><?= htmlspecialchars($store['postgres']['database'] ?? '', ENT_QUOTES, 'UTF-8') ?>,
+      <?= number_format($store['postgres']['database_size_bytes'] / 1048576, 1) ?> MB, checked <?= htmlspecialchars($store['checked_at'], ENT_QUOTES, 'UTF-8') ?> UTC</div>
+  <?php endif; ?>
+</div></div>
+```
+
+**Server status page** (more detail, hot tables, an explicit probe button for MariaDB installs that have a saved connection):
+
+```php
+<?php
+$probe = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['check_postgres']);   // your edition's CSRF check goes with it
+$info  = $rmm->dataStoreInfo()->report($probe, true);
+$h = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+echo '<p>', $h(\RivetCore\Rmm\Store\DataStoreInfo::summaryLine($info)), '</p>';
+if ($info['postgres'] !== null) {
+    $pg = $info['postgres'];
+    echo '<p>', $h($pg['host'] ?? '-'), ':', $h($pg['port'] ?? '-'), ' / ', $h($pg['database'] ?? '-'), '</p>';
+    foreach ($pg['tables'] ?? [] as $t) {
+        echo '<div>', $h($t['table']), ': ', number_format($t['rows']), ' rows, ', number_format($t['bytes'] / 1048576, 1), ' MB</div>';
+    }
+}
+```
+
+Use `report(false, true)` (tables) on the Server page only: it is about a dozen extra catalog reads.

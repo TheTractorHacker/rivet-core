@@ -2,6 +2,15 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.44 (RMM data store info for update pages; no migration)
+
+Additive. No migration, no schema change, no changed signature or constant value. An edition that does nothing behaves exactly as before; the golden replay and the device protocol are unchanged.
+
+- **`DataStoreInfo` (new, `RmmModule::dataStoreInfo()`)**: `report(bool $probe = false, bool $tables = false): array` tells an Update or Server page which RMM data store is in use and, for PostgreSQL, whether it is reachable (a live check, 2 s connect and statement timeouts, behind the data store's own circuit breaker), the server version (`18.6` plus the full string and parsed major/minor), the storage mode (`native`/`timescale`) and TimescaleDB version, the schema state (`applied`, `pending`, `changed`, `current`, `up_to_date`), host/port/database (never the role, a password, the sealed value or a DSN) and `pg_database_size`; with `$tables` also the rows and bytes of the hot tables (the phase 3 `PostgresStoreSizes` report). It never throws. On a MariaDB install it makes no PostgreSQL connection and no PostgreSQL query unless `$probe` is true; it then reports the saved connection (`configured`, `saved`) so a page can say "PostgreSQL configured but not in use". With a shared cache (`cache` module option) the live answer is kept 30 seconds. `error` is one of a fixed set of short sentences, never the driver's text (a server message can name the role).
+- **`DataStoreInfo::summaryLine(array $info): string`**: pure helper for a tile, for example `PostgreSQL 18.6 (native) - schema 0001_hot_tables, up to date`, `PostgreSQL unreachable: connection refused`, `MariaDB (PostgreSQL not in use)`.
+- **Docs**: docs/rmm/POSTGRES.md section 18 "Showing the data store on an Update page" with ready-to-paste snippets for `update.php` and the server status page; UPGRADING entry (nothing required).
+- **Tests**: `tests/Integration/Rmm/DataStoreInfoTest.php` (MariaDB control database, fake connector: no PostgreSQL on a MariaDB install, no secret in any result, every failure an answer, cache honoured, summary line variants) and `tests/Integration/Rmm/Postgres/DataStoreInfoPostgresTest.php` (real PostgreSQL in a role and database created per test with random names: version, schema, mode, size, pending and changed migrations, empty database, wrong password, refused port and blackhole address answered in under 5 s, cache).
+
 ## 1.0.0-rc.42 (PostgreSQL 18 verified; no behaviour change)
 
 - **UI (`assets/ui/css/itflow_design.css`)**: `.btn-outline-primary` label and icon now follow the button's border, which is the theme accent, instead of a fixed blue (`#1c4fcf`). That gave a blue label inside a red or teal border (for example Admin > Users "Department logins", the asset "Link" dropdown). Light theme: the accent darkened 30% towards black (at least 5.7:1 on white and on the app surface for the accents tried: teal, red, blue, orange, purple); dark theme: the accent itself, white on hover. Editions pick this up with `scripts/install-ui-assets.php`.
