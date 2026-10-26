@@ -47,7 +47,7 @@ final class SecretsInDumpsTest extends TestCase
             new VictoriaMetricsStore('https://vm.example.test', new UrlPolicy(), null, null, "bad\ntoken-" . self::PW);
             $this->fail('a token with a newline must be refused');
         } catch (\InvalidArgumentException $e) {
-            $this->assertStringNotContainsString(self::PW, $e->getTraceAsString());
+            $this->assertStringNotContainsString(self::PW, print_r($e->getTrace(), true));
         }
     }
 }
