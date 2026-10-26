@@ -130,9 +130,9 @@ final class ProfileAssessmentTest extends ProfileTestCase
         $csv = $r->csv($got['assessment']);
         self::assertStringContainsString('"Framework profile","Contract X (version 1)"', $csv);
         self::assertStringContainsString('Not met: PostgreSQL RMM store is not in the backup.', $csv);
-        foreach ($r->rows($got['assessment']) as $row) {
-            self::assertNotContains("\n", str_split(implode('', $row)));
-        }
+        // evidence lines are kept one per line in the row data (the HTML shows them one per line); the CSV must not carry an embedded newline in any cell
+        self::assertStringNotContainsString("\n", str_replace("\r\n", '', $csv), 'a CSV cell never contains a bare newline');
+        self::assertStringNotContainsString("\r", str_replace("\r\n", '', $csv));
         // a framework-filtered report of a built-in framework keeps the items tagged to it
         $iso = $r->rows($got['assessment'], 'iso27001');
         self::assertGreaterThan(1, count($iso));
