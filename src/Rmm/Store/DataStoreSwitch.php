@@ -202,6 +202,21 @@ final class DataStoreSwitch
             if (in_array($db->value('SELECT rolsuper FROM pg_roles WHERE rolname = current_user'), [true, 't', 'true', 1, '1'], true)) {
                 $out['warnings'][] = 'The role is a superuser. Use a dedicated role that owns only this database; the RMM needs no superuser rights.';
             }
+            $remote = !in_array(strtolower($config->host), ['localhost', '127.0.0.1', '::1'], true) && !str_starts_with($config->host, '/');
+            if ($remote) {
+                // The hot store holds device logs, change values and software history: a remote server needs a verified TLS connection (CORE-09).
+                if (!in_array($config->sslMode, ['verify-ca', 'verify-full'], true)) {
+                    $out['warnings'][] = 'The server is not on this machine and sslmode is "' . $config->sslMode . '", which does not verify its certificate: anyone on the network path can read or change the traffic. Use verify-full with the server CA (sslrootcert).';
+                }
+                try {
+                    $ssl = $db->value('SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()');
+                    if ($ssl !== null && !in_array($ssl, [true, 't', 'true', 1, '1'], true)) {
+                        $out['warnings'][] = 'This connection is not encrypted (pg_stat_ssl reports ssl off). Enable TLS on the server and use sslmode verify-full.';
+                    }
+                } catch (\Throwable) {
+                    // the view is informational; the sslmode warning above already covers the configuration
+                }
+            }
             $migrator = new PostgresMigrator($db);
             $out['timescale'] = $migrator->timescaleInstalled();
             $st = $migrator->status();

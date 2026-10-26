@@ -117,6 +117,19 @@ final class DataStoreSwitchTest extends RmmTestCase
         $this->assertSame('mariadb', $this->h->module->settings()->dataStore());
     }
 
+    /** CORE-09: a remote server without a verified TLS connection is a warning, a local one or verify-full is not. */
+    public function testARemoteServerWithoutVerifiedTlsIsWarnedAbout(): void
+    {
+        $real = PostgresTestDatabase::config();
+        $sw = new DataStoreSwitch($this->h->module->sql(), $this->h->module->settings(), $this->h->box, $this->h->audit, static fn (PostgresConfig $c) => new PdoPostgresConnection($real));
+        foreach (['prefer', 'require', 'disable'] as $mode) {
+            $w = $sw->testConnection($this->form(['host' => 'db.example.test', 'sslmode' => $mode, 'password' => 'x']))['warnings'];
+            $this->assertNotEmpty(array_filter($w, static fn (string $x): bool => str_contains($x, 'does not verify')), "sslmode $mode on a remote host");
+        }
+        $w = $sw->testConnection($this->form(['host' => 'localhost', 'sslmode' => 'prefer', 'password' => 'x']))['warnings'];
+        $this->assertSame([], array_filter($w, static fn (string $x): bool => str_contains($x, 'does not verify')), 'a server on this machine needs no certificate');
+    }
+
     /** A connection that reports another server version and is otherwise the real one. */
     private function versionSwitch(string $reported): DataStoreSwitch
     {
