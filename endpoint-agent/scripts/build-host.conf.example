@@ -11,7 +11,7 @@ SERVER_URL=https://rmm.example.com/api/build-host
 TOKEN=
 
 # Where the source lives: a git URL or a path to an existing clone. The script only reads it.
-CORE_REPO=https://github.com/rivet/rivet-core.git
+CORE_REPO=https://github.com/TheTractorHacker/rivet-core.git
 
 # Source refs this machine is willing to build (shell patterns, space separated). The server can only pick from these.
 ALLOWED_REFS="main v* agent-v*"

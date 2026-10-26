@@ -308,6 +308,8 @@ build_job() { # version ref targets msi(true|false) linux(true|false|"") -> file
     fi
   fi
   UPLOAD+=("${lin[@]}")
+  # The container wrote OUT: a symlink there would make the checks below read, and write_sums write, a host file (CORE-16).
+  [ -z "$(find "$OUT" -maxdepth 2 -type l -print -quit)" ] || die "the build output contains a symbolic link"
   for f in "${UPLOAD[@]}"; do [ -s "$OUT/$f" ] || die "expected output $f is missing or empty"; done
   [ ! -f "$OUT/rivetit-agent-windows-amd64.exe" ] || pe_check "$OUT/rivetit-agent-windows-amd64.exe" "64 86"
   [ ! -f "$OUT/rivetit-agent-windows-arm64.exe" ] || pe_check "$OUT/rivetit-agent-windows-arm64.exe" "64 aa"
@@ -339,7 +341,7 @@ build_job() { # version ref targets msi(true|false) linux(true|false|"") -> file
   GO_VERSION_BUILT=$(docker run --rm --network none "$GO_IMAGE" go env GOVERSION 2>/dev/null || echo unknown)
 }
 
-write_sums() { ( cd "$OUT" && sha256sum "${UPLOAD[@]}" >SHA256SUMS ); }
+write_sums() { ( cd "$OUT" && rm -f -- SHA256SUMS && sha256sum "${UPLOAD[@]}" >SHA256SUMS ); }
 skipped() { local s; for s in "${SKIPPED[@]}"; do [ "$s" != "$1" ] || return 0; done; return 1; }
 
 # ---------- upload ----------

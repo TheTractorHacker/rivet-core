@@ -220,5 +220,23 @@ class ScriptNoDocker(unittest.TestCase):
         self.assertNotEqual(mock.state, "building")
 
 
+class ShippedFiles(unittest.TestCase):
+    """CORE-15 / CORE-16: what the operator copies must point at this project's repository, and the output checks must refuse symlinks."""
+
+    def test_example_config_and_unit_name_this_repository(self):
+        with open(os.path.join(HERE, "..", "..", "composer.json")) as f:
+            source = json.load(f)["support"]["source"].removesuffix(".git")
+        base = os.path.join(HERE, "..", "scripts")
+        for name in ("build-host.conf.example", "build-host.service"):
+            text = open(os.path.join(base, name)).read()
+            self.assertIn(source.removeprefix("https://github.com/"), text, name)
+            self.assertNotIn("github.com/rivet/", text, name)
+
+    def test_script_refuses_symbolic_links_in_the_build_output(self):
+        text = open(SCRIPT).read()
+        self.assertIn('find "$OUT" -maxdepth 2 -type l', text)
+        self.assertIn("rm -f -- SHA256SUMS", text)
+
+
 if __name__ == "__main__":
     unittest.main()

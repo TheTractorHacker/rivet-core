@@ -1,6 +1,6 @@
 [Unit]
 Description=RivetCore build host: poll the server and build one agent job if there is one
-Documentation=https://github.com/rivet/rivet-core/blob/main/docs/rmm/BUILD_HOST.md
+Documentation=https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/BUILD_HOST.md
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
