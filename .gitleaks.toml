@@ -170,10 +170,6 @@ description = "Historical path (repository root) of endpoint-agent/setup_test.go
 paths = ['''(^|/)setup_test\.go$''']
 
 [[allowlists]]
-description = "Branch compliance (not yet on main): false positive, a data-class registry entry whose 'key' is an identifier string (deployment_history style), not a key."
-paths = ['''(^|/)src/Compliance/Profile/DataClass\.php$''']
-
-[[allowlists]]
 description = "Branch quality-gates-1.0 (never merged): metadata redaction test with placeholder values v1..v9 and word-like names."
 paths = ['''(^|/)tests/Security/AuditSurfaceTest\.php$''']
 

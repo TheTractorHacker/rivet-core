@@ -115,9 +115,6 @@
 # Historical path (repository root) of endpoint-agent/setup_test.go: synthetic setup token of the wrong shape for a real one.
 /setup_test.go
 
-# Branch compliance (not yet on main): false positive, a data-class registry entry whose 'key' is an identifier string (deployment_history style), not a key.
-/src/Compliance/Profile/DataClass.php
-
 # Branch quality-gates-1.0 (never merged): metadata redaction test with placeholder values v1..v9 and word-like names.
 /tests/Security/AuditSurfaceTest.php
 

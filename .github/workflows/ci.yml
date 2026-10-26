@@ -377,3 +377,24 @@ jobs:
             echo "Backward-incompatible changes since $from (listed above)." >&2
             exit 1
           fi
+
+  secret-scan:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { fetch-depth: 0 }
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5' }
+      # secret-scan-allowlist.json is the one list of intentional fixtures (each with a reason); the two files below are generated from it.
+      - name: Scanner configs match the allowlist
+        run: php scripts/secret-scan-sync.php --check
+      # Our own scanner: tracked files plus every line added in the history of this commit. Reports path:line, rule, length and a 4-character fingerprint, never the value.
+      - name: Secret shapes in the tree and in history
+        run: php scripts/secret-scan.php --history --rev=HEAD
+      # A second opinion from a different rule set, pinned by image digest (gitleaks v8.30.0), repository mounted read-only, values redacted.
+      - name: gitleaks
+        run: >-
+          docker run --rm -v "$PWD:/repo:ro" -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo
+          zricethezav/gitleaks@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9
+          git /repo --config /repo/.gitleaks.toml --redact --no-banner --exit-code 1
