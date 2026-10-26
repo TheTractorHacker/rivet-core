@@ -35,6 +35,8 @@ final class PostgresMigrator
     {
         $this->migrations = $migrations ?? [
             ['id' => '0001_hot_tables', 'statements' => static fn (string $mode): array => PostgresSchema::statements($mode)],
+            // #91 phase 2: the read-only `rpt_` views over the hot tables (CREATE OR REPLACE VIEW; no table is touched)
+            ['id' => '0002_reporting_views', 'statements' => static fn (string $mode): array => \RivetCore\Reporting\ReportingSchema::postgresStatements()],
         ];
     }
 
