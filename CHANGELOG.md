@@ -2,12 +2,9 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
-## Unreleased
-
-- **UI (`assets/ui/css/itflow_design.css`)**: `.btn-outline-primary` label and icon now follow the button's border, which is the theme accent, instead of a fixed blue (`#1c4fcf`). That gave a blue label inside a red or teal border (for example Admin > Users "Department logins", the asset "Link" dropdown). Light theme: the accent darkened 30% towards black (at least 5.7:1 on white and on the app surface for the accents tried: teal, red, blue, orange, purple); dark theme: the accent itself, white on hover. Editions pick this up with `scripts/install-ui-assets.php`.
-
 ## 1.0.0-rc.42 (PostgreSQL 18 verified; no behaviour change)
 
+- **UI (`assets/ui/css/itflow_design.css`)**: `.btn-outline-primary` label and icon now follow the button's border, which is the theme accent, instead of a fixed blue (`#1c4fcf`). That gave a blue label inside a red or teal border (for example Admin > Users "Department logins", the asset "Link" dropdown). Light theme: the accent darkened 30% towards black (at least 5.7:1 on white and on the app surface for the accents tried: teal, red, blue, orange, purple); dark theme: the accent itself, white on hover. Editions pick this up with `scripts/install-ui-assets.php`.
 PostgreSQL 18 is now the recommended and primary tested version of the optional RMM data store ([#89](https://github.com/TheTractorHacker/rivet-core/issues/89)); 16 stays tested and supported; 14 remains the untested minimum. No migration, no schema change, no changed signature or constant value; an install on MariaDB is untouched. Editions: nothing required (UPGRADING.md).
 
 - **Verified on PostgreSQL 18.6 and TimescaleDB 2.31.0 (pg18), and again on 16.15 and 2.31.0 (pg16)**, in throwaway Docker containers with random passwords: the PostgreSQL directory, the migration directory, the MariaDB contract tests, the routing and setting tests and the equivalence test in one process per server (266 tests: green on all four; the skips are the cases that need the other mode: 36 on plain PostgreSQL, 1 on TimescaleDB). Found nothing in Core that behaves differently on 18: partition DDL and DEFAULT partitions, BRIN/btree, `timestamptz`, `jsonb`, `ON CONFLICT`, advisory locks, timeouts, error codes, extension detection, hypertables, compression and `drop_chunks` all passed unchanged; `reltuples` of a never-analysed table is `-1` on 14 and newer and the size report already clamps it to 0.
@@ -555,7 +552,7 @@ CI-only follow-up to rc.7; no change to `src/`. The golden RMM transcripts are r
 ## 1.0.0-rc.7
 Security fixes from the 2026-10-08 nightly review: CORE-1 and CORE-2 (RMM enrollment and token revocation are scoped to the token's client), F8 (migration 0017, case-sensitive MCP identity keys) and F10 (automation placeholders fill only allowlisted free-text keys). Details are in the "Security: nightly review 2026-10-08" entry under Unreleased. Editions on rc.6 must run migration 0017 (CoreMigrations) after updating.
 
-## Unreleased
+## Unreleased (UI)
 
 ### Security: nightly review 2026-10-08 (CORE-1, CORE-2, F8, F10)
 
