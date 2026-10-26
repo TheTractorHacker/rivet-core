@@ -59,6 +59,10 @@ function secret_scan_is_placeholder(string $v): bool
     if (preg_match('/EXAMPLE|PLACEHOLDER|CHANGEME|changeme|xxxxx|your[-_ ]|<[^>]*>|\$\{|\{\{|%s|\*{4,}/i', $v) === 1) {
         return true;
     }
+    if (preg_match('/^[a-z]+(?:[_-][a-z]+)+$/', $v) === 1) {
+        return true;   // a snake_case or kebab-case identifier of lower-case words (a registry key, a slug), never a generated secret
+    }
+
     return count(array_unique(str_split($v))) <= 3;   // aaaa…, 0000…, abab…
 }
 

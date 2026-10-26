@@ -57,6 +57,7 @@ final class SecretScanTest extends TestCase
         yield 'url without password' => ['https://user@example.com/path'];
         yield 'url with variable password' => ['postgres://app:${DB_PASSWORD}@db/app'];
         yield 'public key' => ['"public_key": "' . base64_encode(hash('sha256', 'pub', true)) . '"'];
+        yield 'snake case identifier' => ['\'key\' => \'deployment_history_registry_entry\','];
         yield 'plain sentence' => ['The secret to a good tool is that the key stays in the vault.'];
         yield 'pem header only' => ['-----BEGIN ' . 'PRIVATE KEY----- appears in the log'];
         yield 'sha256 of file next to path' => ['sha256sum build/artifact-linux-amd64.tar.gz'];
