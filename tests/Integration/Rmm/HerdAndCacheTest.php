@@ -80,7 +80,7 @@ final class HerdAndCacheTest extends RmmTestCase
         $this->clock->advance(20);
         $other = ScratchDb::connect();
         $this->assertNotNull($other);
-        $name = 'rmm_cache_' . md5('fleet:k');
+        $name = 'rmm_cache_' . md5('fleet:k') . ':' . md5((string) $this->sql()->val('SELECT DATABASE()'));
         $other->query("SELECT GET_LOCK('$name', 0)");
         $r = $c->remember('fleet', 'k', 15, 300, $this->counter($calls));
         $other->query("SELECT RELEASE_LOCK('$name')");

@@ -79,7 +79,7 @@ final class JobClaimer
             return $this->claimBatch($limit, $jobType);
         }
         $name = self::LOCK_PREFIX . ($jobType ?? '*');
-        $got = $this->database->fetchOne('SELECT GET_LOCK(?, 2) AS l', [$name]);
+        $got = $this->database->fetchOne("SELECT GET_LOCK(CONCAT(?, ':', MD5(IFNULL(DATABASE(), ''))), 2) AS l", [$name]);
         if ((int) ($got['l'] ?? 0) !== 1) {
             return [];
         }
@@ -91,7 +91,7 @@ final class JobClaimer
 
             return $this->claimBatch(min($limit, max(0, $maxRunning - $running)), $jobType);
         } finally {
-            $this->database->fetchOne('SELECT RELEASE_LOCK(?) AS r', [$name]);
+            $this->database->fetchOne("SELECT RELEASE_LOCK(CONCAT(?, ':', MD5(IFNULL(DATABASE(), '')))) AS r", [$name]);
         }
     }
 
