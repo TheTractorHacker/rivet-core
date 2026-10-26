@@ -125,6 +125,8 @@ final class PanelAttachmentsTest extends TestCase
             'script after the first 8 KiB' => ['a.txt', 'text/plain', str_repeat('x', 9000) . '<script>alert(1)</script>'],
             'device name' => ['CON.png', 'image/png', self::PNG],
             'device name lower case with extension' => ['nul.txt', 'text/plain', 'hello'],
+            'device name with spaces before the dot' => ['con .txt', 'text/plain', 'hello'],
+            'device name with several spaces and dots' => ['NUL . .txt', 'text/plain', 'hello'],
             'com port' => ['com1.log', 'text/plain', 'hello'],
             'lpt' => ['LPT9.png', 'image/png', self::PNG],
             'leading dash' => ['-rf.png', 'image/png', self::PNG],

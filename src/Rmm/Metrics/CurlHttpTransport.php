@@ -32,7 +32,7 @@ final class CurlHttpTransport implements HttpTransportInterface
             throw new ExternalStoreException('unsupported HTTP method');
         }
         foreach ($headers as $h) {
-            if (preg_match('/[\x00-\x09\x0b-\x1f\x7f]/', $h) === 1) {
+            if (preg_match('/[\x00-\x08\x0a-\x1f\x7f]/', $h) === 1) {
                 throw new ExternalStoreException('invalid request header');
             }
         }

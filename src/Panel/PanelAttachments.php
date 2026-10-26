@@ -133,7 +133,7 @@ final class PanelAttachments
         if ($s === '' || !str_contains($s, '.')) {
             throw self::bad("Attachment $n needs a filename with an extension.");
         }
-        if ($s[0] === '-' || preg_match('/^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i', $s) === 1) {
+        if ($s[0] === '-' || preg_match('/^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])[ .]*(?:\.|$)/i', $s) === 1) {
             throw self::bad("Attachment $n: this file name is not accepted.");
         }
 

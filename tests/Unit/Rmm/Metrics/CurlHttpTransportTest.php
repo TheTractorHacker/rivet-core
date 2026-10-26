@@ -62,6 +62,18 @@ final class CurlHttpTransportTest extends TestCase
         (new CurlHttpTransport(new UrlPolicy(true)))->request('DELETE', $this->server()->url() . '/health', [], '', 5);
     }
 
+    public function testALoneLineFeedInAHeaderIsRefusedAndATabIsNot(): void
+    {
+        $t = new CurlHttpTransport(new UrlPolicy(true));
+        try {
+            $t->request('GET', $this->server()->url() . '/health', ["X: a\nEvil: 1"], '', 5);
+            $this->fail('a bare LF must be refused');
+        } catch (ExternalStoreException $e) {
+            $this->assertSame('invalid request header', $e->getMessage());
+        }
+        $this->assertNotNull($t->request('GET', $this->server()->url() . '/health', ["X: a\tb"], '', 5));
+    }
+
     public function testHeaderInjectionIsRefused(): void
     {
         $this->expectException(ExternalStoreException::class);
