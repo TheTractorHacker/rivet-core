@@ -131,4 +131,14 @@ final class RmmProtocol
     // A device that reports no capability block is treated as today's Windows agent; macOS is deferred (add it here, never rename).
     public const DEFAULT_PLATFORM = 'windows';
     public const PLATFORMS = ['windows', 'linux'];
+
+    /**
+     * True when $value matches $pattern AND does not end in a newline. Most of the patterns above end in a bare `$`, which PCRE lets match just before a
+     * trailing "\n", so `"disk\n"` passed as a check key (the SR-02 class). The constants cannot change (public values), so agent-controlled identifiers are
+     * checked through this method instead.
+     */
+    public static function matches(string $pattern, string $value): bool
+    {
+        return preg_match($pattern, $value) === 1 && !str_ends_with($value, "\n");
+    }
 }

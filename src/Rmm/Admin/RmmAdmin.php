@@ -414,7 +414,7 @@ final class RmmAdmin
         if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
             return $d;
         }
-        if ($version !== null && preg_match(RmmProtocol::AGENT_VERSION_RE, $version) !== 1) {
+        if ($version !== null && !RmmProtocol::matches(RmmProtocol::AGENT_VERSION_RE, $version)) {
             return ActionResult::fail(422, 'invalid', 'The version must look like 1.2.3.');
         }
         if ($os !== null && AgentOs::normalize($os) === null) {

@@ -23,7 +23,7 @@ final class DeviceValidator
     public static function normalizeMac(string $mac): ?string
     {
         $m = strtolower(str_replace('-', ':', trim($mac)));
-        if (preg_match(RmmProtocol::MAC_RE, $m) !== 1 || $m === RmmProtocol::NULL_MAC) {
+        if (!RmmProtocol::matches(RmmProtocol::MAC_RE, $m) || $m === RmmProtocol::NULL_MAC) {
             return null;
         }
 
@@ -93,11 +93,11 @@ final class DeviceValidator
     {
         $bad = static fn (string $f): ApiError => new ApiError(422, 'invalid', "device.$f is invalid");
         $install = $d['install_id'] ?? null;
-        if (!is_string($install) || preg_match(RmmProtocol::INSTALL_ID_RE, $install) !== 1) {
+        if (!is_string($install) || !RmmProtocol::matches(RmmProtocol::INSTALL_ID_RE, $install)) {
             throw $bad('install_id');
         }
         $guid = $d['machine_guid'] ?? null;
-        if ($guid !== null && (!is_string($guid) || preg_match(RmmProtocol::MACHINE_GUID_RE, $guid) !== 1)) {
+        if ($guid !== null && (!is_string($guid) || !RmmProtocol::matches(RmmProtocol::MACHINE_GUID_RE, $guid))) {
             throw $bad('machine_guid');
         }
         $host = self::cleanText($d['hostname'] ?? null, 200);
@@ -113,7 +113,7 @@ final class DeviceValidator
             throw $bad('arch');
         }
         $ver = $d['agent_version'] ?? null;
-        if (!is_string($ver) || preg_match(RmmProtocol::AGENT_VERSION_RE, $ver) !== 1) {
+        if (!is_string($ver) || !RmmProtocol::matches(RmmProtocol::AGENT_VERSION_RE, $ver)) {
             throw $bad('agent_version');
         }
         $macsIn = $d['mac_addresses'] ?? [];

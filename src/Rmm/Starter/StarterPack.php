@@ -538,7 +538,7 @@ final class StarterPack
         $checks = [];
         $keys = [];
         foreach ((array) ($s['checks'] ?? []) as $c) {
-            if (!is_array($c) || !is_string($c['key'] ?? null) || preg_match(RmmProtocol::CHECK_KEY_RE, $c['key']) !== 1 || !is_string($c['type'] ?? null) || !is_int($c['interval_s'] ?? null)) {
+            if (!is_array($c) || !is_string($c['key'] ?? null) || !RmmProtocol::matches(RmmProtocol::CHECK_KEY_RE, $c['key']) || !is_string($c['type'] ?? null) || !is_int($c['interval_s'] ?? null)) {
                 throw $fail("set $id: a check needs key, type and interval_s");
             }
             if (isset($keys[$c['key']])) {

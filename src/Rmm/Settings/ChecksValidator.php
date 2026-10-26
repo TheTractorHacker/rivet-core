@@ -40,7 +40,7 @@ final class ChecksValidator
         $out = [];
         foreach ($list as $c) {
             $key = is_array($c) ? ($c['key'] ?? '') : '';
-            if (!is_array($c) || preg_match(RmmProtocol::CHECK_KEY_RE, self::str($key)) !== 1) {
+            if (!is_array($c) || !RmmProtocol::matches(RmmProtocol::CHECK_KEY_RE, self::str($key))) {
                 return [null, 'Each check needs a key of letters, digits and _ . : -'];
             }
             $key = self::str($c['key']);

@@ -173,7 +173,7 @@ final class UpdateService
     public function recordResult(array $dev, mixed $res): void
     {
         if (!is_array($res) || !is_string($res['version'] ?? null) || !in_array($res['state'] ?? '', ['ok', 'failed', 'rolled_back'], true)
-            || preg_match(RmmProtocol::AGENT_VERSION_RE, $res['version']) !== 1) {
+            || !RmmProtocol::matches(RmmProtocol::AGENT_VERSION_RE, $res['version'])) {
             return;
         }
         $st = !empty($dev['update_state_json']) ? (json_decode((string) $dev['update_state_json'], true) ?: []) : [];
@@ -258,7 +258,7 @@ final class UpdateService
         if ($os !== AgentOs::WINDOWS && !$osCols) {
             return 'This database has not run migration 0037 (agent release platform) yet, so only Windows releases can be added.';
         }
-        if (preg_match(RmmProtocol::AGENT_VERSION_RE, $version) !== 1 || preg_match(RmmProtocol::AGENT_VERSION_RE, $minVersion) !== 1) {
+        if (!RmmProtocol::matches(RmmProtocol::AGENT_VERSION_RE, $version) || !RmmProtocol::matches(RmmProtocol::AGENT_VERSION_RE, $minVersion)) {
             return 'Versions must look like 1.2.3.';
         }
         if (preg_match('/^[0-9a-f]{64}$/', strtolower($sha256)) !== 1) {

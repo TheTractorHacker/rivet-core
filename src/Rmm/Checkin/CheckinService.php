@@ -100,7 +100,7 @@ final class CheckinService
             throw $e;
         }
         $ver = $body['agent_version'] ?? null;
-        if (!is_string($ver) || preg_match(RmmProtocol::AGENT_VERSION_RE, $ver) !== 1) {
+        if (!is_string($ver) || !RmmProtocol::matches(RmmProtocol::AGENT_VERSION_RE, $ver)) {
             throw new ApiError(422, 'invalid', 'agent_version is invalid');
         }
         $inventory = $body['inventory'] ?? null;
@@ -780,7 +780,7 @@ final class CheckinService
         foreach ($checks as $c) {
             $key = is_array($c) ? ($c['key'] ?? null) : null;
             $status = is_array($c) ? ($c['status'] ?? null) : null;
-            if (!is_string($key) || preg_match(RmmProtocol::CHECK_KEY_RE, $key) !== 1 || !is_string($status) || !in_array($status, RmmProtocol::CHECK_STATUSES, true)) {
+            if (!is_string($key) || !RmmProtocol::matches(RmmProtocol::CHECK_KEY_RE, $key) || !is_string($status) || !in_array($status, RmmProtocol::CHECK_STATUSES, true)) {
                 if ($strict) {
                     throw new ApiError(422, 'invalid', 'each check needs a valid key and a status of ok, warn, fail or unknown');
                 }

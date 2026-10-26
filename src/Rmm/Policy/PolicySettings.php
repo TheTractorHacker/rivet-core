@@ -46,7 +46,7 @@ final class PolicySettings
         if (str_starts_with($key, 'feature.') && in_array(substr($key, 8), self::FEATURES, true)) {
             return 'feature';
         }
-        if (str_starts_with($key, 'check.') && preg_match(RmmProtocol::CHECK_KEY_RE, substr($key, 6)) === 1) {
+        if (str_starts_with($key, 'check.') && RmmProtocol::matches(RmmProtocol::CHECK_KEY_RE, substr($key, 6))) {
             return 'check';
         }
 
