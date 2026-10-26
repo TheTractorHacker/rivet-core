@@ -2,6 +2,10 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## Unreleased
+
+- **UI (`assets/ui/css/itflow_design.css`)**: `.btn-outline-primary` label and icon now follow the button's border, which is the theme accent, instead of a fixed blue (`#1c4fcf`). That gave a blue label inside a red or teal border (for example Admin > Users "Department logins", the asset "Link" dropdown). Light theme: the accent darkened 30% towards black (at least 5.7:1 on white and on the app surface for the accents tried: teal, red, blue, orange, purple); dark theme: the accent itself, white on hover. Editions pick this up with `scripts/install-ui-assets.php`.
+
 ## 1.0.0-rc.41 (RMM data store: setting, migration command, capacity recommendation, backup helpers; migration 0044)
 
 Phase 3 of [#89](https://github.com/TheTractorHacker/rivet-core/issues/89). Additive for everything that does not opt in: an install on MariaDB behaves as before, loads no PostgreSQL code and opens no PostgreSQL connection; the golden replay and the device protocol are unchanged. Editions: see UPGRADING.md "Adopting the data store setting and migration" and docs/design/rmm-data-store-phase4-edition-prompts.md.

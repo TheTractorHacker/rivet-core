@@ -1059,5 +1059,9 @@ main .form-text a, main .text-secondary a, main .text-muted a, main .alert a { t
 :root:not([data-bs-theme="dark"]) .alert-warning { color: #6b4200; }
 :root:not([data-bs-theme="dark"]) .alert-info { color: #1b5a8f; }
 :root:not([data-bs-theme="dark"]) .alert-success { color: #166628; }
-:root:not([data-bs-theme="dark"]) .btn-outline-primary { color: #1c4fcf; }
+/* Label and icon follow the border (the theme accent), darkened to stay above 4.5:1 on white; a fixed blue here
+   gave a blue label inside an accent-coloured border. */
+:root:not([data-bs-theme="dark"]) .btn-outline-primary { color: color-mix(in srgb, var(--color-accent) 70%, #000); }
+:root[data-bs-theme="dark"] .btn-outline-primary { color: var(--color-accent); }
+:root[data-bs-theme="dark"] .btn-outline-primary:hover, :root[data-bs-theme="dark"] .btn-outline-primary:focus-visible, :root[data-bs-theme="dark"] .btn-outline-primary:active, :root[data-bs-theme="dark"] .btn-outline-primary.active, :root[data-bs-theme="dark"] .btn-check:checked + .btn-outline-primary { color: #fff; }
 :root:not([data-bs-theme="dark"]) .btn-check:checked + .btn-outline-primary, :root:not([data-bs-theme="dark"]) .btn-outline-primary.active, :root:not([data-bs-theme="dark"]) .btn-outline-primary:hover { color: #fff; }
