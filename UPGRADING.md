@@ -76,6 +76,19 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Security audit 2026-10 (1.0.0-rc.46; nothing required)
+
+No migration and no API removal. Things an edition may notice, none needs a code change:
+
+* `UrlPolicy::vet()` is stricter: webhook, automation and metric-store URLs whose host contains `%`, spaces or non-ASCII characters are now refused. Write an internationalised host as `xn--` punycode.
+* Technicians limited to some clients get 403 for: linking a pending device to an asset of another client, changing or deleting tags and groups, changing or retiring library scripts. Unrestricted administrators are unaffected. If your UI offers these actions to limited users, expect the 403 message.
+* `RedisConnectionConfig::toPredisParameters()` has one more key (`read_write_timeout`); `json_encode()` masks the password and `serialize()` throws. Do not cache or serialise the object.
+* `Rmm\Crypto\Redactor::redact()` masks more (see the changelog) and returns `[REDACTED]` for the whole text if PCRE fails. Stored job output may therefore show `[REDACTED]` where it used to show `DB_PASS=...`.
+* `DataStoreSwitch::testConnection()['warnings']` and the result of `RmmAdmin::saveMesh()` (`data['warnings']`) can carry one more line; render the lists you already render.
+* Database-scoped lock names: nothing to do (see the remediation document for the rolling-upgrade note).
+* New for adapters: `#[\SensitiveParameter]` on `SecretBoxInterface::encrypt/decrypt` (add it to your implementation if you want your own traces clean). Optional: `RmmProtocol::matches($pattern, $value)` for identifiers you validate with a `$`-anchored pattern.
+* Secret scanners: copy `secret-scan-allowlist.json`'s approach for your own fixtures; Core's fixtures are listed there with their reasons.
+
 ## Showing the data store on an Update page (1.0.0-rc.43; nothing required)
 
 Optional, additive, no migration. `$rmm->dataStoreInfo()->report()` returns the RMM data store in use and, for PostgreSQL, its version, storage mode, schema state and size (never throws; no PostgreSQL connection on a MariaDB install); `DataStoreInfo::summaryLine($info)` is the one line for a tile. To show it, paste the snippet from [docs/rmm/POSTGRES.md](docs/rmm/POSTGRES.md) section 18 into `update.php` and the server status page and escape the output. Pass a cache (`cache` module option) if you want the live check kept for 30 seconds; the check is already bounded by 2 second timeouts and the data store's circuit breaker. No public signature or constant value changed; new: `DataStoreInfo`, `RmmModule::dataStoreInfo()`.

@@ -174,7 +174,9 @@ compatible with already enrolled agents. Design: [docs/design/endpoint-module-ex
 
 Effect on 1.0: the RMM module adds public API, so `1.0.0-rc.N` is re-cut after Phase 0 and the 30-day soak starts from that candidate; Phases 1 to 8 are 1.x minor releases.
 
-### Programme status (updated 2026-10-24, through v1.0.0-rc.38)
+### Programme status (updated 2026-10-26, through v1.0.0-rc.46 in preparation)
+
+Security: the Core security audit of 2026-10 (secret detection, 18 findings, 14 fixed with regression tests, 4 open with decisions) is documented in docs/security/CORE_SECURITY_AUDIT.md and CORE_REMEDIATION.md (rc.46).
 
 **Shipped since the phase table was last updated**
 

@@ -2,6 +2,21 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.46 (Core security audit 2026-10: secret scanning, SSRF pin, tenancy, Redis, redaction; no migration)
+
+Findings, fixes, tests and the edition impact are in [docs/security/CORE_SECURITY_AUDIT.md](docs/security/CORE_SECURITY_AUDIT.md), [CORE_REMEDIATION.md](docs/security/CORE_REMEDIATION.md) and [COMPATIBILITY_RESULTS.md](docs/security/COMPATIBILITY_RESULTS.md). No public signature or constant value changed; no migration; the device protocol is untouched. Security fixes (severity): Medium CORE-01 to CORE-04, Low CORE-06 to CORE-12, CORE-14 to CORE-17.
+
+- **Secret scanning.** `scripts/secret-scan.php` (tree and history, never prints a value), `secret-scan-allowlist.json` (every intentional fixture with its reason), generated `.gitleaks.toml` and `.semgrepignore` (`scripts/secret-scan-sync.php`), a `secret scan` CI job (our scanner plus gitleaks pinned by digest), `tests/Unit/SecretScanTest.php`. No real secret was found in the tree or the history; the detections were synthetic test values (derivations in the audit). Redaction tests build their JWT at run time.
+- **SSRF (CORE-01).** `UrlPolicy::vet()` refuses a host that is not plain DNS label characters (`a%62c.example`, non-ASCII): curl decoded it and ignored the address pin. An internationalised host must be written as punycode. Mesh probes use the pinned URL.
+- **Tenancy (CORE-02, 03, 11).** Linking a pending device to an asset of another client, changing or deleting tags and groups, changing or retiring library scripts, and transferring a device now need the ability for the other client / an unrestricted user. Additive `EnrollmentService::assetClientId()`.
+- **Redis (CORE-04, 07).** `toPredisParameters()` adds `read_write_timeout` (a hung Redis no longer blocks a call for 60 s). `RedisConnectionConfig` is `JsonSerializable` (password masked) and refuses `serialize()`. `PostgresConfig` and `VictoriaMetricsStore` no longer show credentials in `(array)` casts, dumps and traces; `SecretBoxInterface` parameters are `#[\SensitiveParameter]`; new `@internal` `Support\SecretString`.
+- **Redaction (CORE-06).** `Rmm\Crypto\Redactor` is linear, returns the mask when PCRE fails instead of the input, and masks `DB_PASS`, `*_PW`, `*_KEY`, camelCase `*Key`, `curl -u`, `mysql -p`, `sshpass -p` like the change monitor.
+- **Locks (CORE-08).** Partition maintenance, job claim and cache refresh locks are per database (the constants keep their values).
+- **PostgreSQL (CORE-09), Mesh (CORE-12).** The connection test warns about a remote server without verified TLS; saving Mesh settings warns when all technicians share one Mesh account.
+- **Validation (CORE-10, INFO-01, INFO-02).** Additive `RmmProtocol::matches()` rejects a trailing newline for check keys, MAC, install id, machine guid and agent version; a bare LF in a transport header and `con .txt` attachment names are refused.
+- **Agent build and CI (CORE-14 to CORE-17).** Build host example names this repository, refuses symlinks in the build output and refreshes its Go image; the workflow validates the tag version; dependabot covers gomod and the MSI image; SECURITY.md scope extended.
+- **Open, decisions in the remediation document:** CORE-05 (reinstall by serial, frozen rule), CORE-13 (Windows state directory owner), CORE-18 (Go job redaction parity), release provenance, a patch floor in go.mod.
+
 ## 1.0.0-rc.45 (reporting views and Power BI guide, phases 1 and 2 of #91; migration 0047)
 
 Phases 1 and 2 of [#91](https://github.com/TheTractorHacker/rivet-core/issues/91): stable, safe SQL views for Power BI and any BI tool, a read-only account for them, and the documents and samples to use them. **Additive: nothing changes for an edition that does nothing.** No table, column or row is touched (the migration only creates views), no public signature or constant changed, the device protocol and the golden replay are untouched. Design: [docs/design/reporting.md](docs/design/reporting.md). Guide: [docs/reporting/POWER_BI.md](docs/reporting/POWER_BI.md).
