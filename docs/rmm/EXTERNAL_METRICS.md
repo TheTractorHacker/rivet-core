@@ -41,6 +41,7 @@ Single node: `victoria-metrics -httpListenAddr=127.0.0.1:8428 -retentionPeriod=1
 TLS-terminating reverse proxy that checks a bearer token (or basic auth). Cluster: write base `https://vm.example/insert/0/influx`, read base
 `https://vm.example/select/0/prometheus` (the adapter appends `/write`, `/api/v1/query_range`, `/api/v1/query`; `/health` of the origin is the ping).
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 $store = new VictoriaMetricsStore(
     writeUrl: 'https://vm.example/insert/0/influx',
@@ -120,6 +121,7 @@ never fails a check-in.
 
 ## 6. Wiring it in an edition
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Rmm\Metrics\{CompositeMetricSink, ExternalMetricReader, ExternalMetricSink, VictoriaMetricsStore};
 use RivetCore\Rmm\Support\DatabaseMetricSink;
@@ -135,6 +137,7 @@ $reader = new ExternalMetricReader($store, $local);                        // se
 `CompositeMetricSink` runs every sink; an exception from the secondary (`false`) is collected in `failures()` and never propagates; a primary
 (`true`) exception is rethrown after all sinks ran. Hand the module the composite as its metric sink and the reader as the `metric_reader` option:
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 $module = new RmmModule($database, $clock, $tenancy, $assets, $bridge, $box, $audit, $sink, $moduleState, ['metric_reader' => $reader, /* ... */]);
 ```
@@ -158,6 +161,7 @@ build into a query, and decide what to do with a value you cannot represent (ski
 
 Then run the kit against it:
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 final class MyStoreKitTest extends \RivetCore\Testing\ExternalMetricStoreConformanceTestCase
 {

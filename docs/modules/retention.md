@@ -19,6 +19,7 @@
 
 ## Key classes
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Retention\RetentionService;
 
@@ -49,6 +50,7 @@ With a profile, `new RetentionService($database, 'soc2')`, every horizon is rais
 
 Deliveries and finished jobs use a shorter floor: 7 days with no preset (`OPERATIONAL_MIN_DAYS`), 30 days under any framework preset (`OPERATIONAL_REGULATED_DAYS`, never above the preset's own floor). Helpers: `isValidProfile()`, `floorDays()`, `floorDaysFor($profile, $kind)`, `effectiveDays()`, `effectiveDaysFor()`, `isBelowFloor()`, `describeDays()`, and the kind constants `KIND_AUDIT`, `KIND_DELIVERIES`, `KIND_JOBS`. A preset is a floor, not a compliance claim.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Compliance\RetentionPolicy;
 

@@ -16,6 +16,7 @@ The edition is responsible for what the control does. The reveal screen it opens
 
 ## Key classes
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Knowledge\CredentialReferenceRenderer;
 

@@ -56,6 +56,7 @@ cancelled), `RISKS`, `TRANSITIONS` (for example approved goes to scheduled, in_p
 rolled_back; rolled_back and cancelled are terminal). There is no separate approver model; approval is just a status.
 Render status dropdowns from the constants instead of copying them into the UI.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\ITSM\{ChangeService, ProblemService, TicketProblemLinkInterface};
 

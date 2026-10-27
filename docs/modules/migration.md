@@ -35,6 +35,7 @@
 
 ### Writing a Core migration (Core contributors)
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Migration\MigrationInterface;
@@ -54,6 +55,7 @@ Rules: additive and idempotent (`CREATE TABLE IF NOT EXISTS`, add a column only 
 
 ## Key classes
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Migration\{MigrationRunner, CoreMigrations};
 use RivetCore\Support\SystemClock;
@@ -67,6 +69,7 @@ $applied = $runner->run();   // list<string> ids applied by this call; [] when a
 
 How an edition's updater calls it (the actual pattern in both editions' `admin/database_updates.php`):
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 // Skipped (version NOT advanced, so it retries) if rivet/rivet-core is not installed yet.
 if (class_exists(\RivetCore\Migration\MigrationRunner::class)) {

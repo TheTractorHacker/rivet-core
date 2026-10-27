@@ -24,6 +24,7 @@ Which key groups an admin may clear (`RedisAdmin` constructor) is also edition d
 
 Plain values for one connection. `fromArray()` accepts `host`, `port`, `db` (or `database`), `password`, `username`, `tls`, `tls_verify`, `tls_ca_file`, `tls_cert_file`, `tls_key_file`; empty strings count as unset.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Redis\RedisConnectionConfig;
 
@@ -39,6 +40,7 @@ $cfg->redact($errorText);          // password replaced by ***
 
 ### RedisAdmin
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Redis\RedisAdmin;
 
@@ -55,6 +57,7 @@ $admin->setMemory($client, 256, 'allkeys-lru');   // 64..65536 MB, policy from R
 
 ### LockManager and Lock
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Redis\LockManager;
 
@@ -69,6 +72,7 @@ if ($lock->held()) { /* work */ $lock->extend(900); $lock->release(); }
 
 ### RateLimiter
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Redis\RateLimiter;
 
@@ -80,6 +84,7 @@ Fixed window; counter and TTL are set in one Lua call.
 
 ### CronGuard
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Redis\CronGuard;
 
@@ -91,6 +96,7 @@ The lock is released automatically at shutdown. Key is `<prefix>lock:cron:<job>`
 
 ### Health\ReadinessChecker
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Health\ReadinessChecker;
 

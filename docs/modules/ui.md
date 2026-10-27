@@ -39,6 +39,7 @@ Ten ids are the legacy `canned_date=` values already in URLs and saved views: `t
 
 Methods: `preset()`, `from()`, `to()`, `isAllTime()`, `label()` (for example "Last 30 days", or "Mar 1 - Mar 31, 2026" for a custom range), `days()` (inclusive length, 0 for all time), `previous()`, `sqlBounds()`, `toQuery()`.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Ui\DateRange;
 
@@ -76,6 +77,7 @@ Behavior worth knowing:
 
 `normalize()` accepts `fa-fire`, `fas fa-fire`, `fa fa-fire`, `fa-solid fa-fire` and bare `fire` (trimmed, case-insensitive). Any syntactically valid class is accepted even when it is not curated, because administrators saved free-text classes before the picker existed. Empty, over-long (more than 50 characters) or invalid input (extra words, quotes, angle brackets, non-ASCII) returns `$default`. `has()` therefore answers "is it in the catalog" (for example to mark a stored icon as "custom" in the picker), while `normalize()` answers "is it safe to store and render".
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Ui\IconCatalog;
 

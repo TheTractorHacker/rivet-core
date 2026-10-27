@@ -38,6 +38,7 @@ Run `Testing\RewrapSourceConformanceTestCase` on it and `Testing\EnvelopeConform
 
 ### Envelope
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Crypto\Envelope;
 use RivetCore\Crypto\KeyGenerator;
@@ -63,6 +64,7 @@ authenticate.
 
 ### Rotation
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Crypto\Envelope;
 use RivetCore\Crypto\KeyGenerator;
@@ -86,6 +88,7 @@ assert($plan->isComplete() && $plan->retirable() === [$old->activeKid()]);
 
 ### SettingsVault (settings, TOTP seeds, tokens)
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Crypto\KeyGenerator;
 use RivetCore\Crypto\KeyPurpose;
@@ -123,6 +126,7 @@ are only accepted when you register `LegacyReaders::plaintext()`.
 
 ### Key files
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Crypto\KeyFile;
 use RivetCore\Crypto\KeyGenerator;
@@ -160,6 +164,7 @@ fingerprint equals the one the manifest already records.
 
 ### Rewrapper (resumable `rewrap` / `vault-rewrap`)
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Crypto\Envelope;
 use RivetCore\Crypto\EnvelopeReencryptor;
@@ -199,6 +204,7 @@ conflicts, so run again until it reports `rewrapped = 0`. With an `AuditService`
 
 ### The credentials vault: DEK, user wraps, fields
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Crypto\Envelope;
 use RivetCore\Crypto\KdfParams;
@@ -235,6 +241,7 @@ authenticated. Parameters below Argon2id 19 MiB x 2 or PBKDF2 600000, or above s
 
 Legacy migration, for a vault whose master key is the old 16-character string:
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Crypto\VaultCipher;
 use RivetCore\Crypto\VaultKeyWrap;

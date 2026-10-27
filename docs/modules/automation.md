@@ -68,6 +68,7 @@ values (unknown paths become empty) but only for the free-text keys in `Automati
 key (`url`, `secret`, `email`, `to`, `assigned_to`, `asset_id`, `headers`, `user_id`, `client_id`, `priority`, ...) is used
 verbatim, so event data cannot steer where a request goes or who is addressed.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Automation\{AutomationExecutor, AutomationRuleEvaluator, AutomationRuleStore, EventContext};
 

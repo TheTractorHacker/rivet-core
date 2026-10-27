@@ -24,6 +24,7 @@ Users are not part of Core. Rows carry `actor_user_id` only; join to the edition
 
 ### AuditService (write)
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Audit\AuditService;
 use RivetCore\Support\NullRequestContext;
@@ -43,6 +44,7 @@ $audit->log(
 
 `afterLog` is the optional third constructor argument, a `\Closure` called after the row is written with `(eventType, actorUserId, entityType, entityId, action, summary, metadata)`. Editions use it to fan the event out to webhooks and automation rules:
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 $audit = new AuditService($database, $request, function ($type, $actor, $entityType, $entityId, $action, $summary, $metadata): void {
     // dispatch to webhooks / automation here
@@ -51,6 +53,7 @@ $audit = new AuditService($database, $request, function ($type, $actor, $entityT
 
 ### AuditReader and AuditPage (read)
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Audit\AuditReader;
 

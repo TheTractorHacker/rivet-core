@@ -54,6 +54,7 @@ kit comes from that checkout, so check it out at the Core tag you are about to r
 
 Each case is one small class. Seed through your own tables and use your own adapters:
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 <?php
 // tests/core/WebhookSubscriptionsConformanceTest.php (RivetMSP; RivetIT is identical with the ITFlow\Core\Adapter namespace)
@@ -102,6 +103,7 @@ final class WebhookSubscriptionsConformanceTest extends WebhookSubscriptionsConf
 
 The other cases follow the same shape. The ones both editions need:
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 // Request context: nothing to seed. The default applyRequest()/clearRequest() write $_SERVER; override them if your
 // adapter prefers other globals (RivetMSP reads $GLOBALS['session_ip'] first; clearRequest() already clears it).

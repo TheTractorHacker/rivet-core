@@ -50,6 +50,7 @@ resolved the run becomes `completed`, or `completed_with_exceptions` when at lea
 `completed_at` is stamped. Optional tasks never gate completion. A run that is no longer `in_progress` (completed or
 cancelled) is not changed by `refreshRunStatus`.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Workflow\WorkflowService;
 

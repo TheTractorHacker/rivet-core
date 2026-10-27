@@ -41,6 +41,7 @@ The edition also supplies a `DatabaseInterface` (see [adapters](../adapters.md))
 
 Scoring: pass = 1, warn = 0.5, fail or error = 0, not applicable is left out. A manual item is 1 when `current`, 0.5 when `due_soon` (inside the last quarter of its interval, at most 30 days), 0 when `overdue` or `never`. The score per framework (and `all`) is the average as a percentage, or `null` when nothing is scored. `ComplianceAssessor::summarize()` is public and static.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Compliance\{ComplianceAssessor, CheckInterface, CheckResult, Framework, ManualItem, AttestationProviderInterface};
 use RivetCore\Support\SystemClock;
@@ -74,6 +75,7 @@ echo $assessment->summaries['all']['score'];        // percentage, or null
 
 Append-only record of manual reviews; the newest row per item decides the state. `new AttestationStore($database, $subjectId = 0)`.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Compliance\AttestationStore;
 
@@ -89,6 +91,7 @@ $history = $attest->history('access_review', 20);   // newest first, limit 1..20
 
 Saved assessments, so posture over time can be shown. Snapshots are evidence and are never pruned by retention.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Compliance\SnapshotStore;
 
@@ -104,6 +107,7 @@ An unknown trigger is stored as `manual`; `get()` returns `null` for a missing i
 
 `rows(Assessment, ?string $framework)`, `csv(...)` and `html(Assessment, string $orgName, ?string $framework, ?string $appVersion)`. The optional framework filters to items tagged to it. A "Responsible" column is added only when some item has a responsible party; unassigned rows then read "Internal". The HTML is self-contained, escapes every value, is marked `noindex`, and includes `ReportRenderer::DISCLAIMER`. CSV starts with a UTF-8 BOM and neutralizes spreadsheet formulas by prefixing a quote to cells beginning with `= + - @` or a tab (`csvCell()`).
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 $renderer = new \RivetCore\Compliance\ReportRenderer();
 $csv = $renderer->csv($assessment, \RivetCore\Compliance\Framework::PCI);
@@ -116,6 +120,7 @@ $html = $renderer->html($assessment, 'Example Org', null, '1.2.3');
 
 `SubjectCompliance($database, $clock)` is the same for a subject other than the installation (an MSP customer), with no automatic checks (Core cannot see a customer's systems):
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Compliance\{SubjectCompliance, Framework};
 
@@ -135,6 +140,7 @@ $rows = $subjects->overview();                      // one row per subject that 
 
 Assign a section (`ResponsibilityStore::sectionKey($category)`) or one item (`itemKey($id)`) to a party, for an organization that outsources part of compliance. An item assignment overrides its section; no assignment means the organization's own staff.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Compliance\ResponsibilityStore;
 
@@ -150,6 +156,7 @@ The party name is stored with the assignment so old reports stay readable if the
 
 Minimum-retention presets, keyed like `Framework`: `none`, `iso27001`, `soc2`, `pci` (365 days each), `hipaa` (2190), `nist171` (365). A preset is a floor, not a promise of compliance.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Compliance\RetentionPolicy;
 
@@ -181,6 +188,7 @@ A framework is data: a list of requirements an administrator can create, copy fr
 | `ProfileCodec` | the strict JSON codec behind export/import (unknown keys, types, bounds, sizes, secrets) |
 | `RetentionFloors` | the selected profile's retention minimums for the RMM settings |
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Compliance\Profile\{FrameworkProfileStore, Requirement, RequirementType};
 
@@ -202,6 +210,7 @@ Every writing method needs a user name (attribution) and throws `ProfileValidati
 
 `Check\ProfileChecks` builds the checks the selected profile asks for (none when no profile is selected). Add them to the assessor and pass the store as the last argument so snapshots record the profile name and version:
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Compliance\Check\ProfileChecks;
 
@@ -228,6 +237,7 @@ Results carry evidence lines (`Met:`, `Not met:`, `Evidence:`, `Caveat:`) in `de
 
 ### Restore tests
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Compliance\Backup\{BackupStore, RestoreTestStore, RowCounts};
 
