@@ -198,3 +198,12 @@ tr[hidden] { display: none; }
 .rmmx-errline { margin-top: .15rem; font-size: .8rem; color: #a4161a; max-width: 28rem; overflow-wrap: anywhere; }
 :root[data-bs-theme="dark"] .rmmx-errline { color: #ff9ea1; }
 .rmmx-table tr.is-ignored > td { opacity: .6; }
+
+/* Agent fleet: label and count lists (rings, versions) stay a readable width instead of pushing the count to the far edge of a wide card. */
+.rmmx-kv { max-width: 18rem; font-size: .9rem; }
+.rmmx-kv li { padding: .3rem 0; border-bottom: 1px solid var(--tblr-border-color-translucent, rgba(0, 0, 0, .08)); }
+.rmmx-kv li:last-child { border-bottom: 0; }
+
+/* Log filter: every control in the two rows is the same height, and the buttons line up with them. */
+.rmm-log-filter .form-control, .rmm-log-filter .form-select, .rmm-log-filter .btn { min-height: 2.35rem; height: 2.35rem; font-size: .875rem; }
+.rmm-log-filter .form-label { margin-bottom: .25rem; }

@@ -2,6 +2,10 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.52 (UI: Agent fleet lists; no migration)
+
+- **UI (`itflow_rmm_ui.css`)**: `.rmmx-kv` (a bounded label-and-count list, used by the Agent fleet rings and versions), and the log filter's equal control heights.
+
 ## 1.0.0-rc.51 (UI: breadcrumbs never underline; no migration)
 
 - **UI (`itflow_design.css`)**: breadcrumb links (`.admin-breadcrumb`, `.breadcrumb-item`) no longer underline on hover or focus; the colour change is the cue.

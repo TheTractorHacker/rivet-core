@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "core_version": "1.0.0-rc.51",
+    "core_version": "1.0.0-rc.52",
     "files": {
         "css/file_upload.css": {
             "sha256": "0643d5ce607c9634d8f74bc908136a037b03e5b96ef922f284eaa65e156ff9a7",
@@ -88,8 +88,8 @@
             "origin": "rivetit-verbatim"
         },
         "css/itflow_rmm_ui.css": {
-            "sha256": "d8c6ee3c46148e57dd0b24fa4b1ac4237d53115bff9f114cfbc11c1ded117810",
-            "bytes": 20409,
+            "sha256": "553c0fa4350f909efb7cb347e9bfd14a5f82c588afb30a7d2f9e79890ab33450",
+            "bytes": 21066,
             "origin": "rivetit-verbatim"
         },
         "css/webhook_form.css": {
