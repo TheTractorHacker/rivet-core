@@ -488,6 +488,6 @@ jobs:
           RIVETCORE_BENCH_DB_USER: root
           RIVETCORE_BENCH_DB_PASS: root
           RIVETCORE_BENCH_REDIS_PORT: '6391'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: bench-result, path: bench-result.json }
