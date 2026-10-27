@@ -2,7 +2,7 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
-## Unreleased
+## 1.0.0-rc.49 (UI: navigation links no longer underlined; no migration)
 
 - **UI (`assets/ui/css/itflow_design.css`)**: links in navigation are no longer underlined. The blanket underline for `li > a` (added for the link-in-text-block check) also hit the admin section jump list ("Tickets / Email intake / Service levels" and the equivalent on every admin hub), and `.admin-breadcrumb a` underlined every breadcrumb link, so admin settings pages looked underlined everywhere. Now only links inside running text (`p`, `small`, `.form-text`, alerts and plain prose lists) are underlined; links in `nav`, `.admin-directory`, breadcrumbs, `.list-group`, tab rows and card headers underline on hover and keyboard focus only. axe `link-in-text-block` still reports 0 on the breadcrumb and section nav markup. Editions pick this up with `scripts/install-ui-assets.php`.
 
