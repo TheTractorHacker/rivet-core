@@ -101,7 +101,7 @@ The keys of `PostgresConfig::fromArray()` (unknown keys are refused, so a typo c
 | `database`, `user` | required | letters, digits, `_ . -` only |
 | `password` | empty | never put it on a command line; it is hidden from dumps and traces |
 | `host`, `port` | `127.0.0.1`, 5432 | a host name, an address, or the directory of the unix socket (starts with `/`) |
-| `sslmode`, `sslrootcert` | `prefer`, none | use `verify-full` with a CA file when the connection leaves the machine |
+| `sslmode`, `sslrootcert` | `prefer`, none | use `verify-full` with a CA file when the connection leaves the machine. `PostgresConfig` itself still defaults to `prefer` (compatibility), but `DataStoreSwitch` refuses to save or test a remote host with `disable`, `allow` or `prefer` unless the input carries `allow_insecure_transport => true` (audited, not stored), and a new remote connection without `sslmode` starts at `verify-full` |
 | `schema` | `public` | the schema the tables live in |
 | `connect_timeout` | 3 s | how long a new connection may take before the server counts as down |
 | `socket_timeout_s` | 30 s | TCP keepalives and user timeout: a peer that stops answering is given up after about this long (not for a unix socket); 0 = the operating system's defaults |
