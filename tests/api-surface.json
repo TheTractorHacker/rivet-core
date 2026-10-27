@@ -8084,6 +8084,103 @@
                 "updateUrl": "updateUrl(string $arch, string $version, string $os = 'windows'): ?string"
             }
         },
+        "RivetCore\\Security\\BaselineChanges": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Audit\\AuditService $audit)",
+                "change": "change(?int $actorUserId, string $key, int|bool|null $old, mixed $requested, ?string $scope = NULL): int|bool"
+            }
+        },
+        "RivetCore\\Security\\BaselineViolation": {
+            "kind": "final class",
+            "extends": "DomainException",
+            "implements": [
+                "Stringable",
+                "Throwable"
+            ],
+            "methods": []
+        },
+        "RivetCore\\Security\\SecurityBaseline": {
+            "kind": "final class",
+            "constants": {
+                "DEFAULT_AUDIT_RETENTION_DAYS": 365,
+                "DEFAULT_COOKIE_SAMESITE": "Lax",
+                "DEFAULT_PASSWORD_LENGTH": 14,
+                "DEFAULT_SESSION_IDLE_MINUTES": 30,
+                "MAX_SESSION_IDLE_MINUTES": 480,
+                "MIN_AUDIT_RETENTION_DAYS": 90,
+                "MIN_PASSWORD_LENGTH": 12,
+                "MIN_PASSWORD_MAX_ACCEPTED": 64,
+                "SETTINGS": {
+                    "audit_enabled": {
+                        "type": "bool",
+                        "default": true,
+                        "locked": true
+                    },
+                    "credential_encryption": {
+                        "type": "bool",
+                        "default": true,
+                        "locked": true
+                    },
+                    "tls_only": {
+                        "type": "bool",
+                        "default": true,
+                        "locked": true
+                    },
+                    "cookie_secure": {
+                        "type": "bool",
+                        "default": true,
+                        "locked": true
+                    },
+                    "cookie_httponly": {
+                        "type": "bool",
+                        "default": true,
+                        "locked": true
+                    },
+                    "mfa_required_administrators": {
+                        "type": "bool",
+                        "default": true,
+                        "locked": true
+                    },
+                    "mfa_required_users": {
+                        "type": "bool",
+                        "default": true,
+                        "locked": false
+                    },
+                    "audit_retention_days": {
+                        "type": "int",
+                        "default": 365,
+                        "min": 90,
+                        "locked": false
+                    },
+                    "password_min_length": {
+                        "type": "int",
+                        "default": 14,
+                        "min": 12,
+                        "locked": false
+                    },
+                    "session_idle_minutes": {
+                        "type": "int",
+                        "default": 30,
+                        "min": 1,
+                        "max": 480,
+                        "locked": false
+                    }
+                }
+            },
+            "methods": {
+                "auditRetentionDays": "static auditRetentionDays(?int $configured): int",
+                "cookieAttributes": "static cookieAttributes(array $requested = []): array",
+                "defaultFor": "static defaultFor(string $key): int|bool",
+                "effective": "static effective(string $key, mixed $stored): int|bool",
+                "hostCookieName": "static hostCookieName(string $name): string",
+                "isLocked": "static isLocked(string $key): bool",
+                "mfaRequired": "static mfaRequired(bool $isAdministrator, ?bool $configuredForUsers): bool",
+                "passwordLengthOk": "static passwordLengthOk(string $password, ?int $configuredMin = NULL): bool",
+                "postgresTransportProblem": "static postgresTransportProblem(RivetCore\\Rmm\\Store\\Postgres\\PostgresConfig $config): ?string",
+                "validate": "static validate(string $key, mixed $requested): int|bool"
+            }
+        },
         "RivetCore\\Support\\AllowAllPolicy": {
             "kind": "final class",
             "implements": [
