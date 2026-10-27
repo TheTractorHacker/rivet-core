@@ -10,7 +10,7 @@ Criteria with no control are listed as unmapped on purpose: most SOC 2 and ISO c
 
 | Criterion | Name | Controls (status) |
 |---|---|---|
-| A1.2 | Environmental protections, backup and recovery infrastructure | ERR-03 Audit retention at least 90 days; changes are audited (partial)<br>DATA-03 Backups of the RMM data store are encrypted (partial)<br>HARD-05 Encrypted backups by default (edition-responsibility) |
+| A1.2 | Environmental protections, backup and recovery infrastructure | ERR-03 Audit retention at least 90 days; changes are audited (enforced)<br>DATA-03 Backups of the RMM data store are encrypted (partial)<br>HARD-05 Encrypted backups by default (edition-responsibility) |
 | A1.3 | Tests recovery plan procedures | DATA-04 Restore testing evidence (enforced) |
 | C1.1 | Identifies and maintains confidential information | CRYPT-01 Authenticated encryption with proven primitives (enforced)<br>CRYPT-02 Key management: random keys, key ids, rotation, rewrap (enforced)<br>CRYPT-03 Stored credentials are sealed; sensitive objects do not leak through dumps (enforced)<br>ERR-02 Audit metadata and job output are redacted (enforced)<br>DATA-01 Sensitive responses are not cached (enforced)<br>DATA-02 Data classification and privacy (edition-responsibility)<br>DATA-03 Backups of the RMM data store are encrypted (partial)<br>HARD-05 Encrypted backups by default (edition-responsibility)<br>AGT-02 Agent job and log redaction (partial) |
 | C1.2 | Disposes of confidential information | DATA-02 Data classification and privacy (edition-responsibility) |
@@ -23,7 +23,7 @@ Criteria with no control are listed as unmapped on purpose: most SOC 2 and ISO c
 | CC6.7 | Restricts transmission, movement and removal of information | SESS-01 Session cookies are Secure, HttpOnly, SameSite, __Host- (edition-responsibility)<br>CRYPT-01 Authenticated encryption with proven primitives (enforced)<br>COMM-01 PostgreSQL: unix socket with peer authentication, or verified TLS (partial)<br>COMM-02 Redis authentication and TLS support (partial)<br>COMM-03 TLS for inbound traffic and outbound webhooks (edition-responsibility) |
 | CC6.8 | Prevents or detects unauthorized or malicious software | AUTH-09 No default credentials or secrets in the repository (enforced)<br>CRYPT-04 Signed jobs and update manifests (enforced)<br>FILE-01 Upload size, type and name checks (enforced)<br>FILE-02 Antivirus scanning of uploads (gap) |
 | CC7.1 | Detects configuration changes and vulnerabilities | ARCH-02 Documented security review and remediation (enforced)<br>VAL-02 Parameterized queries (partial)<br>MAL-01 Dependencies audited and pinned (enforced)<br>MAL-03 Static analysis and secret scanning on every change (enforced)<br>CFG-02 Security baseline is itself checked (enforced) |
-| CC7.2 | Monitors components for anomalies | VAL-05 Log and header injection (enforced)<br>ERR-01 Audit trail records security events and is always on (partial)<br>ERR-03 Audit retention at least 90 days; changes are audited (partial)<br>ERR-04 Audit log tamper evidence (gap)<br>ERR-05 Errors fail safe and say little (partial)<br>ERR-06 Clock synchronisation and skew tolerance (partial)<br>HARD-01 Locked-on controls cannot be switched off (partial) |
+| CC7.2 | Monitors components for anomalies | VAL-05 Log and header injection (enforced)<br>ERR-01 Audit trail records security events and is always on (partial)<br>ERR-03 Audit retention at least 90 days; changes are audited (enforced)<br>ERR-04 Audit log tamper evidence (gap)<br>ERR-05 Errors fail safe and say little (partial)<br>ERR-06 Clock synchronisation and skew tolerance (partial)<br>HARD-01 Locked-on controls cannot be switched off (partial) |
 | CC7.3 | Evaluates security events | ERR-01 Audit trail records security events and is always on (partial)<br>CFG-03 Vulnerability disclosure policy (enforced) |
 | CC7.4 | Responds to security incidents | CFG-03 Vulnerability disclosure policy (enforced) |
 | CC8.1 | Authorizes, tests and approves changes | ARCH-03 Core has no direct database or request-global coupling (enforced)<br>ARCH-04 Public API compatibility is checked (enforced)<br>CRYPT-04 Signed jobs and update manifests (enforced)<br>MAL-02 Release integrity (partial)<br>MAL-03 Static analysis and secret scanning on every change (enforced)<br>CFG-01 Hardened, reviewable build and CI (enforced)<br>HARD-02 Floors are frozen numbers (enforced) |
@@ -52,11 +52,11 @@ Listed in this file's vocabulary but with no control: CC3.4.
 | A.8.7 | Protection against malware | FILE-01 Upload size, type and name checks (enforced)<br>FILE-02 Antivirus scanning of uploads (gap) |
 | A.8.8 | Management of technical vulnerabilities | ARCH-02 Documented security review and remediation (enforced)<br>MAL-01 Dependencies audited and pinned (enforced)<br>CFG-03 Vulnerability disclosure policy (enforced) |
 | A.8.9 | Configuration management | CFG-01 Hardened, reviewable build and CI (enforced)<br>HARD-01 Locked-on controls cannot be switched off (partial)<br>HARD-02 Floors are frozen numbers (enforced)<br>HARD-06 Module and remote-tool features are off until enabled (enforced)<br>AGT-01 Agent state directory permissions (gap) |
-| A.8.10 | Information deletion | ERR-03 Audit retention at least 90 days; changes are audited (partial)<br>DATA-02 Data classification and privacy (edition-responsibility) |
+| A.8.10 | Information deletion | ERR-03 Audit retention at least 90 days; changes are audited (enforced)<br>DATA-02 Data classification and privacy (edition-responsibility) |
 | A.8.11 | Data masking | CRYPT-03 Stored credentials are sealed; sensitive objects do not leak through dumps (enforced)<br>ERR-02 Audit metadata and job output are redacted (enforced)<br>AGT-02 Agent job and log redaction (partial) |
 | A.8.12 | Data leakage prevention | DATA-01 Sensitive responses are not cached (enforced) |
 | A.8.13 | Information backup | DATA-03 Backups of the RMM data store are encrypted (partial)<br>DATA-04 Restore testing evidence (enforced)<br>HARD-05 Encrypted backups by default (edition-responsibility) |
-| A.8.15 | Logging | VAL-05 Log and header injection (enforced)<br>ERR-01 Audit trail records security events and is always on (partial)<br>ERR-02 Audit metadata and job output are redacted (enforced)<br>ERR-03 Audit retention at least 90 days; changes are audited (partial)<br>ERR-04 Audit log tamper evidence (gap)<br>ERR-05 Errors fail safe and say little (partial) |
+| A.8.15 | Logging | VAL-05 Log and header injection (enforced)<br>ERR-01 Audit trail records security events and is always on (partial)<br>ERR-02 Audit metadata and job output are redacted (enforced)<br>ERR-03 Audit retention at least 90 days; changes are audited (enforced)<br>ERR-04 Audit log tamper evidence (gap)<br>ERR-05 Errors fail safe and say little (partial) |
 | A.8.16 | Monitoring activities | ERR-01 Audit trail records security events and is always on (partial) |
 | A.8.17 | Clock synchronization | ERR-06 Clock synchronisation and skew tolerance (partial) |
 | A.8.19 | Installation of software on operational systems | CRYPT-04 Signed jobs and update manifests (enforced) |
@@ -73,8 +73,8 @@ Listed in this file's vocabulary but with no control: CC3.4.
 
 | Status | Controls |
 |---|---|
-| enforced | 29 |
-| partial | 16 |
+| enforced | 30 |
+| partial | 15 |
 | not-applicable-to-Core | 1 |
 | edition-responsibility | 12 |
 | gap | 4 |

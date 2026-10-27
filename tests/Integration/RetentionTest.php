@@ -55,6 +55,17 @@ final class RetentionTest extends TestCase
         $this->assertSame(['old-pending', 'old-running', 'recent-completed'], $left, 'pending and running jobs survive however old they are');
     }
 
+    public function testTheAuditFloorHoldsInTheServiceItself(): void
+    {
+        $this->seed();
+        $this->db->execute("INSERT INTO audit_events (event_type, action, created_at) VALUES ('mid', 'a', NOW() - INTERVAL 60 DAY), ('older', 'a', NOW() - INTERVAL 100 DAY)");
+        $svc = new RetentionService($this->db);
+        $this->assertSame(2, $svc->plan(7, 7)['audit_events'], 'a stored 7 days still plans only the rows older than 90');
+        $svc->prune(7, 7);
+        $this->assertSame(['mid', 'recent'], array_column($this->db->fetchAll('SELECT event_type FROM audit_events ORDER BY event_type'), 'event_type'));
+        $this->assertSame(1, $this->rows('webhook_deliveries'), 'deliveries are still pruned at 7 days');
+    }
+
     public function testZeroOrNegativeKeepsEverything(): void
     {
         $this->seed();

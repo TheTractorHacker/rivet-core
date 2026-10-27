@@ -40,7 +40,7 @@ The edition also supplies a `DatabaseInterface`, a `ClockInterface`, and decides
 ### WebhookDispatcher
 
 Constructor: `(DatabaseInterface, WebhookSubscriptionsInterface, ClockInterface, array $headerPrefixes = ['X-RivetCore'],
-?\Closure $transport = null, int $timeoutSeconds = 10, ?UrlPolicy $urlPolicy = null, bool $requireUrlPolicy = false)`.
+?\Closure $transport = null, int $timeoutSeconds = 10, ?UrlPolicy $urlPolicy = null, bool $requireUrlPolicy = false, bool $requireHttps = false)`. With `$requireHttps = true` a plain `http://` endpoint is refused (`plain http endpoint not allowed`, never contacted) unless that subscription's own `options['allow_http'] === true`; use `UrlPolicy::destinationProblem($url, $allowHttp)` on the destination form. The default stays false for compatibility.
 
 - `deliver($eventType, $payload)` fires at every subscriber from `forEvent()`, one attempt each, in the request.
 - `deliverTo($webhookId, $eventType, $payload, $attempt = 1, $emittedAt = null, $signedAt = null, $options = null)`

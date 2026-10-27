@@ -144,11 +144,70 @@ final class DataStoreSwitchTest extends RmmTestCase
         $real = PostgresTestDatabase::config();
         $sw = new DataStoreSwitch($this->h->module->sql(), $this->h->module->settings(), $this->h->box, $this->h->audit, static fn (PostgresConfig $c) => new PdoPostgresConnection($real));
         foreach (['prefer', 'require', 'disable'] as $mode) {
-            $w = $sw->testConnection($this->form(['host' => 'db.example.test', 'sslmode' => $mode, 'password' => 'x']))['warnings'];
+            $w = $sw->testConnection($this->form(['host' => 'db.example.test', 'sslmode' => $mode, 'password' => 'x', 'allow_insecure_transport' => true]))['warnings'];
             $this->assertNotEmpty(array_filter($w, static fn (string $x): bool => str_contains($x, 'does not verify')), "sslmode $mode on a remote host");
         }
         $w = $sw->testConnection($this->form(['host' => 'localhost', 'sslmode' => 'prefer', 'password' => 'x']))['warnings'];
         $this->assertSame([], array_filter($w, static fn (string $x): bool => str_contains($x, 'does not verify')), 'a server on this machine needs no certificate');
+    }
+
+    /** COMM-01: a remote host with sslmode disable / allow / prefer is refused on save and test unless the operator acknowledges it; the acknowledgement is audited. */
+    public function testARemoteHostWithWeakSslmodeIsRefusedUnlessAcknowledged(): void
+    {
+        foreach (['disable', 'allow', 'prefer'] as $mode) {
+            $in = $this->form(['host' => 'db.example.test', 'sslmode' => $mode, 'password' => 'x']);
+            $e = $this->sw->saveConnection($in);
+            $this->assertStringContainsString('not on this machine', $e[0] ?? '', "save, sslmode $mode");
+            $this->assertStringContainsString('verify-full', $e[0]);
+            $t = $this->sw->testConnection($in);
+            $this->assertFalse($t['ok'], "test, sslmode $mode");
+            $this->assertSame('settings', $t['checks'][0]['name']);
+        }
+        $this->assertNull($this->sw->connectionSettings(), 'nothing was stored');
+        $this->assertSame(0, $this->connects, 'a refused form never opens a connection');
+        // verified or at least required TLS, and the explicit acknowledgement, both go through
+        $this->assertSame([], $this->sw->saveConnection($this->form(['host' => 'db.example.test', 'sslmode' => 'verify-full', 'password' => 'x'])));
+        $this->assertSame([], $this->sw->saveConnection($this->form(['host' => 'db.example.test', 'sslmode' => 'require', 'password' => 'x'])));
+        $this->assertSame([], $this->sw->saveConnection($this->form(['host' => 'db.example.test', 'sslmode' => 'prefer', 'password' => 'x', 'allow_insecure_transport' => true])));
+        $this->assertSame('prefer', $this->sw->connectionSettings()['sslmode']);
+        $this->assertStringContainsString('rmm.data_store.insecure_transport_ack', json_encode($this->h->audit->records()), 'the acknowledgement is audit-logged');
+        // only a real true counts
+        $e = $this->sw->saveConnection($this->form(['host' => 'db.example.test', 'sslmode' => 'disable', 'password' => 'x', 'allow_insecure_transport' => 'yes']));
+        $this->assertNotSame([], $e);
+    }
+
+    /** Local sockets and loopback keep their old behaviour whatever the sslmode. */
+    public function testLocalHostsKeepWeakSslmodes(): void
+    {
+        foreach (['/var/run/postgresql', '127.0.0.1', 'localhost', '::1'] as $host) {
+            $this->assertSame([], $this->sw->saveConnection($this->form(['host' => $host, 'sslmode' => 'prefer', 'password' => 'x'])), $host);
+        }
+    }
+
+    /** A NEW connection to a remote host with no sslmode given gets verify-full (and then needs a CA/host that matches); a local one keeps prefer. */
+    public function testTheDefaultSslmodeForANewRemoteConnectionIsVerifyFull(): void
+    {
+        $in = $this->form(['host' => 'db.example.test', 'password' => 'x']);
+        unset($in['sslmode']);
+        $this->assertSame([], $this->sw->saveConnection($in));
+        $this->assertSame('verify-full', $this->sw->connectionSettings()['sslmode']);
+        $this->h->q('DELETE FROM rmm_data_store_connection');
+        $in = $this->form(['password' => 'x']);
+        unset($in['sslmode']);
+        $this->assertSame([], $this->sw->saveConnection($in));
+        $this->assertSame('prefer', $this->sw->connectionSettings()['sslmode'], 'the local test server keeps the old default');
+    }
+
+    /** Existing stored connections stay readable even if they are weak; only a new save or test is refused. */
+    public function testAnAlreadyStoredWeakConnectionStillLoads(): void
+    {
+        $this->h->q("INSERT INTO rmm_data_store_connection (id, host, port, db_name, db_user, password_sealed, sslmode, schema_name, test_ok, updated_at) VALUES (1, 'db.example.test', 5432, 'rivet', 'rivet', '" . $this->h->box->encrypt('x') . "', 'prefer', 'public', 0, NOW())");
+        $this->assertSame('prefer', $this->sw->connectionSettings()['sslmode']);
+        $cfg = $this->sw->postgresConfig();
+        $this->assertNotNull($cfg);
+        $this->assertTrue($cfg->usesWeakTransport());
+        $e = $this->sw->saveConnection(['password' => '']);
+        $this->assertNotSame([], $e, 'saving the weak stored connection again is refused with a message');
     }
 
     /** A connection that reports another server version and is otherwise the real one. */
