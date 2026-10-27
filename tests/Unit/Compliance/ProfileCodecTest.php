@@ -44,6 +44,17 @@ final class ProfileCodecTest extends TestCase
         self::assertSame(ProfileCodec::export($back), str_replace('"version": 3', '"version": 1', ProfileCodec::export($p)));
     }
 
+    public function testTheLogPresetsRequirementRoundTripsAsAFlagWithoutAValueOrAClass(): void
+    {
+        $p = new FrameworkProfile('logs_x', 'Logs X', '', 1, false, [new Requirement(RequirementType::LOG_PRESETS_BASELINE, null, 1, 'audit policy too')]);
+        $back = ProfileCodec::parse(ProfileCodec::export($p));
+        self::assertSame($p->contentHash(), $back->contentHash());
+        self::assertSame([['type' => 'log_presets_baseline', 'note' => 'audit policy too']], json_decode(ProfileCodec::export($p), true)['profile']['requirements']);
+        self::assertSame('Security event-log presets are collected', $back->requirements[0]->describe());
+        $this->expectException(\InvalidArgumentException::class);
+        new Requirement(RequirementType::LOG_PRESETS_BASELINE, 'audit_events', 1);
+    }
+
     public function testRequirementsAreInCanonicalOrderWhateverTheInputOrder(): void
     {
         $types = array_map(static fn (Requirement $r) => $r->type, self::contractX()->requirements);

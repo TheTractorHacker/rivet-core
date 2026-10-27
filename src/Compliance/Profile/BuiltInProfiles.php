@@ -39,6 +39,18 @@ final class BuiltInProfiles
         return $out;
     }
 
+    /**
+     * Requirements a framework would typically add on top of its built-in floor, for a custom profile that starts as a copy of the built-in. They are NOT part of
+     * {@see all()}: selecting a built-in profile asks for nothing the preset did not already ask for, so adding a requirement here never changes an existing install's
+     * results. Today: collecting the Windows security event-log presets of the compliance baseline.
+     *
+     * @return list<Requirement>
+     */
+    public static function suggestedExtras(string $key): array
+    {
+        return Framework::isValid($key) ? [new Requirement(RequirementType::LOG_PRESETS_BASELINE, null, 1, 'Windows audit policy must also be on; see the Security log presets.')] : [];
+    }
+
     public static function get(string $key): ?FrameworkProfile
     {
         return Framework::isValid($key) ? self::all()[$key] : null;

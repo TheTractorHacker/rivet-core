@@ -2,6 +2,15 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.54 (log presets: compliance baseline recommended by default; no protocol change)
+
+No migration (`req_type` is `varchar(40)`; `log_presets_baseline` fits). No change to the RMM device protocol. Existing installs behave exactly as before: nothing is switched on, stored, or sent to an agent unless an administrator saves it.
+
+- **`SecurityLogPresets`** (additive): `complianceBaseline()` (every preset except `win.sec.devices`), `frameworkReferences()` (HIPAA 164.312(b), PCI DSS 10.2, CIS 8.2/8.5, NIST 800-171 3.3.1/3.3.2, SOC 2 CC7.2, ISO 27001 A.8.15, NIST CSF DE.CM per preset), `auditPolicyNeeds()`, `remediation()` and `AUDIT_POLICY_NOTE`. `catalog()` and `MAX_SOURCES` are unchanged; a test pins that the baseline fits the 4-source cap without dropping an id.
+- **`RemoteSettings`**: `logPresetsChosen()` tells "never chosen" (no stored `presets` key) from "chose none" (an explicit empty list is now kept as `presets: []`). `summary()['log_presets']` entries gain `recommended`, `selected` (stored choice, or the baseline while never chosen), `frameworks`, `audit_policy`; new keys `log_presets_chosen`, `log_presets_baseline`, `log_presets_audit_note`. `enabled` and `agentLogConfig()` are unchanged. `applyComplianceBaseline($userId, $userName)` (adds the baseline, keeps sources, idempotent, audited, never turns `logs` on); `update()` and `RemoteActions::updateSettings()` accept `compliance_baseline_if_unset: true` (stores the baseline only when no choice was ever saved); `RemoteActions::applyLogPresetBaseline()` for the button; `setAudit()` wired by `RmmModule`.
+- **Compliance**: requirement type `log_presets_baseline` (yes/no) and `SecurityLogPresetsCheck` (`security_log_presets`, built by `ProfileChecks` when the profile asks): fail with "Enable preset X (needs Windows audit policy Y)" when log collection is off or a baseline preset is missing, pass otherwise, always with the caveat that the device audit policy is not visible to the system (the frozen protocol does not carry it). The five built-in profiles are NOT changed (a built-in still asks for nothing new, so no existing install gets a new failing check); `BuiltInProfiles::suggestedExtras()` gives the requirement to add to a copy of a built-in.
+- Docs: `docs/rmm/REMOTE_AND_LOGS.md` (Compliance baseline), `docs/design/log-presets-edition-prompts.md` (prompts for the RivetIT and RivetMSP settings UIs).
+
 ## 1.0.0-rc.52 (UI: Agent fleet lists; no migration)
 
 - **UI (`itflow_rmm_ui.css`)**: `.rmmx-kv` (a bounded label-and-count list, used by the Agent fleet rings and versions), and the log filter's equal control heights.

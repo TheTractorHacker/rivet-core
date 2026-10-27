@@ -70,6 +70,13 @@ final class RemoteSettings
     }
 
     private ?\RivetCore\Rmm\Settings\RetentionFloorsInterface $floors = null;
+    private ?\RivetCore\Rmm\Contracts\RmmAuditInterface $audit = null;
+
+    /** Where {@see applyComplianceBaseline()} writes its audit entry. Null (the default) records nothing. */
+    public function setAudit(?\RivetCore\Rmm\Contracts\RmmAuditInterface $audit): void
+    {
+        $this->audit = $audit;
+    }
 
     /**
      * Minimum retention imposed from outside (the selected compliance framework): {@see update()} refuses a log retention below it and {@see limits()}
@@ -163,6 +170,42 @@ final class RemoteSettings
     }
 
     /**
+     * Has an administrator ever saved a preset choice (even an empty one)? False means "never chosen": the stored settings carry no `presets` key. Only an explicit
+     * save writes the key, so this tells "never chosen" apart from "chose none". It never changes what the agent is told: {@see agentLogConfig()} follows
+     * {@see logPresets()} only.
+     */
+    public function logPresetsChosen(): bool
+    {
+        $raw = $this->row()['logs_collect_json'] ?? null;
+        $d = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+
+        return is_array($d) && array_key_exists('presets', $d) && is_array($d['presets']);
+    }
+
+    /**
+     * Store the compliance baseline ({@see SecurityLogPresets::complianceBaseline()}) in addition to the presets already chosen, and record it in the audit log.
+     * Idempotent, keeps every other preset and every custom source, and NEVER turns the `logs` switch on: with collection off the choice is simply stored.
+     *
+     * @return array{added:list<string>,presets:list<string>}
+     */
+    public function applyComplianceBaseline(int $userId, string $userName = ''): array
+    {
+        $before = $this->logPresets();
+        $after = array_values(array_unique([...$before, ...SecurityLogPresets::complianceBaseline()]));
+        $added = array_values(array_diff($after, $before));
+        if ($added !== [] || !$this->logPresetsChosen()) {
+            $errors = $this->update(['logs_collect' => ['presets' => $after]], $userId);
+            if ($errors !== []) {
+                throw new \RuntimeException('The compliance baseline could not be stored: ' . implode(' ', $errors));
+            }
+        }
+        $this->audit?->record('Remote Settings Changed', ($userName !== '' ? $userName : 'User ' . $userId) . ': compliance baseline of log presets applied ('
+            . ($added === [] ? 'nothing to add' : 'added ' . implode(', ', $added)) . ')', 0, 0);
+
+        return ['added' => $added, 'presets' => $this->logPresets()];
+    }
+
+    /**
      * The `config.logs` object for a platform. The version changes exactly when something the agent is told changes.
      *
      * @param list<string>|null $caps what the device announced: the aggregated security presets are added only for an agent that announced `logs:presets`
@@ -194,11 +237,27 @@ final class RemoteSettings
         $l = $this->limits();
         $perRow = 600;
 
+        $chosen = $this->logPresetsChosen();
+        $on = $this->logPresets();
+        $baseline = SecurityLogPresets::complianceBaseline();
+        $refs = SecurityLogPresets::frameworkReferences();
+        $needs = SecurityLogPresets::auditPolicyNeeds();
+
         return [
             'transfer_allow' => $this->allowRoots(),
-            'logs_collect' => ['linux' => $this->logSources('linux'), 'windows' => $this->logSources('windows'), 'presets' => $this->logPresets()],
-            'log_presets' => array_map(fn (string $id, array $p): array => ['id' => $id, 'title' => $p['title'], 'description' => $p['description'], 'platform' => $p['platform'],
-                'aggregated' => $p['aggregate'], 'enabled' => in_array($id, $this->logPresets(), true)], array_keys(SecurityLogPresets::catalog()), SecurityLogPresets::catalog()),
+            'logs_collect' => ['linux' => $this->logSources('linux'), 'windows' => $this->logSources('windows'), 'presets' => $on],
+            // `enabled` is what the agents are told. `selected` is what a settings form should show ticked: the stored choice, or, while an administrator has never chosen, the
+            // compliance baseline. Showing it ticked does not store it; saving the form does.
+            'log_presets' => array_map(static function (string $id, array $p) use ($on, $chosen, $baseline, $refs, $needs): array {
+                $recommended = in_array($id, $baseline, true);
+                $enabled = in_array($id, $on, true);
+
+                return ['id' => $id, 'title' => $p['title'], 'description' => $p['description'], 'platform' => $p['platform'], 'aggregated' => $p['aggregate'], 'enabled' => $enabled,
+                    'recommended' => $recommended, 'selected' => $chosen ? $enabled : $recommended, 'frameworks' => $refs[$id] ?? [], 'audit_policy' => $needs[$id] ?? ''];
+            }, array_keys(SecurityLogPresets::catalog()), SecurityLogPresets::catalog()),
+            'log_presets_chosen' => $chosen,
+            'log_presets_baseline' => $baseline,
+            'log_presets_audit_note' => SecurityLogPresets::AUDIT_POLICY_NOTE,
             'limits' => $l,
             'file_transfer_risk' => self::FILE_TRANSFER_RISK,
             'logs_storage_warning' => self::LOGS_STORAGE_WARNING,
@@ -210,13 +269,22 @@ final class RemoteSettings
     /**
      * Validate and save. Only the keys present are touched; nothing is written when any value is refused.
      *
-     * @param array<string,mixed> $in transfer_allow {linux:[..],windows:[..]}, logs_collect {linux:[..],windows:[..]}, limits {name:int}
+     * @param array<string,mixed> $in transfer_allow {linux:[..],windows:[..]}, logs_collect {linux:[..],windows:[..],presets:[..]}, limits {name:int}, compliance_baseline_if_unset (true: when no preset choice was ever saved, store the compliance baseline)
      * @return list<string> error messages; empty when saved
      */
     public function update(array $in, int $userId): array
     {
         $err = [];
         $set = [];
+        if (array_key_exists('compliance_baseline_if_unset', $in)) {
+            if (!is_bool($in['compliance_baseline_if_unset'])) {
+                $err[] = 'compliance_baseline_if_unset must be true or false.';
+            } elseif ($in['compliance_baseline_if_unset'] && !$this->logPresetsChosen() && !(is_array($in['logs_collect'] ?? null) && array_key_exists('presets', $in['logs_collect']))) {
+                // Nobody has chosen presets yet and this save does not choose any: store the baseline explicitly, next to whatever sources the save carries. An install that has
+                // chosen (even none) is left exactly as it is. The `logs` switch is never touched here.
+                $in['logs_collect'] = (is_array($in['logs_collect'] ?? null) ? $in['logs_collect'] : []) + ['presets' => SecurityLogPresets::complianceBaseline()];
+            }
+        }
         if (array_key_exists('transfer_allow', $in)) {
             $allow = ['linux' => [], 'windows' => []];
             $d = $in['transfer_allow'];
@@ -303,6 +371,7 @@ final class RemoteSettings
      */
     private function validateSources(mixed $d): array
     {
+        $in = is_array($d) ? $d : [];
         $out = ['linux' => [], 'windows' => []];
         $err = [];
         if (!is_array($d)) {
@@ -345,7 +414,9 @@ final class RemoteSettings
                 }
             }
         }
-        if ($presets !== []) {
+        // An explicit choice of no presets is kept as an empty list, so "chose none" stays distinguishable from "never chosen". A save that does not mention the
+        // presets keeps whatever was stored, including that marker.
+        if ($presets !== [] || array_key_exists('presets', $in) || $this->logPresetsChosen()) {
             $out['presets'] = $presets;
         }
 

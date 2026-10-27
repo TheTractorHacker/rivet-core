@@ -22,6 +22,8 @@ final class RequirementType
     public const BACKUP_ENCRYPTED = 'backup_encrypted';
     public const RESTORE_TEST_MAX_AGE = 'restore_test_max_age';
     public const TAMPER_EVIDENCE = 'tamper_evidence';
+    /** Windows security event-log presets ({@see \RivetCore\Rmm\Logs\SecurityLogPresets::complianceBaseline()}) are collected. A yes/no requirement. */
+    public const LOG_PRESETS_BASELINE = 'log_presets_baseline';
 
     public const UNIT_DAYS = 'days';
     public const UNIT_HOURS = 'hours';
@@ -38,6 +40,7 @@ final class RequirementType
         self::BACKUP_ENCRYPTED => ['label' => 'Backups are encrypted', 'unit' => self::UNIT_FLAG, 'min' => 1, 'max' => 1, 'classes' => []],
         self::RESTORE_TEST_MAX_AGE => ['label' => 'Restore tested within N days', 'unit' => self::UNIT_DAYS, 'min' => 1, 'max' => 3650, 'classes' => []],
         self::TAMPER_EVIDENCE => ['label' => 'Tamper evidence', 'unit' => self::UNIT_FLAG, 'min' => 1, 'max' => 1, 'classes' => [DataClass::AUDIT_EVENTS, DataClass::RMM_LOGS, DataClass::CHANGE_RECORDS]],
+        self::LOG_PRESETS_BASELINE => ['label' => 'Security event-log presets are collected', 'unit' => self::UNIT_FLAG, 'min' => 1, 'max' => 1, 'classes' => []],
     ];
 
     /** Types that take a data class. retention_min takes any class; the others are decided by `classes`. */
