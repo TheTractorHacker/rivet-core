@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "core_version": "1.0.0-rc.50",
+    "core_version": "1.0.0-rc.51",
     "files": {
         "css/file_upload.css": {
             "sha256": "0643d5ce607c9634d8f74bc908136a037b03e5b96ef922f284eaa65e156ff9a7",
@@ -38,8 +38,8 @@
             "origin": "rivetit-split"
         },
         "css/itflow_design.css": {
-            "sha256": "e144ca00d3f67fee982d0055c4df79b5779ba914109377ebcc2d4677aa2395b9",
-            "bytes": 62389,
+            "sha256": "5125932f22b766a5e86f13b0e16d9dbc6e9d02ad5827bc42d3aa2a61abf0ee8a",
+            "bytes": 62483,
             "origin": "rivetit-split"
         },
         "css/itflow_metrics.css": {

@@ -599,7 +599,7 @@ code, kbd, samp, pre, .text-monospace, .font-monospace, .if-mono { font-family: 
 }
 .breadcrumb-item, .breadcrumb-item a { color: var(--if-muted); }
 .breadcrumb-item a { text-decoration: none; font-weight: 500; }
-.breadcrumb-item a:hover { color: var(--if-primary); text-decoration: underline; }
+.breadcrumb-item a:hover { color: var(--if-primary); text-decoration: none; }
 .breadcrumb-item.active { color: var(--if-ink); font-weight: 600; }
 .breadcrumb-item + .breadcrumb-item::before {
   color: var(--if-border-strong); font-weight: 700; padding-right: .6rem; padding-left: .1rem;
@@ -1052,7 +1052,8 @@ main p a:not(.btn), main small a:not(.btn), main .small a:not(.btn), main li > a
 :root[data-bs-theme="dark"] a[aria-current="true"]:not(.btn) { color: #9dbcff; }
 main .form-text a, main .text-secondary a, main .text-muted a, main .alert a { text-decoration: underline; }
 /* Navigation links (breadcrumb, section jump list) are not running text: underline on hover and keyboard focus only */
-.admin-breadcrumb a:hover, .admin-breadcrumb a:focus-visible { text-decoration: underline; }
+.admin-breadcrumb a, .admin-breadcrumb a:hover, .admin-breadcrumb a:focus, .admin-breadcrumb a:focus-visible { text-decoration: none; }
+.admin-breadcrumb a:hover { color: var(--if-primary); }
 /* Section tabs and tiles are buttons, not text links: Tabler's bare a:hover underline must not reach them (the pill background is the hover cue). */
 .admin-directory a, .admin-directory a:hover, .admin-directory a:focus, .admin-directory a:focus-visible { text-decoration: none; }
 

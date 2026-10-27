@@ -2,6 +2,10 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.51 (UI: breadcrumbs never underline; no migration)
+
+- **UI (`itflow_design.css`)**: breadcrumb links (`.admin-breadcrumb`, `.breadcrumb-item`) no longer underline on hover or focus; the colour change is the cue.
+
 ## 1.0.0-rc.50 (UI: admin section tabs and tiles stay un-underlined on hover; no migration)
 
 - **UI (`itflow_design.css`)**: the admin section tabs ("Jobs & mail", "Activity & diagnostics") and the tiles under them were underlined on hover and keyboard focus (the rc.49 rule and Tabler's bare `a:hover`). `.admin-directory` links now never underline; the pill background and focus ring are the cue. Breadcrumb links still underline on hover.
