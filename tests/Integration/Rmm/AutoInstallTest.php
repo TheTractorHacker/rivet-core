@@ -504,7 +504,7 @@ final class AutoInstallTest extends DeployTestCase
         // an unrestricted reader sees everything
         $all = $find($this->api('GET', ['software_autoinstall'], $this->viewer)[1]);
         $this->assertSame([$a, $b], array_column($all['auto']['clients'], 'client_id'));
-        $this->assertEqualsCanonicalizing(['client:' . $a, 'client:' . $b, 'location:777'], array_map(static fn (array $r): string => $r['scope'] . ':' . $r['scope_id'], array_filter($all['params']['set'], static fn (array $r): bool => $r['name'] === 'org_key' && $r['scope'] !== 'global')));
+        $this->assertEqualsCanonicalizing(['client:' . $a, 'client:' . $b, 'location:777'], array_values(array_map(static fn (array $r): string => $r['scope'] . ':' . $r['scope_id'], array_filter($all['params']['set'], static fn (array $r): bool => $r['name'] === 'org_key' && $r['scope'] !== 'global'))));
         // the restricted reader sees client B only
         [$c, $j] = $this->api('GET', ['software_autoinstall'], $this->scoped);
         $this->assertSame(200, $c);

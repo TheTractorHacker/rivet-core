@@ -391,6 +391,17 @@ jobs:
             exit 1
           fi
 
+  security-baseline:
+    name: security baseline
+    # docs/security/BASELINE.md: every referenced file and test exists, every 'enforced' control has a test, CONTROL_MAPPING.md is regenerated from baseline.json. No composer install needed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5' }
+      - run: php scripts/baseline-check.php
+      - run: php scripts/baseline-map.php --check
+
   secret-scan:
     name: secret scan
     runs-on: ubuntu-latest
