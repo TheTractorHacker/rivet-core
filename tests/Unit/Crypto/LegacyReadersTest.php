@@ -121,7 +121,8 @@ final class LegacyReadersTest extends TestCase
 
     public function testMalformedLegacyValuesAreDecryptionFailed(): void
     {
-        $k = bin2hex(random_bytes(32));
+        // A fixed key, not a random one: AES-CBC with a random key leaves arbitrary bytes with valid PKCS#7 padding about once in 256 runs, which made this test flaky.
+        $k = hash('sha256', 'LegacyReadersTest fixed key for malformed values');
         foreach ([
             [new LegacySettingsGcmReader($k), 'ENC2:'],
             [new LegacySettingsGcmReader($k), 'ENC2:!!!'],
