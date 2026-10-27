@@ -54,6 +54,7 @@ RivetCore generates the SQL; **it does not run it and never stores the password*
 
 From PHP (any script that has RivetCore loaded; this prints the statements, it runs nothing):
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Reporting\ReportingRole;
 

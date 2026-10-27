@@ -52,6 +52,7 @@ Constructor: `(DatabaseInterface, WebhookSubscriptionsInterface, ClockInterface,
   call it from edition code.
 - `signatureV2($timestamp, $body, $secret)` returns the `X-Rivet-Signature-V2` value.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Support\SystemClock;
 use RivetCore\Webhooks\{WebhookDispatcher, WebhookSubscription, WebhookSubscriptionsInterface, WebhookSubscriptionLookupInterface, UrlPolicy};
@@ -92,6 +93,7 @@ broadcast/reserved addresses are never allowed, even if listed. `isSafe()` and s
 (`MAX_ENTRIES`). `NetworkList::contains($cidrs, $ip)` is the matcher. `Support\LocalNetworks::detect()` suggests the
 server's own private IPv4 subnets (`[{interface, cidr, address}]`), skipping loopback, down interfaces and container bridges.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Webhooks\{UrlPolicy, NetworkList};
 
@@ -119,6 +121,7 @@ A placeholder engine with no code execution: `{{path|default:"x"|json|upper|trun
 `default`, `json`, `upper`, `lower`, `trim`, `truncate`. Encodings: `json`, `text`, `form` (values are escaped for the
 chosen encoding). Limits: 8192 template bytes, 65536 rendered bytes, 100 placeholders.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Webhooks\PayloadTemplate;
 
@@ -135,6 +138,7 @@ Modes (`Authentication::MODES`): `none`, `bearer`, `basic`, `header`, `hmac` (th
 `InvalidArgumentException` when invalid), `redact($config)` masks secrets for display or logs.
 `isValidHeaderName()` and `isForbiddenHeaderName()` (framing and hop-by-hop headers such as Host and Content-Length) are public helpers.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Webhooks\Authentication;
 
@@ -159,6 +163,7 @@ events not emitted everywhere yet) and `tags`.
 `buildUrl($values)` fills `{placeholders}` from `target = 'url'` fields. A `DestinationField` (`name`, `label`, `type`,
 `required`, `help`, `target` of `url` or `option`) describes an extra input such as an ntfy topic.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Webhooks\Destinations;
 

@@ -68,6 +68,7 @@ Core mirrors the switch into a small JSON file so that a gate or a cron entry ca
 Copy `docs/rmm/templates/rmm_gate.php` to the edition's `api/v1/rmm_gate.php` and make it the **first** statement of the REST entry point, before `config.php`,
 before any database connection, before Composer's autoloader:
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 define('RMM_GATE_STATE_DIR', '/var/lib/yourapp/rmm');   // the directory returned by stateDirectory()
 require __DIR__ . '/rmm_gate.php';

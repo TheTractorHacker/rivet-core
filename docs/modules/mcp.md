@@ -38,6 +38,7 @@ Also supplied by the edition:
 
 `McpConfig::resolve(SettingsInterface $settings, callable $env, string $envPrefix): array` returns `schema_ready`, `module_on`, `killed`, `enabled`, `issuer`, `audience`, `issuer_from_env`, `audience_from_env`, `configured`. Environment variables `<PREFIX>ISSUER` and `<PREFIX>AUDIENCE` win over settings when set; `<PREFIX>ENABLED=0` is a hard off switch that no setting can undo. `enabled` is the module setting on and not killed; `configured` means a valid issuer and audience. `schema_ready` is false when `mcp.issuer` reads as `null` (an older schema without the setting). `issuerValid()` requires `https`, a host, at most 255 characters, and no user info, query or fragment. `audienceValid()` requires 1 to 255 characters with no whitespace or control characters.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Mcp\McpConfig;
 use RivetCore\Support\ArraySettings;
@@ -55,6 +56,7 @@ $cfg['configured'];  // true
 
 Extra checks on a token that already passed signature, issuer and expiry validation. `hasDedicatedAudience($claims, $audience)` requires `aud` to be exactly the MCP audience (a string, or a one-element array); a token that is also addressed to another service is refused. `acceptable($subject, $scopes, $claims, $audience, $requiredScope = 'mcp:read', $now = null)` additionally requires a non-empty subject of at most 255 characters, the required scope, integer `iat` and `exp`, `iat` no more than 60 seconds in the future, `exp` after `iat`, and a lifetime of at most one hour.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Mcp\TokenClaimsGuard;
 
@@ -77,6 +79,7 @@ The path every tool call takes: caller, rate limit, permission, the tool's own s
 | body throws anything else | `INTERNAL_ERROR` (generic message) | yes, `error` |
 | success | none | yes, `ok` with row count |
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Audit\AuditService;
 use RivetCore\Mcp\{ToolPipeline, NotFoundException};
@@ -98,6 +101,7 @@ Audit rows use event type `<source>.tool_call`, entity type `<source>_tool`, act
 
 `IdentityLinker::link(int $pendingId, int $userId): array{0:bool,1:string}` links a pending identity to an agent inside one transaction: the pending row must still exist, the agent must be active and unlinked, and the identity must not already belong to another agent. On success it removes the pending row. It returns `[false, message]` for each refusal, with messages safe to show an administrator. Linking is always an explicit administrator action; nothing links automatically.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Mcp\{IdentityLinker, UnlinkedIdentityStore};
 
@@ -114,6 +118,7 @@ The "will this work?" panel for the admin page. `new McpDiagnostics(AgentDirecto
 
 A PSR-16 cache for OAuth discovery and JWKS documents, keyed by `<prefix>` plus the SHA-256 of the key (default prefix `mcp_metadata:`), values JSON-encoded, default TTL one hour. `new RedisMetadataCache(RedisClientProviderInterface $redis, string $keyPrefix = 'mcp_metadata:')`. The class is not final so an edition can subclass it to pin its default provider and prefix. `clear()` always returns `false` on purpose, because flushing a shared Redis database would hit unrelated data.
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Mcp\RedisMetadataCache;
 

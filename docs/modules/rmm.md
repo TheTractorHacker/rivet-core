@@ -67,6 +67,7 @@ Run `RmmBridgeInterface` on the same database connection Core uses so its writes
 
 ### Compose the module and answer a device request
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 // docs-test: compose
 use RivetCore\Rmm\Http\{RmmRequest, SapiEmitter};
@@ -84,6 +85,7 @@ $response = $api->handle($request);              // 401 invalid_token: the crede
 
 ### Administer: switch on, publish a binary, create a deployment command
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 // docs-test: administer
 use RivetCore\Rmm\Authz\RmmPrincipal;
@@ -99,6 +101,7 @@ echo $r->data['commands']['linux'];                      // run as root next to 
 
 ### The technician REST API (the edition's `api/v1/endpoint_devices.php`)
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 // docs-test: technician
 use RivetCore\Rmm\Authz\RmmPrincipal;
@@ -111,6 +114,7 @@ $response = $module->technicianApi()->handle($request, $who);   // {"data": [...
 
 ### The same operations as plain calls (a web handler)
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 // docs-test: actions
 $t = $module->technician();

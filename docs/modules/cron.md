@@ -20,6 +20,7 @@ No interfaces. The edition supplies data and paths:
 
 ## Key classes
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Cron\JobCatalog;
 use RivetCore\Cron\JobRunner;
@@ -40,6 +41,7 @@ $runner->state('sync', '/var/www/app/cron/sync.php');
 
 Static helpers parse a `cron.d` command line the caller already trusts:
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 JobRunner::argumentsFromCommand('/usr/bin/php /v/cron/x.php --full --days=3 >> /var/log/x.log 2>&1', 'x.php');
 // ['--full', '--days=3']; null if any argument is not --name[=value]

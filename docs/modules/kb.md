@@ -27,6 +27,7 @@ No interface. The edition's job around a call:
 
 ## Key classes
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\KB\{DocxConverter, DocxConversionException, PdfConverter, PdfConversionException};
 

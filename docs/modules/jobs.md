@@ -18,6 +18,7 @@ States (`status` enum): `pending`, `running`, `completed`, `failed`, `dead_lette
 
 ## Key classes
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Jobs\{JobQueue, JobWorker, JobContext, PermanentJobFailure};
 

@@ -79,6 +79,7 @@ Changing the mode of an existing schema is not an in-place operation. To change 
 
 Core does not store PostgreSQL credentials. **The edition passes the connection** to the module as the `postgres` option, from wherever it already keeps secrets:
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Rmm\Store\Postgres\PostgresConfig;
 
@@ -193,6 +194,7 @@ The target database and role must exist (section 3). The restore recreates the s
 
 ### 8.4 In-app backup
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 use RivetCore\Rmm\Store\BackupHook;
 
@@ -347,6 +349,7 @@ Summary lines: `PostgreSQL 18.6 (native) - schema 0001_hot_tables, up to date`, 
 
 **Update page tile** (next to the MariaDB version in `update.php`; `$rmm` is however your edition reaches the `RmmModule`):
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 <?php
 $store = $rmm->dataStoreInfo()->report();               // cheap: no PostgreSQL on a MariaDB install
@@ -366,6 +369,7 @@ $warn  = $store['store'] === 'postgres' && !$bad && empty($store['postgres']['sc
 
 **Server status page** (more detail, hot tables, an explicit probe button for MariaDB installs that have a saved connection):
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 <?php
 $probe = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['check_postgres']);   // your edition's CSRF check goes with it
