@@ -57,6 +57,10 @@ $sig = static function (ReflectionMethod $m) use ($ty): string {
         . $m->getName() . '(' . implode(', ', $params) . ')' . ($m->getReturnType() !== null ? ': ' . $ty($m->getReturnType(), $cls) : '');
 };
 $constValue = static function (mixed $v): mixed {
+    if (is_string($v) && !mb_check_encoding($v, 'UTF-8')) {
+        return 'hex:' . bin2hex($v);   // binary constants (a file signature) cannot be JSON strings
+    }
+
     return is_scalar($v) || $v === null ? $v : (is_array($v) ? json_decode(json_encode($v, JSON_PARTIAL_OUTPUT_ON_ERROR) ?: 'null', true) : (is_object($v) ? get_class($v) . (($v instanceof BackedEnum) ? ':' . $v->value : '') : null));
 };
 
@@ -183,6 +187,8 @@ if ($mode === '--update') {
     echo "Wrote tests/api-surface.json\n";
     exit(0);
 }
+// The snapshot went through JSON (25.0 is stored as a float but read back the same only after a round trip): compare like with like.
+$snap = json_decode((string) json_encode($snap, JSON_UNESCAPED_SLASHES), true, 512, JSON_THROW_ON_ERROR);
 if ($old === null) {
     fwrite(STDERR, "tests/api-surface.json is missing; run with --update.\n");
     exit(1);
@@ -224,5 +230,5 @@ if ($changes === []) {
     echo 'Public API surface unchanged (' . count($snap['types']) . ' @api types, ' . count($snap['internal']) . ' internal, ' . count($snap['migrations']) . ' migrations' . ($haveDb ? ', ' . count($snap['tables']) . ' tables' : ', tables skipped: no database') . ").\n";
     exit(0);
 }
-fwrite(STDERR, "The public API surface differs from tests/api-surface.json:\n  " . implode("\n  ", $changes) . "\n\nIf this is intended, run: php scripts/api-surface-check.php --update, review the diff, and record it in CHANGELOG.md.\nBREAKING lines need a major version (docs/architecture/ADR-004-versioning-policy.md).\n");
+fwrite(STDERR, "The public API surface differs from tests/api-surface.json:\n  " . implode("\n  ", $changes) . "\n\nIf this is intended, run: php scripts/api-surface-check.php --update, review the diff, and record it in CHANGELOG.md.\nBREAKING lines need a major version (docs/architecture/ADR-004-versioning-and-compatibility.md).\n");
 exit(1);

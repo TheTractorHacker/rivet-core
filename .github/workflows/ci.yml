@@ -1,5 +1,10 @@
 name: ci
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1'   # weekly: runs the optional benchmark job
 permissions:
   contents: read
 jobs:
@@ -60,6 +65,14 @@ jobs:
           RIVETCORE_TEST_REDIS_PORT: '6391'
           # The starter pack's Linux proof also runs in a container with common tools installed (about 3 minutes); once is enough.
           RIVETCORE_STARTER_PROOF_TOOLS: ${{ matrix.php == '8.5' && matrix.db == 'mariadb:11' && '1' || '' }}
+      - name: Every PHP sample in the docs runs
+        run: php scripts/check-doc-samples.php
+        env:
+          RIVETCORE_TEST_DB_HOST: 127.0.0.1
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
+          RIVETCORE_TEST_DB_USER: root
+          RIVETCORE_TEST_DB_PASS: root
+          RIVETCORE_TEST_REDIS_PORT: '6391'
 
   postgres:
     name: postgres 18 (RMM data store)
@@ -398,3 +411,72 @@ jobs:
           docker run --rm -v "$PWD:/repo:ro" -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo
           zricethezav/gitleaks@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9
           git /repo --config /repo/.gitleaks.toml --redact --no-banner --exit-code 1
+
+  api-surface:
+    name: public API surface (fails on unreviewed changes)
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_test }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
+      - run: composer install --no-interaction --prefer-dist
+      # Compares types, signatures, constants, migrations, vocabularies and table columns with tests/api-surface.json.
+      # To accept an intended change: php scripts/api-surface-check.php --update, review the diff, record it in CHANGELOG.md.
+      - run: php scripts/api-surface-check.php
+        env:
+          RIVETCORE_TEST_DB_HOST: 127.0.0.1
+          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_USER: root
+          RIVETCORE_TEST_DB_PASS: root
+      - name: docs/PUBLIC-API.md lists every public type
+        run: php scripts/public-api-table.php --write && git diff --exit-code docs/PUBLIC-API.md
+
+  smoke-syntax:
+    name: browser smoke specs parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      # Syntax only: the specs need a live scratch edition to run (see tests/smoke/README.md).
+      - run: cd tests/smoke && npm run check
+
+  bench:
+    name: performance regression check (optional - weekly and on demand)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    continue-on-error: true   # shared runners are noisy; thresholds are deliberately generous and a miss is a prompt to look, not a gate
+    services:
+      database:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_bench }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7
+        ports: ['6391:6379']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
+      - run: composer install --no-interaction --prefer-dist
+      - run: php bench/run.php --runs=3 --json=bench-result.json --check=bench/thresholds.json
+        env:
+          RIVETCORE_BENCH_DB_HOST: 127.0.0.1
+          RIVETCORE_BENCH_DB_NAME: rivetcore_bench
+          RIVETCORE_BENCH_DB_USER: root
+          RIVETCORE_BENCH_DB_PASS: root
+          RIVETCORE_BENCH_REDIS_PORT: '6391'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: bench-result, path: bench-result.json }
