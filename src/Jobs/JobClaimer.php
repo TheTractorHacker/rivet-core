@@ -78,8 +78,9 @@ final class JobClaimer
         if ($maxRunning <= 0) {
             return $this->claimBatch($limit, $jobType);
         }
-        $name = self::LOCK_PREFIX . ($jobType ?? '*');
-        $got = $this->database->fetchOne("SELECT GET_LOCK(CONCAT(?, ':', MD5(IFNULL(DATABASE(), ''))), 2) AS l", [$name]);
+        // MySQL limits a lock name to 64 characters (MariaDB does not): prefix + type + ':' + 10 hash characters must fit, so a long type is hashed
+        $name = self::LOCK_PREFIX . ($jobType === null ? '*' : (strlen($jobType) > 24 ? md5($jobType) : $jobType));
+        $got = $this->database->fetchOne("SELECT GET_LOCK(CONCAT(?, ':', LEFT(MD5(IFNULL(DATABASE(), '')), 10)), 2) AS l", [$name]);
         if ((int) ($got['l'] ?? 0) !== 1) {
             return [];
         }
@@ -91,7 +92,7 @@ final class JobClaimer
 
             return $this->claimBatch(min($limit, max(0, $maxRunning - $running)), $jobType);
         } finally {
-            $this->database->fetchOne("SELECT RELEASE_LOCK(CONCAT(?, ':', MD5(IFNULL(DATABASE(), '')))) AS r", [$name]);
+            $this->database->fetchOne("SELECT RELEASE_LOCK(CONCAT(?, ':', LEFT(MD5(IFNULL(DATABASE(), '')), 10))) AS r", [$name]);
         }
     }
 

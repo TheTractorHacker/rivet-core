@@ -205,7 +205,7 @@ final class RmmCache
     private function claimRefresh(string $full): bool
     {
         try {
-            return (int) $this->sql->val("SELECT GET_LOCK(CONCAT(?, ':', MD5(IFNULL(DATABASE(), ''))), 0)", ['rmm_cache_' . md5($full)]) === 1;
+            return (int) $this->sql->val("SELECT GET_LOCK(CONCAT(?, ':', LEFT(MD5(IFNULL(DATABASE(), '')), 10)), 0)", ['rmm_cache_' . md5($full)]) === 1;
         } catch (\Throwable) {
             return false;
         }
@@ -214,7 +214,7 @@ final class RmmCache
     private function releaseRefresh(string $full): void
     {
         try {
-            $this->sql->val("SELECT RELEASE_LOCK(CONCAT(?, ':', MD5(IFNULL(DATABASE(), ''))))", ['rmm_cache_' . md5($full)]);
+            $this->sql->val("SELECT RELEASE_LOCK(CONCAT(?, ':', LEFT(MD5(IFNULL(DATABASE(), '')), 10)))", ['rmm_cache_' . md5($full)]);
         } catch (\Throwable) {
             // the lock goes with the connection
         }

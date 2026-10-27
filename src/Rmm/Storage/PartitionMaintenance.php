@@ -388,12 +388,12 @@ final class PartitionMaintenance
 
     private function lock(): bool
     {
-        return (int) $this->sql->val("SELECT GET_LOCK(CONCAT(?, ':', MD5(IFNULL(DATABASE(), ''))), 0)", [self::LOCK]) === 1;
+        return (int) $this->sql->val("SELECT GET_LOCK(CONCAT(?, ':', LEFT(MD5(IFNULL(DATABASE(), '')), 10)), 0)", [self::LOCK]) === 1;
     }
 
     private function unlock(): void
     {
-        $this->sql->val("SELECT RELEASE_LOCK(CONCAT(?, ':', MD5(IFNULL(DATABASE(), ''))))", [self::LOCK]);
+        $this->sql->val("SELECT RELEASE_LOCK(CONCAT(?, ':', LEFT(MD5(IFNULL(DATABASE(), '')), 10)))", [self::LOCK]);
     }
 
     private static function name(int $epochDay): string

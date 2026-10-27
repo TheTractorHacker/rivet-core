@@ -27,7 +27,7 @@ final class ServerWideLockNamesTest extends RmmTestCase
             $this->assertTrue($lock->invoke($pm), 'the bare-name lock of another database must not block this one');
             $unlock = new \ReflectionMethod($pm, 'unlock');
             $unlock->invoke($pm);
-            $scoped = PartitionMaintenance::LOCK . ':' . md5((string) $this->h->one('SELECT DATABASE()'));
+            $scoped = PartitionMaintenance::LOCK . ':' . substr(md5((string) $this->h->one('SELECT DATABASE()')), 0, 10);
             $this->assertSame('1', (string) $this->h->one("SELECT IS_FREE_LOCK('$scoped')"), 'released under the scoped name');
         } finally {
             $other->query("SELECT RELEASE_LOCK('" . PartitionMaintenance::LOCK . "')");
@@ -38,7 +38,7 @@ final class ServerWideLockNamesTest extends RmmTestCase
     public function testJobClaimWaitsOnlyForItsOwnDatabasesLock(): void
     {
         $bare = \RivetCore\Jobs\JobClaimer::LOCK_PREFIX . '*';
-        $scoped = $bare . ':' . md5((string) $this->h->one('SELECT DATABASE()'));
+        $scoped = $bare . ':' . substr(md5((string) $this->h->one('SELECT DATABASE()')), 0, 10);
         $claimer = new \RivetCore\Jobs\JobClaimer($this->h->db, false, \RivetCore\Jobs\JobClaimer::SKIP_LOCKED);
         foreach ([[$bare, true], [$scoped, false]] as [$held, $mustNotWait]) {
             $other = \RivetCore\Tests\Support\ScratchDb::connect();
@@ -55,5 +55,20 @@ final class ServerWideLockNamesTest extends RmmTestCase
                 $this->assertGreaterThan(1.5, $took, 'the scoped name is the one the claimer really takes');
             }
         }
+    }
+
+    /** MySQL rejects a lock name longer than 64 characters (MariaDB does not): every scoped name this library builds must fit, with a long job type too. */
+    public function testScopedLockNamesFitMysqlsSixtyFourCharacterLimit(): void
+    {
+        $suffix = 1 + 10;   // ':' + 10 hash characters
+        $this->assertLessThanOrEqual(64, strlen(PartitionMaintenance::LOCK) + $suffix);
+        $this->assertLessThanOrEqual(64, strlen('rmm_cache_' . md5('x')) + $suffix);
+        $longType = str_repeat('t', 200);
+        $name = \RivetCore\Jobs\JobClaimer::LOCK_PREFIX . (strlen($longType) > 24 ? md5($longType) : $longType);
+        $this->assertLessThanOrEqual(64, strlen($name) + $suffix, 'a long job type is hashed');
+        $this->assertLessThanOrEqual(64, strlen(\RivetCore\Jobs\JobClaimer::LOCK_PREFIX . '24 characters of type') + $suffix);
+        // and the server really accepts the longest case (on MySQL this raised ER_USER_LOCK_WRONG_NAME before)
+        $this->assertSame('1', (string) $this->h->one("SELECT GET_LOCK(CONCAT('" . $name . "', ':', LEFT(MD5(IFNULL(DATABASE(), '')), 10)), 0)"));
+        $this->h->q("SELECT RELEASE_LOCK(CONCAT('" . $name . "', ':', LEFT(MD5(IFNULL(DATABASE(), '')), 10)))");
     }
 }
