@@ -51,9 +51,11 @@ final class UrlPolicy
     }
 
     /**
+     * @param bool $allowHttp false refuses plain `http://` (only `https://` passes). The default true keeps the behaviour every existing caller relies on;
+     *        webhook delivery uses {@see WebhookDispatcher}'s `requireHttps` option and the per-destination `allow_http` flag instead of calling this with false.
      * @return array{host:string,port:int,ips:list<string>}|null null when the URL is not allowed
      */
-    public function vet(string $url): ?array
+    public function vet(string $url, bool $allowHttp = true): ?array
     {
         if ($url === '' || str_contains($url, '\\') || preg_match('/[\x00-\x20\x7f]/', $url)) {
             return null;
@@ -63,7 +65,7 @@ final class UrlPolicy
             return null;
         }
         $scheme = strtolower($parts['scheme']);
-        if (!in_array($scheme, ['http', 'https'], true)) {
+        if (!in_array($scheme, ['http', 'https'], true) || ($scheme === 'http' && !$allowHttp)) {
             return null;
         }
         $host = strtolower(rtrim(trim($parts['host'], '[]'), '.'));
@@ -122,9 +124,30 @@ final class UrlPolicy
         return NetworkList::contains($this->allowedNetworks, $ip);
     }
 
-    public function isSafe(string $url): bool
+    public function isSafe(string $url, bool $allowHttp = true): bool
     {
-        return $this->vet($url) !== null;
+        return $this->vet($url, $allowHttp) !== null;
+    }
+
+    /** Whether the URL is a plain `http://` one (any letter case). Malformed text is not http. */
+    public static function isPlainHttp(string $url): bool
+    {
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+
+        return is_string($scheme) && strtolower($scheme) === 'http';
+    }
+
+    /**
+     * For an edition's "save destination" form: a short, user-facing reason the URL cannot be used, or null when it can. Plain http is refused unless the destination
+     * carries the explicit allow-http choice ($allowHttp, stored as the subscription option `allow_http`).
+     */
+    public function destinationProblem(string $url, bool $allowHttp = false): ?string
+    {
+        if (self::isPlainHttp($url) && !$allowHttp) {
+            return 'Plain http:// destinations are not allowed. Use https://, or turn on "allow plain http" for this destination and accept that the payload and its signature travel unencrypted.';
+        }
+
+        return $this->vet($url) === null ? 'The URL is not allowed (it must be a public http(s) address with no credentials in it).' : null;
     }
 
     /** IPv4 ranges that are never public (CIDR). */
