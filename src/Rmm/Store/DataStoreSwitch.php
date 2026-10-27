@@ -439,6 +439,10 @@ final class DataStoreSwitch
             if (!self::isLocalHost($cfg['host']) && !in_array($cfg['sslmode'], ['verify-full', 'verify-ca'], true)) {
                 throw new \InvalidArgumentException('The stored password is only sent to a remote host over a verified TLS connection: set sslmode to verify-full (or verify-ca), or enter the password again.');
             }
+        } elseif (!self::isLocalHost($cfg['host']) && !in_array($cfg['sslmode'], ['verify-full', 'verify-ca'], true)) {
+            // No password at all (none typed, none stored): the server's own access rules are the only authentication, so a remote host must at least be reached over a
+            // verified TLS connection. A local socket or loopback host (peer authentication) is the legitimate empty-password case.
+            throw new \InvalidArgumentException('A remote host with no password needs a verified TLS connection: set sslmode to verify-full (or verify-ca), or enter a password.');
         }
 
         return [$cfg, $reuse];
