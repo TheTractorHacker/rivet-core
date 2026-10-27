@@ -880,6 +880,15 @@
         "RivetCore\\Compliance\\Profile\\RequirementType": {
             "kind": "final class",
             "constants": {
+                "ADDED": {
+                    "log_presets_baseline": {
+                        "label": "Security event-log presets are collected",
+                        "unit": "flag",
+                        "min": 1,
+                        "max": 1,
+                        "classes": []
+                    }
+                },
                 "ALL": {
                     "retention_min": {
                         "label": "Minimum retention",
@@ -933,13 +942,6 @@
                             "rmm_logs",
                             "change_records"
                         ]
-                    },
-                    "log_presets_baseline": {
-                        "label": "Security event-log presets are collected",
-                        "unit": "flag",
-                        "min": 1,
-                        "max": 1,
-                        "classes": []
                     }
                 },
                 "BACKUP_COVERS_ALL_STORES": "backup_covers_all_stores",
@@ -959,6 +961,7 @@
                 "ids": "static ids(): array",
                 "isValid": "static isValid(string $type): bool",
                 "label": "static label(string $type): string",
+                "meta": "static meta(string $type): ?array",
                 "takesClass": "static takesClass(string $type): bool",
                 "unit": "static unit(string $type): string"
             }

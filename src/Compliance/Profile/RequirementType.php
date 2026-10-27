@@ -40,34 +40,49 @@ final class RequirementType
         self::BACKUP_ENCRYPTED => ['label' => 'Backups are encrypted', 'unit' => self::UNIT_FLAG, 'min' => 1, 'max' => 1, 'classes' => []],
         self::RESTORE_TEST_MAX_AGE => ['label' => 'Restore tested within N days', 'unit' => self::UNIT_DAYS, 'min' => 1, 'max' => 3650, 'classes' => []],
         self::TAMPER_EVIDENCE => ['label' => 'Tamper evidence', 'unit' => self::UNIT_FLAG, 'min' => 1, 'max' => 1, 'classes' => [DataClass::AUDIT_EVENTS, DataClass::RMM_LOGS, DataClass::CHANGE_RECORDS]],
+    ];
+
+    /**
+     * Types added after 1.0.0-rc.1, kept apart so the value of {@see ALL} (a public constant) never changes. Everything that looks a type up uses {@see meta()},
+     * which reads both.
+     *
+     * @var array<string, array{label:string, unit:string, min:int, max:int, classes:list<string>}>
+     */
+    public const ADDED = [
         self::LOG_PRESETS_BASELINE => ['label' => 'Security event-log presets are collected', 'unit' => self::UNIT_FLAG, 'min' => 1, 'max' => 1, 'classes' => []],
     ];
+
+    /** @return array{label:string, unit:string, min:int, max:int, classes:list<string>}|null */
+    public static function meta(string $type): ?array
+    {
+        return self::ALL[$type] ?? self::ADDED[$type] ?? null;
+    }
 
     /** Types that take a data class. retention_min takes any class; the others are decided by `classes`. */
     public static function takesClass(string $type): bool
     {
-        return $type === self::RETENTION_MIN || (self::ALL[$type]['classes'] ?? []) !== [];
+        return $type === self::RETENTION_MIN || (self::meta($type)['classes'] ?? []) !== [];
     }
 
     /** @return list<string> */
     public static function ids(): array
     {
-        return array_keys(self::ALL);
+        return array_keys(self::ALL + self::ADDED);
     }
 
     public static function isValid(string $type): bool
     {
-        return isset(self::ALL[$type]);
+        return self::meta($type) !== null;
     }
 
     public static function label(string $type): string
     {
-        return self::ALL[$type]['label'] ?? $type;
+        return self::meta($type)['label'] ?? $type;
     }
 
     public static function unit(string $type): string
     {
-        return self::ALL[$type]['unit'] ?? self::UNIT_FLAG;
+        return self::meta($type)['unit'] ?? self::UNIT_FLAG;
     }
 
     public static function allowsClass(string $type, string $class): bool
@@ -76,6 +91,6 @@ final class RequirementType
             return false;
         }
 
-        return $type === self::RETENTION_MIN || in_array($class, self::ALL[$type]['classes'] ?? [], true);
+        return $type === self::RETENTION_MIN || in_array($class, self::meta($type)['classes'] ?? [], true);
     }
 }
