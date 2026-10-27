@@ -106,6 +106,27 @@ final class DataStoreSwitchTest extends RmmTestCase
         $this->assertSame(0, $this->connects);
     }
 
+    /** A first save with no password at all must not rely on the remote server's access rules over an unverified link. */
+    public function testARemoteHostWithNoPasswordNeedsVerifiedTls(): void
+    {
+        foreach (['disable', 'allow', 'prefer', 'require'] as $mode) {
+            $e = $this->sw->saveConnection(['host' => 'db.internal.example', 'password' => '', 'sslmode' => $mode] + $this->form(['host' => 'db.internal.example']));
+            $this->assertStringContainsString('verified TLS', $e[0] ?? '', "sslmode $mode");
+            $t = $this->sw->testConnection(['host' => 'db.internal.example', 'password' => '', 'sslmode' => $mode] + $this->form(['host' => 'db.internal.example']));
+            $this->assertFalse($t['ok'], "sslmode $mode");
+        }
+        $this->assertNull($this->sw->connectionSettings()['host'] ?? null, 'nothing was stored');
+        $this->assertSame([], $this->sw->saveConnection(['host' => 'db.internal.example', 'password' => '', 'sslmode' => 'verify-full'] + $this->form(['host' => 'db.internal.example'])));
+        $this->assertSame(0, $this->connects, 'a refused form never opens a connection');
+    }
+
+    /** Peer authentication over a unix socket or loopback is the legitimate empty-password case. */
+    public function testALocalHostWithNoPasswordIsStillAccepted(): void
+    {
+        $this->assertSame([], $this->sw->saveConnection(['host' => '/var/run/postgresql', 'password' => '', 'sslmode' => 'disable'] + $this->form(['host' => '/var/run/postgresql'])));
+        $this->assertSame([], $this->sw->saveConnection(['host' => '127.0.0.1', 'password' => '', 'sslmode' => 'disable'] + $this->form(['host' => '127.0.0.1'])));
+    }
+
     public function testUpdateStillRefusesPostgresAndSwitchingNeedsTheAcknowledgement(): void
     {
         $e = $this->h->module->settings()->update(['data_store' => 'postgres']);

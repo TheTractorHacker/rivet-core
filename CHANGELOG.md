@@ -2,6 +2,10 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.48 (security fix: RMM data store with no password; no migration)
+
+- **Fix (Medium).** `Rmm\Store\DataStoreSwitch` demanded a verified TLS connection for a remote PostgreSQL host only when it reused a stored password. A first save (or a test) with no password skipped the check, so an administrator could point the RMM data store at a remote host with `sslmode=disable` and rely only on that server's access rules. The local-host-or-verified-TLS rule now applies whenever the effective password is empty: a remote host with no password needs `sslmode` `verify-full` or `verify-ca`; a unix socket or loopback host (peer authentication) is unchanged. Tests: `DataStoreSwitchTest::testARemoteHostWithNoPasswordNeedsVerifiedTls`, `testALocalHostWithNoPasswordIsStillAccepted`. Behaviour change for an edition: the form now returns the error message instead of saving. No signature or constant changed.
+
 ## 1.0.0-rc.47 (security baseline, quality gates, PHPUnit 13; no migration)
 
 Adds the published, CI-checked security baseline and the quality gates toward 1.0. Additive: no existing public signature or constant value changed, no migration, the device protocol is untouched.
