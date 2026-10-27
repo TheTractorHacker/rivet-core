@@ -1,0 +1,10 @@
+/* Software deployment: the Deployment block of the Software tab, the Software catalog, Software assignments and Software report pages (RivetCore 1.0.0-rc.21). Scoped under .rmm-* / #rmm-deployment, built from the --if-* tokens, loaded after itflow_rmm_patches.css and before itflow.bind-tabler.css (see includes/header.php). */
+
+/* a visually-hidden caption is absolutely positioned; without a positioned ancestor it escapes the scroll container and widens the page on a phone */
+#rmm-deployment .table-responsive, .rmm-sw-table, #sw-run-form, #pkg-form, #ver-form { position: relative; }
+#rmm-deployment .table-responsive, .rmm-sw-table { max-width: 100%; }
+.rmm-sw-kpi { font-size: 1.5rem; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.rmm-sw-table td { vertical-align: top; }
+#ver-form .form-text, #pkg-form .form-text, #sw-run-form .form-text { overflow-wrap: anywhere; }
+#ver-form code, #rmm-deployment code, #versions code { overflow-wrap: anywhere; word-break: break-all; }
+#sw-run-form summary, #rmm-deployment details > summary { cursor: pointer; }

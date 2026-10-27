@@ -1,0 +1,10 @@
+bash	5.2.26-3.el10	Red Hat, Inc.	1725235200
+glibc-langpack-fr	2.39-22.el10	Red Hat, Inc.	1725235201
+gpg-pubkey	5a6340b3-6229229e	(none)	1725235202
+kernel	6.12.0-1.el10	Red Hat, Inc.	1725235203
+kernel	6.12.0-5.el10	Red Hat, Inc.	1735235203
+homebuilt	0.9-1	(none)	(none)
+nodate	1-1	Vendor
+
+short
+Ünïcode	1-1	Äcme	0

@@ -1,0 +1,33 @@
+{
+  "id": "lin-network-diagnostics",
+  "name": "Network diagnostics to a target (Linux)",
+  "description": "Pings, traces the route to and resolves a validated host name or IP address.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "network",
+    "diagnostics"
+  ],
+  "timeout_s": 120,
+  "params": [
+    {
+      "name": "target",
+      "type": "string",
+      "label": "Target host",
+      "description": "Host name or IP address to test.",
+      "max_length": 253,
+      "required": true
+    },
+    {
+      "name": "count",
+      "type": "int",
+      "label": "Ping count",
+      "description": "Number of ping packets.",
+      "default": 4,
+      "min": 1,
+      "max": 10
+    }
+  ],
+  "output": "ping summary, route trace, name resolution. Exit 0; 2 invalid target."
+}

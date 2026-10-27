@@ -35,10 +35,16 @@ final class MigrationRunner
     /** Name of the server-side lock that makes two simultaneous runs (two web requests, or web plus CLI) take turns. */
     public const LOCK_NAME = 'rivet_core_migrations';
 
+    /**
+     * GET_LOCK() names are server-wide, not per schema: with a fixed name, migrating database A would make an unrelated
+     * database B on the same server wait (or give up). The name is therefore LOCK_NAME plus a hash of the current schema.
+     */
+    public const LOCK_SQL = "CONCAT(?, ':', MD5(IFNULL(DATABASE(), '')))";
+
 
     /**
      * @return list<string> ids applied by this call (empty when already current)
-     * @throws \RuntimeException when another runner holds the lock for longer than the wait
+     * @throws MigrationInProgressException (a \RuntimeException) when another runner holds the lock for longer than the wait
      */
     public function run(): array
     {
@@ -78,7 +84,7 @@ final class MigrationRunner
     private function acquireLock(): bool
     {
         try {
-            $row = $this->database->fetchOne('SELECT GET_LOCK(?, ?) AS got', [self::LOCK_NAME, $this->lockWaitSeconds]);
+            $row = $this->database->fetchOne('SELECT GET_LOCK(' . self::LOCK_SQL . ', ?) AS got', [self::LOCK_NAME, $this->lockWaitSeconds]);
         } catch (\RivetCore\Database\DatabaseException) {
             return false;
         }
@@ -86,7 +92,7 @@ final class MigrationRunner
             return false;
         }
         if ((int) ($row['got'] ?? 0) !== 1) {
-            throw new \RuntimeException('Another Core migration run is in progress; try again in a moment.');
+            throw new MigrationInProgressException('Another Core migration run is in progress; try again in a moment.');
         }
 
         return true;
@@ -95,7 +101,7 @@ final class MigrationRunner
     private function releaseLock(): void
     {
         try {
-            $this->database->fetchOne('SELECT RELEASE_LOCK(?) AS released', [self::LOCK_NAME]);
+            $this->database->fetchOne('SELECT RELEASE_LOCK(' . self::LOCK_SQL . ') AS released', [self::LOCK_NAME]);
         } catch (\RivetCore\Database\DatabaseException) {
             // The lock dies with the connection anyway.
         }

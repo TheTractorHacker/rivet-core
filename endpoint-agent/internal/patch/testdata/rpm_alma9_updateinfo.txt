@@ -1,0 +1,2 @@
+ALSA-2024:3306 Moderate/Sec. bind-libs-32:9.16.23-15.el9_4.1.x86_64
+ALSA-2024:3306 Moderate/Sec. bind-license-32:9.16.23-15.el9_4.1.noarch

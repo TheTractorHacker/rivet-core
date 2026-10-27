@@ -1,0 +1,33 @@
+{
+  "id": "lin-journal-vacuum",
+  "name": "Vacuum systemd journal (Linux)",
+  "description": "Removes journal entries older than a number of days and reports size before and after.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "changes_system",
+  "tags": [
+    "maintenance",
+    "logs",
+    "disk"
+  ],
+  "timeout_s": 120,
+  "params": [
+    {
+      "name": "keep_days",
+      "type": "int",
+      "label": "Days to keep",
+      "description": "Journal entries older than this are removed.",
+      "default": 14,
+      "min": 1,
+      "max": 365
+    },
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When true (default) only reports the journal size."
+    }
+  ],
+  "output": "[DRY-RUN]/[DONE]/[SKIP] lines with sizes. Exit 0; NOT AVAILABLE without journalctl."
+}

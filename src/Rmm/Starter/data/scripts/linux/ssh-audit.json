@@ -1,0 +1,15 @@
+{
+  "id": "lin-ssh-audit",
+  "name": "SSH server configuration audit (Linux)",
+  "description": "Read-only audit of the effective sshd configuration with PASS or REVIEW remarks.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "security",
+    "audit"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "One line per setting with PASS/REVIEW. Exit 0; NOT AVAILABLE if sshd is not installed."
+}

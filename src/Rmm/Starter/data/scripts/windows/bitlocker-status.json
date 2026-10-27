@@ -1,0 +1,16 @@
+{
+  "id": "win-bitlocker-status",
+  "name": "BitLocker status (Windows)",
+  "description": "Reports BitLocker protection status, encryption percentage and key protector types for each volume. Never prints recovery passwords or keys.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "security",
+    "encryption",
+    "bitlocker"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Table of volumes with status and protector types. Exit 0; prints NOT AVAILABLE if BitLocker cmdlets are missing."
+}

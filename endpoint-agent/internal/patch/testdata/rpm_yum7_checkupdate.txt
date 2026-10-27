@@ -1,0 +1,6 @@
+Loaded plugins: fastestmirror
+
+kernel.x86_64                 3.10.0-1160.119.1.el7        updates
+NetworkManager-config-server.noarch
+                              1:1.18.8-2.el7_9             updates
+openssl.x86_64                1:1.0.2k-26.el7_9            updates

@@ -1,0 +1,306 @@
+{
+    "scenario": "hosted update download: only the release the manifest offers this device, only for its own arch; everything else is a generic 404",
+    "format": 1,
+    "steps": [
+        {
+            "id": "no-credential",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_update?arch=amd64&version=1.1.0",
+                "base": "main",
+                "headers": []
+            },
+            "response": {
+                "status": 401,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Invalid device credential.",
+                    "code": "invalid_token"
+                }
+            }
+        },
+        {
+            "id": "post-not-allowed",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_update?arch=amd64&version=1.1.0",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#5>"
+                }
+            },
+            "response": {
+                "status": 405,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "allow: GET",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Use GET.",
+                    "code": "method_not_allowed"
+                }
+            }
+        },
+        {
+            "id": "missing-params",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_update",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#5>"
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "arch (amd64 or arm64) and version are required.",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "bad-arch",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_update?arch=sparc&version=1.1.0",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#5>"
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "arch (amd64 or arm64) and version are required.",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "bad-version",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_update?arch=amd64&version=latest",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#5>"
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "arch (amd64 or arm64) and version are required.",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "version-not-offered",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_update?arch=amd64&version=1.0.0",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#5>"
+                }
+            },
+            "response": {
+                "status": 404,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Not found.",
+                    "code": "not_found"
+                }
+            }
+        },
+        {
+            "id": "version-unknown",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_update?arch=amd64&version=9.9.9",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#5>"
+                }
+            },
+            "response": {
+                "status": 404,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Not found.",
+                    "code": "not_found"
+                }
+            }
+        },
+        {
+            "id": "other-architecture",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_update?arch=arm64&version=1.1.0",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#5>"
+                }
+            },
+            "response": {
+                "status": 404,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Not found.",
+                    "code": "not_found"
+                }
+            }
+        },
+        {
+            "id": "download-offered-release",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_update?arch=amd64&version=1.1.0",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#5>"
+                }
+            },
+            "response": {
+                "status": 200,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-disposition: attachment; filename=\"rivetit-agent-amd64.exe\"",
+                    "content-length: 12288",
+                    "content-type: application/octet-stream",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "pragma: no-cache",
+                    "x-accel-buffering: no",
+                    "x-content-type-options: nosniff",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body_binary": {
+                    "length": 12288,
+                    "sha256": "7a758b8a61ffabf5ffe29becd570b2754bcedab6f39b79e235ee4fc3c00f3356",
+                    "equals_published": "amd64@1.1.0"
+                }
+            }
+        },
+        {
+            "id": "download-twice-same-bytes",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_update?arch=amd64&version=1.1.0",
+                "base": "main",
+                "headers": {
+                    "authorization": "Bearer <TOKEN#5>"
+                }
+            },
+            "response": {
+                "status": 200,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-disposition: attachment; filename=\"rivetit-agent-amd64.exe\"",
+                    "content-length: 12288",
+                    "content-type: application/octet-stream",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "pragma: no-cache",
+                    "x-accel-buffering: no",
+                    "x-content-type-options: nosniff",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body_binary": {
+                    "length": 12288,
+                    "sha256": "7a758b8a61ffabf5ffe29becd570b2754bcedab6f39b79e235ee4fc3c00f3356"
+                }
+            }
+        }
+    ]
+}

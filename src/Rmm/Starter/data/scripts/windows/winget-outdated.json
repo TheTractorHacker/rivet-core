@@ -1,0 +1,16 @@
+{
+  "id": "win-winget-outdated",
+  "name": "Outdated packages (winget) (Windows)",
+  "description": "Lists packages with available upgrades using winget. Only lists; nothing is installed or upgraded.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "software",
+    "updates",
+    "winget"
+  ],
+  "timeout_s": 300,
+  "params": [],
+  "output": "The winget upgrade table. Exit 0; prints NOT AVAILABLE if winget is not found."
+}

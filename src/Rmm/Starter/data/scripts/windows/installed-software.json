@@ -1,0 +1,25 @@
+{
+  "id": "win-installed-software",
+  "name": "Installed software list (Windows)",
+  "description": "Lists installed programs from the 64-bit, 32-bit and loaded user uninstall registry keys, de-duplicated and sorted by name.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "inventory",
+    "software"
+  ],
+  "timeout_s": 60,
+  "params": [
+    {
+      "name": "limit",
+      "type": "int",
+      "label": "Maximum rows",
+      "description": "Maximum number of programs to list (10 to 1000).",
+      "default": 300,
+      "min": 10,
+      "max": 1000
+    }
+  ],
+  "output": "Table of name, version, publisher. Exit 0; exit 2 on a bad limit."
+}

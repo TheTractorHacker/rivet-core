@@ -1,0 +1,28 @@
+/* Logs tab, Logs page and Log rules page (RivetCore 1.0.0-rc.11). Scoped under .rmm-*, built from the --if-* tokens, loaded after itflow_rmm_automation.css and before itflow.bind-tabler.css (see includes/header.php). */
+
+/* a visually-hidden caption is absolutely positioned; without a positioned ancestor it escapes the scroll container and widens the page on a phone */
+.rmm-log-table, #rmm-logs .table-responsive, #lr-form-card, .rmm-log-explain { position: relative; }
+#rmm-logs .table-responsive, .rmm-log-table { max-width: 100%; }
+.rmm-log-kpi { font-size: 1.25rem; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.rmm-log-abs { white-space: nowrap; }
+.rmm-log-table td { vertical-align: top; }
+.rmm-log-msgcell { min-width: 16rem; max-width: 46rem; }
+
+/* a long message: the first part in the row, the whole text under it. Closed: "show more"; open: "show less". Works with the <details> element alone. */
+.rmm-log-msg > summary { cursor: pointer; overflow-wrap: anywhere; }
+.rmm-log-msg > summary .rmm-log-more, .rmm-log-msg > summary .rmm-log-less { margin-left: .4rem; color: var(--tblr-primary, var(--if-accent)); text-decoration: underline; white-space: nowrap; }
+.rmm-log-msg > summary .rmm-log-less { display: none; }
+.rmm-log-msg[open] > summary .rmm-log-short, .rmm-log-msg[open] > summary .rmm-log-more { display: none; }
+.rmm-log-msg[open] > summary .rmm-log-less { display: inline; margin-left: 0; }
+.rmm-log-msg > summary:focus-visible { outline: 2px solid var(--tblr-primary, var(--if-accent)); outline-offset: 2px; }
+.rmm-log-full { margin-top: .35rem; padding: .45rem .6rem; background: var(--if-bg); border: 1px solid var(--if-border); border-radius: var(--if-radius-sm); color: var(--tblr-body-color); max-height: 24rem; overflow: auto; }
+
+.rmm-log-explain > summary { cursor: pointer; }
+.rmm-log-explain { border: 1px solid var(--if-border); border-radius: var(--if-radius-sm); padding: .5rem .75rem; background: var(--if-bg); }
+.rmm-log-filter .form-control, .rmm-log-filter .form-select { min-width: 0; }
+
+@media (max-width: 575.98px) {
+    .rmm-log-msgcell { min-width: 12rem; }
+}
+
+.rmm-log-src { min-width: 7rem; }

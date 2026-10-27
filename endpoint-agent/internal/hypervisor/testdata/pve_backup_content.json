@@ -1,0 +1,3 @@
+[{"volid":"local:backup/vzdump-qemu-100-2026_10_01-02_00_01.vma.zst","vmid":100,"ctime":1760500000,"content":"backup","format":"vma.zst","size":1234,"notes":"super secret note: password=hunter2"},
+ {"volid":"local:backup/vzdump-qemu-100-2026_10_10-02_00_01.vma.zst","vmid":100,"ctime":1760900000,"content":"backup","format":"vma.zst","size":1234},
+ {"volid":"local:backup/vzdump-lxc-200-2026_10_10-02_00_01.tar.zst","vmid":"200","ctime":1760900100,"content":"backup","format":"tar.zst","size":99}]

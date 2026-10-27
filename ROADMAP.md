@@ -1,6 +1,6 @@
 # RivetCore roadmap to 1.0.0
 
-Written 2026-10-05 from the state of `v0.7.1`. Everything under "Where we are" was measured, not assumed. Estimates are effort for one maintainer
+Written 2026-10-05 from the state of `v0.7.1`; status brought up to date on 2026-10-06 (through `v0.21.0` and the working tree after it). The fact table under "Measured at v0.7.1" is historical and was not re-measured. Gate evidence lives in [docs/RELEASE_GATE.md](docs/RELEASE_GATE.md). Estimates are effort for one maintainer
 (S is up to a day, M is 2 to 4 days, L is 1 to 2 weeks), not calendar promises; the order and the gates matter more than the dates.
 
 ## What 1.0.0 means
@@ -8,7 +8,7 @@ Written 2026-10-05 from the state of `v0.7.1`. Everything under "Where we are" w
 RivetCore 1.0.0 is a promise, not a feature count. It means:
 
 1. **A stable public API.** The contracts, services and tables listed as public are covered by semantic versioning, enforced by a backward-compatibility check in CI.
-2. **A supported platform matrix, tested.** PHP 8.2, 8.3, 8.4 and 8.5; MariaDB 10.11 and 11; MySQL 8.0 and 8.4; Redis 7 (optional everywhere).
+2. **A supported platform matrix, tested.** PHP 8.5 (the minimum from 1.0.0-rc.31; 8.2 to 8.4 were dropped); MariaDB 10.11 and 11; MySQL 8.0 and 8.4; Redis 7 (optional everywhere).
 3. **Production proof.** Both editions run the 1.0 release candidate in production for at least 30 days with every module they use actually exercised, and no open P1 or P2 bug.
 4. **Quality gates that stay green.** Static analysis, measured coverage, dependency audit, and a security review with no open HIGH or MEDIUM finding.
 5. **Documentation an outside developer can use.** How to write an edition adapter, what each module owns and how it fails, how to upgrade, how to report a vulnerability.
@@ -19,9 +19,10 @@ Principles that do not change on the way: Core never knows which edition it runs
 
 ## Where we are
 
-### Shipped since 0.7.1 (status at v0.14.0)
+### Shipped since 0.7.1 (status at v0.21.0)
 
-The releases after 0.7.1 went to compliance work, not to the milestones below, so the milestone numbers here no longer match the version numbers. Nothing below was dropped; the planned work is still open unless it says otherwise.
+The release numbers do not match the milestone numbers below: the 0.8.0 to 0.14.0 releases went to compliance work, and the milestone items
+were delivered in 0.15.0 to 0.18.1. Nothing was dropped; what is still open is listed under "Remaining" in each milestone.
 
 | Version | What shipped |
 |---|---|
@@ -32,23 +33,19 @@ The releases after 0.7.1 went to compliance work, not to the milestones below, s
 | 0.12.0 | NIST SP 800-171 / CMMC Level 2 as a fifth framework (`Nist171Map`) |
 | 0.13.0 | Retention preset `nist171` |
 | 0.14.0 | `ResponsibilityStore`: who is responsible for a section or item (the organization or a managed service provider) |
+| 0.15.0, 0.15.1 | `JobWorker`, single-endpoint webhook delivery (`deliverTo`), event automation store and executor, `AuditService` `afterLog` fan-out |
+| 0.16.0 | **Milestone 0.8.0 (quality gates):** CI matrix, PHPStan level 6, coverage gate, converter corpus tests, migration runner lock and `status()`, Dependabot, project files, releases from tags, docs first pass |
+| 0.17.0 | **Milestone 0.9.0 (contracts):** `@api`/`@internal` marking, PSR-3 logging, `AccessPolicyInterface` (ADR-003), `AuditReader`, `UrlPolicy` and signature V2, job timeouts and heartbeat (migration 0012), Redis auth and TLS configuration, retention horizons and dry run |
+| 0.17.1 | CI fix for the backward-compatibility job |
+| 0.18.0 | Webhooks may reach listed private networks (`allowedNetworks`, `NetworkList`, `LocalNetworks`) |
+| 0.18.1 | Security hardening from the 2026-10 review (UrlPolicy ranges, no proxy, job fencing, runner directory, audit clamping and redaction, retention floors) |
+| 0.19.0 | `Ui\IconCatalog` |
+| 0.20.0 | `Ui\DateRange` |
+| 0.21.0 | Webhook destinations (24 presets), payload formats and templates, outgoing authentication, event catalog |
+| after 0.21.0 (working tree, unreleased) | API freeze review, array-shape docblocks, `MigrationInProgressException`, migration 0013 (retention indexes), adapter conformance kit (`src/Testing`), security review documents, module pages, ADR-004 to 009, `UPGRADING.md`, `docs/EDITION_CHECKLIST.md`, `docs/PERFORMANCE.md` with `scripts/bench.php`, `docs/RELEASE_GATE.md` |
 
-Status update on the branch `quality-gates-1.0` (2026-10-06, not yet merged or released): the CI matrix, PHPStan level 6, coverage gate, `SECURITY.md`,
-`CONTRIBUTING.md` and the compatibility job already existed. This branch adds, as docs, tests and tooling only (one small `src/` fix, `RedisAdmin::setMemory`):
-
-| Issue | Delivered | Still open |
-|---|---|---|
-| #42 performance baselines | `bench/` harness, measured numbers in `docs/PERFORMANCE.md`, optional weekly CI job with generous thresholds | numbers come from a shared, loaded dev box; re-measure on quiet hardware before quoting them |
-| #43 upgrade guide | `docs/UPGRADING.md`, verified from 12 old tags by `scripts/verify-upgrade.php` | none |
-| #19 docs first pass | quickstart, adapters guide, one page per module, runnable example, ADR-004 (ADR-003 was already taken by the authorization contract); every sample executed in CI | owner sign-off on ADR-004 |
-| #38 conformance kit | `tests/Conformance/` with reference in-memory and MySQL runs and negative tests | where it ships to editions (decision #49); no edition runs it yet |
-| #30 API freeze | `docs/PUBLIC-API.md`, `tests/api-surface.json`, `api-surface` CI job that fails on any difference | the 10 open design questions in PUBLIC-API.md |
-| #28 Redis auth/TLS | real-server tests for helpers, `docs/REDIS.md`; one bug found and fixed | editions' installers generating the secret (outside Core) |
-| #41 second security review | `docs/SECURITY-REVIEW-2.md`: threat model, 27 findings (no HIGH/MEDIUM), 36 pinned tests | triage of the LOW findings; external review |
-| #37 browser smoke tests | `tests/smoke/` scaffold and RivetIT spec, syntax-checked only | a run against a live scratch instance, and an MSP spec |
-| #36 installers on clean Ubuntu 24.04 | `docker/ubuntu24/smoke.sh` and `docs/testing/installers.md` | systemd, nginx, cron and the editions' own installers need real VMs |
-
-Still open from the plan: freezing the public contracts (review decisions above), edition adoption, the 30-day soak and the release gate. The fact table below was measured at 0.7.1 and has not been re-measured since.
+Still open overall: the compatibility check becoming required, the second security review and threat model, edition adoption (milestone 0.10.0), the
+clean-VM installer runs, the release candidate and its 30 day soak. See [docs/RELEASE_GATE.md](docs/RELEASE_GATE.md) for each with its evidence and status.
 
 ### Measured at v0.7.1
 
@@ -65,7 +62,9 @@ Still open from the plan: freezing the public contracts (review decisions above)
 | Not present | `SECURITY.md`, `CONTRIBUTING.md`, issue templates, GitHub Releases, API reference, adapter guide, backward-compatibility check |
 | Release channel | Git tags consumed through Composer VCS repositories (not on Packagist). In 0.x a caret like `^0.7` accepts only the same minor, so every 0.x minor needs a constraint bump in both editions |
 
-### Adoption by edition
+### Adoption by edition (as of 0.7.1; not re-measured)
+
+Since then RivetMSP moved to `^0.21` and RivetIT to `^0.18`; the module usage in each edition is described on the "Used by" section of every page in [docs/modules/](docs/modules/README.md), which is current as of 2026-10-06.
 
 | Module | RivetIT (beta, pushed to `main`) | RivetMSP (live, switches all on) |
 |---|---|---|
@@ -91,47 +90,49 @@ the in-app Update used a predictable shared temp directory for composer; the MSP
 
 ## Milestones
 
-### 0.8.0 Quality gates and hygiene (no new features)
+### 0.8.0 Quality gates and hygiene (no new features): done (delivered in 0.16.0, docs in the tree after 0.21.0)
 
 Goal: make every later change safe. Nothing user-visible.
 
 | # | Item | Acceptance | Effort |
 |---|---|---|---|
-| 1 | CI matrix: PHP 8.2 to 8.5, MariaDB 10.11 and 11, MySQL 8.0 and 8.4, Redis 7 | All combinations green; any MySQL-only or MariaDB-only DDL fixed or documented | M |
-| 2 | Static analysis gate | PHPStan level 6 required on every PR; a baseline file holds the 39 converter findings; zero new findings; level 8 clean outside the converters | M |
-| 3 | Measured coverage | pcov in CI; gate at 85% lines outside the converters, report published on every run | S |
-| 4 | Converter corpus and security tests | At least 10 DOCX and 10 PDF fixtures including malformed, encrypted, oversized, XXE payload, path-traversal entry names and zip-bomb ratios; each limit asserted | L |
-| 5 | `declare(strict_types=1)` in the four converter files | Output identical on the whole corpus before and after | S |
-| 6 | Migration runner hardening | Concurrency lock so two updaters cannot race; every migration run twice in a test; a `status()` that lists applied and pending | M |
-| 7 | Dependency hygiene | `composer audit` in CI and on a weekly schedule; Dependabot for Composer and Actions; a `--prefer-lowest` job | S |
-| 8 | Project files | `SECURITY.md` (private reporting, response targets), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, issue and PR templates, `.gitattributes` to keep tests out of installs | S |
-| 9 | Releases | A tag builds a GitHub Release with the changelog excerpt | S |
-| 10 | Docs, first pass | README quickstart; "Writing an edition adapter" guide; one page per module (what it owns, its contracts, how it fails); ADR-003 on versioning and the backward-compatibility policy | M |
-| 11 | Clear the level-5 findings | The 14 findings fixed or justified | S |
+| 1 | CI matrix: PHP 8.5, MariaDB 10.11 and 11, MySQL 8.0 and 8.4, Redis 7 **Done (0.16.0).** | All combinations green; any MySQL-only or MariaDB-only DDL fixed or documented | M |
+| 2 | Static analysis gate **Done (0.16.0).** Level 6 required; the converters keep a baseline. | PHPStan level 6 required on every PR; a baseline file holds the 39 converter findings; zero new findings; level 8 clean outside the converters | M |
+| 3 | Measured coverage **Done (0.16.0).** | pcov in CI; gate at 85% lines outside the converters, report published on every run | S |
+| 4 | Converter corpus and security tests **Done (0.16.0), 34 tests.** | At least 10 DOCX and 10 PDF fixtures including malformed, encrypted, oversized, XXE payload, path-traversal entry names and zip-bomb ratios; each limit asserted | L |
+| 5 | `declare(strict_types=1)` in the four converter files **Done (0.16.0).** | Output identical on the whole corpus before and after | S |
+| 6 | Migration runner hardening **Done (0.16.0).** | Concurrency lock so two updaters cannot race; every migration run twice in a test; a `status()` that lists applied and pending | M |
+| 7 | Dependency hygiene **Done** except the weekly scheduled audit (open). | `composer audit` in CI and on a weekly schedule; Dependabot for Composer and Actions; a `--prefer-lowest` job | S |
+| 8 | Project files **Done (0.16.0).** | `SECURITY.md` (private reporting, response targets), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, issue and PR templates, `.gitattributes` to keep tests out of installs | S |
+| 9 | Releases **Done (0.16.0).** | A tag builds a GitHub Release with the changelog excerpt | S |
+| 10 | Docs, first pass **Done**: README quickstart, adapter guide, one page per module (`docs/modules/`), ADR-004 on versioning (this was planned as ADR-003; ADR-003 became the authorization contract). | README quickstart; "Writing an edition adapter" guide; one page per module (what it owns, its contracts, how it fails); ADR-003 on versioning and the backward-compatibility policy | M |
+| 11 | Clear the level-5 findings **Done (0.16.0).** | The 14 findings fixed or justified | S |
 
 Exit: all gates required on `main`; the full matrix green for two weeks of ordinary changes.
 
-### 0.9.0 Complete and freeze the contracts
+### 0.9.0 Complete and freeze the contracts: done in Core (delivered in 0.15.0 to 0.18.1), sign-off and edition parts open
 
 Goal: everything an edition must implement or call is final. After this milestone the API only grows.
 
 | # | Item | Why | Effort |
 |---|---|---|---|
-| 1 | Public API marking | Tag every type `@api` or `@internal`; move test helpers out of the runtime package or mark them clearly; remove accidental surface | M |
-| 2 | Backward-compatibility check in CI | Fails a PR that breaks the last tag's public API | S |
-| 3 | Logging contract | Inject a PSR-3 logger; replace the remaining `error_log` calls so editions control where messages go | M |
-| 4 | **Decision, then build:** authorization and tenant contract | Needed the moment Automation executes actions, ITSM gets approvals, or MCP serves more than reads. Either ship a minimal `AccessPolicyInterface` now or declare it post-1.0 (see decisions) | M |
-| 5 | Webhook hardening | A URL policy that blocks loopback, link-local and private ranges by default (today only the edition checks); signed timestamp to prevent replay (new header, old headers kept for existing receivers); retries through the job queue | L |
-| 6 | Audit read side | An `AuditReader` with filters and pagination so editions stop querying the table directly; documented columns and event-name conventions | M |
-| 7 | Job worker | A worker loop with a handler registry, timeouts and the lock; today the editions' worker can only fail jobs, so the queue is unusable for real work | M |
-| 8 | Redis authentication and TLS | Password and TLS options end to end (installer generates the secret, both editions read it). The MSP's connection is hard-coded today, so this needs an MSP change first | M |
+| 1 | Public API marking **Done (0.17.0; array shapes and narrowing in the freeze review after 0.21.0).** | Tag every type `@api` or `@internal`; move test helpers out of the runtime package or mark them clearly; remove accidental surface | M |
+| 2 | Backward-compatibility check in CI **Done as an advisory CI job (0.17.0);** becomes required after `v1.0.0`. | Fails a PR that breaks the last tag's public API | S |
+| 3 | Logging contract **Done (0.17.0).** | Inject a PSR-3 logger; replace the remaining `error_log` calls so editions control where messages go | M |
+| 4 | **Decision, then build:** authorization and tenant contract **Decided and built (0.17.0, ADR-003):** minimal `AccessPolicyInterface`, opt-in; no service enforces it yet. | Needed the moment Automation executes actions, ITSM gets approvals, or MCP serves more than reads. Either ship a minimal `AccessPolicyInterface` now or declare it post-1.0 (see decisions) | M |
+| 5 | Webhook hardening **Done (0.17.0, 0.18.0, 0.18.1):** URL policy, signature V2, retries through the queue. | A URL policy that blocks loopback, link-local and private ranges by default (today only the edition checks); signed timestamp to prevent replay (new header, old headers kept for existing receivers); retries through the job queue | L |
+| 6 | Audit read side **Done (0.17.0).** | An `AuditReader` with filters and pagination so editions stop querying the table directly; documented columns and event-name conventions | M |
+| 7 | Job worker **Done (0.15.0, 0.17.0).** | A worker loop with a handler registry, timeouts and the lock; today the editions' worker can only fail jobs, so the queue is unusable for real work | M |
+| 8 | Redis authentication and TLS **Core side done (0.17.0);** the installers' secret generation is edition work and open. | Password and TLS options end to end (installer generates the secret, both editions read it). The MSP's connection is hard-coded today, so this needs an MSP change first | M |
 | 9 | ~~Retention policy options~~ **Done in 0.8.0** | Separate horizons for audit and delivery logs, and compliance presets with enforced minimums (`Compliance\RetentionPolicy`); both editions get an Administration > Compliance page | S |
 | 11 | ~~Compliance status~~ **Done in 0.9.0** | A checklist engine (`Compliance\ComplianceAssessor`, `AttestationStore`, `SnapshotStore`, `ReportRenderer`) scoring ISO/IEC 27001, SOC 2, PCI DSS and HIPAA; each edition supplies its own checks and an Administration > Compliance status page with an auditor export | M |
-| 10 | Freeze review | A written pass over every public method signature, error behavior and table column | S |
+| 10 | Freeze review **Written (`docs/api-freeze-review.md`); awaits sign-off.** | A written pass over every public method signature, error behavior and table column | S |
 
 Exit: public API list reviewed and committed; compatibility check enforcing it; an alpha of 1.0 behavior with no open design questions.
 
-### 0.10.0 Edition adoption (this is what makes a soak meaningful)
+Remaining: sign-off of the freeze review, the compatibility job required, the editions' Redis secret generation. The conformance kit (0.10.0 item 8) and the decisions below were completed in Core after 0.21.0.
+
+### 0.10.0 Edition adoption (this is what makes a soak meaningful): open, mostly edition work
 
 Goal: every module the editions claim to use is used for real, in both, and both can be installed and upgraded from scratch.
 
@@ -141,31 +142,92 @@ Goal: every module the editions claim to use is used for real, in both, and both
 | 2 | **RivetMSP: first real consumers.** Problem and change pages and API (RivetMSP issues #4 and #5); workflow runbooks for client onboarding (#11); an audit viewer and a retention setting in Administration; webhooks for new events; accounting and RMM sync as job types on the queue | L |
 | 3 | **RivetMSP: Redis-backed rate limiting** on the API and the job queue worker running under cron | M |
 | 4 | **MCP in the MSP.** After agent single sign-on lands (#14), wire the MCP module and the read tools (#13) | L |
-| 5 | **Shims: deprecate, do not break.** Mark the `ITFlow\...` compatibility shims `@deprecated`, switch new code to RivetCore directly, keep the shims through the 1.x line | M |
+| 5 | **Shims: deprecate, do not break.** Mark the `ITFlow\...` compatibility shims `@deprecated`, switch new code to RivetCore directly, keep the shims through the 1.x line **Decided (ADR-005);** the `@deprecated` tags are edition work. | M |
 | 6 | **Installers proven end to end.** Fresh install and upgrade-from-previous-release on clean Ubuntu 24.04 VMs, for both editions, in an automated run | L |
 | 7 | **Browser smoke tests** (sign in, tickets, the pages above) on both editions against scratch data | M |
-| 8 | **Shared adapter conformance kit** that each edition's CI runs, so a Core release cannot be tagged if an edition adapter would fail it | M |
+| 8 | **Shared adapter conformance kit** that each edition's CI runs, so a Core release cannot be tagged if an edition adapter would fail it **Kit built in Core (`RivetCore\\Testing`, ADR-009);** each edition must run it in its CI. | M |
 | 9 | Fix the Admin Update page on the MSP (it runs `git pull` as the web user against a tree the CLI user owns) and ship the installers' Redis authentication | S |
 
 Exit: every module has at least one production consumer in each edition that uses it; both installers pass the clean-VM run; the browser smoke suite is green.
+
+### RMM module (added 2026-10-07): the endpoint agent becomes a full RMM in Core
+
+RivetIT's built-in endpoint agent (Windows today) moves into RivetCore so RivetIT and RivetMSP share one RMM, and it grows into a complete
+remote monitoring and management product. Owner decisions: **Windows and Linux** agents (macOS later, no test Mac), the module is **built into Core's
+public API** (so the 1.0 soak restarts after it lands), it is a **module that can be switched on and off** (off by default for new installs, zero cost
+when off, with capacity limits and load shedding because it is compute heavy), and Phase 0 is a faithful port of the existing code plus fix-ups, byte
+compatible with already enrolled agents. Design: [docs/design/endpoint-module-extraction.md](docs/design/endpoint-module-extraction.md), ADR-010.
+
+| Phase | Content | Size | Issues | Status |
+|---|---|---|---|---|
+| **0** | Move the PHP server side, the Go agent and its CI into Core; Linux agent; module switch; capacity controls; both editions adopt it | L | [#60 T1 baseline](https://github.com/TheTractorHacker/rivet-core/issues/60) · [#61 T2 skeleton](https://github.com/TheTractorHacker/rivet-core/issues/61) · [#62 T3 pure classes](https://github.com/TheTractorHacker/rivet-core/issues/62) · [#63 T4 device API](https://github.com/TheTractorHacker/rivet-core/issues/63) · [#64 T5 technician/admin](https://github.com/TheTractorHacker/rivet-core/issues/64) · [#65 T6 Go move + Linux](https://github.com/TheTractorHacker/rivet-core/issues/65) · [#66 T9 switch + capacity](https://github.com/TheTractorHacker/rivet-core/issues/66) · [#67 T7 RivetIT adopts](https://github.com/TheTractorHacker/rivet-core/issues/67) · [#68 T8 RivetMSP adopts](https://github.com/TheTractorHacker/rivet-core/issues/68) · [#77 T10a asset page + fleet dashboard (RivetIT)](https://github.com/TheTractorHacker/rivet-core/issues/77) · [#78 T10b (RivetMSP)](https://github.com/TheTractorHacker/rivet-core/issues/78) | **in progress**: T1–T7 and T9 done (Core v1.0.0-rc.5; RivetIT beta runs on it); T8 built on a local RivetMSP branch awaiting owner answers; T10a/T10b (asset page UI) next; docs: [feature list](docs/rmm/FEATURES.md), [asset page redesign](docs/rmm/ASSET_PAGE_REDESIGN.md), [mockup](docs/rmm/mockups/asset-page.html) |
+| **Scale** | **5,000 devices supported in beta; 10,000 proven before the RMM leaves beta**: load simulator, cheaper write path, partitioned storage and rollups, optional external metric store, worker scaling, read-path caching, herd control, 24 h soak | L | [#79 S1](https://github.com/TheTractorHacker/rivet-core/issues/79) · [#80 S2](https://github.com/TheTractorHacker/rivet-core/issues/80) · [#81 S3](https://github.com/TheTractorHacker/rivet-core/issues/81) · [#82 S4](https://github.com/TheTractorHacker/rivet-core/issues/82) · [#83 S5](https://github.com/TheTractorHacker/rivet-core/issues/83) · [#84 S6](https://github.com/TheTractorHacker/rivet-core/issues/84) · [#85 S7](https://github.com/TheTractorHacker/rivet-core/issues/85) · [#86 S8](https://github.com/TheTractorHacker/rivet-core/issues/86) · [#87 S9 validation gate](https://github.com/TheTractorHacker/rivet-core/issues/87) | **Built in Core, not yet adopted by an edition and not tagged:** S1, S2, S7 (Phase 0); **S3** cheaper write path (27.2 to 15.6 statements per check-in, bytes unchanged), **S4** optional external metric store (off by default), **S5** daily rollup tier + opt-in probed time partitions with a DELETE fallback + retention limits (migration 0021), **S6** SKIP LOCKED worker claiming with lease fallback, per-queue limit and autoscaling hint, **S8** stale-while-revalidate read cache, warm start and per-client token buckets with a measured 5,000-device herd. **S9 is PENDING:** the 24 h / 10,000-device soak has not been run (tooling, runbook and a short validation run exist); the RMM does not leave beta until it passes on the reference hardware. Plan and per-item state: [docs/rmm/SCALING.md](docs/rmm/SCALING.md) |
+| 1 | Software inventory with history, sites/groups/tags, `rmm.*` events, MSP metric sink | L-XL | [#69](https://github.com/TheTractorHacker/rivet-core/issues/69) | **built in Core (v1.0.0-rc.9), not adopted by an edition yet**: software inventory (Windows registry, Linux dpkg/rpm/snap/flatpak; baseline, deltas, history, events), tags and static groups, nine `rmm.*` events (`RmmEventsInterface`), `DatabaseMetricSink` plus `RmmMetricReaderInterface`, per-check history, the live polling document, capability announcement, migration 0018. **Remaining:** normalised hardware tables, site/group/tag at enrollment and auto-tagging, `RmmSitesInterface`, capability filtering of job and check offers, the approved/revoked/module on-off events, the Windows collector on a real Windows host, and edition adoption (UI, wiring). See [FEATURES.md](docs/rmm/FEATURES.md) |
+| 2 | Policies and check templates, script library, scheduled scripts, approvals, custom fields | XL | [#70](https://github.com/TheTractorHacker/rivet-core/issues/70) | **built in Core (v1.0.0-rc.10), not adopted by an edition yet**: the policy engine (client > site > group > tag > device, priority, `enforce`, `disable`, per-assignment overrides, versioned) and its delivery in the check-in (check templates, intervals inside the global clamps, feature toggles, update-ring pinning; `config.policy` only for agents that announce `policies`), the signed script library (bash, PowerShell, Python; versions, parameters, secrets, `requires_approval`), runs on a device or a target, scheduled scripts (interval or cron, jitter, overlap, offline window, idempotent, capacity-aware, per-device history), two-person approval (`rmm.job.approve`, bulk threshold, expiry), custom fields (typed, scoped, secrets), the `shell` and `python` job types, capability filtering of job and check offers, four `rmm.*` events, migration 0019. **Starter pack (added later, no migration):** 73 ready-made scripts (41 Windows, 32 Linux), 3 check template sets, 3 disabled policy drafts and an idempotent installer with plan, selection, uninstall and REST routes ([STARTER_PACK.md](docs/rmm/STARTER_PACK.md)); Linux scripts run for real in a container, Windows scripts parse-checked only. **Remaining:** every edition page (including a Starter pack page and badge) and the adoption wiring, a real Windows host for the PowerShell path (it is compile-checked and unit-tested only), `zsh` and `cmd` interpreters and `run_as` options, per-client script visibility, importing an edition's existing saved scripts, approver notifications, the maintenance-window gate (Phase 3 implements `ScheduleGateInterface`), `RmmSitesInterface` and `ExplainingAccessPolicyInterface`. See [FEATURES.md](docs/rmm/FEATURES.md) |
+| 3 | Alerting maturity: thresholds, maintenance windows, suppression, escalation, more check types | L | [#71](https://github.com/TheTractorHacker/rivet-core/issues/71) | **built in Core (migration 0020), not adopted by an edition yet**, behind the `alerting` sub-switch: threshold tiers with hysteresis and duration, flap detection, one-time and recurring maintenance windows (time zone and calendar aware; mute or suppress; all, client, site, group, tag, device), parent-device suppression, per-client and global storm control with a summary alert, policy check templates that carry thresholds (Phase 2 policies deliver them), maintenance windows that hold scheduled scripts back (`MaintenanceScheduleGate`), escalation policies with acknowledge, resolve and repeat through the optional `RmmEscalationInterface`, the alert lifecycle record and REST routes, six `rmm.alert.*` / `rmm.maintenance.*` events, twelve check types (cpu, memory, process, port, ping, http, cert, ntp, smart; Windows av; Linux systemd_failed, inodes) offered only to agents that announce them. Windows agent code is cross-compiled and vetted, not run on a Windows host. **Remaining:** auto-remediation (needs the Phase 2 script runner), alert templates, SMS, event/syslog pattern checks (Phase 8), the edition adoption and UI, a measurement on PHP-FPM with the Phase 3 checks on |
+| 4 | Patch management (Windows Update, Linux apt/dnf, rings, reboot policy, compliance) | XL | [#72](https://github.com/TheTractorHacker/rivet-core/issues/72) | **built in Core (v1.0.0-rc.20, migration 0028), not adopted by an edition yet**, behind the `patching` sub-switch (off): the `patch_scan` (read only) and `patch_install` (gated) job types with capabilities, scan results per device, approval by hand / rule / policy with ring delays / two people, patch policies on the Phase 2 scopes, install windows (daily or a Phase 3 maintenance window), limits, restart policy (a separate confirmed reboot job), history, `patch.compliance` and `patch.install_failed` alerts, fleet compliance by client / site / group, abilities `rmm.patch.view` / `manage` / `install`. **Verified:** server side by tests (a test per route with a client-restricted user); the Linux agent with apt by fixtures **and** an end-to-end run of the real agent under real systemd against the real PHP server (`e2e/run_patch_proof.sh`: scan, approve, dry run, install of exactly one package, lock held, vanished update, unknown package, forged hostile ids, scheduler); the **Windows scan once, read only, on a real Windows 11 laptop** ([WINDOWS_VERIFICATION.md](docs/rmm/WINDOWS_VERIFICATION.md)). **Not verified:** the **Windows install path has never been run**; dnf, yum and zypper only on fixtures; no edition UI. Not done: third-party apps (moved to Phase 5), WSUS / ConfigMgr, rollback. [PATCHING.md](docs/rmm/PATCHING.md) |
+| 5 | Software deployment and reporting | XL | [#73](https://github.com/TheTractorHacker/rivet-core/issues/73) | **built in Core (v1.0.0-rc.21, migration 0029), not adopted by an edition yet**, behind the `software_deploy` sub-switch (off): a package catalog with immutable, hash-pinned versions (MSI and EXE with silent arguments and a detection rule; apt and dnf packages), an allowed-host list and a replaceable `PackageSourcePolicyInterface` with its own conformance kit (18 mutants), assignments to client / site / group / tag / device with ring delays and optional two-person approval, the `software_detect` (read only) and `software_install` (gated) job types with capabilities, a scheduler that detects, rehearses with dry runs until `software_live_install` is 1 and then installs, and the deployed-versus-expected report by package / client / ring / device with a formula-safe CSV; abilities `rmm.software.view` / `manage` / `deploy`. **Verified:** server side by tests (a test per route with a client-restricted user); the Linux agent with apt by unit tests and an end-to-end run of the real agent under real systemd against the real PHP server (`e2e/run_software_proof.sh`). **Not verified:** the **Windows MSI and EXE paths have never been run** (unit-tested with a fake registry, runner and a local TLS server only); dnf on fixtures; no edition UI. **Not built:** winget and Chocolatey (they cannot be pinned), scheduled / PDF / client-facing reports, EXE uninstall, automatic update-everywhere. [SOFTWARE_DEPLOY.md](docs/rmm/SOFTWARE_DEPLOY.md) |
+| 6 | Remote tools: service/process manager, file transfer, embedded Mesh terminal/files | M-L | [#74](https://github.com/TheTractorHacker/rivet-core/issues/74) | **built in Core (migration 0022), not adopted by an edition yet**, behind the `remote_tools` and `filetransfer` sub-switches (both off): the job types `svc_list`, `svc_control`, `proc_list`, `proc_kill`, `file_get`, `file_put` with capability flags and strict parameter allow lists, the ability `rmm.remote.manage`, confirmation rules, chunked SHA-256-verified file transfer through the new `agent_transfer` endpoint with a folder allow list, a never-transfer list and size and storage caps, Mesh terminal and files launch, REST routes, audit, two events, and the Linux and Windows agent code. The Windows agent code is cross-compiled and vetted, not run on a Windows host. **Added in rc.12 (migration 0023):** an optional tick-box to also install the MeshCentral agent with the RivetIT agent (pulled from the customer's own Mesh server over https with system-root or pinned-certificate TLS, never bundled, never able to fail the RivetIT install) and automatic Mesh node-id mapping with conflict handling; proven against mocks and a Linux container with a fake `meshagent` only, **Update (rc.15):** the download address shape was verified against a real MeshCentral (`id=4` Windows x64 and `installflags=0`; `meshid` is the 64-character URL form, now accepted, stored and sent as such, and a pasted address works); Linux ids, install/uninstall arguments and node-id locations are still unverified, nothing was installed from the real server, and the Windows code was not run on Windows. **Remaining:** every edition page, a Windows test host, a real MeshCentral to confirm the terminal and files views, per-client transfer folders |
+| 7 | macOS agent, Authenticode-signed binaries, MSI | XL | [#75](https://github.com/TheTractorHacker/rivet-core/issues/75) | macOS and signing blocked (no Mac, no certificates). **MSI: built in Core in 1.0.0-rc.16 (amd64, unsigned, parse-checked on Linux, never run on Windows: [MSI_VERIFY.md](docs/rmm/MSI_VERIFY.md))** |
+| 8 | Event-log / syslog collection (optional, off by default) | L | [#76](https://github.com/TheTractorHacker/rivet-core/issues/76) | **built in Core (migration 0022), not adopted by an edition yet**, behind the `logs` sub-switch (off, with a storage warning): Windows event-log and Linux journald collectors with bookmarks, the `agent_logs` endpoint, retention and per-device and per-fleet caps pruned in batches, search, phrase rules that raise alerts through the Phase 3 engine, shed first under load. The Windows reader is cross-compiled and vetted, not run on Windows. **Remaining:** per-policy sources, the edition pages, a Windows test host, a measurement of the write load at fleet scale |
+| 8b | Change monitoring: registry, configuration file, local group and scheduled-task changes, Security log presets (optional, off by default) | L | - | **built in Core (v1.0.0-rc.22, migration 0030), not adopted by an edition yet**, behind the `change_monitor` sub-switch (off, with a storage warning): a signed watch configuration, presets for Windows and Linux, a watch policy that keeps credential stores out, change records in the same database with retention and caps, a "who changed what" timeline, alert rules and `rmm.change.*` events. **The Windows code has never run on a Windows host.** [CHANGE_MONITOR.md](docs/rmm/CHANGE_MONITOR.md) |
+
+Effect on 1.0: the RMM module adds public API, so `1.0.0-rc.N` is re-cut after Phase 0 and the 30-day soak starts from that candidate; Phases 1 to 8 are 1.x minor releases.
+
+### Programme status (updated 2026-10-26, through v1.0.0-rc.46 in preparation)
+
+Security: the Core security audit of 2026-10 (secret detection, 18 findings, 14 fixed with regression tests, 4 open with decisions) is documented in docs/security/CORE_SECURITY_AUDIT.md and CORE_REMEDIATION.md (rc.46).
+
+**Shipped since the phase table was last updated**
+
+| Release | What |
+|---|---|
+| rc.23 to rc.25 | Clock-skew detection and notice (migration 0031), check sets per OS (0032), alerting false positives fixed |
+| rc.26 to rc.28 | Auto-install of software with the installer (0033), Mesh agent after approval (0034), device type with an installer option (0035), Linux install that downloads and installs itself, Mesh node retry |
+| rc.29 | Hypervisor visibility for Proxmox and Hyper-V only (0036): hosts, VMs, storage, snapshots, backups, alerts |
+| rc.30 | Agent binaries and releases are per operating system (0037) |
+| rc.31 | Security fixes from the rc.21 to rc.30 review (Mesh node claims need approval, change-monitor redaction, config sequence counter, 0038); **PHP 8.5 is the minimum** |
+| rc.32 | Per-device kill switch for scheduled scripts and patch installs (0039). Tagged with CI red, repaired in rc.33 |
+| rc.33 | CI repair, `composer.lock` committed, dependency audit job (`composer audit`, `govulncheck`) |
+| rc.34 | Shared design assets (`assets/ui`): RivetIT is the reference; shared stylesheets, five widget scripts, webhook styles, manifest, installer and CI drift check; accessible muted-text colour |
+| rc.35 | RivetPanel device-token API (`src/Panel`, migration 0040): per-device scoped tickets and chat, revocation, rate limits, audit, idempotent ticket creation |
+| rc.36 to rc.37 | `scripts/promote-ui-assets.php`; capped multi-use fleet enrollment tokens for the panel |
+| rc.38 | Security hardening from the rc.31 to rc.36 review (`docs/security/REVIEW_RC36.md`): daily chat budget, ownership by (device, contact), the automation kill switch enforced everywhere and retroactive, redaction and alert-text gaps, Mesh event volume and move rules, attachment formula checks, installer and wizard hardening, pinned CI; migration 0041 |
+
+**In progress**
+
+| Item | State |
+|---|---|
+| Mesh auto-pairing without manual approval (a fresh unguessable pairing group per install, verified through MeshCentral) | design written (`docs/design/mesh-auto-pairing.md`, branch `mesh-pairing-design`); needs a read-only check against a live Mesh before building (estimate 4 to 6 days) |
+| Edition adoption of rc.30 to rc.35 (design assets, Panel API wrappers and Deploy page, hypervisors, device type, Mesh Approve button, policy starter pack, install apps, kill switch): hypervisor pages, device type, Mesh Approve button, policy starter pack, install apps, kill switch | edition work, not started in the edition chats |
+| Power BI and BI reporting ([#91](https://github.com/TheTractorHacker/rivet-core/issues/91)) | **Phases 1 and 2 built (unreleased, rc.45, migration 0047)**: 17 stable `rpt_` views (11 control, 6 over the hot tables, also in the PostgreSQL store), frozen-column contract, no-secrets and tenant tests, `ReportingRole` read-only account SQL, [Power BI guide](docs/reporting/POWER_BI.md), [data dictionary](docs/reporting/DATA_DICTIONARY.md), Power Query and DAX samples, starter report layout, [design](docs/design/reporting.md). **Not built:** phase 3 (feed with scoped tokens), phase 4 (edition settings page and the edition's ticket / SLA / client views; prompts in [docs/design/reporting-edition-prompts.md](docs/design/reporting-edition-prompts.md)), phase 5 (starter `.pbit`, exports). Needs a decision on client_id in the PostgreSQL metric tables. |
+
+**Open**
+
+- Edition adoption of the rc.38 fixes (migration 0041, gateway UTC time stamps, Mesh Approve through Core; `docs/security/edition-checklist.md` section I). A review of rc.37 to rc.38 is not done.
+- "Verify against official release" on the build host and an optional customer-certificate signing hook (#75).
+- Measured capacity numbers (#42); PR #58 (`quality-gates-1.0`) merge or close; close the built issues #69 to #74, #76 (hold #72 until patching runs on a real PC).
+- Real-device proof still owed: patch install, Proxmox and Hyper-V collectors, Linux Mesh install, MSI upgrade, repair and uninstall.
+- On hold: GPO template builder (#88) pending compliance.
+- Edition-only requests tracked in the edition chats: ticket Email Templates, RMM tickets as Maintenance with SLA off by default, per-ticket no-email option.
 
 ### 1.0.0-rc.1 and onward (feature freeze and soak)
 
 - Tag `v1.0.0-rc.1` when 0.10.0 is done. Only bug fixes after that; any API change restarts the clock.
 - Pin both editions to the release candidate and run them in production for **at least 30 consecutive days** with no open P1 or P2 bug.
-- A second security review of everything changed since the first one, plus a threat-model pass over the Redis, webhook and MCP surfaces. External review if budget allows.
-- Performance baselines recorded (audit write, lock acquire, queue claim, retention prune on a large table) so regressions are visible.
-- Upgrade guide for 0.x users (constraint changes, migration notes, deprecations).
+- A second security review of everything changed since the first one, plus a threat-model pass over the Redis, webhook and MCP surfaces. External review if budget allows. In progress: `docs/security/review-2026-10.md` and `docs/security/threat-model.md`.
+- Performance baselines recorded (audit write, lock acquire, queue claim, retention prune on a large table) so regressions are visible. **Done in draft:** [docs/PERFORMANCE.md](docs/PERFORMANCE.md) and `scripts/bench.php`; to be re-recorded on a quiet machine.
+- Upgrade guide for 0.x users (constraint changes, migration notes, deprecations). **Done in draft:** [UPGRADING.md](UPGRADING.md) and [docs/EDITION_CHECKLIST.md](docs/EDITION_CHECKLIST.md); the section covering the release candidate is filled in when it is tagged.
 
 ### 1.0.0 release gate (all must be true)
 
-1. Every item above is closed or explicitly deferred with a written reason.
+1. Every item above is closed or explicitly deferred with a written reason (status per criterion: [docs/RELEASE_GATE.md](docs/RELEASE_GATE.md)).
 2. The CI matrix, static analysis, coverage and compatibility gates are green on the release commit.
 3. Thirty days of production use of the release candidate in both editions, no open P1 or P2.
 4. Security review: no open HIGH or MEDIUM finding.
 5. Documentation complete; `CHANGELOG`, upgrade guide and release notes written.
 6. Both editions' constraints moved to `^1.0` in a tested change, rollback tag recorded.
-7. Tag `v1.0.0`, publish the GitHub Release; submit to Packagist.
+7. Tag `v1.0.0`, publish the GitHub Release. (Packagist submission moved to 1.1 by ADR-006.)
 
 ## After 1.0 (the 1.x backlog)
 
@@ -177,15 +239,32 @@ In rough priority order; each ships as a backward-compatible minor.
 4. **Workflow depth:** task dependencies, approvals, scheduled due dates.
 5. **KB:** media tokens and the HTML importer behind interfaces so both editions can share them.
 6. **A provider interface for accounting and payments**, only if a second edition needs one (see the Stripe discussion: not before).
-7. **PostgreSQL adapter** investigation, only on a concrete requirement (ADR-001).
+7. **PostgreSQL**: see "Enterprise architecture track" below; the whole-app move is rejected (about 10,000 direct MySQL calls in each edition), the RMM hot-table split is a late item there.
 8. **Shared AI-assist pipeline** (summaries, reply drafts, triage) with the same audit and approval rules as MCP tools.
 9. **Audit tamper-evidence** (hash chaining) if compliance work needs it.
+
+### Enterprise architecture track (added 2026-10-24)
+
+What "enterprise" means here, in the order the gaps matter. None of it changes the 1.0 contract; each is a backward-compatible minor or an edition/operations item. Status is "not started" unless noted.
+
+| # | Gap | What closes it | Notes |
+|---|---|---|---|
+| 1 | High availability and disaster recovery | Documented and tested replica/failover for MariaDB and Redis; a restore drill with measured recovery time and data-loss window; backups checked by restoring them | Today there are two backup systems (in-app zip, encrypted `deploy/backup.sh`) and a restore script, but no replica, no failover and no measured RTO/RPO |
+| 2 | More than one web server | Sessions and caches in Redis, uploads and generated files on shared or object storage instead of local disk, no per-host state, a rolling restart that drops no requests | Uploads and attachments are on local disk today; RivetPanel attachments must follow the same rule |
+| 3 | Observability | Health and readiness endpoints (exist), metrics export (Prometheus/OpenTelemetry), structured logs with request and tenant ids, alerting on queue depth, slow queries and failed jobs | RMM already has capacity reports and a metrics subsystem to build on |
+| 4 | Identity | SAML or OIDC single sign-on for every role, SCIM provisioning, enforced MFA policy, service accounts with scoped, expiring keys | Entra OAuth exists in RivetIT; Panel device tokens already follow the scoped-token model |
+| 5 | Tenant isolation | Row-level tenant checks proved by tests across every module (cross-client tests exist for Panel and RMM), a documented threat model per module, optional database-enforced isolation | Postgres row-level security would help here, but only as a second layer behind application checks |
+| 6 | Change safety | Migrations that run without downtime (additive first, destructive later), a rollback story per release, signed releases and a published SBOM | Core migrations are already additive and idempotent; release signing waits on a key |
+| 7 | Compliance evidence | Retention presets, tamper-evident audit (hash chain exists), exportable evidence for ISO 27001, SOC 2, PCI DSS and HIPAA, an external penetration test | Compliance engine exists since 0.9.0; external review is not done. **Customizable frameworks ([#92](https://github.com/TheTractorHacker/rivet-core/issues/92)): phases 1 and 2 are built (unreleased, rc.44, migration 0046)**: profiles as data (built-ins derived from the existing constants, custom profiles that can be copied, edited, versioned, exported and imported), requirement types and checks for retention per data class, backup coverage (both data stores), recency, encryption, off-site copy, restore-test evidence, `BackupFactsProviderInterface` for the editions, retention enforcement in the RMM settings; design [docs/design/compliance-frameworks.md](docs/design/compliance-frameworks.md). Phase 3 (integrity chain for hot data) and phase 4 (editions: settings page, backup integration, report) not done; prompts in [docs/design/compliance-edition-prompts.md](docs/design/compliance-edition-prompts.md) |
+| 8 | Optional PostgreSQL data store for the hot RMM tables ([#89](https://github.com/TheTractorHacker/rivet-core/issues/89)) | An admin setting "RMM data store": MariaDB/MySQL (default) or Postgres (optionally TimescaleDB, may run on the same server) for metrics and rollups, check history, logs, change events and software/patch/hypervisor history, behind one storage interface with two implementations tested by the same contract tests. Control tables (devices, jobs, policies, tokens, alerts) stay in MariaDB; alert-to-ticket uses an outbox. The capacity report recommends Postgres past a configurable device count X (set from the 10,000-device load test); never an automatic flip. A guided migration command works both ways with verified counts and a rollback period | **Decision 2026-10-24: implement now**, before more MySQL-only SQL accumulates. Phases: 1 inventory and interface with a MariaDB implementation (behaviour identical), 2 Postgres implementation and CI matrix, 3 setting, recommendation, migration command, backup/restore coverage, 4 edition pages and settings UI, 5 load test and X. Needs a second database in backup, restore and update procedures. **Phase 1 is built (rc.39)**: inventory, eight store interfaces plus `StoreMaintenance`, the MariaDB implementation behind them, the `rmm_data_store` setting (migration 0042), shared contract tests. **Phase 2 is built (unreleased, rc.40, migration 0043)**: the PostgreSQL stores (native partitions or TimescaleDB), the connection port and PDO adapter, schema and migrator, degraded behaviour, contract + equivalence + concurrency + failure tests, CI jobs, operator guide [docs/rmm/POSTGRES.md](docs/rmm/POSTGRES.md); the edition passes the connection and sets the store by hand. **Phase 3 is built (unreleased, rc.41, migration 0044)**: `DataStoreSwitch` (connection stored with a sealed password, connection test, all-or-nothing switch; no row is moved and old history is hidden, by design), `RmmStoreMigrator` + `scripts/rmm-store-migrate.php` (both directions, resumable, dual-write window, verification, cut-over, rollback, explicit purge), the capacity recommendation, backup/restore scripts, `BackupHook`, `rmm-store-verify.php`, the load-test harness (smoke only) and the edition prompts for phase 4. **Status line (rc.43, unreleased): `DataStoreInfo` / `RmmModule::dataStoreInfo()` gives editions a never-throwing report and a one-line summary of the data store (version, mode, schema, size) for their Update and Server pages.** Phases 4 (editions: settings card, pages through the interfaces) and 5 (load test at 5,000/10,000 devices, the default threshold) not done; see [docs/design/rmm-data-store.md](docs/design/rmm-data-store.md) |
+
+Order of work: 1 to 3 first (they decide whether the product can be run as a service), 4 and 6 next, 5 and 7 continuously. Item 8 is being built now in phases (see #89; PostgreSQL 18 is the recommended and primary tested version since 1.0.0-rc.42, 16 is also tested, 14 is the untested minimum) but stays off by default and its recommended threshold is set only from the load test.
 
 ## Test strategy (what runs where)
 
 | Layer | What | Where |
 |---|---|---|
-| Unit | Pure logic with fakes | Every PR, PHP 8.2 to 8.5 |
+| Unit | Pure logic with fakes | Every PR, PHP 8.5 |
 | Integration | Real MariaDB and MySQL, real Redis, a local HTTP server for webhooks | Every PR |
 | Contract | `DatabaseContractTestCase` run against each edition's adapter | Core CI and each edition's CI |
 | Migration | Fresh install, full upgrade chain, run-twice, concurrent run | Every PR; upgrade chains from the last two releases |
@@ -198,7 +277,7 @@ Rules for test data: scratch databases only, schema-only copies of live schemas,
 ## Release process and policies
 
 - **Semantic versioning.** A breaking change to a public type, to a table's columns or to a migration's meaning is a major bump. Additive tables, columns and methods are minors. Migrations are forward-only, additive and idempotent; a rollback is the edition's database backup plus a version pin.
-- **Deprecation.** A deprecated API stays for at least two minor releases and is listed in the changelog.
+- **Deprecation.** Deprecated in a minor, kept for the rest of the major, removed only in the next major, with at least one minor of notice; listed in the changelog and `UPGRADING.md` ([ADR-004](docs/architecture/ADR-004-versioning-and-compatibility.md), which supersedes this section).
 - **Supported versions.** The latest minor of the current major, plus security fixes for the previous major for 12 months after a new major.
 - **PHP.** Core supports every PHP version that still receives security fixes upstream; dropping a version is announced one minor ahead.
 - **Branches.** `main` is always releasable; releases are annotated tags; the editions pin a tag, never a branch.
@@ -213,15 +292,23 @@ Rules for test data: scratch databases only, schema-only copies of live schemas,
 5. Update using the project's updater; verify health, sign-in, and one flow per module in use.
 6. Watch the logs and the hourly cron for one cycle.
 
-## Decisions needed from you
+## Decisions
 
-1. **Keep the `ITFlow\...` shims for the life of 1.x?** Recommended: yes, deprecated but supported; removing them gains little and risks the 35 audit call sites.
-2. **Authorization and tenant contract: before or after 1.0?** Recommended: a minimal contract in 0.9.0 only if the first consumer (automation actions or MCP writes) is also in 1.0; otherwise post-1.0.
-3. **Publish on Packagist?** Recommended: after the first release candidate, so tags are stable and consumers get normal Composer behavior.
-4. **Webhook signature change.** Adding a signed timestamp needs receivers to opt in. Recommended: send both the old and new headers for the whole of 1.x.
-5. **Database support promise.** Recommended: MariaDB 10.11+ and MySQL 8.0+ in the matrix; PostgreSQL stays out of 1.0.
-6. **Soak length.** Recommended: 30 days in each production; shorten only with a documented reason.
-7. **Test helpers.** Keep `Testing\DatabaseContractTestCase` in the runtime package, or split to a `rivet-core-testing` dev package? Recommended: split before 1.0.
+Resolved on 2026-10-06 and recorded as ADRs (each has a "Reversal cost"):
+
+| # | Decision | Outcome | Record |
+|---|---|---|---|
+| 1 (#45) | Keep the `ITFlow\...` shims for the life of 1.x? | Yes: deprecated, kept through 1.x, removed in 2.0 | [ADR-005](docs/architecture/ADR-005-itflow-shims-stay-for-1x.md) |
+| 2 | Authorization and tenant contract before or after 1.0? | Before: minimal opt-in `AccessPolicyInterface` shipped in 0.17.0 | [ADR-003](docs/architecture/ADR-003-authorization-contract.md) |
+| 3 (#46) | Publish on Packagist? | Not yet; editions keep VCS repositories; revisit at 1.1 (changed from "after the first release candidate") | [ADR-006](docs/architecture/ADR-006-packagist.md) |
+| 4 (#47) | Webhook signature change | V2 default; V1 legacy kept for all of 1.x (deprecated), removed in 2.0; receivers verify V2 with a 5 minute tolerance | [ADR-007](docs/architecture/ADR-007-webhook-signatures.md) |
+| 5 (#48) | Database support promise | MariaDB 10.11/11 and MySQL 8.0/8.4 tested; others best effort; PostgreSQL out of scope for 1.x (#55) | [ADR-008](docs/architecture/ADR-008-database-support.md) |
+| 6 | Soak length | 30 days in each production; shorten only with a documented reason (unchanged) | [docs/RELEASE_GATE.md](docs/RELEASE_GATE.md) |
+| 7 (#49) | Test helpers: split or keep? | Keep in the package as the public conformance kit; revisit if it grows beyond about 20 files (changed from "split before 1.0") | [ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md) |
+| - | Versioning and compatibility policy | semver, `@api`/`@internal`, deprecation rules, supported matrix and support window | [ADR-004](docs/architecture/ADR-004-versioning-and-compatibility.md) |
+
+Open for the maintainer: sign-off of the freeze review, whether to commission an external security review, and what to do about the
+case-insensitive collation of `mcp_unlinked_identities` (fix by migration before 1.0 or defer in writing).
 
 ## Risks
 

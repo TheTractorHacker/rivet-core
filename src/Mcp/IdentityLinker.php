@@ -8,6 +8,9 @@ use RivetCore\Database\DatabaseInterface;
 
 /** Links a pending OAuth identity to one agent. Linking is always an explicit administrator action.
  *
+ * Logging: $logError accepts a PSR-3 LoggerInterface (preferred) or null (ErrorLogLogger). The Closure form (receives the
+ * message string) is @deprecated: kept working through all of 1.x, removed in 2.0.
+ *
  * @api
  */
 final class IdentityLinker
@@ -16,6 +19,7 @@ final class IdentityLinker
         private DatabaseInterface $database,
         private UnlinkedIdentityStore $store,
         private AgentDirectoryInterface $agents,
+        /** @deprecated the Closure form; pass a PSR-3 LoggerInterface (kept through 1.x, removed in 2.0) */
         private \Closure|\Psr\Log\LoggerInterface|null $logError = null,
     ) {
     }

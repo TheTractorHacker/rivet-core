@@ -1,0 +1,20 @@
+[Unit]
+Description=RivetCore build host: poll the server and build one agent job if there is one
+Documentation=https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/BUILD_HOST.md
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# A dedicated user that is a member of the "docker" group (see BUILD_HOST.md). Do NOT run this as root.
+User=rivetit-build
+Group=rivetit-build
+ExecStart=/opt/rivetit-build-host/build-host.sh --config /etc/rivetit/build-host.conf --once
+# A build can take 25 minutes plus uploads.
+TimeoutStartSec=45min
+Nice=10
+IOSchedulingClass=idle
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=yes

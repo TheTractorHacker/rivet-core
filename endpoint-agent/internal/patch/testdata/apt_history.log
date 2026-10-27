@@ -1,0 +1,15 @@
+
+Start-Date: 2024-04-02  06:25:01
+Commandline: /usr/bin/unattended-upgrade
+Upgrade: libc6:amd64 (2.35-0ubuntu3.6, 2.35-0ubuntu3.7)
+End-Date: 2024-04-02  06:25:44
+
+Start-Date: 2024-05-02  06:25:01
+Commandline: apt-get install --only-upgrade openssl
+Upgrade: openssl:amd64 (3.0.2-0ubuntu1.12, 3.0.2-0ubuntu1.15)
+End-Date: 2024-05-02  06:25:12
+
+Start-Date: 2024-05-03  09:00:00
+Commandline: apt-get remove foo
+Remove: foo:amd64 (1.0)
+End-Date: 2024-05-03  09:00:05

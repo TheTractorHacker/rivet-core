@@ -1,0 +1,16 @@
+{
+  "id": "win-rdp-status",
+  "name": "Remote Desktop status (Windows)",
+  "description": "Reports whether RDP is enabled, whether NLA is required, the port, the Remote Desktop firewall rules and current sessions.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "rdp",
+    "security",
+    "network"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Lines for each RDP setting plus quser session output. Exit 0."
+}

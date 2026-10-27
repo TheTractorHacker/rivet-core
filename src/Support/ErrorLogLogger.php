@@ -23,7 +23,22 @@ final class ErrorLogLogger extends AbstractLogger
                 $replace['{' . $key . '}'] = (string) $value;
             }
         }
-        error_log(strtr((string) $message, $replace));
+        error_log(self::oneLine(strtr((string) $message, $replace)));
+    }
+
+    /**
+     * Core builds messages from exception texts that can carry caller-controlled data; a line break in one would let that
+     * data forge extra log lines. Control characters become visible escapes (\n, \r, \xNN) instead.
+     *
+     * @internal
+     */
+    public static function oneLine(string $message): string
+    {
+        return preg_replace_callback('/[\x00-\x08\x0A-\x1F\x7F]/', static fn (array $m): string => match ($m[0]) {
+            "\n" => '\\n',
+            "\r" => '\\r',
+            default => sprintf('\\x%02X', ord($m[0])),
+        }, $message) ?? '';
     }
 
     /**
@@ -44,7 +59,7 @@ final class ErrorLogLogger extends AbstractLogger
 
                 public function log($level, \Stringable|string $message, array $context = []): void
                 {
-                    ($this->sink)((string) $message);
+                    ($this->sink)(ErrorLogLogger::oneLine((string) $message));
                 }
             };
         }

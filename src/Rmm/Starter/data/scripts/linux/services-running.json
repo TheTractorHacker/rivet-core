@@ -1,0 +1,15 @@
+{
+  "id": "lin-services-running",
+  "name": "Running services (Linux)",
+  "description": "Lists running systemd services and counts enabled unit files.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "services",
+    "inventory"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "Running service list and enabled count. Exit 0; NOT AVAILABLE without systemd."
+}

@@ -1,0 +1,46 @@
+{
+  "policies": [
+    {
+      "id": "policy-workstation",
+      "name": "Starter: Workstation baseline",
+      "description": "Draft. Baseline checks for Windows workstations. Review, then enable and assign it.",
+      "platform": "windows",
+      "check_sets": [
+        "workstation-baseline"
+      ],
+      "settings": {
+        "feature.checks": true,
+        "feature.script_checks": true,
+        "feature.software_inventory": true
+      }
+    },
+    {
+      "id": "policy-windows-server",
+      "name": "Starter: Windows Server baseline",
+      "description": "Draft. Baseline checks for Windows servers, with an optional backup agent service. Review, then enable and assign it.",
+      "platform": "windows",
+      "check_sets": [
+        "windows-server-baseline"
+      ],
+      "settings": {
+        "feature.checks": true,
+        "feature.script_checks": true,
+        "feature.software_inventory": true
+      }
+    },
+    {
+      "id": "policy-linux-server",
+      "name": "Starter: Linux Server baseline",
+      "description": "Draft. Baseline checks for Linux servers, with optional certificate and backup service checks. Review, then enable and assign it.",
+      "platform": "linux",
+      "check_sets": [
+        "linux-server-baseline"
+      ],
+      "settings": {
+        "feature.checks": true,
+        "feature.script_checks": true,
+        "feature.software_inventory": true
+      }
+    }
+  ]
+}

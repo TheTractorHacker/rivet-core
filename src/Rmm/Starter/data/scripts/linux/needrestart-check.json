@@ -1,0 +1,15 @@
+{
+  "id": "lin-needrestart-check",
+  "name": "Reboot and restart needed check (Linux)",
+  "description": "Reports whether a reboot is required and which services need a restart (needrestart, Debian flag files, needs-restarting, zypper ps).",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "patching",
+    "diagnostics"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Prints 'REBOOT REQUIRED: yes/no' plus details. Always exits 0."
+}

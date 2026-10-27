@@ -1,0 +1,54 @@
+/* Shared file-upload surface for the app, portal, and installer. */
+/* File inputs share one compact, themed control even on older forms that still
+   emit Bootstrap 4's form-control-file class. */
+input[type="file"].form-control,
+input[type="file"].form-control-file {
+  display: block;
+  width: 100%;
+  min-height: var(--if-control-h, 2.5rem);
+  padding: .25rem;
+  border: 1px solid var(--if-border-strong, #cbd5d6);
+  border-radius: var(--if-radius-sm, 8px);
+  background: var(--if-surface, #fff);
+  color: var(--if-ink, #16232a);
+  line-height: 1.75rem;
+}
+input[type="file"]::file-selector-button {
+  margin: -.25rem .75rem -.25rem -.25rem;
+  padding: .375rem .75rem;
+  border: 0;
+  border-right: 1px solid var(--if-border-strong, #cbd5d6);
+  border-radius: var(--if-radius-sm, 8px) 0 0 var(--if-radius-sm, 8px);
+  background: var(--if-bg, #eef2f2);
+  color: var(--if-ink, #16232a);
+  cursor: pointer;
+}
+input[type="file"]:hover::file-selector-button { background: var(--if-border, #e3e9ea); }
+.file-upload-field {
+  border: 1px dashed var(--if-border-strong, #cbd5d6);
+  border-radius: var(--if-radius-sm, 8px);
+  background: var(--if-bg, #eef2f2);
+  padding: .7rem;
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.file-upload-field:hover,
+.file-upload-field.is-dragging,
+.file-upload-field:focus-within { border-color: var(--if-primary, #0d9488); }
+.file-upload-field.is-dragging { background: var(--if-primary-soft, #ccfbf1); }
+.file-upload-heading {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--if-ink, #16232a);
+  font-size: .875rem;
+  font-weight: 500;
+  margin-bottom: .5rem;
+}
+.file-upload-heading i { color: var(--if-primary, #0d9488); }
+.file-upload-field input[type="file"] { cursor: pointer; }
+.file-upload-hint,
+.file-upload-selection { display: block; margin-top: .45rem; font-size: .75rem; line-height: 1.35; }
+.file-upload-hint { color: var(--if-muted, #5d6f76); }
+.file-upload-selection { color: var(--if-ink, #16232a); overflow-wrap: anywhere; }
+.file-upload-selection:empty { display: none; }

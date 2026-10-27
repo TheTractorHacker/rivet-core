@@ -1,0 +1,16 @@
+{
+  "id": "win-services-auto-stopped",
+  "name": "Stopped automatic services (Windows)",
+  "description": "Lists services set to start automatically that are not running, excluding trigger-start services and known benign ones.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "services",
+    "diagnostics",
+    "health"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Count and table of stopped automatic services. Exit 0."
+}

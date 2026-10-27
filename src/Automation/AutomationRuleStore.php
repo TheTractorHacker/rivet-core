@@ -47,7 +47,7 @@ final class AutomationRuleStore
             throw new \InvalidArgumentException('Give the rule a name (up to 200 characters).');
         }
         $triggerEvent = trim($triggerEvent);
-        if (!preg_match('/^[a-z0-9_.]{1,150}$/', $triggerEvent)) {
+        if (!preg_match('/^[a-z0-9_.]{1,150}\z/D', $triggerEvent)) {
             throw new \InvalidArgumentException('Choose the event that triggers the rule.');
         }
         if (!isset(self::ACTIONS[$actionType])) {
@@ -59,7 +59,7 @@ final class AutomationRuleStore
             if ($field === '') {
                 continue;
             }
-            if (!preg_match('/^[A-Za-z0-9_.]{1,100}$/', $field) || !is_scalar($expected) || mb_strlen((string) $expected) > 200) {
+            if (!preg_match('/^[A-Za-z0-9_.]{1,100}\z/D', $field) || !is_scalar($expected) || mb_strlen((string) $expected) > 200) {
                 throw new \InvalidArgumentException('A condition has an invalid field or value.');
             }
             $clean[$field] = (string) $expected;
@@ -95,7 +95,10 @@ final class AutomationRuleStore
         $this->database->execute('DELETE FROM automation_rules WHERE rule_id = ?', [$id]);
     }
 
-    /** @param array<string,mixed> $config @return array<string,mixed> */
+    /**
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
     private function validateConfig(string $type, array $config): array
     {
         $text = static fn (string $k, int $max): string => mb_substr(trim((string) ($config[$k] ?? '')), 0, $max);
@@ -111,7 +114,10 @@ final class AutomationRuleStore
             case 'send_webhook':
                 $url = $text('url', 500);
                 $parts = parse_url($url);
-                if (!$parts || !in_array(strtolower((string) ($parts['scheme'] ?? '')), ['https', 'http'], true) || empty($parts['host'])) {
+                // Same URL-shape rules as Webhooks\UrlPolicy (no whitespace/control characters, backslash or credentials); the
+                // address itself is checked at send time, so the edition's send_webhook handler must go through UrlPolicy.
+                if (!$parts || str_contains($url, '\\') || preg_match('/[\x00-\x20\x7f]/', $url) === 1 || isset($parts['user']) || isset($parts['pass'])
+                    || !in_array(strtolower((string) ($parts['scheme'] ?? '')), ['https', 'http'], true) || empty($parts['host'])) {
                     throw new \InvalidArgumentException('Enter a valid http(s) URL for the webhook.');
                 }
 

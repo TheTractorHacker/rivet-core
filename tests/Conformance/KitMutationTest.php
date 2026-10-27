@@ -1,0 +1,350 @@
+<?php
+
+declare(strict_types=1);
+
+namespace RivetCore\Tests\Conformance;
+
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+use RivetCore\Tests\Support\TestRedis;
+
+/**
+ * Proves the kit CHECKS what it claims to: for every rule there is an adapter that breaks exactly that rule, and the case
+ * must report a failure in the test(s) named here. A kit that passes everything proves nothing.
+ *
+ * Each row: case class, flaw, test method name(s) that must fail ("method" matches "method" and "method#dataset").
+ */
+final class KitMutationTest extends TestCase
+{
+    /** @return array<string,array{class-string<TestCase>,string,list<string>}> */
+    public static function mutants(): array
+    {
+        $rows = [
+            // Clock
+            [ClockKitTest::class, 'backwards', ['testSuccessiveCallsNeverGoBackwards']],
+            [ClockKitTest::class, 'skewed', ['testRealClockIsCloseToSystemTime']],
+            [ClockKitTest::class, 'wrong_tz', ['testTimezoneIsValidAndConsistent']],
+            [ClockKitTest::class, 'epoch', ['testNowIsAnImmutableInstantUnaffectedByLaterCalls', 'testRealClockIsCloseToSystemTime']],
+            // Settings
+            [SettingsKitTest::class, 'falsy_to_default', ['testStoredValuesAreReturnedEvenWhenFalsy']],
+            [SettingsKitTest::class, 'coerces_default', ['testUnknownKeyReturnsTheDefaultUnchanged', 'testDefaultDefaultsToNull']],
+            [SettingsKitTest::class, 'ignores_default', ['testUnknownKeyReturnsTheDefaultUnchanged', 'testOddKeysNeverThrowAndReadAsDefault']],
+            [SettingsKitTest::class, 'throws_odd', ['testOddKeysNeverThrowAndReadAsDefault']],
+            [SettingsKitTest::class, 'flaky', ['testReadsAreRepeatable']],
+            [SettingsKitTest::class, 'default_leaks', ['testStoredValueDoesNotDependOnTheDefaultPassedIn']],
+            // Request context
+            [RequestContextKitTest::class, 'trust_client_id', ['testClientSuppliedRequestIdIsNeverTrusted']],
+            [RequestContextKitTest::class, 'unstable_id', ['testRequestIdIsStableWithinARequest', 'testNoRequestAtAllNeverThrows']],
+            [RequestContextKitTest::class, 'ip_placeholder', ['testIpAddressIsNullOrAValidAddressLiteral']],
+            [RequestContextKitTest::class, 'throws_cli', ['testNoRequestAtAllNeverThrows']],
+            [RequestContextKitTest::class, 'long_id', ['testRequestIdIsNullOrABoundedToken']],
+            [RequestContextKitTest::class, 'bad_id_chars', ['testRequestIdIsNullOrABoundedToken']],
+            [RequestContextKitTest::class, 'ctrl_ua', ['testUserAgentIsNullOrPrintableText']],
+            // Redis (the "down" rules need no Redis; the live rules are checked when a throwaway Redis is configured)
+            [RedisKitTest::class, 'throws_when_down', ['testUnreachableRedisYieldsNullAndNeverThrows']],
+            [RedisKitTest::class, 'lazy_client_when_down', ['testUnreachableRedisYieldsNullAndNeverThrows']],
+            // Webhook subscriptions
+            [WebhookKitTest::class, 'includes_disabled', ['testDisabledEndpointsAreExcluded', 'testStarSubscribesToEveryEvent']],
+            [WebhookKitTest::class, 'includes_deleted', ['testDeletedEndpointsAreExcluded']],
+            [WebhookKitTest::class, 'prefix_match', ['testNearMissAndHostileEventNamesMatchNothingSeeded']],
+            [WebhookKitTest::class, 'no_patterns', ['testStarSubscribesToEveryEvent', 'testPrefixPatternMatchesItsGroupOnly', 'testPatternsAndPlainEventsMixInOneSubscription']],
+            [WebhookKitTest::class, 'greedy_star', ['testPrefixPatternMatchesItsGroupOnly']],
+            [WebhookKitTest::class, 'encrypted_secret', ['testEnabledEndpointsForAnEventAreReturnedWithIdUrlAndPlainSecret', 'testFindReturnsAnEnabledEndpointLikeForEvent']],
+            [WebhookKitTest::class, 'find_disabled', ['testFindReturnsNullForUnknownDisabledAndDeletedEndpoints']],
+            [WebhookKitTest::class, 'like_wildcards', ['testNearMissAndHostileEventNamesMatchNothingSeeded']],
+            [WebhookKitTest::class, 'keyed_list', ['testEventListsWithSeveralEventsMatchEachOfThem']],
+            // Ticket <-> problem link
+            [TicketProblemLinkKitTest::class, 'unlink_any', ['testUnlinkOnlyRemovesTheLinkToThatProblem']],
+            [TicketProblemLinkKitTest::class, 'no_replace', ['testLinkingToAnotherProblemReplacesTheLink']],
+            [TicketProblemLinkKitTest::class, 'throws_unknown', ['testUnknownTicketNeverThrows']],
+            [TicketProblemLinkKitTest::class, 'creates_unknown', ['testUnknownTicketNeverThrows']],
+            [TicketProblemLinkKitTest::class, 'unlink_all', ['testLinksAreIsolatedPerTicket']],
+            [TicketProblemLinkKitTest::class, 'link_all', ['testLinksAreIsolatedPerTicket']],
+            // Agent directory
+            [AgentDirectoryKitTest::class, 'inactive_linkable', ['testInactiveAgentsAreNotLinkableAndNotActive']],
+            [AgentDirectoryKitTest::class, 'inactive_found', ['testInactiveAgentsAreNotLinkableAndNotActive']],
+            [AgentDirectoryKitTest::class, 'link_ignores_issuer', ['testIdentityIsMatchedAsAnIssuerSubjectPair']],
+            [AgentDirectoryKitTest::class, 'unlink_keeps_identity', ['testUnlinkReversesTheLink']],
+            [AgentDirectoryKitTest::class, 'linked_still_linkable', ['testLinkMovesTheAgentFromLinkableToLinked']],
+            [AgentDirectoryKitTest::class, 'count_wrong', ['testLinkMovesTheAgentFromLinkableToLinked']],
+            [AgentDirectoryKitTest::class, 'find_throws_unknown', ['testUnknownUserIdIsNullNotAnError']],
+            [AgentDirectoryKitTest::class, 'link_unknown_creates', ['testUnlinkAndLinkForUnknownOrUnlinkedUsersAreHarmless']],
+            [AgentDirectoryKitTest::class, 'find_linked_false', ['testLinkMovesTheAgentFromLinkableToLinked']],
+            // Access policy
+            [AccessPolicyKitTest::class, 'throws_unknown_subject', ['testNeverThrowsForAnyUserAbilitySubjectOrContext']],
+            [AccessPolicyKitTest::class, 'null_user_throws', ['testNullUserIsAcceptedAsTheSystemActor']],
+            [AccessPolicyKitTest::class, 'system_bypass', ['testUnknownAbilitiesAreDeniedForEveryUser', 'testTheEditionsSampleDecisionsHold']],
+            [AccessPolicyKitTest::class, 'context_elevates', ['testContextCannotElevateAnUnknownAbility']],
+            [AccessPolicyKitTest::class, 'nondeterministic', ['testTheSameQuestionGetsTheSameAnswer']],
+            [AccessPolicyKitTest::class, 'ignores_user', ['testTheEditionsSampleDecisionsHold']],
+            [AccessPolicyKitTest::class, 'allow_all', ['testUnknownAbilitiesAreDeniedForEveryUser', 'testTheEditionsSampleDecisionsHold']],
+            // Backup facts (customizable compliance frameworks)
+            [BackupFactsKitTest::class, 'future', ['testNoTimestampIsInTheFuture']],
+            [BackupFactsKitTest::class, 'claims_without_success', ['testNothingIsClaimedWithoutASuccessfulBackup']],
+            [BackupFactsKitTest::class, 'unavailable_claims', ['testUnavailableFactsClaimNothingAtAll']],
+            [BackupFactsKitTest::class, 'offsite_without_destination', ['testAnOffsiteArrivalNeedsAnOffsiteDestination']],
+            [BackupFactsKitTest::class, 'secret_text', ['testNoTextFieldCarriesASecret']],
+            [BackupFactsKitTest::class, 'unstable', ['testTwoCallsAgree']],
+            [BackupFactsKitTest::class, 'throws', ['testFactsAreReturnedAndNeverThrow']],
+            // Attestations
+            [AttestationKitTest::class, 'first_wins', ['testTheLastReviewRecordedWins', 'testItemsAreIndependentAndOnePerItem']],
+            [AttestationKitTest::class, 'max_date_wins', ['testTwoReviewsOnTheSameDayStillPickTheLastRecorded']],
+            [AttestationKitTest::class, 'empty_strings', ['testMissingNextDueAndNoteAreNullNotEmptyStrings']],
+            [AttestationKitTest::class, 'extra_key', ['testAReviewIsReturnedWithTheDocumentedShape']],
+            // RMM tenancy
+            [RmmTenancyKitTest::class, 'location_any_client', ['testLocationBelongsOnlyToItsOwnClient']],
+            [RmmTenancyKitTest::class, 'unknown_client_empty', ['testClientNameIsTheNameOrNullForUnknownClients']],
+            [RmmTenancyKitTest::class, 'unrestricted_empty', ['testUnrestrictedUserIsNull']],
+            [RmmTenancyKitTest::class, 'empty_null', ['testRestrictionToNothingIsAnEmptyListNotNull']],
+            [RmmTenancyKitTest::class, 'throws_odd', ['testOddIdsNeverThrow']],
+            [RmmTenancyKitTest::class, 'includes_zero', ['testRestrictedUserSeesExactlyTheirClients']],
+            // RMM assets
+            [RmmAssetsKitTest::class, 'includes_archived', ['testFindBySerialIsExactAndSkipsArchived', 'testFindByMacsIgnoresCaseAndSeparatorsAndSkipsArchived', 'testFindByHostnameIsCaseInsensitiveAndSkipsArchived']],
+            [RmmAssetsKitTest::class, 'serial_prefix', ['testFindBySerialIsExactAndSkipsArchived']],
+            [RmmAssetsKitTest::class, 'mac_strict', ['testFindByMacsIgnoresCaseAndSeparatorsAndSkipsArchived']],
+            [RmmAssetsKitTest::class, 'mac_duplicates', ['testAnAssetWithSeveralMatchingMacsIsReturnedOnce']],
+            [RmmAssetsKitTest::class, 'host_case_sensitive', ['testFindByHostnameIsCaseInsensitiveAndSkipsArchived']],
+            [RmmAssetsKitTest::class, 'ignores_limit', ['testFindBySerialHonoursTheLimit']],
+            [RmmAssetsKitTest::class, 'find_archived_null', ['testFindReportsClientAndArchivedAndNullForUnknown']],
+            [RmmAssetsKitTest::class, 'all_laptops', ['testCreateForDeviceMakesALaptopOrAServer']],
+            [RmmAssetsKitTest::class, 'ignores_hint', ['testAnInstallerTypeHintWins']],
+            [RmmAssetsKitTest::class, 'hint_overrides_nothing', ['testAnInstallerTypeHintWins']],
+            [RmmAssetsKitTest::class, 'ignores_detected', ['testTheDetectedTypeIsUsedWithoutAHint']],
+            [RmmAssetsKitTest::class, 'type_overwrites', ['testFillBlanksNeverOverwritesAnAssetsType']],
+            [RmmAssetsKitTest::class, 'type_not_filled', ['testFillBlanksFillsABlankType']],
+            [RmmAssetsKitTest::class, 'fill_overwrites', ['testFillBlanksNeverOverwritesWhatIsThere']],
+            [RmmAssetsKitTest::class, 'fill_nothing', ['testFillBlanksFillsOnlyBlanks']],
+            [RmmAssetsKitTest::class, 'move_all', ['testMoveToClientMovesOnlyThatAsset']],
+            [RmmAssetsKitTest::class, 'throws_unknown', ['testUnknownAssetsNeverThrowAndCreateNothing']],
+            [RmmAssetsKitTest::class, 'bad_shape', ['testFindBySerialIsExactAndSkipsArchived']],
+            // RMM bridge
+            [RmmBridgeKitTest::class, 'integration_not_idempotent', ['testEnsureIntegrationIsIdempotentPerType']],
+            [RmmBridgeKitTest::class, 'exists_ignores_type', ['testIntegrationExistsNeedsTheRightType']],
+            [RmmBridgeKitTest::class, 'link_starts_online', ['testUpsertLinkCreatesOneUnknownLinkAndUpdatesInPlace']],
+            [RmmBridgeKitTest::class, 'no_move_key', ['testUpsertLinkMovesAnAgentKeyFromAnotherAsset']],
+            [RmmBridgeKitTest::class, 'remove_all', ['testRemoveLinkDeletesOnlyThatKey']],
+            [RmmBridgeKitTest::class, 'apply_creates', ['testApplyHealthIsFalseWithoutALinkAndCreatesNone']],
+            [RmmBridgeKitTest::class, 'apply_always_true', ['testApplyHealthIsFalseWithoutALinkAndCreatesNone']],
+            [RmmBridgeKitTest::class, 'apply_touches_time', ['testApplyHealthSetsOnlineAndMovesTheChangeTimeOnlyOnAChange']],
+            [RmmBridgeKitTest::class, 'offline_other_integration', ['testMarkOfflineFlipsOnlyOnlineLinksOfTheGivenKeys']],
+            [RmmBridgeKitTest::class, 'offline_unknown_too', ['testMarkOfflineFlipsOnlyOnlineLinksOfTheGivenKeys']],
+            [RmmBridgeKitTest::class, 'offline_count_wrong', ['testMarkOfflineFlipsOnlyOnlineLinksOfTheGivenKeys']],
+            [RmmBridgeKitTest::class, 'alert_duplicates', ['testOpenAlertIsIdempotentPerIntegrationAndKey']],
+            [RmmBridgeKitTest::class, 'alert_key_global', ['testSameAlertKeyInAnotherIntegrationIsAnotherAlert']],
+            [RmmBridgeKitTest::class, 'resolve_noop', ['testResolveAlertResolvesOnceAndIsHarmlessAfterwards']],
+            [RmmBridgeKitTest::class, 'reassign_noop', ['testReassignAlertsMovesOnlyOpenAlertsOfThatAssetAndIntegration']],
+            [RmmBridgeKitTest::class, 'reassign_everything', ['testReassignAlertsMovesOnlyOpenAlertsOfThatAssetAndIntegration']],
+            [RmmBridgeKitTest::class, 'script_any', ['testSavedPowerShellScriptReturnsOnlyEnabledPowerShell']],
+            [RmmBridgeKitTest::class, 'session_swap', ['testRecordRemoteSessionStoresTheFieldsAsGiven']],
+            // RMM secret box
+            [RmmSecretBoxKitTest::class, 'plain_in_cipher', ['testCiphertextDoesNotContainThePlaintext']],
+            [RmmSecretBoxKitTest::class, 'throws_garbage', ['testDecryptOfGarbageIsTheEmptyStringAndNeverThrows']],
+            [RmmSecretBoxKitTest::class, 'garbage_echo', ['testDecryptOfGarbageIsTheEmptyStringAndNeverThrows']],
+            [RmmSecretBoxKitTest::class, 'lossy', ['testRoundTrip']],
+            [RmmSecretBoxKitTest::class, 'unauthenticated', ['testDecryptOfGarbageIsTheEmptyStringAndNeverThrows', 'testTruncatedCiphertextDecryptsToTheEmptyString']],
+            [RmmSecretBoxKitTest::class, 'fixed_output', ['testRoundTrip']],
+            // Envelope
+            [EnvelopeKitTest::class, 'ignores_aad', ['testWrongContextIsRefused']],
+            [EnvelopeKitTest::class, 'static_nonce', ['testEverySealUsesAFreshNonce']],
+            [EnvelopeKitTest::class, 'fail_open', ['testEmptyRingFailsClosed']],
+            [EnvelopeKitTest::class, 'swallow_errors', ['testWrongKeyIsRefused', 'testEveryCharacterChangeIsRefused', 'testGarbageIsDecryptionFailedNeverAValue']],
+            [EnvelopeKitTest::class, 'wrong_exception', ['testWrongKeyIsRefused', 'testEveryTruncationAndExtensionIsRefused']],
+            [EnvelopeKitTest::class, 'unknown_kid_fallback', ['testUnknownKidIsUnknownKeyId']],
+            [EnvelopeKitTest::class, 'rewrap_noop', ['testRotationKeepsOldValuesReadableAndRewrapMovesThem']],
+            [EnvelopeKitTest::class, 'needs_rewrap_never', ['testRotationKeepsOldValuesReadableAndRewrapMovesThem', 'testLegacyEnc2ValuesAreReadAndMarkedForRewrap']],
+            [EnvelopeKitTest::class, 'no_legacy', ['testLegacyEnc2ValuesAreReadAndMarkedForRewrap']],
+            [EnvelopeKitTest::class, 'empty_context_ok', ['testEmptyContextIsRejectedBothWays']],
+            [EnvelopeKitTest::class, 'no_kid', ['testFormatNamesTheActiveKidAndHidesThePlaintext']],
+            [EnvelopeKitTest::class, 'plaintext_in_output', ['testFormatNamesTheActiveKidAndHidesThePlaintext']],
+            // Rewrap source
+            [RewrapSourceKitTest::class, 'cursor_inclusive', ['testCursorIsExclusive', 'testPagingVisitsEveryRowExactlyOnce']],
+            [RewrapSourceKitTest::class, 'ignores_limit', ['testLimitIsRespected']],
+            [RewrapSourceKitTest::class, 'string_cursor', ['testPagingVisitsEveryRowExactlyOnce']],
+            [RewrapSourceKitTest::class, 'mutates_on_read', ['testReadingHasNoSideEffects']],
+            [RewrapSourceKitTest::class, 'reverses_pages', ['testPagingVisitsEveryRowExactlyOnce']],
+            [RewrapSourceKitTest::class, 'drops_last', ['testPagingVisitsEveryRowExactlyOnce']],
+            [RewrapSourceKitTest::class, 'stale_reads', ['testReplaceSucceedsOnAMatchAndIsVisible']],
+            [RewrapSourceKitTest::class, 'replace_unconditional', ['testReplaceIsCompareAndSet']],
+            [RewrapSourceKitTest::class, 'replace_true_unknown', ['testReplaceOfAnUnknownIdIsFalseAndCreatesNothing']],
+            [RewrapSourceKitTest::class, 'replace_creates', ['testReplaceOfAnUnknownIdIsFalseAndCreatesNothing']],
+            [RewrapSourceKitTest::class, 'replace_touches_all', ['testReplaceDoesNotTouchOtherRows']],
+            // RMM metric sink, audit, module state
+            [RmmMetricSinkKitTest::class, 'clamps', ['testOutOfRangeUtilizationIsDroppedNotClamped']],
+            [RmmMetricSinkKitTest::class, 'keeps_first_only', ['testValidSamplesAreKept']],
+            [RmmMetricSinkKitTest::class, 'throws_empty', ['testEmptyAndValidIngestNeverThrow']],
+            // Token bucket store (herd control)
+            [TokenBucketStoreKitTest::class, 'no_cap', ['testAnIdleBucketNeverHoldsMoreThanTheBurst']],
+            [TokenBucketStoreKitTest::class, 'no_refill', ['testTokensRefillWithTime']],
+            [TokenBucketStoreKitTest::class, 'shared_key', ['testBucketsAreIndependentPerKey']],
+            [TokenBucketStoreKitTest::class, 'starts_empty', ['testAFreshBucketStartsFullAndRefusesAfterTheBurst']],
+            [TokenBucketStoreKitTest::class, 'retry_zero', ['testARefusalSaysHowLongUntilTheNextToken']],
+            [TokenBucketStoreKitTest::class, 'slow_retry', ['testARefusalSaysHowLongUntilTheNextToken']],
+            [TokenBucketStoreKitTest::class, 'backwards_refills', ['testTimeGoingBackwardsCreatesNoTokens']],
+            [TokenBucketStoreKitTest::class, 'throws_odd', ['testOddKeysNeverThrow']],
+            [TokenBucketStoreKitTest::class, 'closed_on_failure', ['testAStoreThatCannotBeReachedAdmitsInsteadOfRefusing']],
+            [RmmEventsKitTest::class, 'throws_unknown', ['testEveryEventIdIsAccepted']],
+            [RmmEventsKitTest::class, 'drops_nulls', ['testNullAndFalseValuesAreNotDropped']],
+            [RmmEventsKitTest::class, 'reverses', ['testPayloadsArriveUnchangedAndInOrder']],
+            // Schedule gate
+            [ScheduleGateKitTest::class, 'bad_word', ['testTheAnswerIsOneOfTheThreeDecisions', 'testNothingIsChangedAndNothingThrowsForAnUnusualButValidSlot', 'testADeviceRowWithOnlyTheDocumentedMembersIsEnough']],
+            [ScheduleGateKitTest::class, 'flips', ['testTheSameQuestionGetsTheSameAnswer']],
+            [ScheduleGateKitTest::class, 'throws_minimal', ['testADeviceRowWithOnlyTheDocumentedMembersIsEnough']],
+            // Escalation (Phase 3)
+            [RmmEscalationKitTest::class, 'throws_unknown_ack', ['testAcknowledgeAndSeverityForAnUnknownAlertAreQuiet']],
+            [RmmEscalationKitTest::class, 'drops_targets', ['testNotificationsArriveCompleteAndInOrder', 'testTargetsKeepTheirOrderAndNullsSurvive']],
+            [RmmEscalationKitTest::class, 'reverses', ['testNotificationsArriveCompleteAndInOrder']],
+            [RmmEscalationKitTest::class, 'drops_nulls', ['testNotificationsArriveCompleteAndInOrder', 'testTargetsKeepTheirOrderAndNullsSurvive']],
+            [RmmMetricReaderKitTest::class, 'last_arrival_wins', ['testTheNewestReadingWinsWhateverTheOrderOfArrival']],
+            [RmmMetricReaderKitTest::class, 'no_window', ['testPeakExcludesHoursBeforeTheWindow', 'testPeakIsTheMinMaxAndMeanOfTheWindow']],
+            [RmmMetricReaderKitTest::class, 'instance_blur', ['testPeakIsTheMinMaxAndMeanOfTheWindow']],
+            [RmmMetricReaderKitTest::class, 'series_newest_first', ['testSeriesIsOldestFirstWithOnePointPerHour']],
+            [RmmAuditKitTest::class, 'throws_empty', ['testRecordNeverThrows']],
+            [RmmAuditKitTest::class, 'swaps_ids', ['testWhatWasRecordedCanBeReadBack']],
+            [RmmAuditKitTest::class, 'truncates', ['testWhatWasRecordedCanBeReadBack']],
+            [RmmModuleStateKitTest::class, 'flaky', ['testEditionAllowsIsARepeatableBool']],
+            [RmmModuleStateKitTest::class, 'relative_dir', ['testStateDirectoryIsNullOrAnExistingWritableDirectory']],
+            [RmmModuleStateKitTest::class, 'missing_dir', ['testStateDirectoryIsNullOrAnExistingWritableDirectory']],
+            [RmmModuleStateKitTest::class, 'changing_dir', ['testStateDirectoryIsNullOrAnExistingWritableDirectory']],
+            // External metric store (S4)
+            [ExternalMetricStoreKitTest::class, 'not_idempotent', ['testWritingTheSameBatchTwiceChangesNothing']],
+            [ExternalMetricStoreKitTest::class, 'empty_instance_differs', ['testNullAndEmptyInstanceAreTheSameSeries']],
+            [ExternalMetricStoreKitTest::class, 'instance_blur', ['testInstancesAreSeparateSeries']],
+            [ExternalMetricStoreKitTest::class, 'unknown_throws', ['testUnknownAssetKeyAndInstanceHaveNoData']],
+            [ExternalMetricStoreKitTest::class, 'wrong_peak_at', ['testPeakIsTheMinMaxAndMeanOfTheWindow']],
+            [ExternalMetricStoreKitTest::class, 'throws_hostile', ['testHostileStringsNeverLeakNorBreakAQuery', 'testInstancesWithSpecialCharactersRoundTrip']],
+            [ExternalMetricStoreKitTest::class, 'hostile_wildcard', ['testHostileStringsNeverLeakNorBreakAQuery']],
+            [ExternalMetricStoreKitTest::class, 'write_swallows', ['testAFailingWriteIsAnExternalStoreException']],
+            [ExternalMetricStoreKitTest::class, 'plain_exception', ['testAFailingWriteIsAnExternalStoreException']],
+            [ExternalMetricStoreKitTest::class, 'read_swallows', ['testAFailingReadIsAnExternalStoreException']],
+            [ExternalMetricStoreKitTest::class, 'ping_throws', ['testPingIsABoolAndNeverThrows']],
+            [ExternalMetricStoreKitTest::class, 'ping_true', ['testPingIsABoolAndNeverThrows']],
+            [ExternalMetricStoreKitTest::class, 'empty_write_throws', ['testEmptyWriteNeverThrows']],
+            [ExternalMetricStoreKitTest::class, 'avg_midrange', ['testWrittenPointsReadBackAsSeries', 'testPeakIsTheMinMaxAndMeanOfTheWindow']],
+            [ExternalMetricStoreKitTest::class, 'samples_distinct', ['testWrittenPointsReadBackAsSeries']],
+            [ExternalMetricStoreKitTest::class, 'newest_first', ['testWrittenPointsReadBackAsSeries']],
+            [ExternalMetricStoreKitTest::class, 'no_window', ['testSeriesIsBoundedByTheWindow']],
+            [ExternalMetricStoreKitTest::class, 'no_peak_window', ['testPeakExcludesDataBeforeTheWindow']],
+            // Package source policy (Phase 5)
+            [PackageSourcePolicyKitTest::class, 'allows_http', ['testOnlyHttpsIsAllowed']],
+            [PackageSourcePolicyKitTest::class, 'allows_userinfo', ['testUserInformationIsNeverAllowed']],
+            [PackageSourcePolicyKitTest::class, 'suffix_match', ['testOnlyTheWholeHostMatches', 'testUserInformationIsNeverAllowed']],
+            [PackageSourcePolicyKitTest::class, 'prefix_match', ['testOnlyTheWholeHostMatches']],
+            [PackageSourcePolicyKitTest::class, 'substring', ['testOnlyTheWholeHostMatches', 'testNothingThatConfusesAParserIsAllowed']],
+            [PackageSourcePolicyKitTest::class, 'allows_ip', ['testNoIpAddressIsAllowedInAnyNotation']],
+            [PackageSourcePolicyKitTest::class, 'allows_numeric_host', ['testNoIpAddressIsAllowedInAnyNotation']],
+            [PackageSourcePolicyKitTest::class, 'case_sensitive', ['testTheHostIsComparedWithoutRegardToCase']],
+            [PackageSourcePolicyKitTest::class, 'allows_port', ['testOnlyTheDefaultPortIsAllowed']],
+            [PackageSourcePolicyKitTest::class, 'trims_input', ['testWhitespaceAndControlCharactersAreRefused']],
+            [PackageSourcePolicyKitTest::class, 'strips_controls', ['testWhitespaceAndControlCharactersAreRefused']],
+            [PackageSourcePolicyKitTest::class, 'allows_fragment', ['testNothingThatConfusesAParserIsAllowed']],
+            [PackageSourcePolicyKitTest::class, 'backslash_as_slash', ['testNothingThatConfusesAParserIsAllowed']],
+            [PackageSourcePolicyKitTest::class, 'throws_on_garbage', ['testGarbageIsAnsweredWithABoolAndNeverThrows']],
+            [PackageSourcePolicyKitTest::class, 'flips', ['testTheSameQuestionGetsTheSameAnswer']],
+            [PackageSourcePolicyKitTest::class, 'client_elevates', ['testTheClientIdNeverLoosensTheRules']],
+            [PackageSourcePolicyKitTest::class, 'allows_unlisted_nonascii', ['testOnlyTheWholeHostMatches', 'testGarbageIsAnsweredWithABoolAndNeverThrows']],
+            [PackageSourcePolicyKitTest::class, 'returns_int', ['testTheConfiguredAddressIsAllowed']],
+            // Change watch policy (change monitoring)
+            [ChangeWatchPolicyKitTest::class, 'case_sensitive_hives', ['testCredentialHivesAreRefusedInEverySpellingAndUnderEveryControlSet']],
+            [ChangeWatchPolicyKitTest::class, 'long_hive_name', ['testCredentialHivesAreRefusedInEverySpellingAndUnderEveryControlSet']],
+            [ChangeWatchPolicyKitTest::class, 'whole_hive', ['testAWholeHiveOrItsFirstLevelIsRefused']],
+            [ChangeWatchPolicyKitTest::class, 'allows_hkcu', ['testUnsupportedHivesAndMalformedKeysAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'collapses_backslashes', ['testUnsupportedHivesAndMalformedKeysAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'trims_input', ['testUnsupportedHivesAndMalformedKeysAreRefused', 'testRelativeAndTraversingFilePathsAndSystemFoldersAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'lsa_boot_key', ['testCredentialHivesAreRefusedInEverySpellingAndUnderEveryControlSet']],
+            [ChangeWatchPolicyKitTest::class, 'only_current_control_set', ['testCredentialHivesAreRefusedInEverySpellingAndUnderEveryControlSet']],
+            [ChangeWatchPolicyKitTest::class, 'allows_bcd', ['testCredentialHivesAreRefusedInEverySpellingAndUnderEveryControlSet']],
+            [ChangeWatchPolicyKitTest::class, 'security_substring_only_at_top', ['testCredentialHivesAreRefusedInEverySpellingAndUnderEveryControlSet']],
+            [ChangeWatchPolicyKitTest::class, 'allows_shadow', ['testCredentialFilesAndKeysAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'allows_host_keys', ['testCredentialFilesAndKeysAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'allows_private_dirs', ['testCredentialFilesAndKeysAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'allows_user_keys', ['testCredentialFilesAndKeysAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'allows_vpn_and_wifi', ['testCredentialFilesAndKeysAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'allows_secret_names', ['testCredentialFilesAndKeysAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'prefix_check_only', ['testRelativeAndTraversingFilePathsAndSystemFoldersAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'relative_ok', ['testRelativeAndTraversingFilePathsAndSystemFoldersAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'allows_system_folders', ['testRelativeAndTraversingFilePathsAndSystemFoldersAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'trailing_slash_ok', ['testRelativeAndTraversingFilePathsAndSystemFoldersAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'double_slash_ok', ['testRelativeAndTraversingFilePathsAndSystemFoldersAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'proc_and_logs', ['testRelativeAndTraversingFilePathsAndSystemFoldersAreRefused']],
+            [ChangeWatchPolicyKitTest::class, 'allows_windows_hives', ['testRegistryHiveFilesAreNotFiles']],
+            [ChangeWatchPolicyKitTest::class, 'windows_traversal', ['testRegistryHiveFilesAreNotFiles']],
+            [ChangeWatchPolicyKitTest::class, 'forward_slashes_windows', ['testRegistryHiveFilesAreNotFiles']],
+            [ChangeWatchPolicyKitTest::class, 'drive_root_ok', ['testRegistryHiveFilesAreNotFiles']],
+            [ChangeWatchPolicyKitTest::class, 'strips_controls', ['testNulAndControlCharactersAreRefusedEverywhere']],
+            [ChangeWatchPolicyKitTest::class, 'strips_nul_only', ['testNulAndControlCharactersAreRefusedEverywhere']],
+            [ChangeWatchPolicyKitTest::class, 'unknown_kind_is_file', ['testAnUnknownKindIsRefused']],
+            [ChangeWatchPolicyKitTest::class, 'kind_case_insensitive', ['testAnUnknownKindIsRefused']],
+            [ChangeWatchPolicyKitTest::class, 'kinds_interchangeable', ['testAnUnknownKindIsRefused']],
+            [ChangeWatchPolicyKitTest::class, 'throws_on_garbage', ['testGarbageIsRefusedAndNeverThrows']],
+            [ChangeWatchPolicyKitTest::class, 'allows_fullwidth', ['testGarbageIsRefusedAndNeverThrows']],
+            [ChangeWatchPolicyKitTest::class, 'allows_zero_width', ['testGarbageIsRefusedAndNeverThrows']],
+            [ChangeWatchPolicyKitTest::class, 'flips', ['testTheSameQuestionGetsTheSameAnswer']],
+            [ChangeWatchPolicyKitTest::class, 'client_elevates', ['testTheClientIdNeverLoosensTheRules']],
+            [ChangeWatchPolicyKitTest::class, 'returns_int', ['testTheConfiguredTargetsAreAllowed']],
+        ];
+        $out = [];
+        foreach ($rows as [$class, $flaw, $tests]) {
+            $out[substr(strrchr($class, '\\') ?: $class, 1) . ' / ' . $flaw] = [$class, $flaw, $tests];
+        }
+
+        return $out;
+    }
+
+    /** @return array<string,array{class-string<TestCase>,string,list<string>}> flaws that need a live Redis to be seen */
+    public static function liveRedisMutants(): array
+    {
+        return [
+            'null_when_up' => [RedisKitTest::class, 'null_when_up', ['testLiveProviderReturnsAWorkingPredisClient', 'testSetGetDeleteRoundTrip']],
+            'other_database' => [RedisKitTest::class, 'other_database', ['testClientIsUsableOnRepeatedCalls']],
+        ];
+    }
+
+    /**
+     * @param class-string<TestCase> $class
+     * @param list<string> $mustFail
+     */
+    #[DataProvider('mutants')]
+    public function testBrokenAdapterIsCaught(string $class, string $flaw, array $mustFail): void
+    {
+        $this->assertCaught($class, $flaw, $mustFail);
+    }
+
+    /**
+     * @param class-string<TestCase> $class
+     * @param list<string> $mustFail
+     */
+    #[DataProvider('liveRedisMutants')]
+    public function testBrokenRedisAdapterIsCaughtAgainstALiveRedis(string $class, string $flaw, array $mustFail): void
+    {
+        if (!TestRedis::available()) {
+            $this->markTestSkipped('RIVETCORE_TEST_REDIS_PORT not set (throwaway Redis required).');
+        }
+        $this->assertCaught($class, $flaw, $mustFail);
+    }
+
+    /**
+     * @param class-string<TestCase> $class
+     * @param list<string> $mustFail
+     */
+    private function assertCaught(string $class, string $flaw, array $mustFail): void
+    {
+        $clean = Harness::run($class, null);
+        $this->assertSame([], $clean['failed'], 'the reference adapter must pass before a flaw can prove anything');
+        $this->assertNotSame([], $clean['passed']);
+
+        $run = Harness::run($class, $flaw);
+        $failedMethods = array_unique(array_map(fn (string $label) => explode('#', $label)[0], array_keys($run['failed'])));
+        $this->assertNotSame([], $failedMethods, "flaw '$flaw' was NOT caught by any test of " . $class);
+        foreach ($mustFail as $method) {
+            $this->assertContains($method, $failedMethods, "flaw '$flaw' should fail $method but only failed: " . implode(', ', $failedMethods));
+        }
+    }
+
+    public function testHarnessSeparatesPassSkipAndFailure(): void
+    {
+        $run = Harness::run(SettingsKitTest::class, 'throws_odd');
+        $this->assertNotSame([], $run['passed']);
+        $this->assertNotSame([], $run['failed']);
+        $this->assertNull(SettingsKitTest::$flaw, 'the harness must restore the flaw');
+    }
+}

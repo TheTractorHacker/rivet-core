@@ -214,6 +214,10 @@ Sequenced so each phase is shippable alone. Effort: S under 1 week, M 1-3 weeks,
 
 ---
 
+### Phase 7: Compliance (on hold, planned)
+
+* **GPO template builder** (L): guided templates for company and department Windows policy, exported as a PowerShell script plus an HTML/CSV compliance report, optional GPO backup package later. Plan and decisions: [docs/rmm/GPO_TEMPLATES_PLAN.md](rmm/GPO_TEMPLATES_PLAN.md).
+
 ## 5. Decisions and open questions
 
 Decided 2026-10-04: shared core library; benchmark Syncro, Halo, Hudu/IT Glue; QuickBooks Online and Xero (QBO first); LMS stays internal.

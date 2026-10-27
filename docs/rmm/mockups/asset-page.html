@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif;background:#eef2f2}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>RMM Asset Page</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout concept: a two-column asset page (facts rail + working column) under a health strip, mirroring the RivetIT shell.
+   Colour: RivetIT's teal-on-cool-grey tokens for chrome; the dataviz reference palette (blue, orange, aqua) for series;
+   status colours (green, amber, orange, red) are reserved for state and always paired with an icon and a word. */
+:root {
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --bg: #eef2f2; --surface: #ffffff; --surface-2: #f5f8f8; --border: #e3e9ea; --border-strong: #cdd7d9;
+  --ink: #16232a; --ink-2: #3c4d55; --muted: #5d6f76; --faint: #8a9aa0;
+  --primary: #0d9488; --primary-ink: #0b6f66; --primary-soft: #e0f4f1;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --good: #0ca30c; --good-ink: #00600a; --good-soft: #e3f5e3;
+  --warn: #fab219; --warn-ink: #7a4b00; --warn-soft: #fff1d1;
+  --serious: #ec835a; --crit: #d03b3b; --crit-ink: #a52424; --crit-soft: #fde8e8;
+  --off-soft: #e8eded; --grid: #e6ecec; --axis: #b9c6c9;
+  --shadow: 0 1px 2px rgba(20,35,42,.04), 0 3px 10px rgba(20,35,42,.05);
+  --r: 12px; --r-sm: 8px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1615; --surface: #14201f; --surface-2: #192827; --border: #243433; --border-strong: #35494a;
+  --ink: #e5eeee; --ink-2: #c3d2d2; --muted: #9ab0b0; --faint: #6f8686;
+  --primary: #2dd4bf; --primary-ink: #5eead4; --primary-soft: #12332f;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --good: #0ca30c; --good-ink: #6fdc6f; --good-soft: #15321a;
+  --warn-ink: #f6c25a; --warn-soft: #3a2d0c; --crit: #e0504f; --crit-ink: #ff8f8e; --crit-soft: #3d1b1b;
+  --off-soft: #223130; --grid: #223231; --axis: #3b5051;
+  --shadow: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0e1615; --surface: #14201f; --surface-2: #192827; --border: #243433; --border-strong: #35494a;
+  --ink: #e5eeee; --ink-2: #c3d2d2; --muted: #9ab0b0; --faint: #6f8686;
+  --primary: #2dd4bf; --primary-ink: #5eead4; --primary-soft: #12332f;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --good: #0ca30c; --good-ink: #6fdc6f; --good-soft: #15321a;
+  --warn-ink: #f6c25a; --warn-soft: #3a2d0c; --crit: #e0504f; --crit-ink: #ff8f8e; --crit-soft: #3d1b1b;
+  --off-soft: #223130; --grid: #223231; --axis: #3b5051;
+  --shadow: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; margin: 0; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; text-wrap: balance; }
+button, select, input { font: inherit; color: inherit; }
+a { color: var(--primary-ink); }
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-size: .92em; }
+.muted { color: var(--muted); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+
+/* mockup controls (not part of the product page) */
+.mock { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--ink); color: var(--bg); padding: 8px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 12.5px; }
+.mock b { font-weight: 600; letter-spacing: .04em; text-transform: uppercase; font-size: 11px; opacity: .75; }
+.mock .grp { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mock select { background: var(--surface); color: var(--ink); border: 1px solid var(--border-strong); border-radius: 6px; padding: 3px 6px; }
+.mock label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.mock-note { padding: 6px 16px; font-size: 12px; color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--border); }
+
+.page { max-width: 1320px; margin: 0 auto; padding: 16px; }
+.crumbs { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 960px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow); min-width: 0; }
+.card > header, .card-h { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.card h2, .card h3 { font-size: 14.5px; }
+.card .body { padding: 14px 16px; }
+.card .sub { color: var(--muted); font-size: 12.5px; }
+.grow { margin-left: auto; }
+.stack { display: grid; gap: 16px; min-width: 0; }
+
+/* rail */
+.rail dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; }
+.rail dt { color: var(--muted); } .rail dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.rail .sec { padding: 12px 16px; border-top: 1px solid var(--border); }
+.rail .sec:first-child { border-top: 0; }
+.rail h3 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
+.rail-toggle { display: none; }
+@media (max-width: 960px) { .rail-body[hidden-mobile] { display: none; } .rail-toggle { display: inline-flex; } }
+
+/* chips, pills, buttons */
+.pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 7px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; border: 1px solid transparent; }
+.pill svg { width: 13px; height: 13px; flex: none; }
+.pill.ok { background: var(--good-soft); color: var(--good-ink); }
+.pill.warn { background: var(--warn-soft); color: var(--warn-ink); }
+.pill.crit { background: var(--crit-soft); color: var(--crit-ink); }
+.pill.off { background: var(--off-soft); color: var(--ink-2); }
+.pill.info { background: var(--primary-soft); color: var(--primary-ink); }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; color: var(--ink-2); }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--r-sm); border: 1px solid var(--border-strong); background: var(--surface); cursor: pointer; font-weight: 500; font-size: 13px; line-height: 1.2; }
+.btn svg { width: 15px; height: 15px; flex: none; }
+.btn:hover:not(:disabled) { background: var(--surface-2); }
+.btn.primary { background: var(--primary-ink); border-color: var(--primary-ink); color: #fff; }
+:root[data-theme="dark"] .btn.primary { color: #06201c; background: var(--primary); border-color: var(--primary); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary { color: #06201c; background: var(--primary); border-color: var(--primary); } }
+.btn.danger { border-color: var(--crit); color: var(--crit-ink); }
+.btn.sm { padding: 3px 9px; font-size: 12.5px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.menu { position: relative; }
+.menu > summary { list-style: none; } .menu > summary::-webkit-details-marker { display: none; }
+.menu-list { position: absolute; right: 0; top: calc(100% + 4px); min-width: 220px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-sm); box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; z-index: 10; display: grid; }
+.menu-list button { text-align: left; background: none; border: 0; padding: 7px 10px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+.menu-list button:hover:not(:disabled) { background: var(--surface-2); } .menu-list button:disabled { opacity: .5; cursor: not-allowed; }
+.menu-list hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; width: 100%; }
+.ph { display: none; margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--primary-soft); color: var(--primary-ink); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; vertical-align: middle; border: 1px dashed var(--primary); }
+body.show-phases .ph { display: inline-block; }
+
+/* health strip */
+.strip { padding: 14px 16px; display: grid; gap: 12px; }
+.strip-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.strip-top h1 { font-size: 20px; }
+.dot { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--faint); box-shadow: 0 0 0 3px var(--off-soft); }
+.dot.ok { background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); } .dot.crit { background: var(--crit); box-shadow: 0 0 0 3px var(--crit-soft); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 16px; margin: 0; }
+.facts div { min-width: 0; } .facts dt { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.facts dd { margin: 2px 0 0; font-weight: 500; overflow-wrap: anywhere; }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+/* banners */
+.banner { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: var(--r-sm); border: 1px solid var(--border-strong); background: var(--surface-2); font-size: 13px; }
+.banner svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.banner.off { border-color: var(--crit); background: var(--crit-soft); }
+.banner.warn { border-color: var(--warn); background: var(--warn-soft); }
+.banner.info { border-color: var(--primary); background: var(--primary-soft); }
+
+/* tabs */
+.tabs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--border); padding: 0 8px; scrollbar-width: thin; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 11px 12px; cursor: pointer; white-space: nowrap; color: var(--muted); font-weight: 500; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--primary); }
+.tabs button:hover { color: var(--ink); }
+.tabs .sep { width: 1px; background: var(--border); margin: 8px 6px; flex: none; }
+.count { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--off-soft); font-size: 11.5px; text-align: center; margin-left: 4px; }
+
+/* gauges */
+.gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 12px; padding: 14px 16px; }
+.tile { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px; display: grid; gap: 4px; justify-items: center; text-align: center; background: var(--surface); min-width: 0; position: relative; }
+.tile.stat { justify-items: start; text-align: left; align-content: start; }
+.tile .lbl { font-weight: 600; font-size: 13px; } .tile .cap { font-size: 12px; color: var(--muted); }
+.tile.dim svg.g { opacity: .45; }
+.tile .big { font-size: 22px; font-weight: 600; line-height: 1.1; }
+.tile .stale-chip { font-size: 11px; color: var(--ink-2); background: var(--off-soft); border-radius: 999px; padding: 1px 8px; }
+svg.g { width: 112px; height: 96px; display: block; }
+.g .track { stroke: var(--border-strong); } .g .val { font: 600 21px var(--sans); fill: var(--ink); } .g .unit { font: 500 11px var(--sans); fill: var(--muted); }
+.bar { height: 8px; border-radius: 4px; background: var(--off-soft); overflow: hidden; display: flex; gap: 2px; width: 100%; }
+.bar > i { display: block; height: 100%; border-radius: 3px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px; width: 100%; height: 8px; }
+.seg i { background: var(--off-soft); border-radius: 3px; } .seg i.on { background: var(--good); } .seg i.on.w { background: var(--warn); } .seg i.on.c { background: var(--crit); }
+.empty { padding: 22px 16px; text-align: center; color: var(--muted); display: grid; gap: 6px; justify-items: center; }
+.empty strong { color: var(--ink); font-size: 14px; }
+
+/* charts */
+.rangebar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.seg-btn { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--r-sm); overflow: hidden; }
+.seg-btn button { border: 0; background: var(--surface); padding: 5px 11px; cursor: pointer; font-size: 12.5px; border-right: 1px solid var(--border-strong); }
+.seg-btn button:last-child { border-right: 0; }
+.seg-btn button[aria-pressed="true"] { background: var(--primary-ink); color: #fff; }
+:root[data-theme="dark"] .seg-btn button[aria-pressed="true"] { background: var(--primary); color: #06201c; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .seg-btn button[aria-pressed="true"] { background: var(--primary); color: #06201c; } }
+.rangebar input[type=date] { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; padding: 3px 6px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); align-items: center; }
+.legend .k { display: inline-flex; align-items: center; gap: 5px; } .legend .ln { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 14px 16px; }
+@media (max-width: 1100px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.chart { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px 8px; min-width: 0; transition: opacity .15s; }
+.chart-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.chart-h h3 { font-size: 13.5px; } .chart-h .now { font-weight: 600; }
+.chart-host { position: relative; } .chart-host svg { display: block; width: 100%; }
+.chart text { font: 11px var(--sans); fill: var(--muted); }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; padding: 7px 10px; font-size: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.18); z-index: 5; min-width: 150px; display: none; }
+.tip .t { color: var(--muted); margin-bottom: 3px; } .tip .r { display: flex; align-items: center; gap: 6px; } .tip .r b { margin-left: auto; padding-left: 12px; font-weight: 600; }
+.tip .k { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+details.data { margin-top: 4px; font-size: 12px; } details.data summary { cursor: pointer; color: var(--primary-ink); width: max-content; }
+.res { font-size: 11.5px; color: var(--faint); }
+
+/* tables */
+.tw { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; background: var(--surface-2); }
+td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+tr.sev-crit td:first-child { box-shadow: inset 3px 0 0 var(--crit); } tr.sev-warn td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.spark { width: 96px; height: 24px; display: block; }
+.strip24 { display: flex; gap: 2px; align-items: center; } .strip24 i { width: 4px; height: 14px; border-radius: 2px; background: var(--good); } .strip24 i.w { background: var(--warn); } .strip24 i.c { background: var(--crit); } .strip24 i.n { background: var(--off-soft); }
+pre.out { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px; margin: 0; max-height: 220px; overflow: auto; font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; }
+.two { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 16px; }
+.two.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .two, .two.even { grid-template-columns: minmax(0, 1fr); } }
+.list { list-style: none; margin: 0; padding: 0; } .list li { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: flex-start; } .list li:last-child { border-bottom: 0; }
+.list .m { flex: 1; min-width: 0; } .list .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.tl li { position: relative; }
+.ico { width: 26px; height: 26px; border-radius: 50%; background: var(--off-soft); display: grid; place-items: center; flex: none; } .ico svg { width: 14px; height: 14px; }
+.search { background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 5px 10px; min-width: 200px; }
+
+/* fleet */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.kpi { padding: 12px 14px; display: grid; gap: 2px; } .kpi .n { font-size: 26px; font-weight: 600; line-height: 1.1; } .kpi .l { color: var(--muted); font-size: 12.5px; } .kpi .d { font-size: 12px; }
+.donut-wrap { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; padding: 14px 16px; }
+.donut-wrap ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; } .donut-wrap li { display: flex; gap: 8px; align-items: center; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.minibar { display: inline-flex; align-items: center; gap: 6px; min-width: 84px; } .minibar .bar { width: 44px; height: 6px; } .minibar span { font-size: 12.5px; min-width: 32px; }
+.bl { display: grid; gap: 8px; padding: 14px 16px; } .bl .row { display: grid; grid-template-columns: 130px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+.bulk { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+a.dev { font-weight: 600; text-decoration: none; cursor: pointer; } a.dev:hover { text-decoration: underline; }
+dialog { border: 1px solid var(--border-strong); border-radius: var(--r); background: var(--surface); color: var(--ink); padding: 0; max-width: min(480px, calc(100vw - 32px)); width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog form { display: grid; gap: 12px; padding: 16px; } dialog h3 { font-size: 16px; }
+dialog label { display: grid; gap: 4px; font-size: 13px; } dialog select, dialog input[type=number] { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; padding: 6px 8px; }
+.toast { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 8px; z-index: 50; max-width: calc(100vw - 32px); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+@media (max-width: 600px) { .actions { margin-left: 0; } .mock { position: static; } .bl .row { grid-template-columns: 96px 1fr auto; } }
+</style>
+
+<div class="mock" role="region" aria-label="Mockup controls">
+  <b>Mockup</b>
+  <div class="grp"><label for="c-view">View</label><select id="c-view"><option value="asset">Asset page</option><option value="fleet">Fleet RMM dashboard</option></select></div>
+  <div class="grp" id="g-dev"><label for="c-dev">Device</label><select id="c-dev"><option value="win">DEMO-WIN-SRV01 (healthy Windows server)</option><option value="lnx">DEMO-LNX-DB02 (Linux, failing disk)</option></select></div>
+  <div class="grp" id="g-state"><label for="c-state">State</label><select id="c-state"><option value="online">Online</option><option value="offline">Offline</option><option value="never">Never checked in</option><option value="off">RMM module off</option></select></div>
+  <div class="grp"><label for="c-ed">Edition</label><select id="c-ed"><option value="it">RivetIT (Metrics subsystem)</option><option value="msp">RivetMSP (no Metrics yet)</option></select></div>
+  <div class="grp"><label for="c-role">Role</label><select id="c-role"><option value="admin">Administrator</option><option value="tech">Technician</option><option value="view">Read-only</option></select></div>
+  <label><input type="checkbox" id="c-patch"> Patching sub-switch</label>
+  <label><input type="checkbox" id="c-ph"> Phase badges</label>
+  <div class="grp"><label for="c-theme">Theme</label><select id="c-theme"><option value="auto">Match system</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+</div>
+<div class="mock-note">Design mockup for the asset page and fleet RMM dashboard. All names, addresses and numbers are fictional sample data; nothing here is connected to a server.</div>
+<div class="page"><main id="root"></main></div>
+<dialog id="dlg" aria-labelledby="dlg-t"></dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script>
+(function () {
+'use strict';
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+
+/* ---------- icons ---------- */
+var P = {
+  ok: 'M8 12.5l2.7 2.7L16 9.5M12 21a9 9 0 100-18 9 9 0 000 18z',
+  warn: 'M12 4l9 16H3L12 4zM12 10v4M12 17v.5',
+  crit: 'M8 3h8l5 5v8l-5 5H8l-5-5V8l5-5zM9 9l6 6M15 9l-6 6',
+  off: 'M12 21a9 9 0 100-18 9 9 0 000 18zM6 6l12 12',
+  clock: 'M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2',
+  play: 'M7 5l12 7-12 7V5z', power: 'M12 3v9M6.3 6.5a8 8 0 1011.4 0',
+  mon: 'M3 5h18v11H3V5zM8 20h8M12 16v4', ticket: 'M4 8a2 2 0 002-2h12a2 2 0 002 2v2a2 2 0 000 4v2a2 2 0 00-2 2H6a2 2 0 00-2-2v-2a2 2 0 000-4V8z',
+  more: 'M5 12h.01M12 12h.01M19 12h.01', chev: 'M6 9l6 6 6-6', copy: 'M9 9h10v11H9V9zM5 15V4h10', user: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0',
+  job: 'M4 6h16M4 12h16M4 18h10', refresh: 'M20 11a8 8 0 10-2.3 5.7M20 5v6h-6', info: 'M12 21a9 9 0 100-18 9 9 0 000 18zM12 11v6M12 7.5v.5', plug: 'M9 3v5M15 3v5M6 8h12v3a6 6 0 01-12 0V8zM12 17v4'
+};
+var ic = function (n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + P[n] + '"/></svg>'; };
+var pill = function (kind, text) { var i = { ok: 'ok', warn: 'warn', crit: 'crit', off: 'off', info: 'info' }[kind]; return '<span class="pill ' + kind + '">' + ic(i) + esc(text) + '</span>'; };
+var ph = function (t) { return '<span class="ph" title="Delivered in ' + esc(t) + '">' + esc(t) + '</span>'; };
+
+/* ---------- time + data ---------- */
+var STEP = 300000, N = 8640, NOW = Math.floor(Date.now() / STEP) * STEP, T0 = NOW - (N - 1) * STEP;
+var OFFLINE_MS = 134 * 60000;
+function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hr(t) { var d = new Date(t); return d.getHours() + d.getMinutes() / 60; }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function gen(fn) { var a = new Float32Array(N); for (var i = 0; i < N; i++) { a[i] = fn(i, T0 + i * STEP); } return a; }
+function fmtDur(ms) { var s = Math.max(0, Math.floor(ms / 1000)), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? d + ' d ' + h + ' h' : h ? h + ' h ' + m + ' m' : m ? m + ' min' : s + ' s'; }
+function ago(ms) { return ms < 90000 ? Math.round(ms / 1000) + ' s ago' : fmtDur(ms) + ' ago'; }
+function when(t) { return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+function whenUtc(t) { return new Date(t).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'; }
+var rel = function (msAgo) { return NOW - msAgo; };
+
+function build(kind) {
+  var r = rng(kind === 'win' ? 11 : 42), boot = N - 1 - Math.round((kind === 'win' ? 21.2 : 9) * 288), d = {};
+  d.cpu = gen(function (i, t) { var h = hr(t), biz = Math.max(0, Math.sin((h - 7) / 12 * Math.PI)), v = (kind === 'win' ? 12 + 14 * biz : 30 + 16 * biz) + (r() - .5) * 7; if (h >= 1 && h < 1.6) { v += kind === 'win' ? 24 : 30; } if (r() < .006) { v += 30; } return clamp(v, 1, 99); });
+  d.mem = gen(function (i, t) { var k = i >= boot ? i - boot : i + 12 * 288; return clamp((kind === 'win' ? 36 : 44) + (kind === 'win' ? 22 : 34) * (1 - Math.exp(-k / (8 * 288))) + (r() - .5) * 1.6, 5, 99); });
+  if (kind === 'win') {
+    d.d1 = gen(function (i) { return 52 + 2 * i / N + (r() - .5) * .15; }); d.d2 = gen(function (i) { return 58.5 + 2.6 * i / N + (r() - .5) * .1; });
+  } else {
+    var rs = N - 36 * 12; d.d1 = gen(function (i) { var e = i > rs ? Math.pow((i - rs) / (N - rs), 1.4) : 0; return 80 + 2 * i / N + 11.2 * e + (r() - .5) * .12; });
+    d.d2 = gen(function (i) { return 68 + 3 * i / N + (r() - .5) * .1; });
+  }
+  d.rx = gen(function (i, t) { var h = hr(t), biz = Math.max(0, Math.sin((h - 7) / 12 * Math.PI)); return Math.max(.1, (kind === 'win' ? 6 : 3) + 10 * biz * r() + (r() < .02 ? 40 * r() : 0)); });
+  d.tx = gen(function (i, t) { var h = hr(t), biz = Math.max(0, Math.sin((h - 7) / 12 * Math.PI)); return Math.max(.1, 2 + 4 * biz * r() + (h >= 1 && h < 1.5 ? 90 + 25 * r() : 0)); });
+  d.boot = boot; return d;
+}
+var DATA = { win: build('win'), lnx: build('lnx') };
+
+var DEV = {
+  win: { id: 'win', host: 'DEMO-WIN-SRV01', kind: 'windows', os: 'Windows Server 2022 Standard', osb: 'build 20348.2655', arch: 'amd64', agent: '0.1.0-beta.1', ring: 'stable', client: 'Lakeside Demo Co.', site: 'Main office', tags: ['server', 'file-share', 'domain'], mfg: 'Dell', model: 'PowerEdge R350', serial: 'DEMO7XK2201', cpu: 'Intel Xeon E-2336 (6 cores)', ramGb: 32, user: 'none (service session)', mesh: true, bootDays: 21.2,
+    vols: [{ k: 'd1', mount: 'C:', totalGb: 120 }, { k: 'd2', mount: 'D:', totalGb: 1000 }], reboot: false, lastIn: 42000, ip: ['192.0.2.21'], mac: ['02:00:5e:00:53:21'], asset: 'Server', purchase: '2025-02-11', warranty: '2028-02-11', assigned: 'Server room A', ticketsOpen: 0 },
+  lnx: { id: 'lnx', host: 'DEMO-LNX-DB02', kind: 'linux', os: 'Ubuntu 24.04.1 LTS', osb: 'kernel 6.8.0-44', arch: 'amd64', agent: '0.1.0-beta.2', ring: 'pilot', client: 'Harbor Test Group', site: 'Datacenter 2', tags: ['database', 'mariadb'], mfg: 'Supermicro', model: 'SYS-510T', serial: 'DEMOSM990412', cpu: 'AMD EPYC 4244P (6 cores)', ramGb: 64, user: 'none', mesh: false, bootDays: 9, vols: [{ k: 'd1', mount: '/', totalGb: 40 }, { k: 'd2', mount: '/var/lib/mysql', totalGb: 200 }], reboot: true, lastIn: 118000, ip: ['192.0.2.58'], mac: ['02:00:5e:00:53:58'], asset: 'Server', purchase: '2024-06-03', warranty: '2027-06-03', assigned: 'Rack 4, U12', ticketsOpen: 1 }
+};
+
+var S = { view: 'asset', dev: 'win', state: 'online', ed: 'it', role: 'admin', range: '24h', from: '', to: '', tab: 'overview', patch: false, ph: false, theme: 'auto', sel: {}, rail: false };
+
+function cutoff() { return S.state === 'offline' ? NOW - OFFLINE_MS : NOW; }
+function lastIdx() { return S.state === 'offline' ? N - 1 - Math.round(OFFLINE_MS / STEP) : N - 1; }
+function latest(key) { return DATA[S.dev][key][lastIdx()]; }
+
+/* ---------- ranges ---------- */
+var RANGES = { '1h': 3600000, '24h': 86400000, '7d': 7 * 86400000, '30d': 30 * 86400000 };
+var RLABEL = { '1h': 'Last hour', '24h': 'Last 24 hours', '7d': 'Last 7 days', '30d': 'Last 30 days', custom: 'Custom' };
+function span() {
+  if (S.range === 'custom' && S.from && S.to) { var a = new Date(S.from + 'T00:00:00').getTime(), b = Math.min(NOW, new Date(S.to + 'T23:59:59').getTime()); if (b > a) { return [Math.max(a, T0), b]; } }
+  var ms = RANGES[S.range] || RANGES['24h']; return [NOW - ms, NOW];
+}
+function bucketFor(ms) { return ms <= 48 * 3600000 ? STEP : 3600000; }
+function aggregate(arr, from, to, bucket) {
+  var out = [], n = Math.max(1, Math.ceil((to - from) / bucket)), cut = cutoff();
+  for (var b = 0; b < n; b++) { out.push({ t: from + b * bucket + bucket / 2, s: 0, c: 0, mx: -1, mn: 1e9 }); }
+  var i0 = Math.max(0, Math.floor((from - T0) / STEP)), i1 = Math.min(N - 1, Math.floor((to - T0) / STEP));
+  for (var i = i0; i <= i1; i++) { var t = T0 + i * STEP; if (t > cut) { break; } var o = out[Math.min(n - 1, Math.floor((t - from) / bucket))]; var v = arr[i]; o.s += v; o.c++; if (v > o.mx) { o.mx = v; } if (v < o.mn) { o.mn = v; } }
+  return out.map(function (o) { return o.c ? { t: o.t, v: o.s / o.c, max: o.mx, min: o.mn } : { t: o.t, v: null, max: null, min: null }; });
+}
+
+/* ---------- gauges ---------- */
+function polar(cx, cy, r, deg) { var a = deg * Math.PI / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; }
+function arc(cx, cy, r, a0, a1) { var p0 = polar(cx, cy, r, a0), p1 = polar(cx, cy, r, a1); return 'M' + p0[0].toFixed(2) + ' ' + p0[1].toFixed(2) + ' A' + r + ' ' + r + ' 0 ' + ((a1 - a0) > 180 ? 1 : 0) + ' 1 ' + p1[0].toFixed(2) + ' ' + p1[1].toFixed(2); }
+function band(v, w, c) { return v === null ? 'off' : v >= c ? 'crit' : v >= w ? 'warn' : 'ok'; }
+var BCOL = { ok: 'var(--good)', warn: 'var(--warn)', crit: 'var(--crit)', off: 'var(--faint)' };
+var BTXT = { ok: 'OK', warn: 'Warning', crit: 'Critical', off: 'No data' };
+function gauge(label, v, cap, w, c, extra) {
+  var b = band(v, w, c), a0 = 135, span270 = 270, a1 = a0 + span270 * (v === null ? 0 : clamp(v, 0, 100) / 100), cx = 56, cy = 52, r = 40;
+  var ticks = [w, c].map(function (x) { var p0 = polar(cx, cy, r - 7, a0 + span270 * x / 100), p1 = polar(cx, cy, r + 7, a0 + span270 * x / 100); return '<line x1="' + p0[0].toFixed(1) + '" y1="' + p0[1].toFixed(1) + '" x2="' + p1[0].toFixed(1) + '" y2="' + p1[1].toFixed(1) + '" stroke="var(--ink-2)" stroke-width="1.5"/>'; }).join('');
+  var txt = v === null ? 'no data' : Math.round(v * 10) / 10 + '%';
+  var svg = '<svg class="g" viewBox="0 0 112 96" role="img" aria-label="' + esc(label) + ' ' + (v === null ? 'no data' : Math.round(v) + ' percent, ' + BTXT[b]) + '"><path class="track" d="' + arc(cx, cy, r, a0, a0 + span270) + '" fill="none" stroke-width="9" stroke-linecap="round"' + (v === null ? ' stroke-dasharray="3 6"' : '') + '/>' +
+    (v === null ? '' : '<path d="' + arc(cx, cy, r, a0, Math.max(a0 + .5, a1)) + '" fill="none" stroke="' + BCOL[b] + '" stroke-width="9" stroke-linecap="round"/>') + ticks +
+    '<text class="val" x="56" y="' + (v === null ? 56 : 54) + '" text-anchor="middle" ' + (v === null ? 'style="font-size:13px;fill:var(--muted)"' : '') + '>' + (v === null ? 'no data' : Math.round(v)) + '</text>' + (v === null ? '' : '<text class="unit" x="56" y="67" text-anchor="middle">percent</text>') + '</svg>';
+  return '<div class="tile' + (extra && extra.dim ? ' dim' : '') + '">' + svg + '<div class="lbl">' + esc(label) + '</div><div class="cap">' + esc(cap) + '</div>' + pill(b === 'off' ? 'off' : b, BTXT[b]) + (extra && extra.stale ? '<span class="stale-chip">last reading ' + esc(extra.stale) + '</span>' : '') + '</div>';
+}
+function spark(vals, color, w, h) {
+  w = w || 96; h = h || 24; var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals), rg = mx - mn || 1;
+  var pts = vals.map(function (v, i) { return (i / (vals.length - 1) * (w - 4) + 2).toFixed(1) + ',' + (h - 3 - (v - mn) / rg * (h - 6)).toFixed(1); });
+  return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" aria-hidden="true"><polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="1.6" stroke-linejoin="round"/><circle cx="' + pts[pts.length - 1].split(',')[0] + '" cy="' + pts[pts.length - 1].split(',')[1] + '" r="2.2" fill="' + color + '"/></svg>';
+}
+function lastN(arr, n, step) { var out = [], i1 = lastIdx(); for (var k = n - 1; k >= 0; k--) { out.push(arr[Math.max(0, i1 - k * step)]); } return out; }
+
+/* ---------- sample content ---------- */
+function checksFor(dv) {
+  var d = DATA[dv.id], li = lastIdx();
+  var u1 = d.d1[li], u2 = d.d2[li], f = function (u, tot) { return (tot * (1 - u / 100)).toFixed(1); };
+  var ageMs = dv.id === 'win' ? 40000 : 70000;
+  if (dv.id === 'win') {
+    return [
+      { st: 'ok', key: 'disk:C:', type: 'disk', det: 'C: ' + u1.toFixed(0) + '% used (' + f(u1, 120) + ' GB free of 120 GB)', chg: 21.2 * 86400000, thr: 'warn 80 / crit 90', series: 'd1', alert: '' },
+      { st: 'ok', key: 'disk:D:', type: 'disk', det: 'D: ' + u2.toFixed(0) + '% used (' + f(u2, 1000) + ' GB free of 1000 GB)', chg: 21.2 * 86400000, thr: 'warn 80 / crit 90', series: 'd2', alert: '' },
+      { st: 'ok', key: 'pending_reboot', type: 'pending_reboot', det: 'No reboot pending', chg: 21.2 * 86400000, series: '', alert: '' },
+      { st: 'ok', key: 'service:EventLog', type: 'service', det: 'Running', chg: 21.2 * 86400000, series: '', alert: '' },
+      { st: 'ok', key: 'service:DNS', type: 'service', det: 'Running', chg: 21.2 * 86400000, series: '', alert: '' },
+      { st: 'ok', key: 'script:backup-verify', type: 'script', det: 'Last backup 01:12, 214 GB, verified', chg: 86400000 * 2, series: '', alert: '' }
+    ].map(function (c) { c.age = ageMs; return c; });
+  }
+  return [
+    { st: 'fail', key: 'disk:/', type: 'disk', det: '/ ' + u1.toFixed(0) + '% used (' + f(u1, 40) + ' GB free of 40 GB). Failed 14 times in a row.', chg: 10.9 * 3600000, thr: 'warn 80 / crit 90', series: 'd1', alert: 'A-2291' },
+    { st: 'ok', key: 'disk:/var/lib/mysql', type: 'disk', det: '/var/lib/mysql ' + u2.toFixed(0) + '% used (' + f(u2, 200) + ' GB free of 200 GB)', chg: 9 * 86400000, thr: 'warn 80 / crit 90', series: 'd2', alert: '' },
+    { st: 'warn', key: 'pending_reboot', type: 'pending_reboot', det: 'Reboot required: linux-image-6.8.0-45 installed', chg: 3 * 86400000, series: '', alert: 'A-2284' },
+    { st: 'ok', key: 'service:mariadb', type: 'service', det: 'active (running)', chg: 9 * 86400000, series: '', alert: '' },
+    { st: 'ok', key: 'service:ssh', type: 'service', det: 'active (running)', chg: 9 * 86400000, series: '', alert: '' }
+  ].map(function (c) { c.age = ageMs; return c; });
+}
+function alertsFor(dv) {
+  if (dv.id === 'win') { return { open: [], recent: [
+    { sev: 'warn', msg: 'Disk space check: D: at 81% used', opened: 9.2 * 86400000, resolved: 8.9 * 86400000 },
+    { sev: 'warn', msg: 'Device went offline (agent quiet for 15 min)', opened: 21.2 * 86400000, resolved: 21.19 * 86400000 } ] }; }
+  return { open: [
+    { id: 'A-2291', sev: 'crit', msg: 'Disk space check failed: / is 93% used', opened: 10.9 * 3600000, ticket: '#1482', tstate: 'Open' },
+    { id: 'A-2284', sev: 'warn', msg: 'Reboot required: linux-image-6.8.0-45 installed', opened: 3 * 86400000, ticket: '', tstate: '' } ],
+    recent: [{ sev: 'warn', msg: 'Disk space check: / at 81% used', opened: 2.4 * 86400000, resolved: 2.3 * 86400000 }] };
+}
+function eventsFor(dv) {
+  var ev = [{ k: 'reboot', t: T0 + DATA[dv.id].boot * STEP, label: 'Rebooted (booted ' + dv.bootDays + ' days ago)' }];
+  if (dv.id === 'win') { ev.push({ k: 'job', t: rel(3 * 86400000), label: 'Job: Clear temp files (succeeded)' }, { k: 'alert', t: rel(9.2 * 86400000), label: 'Alert opened: D: 81%' }, { k: 'alert', t: rel(8.9 * 86400000), label: 'Alert resolved: D: 81%' }, { k: 'job', t: rel(6 * 3600000), label: 'Job: Collect inventory (succeeded)' }); }
+  else { ev.push({ k: 'alert', t: rel(10.9 * 3600000), label: 'Alert opened: / 93% (critical)' }, { k: 'job', t: rel(3600000 * 1.2), label: 'Job: Collect inventory (succeeded)' }, { k: 'alert', t: rel(3 * 86400000), label: 'Alert opened: reboot required' }, { k: 'alert', t: rel(2.4 * 86400000), label: 'Alert opened: / 81%' }, { k: 'alert', t: rel(2.3 * 86400000), label: 'Alert resolved: / 81%' }); }
+  return ev;
+}
+var JOBS = {
+  win: [
+    { id: 'a41c09e2', type: 'collect', name: 'Collect inventory now', st: 'succeeded', by: 'system', at: 6 * 3600000, dur: '4 s', exit: 0, out: 'Inventory collected: 4 disks, 2 adapters, uptime 21d 4h.\nInventory unchanged since last run.' },
+    { id: '9d70be13', type: 'powershell', name: 'Clear temp files (saved script)', st: 'succeeded', by: 'tech.demo1', at: 3 * 86400000, dur: '31 s', exit: 0, out: 'Cleared C:\\Windows\\Temp: 412 files, 1.8 GB\nCleared user temp folders: 96 files, 220 MB\nConnecting with password=[redacted]\nDone. Freed 2.0 GB.' },
+    { id: '5be8a7f0', type: 'reboot', name: 'Reboot (delay 30 s)', st: 'succeeded', by: 'tech.demo2', at: 21.2 * 86400000, dur: '1 min', exit: 0, out: 'Reboot scheduled in 30 s.', destructive: true }
+  ],
+  lnx: [
+    { id: 'c07a55d1', type: 'collect', name: 'Collect inventory now', st: 'succeeded', by: 'system', at: 1.2 * 3600000, dur: '3 s', exit: 0, out: 'Inventory collected: 2 filesystems, 1 adapter, uptime 9d 1h.' },
+    { id: '28f3d9ab', type: 'reboot', name: 'Reboot (delay 30 s)', st: 'succeeded', by: 'tech.demo2', at: 9 * 86400000, dur: '1 min', exit: 0, out: 'Reboot scheduled in 30 s.', destructive: true }
+  ]
+};
+var SOFT = {
+  win: [['Microsoft Edge', '129.0.2792.79', 'Microsoft', 'Upgraded 3 days ago (128.0 to 129.0)'], ['7-Zip', '24.08', 'Igor Pavlov', 'Installed 4 months ago'], ['Veeam Agent for Windows', '6.2.0.1090', 'Veeam', 'Upgraded 5 weeks ago'], ['Microsoft Visual C++ 2015-2022 Redistributable (x64)', '14.40.33810', 'Microsoft', 'Installed 8 months ago'], ['Notepad++', '8.7.1', 'Notepad++ Team', 'Installed 8 months ago'], ['DemoLOB Server', '4.12.3', 'Example Software Ltd.', 'Upgraded 12 days ago (4.12.1 to 4.12.3)'], ['Zabbix-style DemoMonitor Agent', '1.9.0', 'Example Software Ltd.', 'Removed 6 weeks ago']],
+  lnx: [['mariadb-server', '1:10.11.8-0ubuntu0.24.04.1', 'Ubuntu', 'Upgraded 9 days ago'], ['openssh-server', '1:9.6p1-3ubuntu13.5', 'Ubuntu', 'Installed 4 months ago'], ['linux-image-6.8.0-45-generic', '6.8.0-45.45', 'Ubuntu', 'Installed 3 days ago (reboot pending)'], ['linux-image-6.8.0-44-generic', '6.8.0-44.44', 'Ubuntu', 'Running kernel'], ['prometheus-node-exporter', '1.7.0-1ubuntu0.1', 'Ubuntu', 'Installed 4 months ago'], ['logrotate', '3.21.0-2build1', 'Ubuntu', 'Installed 4 months ago'], ['unattended-upgrades', '2.9.1+nmu4ubuntu1', 'Ubuntu', 'Installed 4 months ago']]
+};
+var ACT = {
+  win: [['job', 'Collect inventory completed (4 s)', 'system', 6 * 3600000], ['user', 'Opened a remote session (MeshCentral)', 'tech.demo1', 3.02 * 86400000], ['job', 'Saved script "Clear temp files" succeeded', 'tech.demo1', 3 * 86400000], ['info', 'Agent updated 0.1.0-beta.0 to 0.1.0-beta.1 (stable ring)', 'system', 12 * 86400000], ['warn', 'Alert resolved: D: 81% used', 'system', 8.9 * 86400000], ['warn', 'Alert opened: D: 81% used', 'system', 9.2 * 86400000], ['power', 'Reboot job succeeded; device back online after 4 min', 'tech.demo2', 21.2 * 86400000], ['ok', 'Device enrolled and linked to the asset (serial match)', 'system', 120 * 86400000]],
+  lnx: [['warn', 'Alert opened: / 93% used (critical); ticket #1482 created', 'system', 10.9 * 3600000], ['job', 'Collect inventory completed (3 s)', 'system', 1.2 * 3600000], ['warn', 'Alert opened: reboot required', 'system', 3 * 86400000], ['info', 'Agent updated 0.1.0-beta.1 to 0.1.0-beta.2 (pilot ring)', 'system', 5 * 86400000], ['power', 'Reboot job succeeded; device back online after 2 min', 'tech.demo2', 9 * 86400000], ['ok', 'Device enrolled and linked to the asset (serial match)', 'system', 70 * 86400000]]
+};
+
+/* ---------- charts ---------- */
+function niceMax(v) { var s = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000], i = 0; while (i < s.length - 1 && s[i] < v * 1.1) { i++; } return s[i]; }
+function lineChart(host, cfg) {
+  var W = Math.max(260, host.clientWidth || 520), H = 196, m = { l: 38, r: 10, t: 26, b: 22 }, pw = W - m.l - m.r, ph2 = H - m.t - m.b;
+  var from = cfg.from, to = cfg.to, X = function (t) { return m.l + (t - from) / (to - from) * pw; }, Y = function (v) { return m.t + ph2 - clamp(v / cfg.yMax, 0, 1) * ph2; };
+  var o = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" tabindex="0" role="group" aria-label="' + esc(cfg.aria) + '">';
+  var ticks = 4; for (var i = 0; i <= ticks; i++) { var yv = cfg.yMax * i / ticks; o += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + Y(yv).toFixed(1) + '" y2="' + Y(yv).toFixed(1) + '" stroke="var(--grid)"/><text x="' + (m.l - 6) + '" y="' + (Y(yv) + 3.5).toFixed(1) + '" text-anchor="end">' + cfg.yFmt(yv) + '</text>'; }
+  var xt = 5; for (var j = 0; j <= xt; j++) { var tt = from + (to - from) * j / xt, d = new Date(tt), lab = (to - from) <= 36 * 3600000 ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); o += '<text x="' + X(tt).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + (j === 0 ? 'start' : j === xt ? 'end' : 'middle') + '">' + lab + '</text>'; }
+  o += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + (m.t + ph2) + '" y2="' + (m.t + ph2) + '" stroke="var(--axis)"/>';
+  if (cfg.offlineFrom && cfg.offlineFrom < to) { var ox = X(Math.max(from, cfg.offlineFrom)); o += '<rect x="' + ox.toFixed(1) + '" y="' + m.t + '" width="' + (W - m.r - ox).toFixed(1) + '" height="' + ph2 + '" fill="var(--off-soft)" opacity=".8"/><text x="' + (W - m.r - 6) + '" y="' + (m.t + ph2 - 6) + '" text-anchor="end" style="fill:var(--ink-2)">Offline since ' + new Date(cfg.offlineFrom).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</text>'; }
+  (cfg.thr || []).forEach(function (t) { var y = Y(t.v).toFixed(1); o += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y + '" y2="' + y + '" stroke="' + t.col + '" stroke-dasharray="5 4" stroke-width="1.3"/><text x="' + (m.l + 4) + '" y="' + (Y(t.v) - 4).toFixed(1) + '" style="fill:' + t.col + '">' + esc(t.label) + '</text>'; });
+  cfg.series.forEach(function (s) {
+    var seg = [], cur = []; s.pts.forEach(function (p) { if (p.v === null) { if (cur.length) { seg.push(cur); cur = []; } } else { cur.push(p); } }); if (cur.length) { seg.push(cur); }
+    seg.forEach(function (sg) { var dd = sg.map(function (p, k) { return (k ? 'L' : 'M') + X(p.t).toFixed(1) + ' ' + Y(p.v).toFixed(1); }).join(''); if (cfg.area && sg.length > 1) { o += '<path d="' + dd + 'L' + X(sg[sg.length - 1].t).toFixed(1) + ' ' + (m.t + ph2) + 'L' + X(sg[0].t).toFixed(1) + ' ' + (m.t + ph2) + 'Z" fill="' + s.color + '" opacity=".13"/>'; } o += '<path d="' + dd + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'; if (sg.length === 1) { o += '<circle cx="' + X(sg[0].t).toFixed(1) + '" cy="' + Y(sg[0].v).toFixed(1) + '" r="2.5" fill="' + s.color + '"/>'; } });
+  });
+  (cfg.markers || []).forEach(function (e) {
+    if (e.t < from || e.t > to) { return; } var x = X(e.t).toFixed(1), y = m.t - 14, g;
+    if (e.k === 'alert') { g = '<path d="M' + x + ' ' + (y - 5) + 'l5 9h-10z" fill="var(--crit)" stroke="var(--surface)" stroke-width="1"/>'; } else if (e.k === 'job') { g = '<path d="M' + x + ' ' + (y - 5) + 'l5 5-5 5-5-5z" fill="var(--ink-2)" stroke="var(--surface)" stroke-width="1"/>'; } else { g = '<rect x="' + (x - 4.5) + '" y="' + (y - 4.5) + '" width="9" height="9" fill="var(--primary-ink)" stroke="var(--surface)" stroke-width="1"/>'; }
+    o += '<line x1="' + x + '" x2="' + x + '" y1="' + (y + 5) + '" y2="' + (m.t + ph2) + '" stroke="var(--axis)" stroke-dasharray="2 3"/><g><title>' + esc(e.label + ' - ' + when(e.t)) + '</title>' + g + '</g>';
+  });
+  o += '<line class="xh" y1="' + m.t + '" y2="' + (m.t + ph2) + '" stroke="var(--ink-2)" stroke-width="1" style="display:none"/>';
+  cfg.series.forEach(function (s, k) { o += '<circle class="dt" data-k="' + k + '" r="4" fill="' + s.color + '" stroke="var(--surface)" stroke-width="2" style="display:none"/>'; });
+  o += '<rect class="hit" x="' + m.l + '" y="' + m.t + '" width="' + pw + '" height="' + ph2 + '" fill="transparent"/></svg><div class="tip" role="presentation"></div>';
+  host.innerHTML = o;
+  var svg = $('svg', host), tip = $('.tip', host), xh = $('.xh', host), dots = $$('.dt', host), pts0 = cfg.series[0].pts, cur = -1;
+  function show(idx) {
+    idx = clamp(idx, 0, pts0.length - 1); cur = idx; var p = pts0[idx], x = X(p.t); xh.setAttribute('x1', x); xh.setAttribute('x2', x); xh.style.display = '';
+    var rows = '', any = false;
+    cfg.series.forEach(function (s, k) { var q = s.pts[idx]; if (q && q.v !== null) { any = true; dots[k].setAttribute('cx', x); dots[k].setAttribute('cy', Y(q.v)); dots[k].style.display = ''; rows += '<div class="r"><span class="k" style="background:' + s.color + '"></span><span>' + esc(s.name) + '</span><b class="num">' + cfg.vFmt(q.v) + '</b></div>' + (cfg.peak && q.max !== null && cfg.bucket > STEP ? '<div class="r muted" style="padding-left:18px"><span>peak in hour</span><b class="num">' + cfg.vFmt(q.max) + '</b></div>' : ''); } else { dots[k].style.display = 'none'; rows += '<div class="r"><span class="k" style="background:' + s.color + '"></span><span>' + esc(s.name) + '</span><b>no data</b></div>'; } });
+    tip.innerHTML = '<div class="t">' + esc(when(p.t)) + (cfg.bucket > STEP ? ' (hour)' : '') + '</div>' + rows; tip.style.display = 'block';
+    var tw = tip.offsetWidth, left = x + 12; if (left + tw > W - 4) { left = x - tw - 12; } tip.style.left = Math.max(2, left) + 'px'; tip.style.top = (m.t + 4) + 'px';
+  }
+  function hide() { xh.style.display = 'none'; dots.forEach(function (d) { d.style.display = 'none'; }); tip.style.display = 'none'; }
+  $('.hit', host).addEventListener('pointermove', function (e) { var r = svg.getBoundingClientRect(), x = (e.clientX - r.left) * (W / r.width), t = from + (x - m.l) / pw * (to - from); var best = 0, bd = 1e18; pts0.forEach(function (p, i) { var dd = Math.abs(p.t - t); if (dd < bd) { bd = dd; best = i; } }); show(best); });
+  $('.hit', host).addEventListener('pointerleave', hide);
+  svg.addEventListener('keydown', function (e) { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); show((cur < 0 ? pts0.length - 1 : cur) + (e.key === 'ArrowRight' ? 1 : -1)); } else if (e.key === 'Escape') { hide(); } });
+  svg.addEventListener('blur', hide);
+}
+function stats(pts) { var vs = pts.filter(function (p) { return p.v !== null; }); if (!vs.length) { return null; } var s = 0, mx = -1, mn = 1e9; vs.forEach(function (p) { s += p.v; mx = Math.max(mx, p.max); mn = Math.min(mn, p.min); }); return { now: vs[vs.length - 1].v, avg: s / vs.length, max: mx, min: mn }; }
+var pctF = function (v) { return (Math.round(v * 10) / 10) + '%'; }, pctT = function (v) { return Math.round(v) + '%'; }, mbF = function (v) { return (v >= 10 ? Math.round(v) : Math.round(v * 10) / 10) + ' Mbit/s'; };
+function chartDefs() {
+  var dv = DEV[S.dev], d = DATA[S.dev], sp = span(), bucket = bucketFor(sp[1] - sp[0]), A = function (k) { return aggregate(d[k], sp[0], sp[1], bucket); };
+  var thr = [{ v: 80, col: 'var(--warn-ink)', label: 'warn 80%' }, { v: 90, col: 'var(--crit-ink)', label: 'crit 90%' }];
+  var rx = A('rx'), tx = A('tx'), peak = Math.max.apply(null, rx.concat(tx).map(function (p) { return p.max === null ? 0 : p.max; }).concat([1]));
+  var defs = [
+    { id: 'cpu', title: 'CPU', series: [{ name: 'CPU', color: 'var(--s1)', pts: A('cpu') }], yMax: 100, yFmt: pctT, vFmt: pctF, area: true, peak: true },
+    { id: 'mem', title: 'Memory', series: [{ name: 'Memory', color: 'var(--s1)', pts: A('mem') }], yMax: 100, yFmt: pctT, vFmt: pctF, area: true, peak: true },
+    { id: 'disk', title: 'Disk used (per volume)', series: dv.vols.map(function (v, i) { return { name: v.mount, color: i ? 'var(--s2)' : 'var(--s1)', pts: A(v.k) }; }), yMax: 100, yFmt: pctT, vFmt: pctF, thr: thr, peak: false },
+    { id: 'net', title: 'Network throughput', series: [{ name: 'Receive', color: 'var(--s1)', pts: rx }, { name: 'Send', color: 'var(--s2)', pts: tx }], yMax: niceMax(peak), yFmt: function (v) { return v >= 1 ? Math.round(v) : v.toFixed(1); }, vFmt: mbF, peak: true, unit: 'Mbit/s, sum of all adapters' }
+  ];
+  defs.forEach(function (c) { c.from = sp[0]; c.to = sp[1]; c.bucket = bucket; c.markers = eventsFor(dv); c.offlineFrom = S.state === 'offline' ? NOW - OFFLINE_MS : 0; c.aria = c.title + ' chart, ' + RLABEL[S.range] + '. Arrow keys move through points. A data table follows the chart.'; });
+  return defs;
+}
+function drawCharts() {
+  if (S.ed === 'msp') { return; }
+  var defs = chartDefs(); defs.forEach(function (c) { var h = $('#ch-' + c.id); if (h) { lineChart(h, c); } });
+}
+function chartCard(c) {
+  var legend = c.series.length > 1 ? '<span class="legend">' + c.series.map(function (s) { return '<span class="k"><i class="ln" style="background:' + s.color + '"></i>' + esc(s.name) + '</span>'; }).join('') + '</span>' : '';
+  var rows = c.series.map(function (s) { var st = stats(s.pts); return st ? '<tr><td>' + esc(s.name) + '</td><td class="num">' + c.vFmt(st.now) + '</td><td class="num">' + c.vFmt(st.avg) + '</td><td class="num">' + c.vFmt(st.max) + '</td><td class="num">' + c.vFmt(st.min) + '</td></tr>' : '<tr><td>' + esc(s.name) + '</td><td colspan="4">no data in range</td></tr>'; }).join('');
+  var now = stats(c.series[0].pts);
+  return '<section class="chart" aria-label="' + esc(c.title) + '"><div class="chart-h"><h3>' + esc(c.title) + '</h3>' + (c.series.length === 1 && now ? '<span class="now num">' + c.vFmt(now.now) + '</span><span class="muted" style="font-size:12px">now (avg ' + c.vFmt(now.avg) + ', peak ' + c.vFmt(now.max) + ')</span>' : '') + legend + '</div><div class="chart-host" id="ch-' + c.id + '"></div>' +
+    '<div class="res">' + (c.bucket > STEP ? 'Hourly rollup (average, peak in tooltip)' : 'Raw 5-minute samples') + (c.unit ? ', ' + esc(c.unit) : '') + '</div><details class="data"><summary>Data table</summary><div class="tw"><table><thead><tr><th>Series</th><th>Latest</th><th>Average</th><th>Peak</th><th>Lowest</th></tr></thead><tbody>' + rows + '</tbody></table></div></details></section>';
+}
+
+/* ---------- asset page ---------- */
+function can(a) { return a === 'view' || (a === 'run' && S.role !== 'view') || (a === 'admin' && S.role === 'admin'); }
+function dis(a, why) { return can(a) ? '' : ' disabled title="' + esc(why || 'Your role cannot do this.') + '"'; }
+
+function strip(dv) {
+  var st = S.state, online = st === 'online', off = st === 'offline', never = st === 'never', rmmOff = st === 'off';
+  var statusPill = rmmOff ? pill('off', 'Status frozen') : never ? pill('off', 'Waiting for first check-in') : off ? pill('crit', 'Offline') : (alertsFor(dv).open.some(function (a) { return a.sev === 'crit'; }) ? pill('crit', 'Online, 1 critical alert') : pill('ok', 'Online'));
+  var dot = never || rmmOff ? '' : off ? 'crit' : 'ok';
+  var upMs = dv.bootDays * 86400000;
+  var facts = (never ? [['Last seen', 'never'], ['Enrolled', 'a few minutes ago'], ['OS', 'not reported yet'], ['Agent', 'not reported yet']] : [
+    ['Last seen', off ? ago(OFFLINE_MS) + ' <span class="muted">(' + esc(when(NOW - OFFLINE_MS)) + ')</span>' : ago(dv.lastIn)],
+    ['Operating system', esc(dv.os) + ' <span class="muted">' + esc(dv.arch) + '</span>'], ['Agent', esc(dv.agent) + ' <span class="muted">' + esc(dv.ring) + ' ring</span>'],
+    ['Uptime', off ? '<span class="muted">unknown while offline</span>' : fmtDur(upMs) + (dv.reboot ? ' ' + pill('warn', 'Reboot pending') : '')], ['Client / site', esc(dv.client) + ' <span class="muted">/ ' + esc(dv.site) + '</span>']]).map(function (f) { return '<div><dt>' + f[0] + '</dt><dd>' + f[1] + '</dd></div>'; }).join('');
+  var nonLinux = dv.kind === 'linux';
+  var actions = rmmOff ? '<span class="muted">RMM actions are hidden while the module is off.</span>' :
+    '<button class="btn primary" data-a="runscript"' + (nonLinux ? ' disabled title="Linux script jobs arrive with shell jobs in Phase 2. Today a Linux device runs inventory collection and reboot."' : dis('run', 'Your role cannot run jobs.')) + (never ? ' disabled title="Available after the first check-in."' : '') + '>' + ic('play') + 'Run script' + (nonLinux ? ph('P2') : '') + '</button>' +
+    '<button class="btn danger" data-a="reboot"' + dis('run', 'Your role cannot reboot devices.') + (never ? ' disabled' : '') + '>' + ic('power') + 'Reboot</button>' +
+    '<details class="menu"><summary class="btn" role="button">' + ic('mon') + 'Remote access' + ic('chev') + '</summary><div class="menu-list">' +
+      '<button data-a="remote"' + (can('run') && dv.mesh && !never ? '' : ' disabled title="' + (!dv.mesh ? 'No MeshCentral node mapped to this device. An administrator can map one.' : never ? 'Available after the first check-in.' : 'Your role cannot open remote sessions.') + '"') + '>Remote desktop (MeshCentral)</button>' +
+      '<button disabled title="Embedded terminal arrives in Phase 6">Terminal ' + ph('P6') + '<span class="muted">Phase 6</span></button><button disabled title="Embedded file browser arrives in Phase 6">Files <span class="muted">Phase 6</span></button></div></details>' +
+    '<button class="btn" data-a="ticket">' + ic('ticket') + 'Open ticket</button>' +
+    '<details class="menu"><summary class="btn" role="button" aria-label="More actions">' + ic('more') + '</summary><div class="menu-list"><button data-a="collect"' + dis('run') + (never ? ' disabled' : '') + '>Collect inventory now</button><button data-a="admin"' + dis('admin', 'Administrators only.') + '>Rotate credential</button><button data-a="admin"' + dis('admin', 'Administrators only.') + '>Transfer to another client</button><hr><button class="danger" data-a="admin"' + dis('admin', 'Administrators only.') + '>Retire device</button><button data-a="admin"' + dis('admin', 'Administrators only.') + '>Open in RMM administration</button></div></details>';
+  return '<section class="card strip" aria-label="Device health"><div class="strip-top">' + (dot ? '<span class="dot ' + dot + '" aria-hidden="true"></span>' : '<span class="dot" aria-hidden="true"></span>') + '<h1>' + esc(dv.host) + '</h1>' + statusPill + (dv.kind === 'linux' ? '<span class="chip">Linux</span>' : '<span class="chip">Windows</span>') + '<div class="actions">' + actions + '</div></div>' +
+    '<dl class="facts">' + facts + '</dl><div class="tags" aria-label="Tags">' + dv.tags.map(function (t) { return '<span class="chip">' + esc(t) + '</span>'; }).join('') + '<button class="btn sm" data-a="tag"' + dis('run') + '>+ Tag' + ph('P1') + '</button></div>' +
+    (off ? '<div class="banner off" role="status">' + ic('plug') + '<div><strong>This device is offline.</strong> Last check-in ' + ago(OFFLINE_MS) + '. Jobs you queue now are delivered when it returns, until they expire. Gauges show the last reading, dimmed. The charts below keep their history.</div></div>' : '') +
+    (rmmOff ? '<div class="banner info" role="status">' + ic('info') + '<div><strong>RMM module is off.</strong> Device status is frozen and no RMM widgets load. The asset works as a normal asset. An administrator can switch the module on under Administration, RMM.</div></div>' : '') +
+    (S.ed === 'msp' && !rmmOff ? '<div class="banner info" role="note">' + ic('info') + '<div>Metric history is not available in this edition yet. Gauges, checks, alerts and jobs work; graphs arrive with the MSP metric sink ' + ph('P1') + '.</div></div>' : '') + '</section>';
+}
+
+function gaugesRow(dv) {
+  var st = S.state, off = st === 'off';
+  if (off) { return ''; }
+  if (st === 'never') { return '<section class="card" aria-label="Live health"><div class="empty"><strong>Waiting for the first check-in</strong><span>The agent was enrolled a few minutes ago. Gauges, graphs and checks appear after its first report, usually within 5 minutes.</span><button class="btn sm" data-a="copy">' + ic('copy') + 'Copy install command</button></div></section>'; }
+  var o = st === 'offline', d = DATA[dv.id], li = lastIdx(), dim = { dim: o, stale: o ? fmtDur(OFFLINE_MS) + ' ago' : '' };
+  var tiles = [gauge('CPU', d.cpu[li], dv.cpu, 80, 95, dim), gauge('Memory', d.mem[li], dv.ramGb + ' GB installed', 80, 95, dim)];
+  dv.vols.forEach(function (v) { var u = d[v.k][li]; tiles.push(gauge('Disk ' + v.mount, u, (v.totalGb * (1 - u / 100)).toFixed(1) + ' GB free of ' + v.totalGb + ' GB', 80, 90, dim)); });
+  var rx = d.rx[li], tx = d.tx[li], pk = Math.max.apply(null, lastN(d.rx, 288, 1).concat(lastN(d.tx, 288, 1)));
+  tiles.push('<div class="tile stat' + (o ? ' dim' : '') + '"><div class="lbl">Network</div><div class="big num">' + mbF(rx) + '</div><div class="cap">receive, ' + mbF(tx) + ' send</div><div class="bar" role="img" aria-label="Receive is ' + Math.round(rx / pk * 100) + ' percent of the 24 hour peak"><i style="width:' + clamp(rx / pk * 100, 1, 100) + '%;background:var(--s1)"></i></div><div class="cap">' + Math.round(rx / pk * 100) + '% of 24 h peak (link speed is not reported)</div></div>');
+  tiles.push('<div class="tile stat"><div class="lbl">Uptime</div><div class="big num">' + (o ? 'unknown' : fmtDur(dv.bootDays * 86400000)) + '</div><div class="cap">Last boot ' + esc(when(NOW - dv.bootDays * 86400000)) + '</div>' + (dv.reboot ? pill('warn', 'Reboot pending') : pill('ok', 'No reboot pending')) + '</div>');
+  var lag = o ? OFFLINE_MS : dv.lastIn, seg = lag > 900000 ? 3 : lag > 330000 ? 2 : 1, cl = lag > 900000 ? 'c' : lag > 330000 ? 'w' : '';
+  tiles.push('<div class="tile stat"><div class="lbl">Agent contact</div><div class="big num">' + ago(lag) + '</div><div class="seg" role="img" aria-label="Agent check-in freshness: ' + (seg === 1 ? 'on time' : seg === 2 ? 'late' : 'overdue') + '"><i class="on ' + cl + '"></i><i class="' + (seg > 1 ? 'on ' + cl : '') + '"></i><i class="' + (seg > 2 ? 'on ' + cl : '') + '"></i></div><div class="cap">Expected every 5 min; offline after 15 min</div></div>');
+  return '<section class="card" aria-label="Live health"><header><h2>Live health</h2><span class="sub">' + (o ? 'Last reading before the device went offline' : 'Latest agent sample, refreshed every 30 s while this tab is visible') + '</span></header><div class="gauges">' + tiles.join('') + '</div></section>';
+}
+
+function graphsCard(dv) {
+  if (S.state === 'off' || S.state === 'never') { return ''; }
+  var rb = '<div class="rangebar" role="group" aria-label="Time range"><div class="seg-btn">' + ['1h', '24h', '7d', '30d', 'custom'].map(function (k) { return '<button data-r="' + k + '" aria-pressed="' + (S.range === k) + '">' + RLABEL[k] + '</button>'; }).join('') + '</div>' +
+    (S.range === 'custom' ? '<label class="sr" for="r-from">From</label><input type="date" id="r-from" value="' + esc(S.from) + '"> to <label class="sr" for="r-to">To</label><input type="date" id="r-to" value="' + esc(S.to) + '"> <button class="btn sm" data-a="applyrange">Apply</button>' : '') +
+    '<span class="legend grow" aria-label="Event markers"><span class="k"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1l5 9H1z" fill="var(--crit)"/></svg>Alert</span><span class="k"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1l5 5-5 5-5-5z" fill="var(--ink-2)"/></svg>Job</span><span class="k"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="2" width="8" height="8" fill="var(--primary-ink)"/></svg>Reboot</span></span></div>';
+  if (S.ed === 'msp') { return '<section class="card" aria-label="Performance"><header><h2>Performance</h2></header><div class="empty"><strong>No metric history in this edition yet</strong><span>RivetMSP does not store device metrics today. Current readings are in Live health above. History and graphs arrive with the metric sink ' + ph('P1') + '.</span></div></section>'; }
+  return '<section class="card" aria-label="Performance"><header><h2>Performance</h2><span class="sub">Times shown in your time zone; hover for UTC in the data table</span></header>' + rb + '<div class="charts" id="charts">' + chartDefs().map(chartCard).join('') + '</div></section>';
+}
+
+function alertsCard(dv) {
+  if (S.state === 'off' || S.state === 'never') { return ''; }
+  var a = alertsFor(dv), item = function (x, open) { return '<li><span class="ico">' + ic(x.sev === 'crit' ? 'crit' : 'warn') + '</span><div class="m"><div>' + pill(x.sev === 'crit' ? 'crit' : 'warn', x.sev === 'crit' ? 'Critical' : 'Warning') + ' ' + esc(x.msg) + '</div><div class="muted" style="font-size:12px">' + (open ? 'Open for ' + fmtDur(x.opened) + (x.ticket ? ' &middot; Ticket ' + esc(x.ticket) + ' (' + esc(x.tstate) + ')' : ' &middot; no ticket') : 'Resolved after ' + fmtDur(x.opened - x.resolved)) + '</div></div>' + (open ? '<button class="btn sm" data-a="ack"' + dis('run') + '>Acknowledge</button>' : '<span class="when">' + ago(x.resolved) + '</span>') + '</li>'; };
+  return '<section class="card" aria-label="Alerts"><header><h2>Alerts</h2>' + (a.open.length ? pill('crit', a.open.length + ' open') : pill('ok', 'None open')) + '<a class="grow" href="#" data-a="nav">All alerts for this device</a></header><ul class="list">' + (a.open.length ? a.open.map(function (x) { return item(x, true); }).join('') : '<li><span class="muted">No open alerts.</span></li>') + '</ul><div class="card-h" style="border-top:1px solid var(--border);border-bottom:0"><h3>Recently resolved</h3></div><ul class="list">' + a.recent.map(function (x) { return item(x, false); }).join('') + '</ul></section>';
+}
+function remoteCard(dv) {
+  if (S.state === 'off' || S.state === 'never') { return ''; }
+  var rows = dv.mesh ? '<li><span class="ico">' + ic('user') + '</span><div class="m">tech.demo1 opened a remote desktop session<div class="muted" style="font-size:12px">from 198.51.100.17</div></div><span class="when">3 d ago</span></li>' : '<li><span class="muted">No sessions recorded.</span></li>';
+  return '<section class="card" aria-label="Remote access"><header><h2>Remote access</h2>' + (dv.mesh ? pill('ok', 'MeshCentral node mapped') : pill('off', 'No node mapped')) + '</header><div class="body"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-a="remote"' + (can('run') && dv.mesh ? '' : ' disabled title="' + (dv.mesh ? 'Your role cannot open remote sessions.' : 'Map a MeshCentral node first (administrator).') + '"') + '>' + ic('mon') + 'Remote desktop</button><button class="btn" disabled>Terminal ' + ph('P6') + '</button><button class="btn" disabled>Files ' + ph('P6') + '</button></div>' + (S.state === 'offline' ? '<p class="muted" style="margin:8px 0 0">The device is offline. A session can be forced, but will likely fail.</p>' : '') + (!dv.mesh ? '<p class="muted" style="margin:8px 0 0">Remote access uses your MeshCentral server. An administrator maps this device to a node.</p>' : '') + '</div><div class="card-h" style="border-top:1px solid var(--border);border-bottom:0"><h3>Recent sessions</h3></div><ul class="list">' + rows + '</ul></section>';
+}
+function checksCard(dv) {
+  if (S.state === 'off' || S.state === 'never') { return ''; }
+  var cs = checksFor(dv), off = S.state === 'offline', fails = cs.filter(function (c) { return c.st === 'fail'; }).length, warns = cs.filter(function (c) { return c.st === 'warn'; }).length, d = DATA[dv.id];
+  var m = { ok: ['ok', 'Passing'], warn: ['warn', 'Warning'], fail: ['crit', 'Failing'], unknown: ['off', 'Unknown'] };
+  var rows = cs.map(function (c) {
+    var sp = '';
+    if (c.series && S.ed === 'it') { sp = spark(lastN(d[c.series], 24, 12), c.st === 'fail' ? 'var(--crit)' : 'var(--s1)'); }
+    else if (!c.series) { var seed = rng(c.key.length * 7 + dv.id.length); var cells = ''; for (var i = 0; i < 24; i++) { var r = seed(); var k = (c.st === 'fail' && i > 12) ? 'c' : (c.st === 'warn' && i > 6) ? 'w' : ''; cells += '<i class="' + k + '"></i>'; } sp = '<span class="strip24" role="img" aria-label="Result history, last 24 results, ' + c.st + ' now">' + cells + '</span>'; } else { sp = '<span class="muted">no history</span>'; }
+    return '<tr class="' + (c.st === 'fail' ? 'sev-crit' : c.st === 'warn' ? 'sev-warn' : '') + '"><td>' + pill(m[off ? 'unknown' : c.st][0], m[off ? 'unknown' : c.st][1]) + '</td><td><div class="mono">' + esc(c.key) + '</div><div class="muted" style="font-size:12px">' + esc(c.type) + (c.thr ? ' &middot; ' + esc(c.thr) : '') + '</div></td><td style="min-width:220px">' + esc(c.det) + '<div class="muted" style="font-size:12px">reported ' + ago(c.age) + '</div></td><td class="num" style="white-space:nowrap">' + (c.st === 'ok' ? 'steady for ' : 'since ') + fmtDur(c.chg) + '</td><td>' + sp + '</td><td>' + (c.alert ? '<span class="chip">' + esc(c.alert) + '</span>' : '<span class="muted">none</span>') + '</td></tr>';
+  }).join('');
+  return '<section class="card" aria-label="Checks"><header><h2>Checks</h2>' + (fails ? pill('crit', fails + ' failing') : '') + (warns ? pill('warn', warns + ' warning') : '') + pill('ok', (cs.length - fails - warns) + ' passing') + '<span class="sub grow">Last 24 h trend ' + ph('history: proposed') + '</span></header><div class="tw"><table><thead><tr><th>Status</th><th>Check</th><th>Last result</th><th>Last change</th><th>Trend</th><th>Alert</th></tr></thead><tbody>' + rows + '</tbody></table></div></section>';
+}
+function assetRail(dv) {
+  var body = '<div class="sec"><h3>Asset</h3><dl><dt>Type</dt><dd>' + esc(dv.asset) + '</dd><dt>Make / model</dt><dd>' + esc(dv.mfg + ' ' + dv.model) + '</dd><dt>Serial</dt><dd class="mono">' + esc(dv.serial) + '</dd><dt>Purchased</dt><dd>' + esc(dv.purchase) + '</dd><dt>Warranty ends</dt><dd>' + esc(dv.warranty) + '</dd></dl></div>' +
+    '<div class="sec"><h3>Assignment</h3><dl><dt>Client</dt><dd>' + esc(dv.client) + '</dd><dt>Location</dt><dd>' + esc(dv.site) + '</dd><dt>Placed</dt><dd>' + esc(dv.assigned) + '</dd><dt>Primary IP</dt><dd class="mono">' + esc(dv.ip[0]) + '</dd></dl></div>' +
+    '<div class="sec"><h3>Custom fields ' + ph('P2') + '</h3><p class="muted" style="margin:0;font-size:12.5px">Typed fields for this device (for example "Backup owner") appear here once custom fields ship.</p></div>' +
+    '<div class="sec"><h3>Linked</h3><dl><dt>Tickets</dt><dd>' + (dv.ticketsOpen ? dv.ticketsOpen + ' open' : 'none open') + '</dd><dt>Documents</dt><dd>3</dd><dt>Credentials</dt><dd>2</dd></dl></div>';
+  return '<aside class="card rail" aria-label="Asset details"><div class="card-h"><h2>Asset</h2><button class="btn sm rail-toggle grow" data-a="rail" aria-expanded="' + S.rail + '">' + (S.rail ? 'Hide details' : 'Show details') + '</button></div><div class="rail-body"' + (S.rail ? '' : ' hidden-mobile') + '>' + body + '</div></aside>';
+}
+function tabsBar(dv) {
+  var rmm = S.state !== 'off';
+  var t = rmm ? [['overview', 'Overview'], ['inventory', 'Inventory'], ['software', 'Software' + ph('P1')], ['jobs', 'Jobs']].concat(S.patch ? [['patches', 'Patches' + ph('P4')]] : []).concat([['activity', 'Activity'], ['sep']]) : [];
+  t = t.concat([['tickets', 'Tickets<span class="count">' + dv.ticketsOpen + '</span>'], ['docs', 'Documents'], ['creds', 'Credentials'], ['warranty', 'Warranty']]);
+  if (!rmm && S.tab !== 'tickets' && S.tab !== 'docs' && S.tab !== 'creds' && S.tab !== 'warranty') { S.tab = 'tickets'; }
+  return '<div class="tabs" role="tablist" aria-label="Asset sections">' + t.map(function (x) { return x[0] === 'sep' ? '<span class="sep" aria-hidden="true"></span>' : '<button role="tab" id="t-' + x[0] + '" data-tab="' + x[0] + '" aria-selected="' + (S.tab === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div>';
+}
+function tabBody(dv) {
+  var t = S.tab, d = DATA[dv.id];
+  if (t === 'overview') { return '<div class="stack">' + gaugesRow(dv) + graphsCard(dv) + '<div class="two">' + alertsCard(dv) + remoteCard(dv) + '</div>' + checksCard(dv) + '</div>'; }
+  if (t === 'inventory') {
+    var disks = dv.vols.map(function (v) { var u = d[v.k][lastIdx()]; return '<tr><td class="mono">' + esc(v.mount) + '</td><td>' + (dv.kind === 'windows' ? 'NTFS' : 'ext4') + '</td><td class="num">' + v.totalGb + ' GB</td><td class="num">' + (v.totalGb * (1 - u / 100)).toFixed(1) + ' GB</td><td><span class="minibar"><span class="bar"><i style="width:' + u + '%;background:' + BCOL[band(u, 80, 90)] + '"></i></span><span class="num">' + Math.round(u) + '%</span></span></td></tr>'; }).join('');
+    return '<div class="stack"><div class="two even"><section class="card"><header><h2>Hardware</h2><span class="sub">from the last inventory, ' + (S.state === 'offline' ? ago(OFFLINE_MS) : '6 h ago') + '</span></header><div class="body rail"><dl><dt>Make / model</dt><dd>' + esc(dv.mfg + ' ' + dv.model) + '</dd><dt>Serial</dt><dd class="mono">' + esc(dv.serial) + '</dd><dt>CPU</dt><dd>' + esc(dv.cpu) + '</dd><dt>Memory</dt><dd>' + dv.ramGb + ' GB</dd><dt>BIOS, TPM, GPU ' + ph('P1') + '</dt><dd class="muted">after normalised inventory</dd><dt>Disk health (SMART)</dt><dd class="muted">not planned</dd></dl></div></section>' +
+      '<section class="card"><header><h2>Operating system</h2></header><div class="body rail"><dl><dt>Name</dt><dd>' + esc(dv.os) + '</dd><dt>Version</dt><dd>' + esc(dv.osb) + '</dd><dt>Architecture</dt><dd>' + esc(dv.arch) + '</dd><dt>Logged-in user</dt><dd>' + esc(dv.user) + '</dd><dt>Last boot</dt><dd>' + esc(when(NOW - dv.bootDays * 86400000)) + '</dd><dt>Pending reboot</dt><dd>' + (dv.reboot ? pill('warn', 'Yes') : 'No') + '</dd></dl></div></section></div>' +
+      '<section class="card"><header><h2>Disks</h2></header><div class="tw"><table><thead><tr><th>Volume</th><th>Filesystem</th><th>Size</th><th>Free</th><th>Used</th></tr></thead><tbody>' + disks + '</tbody></table></div></section>' +
+      '<section class="card"><header><h2>Network adapters</h2></header><div class="tw"><table><thead><tr><th>Adapter</th><th>MAC</th><th>Addresses</th></tr></thead><tbody><tr><td>' + (dv.kind === 'windows' ? 'Ethernet0' : 'eno1') + '</td><td class="mono">' + esc(dv.mac[0]) + '</td><td class="mono">' + esc(dv.ip[0]) + '</td></tr></tbody></table></div></section>' +
+      '<section class="card"><header><h2>Services ' + ph('P6') + '</h2></header><div class="empty"><span>The services list arrives with the service and process manager.</span></div></section></div>';
+  }
+  if (t === 'software') {
+    return '<section class="card"><header><h2>Installed software</h2>' + ph('P1') + '<label class="sr" for="sw-q">Search software</label><input class="search grow" id="sw-q" type="search" placeholder="Search name or publisher"></header><div class="tw"><table id="sw"><thead><tr><th>Name</th><th>Version</th><th>Publisher</th><th>Change history</th></tr></thead><tbody>' + SOFT[dv.id].map(function (s) { return '<tr><td>' + esc(s[0]) + '</td><td class="mono">' + esc(s[1]) + '</td><td>' + esc(s[2]) + '</td><td>' + esc(s[3]) + '</td></tr>'; }).join('') + '</tbody></table></div><div class="body muted" style="font-size:12.5px">Sample rows. The list refreshes with each inventory and keeps a history of installs, upgrades and removals.</div></section>';
+  }
+  if (t === 'jobs') {
+    var js = JOBS[dv.id], stl = { succeeded: 'ok', failed: 'crit' };
+    return '<section class="card"><header><h2>Jobs and scripts</h2><span class="sub">Last 15 jobs. Output has secrets redacted and is size-capped.</span><button class="btn primary sm grow" data-a="runscript"' + (dv.kind === 'linux' ? ' disabled title="Linux script jobs arrive in Phase 2."' : dis('run')) + '>' + ic('play') + 'Run script</button></header><div class="tw"><table><thead><tr><th>Job</th><th>State</th><th>Started</th><th>Took</th><th>By</th><th>Exit</th><th></th></tr></thead><tbody>' + js.map(function (j, i) { return '<tr><td>' + esc(j.name) + (j.destructive ? ' ' + pill('warn', 'Destructive') : '') + '<div class="mono muted">' + esc(j.id) + '</div></td><td>' + pill(stl[j.st] || 'off', j.st[0].toUpperCase() + j.st.slice(1)) + '</td><td>' + ago(j.at) + '</td><td class="num">' + esc(j.dur) + '</td><td>' + esc(j.by) + '</td><td class="num">' + j.exit + '</td><td style="white-space:nowrap"><button class="btn sm" data-a="out" data-i="' + i + '" aria-expanded="false">View output</button> <button class="btn sm" data-a="rerun"' + (j.type === 'collect' ? dis('run') : dis('run')) + '>Re-run</button></td></tr><tr id="out-' + i + '" hidden><td colspan="7"><pre class="out">' + esc(j.out) + '</pre><div style="margin-top:6px"><button class="btn sm" data-a="copyout">' + ic('copy') + 'Copy output</button></div></td></tr>'; }).join('') + '</tbody></table></div></section>';
+  }
+  if (t === 'patches') { return '<section class="card"><header><h2>Patch status</h2>' + ph('P4') + '</header><div class="body"><div class="banner info">' + ic('info') + '<div>Hidden until the Patching sub-switch is on. Sample content for layout only.</div></div><div class="gauges" style="padding:12px 0 0"><div class="tile stat"><div class="lbl">Compliance</div><div class="big num">92%</div><div class="cap">of approved patches installed</div></div><div class="tile stat"><div class="lbl">Pending</div><div class="big num">3</div><div class="cap">2 security, 1 other</div></div><div class="tile stat"><div class="lbl">Last scan</div><div class="big num">4 h ago</div><div class="cap">ring: pilot, window Sun 02:00</div></div></div></div></section>'; }
+  if (t === 'activity') {
+    return '<section class="card"><header><h2>Activity</h2><span class="sub">Audit entries and device events, newest first</span></header><ul class="list tl">' + ACT[dv.id].map(function (a) { return '<li><span class="ico">' + ic({ job: 'job', user: 'user', info: 'info', warn: 'warn', power: 'power', ok: 'ok' }[a[0]]) + '</span><div class="m">' + esc(a[1]) + '<div class="muted" style="font-size:12px">by ' + esc(a[2]) + ' &middot; ' + esc(whenUtc(NOW - a[3])) + '</div></div><span class="when">' + ago(a[3]) + '</span></li>'; }).join('') + '</ul></section>';
+  }
+  var simple = { tickets: ['Tickets', dv.ticketsOpen ? '<li><span class="ico">' + ic('ticket') + '</span><div class="m"><strong>#1482</strong> Disk space critical on DEMO-LNX-DB02<div class="muted" style="font-size:12px">Opened automatically from alert A-2291</div></div>' + pill('warn', 'Open') + '</li>' : '<li><span class="muted">No tickets for this asset.</span></li>'], docs: ['Documents', '<li><div class="m">Runbook: restore from backup</div><span class="when">updated 2 months ago</span></li><li><div class="m">Network diagram, site rack</div><span class="when">updated 5 months ago</span></li><li><div class="m">Vendor support contacts</div><span class="when">updated 8 months ago</span></li>'], creds: ['Credentials', '<li><div class="m">Local administrator<div class="muted" style="font-size:12px">Secret hidden. Reveal is audited.</div></div><button class="btn sm" disabled>Reveal</button></li><li><div class="m">Service account<div class="muted" style="font-size:12px">Secret hidden.</div></div><button class="btn sm" disabled>Reveal</button></li>'], warranty: ['Warranty and purchase', '<li><div class="m">Purchased ' + esc(dv.purchase) + ' from Example Hardware Supply</div></li><li><div class="m">Warranty ends ' + esc(dv.warranty) + '</div></li>'] }[t];
+  return '<section class="card"><header><h2>' + simple[0] + '</h2><span class="sub">Existing asset tab, unchanged by the RMM redesign</span></header><ul class="list">' + simple[1] + '</ul></section>';
+}
+function assetView() {
+  var dv = DEV[S.dev];
+  return '<nav class="crumbs" aria-label="Breadcrumb"><span>' + esc(dv.client) + '</span><span>/</span><span>Assets</span><span>/</span><strong>' + esc(dv.host) + '</strong></nav><div class="layout">' + assetRail(dv) + '<div class="stack">' + strip(dv) + '<div class="card">' + tabsBar(dv) + '</div><div role="tabpanel" aria-labelledby="t-' + S.tab + '">' + tabBody(dv) + '</div></div></div>';
+}
+
+/* ---------- fleet ---------- */
+var FLEET = (function () {
+  var cl = ['Lakeside Demo Co.', 'Harbor Test Group', 'Pinewood Sample LLC', 'Orchard Example Inc.'];
+  var rows = [['DEMO-WIN-SRV01', 0, 'Windows Server 2022', 'online', 22, 54, 54, 0, 0], ['DEMO-LNX-DB02', 1, 'Ubuntu 24.04', 'online', 41, 78, 93, 1, 2], ['DEMO-WIN-DC01', 0, 'Windows Server 2019', 'online', 12, 46, 61, 0, 0], ['DEMO-WIN-LT014', 0, 'Windows 11 Pro', 'online', 18, 79, 66, 0, 0], ['DEMO-WIN-LT022', 1, 'Windows 11 Pro', 'online', 71, 83, 88, 0, 1], ['DEMO-WIN-PC031', 2, 'Windows 10 Pro', 'online', 9, 41, 47, 1, 0], ['DEMO-WIN-PC032', 2, 'Windows 10 Pro', 'offline', null, null, null, 0, 1], ['DEMO-WIN-RCP01', 2, 'Windows 11 Pro', 'online', 27, 62, 52, 0, 0], ['DEMO-LNX-WEB01', 3, 'Debian 12', 'online', 14, 37, 44, 0, 0], ['DEMO-LNX-WEB02', 3, 'Debian 12', 'online', 16, 39, 45, 1, 0], ['DEMO-WIN-LT040', 3, 'Windows 11 Pro', 'offline', null, null, null, 0, 1], ['DEMO-WIN-LT041', 1, 'Windows 11 Pro', 'stale', null, null, null, 0, 0], ['DEMO-WIN-NEW01', 0, 'not reported', 'never', null, null, null, 0, 0], ['DEMO-WIN-SRV07', 3, 'Windows Server 2022', 'online', 33, 88, 71, 0, 1]];
+  return rows.map(function (r, i) { var g = rng(100 + i), s = []; for (var k = 0; k < 24; k++) { s.push(clamp((r[4] === null ? 20 : r[4]) + (g() - .5) * 22, 2, 99)); } return { host: r[0], client: cl[r[1]], os: r[2], st: r[3], cpu: r[4], mem: r[5], disk: r[6], reboot: !!r[7], alerts: r[8], spark: s, seen: r[3] === 'online' ? [40, 75, 110, 30, 55, 20, 90, 15, 60, 45, 100, 25][i % 12] * 1000 : r[3] === 'offline' ? (3 + i) * 3600000 : r[3] === 'stale' ? 9 * 86400000 : 0, real: i < 2 ? (i ? 'lnx' : 'win') : '' }; });
+})();
+function donut(parts) {
+  var tot = parts.reduce(function (a, p) { return a + p.n; }, 0), r = 46, c = 2 * Math.PI * r, off = 0, o = '<svg width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="Fleet status: ' + parts.map(function (p) { return p.n + ' ' + p.l; }).join(', ') + '"><circle cx="70" cy="70" r="' + r + '" fill="none" stroke="var(--off-soft)" stroke-width="18"/>';
+  parts.forEach(function (p) { if (!p.n) { return; } var len = p.n / tot * c; o += '<circle cx="70" cy="70" r="' + r + '" fill="none" stroke="' + p.col + '" stroke-width="18" stroke-dasharray="' + Math.max(0, len - 2).toFixed(2) + ' ' + (c - Math.max(0, len - 2)).toFixed(2) + '" stroke-dashoffset="' + (-off).toFixed(2) + '" transform="rotate(-90 70 70)"/>'; off += len; });
+  return o + '<text x="70" y="68" text-anchor="middle" style="font:600 26px var(--sans);fill:var(--ink)">' + tot + '</text><text x="70" y="86" text-anchor="middle" style="font:12px var(--sans);fill:var(--muted)">devices</text></svg>';
+}
+function mb(v) { return v === null ? '<span class="muted">no data</span>' : '<span class="minibar"><span class="bar" role="img" aria-label="' + v + ' percent"><i style="width:' + v + '%;background:' + BCOL[band(v, 80, 90)] + '"></i></span><span class="num">' + v + '%</span></span>'; }
+function fleetView() {
+  var F = FLEET, cnt = function (s) { return F.filter(function (f) { return f.st === s; }).length; };
+  var on = cnt('online'), offn = cnt('offline'), st = cnt('stale'), nv = cnt('never'), alerts = F.reduce(function (a, f) { return a + f.alerts; }, 0), need = F.filter(function (f) { return f.reboot; }).length, att = F.filter(function (f) { return f.alerts || (f.disk !== null && f.disk >= 90); }).length;
+  var kp = [['Online', on, 'of ' + F.length + ' managed', 'ok'], ['Offline', offn, 'oldest 8 h', 'crit'], ['Need attention', att, 'alert or full disk', 'warn'], ['Open alerts', alerts, '1 critical', 'crit'], ['Need reboot', need, 'pending reboot', 'warn']].map(function (k) { return '<div class="card kpi"><span class="l">' + k[0] + '</span><span class="n num">' + k[1] + '</span><span class="d">' + pill(k[3], k[2]) + '</span></div>'; }).join('') + (S.patch ? '<div class="card kpi"><span class="l">Patches pending ' + ph('P4') + '</span><span class="n num">9</span><span class="d">' + pill('warn', '3 devices') + '</span></div>' : '');
+  if (S.state === 'off') { return '<div class="card"><div class="empty"><strong>The RMM module is off</strong><span>The dashboard, device list and navigation entry are hidden. Device status is frozen and agents back off to a slow retry. Switch the module on under Administration, RMM.</span></div></div>'; }
+  var topAl = F.filter(function (f) { return f.alerts; }).sort(function (a, b) { return b.alerts - a.alerts; });
+  var offl = F.filter(function (f) { return f.st === 'offline' || f.st === 'stale'; });
+  var reb = F.filter(function (f) { return f.reboot; });
+  var rows = F.map(function (f, i) {
+    var pl = f.st === 'online' ? pill('ok', 'Online') : f.st === 'offline' ? pill('crit', 'Offline') : f.st === 'stale' ? pill('off', 'Stale') : pill('off', 'Never seen');
+    return '<tr><td><input type="checkbox" data-sel="' + i + '" aria-label="Select ' + esc(f.host) + '"' + (S.sel[i] ? ' checked' : '') + '></td><td>' + pl + '</td><td><a class="dev" data-open="' + f.real + '" tabindex="0" role="link">' + esc(f.host) + '</a><div class="muted" style="font-size:12px">' + esc(f.client) + ' &middot; ' + esc(f.os) + '</div></td><td>' + mb(f.cpu) + '</td><td>' + mb(f.mem) + '</td><td>' + mb(f.disk) + '</td><td>' + (S.ed === 'it' && f.cpu !== null ? spark(f.spark, 'var(--s1)') : '<span class="muted">' + (S.ed === 'msp' ? 'no history' : 'no data') + '</span>') + '</td><td>' + (f.alerts ? pill('crit', f.alerts + ' open') : '<span class="muted">none</span>') + '</td><td>' + (f.reboot ? pill('warn', 'Reboot') : '') + '</td><td class="num" style="white-space:nowrap">' + (f.st === 'never' ? 'never' : ago(f.seen)) + '</td></tr>';
+  }).join('');
+  var nsel = Object.keys(S.sel).filter(function (k) { return S.sel[k]; }).length;
+  return '<div class="stack"><div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><h1 style="font-size:20px">RMM dashboard</h1><span class="muted">All clients &middot; updated 20 s ago &middot; refreshes while visible</span></div><div class="kpis">' + kp + '</div>' +
+    '<div class="two even"><section class="card" aria-label="Fleet health"><header><h2>Fleet health</h2></header><div class="donut-wrap">' + donut([{ n: on, l: 'online', col: 'var(--good)' }, { n: offn, l: 'offline', col: 'var(--crit)' }, { n: st, l: 'stale', col: 'var(--faint)' }, { n: nv, l: 'never seen', col: 'var(--s1)' }]) + '<ul><li><span class="sw" style="background:var(--good)"></span>Online <b class="num">' + on + '</b></li><li><span class="sw" style="background:var(--crit)"></span>Offline <b class="num">' + offn + '</b></li><li><span class="sw" style="background:var(--faint)"></span>Stale (quiet 7+ days) <b class="num">' + st + '</b></li><li><span class="sw" style="background:var(--s1)"></span>Never checked in <b class="num">' + nv + '</b></li></ul></div></section>' +
+    '<section class="card" aria-label="Top alerts"><header><h2>Devices with open alerts</h2></header><div class="bl">' + topAl.map(function (f) { return '<div class="row"><span>' + esc(f.host) + '</span><div class="bar"><i style="width:' + f.alerts * 40 + '%;background:var(--crit)"></i></div><b class="num">' + f.alerts + '</b></div>'; }).join('') + '</div></section></div>' +
+    '<div class="two even"><section class="card" aria-label="Offline devices"><header><h2>Offline and stale</h2></header><ul class="list">' + offl.map(function (f) { return '<li><div class="m"><strong>' + esc(f.host) + '</strong><div class="muted" style="font-size:12px">' + esc(f.client) + '</div></div>' + pill(f.st === 'offline' ? 'crit' : 'off', f.st === 'offline' ? 'Offline' : 'Stale') + '<span class="when">' + ago(f.seen) + '</span></li>'; }).join('') + '</ul></section>' +
+    '<section class="card" aria-label="Needs reboot"><header><h2>Needs reboot' + (S.patch ? ' or patching' : '') + '</h2></header><ul class="list">' + reb.map(function (f) { return '<li><div class="m"><strong>' + esc(f.host) + '</strong><div class="muted" style="font-size:12px">' + esc(f.client) + '</div></div>' + pill('warn', 'Reboot pending') + '</li>'; }).join('') + (S.patch ? '<li><div class="m"><strong>3 devices with pending patches</strong> ' + ph('P4') + '</div></li>' : '') + '</ul></section></div>' +
+    (S.role === 'admin' ? '<section class="card" aria-label="Capacity"><header><h2>Performance and capacity</h2><span class="sub">Administrators only. From the module capacity report.</span><span class="grow">' + pill('ok', 'Shed level 0: normal') + '</span></header><div class="gauges"><div class="tile stat"><div class="cap">Enrolled devices</div><div class="big num">14 <span class="muted" style="font-size:14px">of 500</span></div><div class="bar" role="img" aria-label="14 of 500 devices"><i style="width:2.8%;background:var(--s1)"></i></div></div><div class="tile stat"><div class="cap">Check-ins, last minute</div><div class="big num">3</div><div class="cap">168 in the last hour</div></div><div class="tile stat"><div class="cap">Check-in latency p95</div><div class="big num">84 ms</div><div class="cap">release gate: under 250 ms</div></div><div class="tile stat"><div class="cap">Ingest mode</div><div class="big">Direct</div><div class="cap">queue empty, oldest 0 s</div></div><div class="tile stat"><div class="cap">Projected write rate</div><div class="big num">0.8 rows/s</div><div class="cap">raw samples kept 7 days</div></div></div></section>' : '') +
+    '<section class="card" aria-label="Devices"><header><h2>Devices</h2><label class="sr" for="f-q">Filter devices</label><input class="search" id="f-q" type="search" placeholder="Filter by name, client or OS"><span class="sub grow">' + F.length + ' devices</span></header>' +
+    '<div class="bulk"><strong>' + nsel + ' selected</strong><button class="btn sm" data-a="bulk"' + (nsel && can('run') ? '' : ' disabled') + '>' + ic('play') + 'Run script</button><button class="btn sm danger" data-a="bulk"' + (nsel && can('run') ? '' : ' disabled') + '>' + ic('power') + 'Reboot</button><button class="btn sm" data-a="bulk"' + (nsel && can('run') ? '' : ' disabled') + '>Tag ' + ph('P1') + '</button>' + (can('run') ? '' : '<span class="muted">Your role cannot run bulk actions.</span>') + '</div>' +
+    '<div class="tw"><table id="fleet"><thead><tr><th><input type="checkbox" data-all aria-label="Select all"></th><th>Status</th><th>Device</th><th>CPU</th><th>Memory</th><th>Worst disk</th><th>CPU, 24 h</th><th>Alerts</th><th>Flags</th><th>Last seen</th></tr></thead><tbody>' + rows + '</tbody></table></div></section></div>';
+}
+
+/* ---------- render + events ---------- */
+function render() {
+  document.body.classList.toggle('show-phases', S.ph);
+  $('#g-dev').style.display = S.view === 'asset' ? '' : 'none';
+  $('#root').innerHTML = S.view === 'asset' ? assetView() : fleetView();
+  drawCharts();
+}
+function toast(msg) { var t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(function () { t.hidden = true; }, 3200); }
+function dialog(html, onOk) { var d = $('#dlg'); d.innerHTML = '<form method="dialog">' + html + '</form>'; d.showModal(); var f = $('form', d); f.addEventListener('submit', function (e) { e.preventDefault(); var ok = e.submitter && e.submitter.value === 'ok'; d.close(); if (ok && onOk) { onOk(f); } }); }
+document.addEventListener('click', function (e) {
+  var el = e.target.closest('[data-a],[data-tab],[data-r],[data-open]'); if (!el) { return; }
+  if (el.dataset.tab) { S.tab = el.dataset.tab; render(); return; }
+  if (el.dataset.r) { S.range = el.dataset.r; if (S.range === 'custom' && !S.from) { S.to = new Date(NOW).toISOString().slice(0, 10); S.from = new Date(NOW - 10 * 86400000).toISOString().slice(0, 10); } render(); return; }
+  if (el.dataset.open !== undefined) { if (el.dataset.open) { S.view = 'asset'; S.dev = el.dataset.open; S.tab = 'overview'; $('#c-view').value = 'asset'; $('#c-dev').value = S.dev; render(); window.scrollTo(0, 0); } else { toast('Sample device: only the two demo devices open a full page.'); } return; }
+  var a = el.dataset.a, dv = DEV[S.dev];
+  if (a === 'rail') { S.rail = !S.rail; render(); }
+  else if (a === 'applyrange') { S.from = $('#r-from').value; S.to = $('#r-to').value; render(); }
+  else if (a === 'out') { var row = $('#out-' + el.dataset.i); row.hidden = !row.hidden; el.setAttribute('aria-expanded', String(!row.hidden)); el.textContent = row.hidden ? 'View output' : 'Hide output'; }
+  else if (a === 'reboot') { dialog('<h3 id="dlg-t">Reboot ' + esc(dv.host) + '?</h3><p class="muted" style="margin:0">The device restarts after 30 seconds. Users on it lose unsaved work. This job is sent at most once and cannot be undone.</p><label><span>Delay (seconds)</span><input type="number" min="5" max="3600" value="30"></label><label style="display:flex;gap:8px;align-items:center;grid-template-columns:none"><input type="checkbox" id="cf" required> I confirm this reboot.</label><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn danger" value="ok">Queue reboot</button></div>', function () { toast('Mock: reboot job queued for ' + dv.host + '.'); }); }
+  else if (a === 'runscript') { dialog('<h3 id="dlg-t">Run script on ' + esc(dv.host) + '</h3><label><span>Saved script</span><select><option>Clear temp files</option><option>Check BitLocker status</option><option>Restart Print Spooler</option></select></label><label><span>Timeout (seconds)</span><input type="number" min="1" max="3600" value="300"></label><p class="muted" style="margin:0;font-size:12.5px">Runs as SYSTEM. Output is size-capped and has secrets redacted. Free-form scripts need the "run script" permission' + (S.role === 'admin' || S.role === 'tech' ? '' : ' (not granted)') + '.</p><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" value="cancel">Cancel</button><button class="btn primary" value="ok">Queue job</button></div>', function () { toast('Mock: script job queued. It will appear under Jobs.'); }); }
+  else if (a === 'remote') { toast('Mock: would mint a single-use MeshCentral login and open it in a new tab (audited).'); }
+  else if (a === 'ticket') { toast('Mock: ticket form opens, prefilled with this device and its open alerts.'); }
+  else if (a === 'collect') { toast('Mock: inventory collection queued.'); }
+  else if (a === 'ack') { toast('Mock: alert acknowledged.'); }
+  else if (a === 'rerun') { toast('Mock: same job queued again.'); }
+  else if (a === 'copy' || a === 'copyout') { toast('Copied (mock).'); }
+  else if (a === 'admin' || a === 'bulk' || a === 'tag' || a === 'nav') { toast('Mock: ' + (a === 'admin' ? 'administrator action' : a === 'bulk' ? 'bulk action on selected devices' : a === 'tag' ? 'tag picker (Phase 1)' : 'opens the alerts list filtered to this device') + '.'); }
+  if (el.closest('.menu') && !el.matches('summary')) { var m = el.closest('.menu'); m.removeAttribute('open'); }
+});
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (t.dataset && t.dataset.sel !== undefined) { S.sel[t.dataset.sel] = t.checked; render(); }
+  else if (t.hasAttribute && t.hasAttribute('data-all')) { FLEET.forEach(function (f, i) { S.sel[i] = t.checked; }); render(); }
+});
+document.addEventListener('input', function (e) {
+  var q = e.target.id === 'sw-q' ? '#sw' : e.target.id === 'f-q' ? '#fleet' : null; if (!q) { return; }
+  var v = e.target.value.toLowerCase(); $$(q + ' tbody tr').forEach(function (tr) { tr.hidden = v && tr.textContent.toLowerCase().indexOf(v) < 0; });
+});
+document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.matches && e.target.matches('a.dev')) { e.target.click(); } });
+function bind(id, key, fn) { $(id).addEventListener('change', function (e) { S[key] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; if (fn) { fn(); } render(); }); }
+bind('#c-view', 'view'); bind('#c-dev', 'dev'); bind('#c-state', 'state'); bind('#c-ed', 'ed'); bind('#c-role', 'role'); bind('#c-patch', 'patch', function () { if (!S.patch && S.tab === 'patches') { S.tab = 'overview'; } }); bind('#c-ph', 'ph');
+$('#c-theme').addEventListener('change', function (e) { var v = e.target.value; if (v === 'auto') { document.documentElement.removeAttribute('data-theme'); } else { document.documentElement.setAttribute('data-theme', v); } });
+var rt; window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(drawCharts, 120); });
+render();
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,8 @@
+Name               Version                     Rev    Tracking         Publisher    Notes
+bare               1.0                         5      latest/stable    canonical✓   base
+core22             20240111                    1380   latest/stable    canonical✓   base
+firefox            131.0-1                     5187   latest/stable/…  mozilla✓     -
+firefox            130.0-1                     5100   latest/stable/…  mozilla✓     disabled
+hello-world        6.4                         29     latest/stable    starcraft**  -
+my-local           0.1                         x1     -                -            -
+broken line

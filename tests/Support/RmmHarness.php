@@ -1,0 +1,392 @@
+<?php
+
+declare(strict_types=1);
+
+namespace RivetCore\Tests\Support;
+
+use RivetCore\Contracts\AccessPolicyInterface;
+use RivetCore\Contracts\ClockInterface;
+use RivetCore\Jobs\Migration\Migration0002IntegrationJobs;
+use RivetCore\Jobs\Migration\Migration0012JobHeartbeat;
+use RivetCore\Rmm\Authz\RmmPrincipal;
+use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
+use RivetCore\Rmm\Contracts\RmmModuleStateInterface;
+use RivetCore\Rmm\Http\DeviceApi;
+use RivetCore\Rmm\Http\RmmRequest;
+use RivetCore\Rmm\Http\RmmResponse;
+use RivetCore\Rmm\Migration\Migration0014EndpointAgent;
+use RivetCore\Rmm\Migration\Migration0015EndpointAgentConverge;
+use RivetCore\Rmm\Migration\Migration0016ModuleSwitches;
+use RivetCore\Rmm\Migration\Migration0018InventoryFoundation;
+use RivetCore\Rmm\Migration\Migration0019PoliciesAndScripts;
+use RivetCore\Rmm\Migration\Migration0020AlertingMaturity;
+use RivetCore\Rmm\Migration\Migration0021ScaleStorage;
+use RivetCore\Rmm\Migration\Migration0022RemoteAndLogs;
+use RivetCore\Rmm\Migration\Migration0023MeshAgent;
+use RivetCore\Rmm\Migration\Migration0024MeshGroupUrl;
+use RivetCore\Rmm\Migration\Migration0025MsiTemplates;
+use RivetCore\Rmm\Migration\Migration0026MeshHide;
+use RivetCore\Rmm\RmmModule;
+use RivetCore\Testing\InMemoryRmmAssets;
+use RivetCore\Testing\InMemoryRmmAudit;
+use RivetCore\Testing\InMemoryRmmEvents;
+use RivetCore\Testing\InMemoryRmmMetricSink;
+use RivetCore\Testing\InMemoryRmmModuleState;
+use RivetCore\Testing\InMemoryRmmTenancy;
+use RivetCore\Testing\InMemorySecretBox;
+
+/**
+ * A fully wired module for the integration tests: the REAL endpoint_agent_* tables on the scratch database (created by Core's own
+ * migrations 0014 to 0016, strict SQL mode) and Core's in-memory reference adapters for everything the edition owns. Refuses any
+ * database whose name does not contain "scratch".
+ */
+final class RmmHarness
+{
+    public const TABLES = ['endpoint_agent_checkins', 'endpoint_agent_checks', 'endpoint_agent_jobs', 'endpoint_agent_mesh_nodes', 'endpoint_agent_releases',
+        'endpoint_agent_enroll_attempts', 'endpoint_agent_enrollment_tokens', 'endpoint_agent_devices', 'endpoint_agent_binaries',
+        'endpoint_agent_check_history', 'rmm_device_state', 'rmm_device_software', 'rmm_software_history', 'rmm_tags', 'rmm_device_tags', 'rmm_groups', 'rmm_group_devices',
+        'rmm_group_tags', 'rmm_metric_latest', 'rmm_metric_hourly', 'rmm_policies', 'rmm_policy_versions', 'rmm_policy_assignments', 'rmm_scripts_v2',
+        'rmm_script_versions', 'rmm_job_extra', 'rmm_schedules', 'rmm_schedule_runs', 'rmm_approvals', 'rmm_custom_fields', 'rmm_custom_field_values',
+        'rmm_alerting_settings', 'rmm_check_eval', 'rmm_alert_meta', 'rmm_storm_summaries', 'rmm_maintenance_windows', 'rmm_device_parents',
+        'rmm_escalation_policies', 'rmm_escalation_steps', 'rmm_metric_daily', 'rmm_storage_state', 'rmm_metric_rollup_state', 'rmm_hot_store_faults', 'rmm_pending_client_moves', 'rmm_data_store_connection', 'rmm_store_migration', 'rmm_cache', 'rmm_metric_outbox', 'rmm_token_buckets', 'endpoint_agent_remote_settings', 'endpoint_agent_transfers', 'endpoint_agent_log_events', 'endpoint_agent_log_state', 'endpoint_agent_log_rules', 'endpoint_agent_mesh_settings', 'endpoint_agent_mesh_agents', 'endpoint_agent_installer_options', 'endpoint_agent_msi_templates',
+        'rmm_patch_scans', 'rmm_patch_available', 'rmm_patch_history', 'rmm_patch_rings', 'rmm_patch_policies', 'rmm_patch_assignments', 'rmm_patch_rules', 'rmm_patch_jobs',
+        'rmm_software_hosts', 'rmm_packages', 'rmm_package_versions', 'rmm_package_assignments', 'rmm_deploy_state', 'rmm_package_installs', 'rmm_package_history', 'rmm_package_jobs', 'rmm_package_auto', 'rmm_package_auto_clients', 'rmm_package_params', 'rmm_installer_apps', 'rmm_device_apps', 'rmm_hosted_files', 'rmm_version_hosted', 'rmm_hosted_grants',
+        'endpoint_agent_change_settings', 'endpoint_agent_change_records', 'endpoint_agent_change_state', 'endpoint_agent_change_rules', 'rmm_device_checkset', 'rmm_hypervisor_hosts', 'rmm_hypervisor_vms', 'rmm_hypervisor_storage', 'rmm_hypervisor_vm_history', 'rmm_mesh_after_approval', 'panel_client_settings', 'panel_ticket_owner', 'rmm_daily_budget'];
+
+    public \mysqli $mysqli;
+    public MysqliDatabase $db;
+    public CountingDatabase $counting;
+    public ClockInterface $clock;
+    public InMemoryRmmTenancy $tenancy;
+    public InMemoryRmmAssets $assets;
+    public RecordingRmmBridge $bridge;
+    public InMemorySecretBox $box;
+    public InMemoryRmmAudit $audit;
+    public RmmMetricSinkInterface $metrics;
+    /** The event bus the module was given (null = none: the module's default null bus). */
+    public ?InMemoryRmmEvents $events = null;
+    public RmmModule $module;
+    public AccessPolicyInterface $policy;
+    public DeviceApi $api;
+    public int $clientA = 0;
+    public int $clientB = 0;
+    /** @var array<string,int> bucket => calls inside the current test */
+    public array $rateCalls = [];
+    /** @var array<string,array{0:int,1:int}> bucket => [limit, window] of the last call */
+    public array $rateArgs = [];
+    /** @var array<string,int> bucket => limit override (0 = unlimited) */
+    public array $rateOverride = [];
+    public string $binaryDir;
+    /** @var list<int> microseconds the long poll asked to sleep */
+    public array $slept = [];
+    public int $seqCounter = 0;
+    /** The long poll's monotonic clock: it only moves when the poll sleeps, so a 5 s wait costs no real time. */
+    public float $pollClock = 1000.0;
+    /** @var list<\mysqli> every connection opened by a harness since the last {@see closeAll()} */
+    private static array $connections = [];
+
+    /**
+     * @param array<string,mixed> $options RmmModule options
+     */
+    public function __construct(?ClockInterface $clock = null, ?RmmModuleStateInterface $state = null, array $options = [], bool $withModuleState = false, ?RmmMetricSinkInterface $sink = null, ?AccessPolicyInterface $policy = null, ?\RivetCore\Webhooks\UrlPolicy $urlPolicy = null, ?InMemoryRmmEvents $events = null)
+    {
+        $name = (string) getenv('RIVETCORE_TEST_DB_NAME');
+        if (!str_contains($name, 'scratch')) {
+            throw new \RuntimeException('Refusing: RIVETCORE_TEST_DB_NAME must name a scratch database');
+        }
+        $m = ScratchDb::connect();
+        if ($m === null) {
+            throw new \RuntimeException('RIVETCORE_TEST_DB_NAME not set');
+        }
+        $this->mysqli = $m;
+        self::$connections[] = $m;
+        $this->db = new MysqliDatabase($m);
+        $this->counting = new CountingDatabase($this->db);
+        $this->clock = $clock ?? new MutableClock();
+        $this->binaryDir = sys_get_temp_dir() . '/rmm_bin_' . bin2hex(random_bytes(4));
+        mkdir($this->binaryDir, 0700);
+
+        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs(), new Migration0023MeshAgent(), new Migration0024MeshGroupUrl(), new Migration0025MsiTemplates(), new Migration0026MeshHide(), new \RivetCore\Rmm\Migration\Migration0027MeshNodeIds(), new \RivetCore\Rmm\Migration\Migration0028Patching(), new \RivetCore\Rmm\Migration\Migration0029SoftwareDeploy(), new \RivetCore\Rmm\Migration\Migration0030ChangeMonitor(), new \RivetCore\Rmm\Migration\Migration0031ClockSkew(), new \RivetCore\Rmm\Migration\Migration0032CheckSet(), new \RivetCore\Rmm\Migration\Migration0033AutoInstall(), new \RivetCore\Rmm\Migration\Migration0034MeshAfterApproval(), new \RivetCore\Rmm\Migration\Migration0035DeviceType(), new \RivetCore\Rmm\Migration\Migration0036Hypervisors(), new \RivetCore\Rmm\Migration\Migration0037AgentOs(), new \RivetCore\Rmm\Migration\Migration0038ConfigSeq(), new \RivetCore\Rmm\Migration\Migration0039AutomationDisabled(), new \RivetCore\Panel\Migration\Migration0040PanelApi(), new \RivetCore\Rmm\Migration\Migration0041DailyBudget(), new \RivetCore\Rmm\Migration\Migration0042RmmDataStore(), new \RivetCore\Rmm\Migration\Migration0043RmmStoreDenormalisation(), new \RivetCore\Rmm\Migration\Migration0044RmmStoreSwitch()] as $mig) {
+            $mig->up($this->db);
+        }
+        \RivetCore\Rmm\Store\MariaDb\ClientColumn::forget();
+        $this->wipe();
+
+        $this->tenancy = new InMemoryRmmTenancy();
+        $this->clientA = $this->tenancy->addClient('Dept A');
+        $this->clientB = $this->tenancy->addClient('Dept B');
+        $this->assets = new InMemoryRmmAssets();
+        $this->bridge = new RecordingRmmBridge($this->clock);
+        $this->box = new InMemorySecretBox(str_repeat('k', SODIUM_CRYPTO_SECRETBOX_KEYBYTES));
+        $this->audit = new InMemoryRmmAudit();
+        $this->metrics = $sink ?? new InMemoryRmmMetricSink();
+        $this->module = new RmmModule(
+            $this->counting, $this->clock, $this->tenancy, $this->assets, $this->bridge, $this->box, $this->audit, $this->metrics,
+            $state ?? new InMemoryRmmModuleState(true),
+            $options + ['binary_dir' => $this->binaryDir, 'allow_insecure_http' => true],
+            null,
+            $this->policy = $policy ?? new AllowUsersPolicy([1 => true]),
+            $urlPolicy ?? new \RivetCore\Webhooks\UrlPolicy(true),
+            $this->events = $events,
+        );
+        $this->api = $this->module->deviceApi(
+            fn (string $bucket, int $limit, int $window): bool => $this->rateLimit($bucket, $limit, $window),
+            $withModuleState,
+            function (int $us): void {
+                $this->slept[] = $us;
+                $this->pollClock += $us / 1e6;
+            },
+            fn (): float => $this->pollClock,
+        );
+    }
+
+    /** Close every connection a test opened (a closure cycle keeps the harness alive until the next GC run, and the server has a connection limit). */
+    public static function closeAll(): void
+    {
+        foreach (self::$connections as $c) {
+            try {
+                $c->close();
+            } catch (\Throwable) {
+                // already closed
+            }
+        }
+        self::$connections = [];
+    }
+
+    public function __destruct()
+    {
+        foreach (glob($this->binaryDir . '/*') ?: [] as $f) {
+            @unlink($f);
+        }
+        @rmdir($this->binaryDir);
+    }
+
+    private function rateLimit(string $bucket, int $limit, int $window): bool
+    {
+        $this->rateArgs[$bucket] = [$limit, $window];
+        $this->rateCalls[$bucket] = ($this->rateCalls[$bucket] ?? 0) + 1;
+        $eff = $this->rateOverride[$bucket] ?? $limit;
+
+        return $eff === 0 || $this->rateCalls[$bucket] <= $eff;
+    }
+
+    public function wipe(): void
+    {
+        foreach (self::TABLES as $t) {
+            $this->mysqli->query("DELETE FROM `$t`");
+        }
+        $this->mysqli->query('DELETE FROM integration_jobs');
+        $this->mysqli->query('DELETE FROM endpoint_agent_settings');
+        $this->mysqli->query('INSERT INTO endpoint_agent_settings (id) VALUES (1)');
+        $this->mysqli->query("INSERT IGNORE INTO rmm_patch_rings (name, delay_days, sort_order, description) VALUES ('pilot', 0, 10, ''), ('broad', 7, 20, ''), ('last', 14, 30, '')");
+    }
+
+    // ------------------------------------------------------------------ requests
+
+    /**
+     * @param array<string,string> $query
+     * @param array<string,string> $headers lower-case names
+     */
+    public function request(string $method, string $endpoint, ?string $rawBody = null, ?string $token = null, array $query = [], array $headers = [], string $ip = '127.0.0.1', bool $secure = true, ?int $declared = null): RmmRequest
+    {
+        if ($token !== null) {
+            $headers['authorization'] = 'Bearer ' . $token;
+        }
+        $stream = null;
+        if ($rawBody !== null) {
+            $stream = fopen('php://memory', 'w+b');
+            fwrite($stream, $rawBody);
+            rewind($stream);
+        }
+
+        return new RmmRequest($method, $endpoint, [], $query, $headers, $ip, 'test-agent', $secure, $declared ?? ($rawBody === null ? null : strlen($rawBody)), $stream);
+    }
+
+    /**
+     * Call a device endpoint with a JSON body (arrays are encoded, strings are sent as given).
+     *
+     * @param array<string,string> $query
+     * @param array<string,string> $headers
+     * @return array{0:int,1:array<string,string>,2:mixed,3:RmmResponse}
+     */
+    public function call(string $method, string $endpoint, mixed $body = null, ?string $token = null, array $query = [], array $headers = [], string $ip = '127.0.0.1', bool $secure = true): array
+    {
+        $raw = $body === null ? null : (is_string($body) ? $body : (string) json_encode($body));
+        $r = $this->api->handle($this->request($method, $endpoint, $raw, $token, $query, $headers + ($raw !== null && !is_string($body) ? ['content-type' => 'application/json'] : []), $ip, $secure));
+
+        return [$r->status, $r->headers, $r->body === null ? null : json_decode($r->body, true), $r];
+    }
+
+    // ------------------------------------------------------------------ technician side
+
+    /**
+     * Call the technician REST API as a principal (null = unauthenticated).
+     *
+     * @param list<string> $segments path segments after endpoint_devices
+     * @param array<string,string> $query
+     * @return array{0:int,1:mixed,2:RmmResponse}
+     */
+    public function tech(string $method, array $segments, ?RmmPrincipal $who, mixed $body = null, array $query = [], string $ip = '127.0.0.1'): array
+    {
+        $raw = $body === null ? null : (is_string($body) ? $body : (string) json_encode($body));
+        $stream = null;
+        if ($raw !== null) {
+            $stream = fopen('php://memory', 'w+b');
+            fwrite($stream, $raw);
+            rewind($stream);
+        }
+        $req = new RmmRequest($method, 'endpoint_devices', $segments, $query, [], $ip, 'test-agent', true, $raw === null ? null : strlen($raw), $stream);
+        $r = $this->module->technicianApi()->handle($req, $who);
+
+        return [$r->status, $r->body === null ? null : json_decode($r->body, true), $r];
+    }
+
+    public function principal(int $userId = 1, string $name = 'Admin'): RmmPrincipal
+    {
+        return new RmmPrincipal($userId, $name);
+    }
+
+    // ------------------------------------------------------------------ scenario helpers
+
+    public function enable(): void
+    {
+        $this->module->settings()->enable();
+    }
+
+    public function token(?int $client = null, int $ttlH = 24, int $maxUses = 5, string $ring = 'stable'): string
+    {
+        $this->enable();
+
+        return $this->module->enrollment()->createToken($client ?? $this->clientA, 0, $ring, $ttlH, $maxUses, 'test', 1)['token'];
+    }
+
+    /** @param array<string,mixed> $over */
+    public static function device(array $over = []): array
+    {
+        return array_merge(['install_id' => self::uuid(), 'machine_guid' => strtolower(bin2hex(random_bytes(8))), 'hostname' => 'WS-' . strtoupper(bin2hex(random_bytes(2))), 'os' => 'windows',
+            'os_version' => 'Windows 11 23H2', 'arch' => 'amd64', 'serial' => 'SN' . strtoupper(bin2hex(random_bytes(4))), 'manufacturer' => 'Dell', 'model' => 'Latitude 7440',
+            'mac_addresses' => [], 'agent_version' => '1.0.0'], $over);
+    }
+
+    public static function uuid(): string
+    {
+        return \RivetCore\Rmm\Job\JobService::uuid();
+    }
+
+    /**
+     * @param array<string,mixed> $device
+     * @return array{0:int,1:array<string,string>,2:mixed,3:RmmResponse}
+     */
+    public function enroll(string $token, array $device, string $ip = '127.0.0.1'): array
+    {
+        return $this->call('POST', 'agent_enroll', ['enrollment_token' => $token, 'device' => $device], null, [], [], $ip);
+    }
+
+    public static function ts(int $offset = 0): string
+    {
+        return gmdate('Y-m-d\TH:i:s\Z', time() + $offset);
+    }
+
+    /**
+     * @param array<string,mixed> $over
+     * @return array{0:int,1:array<string,string>,2:mixed,3:RmmResponse}
+     */
+    public function checkin(string $deviceToken, array $over = []): array
+    {
+        $this->seqCounter++;
+        $body = array_merge(['seq' => $this->seqCounter, 'collected_at' => self::ts(), 'agent_version' => '1.0.0', 'inventory' => null,
+            'metrics' => ['cpu_pct' => 10.5, 'mem_pct' => 40.0, 'disk' => [['mount' => 'C:', 'used_pct' => 55.0]], 'net_rx_bps' => 100.0, 'net_tx_bps' => 50.0],
+            'checks' => [], 'buffered' => []], $over);
+
+        return $this->call('POST', 'agent_checkin', $body, $deviceToken);
+    }
+
+    /** @return mixed first column of the first row */
+    public function one(string $sql): mixed
+    {
+        $r = $this->mysqli->query($sql);
+        if (!$r instanceof \mysqli_result) {
+            return null;
+        }
+        $row = $r->fetch_row();
+
+        return $row[0] ?? null;
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function rows(string $sql): array
+    {
+        $r = $this->mysqli->query($sql);
+
+        return $r instanceof \mysqli_result ? $r->fetch_all(MYSQLI_ASSOC) : [];
+    }
+
+    public function q(string $sql): void
+    {
+        $this->mysqli->query($sql);
+    }
+
+    public function integrationId(): int
+    {
+        return $this->module->settings()->integrationId();
+    }
+
+    /** Add an asset to the edition's (in-memory) inventory. @param array<string,mixed> $a */
+    public function asset(array $a): int
+    {
+        return $this->assets->addAsset($a + ['client_id' => $this->clientA]);
+    }
+
+    /** Archive an asset of the in-memory edition inventory (the reference model has no archive method of its own). */
+    public function archiveAsset(int $assetId): void
+    {
+        $ref = new \ReflectionProperty($this->assets, 'assets');
+        $all = $ref->getValue($this->assets);
+        $all[$assetId]['archived'] = true;
+        $ref->setValue($this->assets, $all);
+    }
+
+    /** A syntactically valid PE image for a machine type (what the real publish path accepts). */
+    public static function fakePe(int $machine, int $size, string $fill): string
+    {
+        $b = 'MZ' . str_repeat("\0", 0x3A) . pack('V', 128);
+        $b = str_pad($b, 128, "\0");
+        $b .= "PE\0\0" . pack('v', $machine) . pack('v', 3) . str_repeat("\0", 12) . pack('v', 0xE0) . pack('v', 0x0022);
+        $chunk = hash('sha256', $fill . $machine, true);
+        $need = $size - strlen($b);
+
+        return $b . substr(str_repeat($chunk, intdiv($need, 32) + 1), 0, $need);
+    }
+
+    /** A minimal ELF64 little-endian executable header (e_type 2) for the machine, padded to `size`, with `$text` embedded (the version string the publish check looks for). */
+    public static function fakeElf(int $machine, int $size, string $text, int $type = 2): string
+    {
+        $h = "\x7fELF" . chr(2) . chr(1) . chr(1) . str_repeat("\0", 9) . pack('v', $type) . pack('v', $machine) . pack('V', 1);
+        $h = str_pad($h, 64, "\0") . $text . "\0";
+
+        return str_pad($h, $size, "\xAB");
+    }
+
+    /**
+     * Store a hosted agent binary the way the admin publish path does (file under the binary dir, rows in endpoint_agent_binaries
+     * and, for a ring, endpoint_agent_releases) so the read side can be tested without the admin layer.
+     *
+     * @return array{binary_id:int,sha256:string,size:int,path:string,bytes:string}
+     */
+    public function publishBinary(string $version, string $arch = 'amd64', int $size = 8192, bool $current = false, ?string $ring = null, int $pct = 100, string $minVersion = '0.0.0', string $os = 'windows'): array
+    {
+        $machine = \RivetCore\Rmm\RmmProtocol::ARCHS[$arch];
+        $bytes = $os === 'linux' ? self::fakeElf($arch === 'amd64' ? 62 : 183, $size, $version) : self::fakePe($machine, $size, 'fill-' . $version);
+        $name = 'bin_' . bin2hex(random_bytes(16)) . '.bin';
+        file_put_contents($this->binaryDir . '/' . $name, $bytes);
+        $sha = hash('sha256', $bytes);
+        $this->mysqli->query("INSERT INTO endpoint_agent_binaries (version, arch, sha256, size_bytes, storage_name, uploaded_by, active, is_current, created_at, os) VALUES ('$version', '$arch', '$sha', $size, '$name', 1, 1, " . ($current ? 1 : 0) . ", UTC_TIMESTAMP(), '$os')");
+        $id = (int) $this->mysqli->insert_id;
+        if ($ring !== null) {
+            $url = $this->module->updates()->updateUrl($arch, $version, $os) ?? 'https://example.test/x';
+            $this->mysqli->query("INSERT INTO endpoint_agent_releases (version, url, sha256, min_version, ring, rollout_pct, notes, created_by, created_at, arch, binary_id, os) VALUES ('$version', '" . $this->mysqli->real_escape_string($url) . "', '$sha', '$minVersion', '$ring', $pct, 'test', 1, UTC_TIMESTAMP(), '$arch', $id, '$os')");
+        }
+
+        return ['binary_id' => $id, 'sha256' => $sha, 'size' => $size, 'path' => $this->binaryDir . '/' . $name, 'bytes' => $bytes];
+    }
+}

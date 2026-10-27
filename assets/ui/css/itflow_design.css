@@ -1,0 +1,1067 @@
+/* =============================================================================
+   RivetIT design layer — the internal IT operations identity.
+   Loaded LAST (after adminlte4 + bridge + itflow_custom) so it sets the tone.
+   Boldness lives in ONE place: the teal accent + IBM Plex type. Everything
+   else is kept quiet and precise. Works in light + dark.
+   ============================================================================= */
+
+/* ---- Self-hosted type (CSP 'self') ---- */
+@font-face { font-family:'Plex Sans'; src:url('/fonts/plex-sans-400.woff2') format('woff2'); font-weight:400; font-style:normal; font-display:swap; }
+@font-face { font-family:'Plex Sans'; src:url('/fonts/plex-sans-500.woff2') format('woff2'); font-weight:500; font-style:normal; font-display:swap; }
+@font-face { font-family:'Plex Sans'; src:url('/fonts/plex-sans-600.woff2') format('woff2'); font-weight:600; font-style:normal; font-display:swap; }
+@font-face { font-family:'Plex Sans'; src:url('/fonts/plex-sans-700.woff2') format('woff2'); font-weight:700; font-style:normal; font-display:swap; }
+@font-face { font-family:'Plex Mono'; src:url('/fonts/plex-mono-400.woff2') format('woff2'); font-weight:400; font-style:normal; font-display:swap; }
+@font-face { font-family:'Plex Mono'; src:url('/fonts/plex-mono-500.woff2') format('woff2'); font-weight:500; font-style:normal; font-display:swap; }
+
+:root {
+  --if-sans: 'Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --if-mono: 'Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  /* intentional cool-slate neutrals with a faint teal bias (not a flat gray) */
+  --if-bg: #eef2f2;
+  --if-surface: #ffffff;
+  --if-border: #e3e9ea;
+  --if-border-strong: #d3dbdc;
+  --if-ink: #16232a;
+  --if-muted: #4b5d64;
+  --if-radius: 12px;
+  --if-radius-sm: 8px;
+  --if-shadow: 0 1px 2px rgba(20,35,42,.04), 0 3px 10px rgba(20,35,42,.05);
+}
+:root[data-bs-theme="dark"] {
+  --if-bg: #0d1417;
+  --if-surface: #14201f;
+  --if-border: #24332f;
+  --if-border-strong: #31433e;
+  --if-ink: #e7eeef;
+  --if-muted: #93a6ab;
+  --if-shadow: 0 1px 2px rgba(0,0,0,.35), 0 3px 12px rgba(0,0,0,.4);
+  --if-shadow-md: 0 6px 18px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.35);
+}
+:root {
+  --if-shadow-md: 0 6px 16px rgba(20,35,42,.10), 0 2px 6px rgba(20,35,42,.08);
+}
+/* Brand/accent alias into this file's token namespace. Declared on `body`
+   (not `:root`) so it re-resolves against whichever --color-accent is
+   cascaded AT body — the plain default, or body.dark-mode's override —
+   instead of locking in :root's light-mode value regardless of theme
+   (a :root-level alias can't see a child selector's override). Source of
+   truth for the actual color stays includes/header.php's per-company inline
+   block + itflow_custom.css's body.dark-mode block; this just gives the
+   rest of this file (and includes/ui/ components) one consistent name for it. */
+body {
+  --if-primary: var(--color-accent, #0d9488);
+  --if-primary-hover: var(--color-accent-hover, #0f766e);
+  --if-primary-soft: var(--color-accent-soft, #ccfbf1);
+  --if-primary-rgb: var(--color-accent-rgb, 13, 148, 136);
+}
+
+/* ---- Base typography ---- */
+body, .app-wrapper, .app-main, .content, .modal, input, button, select, textarea,
+.btn, .form-control, .form-select, .nav, .card, .table, .dropdown-menu, .tom-select, .ts-control {
+  font-family: var(--if-sans);
+}
+body { -webkit-font-smoothing: antialiased; letter-spacing: -0.006em; background-color: var(--if-bg); color: var(--if-ink); }
+.app-main { background-color: var(--if-bg); }
+h1,h2,h3,h4,h5,h6, .h1,.h2,.h3,.h4,.h5,.h6 { font-weight: 650; letter-spacing: -0.02em; }
+h1,.h1 { font-size: 1.6rem; } h2,.h2 { font-size: 1.35rem; } h3,.h3 { font-size: 1.15rem; }
+/* Tabler ships --tblr-font-size-h4:.875rem / h5:.75rem / h6:.625rem, so an h4
+   page title lands at body size and an h6 section heading renders SMALLER than
+   the uppercase column labels underneath it - the hierarchy reads inverted.
+   Redeclare the whole scale here so the ranking is monotone:
+   page title > card title > section heading > body > column label.
+   h4 deliberately outranks h3: in this codebase h4 IS the page-title convention
+   ("Alerts", "RMM Assets", the dashboard greeting, a ticket subject) while h3
+   and h5 are almost always .card-title/.modal-title, which Tabler pins at 1rem
+   on the class regardless of which element carries it. */
+h4,.h4 { font-size: 1.25rem; } h5,.h5 { font-size: 1rem; } h6,.h6 { font-size: .9375rem; }
+/* Card titles inherit Tabler's 500; 600 matches .card-header's own weight so a
+   header reads at one weight whether or not it wraps its text in an h3/h5. */
+.card-title { font-weight: 600; letter-spacing: -0.01em; }
+.text-muted, small.text-muted { color: var(--if-muted) !important; }
+
+/* Mono for the data that defines the product: IDs, code, times, tabular figures */
+code, kbd, samp, pre, .text-monospace, .font-monospace, .if-mono { font-family: var(--if-mono) !important; }
+.table td, .table th, .small-box h3, .info-box-number, td .badge, .table .text-end { font-variant-numeric: tabular-nums; }
+
+/* ---- Cards: crisp border, soft shadow, consistent radius ---- */
+.card {
+  background: var(--if-surface);
+  border: 1px solid var(--if-border);
+  border-radius: var(--if-radius);
+  box-shadow: var(--if-shadow);
+}
+.card > .card-header {
+  background: transparent;
+  border-bottom: 1px solid var(--if-border);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: .8rem 1rem;
+}
+.card > .card-header:first-child { border-radius: var(--if-radius) var(--if-radius) 0 0; }
+.card-body { padding: 1rem 1.1rem; }
+/* Two cards stacked as direct siblings had NO separation at all: AdminLTE's
+   .card carried margin-bottom:1rem, Tabler's carries none, and nothing restored
+   it - so a filter card and the results card under it fused into a single panel
+   with a hairline across the middle and a pinch where the two radii meet.
+   Space the pair instead of giving every card a trailing margin, which would
+   also add a stray gap under the last card on every page. */
+.card + .card { margin-top: 1rem; }
+/* ...but NOT inside a .card-group: those siblings sit side-by-side in one flex
+   row (Tabler zeroes the border between them to read as one seamless bar), so
+   the margin-top above was shoving every card but the first down by 1rem and
+   breaking that alignment - e.g. Project Details' name/description | owner |
+   progress row read as three disconnected floating panels instead of one bar. */
+.card-group > .card + .card { margin-top: 0; }
+
+/* Tabler's .card-group gives each child `flex: 1 0 0` (equal grow, no shrink,
+   zero basis) so siblings SHOULD end up equal-width - but it never sets
+   min-width on those children, and a flex item's default min-width is auto
+   (its own content's min-content size), not 0. Project Details' three-up
+   card-group (name/description, owner/dates, ticket+task progress) has
+   real, variable content in each slot - a client name, an assignee name, a
+   due date - and whichever slot's content happens to be widest wins extra
+   width at its siblings' expense instead of the row splitting evenly.
+   min-width: 0 removes that content-driven floor so flex-basis actually
+   governs the split, which is the equal-thirds look .card-group promises. */
+.card-group > .card { min-width: 0; }
+
+/* ---- Buttons: quiet, precise ---- */
+.btn { font-weight: 500; border-radius: var(--if-radius-sm); padding: .4rem .85rem; letter-spacing: -0.01em; }
+.btn-sm { padding: .28rem .6rem; border-radius: 7px; }
+.btn-primary { background-color: var(--if-primary); border-color: var(--if-primary); box-shadow: 0 1px 2px rgba(var(--if-primary-rgb),.25); }
+.btn-primary:hover, .btn-primary:focus { background-color: var(--if-primary-hover); border-color: var(--if-primary-hover); }
+.btn-secondary, .btn-default { background-color: var(--if-surface); border-color: var(--if-border-strong); color: var(--if-ink); }
+.btn-secondary:hover, .btn-default:hover { background-color: var(--if-bg); color: var(--if-ink); }
+/* AdminLTE4 ships a more specific selector pinning this button's text to
+   --bs-body-color, which resolves to light gray because it inherits from the
+   dark-themed .app-header ancestor (data-bs-theme="dark") even though this
+   dropdown itself renders on a light surface. Match its specificity to win. */
+.navbar-nav > .user-menu > .dropdown-menu > .user-footer .btn-default {
+  color: var(--if-ink);
+}
+.navbar-nav > .user-menu > .dropdown-menu > .user-footer .btn-default:hover {
+  color: var(--if-ink);
+  background-color: var(--if-bg);
+}
+/* User profile dropdown panel. The .user-header / .user-footer rules that used
+   to live here were written against AdminLTE markup that includes/top_nav.php
+   no longer emits (it is plain Tabler dropdown primitives now), so they matched
+   nothing; these are rewritten against the markup that actually ships. */
+.navbar-nav > .user-menu > .dropdown-menu {
+  overflow: hidden;
+  padding: 0;
+  border-radius: var(--if-radius);
+}
+/* The panel hangs off the always-dark header, so it picks up Tabler's dark
+   surface (rgb(43,48,56)) but inherits this file's light-mode --if-ink from
+   <body> - the name, the role and every menu item were landing at about 1.15:1
+   on it. Pin the panel's own ink. (This is what the deleted .user-footer
+   .btn-default rule was reaching for before the markup moved out from under
+   it.) */
+.navbar-nav > .user-menu > .dropdown-menu,
+.navbar-nav > .user-menu > .dropdown-menu .dropdown-item { color: #e9eef0; }
+.navbar-nav > .user-menu > .dropdown-menu .text-muted { color: #a7b7bc !important; }
+.navbar-nav > .user-menu > .dropdown-menu .dropdown-item:hover,
+.navbar-nav > .user-menu > .dropdown-menu .dropdown-item:focus {
+  background-color: rgba(255, 255, 255, .08);
+  color: #ffffff;
+}
+/* Avatars. Both <img> carry width/height attributes (28/28 and 72/72), but the
+   stylesheet reset recomputes height from the file's natural ratio, so a
+   portrait photo is drawn 33% too tall and the border-radius:50% mask turns it
+   into an ellipse - which also stretched .user-menu > a to 61px and pushed
+   .app-header to 70px against its 56px min-height. Re-square the box off
+   whatever width the markup asked for (no size hardcoded here) and crop the
+   photo instead of distorting it. */
+.user-menu img[width][height] {
+  aspect-ratio: 1 / 1;
+  height: auto;
+  object-fit: cover;
+}
+.user-menu .dropdown-menu img[width][height] {
+  box-shadow: 0 1px 3px rgba(20, 35, 42, .18);
+}
+
+/* ---- Chips / badges: the signature data element — crisp & consistent ---- */
+.badge { font-weight: 600; letter-spacing: .01em; border-radius: 999px; padding: .32em .62em; font-size: .72rem; }
+.rounded-pill { border-radius: 999px; }
+
+/* ---- Tables: scannable, calm ---- */
+.table { --bs-table-bg: transparent; color: var(--if-ink); }
+.table > thead th, .table > thead > tr > th {
+  font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--if-muted); border-bottom: 1px solid var(--if-border-strong); padding: .6rem .75rem; white-space: nowrap;
+}
+.table > tbody > tr > td { padding: .7rem .75rem; border-bottom: 1px solid var(--if-border); vertical-align: middle; }
+.table-hover > tbody > tr:hover > td { background-color: rgba(var(--if-primary-rgb),.045); }
+:root[data-bs-theme="dark"] .table-hover > tbody > tr:hover > td { background-color: rgba(var(--if-primary-rgb),.06); }
+
+/* Contextual rows (awaiting reply, overdue, etc.): a muted tint + left accent
+   reads as "this needs attention" without Bootstrap's default saturated fill. */
+.table-warning { --bs-table-bg: rgba(217,119,6,.09); --tblr-table-bg: rgba(217,119,6,.09); --bs-table-color: var(--if-ink); --tblr-table-color: var(--if-ink); box-shadow: inset 3px 0 0 #d97706; }
+.table-danger  { --bs-table-bg: rgba(220,38,38,.08); --tblr-table-bg: rgba(220,38,38,.08); --bs-table-color: var(--if-ink); --tblr-table-color: var(--if-ink); box-shadow: inset 3px 0 0 #dc2626; }
+.table-success { --bs-table-bg: rgba(5,150,105,.08); --tblr-table-bg: rgba(5,150,105,.08); --bs-table-color: var(--if-ink); --tblr-table-color: var(--if-ink); box-shadow: inset 3px 0 0 #059669; }
+.table-info    { --bs-table-bg: rgba(13,148,136,.08); --tblr-table-bg: rgba(13,148,136,.08); --bs-table-color: var(--if-ink); --tblr-table-color: var(--if-ink); box-shadow: inset 3px 0 0 #0d9488; }
+:root[data-bs-theme="dark"] .table-warning { --bs-table-bg: rgba(217,119,6,.14); --tblr-table-bg: rgba(217,119,6,.14); }
+:root[data-bs-theme="dark"] .table-danger  { --bs-table-bg: rgba(220,38,38,.14); --tblr-table-bg: rgba(220,38,38,.14); }
+:root[data-bs-theme="dark"] .table-success { --bs-table-bg: rgba(5,150,105,.14); --tblr-table-bg: rgba(5,150,105,.14); }
+:root[data-bs-theme="dark"] .table-info    { --bs-table-bg: rgba(13,148,136,.14); --tblr-table-bg: rgba(13,148,136,.14); }
+
+/* ---- Forms: tidy inputs ---- */
+/* One control height for the whole app. Native inputs and .btn resolved to 40px
+   while a Tom Select wrapper resolved to 37.4px, so every filter toolbar sat
+   2.6px out of line; give them all the same box instead of chasing paddings. */
+:root { --if-control-h: 2.5rem; }
+.form-control, .form-select, .ts-control {
+  border-color: var(--if-border-strong); border-radius: var(--if-radius-sm);
+  background-color: var(--if-surface); color: var(--if-ink); padding: .45rem .7rem;
+}
+.company-logo-preview { max-width: 100%; max-height: 10rem; object-fit: contain; }
+.company-logo-settings .form-group { text-align: left; }
+.company-logo-settings .form-text { line-height: 1.35; }
+.form-control:not(.form-control-sm):not(textarea),
+.form-select:not(.form-select-sm),
+.ts-wrapper:not(.form-control-sm) { min-height: var(--if-control-h); }
+.ts-wrapper:not(.form-control-sm) > .ts-control {
+  min-height: calc(var(--if-control-h) - 2px);
+  align-items: center;
+}
+/* A single-select control must never reflow the toolbar: at 1280 the widest
+   placeholder ("- All Departments -") wrapped to a second line and grew the
+   control to 58px beside its 37px neighbours. Truncate the selected label the
+   way every other one-line control in the app does. */
+.ts-wrapper.single > .ts-control { flex-wrap: nowrap; }
+.ts-wrapper.single > .ts-control > .item {
+  min-width: 0; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* "- Department -"-style first options (client_id/location/vendor/category
+   pickers) exist only so a required <select> starts on no real choice - Tom
+   Select's global allowEmptyOption:true (js/app.js) always renders that empty
+   value as a genuine selected item, not as its own placeholder mechanism, so
+   the label showed up as ordinary dark selected text instead of a soft hint.
+   Tom Select does mark the rendered item with data-value="" though, so once
+   the option's own text is trimmed down to a plain label (no more "- -"
+   wrapping - see the option text itself), this alone makes it read exactly
+   like the grey placeholder text in every other input on these same forms. */
+.ts-control .item[data-value=""] { color: var(--if-muted) !important; font-weight: 400; }
+/* The same empty/placeholder row, but inside the OPEN dropdown list rather
+   than the closed control above - it should read as a soft "clear this
+   field" hint there too, not as an ordinary, equally-weighted choice. */
+.ts-dropdown .option[data-value=""] { color: var(--if-muted); font-style: italic; }
+/* A genuinely disabled option (e.g. Network Drive's "C: (system drive)",
+   reserved because it's always the local system drive) needs to visibly read
+   as unavailable. Tom Select's own bootstrap5 theme tries to dim it via
+   opacity on a `[data-disabled]` selector, but a *plain* `.option{opacity:1}`
+   rule immediately after it in that same stylesheet - same specificity, later
+   in source order - wins the cascade and cancels the dimming for every option,
+   disabled or not (measured: a disabled option rendered at full opacity with
+   a normal pointer cursor). Tom Select does mark a disabled option with
+   aria-disabled="true" reliably, so target that directly instead. */
+.ts-dropdown .option[aria-disabled="true"] { color: var(--if-muted); opacity: .55; cursor: not-allowed; }
+/* Country-code inputs ("+1", "+44"...) are capped at 4 characters but were
+   sized with Bootstrap's .col-2 grid class (16.67% of the input-group) - a
+   grid utility repurposed as a "keep it small" hack, and wildly oversized for
+   what it holds. agent/modals/location/*.php had already solved this per-field
+   with an inline flex-grow-0 + width:4.5rem; promoted here into one shared
+   class so every phone/mobile/fax country-code box in the app sizes the same
+   way without repeating the inline style. */
+.form-control.phone-country-code { flex: 0 0 auto; width: 4.5rem; }
+/* Tom Select leaves the original <select> in place as a hidden first child, so
+   when the wrapper is alone in an .input-group Bootstrap's "not the first child"
+   rule squares off its left corners (and pulls it 1px left to overlap a border
+   that is not there) even though nothing renders beside it. That rule stacks six
+   :not()s for a specificity of 0,7,0, which no reasonable selector outruns -
+   hence !important, and hence only the two left corners, so a context that
+   deliberately rounds these controls differently keeps its right-hand shape. */
+.input-group > .ts-hidden-accessible + .ts-wrapper:last-child {
+  border-top-left-radius: var(--if-radius-sm) !important;
+  border-bottom-left-radius: var(--if-radius-sm) !important;
+  margin-left: 0 !important;
+}
+/* Bootstrap sees the hidden original select as a child and misses the visible
+   Tom Select wrapper after a legacy input-group-prepend icon. Keep only the
+   outside corners rounded and join the two borders without a gap. */
+.input-group > .input-group-prepend + .ts-hidden-accessible + .ts-wrapper,
+.input-group > .input-group-prepend + .ts-wrapper {
+  min-width: 0;
+  flex: 1 1 auto;
+  margin-left: -1px;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+}
+.input-group > .input-group-prepend + .ts-hidden-accessible + .ts-wrapper > .ts-control,
+.input-group > .input-group-prepend + .ts-wrapper > .ts-control {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+}
+.input-group > .input-group-prepend:has(+ .ts-hidden-accessible + .ts-wrapper) > .input-group-text,
+.input-group > .input-group-prepend:has(+ .ts-wrapper) > .input-group-text {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* Focus vs. invalid must not look alike. A soft coloured halo around a coloured
+   border IS Bootstrap's :invalid look, and on an install whose accent happens to
+   be red (the accent is per-company) an autofocused empty search box then reads
+   as a validation error on a page that has not been submitted. So focus gets a
+   CRISP double edge - border + a 1px ring, no glow - and the soft halo is
+   reserved for the error state below. */
+.form-control:focus, .form-select:focus, .ts-control.focus, .ts-wrapper.focus .ts-control {
+  border-color: var(--if-primary); box-shadow: 0 0 0 1px var(--if-primary);
+}
+/* The error state keeps the halo, and always in danger red rather than the
+   company accent, so "this field is wrong" never depends on which accent the
+   company picked. :user-invalid only fires after the user has actually left a
+   bad value, so an untouched required field stays neutral. */
+.form-control.is-invalid, .form-select.is-invalid,
+.was-validated .form-control:invalid, .was-validated .form-select:invalid {
+  border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,.16);
+  background-color: rgba(220,38,38,.04);
+}
+/* Kept in its own rule: a selector list is not forgiving, so an engine that
+   does not know :user-invalid would drop the block above along with it. */
+.form-control:user-invalid, .form-select:user-invalid {
+  border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,.16);
+  background-color: rgba(220,38,38,.04);
+}
+.form-label, label { font-weight: 500; color: var(--if-ink); margin-bottom: .3rem; }
+.input-group-text { background-color: var(--if-bg); border-color: var(--if-border-strong); color: var(--if-muted); }
+
+/* ---- Sidebar: a teal rail marks the active item (quiet elsewhere) ---- */
+.app-sidebar .sidebar-menu .nav-link, .main-sidebar .nav-link { border-radius: 8px; font-weight: 450; }
+
+/* Group-header links (the ones that toggle a nested .nav-treeview) get a
+   touch more weight and brightness than plain single-destination links, so
+   "this is a category" reads differently from "this goes straight to a page"
+   at a glance - without them the whole menu was one visually flat list where
+   nothing signalled which rows expand and which just navigate. */
+.app-sidebar .sidebar-menu > .nav-item:has(> .nav-treeview) > .nav-link {
+  font-weight: 600;
+  color: #eef1f4 !important;
+}
+.app-sidebar .sidebar-menu > .nav-item:has(> .nav-treeview) > .nav-link .nav-icon {
+  color: #eef1f4 !important;
+}
+.app-sidebar .sidebar-menu > .nav-item:has(> .nav-treeview) > .nav-link .nav-arrow {
+  opacity: .6;
+}
+.app-sidebar .sidebar-menu > .nav-item.menu-open:has(> .nav-treeview) > .nav-link .nav-arrow {
+  opacity: 1;
+  color: var(--color-accent);
+}
+/* The chevron is absolutely positioned at the row's right edge; on a group
+   header that also shows a count badge (e.g. "Service Desk 27") the two sit
+   close together in the already-tight ~250px sidebar. Reserving space via
+   padding on the <p> was tried and made it worse - the sidebar is narrow
+   enough that it just pushed the badge itself into the ellipsis truncation
+   instead. Shrinking the badge a touch on these rows buys just enough gap
+   without touching the truncation width at all. */
+.app-sidebar .sidebar-menu > .nav-item:has(> .nav-treeview) > .nav-link .badge {
+  font-size: .65rem;
+  padding: .25em .45em;
+}
+.app-sidebar .sidebar-menu .nav-link.active, .main-sidebar .nav-link.active { position: relative; font-weight: 600; }
+.app-sidebar .sidebar-menu .nav-link.active::before, .main-sidebar .nav-link.active::before {
+  content:""; position:absolute; left:-.5rem; top:20%; bottom:20%; width:3px; border-radius:0 3px 3px 0; background:#fff;
+}
+.app-sidebar .nav-header, .main-sidebar .nav-header { font-size:.68rem; letter-spacing:.08em; }
+
+/* ---- Sidebar, Tabler generation (`aside.navbar-vertical`) ----
+   The .app-sidebar/.sidebar-menu rules above were written against AdminLTE 3
+   markup; agent/includes/side_nav.php (and the admin/user/client variants) now
+   emit Tabler's vertical navbar, so these are the rules that reach the sidebar
+   the app actually ships. */
+
+/* Count badges: 38 of them ship as `badge text-light` - near-white text with no
+   companion text-bg-* to darken the chip - while the default .badge background
+   resolves to --if-bg (#eef2f2). "14" was white on white at 1.08:1, i.e. gone.
+   Give every UNCOLOURED sidebar badge a chip that belongs on the dark rail;
+   badges that do carry a text-bg-* (open alerts, overdue invoices, expiring
+   certificates) keep their semantic colour untouched. */
+.navbar-vertical .badge:not([class*="text-bg-"]) {
+  background-color: rgba(255, 255, 255, .16);
+  color: #f4f7f8;
+}
+
+/* Icon column: .nav-link-icon is a 24px box but the glyph inside it is
+   left-aligned, and Font Awesome glyph widths run 11.9px (fa-bell) to 17.9px
+   (fa-sitemap), so no two icons share a centre line. Centring the glyph in its
+   own box trues the column in the expanded sidebar and, because the box is
+   already centred in the 48px link, also centres it in the folded 64px rail
+   (icon centres were landing at 26-29 in a rail whose centre is 32). */
+.navbar-vertical .nav-link-icon,
+.navbar-vertical .dropdown-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* All six sidebars share the same compact navigation rows.
+   Keep full-size touch targets on mobile while fitting more destinations on a
+   desktop rail. */
+.navbar-vertical .nav-section-title .nav-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.navbar-vertical .nav-section-title .nav-section-toggle { min-height: 2rem; }
+.navbar-vertical .nav-section-toggle::after {
+  content: "";
+  width: .4rem;
+  height: .4rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform .15s ease;
+}
+.navbar-vertical .nav-section-toggle[aria-expanded="true"]::after { transform: rotate(225deg); }
+.navbar-vertical .nav-section-toggle:focus-visible {
+  outline: 2px solid #73d5ca;
+  outline-offset: 2px;
+}
+.navbar-vertical .navbar-nav > .nav-item[hidden] { display: none !important; }
+@media (min-width: 992px) {
+  .navbar-vertical .navbar-nav > .nav-item > .nav-link { padding-block: .4rem; }
+  .navbar-vertical .dropdown-menu .dropdown-item { padding-block: .32rem; }
+  .navbar-vertical .navbar-nav > .nav-item.dropdown.mt-2 { margin-top: .25rem !important; }
+}
+@media (max-width: 991.98px) {
+  .navbar-vertical .navbar-nav > .nav-item > .nav-link,
+  .navbar-vertical .dropdown-menu .dropdown-item,
+  .navbar-vertical .nav-section-title .nav-section-toggle { min-height: 44px; }
+}
+
+/* Folded rail: the trailing chevron on People / Reports / Docs / custom links
+   ended up ~6px from that row's own icon, so the bottom of the rail read as
+   two crowded glyphs while every row above it had one. Take the chevron out of
+   flow and shrink it to a corner marker instead of hiding it - on a custom link
+   whose icon is unset in the DB it is the row's only glyph. */
+.navbar-vertical.navbar-folded .navbar-nav > .nav-item > .nav-link { position: relative; }
+.navbar-vertical.navbar-folded .navbar-nav > .nav-item > .nav-link > .fa-angle-right {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  margin: 0;
+  transform: translateY(-50%);
+  font-size: .6rem;
+  opacity: .4;
+}
+
+/* Brand: the company name needs 393px at Tabler's 20px/600 and has 176px, so
+   .text-truncate cut "Midwest Automation & Custom Fabrication" down to
+   "Midwest Automa...". A calmer size over two lines fits the whole name; a
+   longer name still truncates honestly, on the second line. */
+.navbar-vertical .navbar-brand .text-truncate {
+  font-size: .9375rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- Stat tiles (.small-box): number leads, label supports -----------------
+   AdminLTE's .small-box is a saturated colour slab with a 70px watermark glyph
+   and a dark translucent footer strip, and css/itflow.shim-adminlte.css
+   faithfully restores that so the class keeps working. agent/dashboard.php then
+   re-skinned it with a page-local <style> - which meant ONE class rendered as
+   two different components: a calm tinted card on the dashboard, and the raw
+   slab everywhere else it is used (alerts, RMM alerts/assets, network, Intune,
+   the client portal). The tinted card is the design language, so it belongs
+   here, once, for every page that uses the class.
+
+   The hues below are exactly the ones agent/dashboard.php and agent/invoices.php
+   declare inline, so those blocks are now redundant rather than divergent, and
+   deleting them (a separate lane) changes nothing on screen. Identity hues
+   (primary/info/secondary/pink) are informational; status hues
+   (success/warning/danger) mean good / attention soon / attention now. */
+.small-box {
+  --if-tile-accent: var(--if-border-strong);
+  --if-tile-tint: transparent;
+  --if-tile-chip: rgba(var(--if-primary-rgb), .12);
+  position: relative;
+  display: block;
+  /* !important is load-bearing: Bootstrap's background utilities set
+     background-color !important, which is what paints the raw slab. Same
+     specificity, later file - this wins; the page-local dashboard/invoices
+     blocks are 0,2,0 and still win over it, as intended. */
+  background: linear-gradient(var(--if-tile-tint), var(--if-tile-tint)), var(--if-surface) !important;
+  color: var(--if-ink) !important;
+  border: 1px solid var(--if-border);
+  border-left: 4px solid var(--if-tile-accent);
+  border-radius: var(--if-radius-sm);
+  box-shadow: none;
+  overflow: hidden;
+  text-decoration: none;
+  transition: box-shadow .15s ease, border-color .15s ease;
+}
+.small-box:hover { box-shadow: 0 3px 10px rgba(20,35,42,.08); color: var(--if-ink); text-decoration: none; }
+/* Tints are mixed for a white surface; over the dark surface the same alpha
+   disappears, so paint the wash twice there instead of restating seven hues. */
+:root[data-bs-theme="dark"] .small-box, body.dark-mode .small-box {
+  background: linear-gradient(var(--if-tile-tint), var(--if-tile-tint)),
+              linear-gradient(var(--if-tile-tint), var(--if-tile-tint)),
+              var(--if-surface) !important;
+}
+.small-box > .inner { padding: 14px 16px; }
+.small-box .inner h3 {
+  font-size: 1.9rem; font-weight: 700; letter-spacing: -0.03em;
+  margin: 0 0 2px; padding: 0; color: var(--if-ink); white-space: nowrap;
+}
+.small-box .inner p { color: var(--if-muted); opacity: 1; font-weight: 500; font-size: .9rem; margin: 0; }
+.small-box .inner p small { color: var(--if-muted) !important; opacity: 1; }
+
+/* Icon: a small fixed chip, not a giant faded watermark. The !important on the
+   box metrics matches the note in css/itflow.shim-adminlte.css - css/itflow.bind-tabler.css
+   loads after this file and resets a bare .icon at specificity 0,4,0. */
+.small-box .icon {
+  position: absolute; top: 14px; right: 14px; z-index: 1;
+  width: 36px !important; height: 36px !important;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--if-tile-chip);
+  color: var(--if-tile-glyph, var(--if-tile-accent));
+  font-size: 15px !important; line-height: 1 !important;
+  opacity: 1;
+}
+.small-box .icon i, .small-box .icon svg {
+  position: static !important; font-size: 15px !important; line-height: 1 !important;
+  transform: none !important; color: inherit;
+}
+.small-box:hover .icon i { transform: none !important; }
+
+/* Footer strip: AdminLTE's was a dark translucent band with white text, which
+   is unreadable on a light tile. A quiet caption rule carries the same words.
+   The !important answers css/itflow_custom.css's `.small-box-footer {
+   background: rgba(0,0,0,.1) !important }` - that file is not this lane's to
+   edit and !important beats specificity, so it has to be met in kind. */
+.small-box .small-box-footer {
+  position: relative; z-index: 1;
+  display: block; padding: .4rem 1rem;
+  background: transparent !important;
+  border-top: 1px solid var(--if-border);
+  color: var(--if-muted);
+  font-size: .78rem; font-weight: 500; text-align: left;
+  text-decoration: none;
+}
+.small-box .small-box-footer:hover { background: rgba(var(--if-primary-rgb), .06) !important; color: var(--if-primary); }
+
+/* Identity hues - informational counts, no good/bad meaning */
+.small-box.bg-primary,   .small-box.text-bg-primary   { --if-tile-accent:#2a78d6; --if-tile-tint:rgba(42,120,214,.07);  --if-tile-chip:rgba(42,120,214,.16); }
+.small-box.bg-info,      .small-box.text-bg-info      { --if-tile-accent:#1baf7a; --if-tile-tint:rgba(27,175,122,.07);  --if-tile-chip:rgba(27,175,122,.16); --if-tile-glyph:#159763; }
+.small-box.bg-secondary, .small-box.text-bg-secondary { --if-tile-accent:#4a3aa7; --if-tile-tint:rgba(74,58,167,.06);   --if-tile-chip:rgba(74,58,167,.14); }
+.small-box.bg-pink                                    { --if-tile-accent:#e87ba4; --if-tile-tint:rgba(232,123,164,.10); --if-tile-chip:rgba(232,123,164,.20); --if-tile-glyph:#c94c7c; }
+/* Status hues - reserved meaning: good / attention soon / attention now. The
+   number stays in primary ink on every tile; a coloured numeral is harder to
+   read and the tint + chip + label already carry the meaning. */
+.small-box.bg-success,   .small-box.text-bg-success   { --if-tile-accent:#0ca30c; --if-tile-tint:rgba(12,163,12,.07);   --if-tile-chip:rgba(12,163,12,.16); }
+.small-box.bg-warning,   .small-box.text-bg-warning   { --if-tile-accent:#fab219; --if-tile-tint:rgba(250,178,25,.12);  --if-tile-chip:rgba(250,178,25,.22); --if-tile-glyph:#9c6b04; }
+.small-box.bg-danger,    .small-box.text-bg-danger    { --if-tile-accent:#d03b3b; --if-tile-tint:rgba(208,59,59,.07);   --if-tile-chip:rgba(208,59,59,.16); }
+
+.info-box-number { font-family: var(--if-mono); }
+
+/* ---- Modals: match the card language ---- */
+.modal-content {
+  border: 1px solid var(--if-border);
+  border-radius: var(--if-radius);
+  background: var(--if-surface);
+  box-shadow: 0 12px 40px rgba(20,35,42,.18);
+}
+.modal-header {
+  border-bottom: 1px solid var(--if-border);
+  border-radius: 0;
+}
+/* Dark headers cover the modal's inner top edge so its light body surface cannot
+   show as white crescents. Keep overflow visible for menus and select dropdowns. */
+.modal-header.bg-dark {
+  margin: -1px -1px 0;
+  border-radius: var(--if-radius) var(--if-radius) 0 0;
+}
+.modal-footer { border-top: 1px solid var(--if-border); }
+
+/* ---- Breadcrumbs: readable wayfinding above detail pages. ---- */
+.breadcrumb {
+  --bs-breadcrumb-divider: "\2039";
+  font-size: 1rem;
+  padding: 0;
+  margin-bottom: .6rem;
+}
+.breadcrumb-item, .breadcrumb-item a { color: var(--if-muted); }
+.breadcrumb-item a { text-decoration: none; font-weight: 500; }
+.breadcrumb-item a:hover { color: var(--if-primary); text-decoration: underline; }
+.breadcrumb-item.active { color: var(--if-ink); font-weight: 600; }
+.breadcrumb-item + .breadcrumb-item::before {
+  color: var(--if-border-strong); font-weight: 700; padding-right: .6rem; padding-left: .1rem;
+}
+.admin-breadcrumb { font-size: 1rem; line-height: 1.5; }
+
+/* ---- Refined scrollbars (subtle, not loud) ---- */
+* { scrollbar-width: thin; scrollbar-color: var(--if-border-strong) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--if-border-strong); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+
+/* keyboard focus visible everywhere (quality floor) */
+a:focus-visible, .btn:focus-visible, .nav-link:focus-visible { outline: 2px solid var(--if-primary); outline-offset: 2px; }
+
+/* ---- CSAT face rating widget: works with JS fully disabled (native radios,
+   no fill trick needed - unlike a star scale, each face is one discrete option
+   representing its own satisfaction level, not a cumulative "fill up to here").
+   Faces stay in full natural color at all times - emoji rely on color for
+   readability, and desaturating them (an earlier version of this rule did)
+   turns 5 distinct expressions into 5 near-identical muddy gray-brown blobs,
+   defeating the entire point of a face scale. Hover/selection is shown purely
+   via scale + a soft background + a ring, never by dimming the others. ---- */
+.csat-faces { border: 0; padding: 0; margin: 0; display: inline-flex; overflow: visible; min-width: 0; gap: .35rem; }
+.csat-face-input { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important; }
+/* Color emoji glyphs render taller than their nominal font-size implies (their
+   font metrics bake in extra vertical space differently per platform), so a
+   line-height:1 box the same height as the font-size clips their bottom edge
+   - give the line box real breathing room instead of relying on font-size alone. */
+.csat-face-label { display: inline-flex; align-items: center; justify-content: center; overflow: visible; width: 3rem; height: 3rem; font-size: 2rem; line-height: 3rem; cursor: pointer; border-radius: 50%; transition: transform .15s ease, background-color .15s ease, box-shadow .15s ease; }
+.csat-face-label:hover { transform: scale(1.15); background-color: var(--if-surface); }
+.csat-face-input:checked + .csat-face-label { transform: scale(1.2); background-color: var(--if-surface); box-shadow: 0 0 0 2px var(--if-primary); }
+.csat-face-input:focus-visible + .csat-face-label { outline: 2px solid var(--if-primary); outline-offset: 2px; }
+.csat-face-display { font-size: 1.8rem; line-height: 1.4; vertical-align: middle; }
+
+/* CSAT prompt/thank-you card: deliberately NOT the dark-header record-card
+   treatment used above it (ticket subject/state/priority) - that pattern reads
+   as "formal record," which is wrong for what should feel like a quick,
+   personal, low-friction ask. A colored top accent (echoing the accent button
+   below it) plus a light surface differentiates "quick human interaction" from
+   "formal record" without introducing a new visual language. */
+.csat-card { border: 1px solid var(--if-border); border-top: 3px solid var(--if-primary); border-radius: var(--if-radius); background-color: var(--if-surface); box-shadow: none; }
+.csat-card .card-body { padding: 1.75rem 1.5rem; }
+.csat-card-lede { color: var(--if-muted); }
+
+/* Google review CTA: a soft accent wash (not a plain link) so it reads as a
+   reward for the 4-5 star rating that just happened, not one more form field.
+   The button itself is the one deliberate exception to the app's teal accent
+   in this whole file - it borrows Google's own blue, the same "wear the
+   destination's colors" convention every real "Sign in with Google"/"Pay with
+   PayPal" button uses, because its entire job is to signal "this leaves the
+   app" before the click happens. */
+.google-review-cta { background-color: var(--if-primary-soft); border-radius: var(--if-radius); padding: 1.1rem 1.25rem; }
+:root[data-bs-theme="dark"] .google-review-cta { background-color: rgba(13,148,136,.15); }
+.btn-google { background-color: #4285F4; border-color: #4285F4; color: #fff; font-weight: 600; box-shadow: 0 2px 6px rgba(66,133,244,.35); transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease; }
+.btn-google:hover, .btn-google:focus { background-color: #3367D6; border-color: #3367D6; color: #fff; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(66,133,244,.45); }
+@media (prefers-reduced-motion: reduce) { .btn-google { transition: none; } .btn-google:hover, .btn-google:focus { transform: none; } }
+
+/* ---- Ticket detail sidebar: the stacked cards (Time Entry, Appointments,
+   Technicians, Live Chat, Activity Summary, Tasks, Worksheets, Attachments,
+   Charges, Contact) had no gap and no shadow between them, so they visually
+   fused into one flat, borderless block instead of reading as separate cards. ---- */
+/* Spacing here is `gap` on the flex container, NOT margin-bottom on the children.
+   The sidebar cards carry inline `order:N` (agent/ticket.php) so their VISUAL order
+   differs from their DOM order - which means a `:last-child { margin-bottom: 0 }` rule
+   zeroes the margin on whichever card happens to be last in the markup, not the one
+   that actually renders last. The result is a missing gap somewhere in the middle of
+   the stack and a stray trailing gap at the bottom. `gap` is order-agnostic and needs
+   no last-child special case. */
+.ticket-sidebar { display: flex; flex-direction: column; gap: 1rem; }
+.ticket-sidebar > .card { margin-bottom: 0; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075); }
+/* These two stacks space themselves with `gap`, so the .card + .card margin
+   added above would double their separation. */
+.ticket-sidebar > .card + .card, .security-cards > .card + .card { margin-top: 0; }
+
+/* Account Security (agent/user/user_security.php): the Password, Two-Factor
+   Authentication, Passkeys, and Mobile App Tokens cards had no gap between
+   them (same root cause as .ticket-sidebar above - .card carries no default
+   margin-bottom) and visually fused into one block, except for a single
+   manual mt-3 before the last card. flex + gap fixes all the gaps at once. */
+.security-cards { display: flex; flex-direction: column; gap: 1rem; }
+
+/* =============================================================================
+   Reusable UI components (modernization plan §8/§9) — backed by includes/ui/*.php.
+   New, additive, opt-in: nothing above this line is renamed or removed, and no
+   existing page markup is changed by adding these. Purely for pages that adopt
+   the includes/ui/ helpers going forward.
+   ============================================================================= */
+
+/* ---- Page header ---- */
+.it-page-header { margin-bottom: 1.25rem; }
+.it-page-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.it-page-title { font-size: 1.5rem; font-weight: 650; letter-spacing: -0.02em; margin: 0; color: var(--if-ink); }
+/* Cap the measure: render_page_header() subtitles run to ~200 characters and
+   without a max-width they stretch across the whole content column as one
+   1200px ribbon of 14px text - roughly twice a readable line length. */
+.it-page-subtitle { font-size: .875rem; color: var(--if-muted); margin: .3rem 0 0; max-width: 62ch; }
+.it-page-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+
+/* ---- Card ---- */
+.it-card { background: var(--if-surface); border: 1px solid var(--if-border); border-radius: var(--if-radius); box-shadow: var(--if-shadow); margin-bottom: 1rem; }
+.it-card-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .8rem 1rem; border-bottom: 1px solid var(--if-border); font-weight: 600; letter-spacing: -0.01em; }
+.it-card-header:first-child { border-radius: var(--if-radius) var(--if-radius) 0 0; }
+.it-card-body { padding: 1rem 1.1rem; }
+.it-card-body:last-child { border-radius: 0 0 var(--if-radius) var(--if-radius); }
+
+/* ---- Stat cards ---- */
+.it-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+.it-stat-card {
+  display: flex; align-items: center; gap: .85rem;
+  background: var(--if-surface); border: 1px solid var(--if-border); border-radius: var(--if-radius); box-shadow: var(--if-shadow);
+  padding: 1rem 1.1rem; color: inherit; text-decoration: none !important;
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+a.it-stat-card:hover, a.it-stat-card:focus-visible { box-shadow: var(--if-shadow-md); transform: translateY(-1px); }
+.it-stat-icon { width: 2.5rem; height: 2.5rem; min-width: 2.5rem; border-radius: var(--if-radius-sm); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+.it-stat-body { min-width: 0; }
+.it-stat-value { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; font-family: var(--if-mono); }
+.it-stat-label { font-size: .78rem; color: var(--if-muted); font-weight: 500; line-height: 1.3; }
+
+/* Semantic tint pairs for .it-stat-icon (background + icon color) — same
+   palette as the existing "contextual rows" / info-box accent colors above,
+   so a stat tile and a table row flagging the same condition read as the
+   same color language app-wide. */
+.it-stat-icon.it-tint-primary { background: var(--if-primary-soft); color: var(--if-primary); }
+.it-stat-icon.it-tint-slate   { background: rgba(100,116,139,.12); color: #64748b; }
+.it-stat-icon.it-tint-success { background: rgba(5,150,105,.12);  color: #059669; }
+.it-stat-icon.it-tint-warning { background: rgba(217,119,6,.12);  color: #d97706; }
+.it-stat-icon.it-tint-danger  { background: rgba(220,38,38,.12);  color: #dc2626; }
+.it-stat-icon.it-tint-info    { background: rgba(8,145,178,.12);  color: #0891b2; }
+.it-stat-icon.it-tint-violet  { background: rgba(139,92,246,.14); color: #7c3aed; }
+
+/* ---- Status / priority pills ----
+   .it-status-pill takes its color inline (style="background:...;color:...")
+   since ticket_statuses.ticket_status_color is a free-form per-row admin
+   setting, not a fixed palette — see includes/ui/status_badge.php. */
+.it-status-pill {
+  display: inline-flex; align-items: center; font-weight: 600; letter-spacing: .01em;
+  border-radius: 999px; padding: .32em .7em; font-size: .72rem; line-height: 1; white-space: nowrap;
+}
+
+/* .it-priority-pill IS a fixed small set (low/medium/high/critical), so it
+   gets real classes instead, reusing the --priority-* tokens already defined
+   in itflow_custom.css for the ticket-list priority dots. */
+.it-priority-pill {
+  display: inline-flex; align-items: center; gap: .4em; font-weight: 600; letter-spacing: .01em;
+  border-radius: 999px; padding: .32em .7em; font-size: .72rem; line-height: 1; white-space: nowrap;
+}
+.it-priority-pill::before { content: ""; width: .5em; height: .5em; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.it-priority-pill.it-priority-low      { background: rgba(23,162,184,.13);  color: #0e7490; }
+.it-priority-pill.it-priority-medium   { background: rgba(255,193,7,.18);   color: #92660a; }
+.it-priority-pill.it-priority-high     { background: rgba(220,53,69,.13);   color: #b02a37; }
+.it-priority-pill.it-priority-critical { background: rgba(220,38,38,.18);   color: #dc2626; }
+:root[data-bs-theme="dark"] .it-priority-pill.it-priority-low      { color: #67e8f9; }
+:root[data-bs-theme="dark"] .it-priority-pill.it-priority-medium   { color: #fde68a; }
+:root[data-bs-theme="dark"] .it-priority-pill.it-priority-high     { color: #fca5a5; }
+:root[data-bs-theme="dark"] .it-priority-pill.it-priority-critical { color: #fca5a5; }
+
+/* ---- Section grouping (e.g. Reports hub "Financial"/"Technical" blocks) ---- */
+.it-section { margin-bottom: 1.5rem; }
+.it-section-header { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--if-muted); margin-bottom: .6rem; }
+
+/* ---- Empty state ---- */
+.it-empty-state { text-align: center; padding: 3rem 1.5rem; }
+.it-empty-icon { font-size: 2.25rem; color: var(--if-border-strong); margin-bottom: .75rem; }
+.it-empty-title { font-size: 1rem; font-weight: 600; color: var(--if-ink); margin: 0 0 .35rem; }
+.it-empty-subtitle { font-size: .875rem; color: var(--if-muted); margin: 0 auto 1rem; max-width: 32rem; }
+.it-empty-actions { display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; }
+
+/* ---- List-page vertical rhythm ----
+   Filter/search toolbars sit directly beneath a card header with no separation, so the
+   controls read as part of the header strip rather than as their own band, and the
+   results table butts straight up underneath them. Give the toolbar real breathing room
+   on both sides. Applies app-wide - every list page uses one of these two wrappers. */
+.card-body > .filter-toolbar:first-child,
+.card-body > .ticket-filter-bar:first-child,
+.card-body > .filter-bar:first-child {
+    margin-top: .25rem;
+}
+.filter-toolbar + .table-responsive,
+.filter-toolbar + .table,
+.ticket-filter-bar + .table-responsive,
+.filter-bar + .table-responsive {
+    margin-top: .25rem;
+}
+
+/* Empty states inside a list card were flush against the toolbar above them. */
+.card-body > .text-center.text-muted:last-child,
+.card-body > .it-empty-state:last-child {
+    padding-top: 1.5rem;
+}
+
+/* ---- Outline button ink: amber and cyan fail contrast on white ----
+   Bootstrap/Tabler draw .btn-outline-* label text in the raw semantic hue. For
+   warning and info that is unreadable on a white card: measured on the alerts
+   severity filter at 12px, warning (#f59f00) is 2.13:1 and info (#4299e1) is
+   3.05:1 against white, both well under the 4.5:1 minimum -- the amber was the
+   faintest text anywhere in the app. danger (#d63939, 4.66:1) and the rest
+   already pass and are left alone.
+
+   Only the resting LABEL colour changes. The border and the hover/active fill
+   keep the true severity hue, so the colour-coding that makes a severity filter
+   readable at a glance is preserved -- flattening all four buttons to grey would
+   have deleted that information instead of fixing the contrast.
+
+   Values are darkened ramps of the same hues: #946200 = 5.24:1, #12719c = 5.43:1.
+   Dark mode needs the opposite correction, so those are lightened instead and
+   measured against the dark card surface: #f0a500 = 7.10:1, #6cb6f0 = 6.74:1. */
+.btn-outline-warning { color: #946200; }
+.btn-outline-info    { color: #12719c; }
+.btn-outline-warning:hover, .btn-outline-warning:focus-visible, .btn-outline-warning.active,
+.btn-outline-info:hover,    .btn-outline-info:focus-visible,    .btn-outline-info.active { color: #fff; }
+
+:root[data-bs-theme="dark"] .btn-outline-warning, body.dark-mode .btn-outline-warning { color: #f0a500; }
+:root[data-bs-theme="dark"] .btn-outline-info,    body.dark-mode .btn-outline-info    { color: #6cb6f0; }
+
+/* Inline-edit cells on the Assets list (agent/assets.php +
+   agent/js/asset_inline_edit.js). The trigger is a bare button that reads like
+   the plain text/badge it replaced - a caret and a soft hover fill are the only
+   hint it's clickable, so the table doesn't turn into a wall of form controls.
+   The caret stays faintly visible (not hover-only) so it's discoverable on touch. */
+.asset-inline-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    max-width: 100%;
+    margin: -.25rem -.4rem;
+    padding: .25rem .4rem;
+    border: 1px solid transparent;
+    border-radius: var(--if-radius-sm, 8px);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color .12s ease, border-color .12s ease;
+}
+.asset-inline-trigger:hover,
+.asset-inline-trigger:focus-visible {
+    background-color: var(--if-bg, #eef2f2);
+    border-color: var(--if-border-strong, #d3dbdc);
+    outline: none;
+}
+.asset-inline-caret {
+    font-size: .75em;
+    opacity: .35;
+    transition: opacity .12s ease;
+}
+.asset-inline-trigger:hover .asset-inline-caret,
+.asset-inline-trigger:focus-visible .asset-inline-caret {
+    opacity: .85;
+}
+.asset-inline-cell.is-editing .asset-inline-trigger,
+.asset-inline-cell.is-editing .asset-inline-link {
+    display: none;
+}
+/* Contact-card / department link beside a trigger - the navigation the cell
+   had before it became a dropdown. Faint until hovered, like the caret. */
+.asset-inline-link {
+    margin-left: .5rem;
+    color: inherit;
+    opacity: .35;
+    transition: opacity .12s ease;
+}
+.asset-inline-link:hover,
+.asset-inline-link:focus-visible,
+tr:hover .asset-inline-link {
+    opacity: .85;
+}
+/* A fixed width, not the wrapper's default 100%: that let an open editor
+   stretch its whole column and shove the rest of the table sideways. */
+.asset-inline-cell .ts-wrapper {
+    width: 14rem;
+}
+.asset-inline-option {
+    display: flex;
+    align-items: center;
+}
+.asset-inline-check {
+    margin-left: auto;
+    padding-left: .75rem;
+    font-size: .8em;
+    color: var(--if-primary, #0d9488);
+}
+.asset-inline-cell.is-saving .asset-inline-trigger {
+    opacity: .5;
+    pointer-events: none;
+}
+.asset-inline-cell.is-saving .asset-inline-caret::before {
+    content: "\f110"; /* fa-spinner */
+    display: inline-block;
+    animation: asset-inline-spin 1s linear infinite;
+}
+@keyframes asset-inline-spin { to { transform: rotate(360deg); } }
+.asset-inline-dot {
+    display: inline-block;
+    width: .6rem;
+    height: .6rem;
+    margin-right: .5rem;
+    border-radius: 50%;
+    background-color: var(--if-border-strong, #d3dbdc);
+    vertical-align: baseline;
+}
+.asset-inline-saved {
+    animation: asset-inline-saved 1.4s ease-out;
+}
+@keyframes asset-inline-saved {
+    0%   { background-color: rgba(25, 135, 84, .22); }
+    100% { background-color: transparent; }
+}
+tr.asset-inline-moved-out > td {
+    opacity: .45;
+}
+@media (prefers-reduced-motion: reduce) {
+    .asset-inline-saved,
+    .asset-inline-cell.is-saving .asset-inline-caret::before { animation: none; }
+}
+
+/* Contact card modal (agent/modals/contact/contact_details.php) - the quick
+   view opened from contact names/icons across the app (Assets list, etc). */
+.contact-card-avatar {
+    flex: 0 0 auto;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, .25);
+}
+.contact-card-initials {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, .14);
+    color: #fff;
+    font-weight: 600;
+    font-size: .95rem;
+    letter-spacing: .02em;
+}
+.contact-card-subtitle {
+    font-size: .85rem;
+    color: rgba(255, 255, 255, .7);
+}
+.min-w-0 { min-width: 0; }
+/* Wrapping grid of whichever contact fields are filled in - no "-" columns. */
+.contact-card-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+    gap: .85rem 1.5rem;
+    padding: .9rem 1rem;
+    border: 1px solid var(--if-border, #e3e9ea);
+    border-radius: var(--if-radius-sm, 8px);
+    background: var(--if-bg, #eef2f2);
+}
+.contact-card-fact { min-width: 0; }
+.contact-card-label {
+    margin-bottom: .15rem;
+    font-size: .7rem;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--if-muted, #5d6f76);
+}
+.contact-card-tabs .nav-link {
+    padding: .45rem .8rem;
+    white-space: nowrap;
+}
+.contact-card-table > thead th {
+    font-size: .7rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--if-muted, #5d6f76);
+}
+
+/* Skip link + programmatic focus target for <main id="main-content"> */
+.skip-link { position: absolute; left: .5rem; top: -4rem; z-index: 2000; padding: .5rem 1rem; background: var(--if-surface); color: var(--if-ink); border: 2px solid var(--if-primary); border-radius: var(--if-radius-sm); }
+.skip-link:focus { top: .5rem; }
+#main-content:focus { outline: none; }
+
+/* Wide data tables scroll inside their card below 1200px instead of widening the whole page. Bootstrap's
+   .table-responsive-sm only scrolls under 576px, and many lists use bare tables in .card-body. (Desktop is left alone so
+   row-action dropdowns near the bottom of a table are not clipped by an overflow container.) */
+@media (max-width: 1199.98px) {
+    .table-responsive-sm, .table-responsive-md, .table-responsive-lg,
+    .card-body:has(> table), .card-body:has(> .table), .card:has(> table), .card:has(> .table), [class*="col-"]:has(> table), [class*="col-"]:has(> .table) { overflow-x: auto; }
+}
+
+/* A flex child will not shrink below its content: without this a wide .table-responsive pushes the whole page wider
+   than the viewport instead of scrolling inside its own box. */
+.page-wrapper, .page-body, .page-body > main { min-width: 0; }
+
+/* Light-theme helper text: Tabler's success green and muted grey fall under 4.5:1 on white and on the amber/red row tints. */
+:root:not([data-bs-theme="dark"]) .text-success { color: #157a30 !important; }
+:root:not([data-bs-theme="dark"]) .text-secondary, :root:not([data-bs-theme="dark"]) .text-muted { color: #566570 !important; }
+:root:not([data-bs-theme="dark"]) .cred-desc { color: #566570; }
+
+/* Dark theme: helper text, tom-select placeholder and outline-danger buttons were under 4.5:1 on the dark surfaces. */
+:root[data-bs-theme="dark"] .text-secondary, :root[data-bs-theme="dark"] .text-muted { color: #a9b6bb !important; }
+:root[data-bs-theme="dark"] .ts-control input, :root[data-bs-theme="dark"] .ts-control > input::placeholder { color: #a9b6bb; }
+:root[data-bs-theme="dark"] .btn-outline-danger { color: #ff9a9a; border-color: #ff9a9a; }
+:root[data-bs-theme="dark"] .btn-outline-danger:hover { color: #fff; }
+
+
+/* ---- Contrast pass (run 3) -------------------------------------------------------------------------------------
+   Contextual rows: Tabler also colours STRIPED / HOVER / ACTIVE cells from its own --tblr-table-*-color (black) and
+   --tblr-table-striped-bg (cream), so odd rows kept black text on a dark tint. Cover every variant and state. */
+.table-primary, .table-secondary, .table-light, .table-dark { --tblr-table-color: var(--if-ink); --bs-table-color: var(--if-ink); }
+.table-primary   { --tblr-table-bg: rgba(var(--if-primary-rgb), .09); }
+.table-secondary { --tblr-table-bg: rgba(93, 111, 118, .10); }
+.table-light     { --tblr-table-bg: rgba(93, 111, 118, .05); }
+.table-dark      { --tblr-table-bg: rgba(15, 23, 28, .90); --tblr-table-color: #e7eeef; }
+:root[data-bs-theme="dark"] .table-secondary { --tblr-table-bg: rgba(169, 182, 187, .12); }
+:root[data-bs-theme="dark"] .table-light { --tblr-table-bg: rgba(169, 182, 187, .08); }
+.table-warning, .table-danger, .table-success, .table-info, .table-primary, .table-secondary, .table-light {
+    --tblr-table-striped-color: var(--if-ink); --tblr-table-active-color: var(--if-ink); --tblr-table-hover-color: var(--if-ink);
+    --tblr-table-striped-bg: var(--tblr-table-bg); --tblr-table-active-bg: var(--tblr-table-bg); --tblr-table-hover-bg: var(--tblr-table-bg);
+    --tblr-table-color-state: var(--if-ink); --tblr-table-color-type: var(--if-ink);
+}
+.table-warning > *, .table-danger > *, .table-success > *, .table-info > *, .table-primary > *, .table-secondary > *, .table-light > * { color: var(--if-ink); }
+
+/* Dark surfaces that stayed light because a utility hard-codes white */
+:root[data-bs-theme="dark"] .bg-white, :root[data-bs-theme="dark"] .card-footer.bg-white { background-color: var(--if-surface) !important; }
+:root[data-bs-theme="dark"] .bg-light { background-color: color-mix(in srgb, var(--if-surface) 90%, #fff) !important; }
+:root[data-bs-theme="dark"] .text-dark:not(.badge):not([class*="bg-"]) { color: var(--if-ink) !important; }
+:root[data-bs-theme="dark"] .text-danger { color: #ff8585 !important; }
+:root[data-bs-theme="dark"] .nav-tabs .nav-link:not(.active), :root[data-bs-theme="dark"] .nav-pills .nav-link:not(.active) { color: #a9b6bb; }
+:root[data-bs-theme="dark"] .tr-chip[aria-pressed="true"], :root[data-bs-theme="dark"] .trb-node__name { color: #9dbcff; }
+/* (calendar day numbers and headers take their colour from the .cal-surface block in itflow_custom.css) */
+
+/* Filled buttons: white label needs >= 4.5:1 (Tabler's success/info/danger/warning fills do not give it) */
+.btn-danger  { background-color: #c52f2f; border-color: #c52f2f; color: #fff; }
+.btn-success { background-color: #1d7f33; border-color: #1d7f33; color: #fff; }
+.btn-info    { background-color: #2a6cb0; border-color: #2a6cb0; color: #fff; }
+.btn-warning { background-color: #f5a30a; border-color: #f5a30a; color: #1b1b1b; }
+.btn-danger:hover  { background-color: #a82424; border-color: #a82424; }
+.btn-success:hover { background-color: #166628; border-color: #166628; }
+.btn-info:hover    { background-color: #21588f; border-color: #21588f; }
+
+/* Links that sit inside running text must not rely on colour alone */
+main p a:not(.btn), main small a:not(.btn), main .small a:not(.btn), main li > a:not(.btn):not(.nav-link):not(.dropdown-item):not(.list-group-item) { text-decoration: underline; }
+:root[data-bs-theme="dark"] .fc .fc-event .fc-event-time, :root[data-bs-theme="dark"] .fc .fc-event .fc-event-title, :root[data-bs-theme="dark"] .fc .fc-daygrid-dot-event .fc-event-time { color: #e7eeef !important; }
+:root[data-bs-theme="dark"] .trb-node .trb-node__name, :root[data-bs-theme="dark"] .trb-node__open .trb-node__name { color: #9dbcff !important; }
+
+/* Calendar: keyboard focus must be visible on FullCalendar's own links and buttons */
+.fc a:focus-visible, .fc .fc-button:focus-visible, .fc .fc-event:focus-visible { outline: 2px solid var(--if-primary, #0d9488); outline-offset: 2px; }
+
+/* Contrast: accent-filled buttons, the theme toggle's active segment, alerts, settings nav in dark, links inside help text */
+.btn-primary { background-color: color-mix(in srgb, var(--color-accent, #206bc4) 84%, #000); border-color: color-mix(in srgb, var(--color-accent, #206bc4) 84%, #000); }
+.btn-outline-secondary.active, .btn-check:checked + .btn-outline-secondary { background-color: #4a5a63; border-color: #4a5a63; color: #fff; }
+:root:not([data-bs-theme="dark"]) .alert-danger { color: #8f1d1d; }
+:root[data-bs-theme="dark"] a[aria-current="true"]:not(.btn) { color: #9dbcff; }
+main .form-text a, main .text-secondary a, main .text-muted a, main .alert a { text-decoration: underline; }
+.admin-breadcrumb a { text-decoration: underline; }
+
+/* Contrast (RMM pages): help text, tab links, tinted alerts and outline-primary buttons */
+:root:not([data-bs-theme="dark"]) .form-text, :root:not([data-bs-theme="dark"]) .form-hint { color: #566570; }
+:root:not([data-bs-theme="dark"]) .nav-tabs .nav-link:not(.active), :root:not([data-bs-theme="dark"]) .nav-pills .nav-link:not(.active) { color: #4d5b66; }
+:root:not([data-bs-theme="dark"]) .alert-warning { color: #6b4200; }
+:root:not([data-bs-theme="dark"]) .alert-info { color: #1b5a8f; }
+:root:not([data-bs-theme="dark"]) .alert-success { color: #166628; }
+/* Label and icon follow the border (the theme accent), darkened to stay above 4.5:1 on white; a fixed blue here
+   gave a blue label inside an accent-coloured border. */
+:root:not([data-bs-theme="dark"]) .btn-outline-primary { color: color-mix(in srgb, var(--color-accent) 70%, #000); }
+:root[data-bs-theme="dark"] .btn-outline-primary { color: var(--color-accent); }
+:root[data-bs-theme="dark"] .btn-outline-primary:hover, :root[data-bs-theme="dark"] .btn-outline-primary:focus-visible, :root[data-bs-theme="dark"] .btn-outline-primary:active, :root[data-bs-theme="dark"] .btn-outline-primary.active, :root[data-bs-theme="dark"] .btn-check:checked + .btn-outline-primary { color: #fff; }
+:root:not([data-bs-theme="dark"]) .btn-check:checked + .btn-outline-primary, :root:not([data-bs-theme="dark"]) .btn-outline-primary.active, :root:not([data-bs-theme="dark"]) .btn-outline-primary:hover { color: #fff; }

@@ -1,0 +1,26 @@
+{
+  "id": "win-eventlog-errors",
+  "name": "Critical and error events (Windows)",
+  "description": "Summarises Critical and Error events from the System and Application logs, grouped by source and event ID with the newest message.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "eventlog",
+    "diagnostics",
+    "errors"
+  ],
+  "timeout_s": 120,
+  "params": [
+    {
+      "name": "hours",
+      "type": "int",
+      "label": "Hours to look back",
+      "description": "How many hours of events to scan.",
+      "default": 24,
+      "min": 1,
+      "max": 168
+    }
+  ],
+  "output": "Top 40 groups with counts and truncated newest message. Exit 0; exit 2 on invalid parameters."
+}

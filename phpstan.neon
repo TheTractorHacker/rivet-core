@@ -5,8 +5,3 @@ parameters:
     level: 6
     paths:
         - src
-    # Array shape docs ("array" without a value type) are a documentation gap, not a defect; they are
-    # tracked separately and not worth blanket-annotating ~60 signatures in this pass.
-    ignoreErrors:
-        -
-            identifier: missingType.iterableValue

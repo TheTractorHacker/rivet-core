@@ -1,0 +1,370 @@
+<?php
+
+declare(strict_types=1);
+
+namespace RivetCore\Rmm\Maintenance;
+
+use RivetCore\Rmm\Alerting\AlertingHousekeeping;
+use RivetCore\Rmm\Approvals\ApprovalService;
+use RivetCore\Rmm\Capacity\IngestQueue;
+use RivetCore\Rmm\Capacity\LoadShedder;
+use RivetCore\Rmm\Contracts\RmmBridgeInterface;
+use RivetCore\Rmm\Device\DeviceState;
+use RivetCore\Rmm\Job\JobExtras;
+use RivetCore\Rmm\Job\JobService;
+use RivetCore\Rmm\Policy\PolicyStore;
+use RivetCore\Rmm\Scripts\ApprovedRunExecutor;
+use RivetCore\Rmm\Scripts\ScheduleRunner;
+use RivetCore\Rmm\Link\RmmLinker;
+use RivetCore\Rmm\Logs\LogRuleService;
+use RivetCore\Rmm\Logs\LogService;
+use RivetCore\Rmm\Remote\TransferService;
+use RivetCore\Rmm\RmmEvent;
+use RivetCore\Rmm\Metrics\ExternalMetricSink;
+use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Store\CheckHistoryStore;
+use RivetCore\Rmm\Store\MariaDb\MariaDbCheckHistoryStore;
+use RivetCore\Rmm\Store\MariaDb\MariaDbSoftwareHistoryStore;
+use RivetCore\Rmm\Store\MetricStore;
+use RivetCore\Rmm\Store\SoftwareHistoryStore;
+use RivetCore\Rmm\Storage\StorageMaintenance;
+use RivetCore\Rmm\Store\StoreMaintenance;
+use RivetCore\Rmm\Support\DatabaseMetricSink;
+use RivetCore\Rmm\Support\RmmCache;
+use RivetCore\Rmm\Support\RmmEventPublisher;
+use RivetCore\Rmm\Support\Sql;
+
+/**
+ * Periodic housekeeping, run from the edition's cron entry: flip the edition's RMM links of devices that stopped checking in to
+ * offline (in chunks, through the bridge), expire and fail jobs whose result can no longer arrive, and prune old rows in batches so
+ * a large backlog never becomes one huge DELETE. Does nothing while the master switch is off (an admin flipping the switch must
+ * not fire an asset_offline automation for every device, and nothing is deleted).
+ *
+ * @api
+ */
+final class Housekeeping
+{
+    public const OFFLINE_CHUNK = 500;
+    public const PRUNE_BATCH = 5000;
+    /** Rows one table may lose in one run; the next run continues. */
+    public const PRUNE_RUN_CAP = 200000;
+    public const PRUNE_PAUSE_US = 20000;
+    public const ATTEMPT_RETENTION_DAYS = 30;
+
+    /** @var \Closure(int):void */
+    private \Closure $pause;
+    private readonly CheckHistoryStore $checkHistory;
+    private readonly SoftwareHistoryStore $softwareHistory;
+    /** The metric store in use: the one passed as $metricStore (any implementation), else the legacy $metricSink argument. */
+    private readonly ?MetricStore $metrics;
+    private readonly ?StoreMaintenance $maintenance;
+
+    /**
+     * @param (\Closure(int):void)|null $pause called between delete batches with the microseconds to wait (default usleep)
+     */
+    public function __construct(
+        private readonly Sql $sql,
+        private readonly RmmSettings $settings,
+        private readonly RmmBridgeInterface $bridge,
+        private readonly JobService $jobs,
+        ?\Closure $pause = null,
+        private readonly ?LoadShedder $shedder = null,
+        private readonly ?IngestQueue $ingest = null,
+        private readonly ?RmmEventPublisher $events = null,
+        private readonly ?DeviceState $deviceState = null,
+        private readonly ?DatabaseMetricSink $metricSink = null,
+        private readonly ?ScheduleRunner $schedules = null,
+        private readonly ?ApprovalService $approvals = null,
+        private readonly ?ApprovedRunExecutor $approvedRuns = null,
+        private readonly ?JobExtras $extras = null,
+        private readonly ?PolicyStore $policies = null,
+        private readonly ?AlertingHousekeeping $alerting = null,
+        private readonly ?StorageMaintenance $storage = null,
+        private readonly ?RmmCache $cache = null,
+        private readonly ?ExternalMetricSink $external = null,
+        private readonly ?LogService $logs = null,
+        private readonly ?LogRuleService $logRules = null,
+        private readonly ?TransferService $transfers = null,
+        private readonly ?\RivetCore\Rmm\Patch\PatchScheduler $patches = null,
+        private readonly ?\RivetCore\Rmm\Deploy\DeployScheduler $deploy = null,
+        private readonly ?\RivetCore\Rmm\Change\ChangeService $changes = null,
+        private readonly ?\RivetCore\Rmm\Change\ChangeRuleService $changeRules = null,
+        private readonly ?\RivetCore\Rmm\Hypervisor\HypervisorService $hypervisor = null,
+        ?CheckHistoryStore $checkHistory = null,
+        ?SoftwareHistoryStore $softwareHistory = null,
+        ?MetricStore $metricStore = null,
+        ?StoreMaintenance $storeMaintenance = null,
+        private readonly ?\RivetCore\Rmm\Store\RmmDataStores $stores = null,
+    ) {
+        $this->metrics = $metricStore ?? $metricSink;
+        $this->maintenance = $storeMaintenance ?? $storage;
+        $this->checkHistory = $checkHistory ?? new MariaDbCheckHistoryStore($sql);
+        $this->softwareHistory = $softwareHistory ?? new MariaDbSoftwareHistoryStore($sql);
+        $this->pause = $pause ?? static function (int $us): void {
+            usleep($us);
+        };
+    }
+
+    /** @return array<string,int> */
+    public function run(): array
+    {
+        $out = ['offline' => 0, 'jobs_swept' => 0, 'pruned_checkins' => 0, 'pruned_attempts' => 0, 'pruned_jobs' => 0];
+        $cfg = $this->settings->get(true);
+        if ((int) $cfg['enabled'] !== 1) {
+            return $out;
+        }
+        $out['shed_level'] = $this->shedder === null ? (int) ($cfg['shed_level'] ?? 0) : $this->shedder->evaluate()['level'];
+        if ($this->ingest !== null) {
+            $out['pruned_ingest_jobs'] = $this->ingest->pruneCompleted();
+            $out['reclaimed_ingest_jobs'] = $this->ingest->reclaimStale();
+        }
+        $integration = $this->settings->integrationId();
+        $out['offline'] = $this->flipOffline($integration, $this->sql->utcAt(-(int) $cfg['offline_after_s']));
+        $out['jobs_swept'] = $this->jobs->sweep();
+        $out['pruned_checkins'] = $this->prune('endpoint_agent_checkins', 'received_at < ?', [$this->sql->utcAt(-((int) $cfg['retention_days'] + 1) * 86400)]);
+        $out['pruned_attempts'] = $this->prune('endpoint_agent_enroll_attempts', 'attempted_at < ?', [$this->sql->utcAt(-self::ATTEMPT_RETENTION_DAYS * 86400)]);
+        $out['pruned_jobs'] = $this->prune('endpoint_agent_jobs', "state IN ('succeeded','failed','timed_out','cancelled','expired') AND finished_at < ?",
+            [$this->sql->utcAt(-(int) $cfg['job_retention_days'] * 86400)]);
+        if ($this->stores !== null && $this->stores->kind() !== \RivetCore\Rmm\Store\RmmDataStoreKind::MARIADB) {
+            $out['client_moves_retried'] = (new \RivetCore\Rmm\Store\ClientMoves($this->sql, $this->stores))->retryPending();   // device moves the hot store could not take when they happened
+        }
+        $limits = $this->settings->limits();
+        // Scale S5: roll days up and keep the time partitions; a partitioned table is pruned by dropping partitions, every other one by batched DELETE as before.
+        $partitioned = [];
+        if ($this->maintenance !== null) {
+            $st = $this->maintenance->run($limits, $this->settings->effectiveExplicitLimits($this->metrics?->retentionDays() ?? 14, $this->metrics?->dailyRetentionDays() ?? 400), $this->metrics?->retentionDays() ?? 14, $this->metrics?->dailyRetentionDays() ?? 400);
+            $partitioned = $st['partitioned'];
+            $out['rollup_days'] = (int) ($st['rollup']['days'] ?? 0);
+            $out['rollup_behind_days'] = (int) ($st['rollup']['behind_days'] ?? 0);
+            $out['partitions_created'] = array_sum(array_column($st['partitions'], 'created'));
+            $out['partitions_dropped'] = array_sum(array_column($st['partitions'], 'dropped'));
+        }
+        $out['pruned_check_history'] = in_array('endpoint_agent_check_history', $partitioned, true) ? 0
+            : $this->pruneStore(fn (int $n): int => $this->checkHistory->deleteOlderThan($this->sql->utcAt(-max(1, $limits['check_history_days']) * 86400), $n));
+        $softwareBefore = $this->sql->utcAt(-$limits['software_history_days'] * 86400);
+        $out['pruned_software_history'] = $this->pruneStore(fn (int $n): int => $this->softwareHistory->deleteOlderThan($softwareBefore, $n));
+        $out['pruned_software_removed'] = $this->prune('rmm_device_software', 'removed_at IS NOT NULL AND removed_at < ?', [$softwareBefore]);
+        if ($this->metrics !== null) {
+            $explicit = $this->settings->effectiveExplicitLimits($this->metrics->retentionDays(), $this->metrics->dailyRetentionDays());
+            $out['pruned_metrics'] = $this->metrics->prune(self::PRUNE_RUN_CAP, $this->pause, $explicit['metric_hourly_days'] ?? null, $explicit['metric_daily_days'] ?? null, $partitioned);
+        }
+        if ($this->cache !== null) {
+            $out['pruned_cache'] = $this->cache->prune();
+        }
+        if ($this->external !== null) {
+            // Scale S4: deliver the buffered batches to the external metric store (bounded, backed off, never inside a check-in)
+            $f = $this->external->flush(5);
+            $out['external_sent'] = $f['sent'];
+            $out['external_failed'] = $f['failed'] + $f['permanent'];
+            $out['external_pending'] = $f['pending'];
+        }
+        if ($this->alerting !== null && $this->settings->featureOn('alerting')) {
+            $out += $this->alerting->run();
+        }
+        // Phases 6 and 8: collected logs age out and are trimmed to their caps whatever the switch says (switching a feature off never keeps its data forever),
+        // log rules recover their alerts, and transfer files past their expiry are deleted. A failure here never stops the rest of the run.
+        $out += $this->remoteAndLogs((int) $cfg['job_retention_days']);
+        // Phase 4: scans, approvals, installs and the clean-up of patch data, only while the `patching` switch is on. A failure here never stops the rest of the run.
+        if ($this->patches !== null && $this->settings->featureOn('patching')) {
+            try {
+                $out += $this->patches->run();
+            } catch (\Throwable $e) {
+                error_log('rmm housekeeping (patching): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0028 not applied yet
+            }
+        }
+        // Phase 5: software detection, deployment and the clean-up of its data, only while the `software_deploy` switch is on. A failure here never stops the rest of the run.
+        if ($this->deploy !== null && $this->settings->featureOn('software_deploy')) {
+            try {
+                $out += $this->deploy->run();
+            } catch (\Throwable $e) {
+                error_log('rmm housekeeping (software deploy): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0029 not applied yet
+            }
+        }
+        // Change monitoring: retention and caps, and the recovery of change-rule alerts. Runs while the switch is on or records / rules still exist (so turning it off still cleans up).
+        if ($this->changes !== null) {
+            try {
+                if ($this->settings->featureOn('change_monitor') || $this->changes->hasRecorded()) {
+                    foreach ($this->changes->prune($this->pause) as $k => $v) {
+                        $out['pruned_changes_' . $k] = $v;
+                    }
+                }
+                if ($this->changeRules !== null && ($this->settings->featureOn('change_monitor') || (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_change_rules') > 0)) {
+                    $out['change_rule_alerts_recovered'] = $this->changeRules->sweep();
+                }
+            } catch (\Throwable $e) {
+                error_log('rmm housekeeping (change monitor): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0030 not applied yet
+            }
+        }
+        // Hypervisor visibility: VMs and storage missing past their retention and rows of devices that no longer exist. Runs while the switch is on or rows still exist (so turning it off still cleans up).
+        if ($this->hypervisor !== null) {
+            try {
+                if ($this->settings->featureOn('hypervisor') || (int) $this->sql->val('SELECT COUNT(*) FROM rmm_hypervisor_hosts') > 0) {
+                    foreach ($this->hypervisor->prune() as $k => $v) {
+                        $out['pruned_hypervisor_' . $k] = $v;
+                    }
+                }
+            } catch (\Throwable $e) {
+                error_log('rmm housekeeping (hypervisor): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0036 not applied yet
+            }
+        }
+        if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {
+            $out['offline_events'] = $this->announceOffline((int) $cfg['offline_after_s'], (int) $cfg['stale_after_s']);
+        }
+        // Phase 2: only while the `scripts` sub-switch is on (a module that never uses the library pays nothing here).
+        if ($this->settings->featureOn('scripts')) {
+            $out += $this->automation($cfg);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<string,int>
+     */
+    private function remoteAndLogs(int $retentionDays): array
+    {
+        $out = [];
+        try {
+            if ($this->logs !== null) {
+                foreach ($this->logs->prune($this->pause) as $k => $v) {
+                    $out['pruned_logs_' . $k] = $v;
+                }
+            }
+            if ($this->logRules !== null && ($this->settings->featureOn('logs') || (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_log_rules') > 0)) {
+                $out['log_rule_alerts_recovered'] = $this->logRules->sweep();
+            }
+            if ($this->transfers !== null) {
+                foreach ($this->transfers->prune($retentionDays) as $k => $v) {
+                    $out['transfers_' . $k] = $v;
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('rmm housekeeping (remote and logs): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0022 not applied yet
+        }
+
+        return $out;
+    }
+
+    /**
+     * Scheduled scripts, approvals and the clean-up of what they leave behind.
+     *
+     * @param array<string,mixed> $cfg
+     * @return array<string,int>
+     */
+    private function automation(array $cfg): array
+    {
+        $out = [];
+        if ($this->approvals !== null) {
+            $lapsed = $this->approvals->expireDue();
+            $out['approvals_expired'] = count($lapsed);
+            foreach ($lapsed as $a) {
+                $this->events?->emitScoped(RmmEvent::APPROVAL_DECIDED, 0, ['approval_id' => $a['approval_id'], 'kind' => $a['kind'], 'state' => 'expired', 'decided_by' => null]);
+            }
+            $out['approvals_pruned'] = $this->approvals->prune(max(30, (int) $cfg['job_retention_days']));
+        }
+        if ($this->approvedRuns !== null) {
+            $out['approved_runs_resumed'] = $this->approvedRuns->resume();
+        }
+        if ($this->schedules !== null) {
+            foreach ($this->schedules->run() as $k => $v) {
+                $out['schedule_' . $k] = $v;
+            }
+            $out['schedule_rows_pruned'] = $this->schedules->prune(max(30, (int) $cfg['job_retention_days']));
+        }
+        if ($this->extras !== null) {
+            $out['job_secrets_wiped'] = $this->extras->wipeFinished();
+        }
+        if ($this->policies !== null) {
+            $out['policy_assignments_dropped'] = $this->policies->dropOrphanAssignments();
+        }
+
+        return $out;
+    }
+
+    /**
+     * Devices linked to an asset that stopped checking in (only they can have a link): flip the edition's link to offline (this also feeds its asset_offline automation). Stale
+     * device keys are read in pages and handed to the bridge in chunks of {@see OFFLINE_CHUNK}.
+     */
+    private function flipOffline(int $integration, string $before): int
+    {
+        $changed = 0;
+        $after = 0;
+        while (true) {
+            $rows = $this->sql->all('SELECT device_id FROM endpoint_agent_devices WHERE device_id > ? AND asset_id IS NOT NULL AND (last_checkin_at IS NULL OR last_checkin_at < ?) ORDER BY device_id LIMIT ' . self::OFFLINE_CHUNK,
+                [$after, $before]);
+            if ($rows === []) {
+                break;
+            }
+            $keys = [];
+            foreach ($rows as $r) {
+                $after = (int) $r['device_id'];
+                $keys[] = RmmLinker::agentKey($after);
+            }
+            $changed += $this->bridge->markOffline($integration, $keys);
+            if (count($rows) < self::OFFLINE_CHUNK) {
+                break;
+            }
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Tell the event bus about devices that just went offline (once per offline period: the state table remembers it). A device that has been silent for
+     * longer than the stale window is recorded as offline without an event, so switching events on never announces a fleet of long-dead machines.
+     */
+    private function announceOffline(int $offlineAfter, int $staleAfter): int
+    {
+        if ($this->events === null || $this->deviceState === null) {
+            return 0;
+        }
+        $before = $this->sql->utcAt(-$offlineAfter);
+        $staleBefore = $this->sql->utcAt(-$staleAfter);
+        $after = 0;
+        $announced = 0;
+        while (true) {
+            $rows = $this->sql->all("SELECT d.* FROM endpoint_agent_devices d LEFT JOIN rmm_device_state s ON s.device_id = d.device_id
+                WHERE d.device_id > ? AND d.revoked_at IS NULL AND d.retired_at IS NULL AND d.last_checkin_at IS NOT NULL AND d.last_checkin_at < ?
+                AND (s.presence IS NULL OR s.presence <> 'offline') ORDER BY d.device_id LIMIT " . self::OFFLINE_CHUNK, [$after, $before]);
+            foreach ($rows as $d) {
+                $after = (int) $d['device_id'];
+                $this->deviceState->markOffline($after);
+                if ((string) $d['last_checkin_at'] >= $staleBefore) {
+                    $this->events->emit(RmmEvent::DEVICE_OFFLINE, $d, ['last_checkin_at' => Sql::iso((string) $d['last_checkin_at'])]);
+                    ++$announced;
+                }
+            }
+            if (count($rows) < self::OFFLINE_CHUNK) {
+                break;
+            }
+        }
+
+        return $announced;
+    }
+
+    /** @param list<mixed> $params */
+    private function prune(string $table, string $where, array $params): int
+    {
+        return $this->pruneStore(fn (int $n): int => $this->sql->run("DELETE FROM `$table` WHERE $where LIMIT " . $n, $params));
+    }
+
+    /**
+     * Delete in batches until a batch comes back short or the run cap is reached, pausing between batches.
+     *
+     * @param \Closure(int):int $deleteBatch deletes at most the given number of rows and returns how many it deleted
+     */
+    private function pruneStore(\Closure $deleteBatch): int
+    {
+        $total = 0;
+        while ($total < self::PRUNE_RUN_CAP) {
+            $n = $deleteBatch(self::PRUNE_BATCH);
+            $total += $n;
+            if ($n < self::PRUNE_BATCH) {
+                break;
+            }
+            ($this->pause)(self::PRUNE_PAUSE_US);
+        }
+
+        return $total;
+    }
+}

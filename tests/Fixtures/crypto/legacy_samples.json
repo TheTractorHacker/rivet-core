@@ -1,0 +1,82 @@
+{
+    "settings_key": "ae28541f0b0adb9a095c0f3e48006eb7f7fb08285f9921cfd8c11797e7f4f3ec",
+    "master_key": "Qm9y_8cVx-12AbZk",
+    "password": "Correct Horse 9 Battery",
+    "samples": [
+        {
+            "format": "ENC2",
+            "plaintext": "smtp-pass",
+            "stored": "ENC2:8JTTRroLaN97ju25pc2RFKNANiT/I1kPVf2CAFsHg0/njs6cAg=="
+        },
+        {
+            "format": "ENC",
+            "plaintext": "smtp-pass",
+            "stored": "ENC:ORLxXGBUh2u1jSjY6ta5WSdf3ZeHxSow5FE7AL94YUE="
+        },
+        {
+            "format": "ENC2",
+            "plaintext": "unicode pässwörd 🔑",
+            "stored": "ENC2:eESyu5R+FEpEanfUZoueUdaQvTSF7g+K2zmMvgRCUNHUUEikE7UReMkgg0qr4U9YcLuT"
+        },
+        {
+            "format": "ENC",
+            "plaintext": "unicode pässwörd 🔑",
+            "stored": "ENC:1UCZCwZSIs41DGaJtsI+RxItXgQliASJcV9T2oy/QCsgM7L1uQYT7NLmE01cO+ai"
+        },
+        {
+            "format": "ENC2",
+            "plaintext": "0",
+            "stored": "ENC2:UZLMilLubeVnyVrfJR2RSvR61iOjVYugjnjIilc="
+        },
+        {
+            "format": "ENC",
+            "plaintext": "0",
+            "stored": "ENC:NKYE1fUDP5mFKPX9DLFptfYUTL7wic8J1IKrOWwk874="
+        },
+        {
+            "format": "ENC2",
+            "plaintext": "long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long ",
+            "stored": "ENC2:tS9BWSsPhYKA4C++emf4GtcPxKLJ1iHVkF02Z7Uw7Xlj2Ng6VadFiblMtAw3rShOXq8zNrwDRMBM+QE6OmybzDH9cdCd+amvmX3p/NISTLbA7HaR9TmEYF+khp/0i4rOAvW6wgx4kPasWRyaDaRTXiE1dJy/yqGf5CigOCOkuR2SL7gGvaoIFPEa3xbolXWqoliF/p+qaCBmomecgpsoBrBq/nu5fgK+ini6V6Ovf8kbqO6MXjqlK5Qxoa5XDC7B2xEWhnKKAfq+xyF7jFp+cTnQvqS3pOgQL6CgY2LeHKsBg7HtoC++D9FgTlqjTwP1AuuV2ca078m1YqfodhzOi0ylqKR+d1LNHHB4n+EVjrk5yLG4jOD13SRySBNliqVO5DMm3bkaDBDeKAkb7Ktj+1As+EZ5QEuKGqS8TTRpCTpkqz4rhTtnm6Gp8KubEWI8AyCh7gLCCAGaxh3dR17afVE8zx+87Z1Pi7FVjggzHnPBiCgnBH3RISgFj3MHwVtTkFRRbkmgDNCO1qSg+BfH6YXH7KNGiHMacpTIqttNi06tsGx3oHeKjTuM5QonwstXZ76S4qot3B0usFdvBhQUKpPMUIW/hgEjJ9Gyxi2eQOw4EoUX7h7FcbKsUZRb9jlCtDXZX7AvMpuXxQh1CKl4zm/89twcvH3O3itU0vy6Joad3bfoCkczmklt8I4/tOgo9sejHan7uKVeU3kK2J5avy9xdPzOmlFN5oSg8YK8Q0wAqupTlGnzRi92yfpPfX2+ho8vhHC3WDXEJY0eRbPtX1vFLOyfuE9ZJ/z55Ho94hlsPloBh4meZn04cpaThrt/dnKR2wCqzLGyHbddQkDXJUEipYmBLdFldra4VrwovkImXixHMujHqQ8RWtTHKSRdchvJniVBzqGIlZo0PVuvHHewIH0JZwoNKE1WJh3yXJbq8vDunmug5JTjBpiRTxLUTZ3HkdcV1mWDIsxgs5OLiNMOYKBH63ayC7f7kZcz/wBlE1Y7Megmtl5KqTK9LNtVpJUeyMnLdTTWW+j+GSc3LZwyp0SuR+s6pbjLB7a5WBxvW7kFnFFLdBrBJSU8H4CODM3kwk4cPIOjIIzA50SoUQCdSm7bYuBWnlcVFhxnJfRvfvOLPBoQ3PQ5P7AmFZKPkmH1suC5N0s4nkpnqYjae3/m0HpyXQmfW8YryzqjTompu00+VOrAk8I3aaqmarfMguyZG/PGxP/KhhL+HZQ23tYeH2DYbfV9QvqlcwDDZNsmdS3MARllTrBd2L2gTpihbC5LKCp5caX3IrSQpTehEYhqzfTdn/gWaG6oxA84LbpXwHtOmPd1OKrhh72++snJ9vr4w6VpZCQoOvg6v2Oa7jia2OI="
+        },
+        {
+            "format": "ENC",
+            "plaintext": "long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long long ",
+            "stored": "ENC:eP79ghnxZfGE6qsEELvVrpR1ooxDURe0MdfeTyCFxPFh4ELJehhbTsNNLo2tfveaC4EoA9feWNy7TO/lH35wQnxahTh0KDJofOZpdXnK1cH/ziMAmSQszaKGtJc3NYoyT3bsZ32mQaPt5JjyGTHhm4CO8StoOR0nbKeesx8zysRvuKpYNK+ZYoVwhJ1npAfl/P3iKOS8xNTsTaFZwV+BfvotnrCQX8TFAWmprSzsvwrpd3tspo3Jhnhxh1OW28c6UPpho15xt1RR9p5fsn2hy+/GqpIeHuP873CCceXftxGUMS33JuLlTM38BQDkXps8N2Y3Rpbyqr/e0VPL9dGowCzGzLQAkcKyUp08ycY01YSt8trvAGhtM7OR1N4T5bp7N8QtFRgF9osW4F3lwCXrjoe9qJ6vKqJuZ6r7iFTDrw0HMYFkGZK3j3D3UbBaQ6DmVzcR1/yjUOFlgYtoTsZyjaBipIVpuMc8nIIKY+mk2ZqGrH/HV2SvVFKPz41ubZMDg31TwEMcProfsUYY+esNH2Af1+9P09O9o9xJ1gbLOX02zlGDvSC9bWmiNfGVsRD313v3VAwtsea+cUKQ/39ouCNvHnZUwzjnuyzkaGtYDBLRo69Pfy5ObQMMtj9O3krxfSqiWrusMYI7gHa4HsoUpHO6/MkjP5bdWiZfyA+CCRvUXHZvgdCkwqiinXEkqUyVEWUYmjH/3rJaTJop8ttq5Aac4cOC43HM+UT/QqmPHCfPLl4pcIodyl9sf+VODqUU9DJonLi9K5+jj+tTdIqnJgmGM1Z0PJtTYDRwbQHQLifspsS/qJE81GiUbQ89eni5Ojq+Gf796+MSZrTJmTvE3IfDL9COEmIcrnwLhT7uyHtxB/qWlZbUghxlKhIirVr5CnVO3pSWqTs2/ylAEjEByHBFb4+DDArIHpJp7p/36QDxn3hOJ9dfd97bQw3kCTYYXbseOCkAmG6dHEIdQ/iNkDcQtjEs/5+m6V7laiYYbzuvHs/AYn69ssAwkAOI0P8m/yIHMpcRxG6bHbhVlkz1lIWP/jzkBRf82B+fu77X5kTClrnoqwhvI1VjXvH+4m560OoEMrDIDPfZjvfSjZXHDnOlnoalE236WxCVkpHoIKKwwpBJk5Qx3Hx2x7hu/z7ey5nz3uucJ4UiMH9PUlmHleF9lRQIyh7utG0BI9yeDvKkiCc922CoItcwh/XdgK+bTtPJUDC3Bs5Vq8gzHKx53EaNDdNRkr9SWMfYMbmVHu/TFnvCRN4dkhOjNOZmqPsoOCP1a9OAxhQFgo0FfKXS4X6WwQJqlR/vn+sQCIzBjE17d8mvNA/3DC8T/Sr2Ph21faN+ewb7goTUzig0/YQgcQ=="
+        },
+        {
+            "format": "enc",
+            "plaintext": "JBSWY3DPEHPK3PXP",
+            "stored": "enc:vceSkaFYNa75nK6feq3MZUoZUC9ZGQ9l/Egjdlj2EvkiIwN/L3wLDaeN0aY="
+        },
+        {
+            "format": "enc",
+            "plaintext": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+            "stored": "enc:0opU8E0EF4lXe8wAWLuzao9La7QiCtBREuzruhXFx/2tZ4nFyTw/pGYagaiBVfxBQ73/7TW7LIesY55k"
+        },
+        {
+            "format": "vault-cbc",
+            "plaintext": "admin:hunter2",
+            "stored": "bjsdYh_4IlJhXv1rRWhr5S/CTM8rReUmQDtdLg=="
+        },
+        {
+            "format": "vault-cbc",
+            "plaintext": "pässwörd 🔑",
+            "stored": "frsmZQ4h5ZPOBZthWiyzsAMHehAgAf7TQkCOPA=="
+        },
+        {
+            "format": "vault-cbc",
+            "plaintext": "x",
+            "stored": "Cw_Dg83hp7YU4k2WZBT0Fee8wq9k0apfWt1Ulw=="
+        },
+        {
+            "format": "V2",
+            "plaintext": "Qm9y_8cVx-12AbZk",
+            "stored": "V2:fm4ii2ChSTuH0RYkPPIronloYNEzI8i1MT6iKW7bqvf79Vy1wujju3OggKTiv4WJvhbG9si/+8g="
+        },
+        {
+            "format": "V1",
+            "plaintext": "Qm9y_8cVx-12AbZk",
+            "stored": "oaPOZSMTtnF0t2FF6cHsoAu7EC_JPfw2i2xwKy956y2hJiMnV7xfBnUEYG1JNfYQA9LEoENq/fI="
+        }
+    ]
+}

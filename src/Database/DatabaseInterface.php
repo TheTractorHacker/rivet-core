@@ -16,13 +16,27 @@ namespace RivetCore\Database;
  */
 interface DatabaseInterface
 {
-    /** First row as an associative array, or null when nothing matches. */
+    /**
+     * First row as an associative array, or null when nothing matches.
+     *
+     * @param list<mixed> $params
+     * @return array<string,mixed>|null
+     */
     public function fetchOne(string $sql, array $params = []): ?array;
 
-    /** All rows as a list of associative arrays (empty list when nothing matches). */
+    /**
+     * All rows as a list of associative arrays (empty list when nothing matches).
+     *
+     * @param list<mixed> $params
+     * @return list<array<string,mixed>>
+     */
     public function fetchAll(string $sql, array $params = []): array;
 
-    /** INSERT / UPDATE / DELETE / DDL. */
+    /**
+     * INSERT / UPDATE / DELETE / DDL.
+     *
+     * @param list<mixed> $params
+     */
     public function execute(string $sql, array $params = []): ExecutionResult;
 
     /**

@@ -1,0 +1,4 @@
+HKEY_LOCAL_MACHINE\SOFTWARE\Open Source\MeshAgent2
+    ServiceName    REG_SZ    Mesh Agent
+    NodeId    REG_SZ    AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@$AbCdEfGhIjKlMnOpQrStUvWxYz01
+

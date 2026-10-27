@@ -1,0 +1,11 @@
+/* Patches tab, Patch compliance, Patch approvals and Patch policies pages (RivetCore 1.0.0-rc.20). Scoped under .rmm-* / #rmm-patches, built from the --if-* tokens, loaded after itflow_rmm_logs.css and before itflow.bind-tabler.css (see includes/header.php). */
+
+/* a visually-hidden caption is absolutely positioned; without a positioned ancestor it escapes the scroll container and widens the page on a phone */
+#rmm-patches .table-responsive, .rmm-pat-table, #pat-fleet-form, #pat-dev-form, .rmm-pat-form { position: relative; }
+#rmm-patches .table-responsive, .rmm-pat-table { max-width: 100%; }
+.rmm-pat-kpi { font-size: 1.5rem; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.rmm-pat-table td { vertical-align: top; }
+.rmm-pat-table .form-check-input, #pat-dev-form .form-check-input, #pat-fleet-form .form-check-input { width: 1.1rem; height: 1.1rem; }
+.rmm-pat-policy { background: var(--if-bg); border-color: var(--if-border) !important; border-radius: var(--if-radius-sm); }
+.rmm-pat-filter .form-control, .rmm-pat-filter .form-select { min-width: 0; }
+#pol-form .form-text { overflow-wrap: anywhere; }

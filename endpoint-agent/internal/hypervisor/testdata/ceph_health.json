@@ -1,0 +1,1 @@
+{"status":"HEALTH_WARN","checks":{"OSD_DOWN":{"severity":"HEALTH_WARN","summary":{"message":"1 osds down"}}},"mutes":[]}

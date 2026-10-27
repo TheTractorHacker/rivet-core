@@ -1,0 +1,372 @@
+/* =============================================================================
+   RivetIT — ADMINLTE MARKUP SHIM  (self-hosted; retires with the last AL-era page)
+
+   WHAT THIS IS
+   AdminLTE's CSS is no longer loaded (plugins/adminlte4/css/adminlte.min.css was
+   dropped when plugins/tabler/css/tabler.min.css came in), but AdminLTE-shaped
+   MARKUP is still emitted across the app:
+
+        .card-tools     117 files / 170 occurrences
+        .btn-tool        18 files /  80 occurrences
+        .card-outline    26 files  (card-primary 13, card-secondary 16,
+                                    card-warning 1, card-danger 1)
+        .info-box        12 files
+        .small-box        9 files
+        .img-circle      10 files
+        .img-size-50      6 files
+        .text-<name>     AdminLTE 3's extra colour utilities (18 of them, most
+                         visibly admin/settings_theme.php's theme swatches)
+
+   Tabler defines NONE of these class names, so everything here is first-party and
+   collides with nothing. This file is the whole reason those pages still render.
+
+   WHY IT IS A SEPARATE FILE FROM css/itflow.shim-bs4.css
+   Different end-of-life dates, which is exactly why the old combined bridge could
+   never be pruned. The BS4 shim has no retirement schedule (Tabler will never
+   style .form-group). THIS file is retired page-by-page as AdminLTE-era markup is
+   rewritten in Tabler's own idiom — .card-tools becomes .card-actions,
+   .card-outline becomes .card-status-start, .small-box/.info-box become Tabler
+   .card + .card-sm stat tiles. Track it by class count, and when a class hits
+   zero consumers delete its block here.
+
+   *** WHAT CHANGED IN THE SPLIT: .card-tools / .btn-tool / .card-outline now have
+       a REAL base definition. ***
+   They never had one. The old bridge carried only a PATCH
+       .card-header.py-2 .btn-tool { margin: -.5rem 0 }
+   whose entire job was to partially undo AdminLTE 4's own
+       .btn-tool { margin: -1rem 0 }
+   on the app's compact headers. With AdminLTE's CSS gone, the thing being undone
+   is gone too, and the patch was left compensating for nothing — which is why
+   these needed writing from scratch rather than copying.
+
+   Load order: anywhere after tabler.min.css. See the two SPECIFICITY NOTES below
+   for the only two ordering constraints in the file.
+   ============================================================================= */
+
+/* =============================================================================
+   CARD HEADER ACTIONS  (.card-tools / .btn-tool)
+   ============================================================================= */
+
+/* AdminLTE's .card-header was display:block with .card-title floated left and
+   .card-tools floated right. Tabler's .card-header is
+       display: flex; align-items: center;
+   so the float is inert and .card-tools would sit immediately after the title
+   instead of at the far end of the header. margin-inline-start:auto is the flex
+   equivalent of AdminLTE's float:right and is what restores the layout on all
+   117 files. */
+.card-tools {
+    margin-inline-start: auto;
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+    flex-shrink: 0;
+}
+/* Buttons in a .card-tools group frequently still carry .float-end / .float-right
+   from the AdminLTE layout. Inside a flex row a float does nothing, but it is
+   harmless; what is NOT harmless is the stray margin some of those utilities
+   imply, so normalise the run. */
+.card-tools > .btn,
+.card-tools > form,
+.card-tools > .dropdown { margin-bottom: 0; }
+
+/* AdminLTE's quiet icon button. Deliberately NOT a .btn-link clone: it must read
+   as chrome (muted until hovered), sit on the header's own background, and stay
+   optically centred in a flex row without the negative margins AdminLTE used to
+   claw back from its block header. Because the header is now flex + centred,
+   NO negative margin is needed or wanted here — that is the patch this file
+   replaces. */
+.btn-tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: .25rem .45rem;
+    margin: 0;
+    font-size: .875rem;
+    line-height: 1;
+    color: var(--if-muted, #5d6f76);
+    background: transparent;
+    border: 0;
+    border-radius: var(--if-radius-sm, 8px);
+    box-shadow: none;
+    cursor: pointer;
+    transition: color .12s ease-out, background-color .12s ease-out;
+}
+.btn-tool:hover,
+.btn-tool:focus {
+    color: var(--if-ink, #16232a);
+    background-color: color-mix(in srgb, var(--if-ink, #16232a) 8%, transparent);
+}
+.btn-tool:focus-visible {
+    outline: 2px solid var(--if-primary, var(--color-accent, #0d9488));
+    outline-offset: 1px;
+}
+.btn-tool:disabled,
+.btn-tool.disabled { opacity: .45; pointer-events: none; }
+
+/* AdminLTE-era headers put <h3 class="card-title mt-2"> inside a block header, so
+   the margin-top was doing real vertical centring work. Tabler's header is
+   align-items:center, so that same mt-* now pushes the title BELOW the centre
+   line while .card-tools stays on it — a visibly crooked header on ~117 pages.
+   Only the values actually emitted app-wide are neutralised, and only inside a
+   card header, so no general utility behaviour changes. */
+.card-header > .card-title { margin-bottom: 0; }
+.card-header > .card-title.mt-1,
+.card-header > .card-title.mt-2,
+.card-header > .card-title.mt-3 { margin-top: 0 !important; }
+
+/* =============================================================================
+   .card-outline  (AdminLTE's coloured top rule on a card)
+   ============================================================================= */
+
+/* AdminLTE shipped `.card-outline { border-top: 3px solid <variant colour> }`.
+   Its rule still won at specificity 0,2,0 for as long as adminlte.min.css was
+   loaded; with that gone, all 26 consumers lost the accent stripe entirely and
+   became indistinguishable from a plain card.
+
+   Note css/itflow_custom.css declares `.card:not(.card-outline) { border: none }`,
+   i.e. .card-outline is precisely the opt-in for "keep the border". So the base
+   rule here only has to widen and colour the TOP edge; the other three edges come
+   from css/itflow_design.css's `.card { border: 1px solid var(--if-border) }`. */
+.card.card-outline {
+    border-top-width: 3px;
+    border-top-style: solid;
+    border-top-color: var(--if-border-strong, #d3dbdc);
+}
+.card.card-outline.card-primary   { border-top-color: var(--if-primary, var(--color-accent, #0d9488)); }
+.card.card-outline.card-secondary { border-top-color: var(--tblr-secondary, #6b7280); }
+.card.card-outline.card-success   { border-top-color: var(--tblr-success, #2fb344); }
+.card.card-outline.card-danger    { border-top-color: var(--tblr-danger, #d63939); }
+.card.card-outline.card-warning   { border-top-color: var(--tblr-warning, #f59f00); }
+.card.card-outline.card-info      { border-top-color: var(--tblr-info, #4299e1); }
+.card.card-outline.card-dark      { border-top-color: var(--tblr-dark, #1f2937); }
+
+/* =============================================================================
+   .small-box  (AdminLTE 3 dashboard stat tile)
+   ============================================================================= */
+.small-box {
+    position: relative;
+    display: block;
+    margin-bottom: 1rem;
+    border-radius: var(--if-radius-sm, .5rem);
+    box-shadow: 0 0 1px rgba(0, 0, 0, .125), 0 1px 3px rgba(0, 0, 0, .2);
+    color: #fff;
+    overflow: hidden;
+    text-decoration: none;
+}
+.small-box:hover { color: #fff; text-decoration: none; }
+.small-box > .inner { padding: 10px; }
+/* `color: inherit` is the whole point of this rule, not a tidy-up. tabler.min.css
+   ships `h1..h6 { color: var(--tblr-heading-color) }` — 0,0,1 but still enough to
+   outrank the inherited `color:#fff` from .small-box above, because that is not a
+   declaration on the <h3> at all. The result was the tile's headline NUMBER
+   rendering in near-black ink (#111827) on a saturated red/green/slate fill while
+   its own caption <p> beside it stayed white (/agent/alerts.php, network.php,
+   rmm_assets.php, intune_devices.php, rmm_alerts.php, client/index.php).
+   Inheriting is also what the tinted-tile pages need: agent/dashboard.php and
+   agent/invoices.php set a dark `color` on .small-box itself with !important, so
+   the numeral follows them down to dark ink rather than needing its own copy. */
+.small-box h3 { font-size: 2.2rem; font-weight: 700; margin: 0 0 10px; white-space: nowrap; padding: 0; color: inherit; }
+.small-box p  { font-size: 1rem; margin: 0; }
+
+/* SPECIFICITY NOTE — the !important here is load-bearing, do not drop it.
+   css/itflow.bind-tabler.css neutralises Tabler's 20x20 `.icon` box with
+       .icon:not([class*="ti-"]):not(.icon-sm):not(.icon-lg) { font-size: inherit; … }
+   at specificity 0,4,0, and it loads AFTER this file. A .small-box tile's
+   oversized watermark glyph lives in a plain <div class="icon">, so without
+   !important that 70px would silently collapse to the inherited body size and
+   the watermark would vanish. */
+.small-box .icon {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    z-index: 0;
+    font-size: 70px !important;
+    line-height: 1 !important;
+    width: auto;
+    height: auto;
+    color: rgba(0, 0, 0, .15);
+}
+.small-box .small-box-footer {
+    position: relative;
+    z-index: 10;
+    display: block;
+    padding: 3px 0;
+    text-align: center;
+    background: rgba(0, 0, 0, .1);
+    color: rgba(255, 255, 255, .8);
+    text-decoration: none;
+}
+.small-box .small-box-footer:hover { background: rgba(0, 0, 0, .15); color: #fff; }
+
+/* The one solid fill white ink cannot sit on. Tabler's --tblr-warning (#f59f00)
+   measures 2.1:1 against #fff — under the 3:1 floor even for the 32px numeral,
+   and the caption under it is 16px — so the warning tile flips to dark ink
+   instead (agent/network.php's "With Alerts", the acknowledged state of
+   alerts.php and rmm_alerts.php, client/index.php's tech-alert tile). .bg-light
+   is here defensively for the same reason: white on a near-white fill would
+   erase the number outright. The other fills the app pairs with .small-box keep
+   white, as AdminLTE intended — danger 4.7:1 and secondary 5.2:1 clear AA
+   outright, info sits at 3.1:1 — and re-inking them would be a re-skin of pages
+   this file has no business re-skinning, not a fix. Two classes deep, so the
+   tinted-tile pages (dashboard, invoices) that set their own `color: …
+   !important` still win, and the watermark .icon is already black at 15%. */
+.small-box.bg-warning,
+.small-box.bg-light { color: var(--if-ink, #16232a); }
+/* Ink only: the footer's translucent-black wash is set with !important by
+   css/itflow_custom.css:706, which loads after this file, and a black wash reads
+   correctly on the light fill anyway. */
+.small-box.bg-warning .small-box-footer,
+.small-box.bg-light .small-box-footer { color: rgba(0, 0, 0, .65); }
+.small-box.bg-warning .small-box-footer:hover,
+.small-box.bg-light .small-box-footer:hover { color: var(--if-ink, #16232a); }
+
+/* =============================================================================
+   .info-box  (AdminLTE 3 compact stat row)
+   ============================================================================= */
+.info-box {
+    display: flex;
+    min-height: 80px;
+    margin-bottom: 1rem;
+    border-radius: var(--if-radius-sm, .5rem);
+    background: var(--if-surface, #fff);
+    color: var(--if-ink, #16232a);
+    box-shadow: var(--if-shadow, 0 0 1px rgba(0, 0, 0, .125), 0 1px 3px rgba(0, 0, 0, .2));
+}
+.info-box .info-box-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 70px;
+    flex-shrink: 0;
+    font-size: 1.8rem;
+    color: #fff;
+    border-radius: var(--if-radius-sm, .5rem) 0 0 var(--if-radius-sm, .5rem);
+}
+.info-box .info-box-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex: 1;
+    padding: 5px 10px;
+    overflow: hidden;
+}
+.info-box .info-box-text {
+    display: block;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.info-box .info-box-number { display: block; font-weight: 700; font-size: 1.2rem; }
+.info-box .progress { height: 2px; margin: 5px 0; background: rgba(0, 0, 0, .125); }
+
+/* Coloured .info-box variants.
+   Bootstrap's/Tabler's .bg-* utilities only set background-color, so the default
+   dark body text ends up sitting directly on a saturated fill — unreadable on
+   bg-dark / bg-success / bg-danger / bg-primary / bg-secondary — and .bg-teal
+   (which Tabler DOES define, unlike stock Bootstrap) renders a differently-toned
+   tile beside its siblings. Muted surface + coloured leading edge + coloured icon
+   instead, matching the app's contextual-row treatment in itflow_design.css.
+   Global, so every .info-box app-wide gets a readable on-brand tile without any
+   page carrying its own copy of the fix. */
+.info-box.bg-primary, .info-box.bg-secondary, .info-box.bg-success, .info-box.bg-danger,
+.info-box.bg-warning, .info-box.bg-info, .info-box.bg-dark, .info-box.bg-teal {
+    background-color: var(--if-surface, #fff) !important;
+    color: var(--if-ink, #16232a) !important;
+    border: 1px solid var(--if-border, #e3e9ea);
+    border-inline-start-width: 3px;
+    box-shadow: var(--if-shadow);
+}
+.info-box.bg-primary   { border-inline-start-color: #0d6efd; }
+.info-box.bg-secondary { border-inline-start-color: #6c757d; }
+.info-box.bg-success   { border-inline-start-color: #059669; }
+.info-box.bg-danger    { border-inline-start-color: #dc2626; }
+.info-box.bg-warning   { border-inline-start-color: #d97706; }
+.info-box.bg-info      { border-inline-start-color: #0891b2; }
+.info-box.bg-dark      { border-inline-start-color: #475569; }
+.info-box.bg-teal      { border-inline-start-color: var(--if-primary, var(--color-accent, #0d9488)); }
+.info-box.bg-primary   .info-box-icon { color: #0d6efd; }
+.info-box.bg-secondary .info-box-icon { color: #6c757d; }
+.info-box.bg-success   .info-box-icon { color: #059669; }
+.info-box.bg-danger    .info-box-icon { color: #dc2626; }
+.info-box.bg-warning   .info-box-icon { color: #b45309; }
+.info-box.bg-info      .info-box-icon { color: #0891b2; }
+.info-box.bg-dark      .info-box-icon { color: #475569; }
+.info-box.bg-teal      .info-box-icon { color: var(--if-primary, var(--color-accent, #0d9488)); }
+
+/* =============================================================================
+   AVATAR UTILITIES  (.img-size-* / .img-circle)
+   ============================================================================= */
+
+/* AdminLTE's two-class avatar idiom: a size box plus a circular mask. With
+   adminlte.min.css gone NEITHER had a definition anywhere in the 17 loaded
+   sheets, so every <img class="img-size-50 img-circle"> fell back to the image's
+   intrinsic size. A 2296x3056 phone photo therefore rendered ~890x1180 as the
+   first element of a ticket comment card (agent/ticket.php pushed
+   body.scrollHeight to 5688px on a four-reply ticket) and 619x824 inside a table
+   cell on admin/users.php, stretching one user row past the whole viewport.
+
+   object-fit:cover is the one deliberate departure from AdminLTE 3, which set
+   only width/height: without it a portrait photo is squeezed into the square
+   instead of cropped to it, and every avatar in the app is a phone photo.
+   .img-circle stays a pure border-radius so it keeps working on the large
+   .img-fluid photo panels (agent/contact_details.php, agent/asset_details.php)
+   that use it without a size class.
+
+   Only -50 is emitted today (6 files); -32 and -64 are the rest of AdminLTE's
+   set and are here so the next consumer cannot reintroduce the same blow-up. */
+.img-size-32 { width: 32px;  height: 32px;  object-fit: cover; }
+.img-size-50 { width: 50px;  height: 50px;  object-fit: cover; }
+.img-size-64 { width: 64px;  height: 64px;  object-fit: cover; }
+.img-circle  { border-radius: 50%; }
+
+/* =============================================================================
+   AdminLTE 3 named .text-<colour> utilities
+   ============================================================================= */
+/* AdminLTE 4 already dropped these (it ships only Bootstrap's palette) and Tabler
+   does not restore them, so every consumer still asking for .text-lightblue /
+   .text-navy / .text-maroon silently inherited its parent's colour instead.
+   admin/settings_theme.php's "Select a Theme" swatches are the visible case: all
+   18 rendered in the same flat ink instead of their real hue. Values are
+   AdminLTE 3's light-mode palette, kept literal on purpose — they are naming a
+   specific hue ("maroon"), not a semantic role, so they must NOT follow the
+   theme. */
+.text-lightblue { color: #3c8dbc !important; }
+.text-navy      { color: #001f3f !important; }
+.text-olive     { color: #3d9970 !important; }
+.text-fuchsia   { color: #f012be !important; }
+.text-maroon    { color: #d81b60 !important; }
+.text-indigo    { color: #6610f2 !important; }
+.text-purple    { color: #6f42c1 !important; }
+.text-pink      { color: #e83e8c !important; }
+.text-orange    { color: #fd7e14 !important; }
+.text-teal      { color: #20c997 !important; }
+.text-gray      { color: #6c757d !important; }
+.text-black     { color: #000000 !important; }
+.text-blue      { color: #007bff !important; }
+.text-cyan      { color: #17a2b8 !important; }
+.text-green     { color: #28a745 !important; }
+.text-red       { color: #dc3545 !important; }
+.text-yellow    { color: #ffc107 !important; }
+
+/* =============================================================================
+   REMOVED IN THE SPLIT — recorded so nobody re-adds them by accident
+   =============================================================================
+   .callout  (+ .callout-info/-success/-warning/-danger)
+        Deleted. Zero consumers: the only match for "callout" in 252 pages is the
+        HTML comment admin/settings_notification.php:498. Tabler ships its own
+        .callout, so if the class is ever wanted again, use Tabler's — do not
+        restore the AdminLTE copy on top of it.
+
+   .timeline (+ .timeline-item/-header/-body/-footer, .time-label)
+        Deleted. Zero consumers: every "timeline" match in the app is prose or a
+        code comment (agent/project_gantt.php, agent/contact_details.php,
+        agent/crm_ajax.php, agent/ajax.php, admin/database_updates.php).
+
+   .direct-chat*
+        Was already dead in the old bridge and is not carried over.
+
+   .card-dark
+        161 files / 307 occurrences, but INERT: css/itflow_custom.css:269-300
+        neutralises it, and this file adds nothing. Do not write rules for it.
+   ============================================================================= */

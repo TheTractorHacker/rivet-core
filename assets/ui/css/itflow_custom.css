@@ -1,0 +1,2517 @@
+/* ===== Alga theme: design tokens ===== */
+:root {
+    --color-accent: #0D9488;
+    --color-accent-hover: #0F766E;
+    --color-accent-soft: #CCFBF1;
+    --color-accent-rgb: 13, 148, 136;
+    --color-surface: #fff;
+    --color-surface-alt: #F8F9FC;
+    --color-border: #E2E8F0;
+    --color-border-soft: #F1F2F6;
+    --color-text: #0F172A;
+    --color-text-muted: #64748B;
+    --card-radius: 14px;
+    --input-radius: 8px;
+    --card-shadow: 0 4px 8px -2px rgba(16,24,40,.10), 0 2px 4px -2px rgba(16,24,40,.06);
+}
+
+body.dark-mode {
+    --color-accent: #2DD4BF;
+    --color-accent-hover: #5EEAD4;
+    --color-accent-soft: rgba(45,212,191,.15);
+    --color-accent-rgb: 45, 212, 191;
+    --color-surface: #343a40;
+    --color-surface-alt: #2c3034;
+    --color-border: #4b5158;
+    --color-border-soft: #3f454b;
+    --color-text: #e9ecef;
+    --color-text-muted: #adb5bd;
+    --card-shadow: 0 4px 8px -2px rgba(0,0,0,.4), 0 2px 4px -2px rgba(0,0,0,.3);
+}
+
+/*
+   For screens below 576px (xs):
+   - Make the button full-width, display:block
+*/
+@media (max-width: 575.98px) {
+  .btn-responsive {
+    display: block;
+    width: 100%;
+  }
+}
+
+/*
+   For screens 576px (sm) and above:
+   - Revert to an inline style
+*/
+@media (min-width: 576px) {
+  .btn-responsive {
+    display: inline-block;
+    width: auto;
+  }
+}
+
+.drag-handle {
+    cursor: grab !important;
+}
+
+.drag-handle:active {
+    cursor: grabbing !important;
+}
+
+.star-toggle input {
+    display: none;
+}
+
+.star-toggle i {
+    cursor: pointer;
+    font-size: 1.2rem;
+    color: #adb5bd;
+}
+
+.star-toggle input:checked + i {
+    color: #f1c40f;
+    font-weight: 900;
+}
+
+/* One fixed-width checkbox column for every bulk-select list: the same width and zero side padding in the header, the group-header rows and
+   the data rows (the header cell and the body cells used to take different table padding, putting the boxes up to 8px apart), centred both ways. */
+.checkbox-column {
+    width: 40px;
+    min-width: 40px;
+    max-width: 40px;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    text-align: center;
+    vertical-align: middle !important;
+}
+
+.checkbox-column .form-check {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding-left: 0;
+    margin: 0 auto;
+    min-height: 0;
+    width: 40px; /* min-width on a table cell is ignored by auto table layout; the content width is what holds the column open */
+}
+/* Group header rows (tickets grouped by category): the chevron sits on the checkbox column's centre line instead of 8px to its right. */
+tr.ticket-group-header > td:first-child { padding-left: 14px !important; }
+
+.checkbox-column .form-check-input {
+    position: static;
+    margin: 0;
+}
+
+/* Form controls inside dark cards inherit white text — force readable colors.
+   These were hard-coded #495057-on-#fff, which is only correct in light mode:
+   .card-dark is 0,2,0 and out-ranks the design layer's own `.form-control`
+   (0,1,0), so in dark mode every control on a .card-dark page — the 7 tom-select
+   pills on the ticket filter bar included — painted pure white while the .item
+   text inside them inherited the dark theme's near-white ink (1.17:1, verified
+   headless). Reading the theme tokens keeps the original intent (a readable
+   control on a dark card) and is correct in BOTH modes; --color-* is aliased
+   onto the --if-* design layer by css/itflow.compat-color.css.
+   NOTE .card-dark is otherwise inert (see css/itflow.shim-adminlte.css); when
+   the last .card-dark leaves the markup, delete this rule with it. */
+.card-dark .form-control,
+.card-dark .custom-select {
+    color: var(--color-text);
+    background-color: var(--color-surface);
+}
+
+.welcome-banner {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 0.5rem;
+}
+
+.welcome-banner .fa-stack-1x {
+    font-size: 1.1rem;
+}
+
+/* ===== Ticketing UI redesign (alga-psa inspired) ===== */
+
+/* Rounded-pill filter controls (also available as .filter-bar on non-ticket list pages) */
+.ticket-filter-bar .form-control,
+.ticket-filter-bar .select2-container .select2-selection,
+.ticket-filter-bar .btn,
+.filter-bar .form-control,
+.filter-bar .select2-container .select2-selection,
+.filter-bar .btn {
+    border-radius: 50rem !important;
+}
+
+/* The search input-group is the one control on the bar that is not a lone
+   pill. The generic `.input-group > .input-group-append > .btn` rule further
+   down this file (0,3,0, !important) beats the 50rem rule above (0,2,0), so the
+   submit button kept 8px corners and the pair read as the only square-ish shape
+   in a row of 800px pills. Restate it at the same weight, scoped to the bars. */
+.ticket-filter-bar .input-group > .input-group-append > .btn,
+.filter-bar .input-group > .input-group-append > .btn {
+    border-radius: 0 50rem 50rem 0 !important;
+}
+
+.ticket-filter-bar .select2-container,
+.filter-bar .select2-container {
+    min-width: 120px;
+}
+
+.ticket-filter-bar .select2-selection__rendered,
+.filter-bar .select2-selection__rendered {
+    padding-left: 1rem !important;
+    line-height: 2.25rem !important;
+}
+
+.ticket-filter-bar .select2-selection--single,
+.filter-bar .select2-selection--single {
+    height: calc(1.5em + .75rem + 2px) !important;
+}
+
+.ticket-filter-bar .select2-selection__arrow,
+.filter-bar .select2-selection__arrow {
+    height: calc(1.5em + .75rem + 2px) !important;
+    top: 0 !important;
+}
+
+/* The filter row WRAPS; it does not scroll. It used to be flex-wrap:nowrap +
+   overflow-x:auto, which measured 1350px of controls inside a 1029px card at
+   1600 and 762px at 1280 — Tags Filter sliced in half, Reset Filters and More
+   Filters entirely outside the card, and no scrollbar painted (overlay
+   scrollbars take no layout space: offsetHeight == clientHeight == 56), so
+   nothing signalled that three of the eight controls existed. The clip also
+   leaked 88px of horizontal PAGE scroll at 1280, because tom-select's hidden
+   original <select name="tags[]"> is position:absolute and resolves against
+   .card-body, which sits outside the clip.
+   Wrapping shows every control at every width; the .col-auto children already
+   carry mb-2, which supplies the second row's gutter, so the .filter-toolbar
+   padding (.85rem top / .35rem bottom) still reads as an even box. */
+.ticket-filter-bar .filter-row-nowrap,
+.filter-bar .filter-row-nowrap {
+    flex-wrap: wrap;
+    overflow: visible;
+}
+
+.ticket-filter-bar .filter-row-nowrap > [class*="col-"],
+.filter-bar .filter-row-nowrap > [class*="col-"] {
+    flex: 0 0 auto;
+    width: auto;
+}
+
+/* Generic pill badge polish (status/priority/category badges) */
+.tkt-pill-badge {
+    font-weight: 500;
+    padding: .35em .9em;
+    font-size: .8rem;
+    border-radius: 50rem;
+}
+
+/* Status select styled as a colored pill matching the selected status */
+.status-pill-select {
+    border: none;
+    border-radius: 50rem;
+    color: #fff;
+    font-weight: 500;
+}
+
+/* Keep the dropdown's option list normal-colored - only the closed pill should
+   take on the status color */
+.status-pill-select option {
+    background-color: #fff;
+    color: #212529;
+}
+
+/* Colored priority dot (used in filter pill + ticket detail field grid) */
+.priority-dot {
+    display: inline-block;
+    width: .6rem;
+    height: .6rem;
+    border-radius: 50%;
+    margin-right: .4rem;
+}
+
+.priority-dot-low { background-color: #17a2b8; }
+.priority-dot-medium { background-color: #ffc107; }
+.priority-dot-high { background-color: #dc3545; }
+
+/* Tag pill badges (ticket list Tags column + ticket detail Tags row) */
+.ticket-tag-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: .25em .7em;
+    border-radius: 50rem;
+    font-size: .8rem;
+    margin: 0 .25rem .25rem 0;
+}
+
+.ticket-tag-pill .remove-tag {
+    margin-left: .4rem;
+    opacity: .7;
+    cursor: pointer;
+}
+
+.ticket-tag-pill .remove-tag:hover {
+    opacity: 1;
+}
+
+/* Modern card shadow/spacing for ticket detail main + sidebar cards */
+.card-sidebar,
+.card.shadow-sm {
+    border: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    margin-bottom: 1rem;
+}
+
+.card-sidebar .card-header {
+    background: transparent;
+    border-bottom: 1px solid #f0f0f0;
+    font-weight: 600;
+}
+
+/* Avatar / initials badge for Assigned To */
+.avatar-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    background-color: #6c757d;
+    color: #fff;
+    font-size: .7rem;
+    font-weight: 700;
+    margin-right: .4rem;
+    flex-shrink: 0;
+}
+
+/* ===== Alga theme: generic app-wide rules ===== */
+
+.content-wrapper {
+    background-color: var(--color-surface-alt) !important;
+}
+
+.main-header.navbar {
+    /* Match the dark sidebar (.sidebar-dark-*, always #343a40 regardless of theme/dark-mode) */
+    background-color: #343a40 !important;
+}
+
+.card:not(.card-outline) {
+    border: none;
+    border-radius: var(--card-radius);
+    box-shadow: var(--card-shadow);
+}
+
+.card-outline {
+    border-radius: var(--card-radius);
+}
+
+.card-header,
+.card-dark .card-header,
+.card.card-dark {
+    background: var(--color-surface) !important;
+    color: var(--color-text) !important;
+    border-bottom: 1px solid var(--color-border-soft);
+    border-radius: var(--card-radius) var(--card-radius) 0 0 !important;
+}
+
+.card-dark .card-title,
+.card-dark .btn-tool {
+    color: var(--color-text) !important;
+}
+
+/*
+ * AdminLTE hardcodes .card-dark .card-header a { color: #fff } for its
+ * original dark-card design. Our theme forces that header background to
+ * var(--color-surface), which is white in light mode — so every inactive
+ * tab became literal white-on-white (invisible at rest, still invisible on
+ * hover since AdminLTE never restyles color on :hover; clicking a tab also
+ * dropped the previously-active tab back into the same invisible state).
+ * Override color explicitly for all three states so tabs stay visible in
+ * both themes.
+ */
+.card-dark .card-header a.nav-link {
+    color: var(--color-text-muted) !important;
+}
+.card-dark .card-header a.nav-link:hover {
+    color: var(--color-text) !important;
+}
+.nav-tabs .nav-link.active,
+.card-dark .card-header a.nav-link.active {
+    color: var(--color-link) !important;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid var(--color-accent);
+}
+
+.btn-primary {
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:not(:disabled):not(.disabled):active {
+    background-color: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
+}
+
+.alert {
+    border: none;
+    border-radius: var(--input-radius);
+}
+
+/* ---- The accent USED AS TEXT -----------------------------------------------
+   --color-accent is a fill colour: it is chosen to carry white on top of it
+   (buttons, active pills, the sidebar's active row), and on a dark page it is
+   too dark to BE text. This install's accent (#DC2626) measured 3.38:1 against
+   the dark surface and 3.04:1 against the dark pagination strip — both under the
+   4.5:1 floor, both fine in light mode (4.62-4.83:1).
+
+   So the accent gets a second name for the one job it does badly: --color-link,
+   the accent as ink. In light mode it IS --color-accent, byte for byte, so
+   nothing about the light theme moves. In dark mode it is the accent mixed
+   toward white — the same trick includes/header.php already does for the dark
+   --color-accent-hover, done here with color-mix so it works for a company that
+   has no custom accent hex (and therefore gets no inline block at all).
+   Fills, borders and the active-pill backgrounds keep reading --color-accent;
+   only text switched over. */
+:root {
+    --color-link:       var(--color-accent);
+    --color-link-hover: var(--color-accent-hover);
+}
+body.dark-mode,
+:root[data-bs-theme="dark"] {
+    --color-link:       color-mix(in srgb, var(--color-accent) 72%, #fff);
+    --color-link-hover: color-mix(in srgb, var(--color-accent) 45%, #fff);
+}
+
+/* Remap Bootstrap's default "primary" blue (links, badges, toggles, pagination, etc.) to the accent color */
+a {
+    color: var(--color-link);
+}
+
+a:hover {
+    color: var(--color-link-hover);
+}
+
+/* A link inside a data table is a ROW, not a call to action. Painting all of
+   them the accent made a directory of names, e-mail addresses and department
+   links read as an error state — and put two near-but-unequal reds in the same
+   row, the accent (#dc2626) next to Tabler's danger (#d63939) on the row's own
+   Archive/Anonymize items. Half the app already knew this and hand-wrote
+   `class="text-dark"` on its primary cell link (clients.php, contacts.php,
+   credentials.php); this makes that the default for the rest, and moves the
+   accent to hover, where it reads as "this one is clickable".
+   The guards keep every element that owns its colour: .btn/.badge/.dropdown-item
+   and anything wearing a text-* utility (.text-danger, .text-muted, .text-dark). */
+.table tbody a:not(.btn):not(.badge):not(.dropdown-item):not([class*="text-"]) {
+    color: var(--color-text);
+}
+.table tbody a:not(.btn):not(.badge):not(.dropdown-item):not([class*="text-"]):hover {
+    color: var(--color-link);
+    text-decoration: underline;
+}
+
+.text-primary {
+    color: var(--color-link) !important;
+}
+
+.bg-primary {
+    background-color: var(--color-accent) !important;
+}
+
+.border-primary {
+    border-color: var(--color-accent) !important;
+}
+
+.badge-primary {
+    background-color: var(--color-accent);
+}
+
+.btn-link {
+    color: var(--color-link);
+}
+
+.btn-outline-primary {
+    color: var(--color-link);
+    border-color: var(--color-accent);
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:not(:disabled):not(.disabled):active,
+.btn-outline-primary:not(:disabled):not(.disabled).active {
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+}
+
+.custom-control-input:checked ~ .custom-control-label::before {
+    border-color: var(--color-accent);
+    background-color: var(--color-accent);
+}
+
+.page-link {
+    color: var(--color-link);
+}
+
+.page-item.active .page-link {
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+}
+
+.nav-pills .nav-link.active,
+.nav-pills .show > .nav-link {
+    /* An accent TINT with accent ink, not a solid accent slab.
+       History, because this rule has been wrong twice: it originally overrode only
+       the background to the solid accent and left Tabler's foreground alone, which
+       gave #DC2626 text on a #DC2626 fill - the active tab label was invisible.
+       That was fixed by forcing white text, which was legible but left a solid
+       245px accent block sitting in a 540px modal, louder than anything else on
+       screen. This is the version that solves both: Tabler's own tint treatment,
+       with the ink darkened enough to actually pass contrast.
+
+       --color-accent-hover is the app's own per-company darkened accent (computed
+       in includes/header.php), so this follows a custom accent instead of pinning
+       a hex. For the default red that is #b41f1f on the .12 tint = 5.53:1.
+       Tabler's stock pairing (#DC2626 on its own tint) measures 4.01:1 and fails
+       AA, which is why the plain framework value is not used here. */
+    color: var(--color-accent-hover, var(--color-accent));
+    background-color: rgba(var(--color-accent-rgb), .12);
+    font-weight: 600;
+}
+
+/* Modal tab strips: size pills to their label, not to the dialog.
+   .nav-justified stretches every pill to an equal share of the container, so a
+   two-tab strip in a 540px modal gave two 245px pills - and the active one, being
+   filled, read as a giant button rather than a tab. Ten admin modals use this
+   class (user, role, contract_template, vendor_template, payment_provider), so it
+   is corrected once here rather than in each file. Scoped to .modal so full-width
+   page-level tab strips, where justified IS the right behaviour, are untouched. */
+.modal .nav-pills.nav-justified { flex: 0 0 auto; }
+.modal .nav-pills.nav-justified > .nav-item { flex: 0 1 auto; }
+
+.progress-bar {
+    background-color: var(--color-accent);
+}
+
+/* Tabler's own --tblr-dropdown-link-active-color is var(--tblr-primary) -
+   i.e. Tabler's active-item design is already accent-colored TEXT paired
+   with a light accent-tinted background, coordinated together in its own
+   rule. This override replaces only the background with a SOLID full-
+   strength accent color while leaving that accent-colored text in place,
+   so the label became accent-on-accent - invisible on any install whose
+   accent isn't a pale color (confirmed on this red-accented install: the
+   Set Status/Priority/Category/Assign quick-dropdowns' currently-selected
+   row rendered as a blank red bar). Same anti-pattern the tab-pill fix
+   (22a0d9f, "accent tint, not a solid accent slab") already corrected
+   elsewhere; a solid highlight needs an explicit contrasting text color,
+   which Tabler's own coordinated pair never needed. */
+.dropdown-item.active,
+.dropdown-item:active {
+    background-color: var(--color-accent);
+    color: #fff;
+}
+
+.list-group-item.active {
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+}
+
+/* Tabler hardcodes .text-bg-warning (and plain .badge.bg-warning, which shares
+   the same warning background) to `color:#fff !important` - a reasonable
+   default against Bootstrap's own pale warning yellow, but this install's
+   --tblr-warning is a saturated amber/orange (rgb(245,159,0)) where white text
+   measures ~2.1:1 contrast - well under WCAG AA's 4.5:1, and visibly hard to
+   read (confirmed via a real rendered screenshot: "SpamTitan (TitanHQ)" on an
+   orange Spam Filter badge). Dark text against this same amber measures
+   ~7.2:1. Same anti-pattern as the dropdown/list-group fix above - a solid
+   highlight needs a text color chosen for ITS OWN background, not inherited
+   from an assumption (pale yellow) that doesn't hold for this accent. */
+.text-bg-warning,
+.badge.bg-warning {
+    color: #212529 !important;
+}
+
+/* Solid badges: the text colour has to be chosen for the badge's OWN fill. Plain `badge bg-*` (no text-bg-*) inherits
+   Tabler's grey badge ink, which vanishes on primary/dark fills, and Tabler's white on the light cyan info fill
+   (~2.9:1) is hard to read. White on the deep fills, dark ink on the light info fill (~7:1). */
+.badge.bg-primary,
+.badge.bg-secondary,
+.badge.bg-success,
+.badge.bg-danger,
+.badge.bg-dark,
+.badge.bg-indigo,
+.badge.bg-purple {
+    color: #fff !important;
+}
+.text-bg-info,
+.badge.bg-info {
+    color: #0b2530 !important;
+}
+/* A dark badge on a dark page disappears into the card; lift the fill and give it an edge. */
+:root[data-bs-theme="dark"] .badge.bg-dark,
+:root[data-bs-theme="dark"] .badge.text-bg-dark,
+body.dark-mode .badge.bg-dark {
+    background-color: #4b5563 !important;
+    color: #fff !important;
+}
+
+/* Bootstrap hardcodes .text-dark to a fixed dark gray, which goes low-contrast
+   on dark backgrounds. Remap to the theme text color (black in light mode,
+   near-white in dark mode) so table headers/links stay readable in both.
+
+   The :not() guard is load-bearing. `.text-bg-light` and friends are PAIRED
+   utilities: they set a background AND the matching foreground in one rule, so
+   they are already correct in both themes. Repainting their text with the theme
+   ink broke the pair — agent/tickets.php's `text-bg-light text-dark` count pill
+   rendered near-white ink on the utility's near-white fill in dark mode, i.e.
+   the "0 Open" badge vanished. Skipping those elements hands them back to their
+   own foreground. */
+.text-dark:not([class*="text-bg-"]) {
+    color: var(--color-text) !important;
+}
+
+/* .bg-light is a utility that assumes a light page: it paints #f9fafb from
+   --tblr-light, which Tabler deliberately does NOT flip in dark mode (the same
+   token is the FOREGROUND of .text-light and of every <pre>, so flipping it
+   would black out those instead). On a dark page that left a bright white slab
+   wherever the utility is used structurally — the 10 checkbox-column cells plus
+   the thead on clients.php form a solid 44px white column down the left edge of
+   the table, and assets/contacts/credentials/expenses do the same. Repaint only
+   the background, only when the PAGE is dark (:root / body — never a dark chrome
+   island), and use --if-bg so the strip sits a shade under its card exactly the
+   way #f9fafb sits under #fff in light mode. */
+:root[data-bs-theme="dark"] .bg-light,
+body.dark-mode .bg-light {
+    background-color: var(--if-bg, #0d1417) !important;
+}
+
+.btn-outline-dark {
+    color: var(--color-text);
+    border-color: var(--color-border);
+}
+
+.btn-outline-dark:hover,
+.btn-outline-dark:focus,
+.btn-outline-dark:not(:disabled):not(.disabled):active,
+.btn-outline-dark:not(:disabled):not(.disabled).active {
+    color: #fff;
+    background-color: var(--color-text-muted);
+    border-color: var(--color-text-muted);
+}
+
+.btn-outline-secondary {
+    color: var(--color-text-muted);
+    border-color: var(--color-border);
+    background-color: var(--color-surface);
+}
+
+.btn-outline-secondary:hover,
+.btn-outline-secondary:focus,
+.btn-outline-secondary:not(:disabled):not(.disabled):active {
+    color: var(--color-link-hover);
+    background-color: var(--color-accent-soft);
+    border-color: var(--color-accent);
+}
+
+/* Filter toolbar wrapper for ticket/KB list filter bars */
+.filter-toolbar {
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius);
+    padding: .85rem 1rem .35rem;
+    margin-bottom: 1rem;
+}
+
+/* ===== alga-psa inspired visual theme (.ticket-alga-theme is an alias kept for the ticket page) ===== */
+
+.ticket-alga-theme,
+.alga-theme {
+    background: var(--color-surface-alt);
+    padding: 1rem 0 .5rem;
+    margin: -1rem -.01px 0;
+}
+
+.ticket-alga-theme .card,
+.alga-theme .card {
+    border: none;
+    border-radius: var(--card-radius);
+    box-shadow: var(--card-shadow);
+    margin-bottom: 1rem;
+}
+
+.ticket-alga-theme .form-control,
+.ticket-alga-theme select.form-control,
+.ticket-alga-theme .select2-container .select2-selection,
+.alga-theme .form-control,
+.alga-theme select.form-control,
+.alga-theme .select2-container .select2-selection {
+    border: 1px solid var(--color-border);
+    border-radius: var(--input-radius);
+    background-color: var(--color-surface);
+}
+
+.ticket-alga-theme .btn-primary,
+.ticket-alga-theme .btn-purple,
+.alga-theme .btn-primary,
+.alga-theme .btn-purple {
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+}
+
+.ticket-alga-theme .btn-primary:hover,
+.ticket-alga-theme .btn-purple:hover,
+.alga-theme .btn-primary:hover,
+.alga-theme .btn-purple:hover {
+    background-color: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
+    color: #fff;
+}
+
+.ticket-alga-theme .btn-outline-purple,
+.alga-theme .btn-outline-purple {
+    color: var(--color-accent);
+    border: 1px solid var(--color-accent);
+    background-color: var(--color-surface);
+}
+
+.ticket-alga-theme .btn-outline-purple:hover,
+.alga-theme .btn-outline-purple:hover {
+    background-color: var(--color-accent-soft);
+    color: var(--color-accent-hover);
+    border-color: var(--color-accent);
+}
+
+/* Comment tabs (Client / Internal / System / All Comments) */
+.ticket-alga-theme .comment-tabs,
+.alga-theme .comment-tabs {
+    border-bottom: 1px solid var(--color-border);
+}
+
+.ticket-alga-theme .comment-tabs .nav-link,
+.alga-theme .comment-tabs .nav-link {
+    border: 0;
+    color: var(--color-text-muted);
+    font-weight: 500;
+    padding: .5rem .25rem;
+    margin-right: 1.25rem;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+}
+
+.ticket-alga-theme .comment-tabs .nav-link.active,
+.alga-theme .comment-tabs .nav-link.active {
+    color: var(--color-link);
+    border-bottom: 2px solid var(--color-accent);
+    background: transparent;
+}
+
+/* Time Entry sidebar card */
+.ticket-alga-theme .time-entry-card,
+.alga-theme .time-entry-card {
+    background: var(--bs-card-bg, var(--color-surface));   /* same surface as the sibling sidebar cards (it was a pink/beige tint) */
+}
+
+/* ===== Base text color ===== */
+body:not(.dark-mode),
+body:not(.dark-mode) .content-wrapper,
+body:not(.dark-mode) .wrapper {
+    color: var(--color-text) !important;
+}
+/* Table cells need explicit override since DataTables resets inheritance */
+body:not(.dark-mode) .table td,
+body:not(.dark-mode) .table th,
+body:not(.dark-mode) table.dataTable td,
+body:not(.dark-mode) table.dataTable th {
+    color: var(--color-text) !important;
+}
+/* Muted text should still be muted */
+body:not(.dark-mode) .text-muted,
+body:not(.dark-mode) small.text-muted {
+    color: var(--color-text-muted) !important;
+}
+/* Dark-mode content text — mirrors the light rules via theme variables so header.php
+   no longer needs an inline !important block to keep content legible. */
+body.dark-mode .content-wrapper,
+body.dark-mode .content-wrapper .card-body,
+body.dark-mode .content-wrapper p {
+    color: var(--color-text) !important;
+}
+body.dark-mode .content-wrapper .table td,
+body.dark-mode .content-wrapper .table th,
+body.dark-mode .content-wrapper table.dataTable td,
+body.dark-mode .content-wrapper table.dataTable th {
+    color: var(--color-text) !important;
+}
+body.dark-mode .content-wrapper .text-muted,
+body.dark-mode .content-wrapper small.text-muted {
+    color: var(--color-text-muted) !important;
+}
+
+/* ===== Design-kit token additions ===== */
+:root {
+    --font-mono: 'Source Code Pro', ui-monospace, SFMono-Regular, Menlo,
+                 Consolas, 'Liberation Mono', monospace;
+    --priority-low:    #17A2B8;
+    --priority-medium: #FFC107;
+    --priority-high:   #DC3545;
+    --stat-slate:      #64748B;
+    --stat-amber:      #F59E0B;
+    --stat-blue:       #3B82F6;
+    --stat-orange:     #D97706;
+    --stat-red:        #EF4444;
+    --stat-violet:     #8B5CF6;
+}
+
+/* ===== Sidebar brand icon ===== */
+.brand-link .brand-image {
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px;
+    max-height: 30px !important;
+    border-radius: 7px;
+    background: var(--color-accent);
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    float: none !important;
+    margin: 0 .5rem 0 0 !important;
+    line-height: 1;
+}
+.brand-link .brand-image::after {
+    content: '\f0e7';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    color: #fff;
+    font-size: 14px;
+    line-height: 1;
+}
+.brand-link {
+    display: flex !important;
+    align-items: center;
+}
+.brand-link .brand-text {
+    font-size: 1.15rem !important;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+/* ===== Sidebar nav: rounded active pills ===== */
+.main-sidebar .nav-sidebar .nav-link {
+    border-radius: 6px;
+    margin: 1px 0;
+    transition: background-color .15s ease, color .15s ease;
+}
+.main-sidebar .nav-sidebar .nav-link.active {
+    background-color: var(--color-accent) !important;
+    color: #fff !important;
+    border-radius: 6px;
+}
+.main-sidebar .nav-sidebar .nav-link:not(.active):hover {
+    background-color: rgba(255, 255, 255, .08) !important;
+    color: #fff;
+}
+/* Badge/count pills on sidebar nav items */
+.main-sidebar .nav-sidebar .badge {
+    font-size: .7rem;
+    font-weight: 700;
+    border-radius: 10px;
+    padding: 2px 7px;
+    background: rgba(255, 255, 255, .16) !important;
+    color: #fff !important;
+}
+.main-sidebar .nav-sidebar .nav-link.active .badge {
+    background: rgba(255, 255, 255, .25) !important;
+}
+
+/* ===== Global form control border-radius ===== */
+.form-control,
+.custom-select {
+    border-radius: var(--input-radius);
+    border-color: var(--color-border);
+}
+.form-control:focus,
+.custom-select:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 .2rem rgba(var(--color-accent-rgb), .2);
+}
+/* Preserve input-group shape */
+.input-group > .form-control:not(:last-child),
+.input-group > .custom-select:not(:last-child) {
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+}
+.input-group > .form-control:not(:first-child),
+.input-group > .custom-select:not(:first-child) {
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+}
+.input-group-text {
+    border-color: var(--color-border);
+    background-color: var(--color-surface-alt);
+}
+.input-group > .input-group-prepend > .input-group-text {
+    border-radius: var(--input-radius) 0 0 var(--input-radius);
+}
+.input-group > .input-group-append > .input-group-text {
+    border-radius: 0 var(--input-radius) var(--input-radius) 0;
+}
+.input-group > .input-group-prepend > .btn {
+    border-radius: var(--input-radius) 0 0 var(--input-radius) !important;
+}
+.input-group > .input-group-append > .btn {
+    border-radius: 0 var(--input-radius) var(--input-radius) 0 !important;
+}
+
+/* Select2 border-radius */
+.select2-container--bootstrap4 .select2-selection--single,
+.select2-container--bootstrap4 .select2-selection--multiple {
+    border-radius: var(--input-radius) !important;
+    border-color: var(--color-border) !important;
+}
+.select2-container--bootstrap4.select2-container--focus .select2-selection {
+    border-color: var(--color-accent) !important;
+    box-shadow: 0 0 0 .2rem rgba(var(--color-accent-rgb), .2) !important;
+}
+
+/* ===== Dashboard small-box refinements ===== */
+.small-box {
+    border-radius: var(--input-radius);
+    overflow: hidden;
+    text-decoration: none !important;
+}
+.small-box h3 {
+    font-weight: 700;
+    font-size: 2rem;
+}
+.small-box-footer {
+    background: rgba(0, 0, 0, .1) !important;
+    font-size: .8rem;
+    padding: .35rem .75rem;
+}
+.small-box-footer:hover {
+    background: rgba(0, 0, 0, .15) !important;
+}
+
+/* ===== Dropdown / modal border-radius ===== */
+.dropdown-menu {
+    border-radius: var(--input-radius);
+    border-color: var(--color-border);
+    box-shadow: 0 6px 14px -4px rgba(16, 24, 40, .18);
+}
+.modal-content {
+    border-radius: var(--card-radius);
+    border: none;
+    box-shadow: 0 10px 30px -5px rgba(16, 24, 40, .25);
+}
+.modal-header {
+    border-radius: var(--card-radius) var(--card-radius) 0 0;
+}
+/* Dark modal headers (modal-header.bg-dark, used app-wide for a "console/emphasis"
+   convention) never got their title color set, so it fell back to the default
+   dark body-text color on a dark background (~1.16:1 contrast, effectively
+   invisible). Only the close button was reliably given text-white/text-light. */
+.modal-header.bg-dark .modal-title {
+    color: #fff;
+}
+
+/* Same bug, different component: card-header.bg-dark (client/guest ticket and
+   item view headers) never got a text color either, so the ticket number/
+   subject heading was invisible-on-invisible in light mode. */
+.card-header.bg-dark {
+    color: #fff;
+}
+
+/* ===== Table row hover accent ===== */
+.table-hover tbody tr:hover {
+    background-color: var(--color-accent-soft);
+}
+
+/* ===== Ticket detail page — visual hierarchy pass =====
+   Goal: the conversation/composer (what a tech actually reads and does on every
+   visit) should read as the primary surface; the sidebar's low-frequency
+   reference cards should recede rather than compete with it 1-for-1. */
+
+/* Header card: identity+actions, the status/tags/chip rows, and the SLA meters
+   were stacked with equal spacing/borders as if they were peers - visually the
+   busiest block on the page before you even reach any content. Tightening the
+   rhythm and lightening the internal dividers reads as one cohesive strip
+   instead of four stacked sections, without removing any of the information. */
+.ticket-alga-theme .ticket-header-compact .card-body {
+    padding-top: .65rem;
+    padding-bottom: .65rem;
+}
+/* The subject is the page's title, but its <h4> computed 14px — identical to
+   body text, and BELOW the 16px of every sidebar .card-title on the same
+   screen, so "Attachments" out-ranked "Google Maps API". (Tabler sizes h4 at
+   1rem and the base font is already .875rem, so an h4 buys nothing here.)
+   18px against 16px/500 card titles and 16px breadcrumbs gives the page one
+   unambiguous top of the hierarchy; the weight stays with .fw-bold's 700. */
+.ticket-alga-theme .ticket-header-compact h4 {
+    font-size: 1.125rem;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+}
+.ticket-alga-theme .ticket-header-compact .border-top {
+    border-top-color: var(--color-border-soft) !important;
+    padding-top: .5rem !important;
+    margin-top: .35rem !important;
+}
+
+/* Composer + conversation get a touch more presence than a generic .card. */
+.ticket-alga-theme .ticket-primary-panel {
+    box-shadow: 0 6px 16px -4px rgba(16, 24, 40, .14), 0 2px 6px -2px rgba(16, 24, 40, .08);
+}
+.ticket-alga-theme .ticket-thread-reply .card-body {
+    padding: .85rem 1rem;
+    font-size: .92rem;
+    line-height: 1.55;
+}
+
+/* Sidebar cards carry an explicit inline `order` (tiered by usage frequency,
+   see agent/ticket.php) - flex-column is what makes that `order` apply. */
+.ticket-alga-theme .ticket-sidebar {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Cards in the sidebar's collapsed-by-default tier: quieter chrome (smaller
+   headers, flatter shadow) so they read as reference material rather than
+   competing with the always-visible cards above them, plus a rotating chevron
+   on their native Bootstrap collapse toggle (data-bs-toggle="collapse" - same
+   idiom already used app-wide for #advancedFilter panels, no new JS needed). */
+.ticket-alga-theme .ticket-sidebar-compact.card {
+    box-shadow: none;
+    border: 1px solid var(--color-border-soft);
+}
+.ticket-alga-theme .ticket-sidebar-compact .card-header {
+    padding: .5rem .75rem;
+}
+/* Collapsed, the header IS the card: a 57px header inside a 59px card. Its
+   border-bottom has square corners and the card has 14px ones, so the rule ran
+   out past the curve on both sides and doubled the card's bottom edge. Drop it
+   while the body next to it is hidden — Bootstrap's .collapse only carries
+   .show when open, so this tracks the real state with no JS — and restore it
+   the moment the card is expanded and the border is actually separating two
+   things. */
+.ticket-alga-theme .ticket-sidebar-compact.card:has(> .collapse:not(.show)) > .card-header {
+    border-bottom-color: transparent;
+}
+.ticket-alga-theme .ticket-sidebar-compact .card-header .card-title {
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    border-radius: 4px;
+    transition: color .1s ease-out;
+}
+/* The title text itself carries the same collapse toggle as the chevron button
+   (see agent/ticket.php) - a much bigger, easier click target than the small
+   chevron alone for a row whose only job most of the time is "expand this". */
+.ticket-alga-theme .ticket-sidebar-compact .card-header .card-title:hover {
+    color: var(--color-accent);
+}
+.ticket-alga-theme .ticket-sidebar-compact .card-body {
+    padding: .65rem .75rem;
+    font-size: .82rem;
+}
+.ticket-alga-theme .ticket-sidebar-compact .card-tools .btn-tool .fa-chevron-down {
+    transition: transform .15s ease-out;
+}
+.ticket-alga-theme .ticket-sidebar-compact .card-tools .btn-tool[aria-expanded="true"] .fa-chevron-down {
+    transform: rotate(180deg);
+}
+
+
+
+/* Credentials vault: value + action buttons sit in one tidy row (list and detail modal). */
+.cred-cell { display: inline-flex; align-items: center; gap: .25rem; max-width: 100%; vertical-align: middle; }
+.cred-text { min-width: 0; overflow-wrap: anywhere; }
+.cred-mask { font-family: var(--tblr-font-monospace, monospace); letter-spacing: .12em; color: var(--tblr-secondary, #6c757d); user-select: none; }
+.cred-btn { --tblr-btn-bg: transparent; --tblr-btn-border-color: transparent; --tblr-btn-hover-bg: var(--tblr-bg-surface-secondary, rgba(0,0,0,.06)); --tblr-btn-hover-border-color: transparent; --tblr-btn-active-bg: var(--tblr-bg-surface-secondary, rgba(0,0,0,.06)); --tblr-btn-active-border-color: transparent; box-shadow: none; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; padding: 0; border: 0; background: transparent; color: var(--tblr-secondary, #6c757d); border-radius: .375rem; }
+.cred-btn:hover, .cred-btn:focus-visible { background: var(--tblr-bg-surface-secondary, rgba(0,0,0,.06)); color: var(--tblr-body-color, inherit); }
+.modal-body .table td { vertical-align: middle; padding-block: .6rem; }
+
+/* Credentials list: name cell */
+.cred-name-link { display: flex; align-items: flex-start; gap: .75rem; color: inherit; text-decoration: none; }
+.cred-icon { flex: 0 0 2rem; width: 2rem; padding-top: .1rem; text-align: center; color: var(--tblr-body-color); opacity: .85; }
+.cred-name-body { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.cred-title { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; line-height: 1.35; font-weight: 500; }
+.cred-name { overflow-wrap: anywhere; }
+.cred-type-badge { font-size: .7rem; line-height: 1; padding: .3em .55em; }
+.cred-desc { color: var(--tblr-secondary-color, #566570); font-size: .8rem; line-height: 1.4; }
+.cred-tags { margin: .4rem 0 0 2.75rem; }
+
+/* Icon picker (includes/icon_picker.php + js/icon_picker.js). The panel sits in normal flow under the button so a
+   .modal-body never clips it; colours come from Tabler/Bootstrap variables so dark mode follows automatically. */
+.icon-picker { position: relative; }
+.icon-picker__button { display: flex; align-items: center; gap: .75rem; width: 100%; padding: .4rem .75rem; text-align: left; cursor: pointer;
+    color: var(--tblr-body-color, inherit); background: var(--tblr-bg-forms, var(--tblr-bg-surface, transparent));
+    border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); }
+.icon-picker__button:hover, .icon-picker__button[aria-expanded="true"] { border-color: var(--tblr-primary, #206bc4); }
+.icon-picker__button:focus-visible, .icon-picker__item:focus-visible, .icon-picker__chip:focus-visible { outline: 2px solid var(--tblr-primary, #206bc4); outline-offset: 1px; }
+.icon-picker__preview { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem; font-size: 1.6rem; flex: 0 0 auto;
+    color: var(--tblr-primary, #206bc4); background: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .1)); border-radius: var(--tblr-border-radius, .375rem); }
+.icon-picker__label { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; line-height: 1.25; }
+.icon-picker__class { font-family: var(--tblr-font-monospace, monospace); overflow-wrap: anywhere; }
+.icon-picker__hint { color: var(--tblr-secondary-color, #6c7a91); }
+.icon-picker__caret { color: var(--tblr-secondary-color, #6c7a91); transition: transform .15s; }
+.icon-picker.is-open .icon-picker__caret { transform: rotate(180deg); }
+.icon-picker__panel { margin-top: .5rem; padding: .75rem; border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem);
+    background: var(--tblr-bg-surface, var(--tblr-body-bg, transparent)); }
+.icon-picker__panel[hidden] { display: none; }
+.icon-picker__cats { display: flex; gap: .35rem; margin: .6rem 0; overflow-x: auto; padding-bottom: .25rem; }
+.icon-picker__chip { flex: 0 0 auto; padding: .15rem .6rem; font-size: .8rem; cursor: pointer; white-space: nowrap; border-radius: 999px;
+    color: var(--tblr-body-color, inherit); background: transparent; border: 1px solid var(--tblr-border-color, #dce1e7); }
+.icon-picker__chip[aria-pressed="true"] { color: #fff; background: var(--tblr-primary, #206bc4); border-color: var(--tblr-primary, #206bc4); }
+.icon-picker__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.5rem, 1fr)); gap: .25rem; max-height: 14rem; overflow-y: auto; padding: .15rem; }
+.icon-picker__item { display: flex; align-items: center; justify-content: center; height: 2.5rem; font-size: 1.15rem; cursor: pointer;
+    color: var(--tblr-body-color, inherit); background: transparent; border: 1px solid transparent; border-radius: var(--tblr-border-radius, .375rem); }
+.icon-picker__item:hover { background: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .15)); border-color: var(--tblr-border-color, #dce1e7); }
+.icon-picker__item[aria-selected="true"] { color: #fff; background: var(--tblr-primary, #206bc4); }
+.icon-picker__empty { grid-column: 1 / -1; padding: 1rem .25rem; color: var(--tblr-secondary-color, #6c7a91); }
+.icon-picker__status { margin: .35rem 0 .6rem; font-size: .75rem; color: var(--tblr-secondary-color, #6c7a91); }
+.icon-picker__error[hidden] { display: none; }
+
+/* Shared date-range picker (includes/date_range_picker.php + js/date_range_picker.js). Colours come from Tabler/Bootstrap
+   variables so dark mode follows automatically; the popover sits over the page on wide screens and becomes a bottom sheet
+   (presets stacked above one month) on phones. */
+.drp { position: relative; display: inline-block; max-width: 100%; }
+.drp-row { display: flex; align-items: stretch; gap: .25rem; }
+.drp-btn { display: flex; align-items: center; gap: .5rem; min-width: 13rem; max-width: 100%; padding: .4rem .75rem; text-align: left; cursor: pointer;
+    color: var(--tblr-body-color, inherit); background: var(--tblr-bg-forms, var(--tblr-bg-surface, transparent));
+    border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); line-height: 1.25; }
+.drp-btn:hover, .drp.is-open .drp-btn { border-color: var(--tblr-primary, #206bc4); }
+.drp-btn:focus-visible, .drp-opt:focus-visible, .drp-clear:focus-visible { outline: 2px solid var(--tblr-primary, #206bc4); outline-offset: 1px; }
+.drp-text { display: flex; flex-wrap: wrap; column-gap: .5rem; min-width: 0; flex: 1 1 auto; }
+.drp-label { font-weight: 600; white-space: nowrap; }
+.drp-dates { color: var(--tblr-secondary-color, #6c7a91); white-space: nowrap; }
+.drp-dates:empty { display: none; }
+.drp-icon, .drp-caret { color: var(--tblr-secondary-color, #6c7a91); flex: 0 0 auto; }
+.drp-caret { font-size: .7rem; transition: transform .15s; }
+.drp.is-open .drp-caret { transform: rotate(180deg); }
+.drp-clear { padding: 0 .55rem; color: var(--tblr-secondary-color, #6c7a91); background: transparent; border: 1px solid transparent; border-radius: var(--tblr-border-radius, .375rem); cursor: pointer; }
+.drp-clear:hover { color: var(--tblr-body-color, inherit); border-color: var(--tblr-border-color, #dce1e7); }
+.drp-clear[hidden], .drp-panel[hidden], .drp-custom[hidden] { display: none; }
+.drp-panel { position: absolute; z-index: 1056; top: 100%; left: 0; margin-top: .35rem; display: flex; max-width: min(46rem, 95vw);
+    color: var(--tblr-body-color, inherit); background: var(--tblr-bg-surface, var(--tblr-body-bg, #fff));
+    border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .18); }
+.drp-presets { flex: 0 0 13rem; max-height: 24rem; overflow-y: auto; padding: .5rem; border-inline-end: 1px solid var(--tblr-border-color, #dce1e7); }
+.drp-group + .drp-group { margin-top: .4rem; }
+.drp-group-title { padding: .15rem .5rem; font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--tblr-secondary-color, #6c7a91); }
+.drp-opt { display: flex; justify-content: space-between; gap: .75rem; width: 100%; padding: .3rem .5rem; text-align: left; cursor: pointer; font-size: .875rem;
+    color: inherit; background: transparent; border: 0; border-radius: var(--tblr-border-radius, .375rem); }
+.drp-opt:hover { background: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .15)); }
+.drp-opt[aria-selected="true"] { color: #fff; background: var(--tblr-primary, #206bc4); }
+.drp-opt-dates { font-size: .75rem; opacity: .7; white-space: nowrap; }
+.drp-custom { padding: .75rem; min-width: 0; }
+.drp-inputs { display: flex; gap: .75rem; margin-bottom: .6rem; }
+.drp-field { display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; color: var(--tblr-secondary-color, #6c7a91); flex: 1 1 0; }
+.drp-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .6rem; }
+.drp-lp-host { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.drp-cal .litepicker { font-family: inherit; color: var(--tblr-body-color, inherit); background: transparent; box-shadow: none; }
+.drp-cal .litepicker .container__main, .drp-cal .litepicker .container__months { background: transparent; box-shadow: none; }
+.drp-cal .litepicker .month-item-name, .drp-cal .litepicker .month-item-year, .drp-cal .litepicker .container__days .day-item,
+.drp-cal .litepicker .month-item-weekdays-row > div { color: var(--tblr-body-color, inherit); }
+.drp-cal .litepicker .container__days .day-item.is-in-range { background-color: var(--tblr-primary-lt, rgba(32, 107, 196, .2)) !important; color: var(--tblr-body-color, inherit); }
+.drp-cal .litepicker .container__days .day-item.is-start-date, .drp-cal .litepicker .container__days .day-item.is-end-date { color: #fff; }
+.drp-cal .litepicker .container__days .day-item.is-locked { opacity: .35; }
+.drp-cal .litepicker .button-previous-month, .drp-cal .litepicker .button-next-month { color: var(--tblr-body-color, inherit); }
+@media (max-width: 640px) {
+    .drp { display: block; }
+    .drp-btn { min-width: 0; width: 100%; }
+    .drp-row { width: 100%; }
+    .drp-panel { position: fixed; z-index: 1056; inset: auto 0 0 0; top: auto; max-width: none; max-height: 88vh; overflow-y: auto; flex-direction: column; margin: 0;
+        border-radius: .75rem .75rem 0 0; }
+    .drp-presets { flex: 0 0 auto; max-height: 14rem; border-inline-end: 0; border-bottom: 1px solid var(--tblr-border-color, #dce1e7); }
+    .drp-opt { padding: .55rem .5rem; }
+    .drp-cal { overflow-x: auto; }
+}
+
+/* ---- Event picker (includes/event_picker.php, js/event_picker.js) and the webhook add/edit flow (js/webhook_form.js) ----
+   Colours come from the Tabler tokens the rest of the app uses, so light and dark both follow the theme. */
+.event-picker { --ep-border: var(--tblr-border-color, #dce1e7); --ep-muted: var(--tblr-secondary-color, #6c7a91); --ep-surface: var(--tblr-bg-surface, #fff); --ep-hover: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .12)); border: 1px solid var(--ep-border); border-radius: var(--tblr-border-radius, .375rem); background: var(--ep-surface); color: var(--tblr-body-color, inherit); }
+.event-picker .ep-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; padding: .6rem .75rem; border-bottom: 1px solid var(--ep-border); }
+.event-picker .ep-search { position: relative; flex: 1 1 14rem; min-width: 0; }
+.event-picker .ep-search .form-control { padding-inline-start: 2rem; }
+.event-picker .ep-search-icon { position: absolute; inset-inline-start: .7rem; top: 50%; transform: translateY(-50%); color: var(--ep-muted); pointer-events: none; }
+.event-picker .ep-summary { font-size: .85rem; font-weight: 600; white-space: nowrap; }
+.event-picker .ep-clear { padding: 0; }
+.event-picker .ep-clear[hidden], .event-picker .ep-chips[hidden], .event-picker [hidden] { display: none !important; }
+.event-picker .ep-chips { display: flex; flex-wrap: wrap; gap: .35rem; padding: .5rem .75rem; max-height: 8.5rem; overflow-y: auto; border-bottom: 1px solid var(--ep-border); }
+.event-picker .ep-chip { display: inline-flex; align-items: center; gap: .15rem; max-width: 100%; padding: .1rem .15rem .1rem .55rem; font-size: .8rem; border-radius: 999px; background: var(--tblr-primary-lt, rgba(32, 107, 196, .14)); color: var(--tblr-primary, #206bc4); border: 1px solid transparent; }
+.event-picker .ep-chip-pattern { border-color: currentColor; font-weight: 600; }
+.event-picker .ep-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-picker .ep-chip-x { display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem; padding: 0; line-height: 1; font-size: 1.1rem; color: inherit; background: transparent; border: 0; border-radius: 50%; cursor: pointer; }
+.event-picker .ep-chip-x:hover, .event-picker .ep-chip-x:focus-visible { background: rgba(128, 128, 128, .25); }
+.event-picker .ep-all { display: flex; align-items: center; gap: .6rem; margin: 0; padding: .55rem .75rem; border-bottom: 1px solid var(--ep-border); cursor: pointer; }
+.event-picker .ep-groups { display: flex; flex-direction: column; max-height: 24rem; overflow-y: auto; }
+.event-picker .ep-loading, .event-picker .ep-none { padding: 1rem .75rem; color: var(--ep-muted); }
+.event-picker .ep-group { border-bottom: 1px solid var(--ep-border); }
+.event-picker .ep-group:last-child { border-bottom: 0; }
+.event-picker .ep-group-head { display: flex; align-items: center; gap: .6rem; padding: .15rem .5rem .15rem 0; background: var(--ep-hover); }
+.event-picker .ep-group-toggle { flex: 1 1 auto; display: flex; align-items: center; gap: .6rem; min-width: 0; padding: .55rem .75rem; text-align: start; font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; }
+.event-picker .ep-group-title { font-weight: 600; }
+.event-picker .ep-group-count { margin-inline-start: auto; font-size: .78rem; color: var(--ep-muted); white-space: nowrap; }
+.event-picker .ep-group-count.has-selection { color: var(--tblr-primary, #206bc4); font-weight: 600; }
+.event-picker .ep-caret { width: .8rem; color: var(--ep-muted); font-size: .75rem; }
+.event-picker .ep-group-all { display: inline-flex; align-items: center; gap: .35rem; margin: 0; font-size: .78rem; color: var(--ep-muted); cursor: pointer; white-space: nowrap; }
+.event-picker .ep-group-pattern { font-size: .72rem; }
+.event-picker .ep-group-body { display: flex; flex-direction: column; }
+.event-picker .ep-row { display: flex; align-items: flex-start; gap: .65rem; margin: 0; padding: .5rem .75rem .5rem 1.75rem; cursor: pointer; }
+.event-picker .ep-row:hover { background: var(--ep-hover); }
+.event-picker .ep-row.is-selected { background: var(--tblr-primary-lt, rgba(32, 107, 196, .08)); }
+.event-picker .ep-row .form-check-input { flex: 0 0 auto; margin-top: .25rem; }
+.event-picker .ep-row-main { display: flex; flex-direction: column; min-width: 0; }
+.event-picker .ep-row-line { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; }
+.event-picker .ep-row-label { font-weight: 600; }
+.event-picker .ep-row-id { font-size: .78rem; color: var(--ep-muted); background: transparent; padding: 0; overflow-wrap: anywhere; }
+.event-picker .ep-row-desc { font-size: .82rem; color: var(--ep-muted); }
+.event-picker .ep-sev, .event-picker .ep-planned { padding: 0 .4rem; font-size: .68rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; border-radius: 999px; border: 1px solid currentColor; }
+.event-picker .ep-sev-info { color: var(--ep-muted); }
+.event-picker .ep-sev-warning { color: var(--tblr-orange, #f76707); }
+.event-picker .ep-sev-critical { color: var(--tblr-red, #d63939); }
+.event-picker .ep-planned { color: var(--tblr-purple, #ae3ec9); border-style: dashed; }
+@media (max-width: 640px) {
+    .event-picker .ep-toolbar { padding: .5rem; }
+    .event-picker .ep-groups { max-height: 60vh; }
+    .event-picker .ep-group-head { flex-wrap: wrap; }
+    .event-picker .ep-group-count { margin-inline-start: 0; }
+    .event-picker .ep-row { padding-inline-start: 1rem; }
+}
+
+/* Webhook add/edit: platform chooser, form + setup guide */
+.wh-modal .modal-body { padding: 0; }
+.wh-steps { display: flex; gap: .5rem; align-items: center; padding: .6rem 1rem; font-size: .85rem; color: var(--tblr-secondary-color, #6c7a91); border-bottom: 1px solid var(--tblr-border-color, #dce1e7); }
+.wh-steps .is-current { color: var(--tblr-body-color, inherit); font-weight: 600; }
+.wh-chooser { padding: 1rem; }
+.wh-cat-title { margin: 1rem 0 .5rem; font-size: .72rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--tblr-secondary-color, #6c7a91); }
+.wh-cat-title:first-of-type { margin-top: .25rem; }
+.wh-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .6rem; }
+.wh-card { display: flex; flex-direction: column; gap: .2rem; padding: .7rem .8rem; text-align: start; font: inherit; color: inherit; cursor: pointer; background: var(--tblr-bg-surface, #fff); border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); }
+.wh-card:hover, .wh-card:focus-visible { border-color: var(--tblr-primary, #206bc4); box-shadow: 0 0 0 1px var(--tblr-primary, #206bc4) inset; }
+.wh-card[hidden], .wh-cat[hidden] { display: none; }
+.wh-card-title { display: flex; align-items: center; gap: .5rem; font-weight: 600; }
+.wh-card-title i { width: 1.4rem; text-align: center; color: var(--tblr-primary, #206bc4); }
+.wh-card-desc { font-size: .8rem; color: var(--tblr-secondary-color, #6c7a91); }
+.wh-form-wrap { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.wh-form-main { padding: 1rem; min-width: 0; }
+.wh-guide { padding: 1rem; min-width: 0; border-inline-start: 1px solid var(--tblr-border-color, #dce1e7); background: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .06)); max-height: 78vh; overflow-y: auto; }
+.wh-guide h6 { margin: 1rem 0 .4rem; font-size: .75rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--tblr-secondary-color, #6c7a91); }
+.wh-guide h6:first-child { margin-top: 0; }
+.wh-guide ol, .wh-guide ul { padding-inline-start: 1.2rem; margin-bottom: .5rem; }
+.wh-code { position: relative; margin: 0 0 .5rem; padding: .6rem .75rem; max-height: 14rem; overflow: auto; font-size: .76rem; line-height: 1.4; white-space: pre; color: var(--tblr-body-color, inherit); background: var(--tblr-bg-surface, #fff); border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); }
+.wh-copy { position: absolute; top: .3rem; inset-inline-end: .3rem; }
+.wh-codewrap { position: relative; }
+.wh-result { margin-top: .75rem; padding: .6rem .8rem; border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); background: var(--tblr-bg-surface, #fff); }
+.wh-result.is-ok { border-color: var(--tblr-green, #2fb344); }
+.wh-result.is-bad { border-color: var(--tblr-red, #d63939); }
+.wh-result pre { margin: .4rem 0 0; max-height: 14rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .76rem; }
+.wh-secret-note { font-size: .8rem; color: var(--tblr-secondary-color, #6c7a91); }
+@media (max-width: 900px) {
+    .wh-form-wrap { grid-template-columns: minmax(0, 1fr); }
+    .wh-guide { border-inline-start: 0; border-top: 1px solid var(--tblr-border-color, #dce1e7); max-height: none; }
+    .wh-cards { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ===== Event rules (admin/event_rules.php, js/event_rules.js): When -> If -> Then rule builder. Theme tokens only, so dark mode follows. ===== */
+.er-page, .er-overlay { --er-border: var(--tblr-border-color, #dce1e7); --er-muted: var(--tblr-secondary-color, #6c7a91); --er-surface: var(--tblr-bg-surface, #fff); --er-soft: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .08)); --er-primary: var(--tblr-primary, #206bc4); --er-ok: var(--tblr-green, #2fb344); --er-bad: var(--tblr-red, #d63939); --er-warn: var(--tblr-orange, #f76707); --er-radius: var(--tblr-border-radius, .375rem); }
+.er-page [hidden], .er-overlay [hidden] { display: none !important; }
+.er-ok { color: var(--er-ok); }
+.er-bad { color: var(--er-bad); }
+.er-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem 1.5rem; margin-bottom: 1rem; }
+.er-title { margin: 0 0 .25rem; font-size: 1.25rem; }
+.er-title-name { font-weight: 400; color: var(--er-muted); }
+.er-sub { margin: 0; max-width: 62rem; color: var(--er-muted); font-size: .9rem; }
+.er-head-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.er-back { display: inline-block; margin-bottom: .35rem; font-size: .85rem; }
+.er-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.er-tile { display: flex; flex-direction: column; padding: .65rem .9rem; color: inherit; text-decoration: none; background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-tile:hover, .er-tile:focus-visible { border-color: var(--er-primary); color: inherit; }
+.er-tile-n { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.er-tile-l { font-size: .8rem; color: var(--er-muted); }
+.er-filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+.er-filters .form-select { width: auto; flex: 0 1 9rem; }
+.er-search { position: relative; flex: 1 1 12rem; min-width: 0; }
+.er-search > i { position: absolute; inset-inline-start: .75rem; top: 50%; transform: translateY(-50%); color: var(--er-muted); pointer-events: none; }
+.er-search .form-control { padding-inline-start: 2.1rem; }
+.er-count { margin-bottom: .5rem; }
+.er-list { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
+.er-rule { display: grid; grid-template-columns: auto auto minmax(0, 1fr) minmax(11rem, 14rem) auto; gap: .75rem 1rem; align-items: center; padding: .8rem 1rem; background: var(--er-surface); border: 1px solid var(--er-border); border-inline-start: 4px solid var(--er-ok); border-radius: var(--er-radius); position: relative; }
+.er-rule.is-off { border-inline-start-color: var(--er-border); }
+.er-rule.is-off .er-main { opacity: .72; }
+.er-rule.is-failing { border-inline-start-color: var(--er-bad); }
+.er-rule.is-dragging { opacity: .45; }
+.er-rule.er-drop-before::before, .er-rule.er-drop-after::after { content: ""; position: absolute; inset-inline: 0; height: 3px; background: var(--er-primary); border-radius: 2px; }
+.er-rule.er-drop-before::before { top: -5px; }
+.er-rule.er-drop-after::after { bottom: -5px; }
+.er-order { display: flex; flex-direction: column; align-items: center; color: var(--er-muted); }
+.er-grip { cursor: grab; padding: .1rem .35rem; }
+.er-move { padding: 0 .35rem; line-height: 1.2; font-size: .7rem; color: var(--er-muted); background: transparent; border: 0; border-radius: 4px; cursor: pointer; }
+.er-move:hover, .er-move:focus-visible { color: var(--er-primary); background: var(--er-soft); }
+.er-switch { position: relative; width: 2.6rem; height: 1.45rem; padding: 0; border: 1px solid var(--er-border); border-radius: 999px; background: var(--er-soft); cursor: pointer; transition: background .15s; }
+.er-switch .er-knob { position: absolute; top: 2px; inset-inline-start: 2px; width: 1.05rem; height: 1.05rem; border-radius: 50%; background: var(--er-muted); transition: transform .15s, background .15s; }
+.er-switch[aria-checked="true"] { background: var(--er-ok); border-color: var(--er-ok); }
+.er-switch[aria-checked="true"] .er-knob { transform: translateX(1.15rem); background: #fff; }
+[dir="rtl"] .er-switch[aria-checked="true"] .er-knob { transform: translateX(-1.15rem); }
+.er-switch:focus-visible, .er-chip:focus-visible, .er-action-card:focus-within { outline: 2px solid var(--er-primary); outline-offset: 2px; }
+.er-switch:disabled { opacity: .6; cursor: progress; }
+.er-main { min-width: 0; }
+.er-name-line { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; }
+.er-name { font-weight: 600; font-size: 1.02rem; overflow-wrap: anywhere; }
+.er-sentence { margin: .2rem 0 .45rem; color: var(--tblr-body-color, inherit); font-size: .92rem; overflow-wrap: anywhere; }
+.er-meta { display: flex; flex-wrap: wrap; gap: .35rem; }
+.er-badge { --er-c: var(--er-muted); display: inline-flex; align-items: center; gap: .35rem; max-width: 100%; padding: .1rem .55rem; font-size: .76rem; color: var(--er-c); background: color-mix(in srgb, var(--er-c) 13%, transparent); border: 1px solid color-mix(in srgb, var(--er-c) 35%, transparent); border-radius: 999px; }
+.er-badge code { padding: 0; font-size: .72rem; color: inherit; background: transparent; opacity: .8; }
+.er-badge-action { --er-c: var(--er-primary); }
+.er-stats { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.er-spark-line { display: flex; align-items: center; gap: .5rem; }
+.er-spark { flex: 0 0 auto; }
+.er-s-ok { fill: var(--er-ok); }
+.er-s-bad { fill: var(--er-bad); }
+.er-s-other { fill: var(--er-warn); }
+.er-s-none { fill: var(--er-border); }
+.er-actions-cell { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; max-width: 16rem; }
+.er-empty { padding: 2rem 1rem; text-align: center; color: var(--er-muted); background: var(--er-surface); border: 1px dashed var(--er-border); border-radius: var(--er-radius); margin-bottom: 1rem; }
+.er-empty-small { padding: 1rem; }
+.er-empty-icon { font-size: 2rem; margin-bottom: .5rem; color: var(--er-primary); }
+.er-empty h4 { color: var(--tblr-body-color, inherit); }
+.er-recipes-wrap { margin: 1rem 0; }
+.er-recipes-wrap > summary { cursor: pointer; font-weight: 600; padding: .4rem 0; }
+.er-recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: .75rem; margin-top: .5rem; }
+.er-recipe { --er-c: var(--er-primary); display: flex; gap: .75rem; padding: .8rem; color: inherit; text-decoration: none; background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-recipe:hover, .er-recipe:focus-visible { border-color: var(--er-c); box-shadow: 0 0 0 1px var(--er-c) inset; color: inherit; }
+.er-recipe-icon { flex: 0 0 2.4rem; height: 2.4rem; display: inline-flex; align-items: center; justify-content: center; color: var(--er-c); background: color-mix(in srgb, var(--er-c) 14%, transparent); border-radius: 50%; }
+.er-recipe-body { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.er-recipe-title { font-weight: 600; }
+.er-recipe-blurb { font-size: .82rem; color: var(--er-muted); }
+.er-recipe-flow { font-size: .75rem; color: var(--er-muted); }
+
+/* editor */
+.er-editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: 1rem; align-items: start; }
+.er-cards { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.er-card { background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-card-h { display: flex; align-items: center; gap: .6rem; margin: 0; padding: .7rem 1rem; font-size: 1rem; border-bottom: 1px solid var(--er-border); }
+.er-step { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.7rem; font-size: .85rem; font-weight: 700; color: #fff; background: var(--er-primary); border-radius: 50%; }
+.er-optional { font-weight: 400; font-size: .8rem; color: var(--er-muted); }
+.er-card-b { padding: 1rem; }
+.er-problem { margin-top: .5rem; padding: .4rem .7rem; font-size: .85rem; color: var(--er-bad); background: color-mix(in srgb, var(--er-bad) 10%, transparent); border: 1px solid color-mix(in srgb, var(--er-bad) 35%, transparent); border-radius: var(--er-radius); }
+.er-event-info { margin: 0 0 .75rem; padding: .6rem .8rem; background: var(--er-soft); border-radius: var(--er-radius); }
+.er-evhead { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; margin-bottom: .2rem; }
+.er-fields summary { cursor: pointer; font-size: .85rem; color: var(--er-primary); }
+.er-fields table { font-size: .8rem; margin-top: .4rem; }
+.er-fpath { font-family: var(--tblr-font-monospace, monospace); white-space: nowrap; }
+.er-fsample { overflow-wrap: anywhere; }
+.er-builder .er-cbox { padding: .6rem .75rem; margin-bottom: .6rem; border: 1px solid var(--er-border); border-radius: var(--er-radius); background: var(--er-soft); }
+.er-builder .er-cgroup { position: relative; margin: .6rem 0 0 1.2rem; border-inline-start: 3px solid var(--er-primary); background: var(--er-surface); }
+.er-mode { margin-bottom: .5rem; font-weight: 600; }
+.er-mode label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; }
+.er-mode select { min-width: 5.2rem; padding-inline-end: 2rem; }
+.er-card .event-picker .ep-groups { max-height: 17rem; }
+.er-cond-row.has-hint .er-val .form-control, .er-cond-row.has-hint .er-val .ts-control { border-color: var(--er-warn); }
+.er-row-hint { grid-column: 2 / -1; font-size: .75rem; color: var(--er-warn); }
+.er-cgroup-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .4rem; }
+.er-join { display: inline-block; min-width: 2.2rem; text-align: center; padding: 0 .4rem; font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--er-muted); }
+.er-join-group { position: absolute; top: -.8rem; inset-inline-start: .5rem; background: var(--er-soft); border-radius: 999px; }
+.er-cond-row { display: grid; grid-template-columns: 2.6rem minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.6fr) auto; gap: .4rem; align-items: center; margin-bottom: .4rem; }
+.er-cond-row .ts-wrapper { min-width: 0; }
+.er-cond-empty { padding: .75rem 1rem; color: var(--er-muted); border: 1px dashed var(--er-border); border-radius: var(--er-radius); margin-bottom: .6rem; }
+.er-cbar { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .25rem; }
+.er-builder-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-top: .9rem; padding-top: .75rem; border-top: 1px solid var(--er-border); }
+.er-check-out { margin-top: .6rem; padding: .6rem .8rem; background: var(--er-soft); border-radius: var(--er-radius); }
+.er-check-list, .er-cond-result { list-style: none; margin: 0; padding: 0; }
+.er-check-list li, .er-cond-result li { padding: .15rem 0; }
+.er-check-list .is-ok i, .er-cond-result .is-ok i { color: var(--er-ok); }
+.er-check-list .is-no i, .er-cond-result .is-no i { color: var(--er-bad); }
+.er-cond-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.er-fail { margin-inline-start: 1.4rem; }
+.ts-dropdown .er-fopt { display: flex; flex-direction: column; }
+.ts-dropdown .er-fopt-path { font-family: var(--tblr-font-monospace, monospace); font-size: .85rem; }
+.ts-dropdown .er-fopt-desc { font-size: .75rem; opacity: .7; }
+.er-action-search { position: relative; max-width: 20rem; margin-bottom: .6rem; }
+.er-action-search > i { position: absolute; inset-inline-start: .7rem; top: 50%; transform: translateY(-50%); color: var(--er-muted); pointer-events: none; }
+.er-action-search .form-control { padding-inline-start: 2rem; }
+.er-actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(14.5rem, 1fr)); gap: .6rem; margin-bottom: .75rem; }
+.er-action-card { display: flex; gap: .65rem; align-items: flex-start; margin: 0; padding: .65rem .75rem; cursor: pointer; background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-action-card:hover { border-color: var(--er-primary); }
+.er-action-card.is-selected { border-color: var(--er-primary); background: color-mix(in srgb, var(--er-primary) 9%, transparent); box-shadow: 0 0 0 1px var(--er-primary) inset; }
+.er-action-icon { flex: 0 0 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; color: var(--er-primary); background: color-mix(in srgb, var(--er-primary) 12%, transparent); border-radius: 50%; }
+.er-action-text { display: flex; flex-direction: column; min-width: 0; }
+.er-action-name { font-weight: 600; font-size: .9rem; }
+.er-action-desc { font-size: .76rem; color: var(--er-muted); }
+.er-act-boxes { margin-top: .5rem; }
+.er-act-box { padding: .9rem; border: 1px solid var(--er-border); border-radius: var(--er-radius); background: var(--er-soft); }
+.er-checks { max-height: 12rem; overflow: auto; display: flex; flex-direction: column; gap: .15rem; padding: .4rem .6rem; background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-chips { display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; margin-top: .35rem; max-height: 5.2rem; overflow: auto; }
+.er-chips-l { font-size: .75rem; color: var(--er-muted); }
+.er-chip { padding: .05rem .5rem; font-size: .74rem; font-family: var(--tblr-font-monospace, monospace); color: var(--er-primary); background: color-mix(in srgb, var(--er-primary) 10%, transparent); border: 1px solid color-mix(in srgb, var(--er-primary) 30%, transparent); border-radius: 999px; cursor: pointer; }
+.er-chip:hover { background: color-mix(in srgb, var(--er-primary) 20%, transparent); }
+.er-preview { margin: .35rem 0 .6rem; color: var(--er-muted); }
+.er-preview-text { color: var(--tblr-body-color, inherit); white-space: pre-wrap; overflow-wrap: anywhere; }
+.er-side { position: sticky; top: 4.5rem; }
+.er-summary { padding: 1rem; background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-side-h { margin: 0 0 .6rem; font-size: .75rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--er-muted); }
+.er-sentence-big { margin: 0 0 .8rem; padding: .6rem .75rem; font-size: .98rem; line-height: 1.45; background: var(--er-soft); border-inline-start: 3px solid var(--er-primary); border-radius: var(--er-radius); overflow-wrap: anywhere; }
+.er-checks-list { list-style: none; margin: 0 0 1rem; padding: 0; font-size: .85rem; }
+.er-checks-list li { display: flex; gap: .5rem; align-items: baseline; padding: .15rem 0; color: var(--er-muted); }
+.er-checks-list li.is-ok { color: var(--tblr-body-color, inherit); }
+.er-checks-list li.is-ok i { color: var(--er-ok); }
+.er-checks-list li.is-bad { color: var(--er-bad); }
+.er-checks-list li em { font-style: normal; overflow-wrap: anywhere; }
+.er-side-buttons { display: flex; flex-direction: column; gap: .5rem; }
+.er-test-out { margin-top: 1rem; }
+.er-hist-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+.er-hist-msg { overflow-wrap: anywhere; font-size: .85rem; }
+.er-hist-table td { vertical-align: top; }
+
+/* drawers: right panel on desktop, bottom sheet on phones */
+.er-overlay { position: fixed; inset: 0; z-index: 1080; display: flex; justify-content: flex-end; background: rgba(15, 23, 42, .45); }
+.er-drawer { display: flex; flex-direction: column; width: min(38rem, 100%); height: 100%; color: var(--tblr-body-color, inherit); background: var(--er-surface, var(--tblr-bg-surface, #fff)); box-shadow: -8px 0 24px rgba(0, 0, 0, .25); }
+.er-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 1rem; border-bottom: 1px solid var(--tblr-border-color, #dce1e7); }
+.er-drawer-title { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.er-drawer-body { flex: 1 1 auto; padding: 1rem; overflow-y: auto; }
+.er-drawer .er-sentence-big { margin-top: 0; }
+body.er-noscroll { overflow: hidden; }
+.er-toasts { position: fixed; z-index: 1090; inset-inline-end: 1rem; bottom: 1rem; display: flex; flex-direction: column; gap: .5rem; max-width: min(24rem, calc(100vw - 2rem)); }
+.er-toast { padding: .6rem .9rem; color: #fff; background: #1f2d3d; border-radius: var(--tblr-border-radius, .375rem); box-shadow: 0 4px 14px rgba(0, 0, 0, .3); transition: opacity .3s; }
+.er-toast-bad { background: #b02a2a; }
+.er-toast.is-gone { opacity: 0; }
+
+@media (max-width: 1100px) {
+    .er-rule { grid-template-columns: auto auto minmax(0, 1fr); }
+    .er-stats, .er-actions-cell { grid-column: 3; }
+    .er-actions-cell { justify-content: flex-start; max-width: none; }
+}
+@media (max-width: 900px) {
+    .er-editor-grid { grid-template-columns: minmax(0, 1fr); }
+    .er-side { position: static; order: -1; }
+    .er-cond-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .er-cond-row .er-join { grid-column: 1 / -1; text-align: start; }
+    .er-cond-row .er-fld, .er-cond-row .er-op, .er-cond-row .er-val { grid-column: 1; }
+    .er-cond-row .er-rm { grid-column: 2; grid-row: 2; }
+    .er-builder .er-cgroup { margin-inline-start: .4rem; }
+}
+@media (max-width: 640px) {
+    .er-overlay { align-items: flex-end; }
+    .er-drawer { width: 100%; height: 90vh; border-radius: 1rem 1rem 0 0; box-shadow: 0 -8px 24px rgba(0, 0, 0, .25); }
+    .er-rule { grid-template-columns: auto minmax(0, 1fr); padding: .7rem; }
+    .er-rule .er-order { display: none; }
+    .er-stats, .er-actions-cell { grid-column: 1 / -1; }
+    .er-filters .form-select { flex: 1 1 calc(50% - .5rem); min-width: 0; }
+    .er-side-buttons { position: sticky; bottom: 0; background: var(--er-surface); padding-top: .5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .er-switch, .er-switch .er-knob, .er-toast { transition: none; }
+}
+
+/* Recipe cards are links: keep them free of the global link underline (hover, focus and their text spans too). */
+a.er-recipe, a.er-recipe:hover, a.er-recipe:focus, a.er-recipe:focus-visible, a.er-recipe:active,
+a.er-recipe .er-recipe-title, a.er-recipe .er-recipe-blurb, a.er-recipe .er-recipe-flow,
+a.er-recipe:hover .er-recipe-title, a.er-recipe:hover .er-recipe-blurb, a.er-recipe:hover .er-recipe-flow { text-decoration: none; }
+
+/* Multi-choice ticket filters (js/ticket_view_filters.js): a checkbox list in the filter bar's dropdowns and in the saved-view dialogs */
+.tv-fieldset { border: 0; padding: 0; margin: 0 0 .75rem; min-width: 0; }
+.tv-legend { float: none; width: auto; margin: 0 0 .35rem; padding: 0; font-size: .875rem; font-weight: 600; color: var(--color-text); }
+.tv-legend-sm { float: none; width: auto; margin: 0 0 .25rem; padding: 0; font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-muted); }
+.tv-tools { font-size: .75rem; margin-left: .5rem; white-space: nowrap; }
+.tv-legend .tv-tools { font-weight: 400; }
+.tv-options { display: flex; flex-wrap: wrap; gap: .25rem 1rem; max-height: 11rem; overflow-y: auto; padding: .15rem 0; }
+.tv-option { margin: 0; display: flex; align-items: center; gap: .4rem; cursor: pointer; }
+.tv-option .form-check-input { float: none; margin: 0; flex: 0 0 auto; }
+.tv-ms-menu { min-width: 14rem; max-width: min(22rem, calc(100vw - 2rem)); }
+.tv-ms-menu .tv-options { flex-direction: column; flex-wrap: nowrap; gap: .25rem; max-height: 16rem; margin-top: .35rem; }
+.tv-ms-menu .tv-fieldset { margin-bottom: 0; }
+.tv-ms-btn.tv-active { border-color: var(--color-accent); color: var(--color-text); background: var(--color-accent-soft); }
+.tv-ms-btn .tv-count { font-size: .7rem; vertical-align: text-top; }
+.tv-count[hidden] { display: none; }
+.saved-view-star { padding: 0 .35rem; color: var(--color-text-muted); text-decoration: none; line-height: 1; }
+.saved-view-star:hover, .saved-view-star:focus-visible { color: var(--color-accent); }
+.saved-view-star.is-default { color: #d97706; }
+.ticket-saved-views .nav-item:focus-within .saved-view-actions { opacity: 1; }
+
+/* A scrollable modal whose header, body and footer sit inside a <form> (Add device and many others): Bootstrap only lets the
+   direct children of .modal-content shrink and scroll, so without this the footer (the Download button) fell off the screen. */
+.modal-dialog-scrollable .modal-content > form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
+}
+.modal-dialog-scrollable .modal-content > form > .modal-body {
+    overflow-y: auto;
+}
+
+/* ===== Design review fixes =====================================================================
+   1. Tabler makes .alert a flex row with a 1rem gap, so an alert written as "text <strong>x</strong> text" (the app's usual
+      markup) was split into separate flex items: gaps inside sentences and a lone "." wrapping onto its own line. Only alerts
+      built the Tabler way (a direct .alert-icon child) keep the flex layout. */
+.alert:not(:has(> .alert-icon)) { display: block; }
+
+/* 2. A dark card header / table head gave its children (h4, th) their own dark text colour, so titles were unreadable on the dark band. */
+.card-header.bg-dark .h1, .card-header.bg-dark .h2, .card-header.bg-dark .h3, .card-header.bg-dark .h4,
+.card-header.bg-dark .h5, .card-header.bg-dark .h6 { color: inherit; }
+.table > thead.thead-dark > tr > th, body:not(.dark-mode) .table > thead.thead-dark > tr > th { color: #fff !important; }
+
+/* 3. Unchecked switches and checkboxes were white on white (light theme) and nearly invisible (dark theme). */
+.form-check-input:not(:checked):not(:indeterminate) { border-color: #8693a0; }
+.form-switch .form-check-input:not(:checked) { background-color: #dde3e8; border-color: #8693a0; }
+:root[data-bs-theme="dark"] .form-check-input:not(:checked):not(:indeterminate) { border-color: #6b7a86; }
+:root[data-bs-theme="dark"] .form-switch .form-check-input:not(:checked) { background-color: #2c3a44; border-color: #6b7a86; }
+
+/* 4. Tablet widths (768-1099px): the md breakpoint is measured on the viewport, but the department sidebar still takes ~230px, so a
+      3/9 or 4/8 detail layout left its narrow column ~110px wide (one word per line, emails breaking mid-address). Stack them here. */
+@media (min-width: 768px) and (max-width: 1099.98px) {
+    .row:has(> .col-md-9) > .col-md-3, .row:has(> .col-md-9) > .col-md-9,
+    .row:has(> .col-md-8) > .col-md-4, .row:has(> .col-md-8) > .col-md-8,
+    .row:has(> .col-md-3) > .col-md-9 { flex: 0 0 100%; max-width: 100%; width: 100%; }
+}
+
+/* 5. Filter toolbars: a pill group of type tabs sat on top of the search box at tablet width. Let the toolbar wrap. */
+.card-body > .row > .col-sm-8 > .btn-group.float-end { float: none !important; display: flex; flex-wrap: wrap; justify-content: flex-end; }
+
+/* 6. Admin pages that print the legacy Home / Admin / ... trail under the shell's own back-crumb showed two breadcrumb rows. */
+nav.admin-breadcrumb ~ ol.breadcrumb { display: none; }
+
+/* 7. KPI tile labels were clipped with an ellipsis and no way to read them (Total..., Warni..., Unkn...). Let them wrap instead. */
+.info-box .info-box-text { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; }
+
+/* 8. A table that scrolls sideways inside its card gave no hint that more columns exist (last column cut at the card edge).
+      Classic scroll-shadow: edge fades appear only while there is more to scroll. */
+.table-responsive, [class*="table-responsive-"] {
+    background:
+        linear-gradient(to right, var(--tblr-bg-surface, #fff) 30%, rgba(255, 255, 255, 0)) left center / 40px 100% no-repeat local,
+        linear-gradient(to left, var(--tblr-bg-surface, #fff) 30%, rgba(255, 255, 255, 0)) right center / 40px 100% no-repeat local,
+        radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, .22), rgba(0, 0, 0, 0)) left center / 12px 100% no-repeat scroll,
+        radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, .22), rgba(0, 0, 0, 0)) right center / 12px 100% no-repeat scroll;
+}
+
+/* 9. Dark theme: the white "Cancel/Close" (.btn-light) in every modal footer stayed a bright white slab that outweighed the blue primary
+      button, and .alert-dark (grey on dark) was nearly invisible. Use the surface tokens instead. */
+:root[data-bs-theme="dark"] .btn-light,
+:root[data-bs-theme="dark"] .btn-white,
+:root[data-bs-theme="dark"] .btn-default {
+    background-color: var(--tblr-bg-surface-secondary, #232e3c);
+    border-color: var(--tblr-border-color, #36445a);
+    color: var(--tblr-body-color, #e6e9ee);
+}
+:root[data-bs-theme="dark"] .btn-light:hover, :root[data-bs-theme="dark"] .btn-white:hover, :root[data-bs-theme="dark"] .btn-default:hover,
+:root[data-bs-theme="dark"] .btn-light:focus-visible {
+    background-color: var(--tblr-bg-surface-tertiary, #2c3a4c);
+    color: #fff;
+}
+:root[data-bs-theme="dark"] .alert-dark {
+    --tblr-alert-bg: #2a3544; --tblr-alert-color: #dfe5ec; --tblr-alert-border-color: #3a475a;
+    background-color: #2a3544; color: #dfe5ec;
+}
+
+/* 10. Every custom link adds an icon to the top bar and nothing limited them, so ~30 links pushed the user menu off the right edge and made the
+       whole page scroll sideways. Let the icon group shrink and scroll inside the bar instead. */
+.navbar > .container-fluid > .navbar-nav.ms-auto { min-width: 0; flex: 0 1 auto; max-width: 100%; }
+.navbar > .container-fluid > .navbar-nav.ms-auto > li:not(.user-menu) { flex: 0 0 auto; }
+@media (min-width: 768px) {
+    .navbar > .container-fluid > .navbar-nav.ms-auto { flex-wrap: wrap; justify-content: flex-end; row-gap: 0; }
+}
+
+/* 11. One very long unbroken value (a 300+ character name, a pasted URL) made a table - and then the whole page - thousands of pixels wide.
+       Cells and titles may break anywhere when they have to, so the layout can always shrink to its container. */
+.table td, .table th, .card-title, .modal-title, .breadcrumb-item, .list-group-item, .dropdown-item, .badge { overflow-wrap: anywhere; }
+.table td { min-width: 0; }
+main, main :where(div, span, a, p, li, strong, small, h1, h2, h3, h4, h5, h6, td, th, label), .modal-content :where(div, span, a, p, li, strong, small, h5) { overflow-wrap: anywhere !important; word-wrap: normal; }
+
+
+/* 12. Design review polish. Badges floated inside nav links (folder tree counts) drifted onto their own line; flex keeps them on the row. */
+.nav-link:has(> .badge.float-end) { display: flex; align-items: center; gap: .4rem; }
+.nav-link:has(> .badge.float-end) > .badge.float-end { float: none !important; margin: 0 0 0 auto !important; order: 3; }
+.nav-link:has(> .badge.float-end) > i.fa-chevron-down, .nav-link:has(> .badge.float-end) > i.fa-chevron-right { order: 2; }
+/* asset/contact header cards: a long asset name was squeezed into a ~110px column and broke inside the token */
+.card .media-body, .card .media-body h4, .card .media-body h5 { min-width: 0; }
+
+/* 14. Tablet polish (768-1099px). Filter selects in a 2-column slot were ~100px wide and read "All Accour" / "All Payme"; give those slots room to
+      grow and wrap the row. A wrapped badge (rule/condition pills) became a circle because the pill radius is sized for one line. */
+@media (min-width: 768px) and (max-width: 1099.98px) {
+    form[method="get"] > .row, form > .row:has(.auto-submit-select) { row-gap: .5rem; }
+    form[method="get"] > .row > .col-md-2, form[method="get"] > .row > .col-sm-2,
+    form > .row:has(.auto-submit-select) > .col-md-2, form > .row:has(.auto-submit-select) > .col-sm-2 { flex: 1 1 28%; width: auto; max-width: none; min-width: 160px; }
+    form[method="get"] > .row > [class*="col-"] > a.btn-block, form[method="get"] > .row > [class*="col-"] > .btn-block { white-space: normal; }
+}
+.badge.text-wrap { border-radius: .5rem; padding: .35em .6em; line-height: 1.3; text-align: left; max-width: 100%; }
+
+/* 15. Ticket list: with ~10 columns at 1366px the Subject collapsed to one word per line (and the last columns were cut with no cue). Give it a floor; the table scrolls inside its card. */
+.tk-col-subject { min-width: 220px; }
+
+/* 16. Asset name in the narrow detail sidebar: wrap between words, never inside "LT-EXEC-01" (the hyphens are non-breaking in the markup). */
+.asset-name { overflow-wrap: break-word !important; word-break: normal !important; }
+
+/* 17. Dropdowns (TomSelect) look and behave like dropdowns. No caret in a closed control, a chevron instead, a neutral focus ring (red only when invalid),
+      a placeholder row is not listed again, and the open list is not clipped by the modal. */
+.ts-dropdown .ts-placeholder-row { display: none; }
+.ts-wrapper.single .ts-control { cursor: pointer; min-height: calc(1.5em + .75rem + 2px); }
+.ts-wrapper.single .ts-control > input { caret-color: transparent; }
+.ts-wrapper.single.input-active .ts-control > input { caret-color: auto; }
+.ts-wrapper.single .ts-control:after { content: ""; position: absolute; right: .85rem; top: 50%; width: .45rem; height: .45rem; margin-top: -.3rem; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); opacity: .55; pointer-events: none; }
+.ts-wrapper.single.dropdown-active .ts-control:after { transform: rotate(-135deg); margin-top: -.1rem; }
+.ts-wrapper.focus:not(.is-invalid) .ts-control { border-color: var(--bs-primary, #206bc4); box-shadow: 0 0 0 .2rem rgba(var(--bs-primary-rgb, 32, 107, 196), .18); }
+.ts-wrapper.disabled .ts-control { cursor: not-allowed; opacity: .7; }
+.modal .ts-dropdown { z-index: 1090; }
+.ts-dropdown .dropdown-input { margin: .35rem .5rem; width: calc(100% - 1rem); }
+
+/* 18. Ticket Time Entry card: timer centred over equal-width Start / Reset buttons with a gap; same card surface as its siblings. */
+.time-entry-card .card-body > .d-flex.justify-content-center { gap: 0; }
+.time-entry-card .time-entry-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; max-width: 15rem; margin-inline: auto; }
+.time-entry-card .time-entry-actions .btn { height: 2.25rem; display: inline-flex; align-items: center; justify-content: center; }
+.time-entry-card .form-control-sm { height: 2.1rem; }
+
+/* 19. TinyMCE: the focus frame uses the app's primary instead of TinyMCE's own mismatched blue. */
+.tox .tox-edit-area::before { border-color: var(--bs-primary, #206bc4) !important; }
+.tox.tox-tinymce { border-radius: var(--bs-border-radius, .375rem); border-color: var(--bs-border-color, #dee2e6); }
+
+/* 20. Split buttons (btn + dropdown-toggle-split) everywhere: the caret segment belongs to the button (same colour, a divider, same height/radius),
+       and menu rows use a neutral hover/focus/active state instead of flooding the row with the theme colour. */
+.btn-group > .btn.dropdown-toggle-split { padding-inline: .6rem; border-left: 1px solid rgba(255, 255, 255, .45); box-shadow: none; }
+.btn-group > .btn-outline-primary.dropdown-toggle-split, .btn-group > .btn-outline-secondary.dropdown-toggle-split,
+.btn-group > .btn-light.dropdown-toggle-split, .btn-group > .btn-secondary.dropdown-toggle-split { border-left-color: var(--bs-border-color, #ccd); }
+.btn-group > .btn.dropdown-toggle-split:focus-visible { outline: 2px solid var(--bs-primary, #206bc4); outline-offset: 2px; position: relative; z-index: 2; }
+.dropdown-menu .dropdown-item:hover, .dropdown-menu .dropdown-item:focus { background: var(--bs-tertiary-bg, rgba(100, 116, 139, .12)); color: var(--bs-body-color); }
+.dropdown-menu .dropdown-item.active, .dropdown-menu .dropdown-item:active { background: var(--bs-secondary-bg, rgba(100, 116, 139, .18)); color: var(--bs-body-color); font-weight: 600; }
+.dropdown-menu .dropdown-item.text-danger:hover, .dropdown-menu .dropdown-item.text-danger:focus { background: rgba(var(--bs-danger-rgb, 214, 57, 57), .1); }
+
+/* 21. Project detail header: padded summary cards with breathing room, readable action buttons. */
+.project-summary-group > .card.card-body { padding: 1rem 1.25rem; gap: .3rem; }
+.project-summary-group > .card.card-body > h5 { margin-bottom: .15rem; }
+.project-header-card > .card-header { padding: .75rem 1.25rem; }
+.project-header-card .card-tools .btn-sm { min-height: 2.15rem; padding: .3rem .8rem; font-size: .875rem; }
+.project-header-card .card-tools { display: flex; align-items: center; gap: .5rem; }
+
+/* 22. Search input groups built from .input-group-append wrappers (every list's "Search / filter / search" bar): the wrappers are not direct
+       children, so Bootstrap left the inner joins rounded and the outer-right corner square. Make the wrapper a flex segment and round only the outer ends. */
+.input-group > .input-group-append, .input-group > .input-group-prepend { display: flex; }
+.input-group > .input-group-append > .btn { border-radius: 0 !important; margin-left: -1px; height: 100%; }
+.input-group > .input-group-append > .btn:last-child { border-top-right-radius: var(--input-radius, .375rem) !important; border-bottom-right-radius: var(--input-radius, .375rem) !important; }
+.input-group > .input-group-append > .btn + .btn { border-left: 1px solid rgba(255, 255, 255, .35); }
+.input-group > .form-control:not(:last-child),
+.input-group > .custom-select:not(:last-child) {
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+}
+.input-group > .form-control:not(:first-child),
+.input-group > .custom-select:not(:first-child) {
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+}
+.input-group-text {
+    border-color: var(--color-border);
+    background-color: var(--color-surface-alt);
+}
+.input-group > .input-group-prepend > .input-group-text {
+    border-radius: var(--input-radius) 0 0 var(--input-radius);
+}
+.input-group > .input-group-append > .input-group-text {
+    border-radius: 0 var(--input-radius) var(--input-radius) 0;
+}
+.input-group > .input-group-prepend > .btn {
+    border-radius: var(--input-radius) 0 0 var(--input-radius) !important;
+}
+.input-group > .input-group-append > .btn {
+    border-radius: 0 var(--input-radius) var(--input-radius) 0 !important;
+}
+
+/* Select2 border-radius */
+.select2-container--bootstrap4 .select2-selection--single,
+.select2-container--bootstrap4 .select2-selection--multiple {
+    border-radius: var(--input-radius) !important;
+    border-color: var(--color-border) !important;
+}
+.select2-container--bootstrap4.select2-container--focus .select2-selection {
+    border-color: var(--color-accent) !important;
+    box-shadow: 0 0 0 .2rem rgba(var(--color-accent-rgb), .2) !important;
+}
+
+/* ===== Dashboard small-box refinements ===== */
+.small-box {
+    border-radius: var(--input-radius);
+    overflow: hidden;
+    text-decoration: none !important;
+}
+.small-box h3 {
+    font-weight: 700;
+    font-size: 2rem;
+}
+.small-box-footer {
+    background: rgba(0, 0, 0, .1) !important;
+    font-size: .8rem;
+    padding: .35rem .75rem;
+}
+.small-box-footer:hover {
+    background: rgba(0, 0, 0, .15) !important;
+}
+
+/* ===== Dropdown / modal border-radius ===== */
+.dropdown-menu {
+    border-radius: var(--input-radius);
+    border-color: var(--color-border);
+    box-shadow: 0 6px 14px -4px rgba(16, 24, 40, .18);
+}
+.modal-content {
+    border-radius: var(--card-radius);
+    border: none;
+    box-shadow: 0 10px 30px -5px rgba(16, 24, 40, .25);
+}
+.modal-header {
+    border-radius: var(--card-radius) var(--card-radius) 0 0;
+}
+/* Dark modal headers (modal-header.bg-dark, used app-wide for a "console/emphasis"
+   convention) never got their title color set, so it fell back to the default
+   dark body-text color on a dark background (~1.16:1 contrast, effectively
+   invisible). Only the close button was reliably given text-white/text-light. */
+.modal-header.bg-dark .modal-title {
+    color: #fff;
+}
+
+/* Same bug, different component: card-header.bg-dark (client/guest ticket and
+   item view headers) never got a text color either, so the ticket number/
+   subject heading was invisible-on-invisible in light mode. */
+.card-header.bg-dark {
+    color: #fff;
+}
+
+/* ===== Table row hover accent ===== */
+.table-hover tbody tr:hover {
+    background-color: var(--color-accent-soft);
+}
+
+/* ===== Ticket detail page — visual hierarchy pass =====
+   Goal: the conversation/composer (what a tech actually reads and does on every
+   visit) should read as the primary surface; the sidebar's low-frequency
+   reference cards should recede rather than compete with it 1-for-1. */
+
+/* Header card: identity+actions, the status/tags/chip rows, and the SLA meters
+   were stacked with equal spacing/borders as if they were peers - visually the
+   busiest block on the page before you even reach any content. Tightening the
+   rhythm and lightening the internal dividers reads as one cohesive strip
+   instead of four stacked sections, without removing any of the information. */
+.ticket-alga-theme .ticket-header-compact .card-body {
+    padding-top: .65rem;
+    padding-bottom: .65rem;
+}
+/* The subject is the page's title, but its <h4> computed 14px — identical to
+   body text, and BELOW the 16px of every sidebar .card-title on the same
+   screen, so "Attachments" out-ranked "Google Maps API". (Tabler sizes h4 at
+   1rem and the base font is already .875rem, so an h4 buys nothing here.)
+   18px against 16px/500 card titles and 16px breadcrumbs gives the page one
+   unambiguous top of the hierarchy; the weight stays with .fw-bold's 700. */
+.ticket-alga-theme .ticket-header-compact h4 {
+    font-size: 1.125rem;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+}
+.ticket-alga-theme .ticket-header-compact .border-top {
+    border-top-color: var(--color-border-soft) !important;
+    padding-top: .5rem !important;
+    margin-top: .35rem !important;
+}
+
+/* Composer + conversation get a touch more presence than a generic .card. */
+.ticket-alga-theme .ticket-primary-panel {
+    box-shadow: 0 6px 16px -4px rgba(16, 24, 40, .14), 0 2px 6px -2px rgba(16, 24, 40, .08);
+}
+.ticket-alga-theme .ticket-thread-reply .card-body {
+    padding: .85rem 1rem;
+    font-size: .92rem;
+    line-height: 1.55;
+}
+
+/* Sidebar cards carry an explicit inline `order` (tiered by usage frequency,
+   see agent/ticket.php) - flex-column is what makes that `order` apply. */
+.ticket-alga-theme .ticket-sidebar {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Cards in the sidebar's collapsed-by-default tier: quieter chrome (smaller
+   headers, flatter shadow) so they read as reference material rather than
+   competing with the always-visible cards above them, plus a rotating chevron
+   on their native Bootstrap collapse toggle (data-bs-toggle="collapse" - same
+   idiom already used app-wide for #advancedFilter panels, no new JS needed). */
+.ticket-alga-theme .ticket-sidebar-compact.card {
+    box-shadow: none;
+    border: 1px solid var(--color-border-soft);
+}
+.ticket-alga-theme .ticket-sidebar-compact .card-header {
+    padding: .5rem .75rem;
+}
+/* Collapsed, the header IS the card: a 57px header inside a 59px card. Its
+   border-bottom has square corners and the card has 14px ones, so the rule ran
+   out past the curve on both sides and doubled the card's bottom edge. Drop it
+   while the body next to it is hidden — Bootstrap's .collapse only carries
+   .show when open, so this tracks the real state with no JS — and restore it
+   the moment the card is expanded and the border is actually separating two
+   things. */
+.ticket-alga-theme .ticket-sidebar-compact.card:has(> .collapse:not(.show)) > .card-header {
+    border-bottom-color: transparent;
+}
+.ticket-alga-theme .ticket-sidebar-compact .card-header .card-title {
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    border-radius: 4px;
+    transition: color .1s ease-out;
+}
+/* The title text itself carries the same collapse toggle as the chevron button
+   (see agent/ticket.php) - a much bigger, easier click target than the small
+   chevron alone for a row whose only job most of the time is "expand this". */
+.ticket-alga-theme .ticket-sidebar-compact .card-header .card-title:hover {
+    color: var(--color-accent);
+}
+.ticket-alga-theme .ticket-sidebar-compact .card-body {
+    padding: .65rem .75rem;
+    font-size: .82rem;
+}
+.ticket-alga-theme .ticket-sidebar-compact .card-tools .btn-tool .fa-chevron-down {
+    transition: transform .15s ease-out;
+}
+.ticket-alga-theme .ticket-sidebar-compact .card-tools .btn-tool[aria-expanded="true"] .fa-chevron-down {
+    transform: rotate(180deg);
+}
+
+
+
+/* Credentials vault: value + action buttons sit in one tidy row (list and detail modal). */
+.cred-cell { display: inline-flex; align-items: center; gap: .25rem; max-width: 100%; vertical-align: middle; }
+.cred-text { min-width: 0; overflow-wrap: anywhere; }
+.cred-mask { font-family: var(--tblr-font-monospace, monospace); letter-spacing: .12em; color: var(--tblr-secondary, #6c757d); user-select: none; }
+.cred-btn { --tblr-btn-bg: transparent; --tblr-btn-border-color: transparent; --tblr-btn-hover-bg: var(--tblr-bg-surface-secondary, rgba(0,0,0,.06)); --tblr-btn-hover-border-color: transparent; --tblr-btn-active-bg: var(--tblr-bg-surface-secondary, rgba(0,0,0,.06)); --tblr-btn-active-border-color: transparent; box-shadow: none; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; padding: 0; border: 0; background: transparent; color: var(--tblr-secondary, #6c757d); border-radius: .375rem; }
+.cred-btn:hover, .cred-btn:focus-visible { background: var(--tblr-bg-surface-secondary, rgba(0,0,0,.06)); color: var(--tblr-body-color, inherit); }
+.modal-body .table td { vertical-align: middle; padding-block: .6rem; }
+
+/* Credentials list: name cell */
+.cred-name-link { display: flex; align-items: flex-start; gap: .75rem; color: inherit; text-decoration: none; }
+.cred-icon { flex: 0 0 2rem; width: 2rem; padding-top: .1rem; text-align: center; color: var(--tblr-body-color); opacity: .85; }
+.cred-name-body { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.cred-title { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; line-height: 1.35; font-weight: 500; }
+.cred-name { overflow-wrap: anywhere; }
+.cred-type-badge { font-size: .7rem; line-height: 1; padding: .3em .55em; }
+.cred-desc { color: var(--tblr-secondary-color, #566570); font-size: .8rem; line-height: 1.4; }
+.cred-tags { margin: .4rem 0 0 2.75rem; }
+
+/* Icon picker (includes/icon_picker.php + js/icon_picker.js). The panel sits in normal flow under the button so a
+   .modal-body never clips it; colours come from Tabler/Bootstrap variables so dark mode follows automatically. */
+.icon-picker { position: relative; }
+.icon-picker__button { display: flex; align-items: center; gap: .75rem; width: 100%; padding: .4rem .75rem; text-align: left; cursor: pointer;
+    color: var(--tblr-body-color, inherit); background: var(--tblr-bg-forms, var(--tblr-bg-surface, transparent));
+    border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); }
+.icon-picker__button:hover, .icon-picker__button[aria-expanded="true"] { border-color: var(--tblr-primary, #206bc4); }
+.icon-picker__button:focus-visible, .icon-picker__item:focus-visible, .icon-picker__chip:focus-visible { outline: 2px solid var(--tblr-primary, #206bc4); outline-offset: 1px; }
+.icon-picker__preview { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem; font-size: 1.6rem; flex: 0 0 auto;
+    color: var(--tblr-primary, #206bc4); background: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .1)); border-radius: var(--tblr-border-radius, .375rem); }
+.icon-picker__label { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; line-height: 1.25; }
+.icon-picker__class { font-family: var(--tblr-font-monospace, monospace); overflow-wrap: anywhere; }
+.icon-picker__hint { color: var(--tblr-secondary-color, #6c7a91); }
+.icon-picker__caret { color: var(--tblr-secondary-color, #6c7a91); transition: transform .15s; }
+.icon-picker.is-open .icon-picker__caret { transform: rotate(180deg); }
+.icon-picker__panel { margin-top: .5rem; padding: .75rem; border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem);
+    background: var(--tblr-bg-surface, var(--tblr-body-bg, transparent)); }
+.icon-picker__panel[hidden] { display: none; }
+.icon-picker__cats { display: flex; gap: .35rem; margin: .6rem 0; overflow-x: auto; padding-bottom: .25rem; }
+.icon-picker__chip { flex: 0 0 auto; padding: .15rem .6rem; font-size: .8rem; cursor: pointer; white-space: nowrap; border-radius: 999px;
+    color: var(--tblr-body-color, inherit); background: transparent; border: 1px solid var(--tblr-border-color, #dce1e7); }
+.icon-picker__chip[aria-pressed="true"] { color: #fff; background: var(--tblr-primary, #206bc4); border-color: var(--tblr-primary, #206bc4); }
+.icon-picker__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.5rem, 1fr)); gap: .25rem; max-height: 14rem; overflow-y: auto; padding: .15rem; }
+.icon-picker__item { display: flex; align-items: center; justify-content: center; height: 2.5rem; font-size: 1.15rem; cursor: pointer;
+    color: var(--tblr-body-color, inherit); background: transparent; border: 1px solid transparent; border-radius: var(--tblr-border-radius, .375rem); }
+.icon-picker__item:hover { background: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .15)); border-color: var(--tblr-border-color, #dce1e7); }
+.icon-picker__item[aria-selected="true"] { color: #fff; background: var(--tblr-primary, #206bc4); }
+.icon-picker__empty { grid-column: 1 / -1; padding: 1rem .25rem; color: var(--tblr-secondary-color, #6c7a91); }
+.icon-picker__status { margin: .35rem 0 .6rem; font-size: .75rem; color: var(--tblr-secondary-color, #6c7a91); }
+.icon-picker__error[hidden] { display: none; }
+
+/* Shared date-range picker (includes/date_range_picker.php + js/date_range_picker.js). Colours come from Tabler/Bootstrap
+   variables so dark mode follows automatically; the popover sits over the page on wide screens and becomes a bottom sheet
+   (presets stacked above one month) on phones. */
+.drp { position: relative; display: inline-block; max-width: 100%; }
+.drp-row { display: flex; align-items: stretch; gap: .25rem; }
+.drp-btn { display: flex; align-items: center; gap: .5rem; min-width: 13rem; max-width: 100%; padding: .4rem .75rem; text-align: left; cursor: pointer;
+    color: var(--tblr-body-color, inherit); background: var(--tblr-bg-forms, var(--tblr-bg-surface, transparent));
+    border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); line-height: 1.25; }
+.drp-btn:hover, .drp.is-open .drp-btn { border-color: var(--tblr-primary, #206bc4); }
+.drp-btn:focus-visible, .drp-opt:focus-visible, .drp-clear:focus-visible { outline: 2px solid var(--tblr-primary, #206bc4); outline-offset: 1px; }
+.drp-text { display: flex; flex-wrap: wrap; column-gap: .5rem; min-width: 0; flex: 1 1 auto; }
+.drp-label { font-weight: 600; white-space: nowrap; }
+.drp-dates { color: var(--tblr-secondary-color, #6c7a91); white-space: nowrap; }
+.drp-dates:empty { display: none; }
+.drp-icon, .drp-caret { color: var(--tblr-secondary-color, #6c7a91); flex: 0 0 auto; }
+.drp-caret { font-size: .7rem; transition: transform .15s; }
+.drp.is-open .drp-caret { transform: rotate(180deg); }
+.drp-clear { padding: 0 .55rem; color: var(--tblr-secondary-color, #6c7a91); background: transparent; border: 1px solid transparent; border-radius: var(--tblr-border-radius, .375rem); cursor: pointer; }
+.drp-clear:hover { color: var(--tblr-body-color, inherit); border-color: var(--tblr-border-color, #dce1e7); }
+.drp-clear[hidden], .drp-panel[hidden], .drp-custom[hidden] { display: none; }
+.drp-panel { position: absolute; z-index: 1056; top: 100%; left: 0; margin-top: .35rem; display: flex; max-width: min(46rem, 95vw);
+    color: var(--tblr-body-color, inherit); background: var(--tblr-bg-surface, var(--tblr-body-bg, #fff));
+    border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .18); }
+.drp-presets { flex: 0 0 13rem; max-height: 24rem; overflow-y: auto; padding: .5rem; border-inline-end: 1px solid var(--tblr-border-color, #dce1e7); }
+.drp-group + .drp-group { margin-top: .4rem; }
+.drp-group-title { padding: .15rem .5rem; font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--tblr-secondary-color, #6c7a91); }
+.drp-opt { display: flex; justify-content: space-between; gap: .75rem; width: 100%; padding: .3rem .5rem; text-align: left; cursor: pointer; font-size: .875rem;
+    color: inherit; background: transparent; border: 0; border-radius: var(--tblr-border-radius, .375rem); }
+.drp-opt:hover { background: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .15)); }
+.drp-opt[aria-selected="true"] { color: #fff; background: var(--tblr-primary, #206bc4); }
+.drp-opt-dates { font-size: .75rem; opacity: .7; white-space: nowrap; }
+.drp-custom { padding: .75rem; min-width: 0; }
+.drp-inputs { display: flex; gap: .75rem; margin-bottom: .6rem; }
+.drp-field { display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; color: var(--tblr-secondary-color, #6c7a91); flex: 1 1 0; }
+.drp-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .6rem; }
+.drp-lp-host { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.drp-cal .litepicker { font-family: inherit; color: var(--tblr-body-color, inherit); background: transparent; box-shadow: none; }
+.drp-cal .litepicker .container__main, .drp-cal .litepicker .container__months { background: transparent; box-shadow: none; }
+.drp-cal .litepicker .month-item-name, .drp-cal .litepicker .month-item-year, .drp-cal .litepicker .container__days .day-item,
+.drp-cal .litepicker .month-item-weekdays-row > div { color: var(--tblr-body-color, inherit); }
+.drp-cal .litepicker .container__days .day-item.is-in-range { background-color: var(--tblr-primary-lt, rgba(32, 107, 196, .2)) !important; color: var(--tblr-body-color, inherit); }
+.drp-cal .litepicker .container__days .day-item.is-start-date, .drp-cal .litepicker .container__days .day-item.is-end-date { color: #fff; }
+.drp-cal .litepicker .container__days .day-item.is-locked { opacity: .35; }
+.drp-cal .litepicker .button-previous-month, .drp-cal .litepicker .button-next-month { color: var(--tblr-body-color, inherit); }
+@media (max-width: 640px) {
+    .drp { display: block; }
+    .drp-btn { min-width: 0; width: 100%; }
+    .drp-row { width: 100%; }
+    .drp-panel { position: fixed; z-index: 1056; inset: auto 0 0 0; top: auto; max-width: none; max-height: 88vh; overflow-y: auto; flex-direction: column; margin: 0;
+        border-radius: .75rem .75rem 0 0; }
+    .drp-presets { flex: 0 0 auto; max-height: 14rem; border-inline-end: 0; border-bottom: 1px solid var(--tblr-border-color, #dce1e7); }
+    .drp-opt { padding: .55rem .5rem; }
+    .drp-cal { overflow-x: auto; }
+}
+
+/* ---- Event picker (includes/event_picker.php, js/event_picker.js) and the webhook add/edit flow (js/webhook_form.js) ----
+   Colours come from the Tabler tokens the rest of the app uses, so light and dark both follow the theme. */
+.event-picker { --ep-border: var(--tblr-border-color, #dce1e7); --ep-muted: var(--tblr-secondary-color, #6c7a91); --ep-surface: var(--tblr-bg-surface, #fff); --ep-hover: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .12)); border: 1px solid var(--ep-border); border-radius: var(--tblr-border-radius, .375rem); background: var(--ep-surface); color: var(--tblr-body-color, inherit); }
+.event-picker .ep-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; padding: .6rem .75rem; border-bottom: 1px solid var(--ep-border); }
+.event-picker .ep-search { position: relative; flex: 1 1 14rem; min-width: 0; }
+.event-picker .ep-search .form-control { padding-inline-start: 2rem; }
+.event-picker .ep-search-icon { position: absolute; inset-inline-start: .7rem; top: 50%; transform: translateY(-50%); color: var(--ep-muted); pointer-events: none; }
+.event-picker .ep-summary { font-size: .85rem; font-weight: 600; white-space: nowrap; }
+.event-picker .ep-clear { padding: 0; }
+.event-picker .ep-clear[hidden], .event-picker .ep-chips[hidden], .event-picker [hidden] { display: none !important; }
+.event-picker .ep-chips { display: flex; flex-wrap: wrap; gap: .35rem; padding: .5rem .75rem; max-height: 8.5rem; overflow-y: auto; border-bottom: 1px solid var(--ep-border); }
+.event-picker .ep-chip { display: inline-flex; align-items: center; gap: .15rem; max-width: 100%; padding: .1rem .15rem .1rem .55rem; font-size: .8rem; border-radius: 999px; background: var(--tblr-primary-lt, rgba(32, 107, 196, .14)); color: var(--tblr-primary, #206bc4); border: 1px solid transparent; }
+.event-picker .ep-chip-pattern { border-color: currentColor; font-weight: 600; }
+.event-picker .ep-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-picker .ep-chip-x { display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem; padding: 0; line-height: 1; font-size: 1.1rem; color: inherit; background: transparent; border: 0; border-radius: 50%; cursor: pointer; }
+.event-picker .ep-chip-x:hover, .event-picker .ep-chip-x:focus-visible { background: rgba(128, 128, 128, .25); }
+.event-picker .ep-all { display: flex; align-items: center; gap: .6rem; margin: 0; padding: .55rem .75rem; border-bottom: 1px solid var(--ep-border); cursor: pointer; }
+.event-picker .ep-groups { display: flex; flex-direction: column; max-height: 24rem; overflow-y: auto; }
+.event-picker .ep-loading, .event-picker .ep-none { padding: 1rem .75rem; color: var(--ep-muted); }
+.event-picker .ep-group { border-bottom: 1px solid var(--ep-border); }
+.event-picker .ep-group:last-child { border-bottom: 0; }
+.event-picker .ep-group-head { display: flex; align-items: center; gap: .6rem; padding: .15rem .5rem .15rem 0; background: var(--ep-hover); }
+.event-picker .ep-group-toggle { flex: 1 1 auto; display: flex; align-items: center; gap: .6rem; min-width: 0; padding: .55rem .75rem; text-align: start; font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; }
+.event-picker .ep-group-title { font-weight: 600; }
+.event-picker .ep-group-count { margin-inline-start: auto; font-size: .78rem; color: var(--ep-muted); white-space: nowrap; }
+.event-picker .ep-group-count.has-selection { color: var(--tblr-primary, #206bc4); font-weight: 600; }
+.event-picker .ep-caret { width: .8rem; color: var(--ep-muted); font-size: .75rem; }
+.event-picker .ep-group-all { display: inline-flex; align-items: center; gap: .35rem; margin: 0; font-size: .78rem; color: var(--ep-muted); cursor: pointer; white-space: nowrap; }
+.event-picker .ep-group-pattern { font-size: .72rem; }
+.event-picker .ep-group-body { display: flex; flex-direction: column; }
+.event-picker .ep-row { display: flex; align-items: flex-start; gap: .65rem; margin: 0; padding: .5rem .75rem .5rem 1.75rem; cursor: pointer; }
+.event-picker .ep-row:hover { background: var(--ep-hover); }
+.event-picker .ep-row.is-selected { background: var(--tblr-primary-lt, rgba(32, 107, 196, .08)); }
+.event-picker .ep-row .form-check-input { flex: 0 0 auto; margin-top: .25rem; }
+.event-picker .ep-row-main { display: flex; flex-direction: column; min-width: 0; }
+.event-picker .ep-row-line { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; }
+.event-picker .ep-row-label { font-weight: 600; }
+.event-picker .ep-row-id { font-size: .78rem; color: var(--ep-muted); background: transparent; padding: 0; overflow-wrap: anywhere; }
+.event-picker .ep-row-desc { font-size: .82rem; color: var(--ep-muted); }
+.event-picker .ep-sev, .event-picker .ep-planned { padding: 0 .4rem; font-size: .68rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; border-radius: 999px; border: 1px solid currentColor; }
+.event-picker .ep-sev-info { color: var(--ep-muted); }
+.event-picker .ep-sev-warning { color: var(--tblr-orange, #f76707); }
+.event-picker .ep-sev-critical { color: var(--tblr-red, #d63939); }
+.event-picker .ep-planned { color: var(--tblr-purple, #ae3ec9); border-style: dashed; }
+@media (max-width: 640px) {
+    .event-picker .ep-toolbar { padding: .5rem; }
+    .event-picker .ep-groups { max-height: 60vh; }
+    .event-picker .ep-group-head { flex-wrap: wrap; }
+    .event-picker .ep-group-count { margin-inline-start: 0; }
+    .event-picker .ep-row { padding-inline-start: 1rem; }
+}
+
+/* Webhook add/edit: platform chooser, form + setup guide */
+.wh-modal .modal-body { padding: 0; }
+.wh-steps { display: flex; gap: .5rem; align-items: center; padding: .6rem 1rem; font-size: .85rem; color: var(--tblr-secondary-color, #6c7a91); border-bottom: 1px solid var(--tblr-border-color, #dce1e7); }
+.wh-steps .is-current { color: var(--tblr-body-color, inherit); font-weight: 600; }
+.wh-chooser { padding: 1rem; }
+.wh-cat-title { margin: 1rem 0 .5rem; font-size: .72rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--tblr-secondary-color, #6c7a91); }
+.wh-cat-title:first-of-type { margin-top: .25rem; }
+.wh-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .6rem; }
+.wh-card { display: flex; flex-direction: column; gap: .2rem; padding: .7rem .8rem; text-align: start; font: inherit; color: inherit; cursor: pointer; background: var(--tblr-bg-surface, #fff); border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); }
+.wh-card:hover, .wh-card:focus-visible { border-color: var(--tblr-primary, #206bc4); box-shadow: 0 0 0 1px var(--tblr-primary, #206bc4) inset; }
+.wh-card[hidden], .wh-cat[hidden] { display: none; }
+.wh-card-title { display: flex; align-items: center; gap: .5rem; font-weight: 600; }
+.wh-card-title i { width: 1.4rem; text-align: center; color: var(--tblr-primary, #206bc4); }
+.wh-card-desc { font-size: .8rem; color: var(--tblr-secondary-color, #6c7a91); }
+.wh-form-wrap { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.wh-form-main { padding: 1rem; min-width: 0; }
+.wh-guide { padding: 1rem; min-width: 0; border-inline-start: 1px solid var(--tblr-border-color, #dce1e7); background: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .06)); max-height: 78vh; overflow-y: auto; }
+.wh-guide h6 { margin: 1rem 0 .4rem; font-size: .75rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--tblr-secondary-color, #6c7a91); }
+.wh-guide h6:first-child { margin-top: 0; }
+.wh-guide ol, .wh-guide ul { padding-inline-start: 1.2rem; margin-bottom: .5rem; }
+.wh-code { position: relative; margin: 0 0 .5rem; padding: .6rem .75rem; max-height: 14rem; overflow: auto; font-size: .76rem; line-height: 1.4; white-space: pre; color: var(--tblr-body-color, inherit); background: var(--tblr-bg-surface, #fff); border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); }
+.wh-copy { position: absolute; top: .3rem; inset-inline-end: .3rem; }
+.wh-codewrap { position: relative; }
+.wh-result { margin-top: .75rem; padding: .6rem .8rem; border: 1px solid var(--tblr-border-color, #dce1e7); border-radius: var(--tblr-border-radius, .375rem); background: var(--tblr-bg-surface, #fff); }
+.wh-result.is-ok { border-color: var(--tblr-green, #2fb344); }
+.wh-result.is-bad { border-color: var(--tblr-red, #d63939); }
+.wh-result pre { margin: .4rem 0 0; max-height: 14rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .76rem; }
+.wh-secret-note { font-size: .8rem; color: var(--tblr-secondary-color, #6c7a91); }
+@media (max-width: 900px) {
+    .wh-form-wrap { grid-template-columns: minmax(0, 1fr); }
+    .wh-guide { border-inline-start: 0; border-top: 1px solid var(--tblr-border-color, #dce1e7); max-height: none; }
+    .wh-cards { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ===== Event rules (admin/event_rules.php, js/event_rules.js): When -> If -> Then rule builder. Theme tokens only, so dark mode follows. ===== */
+.er-page, .er-overlay { --er-border: var(--tblr-border-color, #dce1e7); --er-muted: var(--tblr-secondary-color, #6c7a91); --er-surface: var(--tblr-bg-surface, #fff); --er-soft: var(--tblr-bg-surface-secondary, rgba(128, 128, 128, .08)); --er-primary: var(--tblr-primary, #206bc4); --er-ok: var(--tblr-green, #2fb344); --er-bad: var(--tblr-red, #d63939); --er-warn: var(--tblr-orange, #f76707); --er-radius: var(--tblr-border-radius, .375rem); }
+.er-page [hidden], .er-overlay [hidden] { display: none !important; }
+.er-ok { color: var(--er-ok); }
+.er-bad { color: var(--er-bad); }
+.er-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem 1.5rem; margin-bottom: 1rem; }
+.er-title { margin: 0 0 .25rem; font-size: 1.25rem; }
+.er-title-name { font-weight: 400; color: var(--er-muted); }
+.er-sub { margin: 0; max-width: 62rem; color: var(--er-muted); font-size: .9rem; }
+.er-head-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.er-back { display: inline-block; margin-bottom: .35rem; font-size: .85rem; }
+.er-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.er-tile { display: flex; flex-direction: column; padding: .65rem .9rem; color: inherit; text-decoration: none; background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-tile:hover, .er-tile:focus-visible { border-color: var(--er-primary); color: inherit; }
+.er-tile-n { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.er-tile-l { font-size: .8rem; color: var(--er-muted); }
+.er-filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+.er-filters .form-select { width: auto; flex: 0 1 9rem; }
+.er-search { position: relative; flex: 1 1 12rem; min-width: 0; }
+.er-search > i { position: absolute; inset-inline-start: .75rem; top: 50%; transform: translateY(-50%); color: var(--er-muted); pointer-events: none; }
+.er-search .form-control { padding-inline-start: 2.1rem; }
+.er-count { margin-bottom: .5rem; }
+.er-list { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
+.er-rule { display: grid; grid-template-columns: auto auto minmax(0, 1fr) minmax(11rem, 14rem) auto; gap: .75rem 1rem; align-items: center; padding: .8rem 1rem; background: var(--er-surface); border: 1px solid var(--er-border); border-inline-start: 4px solid var(--er-ok); border-radius: var(--er-radius); position: relative; }
+.er-rule.is-off { border-inline-start-color: var(--er-border); }
+.er-rule.is-off .er-main { opacity: .72; }
+.er-rule.is-failing { border-inline-start-color: var(--er-bad); }
+.er-rule.is-dragging { opacity: .45; }
+.er-rule.er-drop-before::before, .er-rule.er-drop-after::after { content: ""; position: absolute; inset-inline: 0; height: 3px; background: var(--er-primary); border-radius: 2px; }
+.er-rule.er-drop-before::before { top: -5px; }
+.er-rule.er-drop-after::after { bottom: -5px; }
+.er-order { display: flex; flex-direction: column; align-items: center; color: var(--er-muted); }
+.er-grip { cursor: grab; padding: .1rem .35rem; }
+.er-move { padding: 0 .35rem; line-height: 1.2; font-size: .7rem; color: var(--er-muted); background: transparent; border: 0; border-radius: 4px; cursor: pointer; }
+.er-move:hover, .er-move:focus-visible { color: var(--er-primary); background: var(--er-soft); }
+.er-switch { position: relative; width: 2.6rem; height: 1.45rem; padding: 0; border: 1px solid var(--er-border); border-radius: 999px; background: var(--er-soft); cursor: pointer; transition: background .15s; }
+.er-switch .er-knob { position: absolute; top: 2px; inset-inline-start: 2px; width: 1.05rem; height: 1.05rem; border-radius: 50%; background: var(--er-muted); transition: transform .15s, background .15s; }
+.er-switch[aria-checked="true"] { background: var(--er-ok); border-color: var(--er-ok); }
+.er-switch[aria-checked="true"] .er-knob { transform: translateX(1.15rem); background: #fff; }
+[dir="rtl"] .er-switch[aria-checked="true"] .er-knob { transform: translateX(-1.15rem); }
+.er-switch:focus-visible, .er-chip:focus-visible, .er-action-card:focus-within { outline: 2px solid var(--er-primary); outline-offset: 2px; }
+.er-switch:disabled { opacity: .6; cursor: progress; }
+.er-main { min-width: 0; }
+.er-name-line { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; }
+.er-name { font-weight: 600; font-size: 1.02rem; overflow-wrap: anywhere; }
+.er-sentence { margin: .2rem 0 .45rem; color: var(--tblr-body-color, inherit); font-size: .92rem; overflow-wrap: anywhere; }
+.er-meta { display: flex; flex-wrap: wrap; gap: .35rem; }
+.er-badge { --er-c: var(--er-muted); display: inline-flex; align-items: center; gap: .35rem; max-width: 100%; padding: .1rem .55rem; font-size: .76rem; color: var(--er-c); background: color-mix(in srgb, var(--er-c) 13%, transparent); border: 1px solid color-mix(in srgb, var(--er-c) 35%, transparent); border-radius: 999px; }
+.er-badge code { padding: 0; font-size: .72rem; color: inherit; background: transparent; opacity: .8; }
+.er-badge-action { --er-c: var(--er-primary); }
+.er-stats { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.er-spark-line { display: flex; align-items: center; gap: .5rem; }
+.er-spark { flex: 0 0 auto; }
+.er-s-ok { fill: var(--er-ok); }
+.er-s-bad { fill: var(--er-bad); }
+.er-s-other { fill: var(--er-warn); }
+.er-s-none { fill: var(--er-border); }
+.er-actions-cell { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; max-width: 16rem; }
+.er-empty { padding: 2rem 1rem; text-align: center; color: var(--er-muted); background: var(--er-surface); border: 1px dashed var(--er-border); border-radius: var(--er-radius); margin-bottom: 1rem; }
+.er-empty-small { padding: 1rem; }
+.er-empty-icon { font-size: 2rem; margin-bottom: .5rem; color: var(--er-primary); }
+.er-empty h4 { color: var(--tblr-body-color, inherit); }
+.er-recipes-wrap { margin: 1rem 0; }
+.er-recipes-wrap > summary { cursor: pointer; font-weight: 600; padding: .4rem 0; }
+.er-recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: .75rem; margin-top: .5rem; }
+.er-recipe { --er-c: var(--er-primary); display: flex; gap: .75rem; padding: .8rem; color: inherit; text-decoration: none; background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-recipe:hover, .er-recipe:focus-visible { border-color: var(--er-c); box-shadow: 0 0 0 1px var(--er-c) inset; color: inherit; }
+.er-recipe-icon { flex: 0 0 2.4rem; height: 2.4rem; display: inline-flex; align-items: center; justify-content: center; color: var(--er-c); background: color-mix(in srgb, var(--er-c) 14%, transparent); border-radius: 50%; }
+.er-recipe-body { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.er-recipe-title { font-weight: 600; }
+.er-recipe-blurb { font-size: .82rem; color: var(--er-muted); }
+.er-recipe-flow { font-size: .75rem; color: var(--er-muted); }
+
+/* editor */
+.er-editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: 1rem; align-items: start; }
+.er-cards { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.er-card { background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-card-h { display: flex; align-items: center; gap: .6rem; margin: 0; padding: .7rem 1rem; font-size: 1rem; border-bottom: 1px solid var(--er-border); }
+.er-step { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.7rem; font-size: .85rem; font-weight: 700; color: #fff; background: var(--er-primary); border-radius: 50%; }
+.er-optional { font-weight: 400; font-size: .8rem; color: var(--er-muted); }
+.er-card-b { padding: 1rem; }
+.er-problem { margin-top: .5rem; padding: .4rem .7rem; font-size: .85rem; color: var(--er-bad); background: color-mix(in srgb, var(--er-bad) 10%, transparent); border: 1px solid color-mix(in srgb, var(--er-bad) 35%, transparent); border-radius: var(--er-radius); }
+.er-event-info { margin: 0 0 .75rem; padding: .6rem .8rem; background: var(--er-soft); border-radius: var(--er-radius); }
+.er-evhead { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; margin-bottom: .2rem; }
+.er-fields summary { cursor: pointer; font-size: .85rem; color: var(--er-primary); }
+.er-fields table { font-size: .8rem; margin-top: .4rem; }
+.er-fpath { font-family: var(--tblr-font-monospace, monospace); white-space: nowrap; }
+.er-fsample { overflow-wrap: anywhere; }
+.er-builder .er-cbox { padding: .6rem .75rem; margin-bottom: .6rem; border: 1px solid var(--er-border); border-radius: var(--er-radius); background: var(--er-soft); }
+.er-builder .er-cgroup { position: relative; margin: .6rem 0 0 1.2rem; border-inline-start: 3px solid var(--er-primary); background: var(--er-surface); }
+.er-mode { margin-bottom: .5rem; font-weight: 600; }
+.er-mode label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; }
+.er-mode select { min-width: 5.2rem; padding-inline-end: 2rem; }
+.er-card .event-picker .ep-groups { max-height: 17rem; }
+.er-cond-row.has-hint .er-val .form-control, .er-cond-row.has-hint .er-val .ts-control { border-color: var(--er-warn); }
+.er-row-hint { grid-column: 2 / -1; font-size: .75rem; color: var(--er-warn); }
+.er-cgroup-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .4rem; }
+.er-join { display: inline-block; min-width: 2.2rem; text-align: center; padding: 0 .4rem; font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--er-muted); }
+.er-join-group { position: absolute; top: -.8rem; inset-inline-start: .5rem; background: var(--er-soft); border-radius: 999px; }
+.er-cond-row { display: grid; grid-template-columns: 2.6rem minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.6fr) auto; gap: .4rem; align-items: center; margin-bottom: .4rem; }
+.er-cond-row .ts-wrapper { min-width: 0; }
+.er-cond-empty { padding: .75rem 1rem; color: var(--er-muted); border: 1px dashed var(--er-border); border-radius: var(--er-radius); margin-bottom: .6rem; }
+.er-cbar { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .25rem; }
+.er-builder-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-top: .9rem; padding-top: .75rem; border-top: 1px solid var(--er-border); }
+.er-check-out { margin-top: .6rem; padding: .6rem .8rem; background: var(--er-soft); border-radius: var(--er-radius); }
+.er-check-list, .er-cond-result { list-style: none; margin: 0; padding: 0; }
+.er-check-list li, .er-cond-result li { padding: .15rem 0; }
+.er-check-list .is-ok i, .er-cond-result .is-ok i { color: var(--er-ok); }
+.er-check-list .is-no i, .er-cond-result .is-no i { color: var(--er-bad); }
+.er-cond-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.er-fail { margin-inline-start: 1.4rem; }
+.ts-dropdown .er-fopt { display: flex; flex-direction: column; }
+.ts-dropdown .er-fopt-path { font-family: var(--tblr-font-monospace, monospace); font-size: .85rem; }
+.ts-dropdown .er-fopt-desc { font-size: .75rem; opacity: .7; }
+.er-action-search { position: relative; max-width: 20rem; margin-bottom: .6rem; }
+.er-action-search > i { position: absolute; inset-inline-start: .7rem; top: 50%; transform: translateY(-50%); color: var(--er-muted); pointer-events: none; }
+.er-action-search .form-control { padding-inline-start: 2rem; }
+.er-actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(14.5rem, 1fr)); gap: .6rem; margin-bottom: .75rem; }
+.er-action-card { display: flex; gap: .65rem; align-items: flex-start; margin: 0; padding: .65rem .75rem; cursor: pointer; background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-action-card:hover { border-color: var(--er-primary); }
+.er-action-card.is-selected { border-color: var(--er-primary); background: color-mix(in srgb, var(--er-primary) 9%, transparent); box-shadow: 0 0 0 1px var(--er-primary) inset; }
+.er-action-icon { flex: 0 0 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; color: var(--er-primary); background: color-mix(in srgb, var(--er-primary) 12%, transparent); border-radius: 50%; }
+.er-action-text { display: flex; flex-direction: column; min-width: 0; }
+.er-action-name { font-weight: 600; font-size: .9rem; }
+.er-action-desc { font-size: .76rem; color: var(--er-muted); }
+.er-act-boxes { margin-top: .5rem; }
+.er-act-box { padding: .9rem; border: 1px solid var(--er-border); border-radius: var(--er-radius); background: var(--er-soft); }
+.er-checks { max-height: 12rem; overflow: auto; display: flex; flex-direction: column; gap: .15rem; padding: .4rem .6rem; background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-chips { display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; margin-top: .35rem; max-height: 5.2rem; overflow: auto; }
+.er-chips-l { font-size: .75rem; color: var(--er-muted); }
+.er-chip { padding: .05rem .5rem; font-size: .74rem; font-family: var(--tblr-font-monospace, monospace); color: var(--er-primary); background: color-mix(in srgb, var(--er-primary) 10%, transparent); border: 1px solid color-mix(in srgb, var(--er-primary) 30%, transparent); border-radius: 999px; cursor: pointer; }
+.er-chip:hover { background: color-mix(in srgb, var(--er-primary) 20%, transparent); }
+.er-preview { margin: .35rem 0 .6rem; color: var(--er-muted); }
+.er-preview-text { color: var(--tblr-body-color, inherit); white-space: pre-wrap; overflow-wrap: anywhere; }
+.er-side { position: sticky; top: 4.5rem; }
+.er-summary { padding: 1rem; background: var(--er-surface); border: 1px solid var(--er-border); border-radius: var(--er-radius); }
+.er-side-h { margin: 0 0 .6rem; font-size: .75rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--er-muted); }
+.er-sentence-big { margin: 0 0 .8rem; padding: .6rem .75rem; font-size: .98rem; line-height: 1.45; background: var(--er-soft); border-inline-start: 3px solid var(--er-primary); border-radius: var(--er-radius); overflow-wrap: anywhere; }
+.er-checks-list { list-style: none; margin: 0 0 1rem; padding: 0; font-size: .85rem; }
+.er-checks-list li { display: flex; gap: .5rem; align-items: baseline; padding: .15rem 0; color: var(--er-muted); }
+.er-checks-list li.is-ok { color: var(--tblr-body-color, inherit); }
+.er-checks-list li.is-ok i { color: var(--er-ok); }
+.er-checks-list li.is-bad { color: var(--er-bad); }
+.er-checks-list li em { font-style: normal; overflow-wrap: anywhere; }
+.er-side-buttons { display: flex; flex-direction: column; gap: .5rem; }
+.er-test-out { margin-top: 1rem; }
+.er-hist-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+.er-hist-msg { overflow-wrap: anywhere; font-size: .85rem; }
+.er-hist-table td { vertical-align: top; }
+
+/* drawers: right panel on desktop, bottom sheet on phones */
+.er-overlay { position: fixed; inset: 0; z-index: 1080; display: flex; justify-content: flex-end; background: rgba(15, 23, 42, .45); }
+.er-drawer { display: flex; flex-direction: column; width: min(38rem, 100%); height: 100%; color: var(--tblr-body-color, inherit); background: var(--er-surface, var(--tblr-bg-surface, #fff)); box-shadow: -8px 0 24px rgba(0, 0, 0, .25); }
+.er-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 1rem; border-bottom: 1px solid var(--tblr-border-color, #dce1e7); }
+.er-drawer-title { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.er-drawer-body { flex: 1 1 auto; padding: 1rem; overflow-y: auto; }
+.er-drawer .er-sentence-big { margin-top: 0; }
+body.er-noscroll { overflow: hidden; }
+.er-toasts { position: fixed; z-index: 1090; inset-inline-end: 1rem; bottom: 1rem; display: flex; flex-direction: column; gap: .5rem; max-width: min(24rem, calc(100vw - 2rem)); }
+.er-toast { padding: .6rem .9rem; color: #fff; background: #1f2d3d; border-radius: var(--tblr-border-radius, .375rem); box-shadow: 0 4px 14px rgba(0, 0, 0, .3); transition: opacity .3s; }
+.er-toast-bad { background: #b02a2a; }
+.er-toast.is-gone { opacity: 0; }
+
+@media (max-width: 1100px) {
+    .er-rule { grid-template-columns: auto auto minmax(0, 1fr); }
+    .er-stats, .er-actions-cell { grid-column: 3; }
+    .er-actions-cell { justify-content: flex-start; max-width: none; }
+}
+@media (max-width: 900px) {
+    .er-editor-grid { grid-template-columns: minmax(0, 1fr); }
+    .er-side { position: static; order: -1; }
+    .er-cond-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .er-cond-row .er-join { grid-column: 1 / -1; text-align: start; }
+    .er-cond-row .er-fld, .er-cond-row .er-op, .er-cond-row .er-val { grid-column: 1; }
+    .er-cond-row .er-rm { grid-column: 2; grid-row: 2; }
+    .er-builder .er-cgroup { margin-inline-start: .4rem; }
+}
+@media (max-width: 640px) {
+    .er-overlay { align-items: flex-end; }
+    .er-drawer { width: 100%; height: 90vh; border-radius: 1rem 1rem 0 0; box-shadow: 0 -8px 24px rgba(0, 0, 0, .25); }
+    .er-rule { grid-template-columns: auto minmax(0, 1fr); padding: .7rem; }
+    .er-rule .er-order { display: none; }
+    .er-stats, .er-actions-cell { grid-column: 1 / -1; }
+    .er-filters .form-select { flex: 1 1 calc(50% - .5rem); min-width: 0; }
+    .er-side-buttons { position: sticky; bottom: 0; background: var(--er-surface); padding-top: .5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .er-switch, .er-switch .er-knob, .er-toast { transition: none; }
+}
+
+/* Recipe cards are links: keep them free of the global link underline (hover, focus and their text spans too). */
+a.er-recipe, a.er-recipe:hover, a.er-recipe:focus, a.er-recipe:focus-visible, a.er-recipe:active,
+a.er-recipe .er-recipe-title, a.er-recipe .er-recipe-blurb, a.er-recipe .er-recipe-flow,
+a.er-recipe:hover .er-recipe-title, a.er-recipe:hover .er-recipe-blurb, a.er-recipe:hover .er-recipe-flow { text-decoration: none; }
+
+/* Multi-choice ticket filters (js/ticket_view_filters.js): a checkbox list in the filter bar's dropdowns and in the saved-view dialogs */
+.tv-fieldset { border: 0; padding: 0; margin: 0 0 .75rem; min-width: 0; }
+.tv-legend { float: none; width: auto; margin: 0 0 .35rem; padding: 0; font-size: .875rem; font-weight: 600; color: var(--color-text); }
+.tv-legend-sm { float: none; width: auto; margin: 0 0 .25rem; padding: 0; font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-muted); }
+.tv-tools { font-size: .75rem; margin-left: .5rem; white-space: nowrap; }
+.tv-legend .tv-tools { font-weight: 400; }
+.tv-options { display: flex; flex-wrap: wrap; gap: .25rem 1rem; max-height: 11rem; overflow-y: auto; padding: .15rem 0; }
+.tv-option { margin: 0; display: flex; align-items: center; gap: .4rem; cursor: pointer; }
+.tv-option .form-check-input { float: none; margin: 0; flex: 0 0 auto; }
+.tv-ms-menu { min-width: 14rem; max-width: min(22rem, calc(100vw - 2rem)); }
+.tv-ms-menu .tv-options { flex-direction: column; flex-wrap: nowrap; gap: .25rem; max-height: 16rem; margin-top: .35rem; }
+.tv-ms-menu .tv-fieldset { margin-bottom: 0; }
+.tv-ms-btn.tv-active { border-color: var(--color-accent); color: var(--color-text); background: var(--color-accent-soft); }
+.tv-ms-btn .tv-count { font-size: .7rem; vertical-align: text-top; }
+.tv-count[hidden] { display: none; }
+.saved-view-star { padding: 0 .35rem; color: var(--color-text-muted); text-decoration: none; line-height: 1; }
+.saved-view-star:hover, .saved-view-star:focus-visible { color: var(--color-accent); }
+.saved-view-star.is-default { color: #d97706; }
+.ticket-saved-views .nav-item:focus-within .saved-view-actions { opacity: 1; }
+
+/* A scrollable modal whose header, body and footer sit inside a <form> (Add device and many others): Bootstrap only lets the
+   direct children of .modal-content shrink and scroll, so without this the footer (the Download button) fell off the screen. */
+.modal-dialog-scrollable .modal-content > form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
+}
+.modal-dialog-scrollable .modal-content > form > .modal-body {
+    overflow-y: auto;
+}
+
+/* ===== Design review fixes =====================================================================
+   1. Tabler makes .alert a flex row with a 1rem gap, so an alert written as "text <strong>x</strong> text" (the app's usual
+      markup) was split into separate flex items: gaps inside sentences and a lone "." wrapping onto its own line. Only alerts
+      built the Tabler way (a direct .alert-icon child) keep the flex layout. */
+.alert:not(:has(> .alert-icon)) { display: block; }
+
+/* 2. A dark card header / table head gave its children (h4, th) their own dark text colour, so titles were unreadable on the dark band. */
+.card-header.bg-dark .h1, .card-header.bg-dark .h2, .card-header.bg-dark .h3, .card-header.bg-dark .h4,
+.card-header.bg-dark .h5, .card-header.bg-dark .h6 { color: inherit; }
+.table > thead.thead-dark > tr > th, body:not(.dark-mode) .table > thead.thead-dark > tr > th { color: #fff !important; }
+
+/* 3. Unchecked switches and checkboxes were white on white (light theme) and nearly invisible (dark theme). */
+.form-check-input:not(:checked):not(:indeterminate) { border-color: #8693a0; }
+.form-switch .form-check-input:not(:checked) { background-color: #dde3e8; border-color: #8693a0; }
+:root[data-bs-theme="dark"] .form-check-input:not(:checked):not(:indeterminate) { border-color: #6b7a86; }
+:root[data-bs-theme="dark"] .form-switch .form-check-input:not(:checked) { background-color: #2c3a44; border-color: #6b7a86; }
+
+/* 4. Tablet widths (768-1099px): the md breakpoint is measured on the viewport, but the department sidebar still takes ~230px, so a
+      3/9 or 4/8 detail layout left its narrow column ~110px wide (one word per line, emails breaking mid-address). Stack them here. */
+@media (min-width: 768px) and (max-width: 1099.98px) {
+    .row:has(> .col-md-9) > .col-md-3, .row:has(> .col-md-9) > .col-md-9,
+    .row:has(> .col-md-8) > .col-md-4, .row:has(> .col-md-8) > .col-md-8,
+    .row:has(> .col-md-3) > .col-md-9 { flex: 0 0 100%; max-width: 100%; width: 100%; }
+}
+
+/* 5. Filter toolbars: a pill group of type tabs sat on top of the search box at tablet width. Let the toolbar wrap. */
+.card-body > .row > .col-sm-8 > .btn-group.float-end { float: none !important; display: flex; flex-wrap: wrap; justify-content: flex-end; }
+
+/* 6. Admin pages that print the legacy Home / Admin / ... trail under the shell's own back-crumb showed two breadcrumb rows. */
+nav.admin-breadcrumb ~ ol.breadcrumb { display: none; }
+
+/* 7. KPI tile labels were clipped with an ellipsis and no way to read them (Total..., Warni..., Unkn...). Let them wrap instead. */
+.info-box .info-box-text { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; }
+
+/* 8. A table that scrolls sideways inside its card gave no hint that more columns exist (last column cut at the card edge).
+      Classic scroll-shadow: edge fades appear only while there is more to scroll. */
+.table-responsive, [class*="table-responsive-"] {
+    background:
+        linear-gradient(to right, var(--tblr-bg-surface, #fff) 30%, rgba(255, 255, 255, 0)) left center / 40px 100% no-repeat local,
+        linear-gradient(to left, var(--tblr-bg-surface, #fff) 30%, rgba(255, 255, 255, 0)) right center / 40px 100% no-repeat local,
+        radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, .22), rgba(0, 0, 0, 0)) left center / 12px 100% no-repeat scroll,
+        radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, .22), rgba(0, 0, 0, 0)) right center / 12px 100% no-repeat scroll;
+}
+
+/* 9. Dark theme: the white "Cancel/Close" (.btn-light) in every modal footer stayed a bright white slab that outweighed the blue primary
+      button, and .alert-dark (grey on dark) was nearly invisible. Use the surface tokens instead. */
+:root[data-bs-theme="dark"] .btn-light,
+:root[data-bs-theme="dark"] .btn-white,
+:root[data-bs-theme="dark"] .btn-default {
+    background-color: var(--tblr-bg-surface-secondary, #232e3c);
+    border-color: var(--tblr-border-color, #36445a);
+    color: var(--tblr-body-color, #e6e9ee);
+}
+:root[data-bs-theme="dark"] .btn-light:hover, :root[data-bs-theme="dark"] .btn-white:hover, :root[data-bs-theme="dark"] .btn-default:hover,
+:root[data-bs-theme="dark"] .btn-light:focus-visible {
+    background-color: var(--tblr-bg-surface-tertiary, #2c3a4c);
+    color: #fff;
+}
+:root[data-bs-theme="dark"] .alert-dark {
+    --tblr-alert-bg: #2a3544; --tblr-alert-color: #dfe5ec; --tblr-alert-border-color: #3a475a;
+    background-color: #2a3544; color: #dfe5ec;
+}
+
+/* 10. Every custom link adds an icon to the top bar and nothing limited them, so ~30 links pushed the user menu off the right edge and made the
+       whole page scroll sideways. Let the icon group shrink and scroll inside the bar instead. */
+.navbar > .container-fluid > .navbar-nav.ms-auto { min-width: 0; flex: 0 1 auto; max-width: 100%; }
+.navbar > .container-fluid > .navbar-nav.ms-auto > li:not(.user-menu) { flex: 0 0 auto; }
+@media (min-width: 768px) {
+    .navbar > .container-fluid > .navbar-nav.ms-auto { flex-wrap: wrap; justify-content: flex-end; row-gap: 0; }
+}
+
+/* 11. One very long unbroken value (a 300+ character name, a pasted URL) made a table - and then the whole page - thousands of pixels wide.
+       Cells and titles may break anywhere when they have to, so the layout can always shrink to its container. */
+.table td, .table th, .card-title, .modal-title, .breadcrumb-item, .list-group-item, .dropdown-item, .badge { overflow-wrap: anywhere; }
+.table td { min-width: 0; }
+main, main :where(div, span, a, p, li, strong, small, h1, h2, h3, h4, h5, h6, td, th, label), .modal-content :where(div, span, a, p, li, strong, small, h5) { overflow-wrap: anywhere !important; word-wrap: normal; }
+
+
+/* 12. Design review polish. Badges floated inside nav links (folder tree counts) drifted onto their own line; flex keeps them on the row. */
+.nav-link:has(> .badge.float-end) { display: flex; align-items: center; gap: .4rem; }
+.nav-link:has(> .badge.float-end) > .badge.float-end { float: none !important; margin: 0 0 0 auto !important; order: 3; }
+.nav-link:has(> .badge.float-end) > i.fa-chevron-down, .nav-link:has(> .badge.float-end) > i.fa-chevron-right { order: 2; }
+/* asset/contact header cards: a long asset name was squeezed into a ~110px column and broke inside the token */
+.card .media-body, .card .media-body h4, .card .media-body h5 { min-width: 0; }
+
+/* 14. Tablet polish (768-1099px). Filter selects in a 2-column slot were ~100px wide and read "All Accour" / "All Payme"; give those slots room to
+      grow and wrap the row. A wrapped badge (rule/condition pills) became a circle because the pill radius is sized for one line. */
+@media (min-width: 768px) and (max-width: 1099.98px) {
+    form[method="get"] > .row, form > .row:has(.auto-submit-select) { row-gap: .5rem; }
+    form[method="get"] > .row > .col-md-2, form[method="get"] > .row > .col-sm-2,
+    form > .row:has(.auto-submit-select) > .col-md-2, form > .row:has(.auto-submit-select) > .col-sm-2 { flex: 1 1 28%; width: auto; max-width: none; min-width: 160px; }
+    form[method="get"] > .row > [class*="col-"] > a.btn-block, form[method="get"] > .row > [class*="col-"] > .btn-block { white-space: normal; }
+}
+.badge.text-wrap { border-radius: .5rem; padding: .35em .6em; line-height: 1.3; text-align: left; max-width: 100%; }
+
+/* 15. Ticket list: with ~10 columns at 1366px the Subject collapsed to one word per line (and the last columns were cut with no cue). Give it a floor; the table scrolls inside its card. */
+.tk-col-subject { min-width: 220px; }
+
+/* 16. Asset name in the narrow detail sidebar: wrap between words, never inside "LT-EXEC-01" (the hyphens are non-breaking in the markup). */
+.asset-name { overflow-wrap: break-word !important; word-break: normal !important; }
+
+/* 17. Dropdowns (TomSelect) look and behave like dropdowns. No caret in a closed control, a chevron instead, a neutral focus ring (red only when invalid),
+      a placeholder row is not listed again, and the open list is not clipped by the modal. */
+.ts-dropdown .ts-placeholder-row { display: none; }
+.ts-wrapper.single .ts-control { cursor: pointer; min-height: calc(1.5em + .75rem + 2px); }
+.ts-wrapper.single .ts-control > input { caret-color: transparent; }
+.ts-wrapper.single.input-active .ts-control > input { caret-color: auto; }
+.ts-wrapper.single .ts-control:after { content: ""; position: absolute; right: .85rem; top: 50%; width: .45rem; height: .45rem; margin-top: -.3rem; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); opacity: .55; pointer-events: none; }
+.ts-wrapper.single.dropdown-active .ts-control:after { transform: rotate(-135deg); margin-top: -.1rem; }
+.ts-wrapper.focus:not(.is-invalid) .ts-control { border-color: var(--bs-primary, #206bc4); box-shadow: 0 0 0 .2rem rgba(var(--bs-primary-rgb, 32, 107, 196), .18); }
+.ts-wrapper.disabled .ts-control { cursor: not-allowed; opacity: .7; }
+.modal .ts-dropdown { z-index: 1090; }
+.ts-dropdown .dropdown-input { margin: .35rem .5rem; width: calc(100% - 1rem); }
+
+/* 18. Ticket Time Entry card: timer centred over equal-width Start / Reset buttons with a gap; same card surface as its siblings. */
+.time-entry-card .card-body > .d-flex.justify-content-center { gap: 0; }
+.time-entry-card .time-entry-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; max-width: 15rem; margin-inline: auto; }
+.time-entry-card .time-entry-actions .btn { height: 2.25rem; display: inline-flex; align-items: center; justify-content: center; }
+.time-entry-card .form-control-sm { height: 2.1rem; }
+
+/* 19. TinyMCE: the focus frame uses the app's primary instead of TinyMCE's own mismatched blue. */
+.tox .tox-edit-area::before { border-color: var(--bs-primary, #206bc4) !important; }
+.tox.tox-tinymce { border-radius: var(--bs-border-radius, .375rem); border-color: var(--bs-border-color, #dee2e6); }
+
+/* 20. Split buttons (btn + dropdown-toggle-split) everywhere: the caret segment belongs to the button (same colour, a divider, same height/radius),
+       and menu rows use a neutral hover/focus/active state instead of flooding the row with the theme colour. */
+.btn-group > .btn.dropdown-toggle-split { padding-inline: .6rem; border-left: 1px solid rgba(255, 255, 255, .45); box-shadow: none; }
+.btn-group > .btn-outline-primary.dropdown-toggle-split, .btn-group > .btn-outline-secondary.dropdown-toggle-split,
+.btn-group > .btn-light.dropdown-toggle-split, .btn-group > .btn-secondary.dropdown-toggle-split { border-left-color: var(--bs-border-color, #ccd); }
+.btn-group > .btn.dropdown-toggle-split:focus-visible { outline: 2px solid var(--bs-primary, #206bc4); outline-offset: 2px; position: relative; z-index: 2; }
+.dropdown-menu .dropdown-item:hover, .dropdown-menu .dropdown-item:focus { background: var(--bs-tertiary-bg, rgba(100, 116, 139, .12)); color: var(--bs-body-color); }
+.dropdown-menu .dropdown-item.active, .dropdown-menu .dropdown-item:active { background: var(--bs-secondary-bg, rgba(100, 116, 139, .18)); color: var(--bs-body-color); font-weight: 600; }
+.dropdown-menu .dropdown-item.text-danger:hover, .dropdown-menu .dropdown-item.text-danger:focus { background: rgba(var(--bs-danger-rgb, 214, 57, 57), .1); }
+
+/* 21. Project detail header: padded summary cards with breathing room, readable action buttons. */
+.project-summary-group > .card.card-body { padding: 1rem 1.25rem; gap: .3rem; }
+.project-summary-group > .card.card-body > h5 { margin-bottom: .15rem; }
+.project-header-card > .card-header { padding: .75rem 1.25rem; }
+.project-header-card .card-tools .btn-sm { min-height: 2.15rem; padding: .3rem .8rem; font-size: .875rem; }
+.project-header-card .card-tools { display: flex; align-items: center; gap: .5rem; }
+
+/* 22. Search input groups built from .input-group-append wrappers (every list's "Search / filter / search" bar): the wrappers are not direct
+       children, so Bootstrap left the inner joins rounded and the outer-right corner square. Make the wrapper a flex segment and round only the outer ends. */
+.input-group > .input-group-append, .input-group > .input-group-prepend { display: flex; }
+.input-group > .input-group-append > .btn { border-radius: 0; margin-left: -1px; height: 100%; }
+.input-group > .input-group-append:last-child > .btn:last-child { border-top-right-radius: var(--bs-border-radius, .375rem); border-bottom-right-radius: var(--bs-border-radius, .375rem); }
+.input-group > .input-group-append > .btn + .btn { border-left: 1px solid rgba(255, 255, 255, .35); }
+.input-group > .form-control:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.input-group > .input-group-append > .btn:not(:last-child),
+.ticket-filter-bar .input-group > .input-group-append > .btn:not(:last-child),
+.filter-bar .input-group > .input-group-append > .btn:not(:last-child) { border-radius: 0 !important; }
+
+/* 23. MDM "Users to contacts" and the shared mapping picker: toolbar, explainer, scrolling table, body-level contact picker list. */
+.mdm-toolbar .mdm-search { width: min(22rem, 100%); }
+.mdm-toolbar .mdm-status { min-width: 12.5rem; padding-right: 2.25rem; }
+.mdm-toolbar .btn, .mdm-toolbar .form-control, .mdm-toolbar .form-select { min-height: 2.35rem; }
+.mdm-explainer { font-size: .9rem; }
+.mdm-explainer p { max-width: 80ch; }
+.mdm-scroll { overflow-x: auto; }
+.mdm-action-col { min-width: 25rem; }
+.mdm-map-form .mdm-typeahead { min-width: 14rem; flex: 1 1 14rem; }
+.mdm-map-form .btn { min-height: 2.35rem; white-space: nowrap; }
+.mdm-map-form .btn:disabled { opacity: .55; cursor: not-allowed; }
+.mdm-kpis .small-box { margin-bottom: 0; height: 100%; position: relative; }
+.mdm-kpis .small-box:focus-within { outline: 2px solid var(--bs-primary, #206bc4); outline-offset: 2px; }
+.mdm-pick-list { position: fixed; z-index: 2000; max-height: 300px; overflow-y: auto; padding: .25rem; border: 1px solid var(--bs-border-color, #dee2e6); border-radius: .5rem; background: var(--bs-body-bg, #fff); }
+.mdm-pick-item { display: flex; flex-direction: column; align-items: flex-start; width: 100%; min-height: 2.25rem; padding: .35rem .6rem; border: 0; border-radius: .35rem; background: transparent; color: var(--bs-body-color); text-align: left; line-height: 1.25; }
+.mdm-pick-item:hover, .mdm-pick-item.active { background: var(--bs-tertiary-bg, rgba(100, 116, 139, .14)); }
+.mdm-pick-title { font-weight: 600; font-size: .875rem; }
+.mdm-pick-sub { font-size: .75rem; color: var(--bs-secondary-color, #667085); }
+.mdm-pick-item mark { padding: 0; background: rgba(255, 193, 7, .35); color: inherit; border-radius: 2px; }
+.mdm-pick-empty { padding: .6rem .75rem; font-size: .85rem; color: var(--bs-secondary-color, #667085); }
+@media (min-width: 992px) { .mdm-toolbar > form:first-child { flex-wrap: nowrap; } }
+
+/* 24. A badge inside a table cell with a very long value (a pasted colour string, a 300-character label) kept `white-space: nowrap` and widened the whole page; let it wrap when it has to. */
+.table td .badge, .table th .badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+
+/* === list-ui (qa-b): sortable headers, filter chips, status badge, sticky list header === */
+.status-badge {
+    display: inline-flex; align-items: center; gap: .4rem; min-width: 6.5rem; height: 1.75rem; padding: 0 .75rem;
+    border-radius: 50rem; font-size: .8125rem; font-weight: 600; line-height: 1; white-space: nowrap;
+    background: var(--sb-bg-l); color: var(--sb-fg-l); box-shadow: inset 0 0 0 1px var(--sb-bd-l);
+}
+.status-badge-dot { flex: none; width: .5rem; height: .5rem; border-radius: 50%; background: var(--sb-dot); }
+.status-badge-label { overflow: hidden; text-overflow: ellipsis; }
+.status-badge-neutral { background: #eef1f4; color: #3b4652; box-shadow: inset 0 0 0 1px #d5dbe1; }
+.status-badge-neutral .status-badge-dot { background: #8793a1; }
+.status-badge-empty { background: transparent; color: #5b6674; box-shadow: inset 0 0 0 1px #c3ccd5; border-style: dashed; font-weight: 500; }
+:root[data-bs-theme="dark"] .status-badge { background: var(--sb-bg-d); color: var(--sb-fg-d); box-shadow: inset 0 0 0 1px var(--sb-bd-d); }
+:root[data-bs-theme="dark"] .status-badge-neutral { background: #2a3441; color: #cbd5e1; box-shadow: inset 0 0 0 1px #3d4a5a; }
+:root[data-bs-theme="dark"] .status-badge-empty { background: transparent; color: #9aa6b5; box-shadow: inset 0 0 0 1px #4a5868; }
+
+.sort-link { color: inherit; text-decoration: none; white-space: nowrap; }
+.sort-link .sort-icon { margin-left: .2rem; opacity: .35; font-size: .85em; }
+.sort-link:hover, .sort-link.is-active { color: var(--tblr-primary, #1f5fbf); text-decoration: none; }
+.sort-link:hover .sort-icon, .sort-link.is-active .sort-icon { opacity: .95; }
+.sort-link:focus-visible { outline: 2px solid var(--tblr-primary, #1f5fbf); outline-offset: 2px; border-radius: 3px; }
+
+.filter-chip { display: inline-flex; align-items: center; gap: .35rem; max-width: 100%; padding: .2rem .35rem .2rem .65rem; border-radius: 50rem; font-size: .8125rem; background: var(--tblr-bg-surface-secondary, #eef2f6); border: 1px solid var(--tblr-border-color, #d5dbe1); color: var(--tblr-body-color, #1b2430); }
+.filter-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-chip-x { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; color: inherit; opacity: .7; text-decoration: none; font-size: .7rem; }
+.filter-chip-x:hover, .filter-chip-x:focus-visible { opacity: 1; background: rgba(127, 127, 127, .25); }
+@media (min-width: 768px) { #assetMoreFilters.collapse:not(.show) { display: block !important; } }
+
+.table-sticky-head { max-height: calc(100vh - 16rem); min-height: 12rem; overflow: auto; }
+.table-sticky-head thead th, .table-sticky-head thead td { position: sticky; top: 0; z-index: 3; background: var(--tblr-bg-surface-secondary, #f6f8fb); box-shadow: inset 0 -1px 0 var(--tblr-border-color, #dde2e8); }
+.assets-table > :not(caption) > * > * { padding: .5rem .75rem; vertical-align: middle; }
+.assets-table .asset-inline-caret { opacity: 0; font-size: .65em; }
+.assets-table .asset-inline-trigger:hover .asset-inline-caret,
+.assets-table .asset-inline-trigger:focus-visible .asset-inline-caret { opacity: .8; }
+@media (hover: none) { .assets-table .asset-inline-caret { opacity: .5; } }
+.assets-table .asset-inline-text.text-secondary { opacity: .6; }
+/* === end list-ui === */
+
+/* Placeholder of a closed single TomSelect that has no text input (see js/app.js initSelect2Widgets). */
+.ts-wrapper.single:not(.has-items) .ts-control[data-ts-ph]::before { content: attr(data-ts-ph); color: var(--tblr-secondary-color, #6c7a89); opacity: .85; }
+
+/* === calendar (qa-b): chips in the calendar's own colour, quiet day numbers, one toolbar style, a real legend === */
+.cal-surface {
+  --fc-border-color: var(--if-border, #dde2e8);
+  --fc-page-bg-color: var(--if-surface, #fff);
+  --fc-neutral-bg-color: color-mix(in srgb, var(--if-ink, #16232a) 4%, transparent);
+  --fc-today-bg-color: color-mix(in srgb, var(--if-primary, #1f5fbf) 7%, transparent);
+  --fc-now-indicator-color: #d6336c;
+  --fc-event-text-color: var(--if-ink, #16232a);
+  color: var(--if-ink, #16232a);
+}
+.cal-surface .fc-header-toolbar { margin: 0; padding: 14px 16px 12px; gap: 10px 8px; flex-wrap: wrap; align-items: center; }
+.cal-surface .fc-toolbar-chunk { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cal-surface .fc-toolbar-title { margin: 0 0 0 .5rem; font-size: 1.25rem; font-weight: 600; line-height: 1.2; }
+.cal-surface .fc .fc-button, .cal-surface .fc-button {
+  height: 36px; padding: 0 .9rem; display: inline-flex; align-items: center; gap: .4rem; border-radius: 8px;
+  border: 1px solid var(--if-border-strong, #cfd6dc); background: var(--if-surface, #fff); color: var(--if-ink, #16232a);
+  font-size: .875rem; font-weight: 500; text-transform: none; box-shadow: none;
+}
+.cal-surface .fc-button:hover:not(:disabled) { background: color-mix(in srgb, var(--if-ink, #16232a) 6%, var(--if-surface, #fff)); color: var(--if-ink, #16232a); }
+.cal-surface .fc-button:disabled { opacity: .45; }
+.cal-surface .fc-button-group { display: inline-flex; gap: 0; }
+.cal-surface .fc-button-group > .fc-button { border-radius: 0; margin-left: -1px; }
+.cal-surface .fc-button-group > .fc-button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.cal-surface .fc-button-group > .fc-button:last-child { border-radius: 0 8px 8px 0; }
+.cal-surface .fc-button-group > .fc-button:only-child { border-radius: 8px; }
+.cal-surface .fc-button.fc-button-active, .cal-surface .fc-button-primary.active {
+  background: color-mix(in srgb, var(--if-primary, #1f5fbf) 14%, var(--if-surface, #fff)); border-color: color-mix(in srgb, var(--if-primary, #1f5fbf) 55%, transparent);
+  color: var(--if-primary, #1f5fbf); font-weight: 600; z-index: 1;
+}
+.cal-surface .fc-newEvent-button { background: var(--if-primary, #1f5fbf); border-color: var(--if-primary, #1f5fbf); color: #fff; font-weight: 600; }
+.cal-surface .fc-newEvent-button:hover:not(:disabled) { background: color-mix(in srgb, var(--if-primary, #1f5fbf) 86%, #000); color: #fff; }
+.cal-surface .fc-toolbar > .fc-toolbar-chunk:last-child { margin-left: auto; }
+
+.cal-surface .fc-col-header-cell { background: transparent; }
+.cal-surface .fc-col-header-cell-cushion { padding: 9px 4px; font-size: .72rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--if-muted, #5d6f76); text-decoration: none; }
+.cal-surface .fc-daygrid-day-frame { min-height: 7.25rem; }
+.cal-surface .fc-daygrid-day-top { justify-content: flex-end; }
+.cal-surface .fc-daygrid-day-number { padding: 4px 6px; margin: 2px; min-width: 1.75rem; text-align: center; font-size: .8125rem; font-weight: 500; color: var(--if-ink, #16232a); text-decoration: none; border-radius: 999px; }
+.cal-surface .fc-day-other .fc-daygrid-day-number { opacity: .42; }
+.cal-surface .fc-day-sat, .cal-surface .fc-day-sun { background: var(--fc-neutral-bg-color); }
+.cal-surface .fc-day-today { background: var(--fc-today-bg-color) !important; }
+.cal-surface .fc-day-today .fc-daygrid-day-number { background: var(--if-primary, #1f5fbf); color: #fff; font-weight: 600; }
+.cal-surface .fc-scrollgrid, .cal-surface .fc-scrollgrid td, .cal-surface .fc-scrollgrid th { border-color: var(--fc-border-color); }
+
+/* Event chips: tinted in the calendar's colour, a solid left edge, readable ink. Links no longer turn the text the theme's link colour. */
+.cal-surface .fc-event, .cal-surface a.fc-event { color: var(--if-ink, #16232a); text-decoration: none; }
+.cal-surface .fc-daygrid-event { margin: 1px 5px 0; padding: 1px 6px; border-radius: 6px; font-size: .78rem; line-height: 1.4; }
+.cal-surface .fc-daygrid-dot-event, .cal-surface .fc-daygrid-block-event {
+  background: color-mix(in srgb, var(--ev-color, #64748b) 14%, var(--if-surface, #fff)) !important;
+  border: 0; border-left: 3px solid var(--ev-color, #64748b); box-shadow: none;
+}
+.cal-surface .fc-daygrid-dot-event:hover, .cal-surface .fc-daygrid-block-event:hover { background: color-mix(in srgb, var(--ev-color, #64748b) 24%, var(--if-surface, #fff)) !important; }
+.cal-surface .fc-daygrid-event-dot { display: none; }
+.cal-surface .fc-daygrid-dot-event .fc-event-title, .cal-surface .fc-daygrid-block-event .fc-event-title { font-weight: 500; color: var(--if-ink, #16232a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-surface .fc-daygrid-dot-event .fc-event-time, .cal-surface .fc-daygrid-block-event .fc-event-time { font-weight: 400; color: var(--if-muted, #5d6f76); }
+.cal-surface .fc-event-main { color: var(--if-ink, #16232a); }
+.cal-surface .fc-timegrid-event { background: color-mix(in srgb, var(--ev-color, #64748b) 20%, var(--if-surface, #fff)); border: 0; border-left: 3px solid var(--ev-color, #64748b); border-radius: 6px; }
+.cal-surface .fc-timegrid-event .fc-event-main { color: var(--if-ink, #16232a); }
+.cal-surface .fc-daygrid-more-link { margin: 1px 5px; padding: 1px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; color: var(--if-primary, #1f5fbf); background: color-mix(in srgb, var(--if-primary, #1f5fbf) 9%, transparent); text-decoration: none; }
+.cal-surface .fc-daygrid-more-link:hover { background: color-mix(in srgb, var(--if-primary, #1f5fbf) 18%, transparent); }
+.fc .fc-popover { border: 1px solid var(--if-border, #dde2e8); border-radius: 10px; background: var(--if-surface, #fff); box-shadow: 0 12px 32px -12px rgba(0, 0, 0, .35); overflow: hidden; }
+.fc .fc-popover-header { background: color-mix(in srgb, var(--if-ink, #16232a) 5%, transparent); color: var(--if-ink, #16232a); font-weight: 600; padding: 8px 12px; }
+.fc .fc-popover-body { padding: 4px 0 6px; }
+.cal-surface .fc-timegrid-slot { height: 2.35rem; }
+.cal-surface .fc-timegrid-slot-label-cushion, .cal-surface .fc-timegrid-axis-cushion { font-size: .75rem; color: var(--if-muted, #5d6f76); }
+.cal-surface .fc-timegrid-now-indicator-line { border-width: 2px 0 0; }
+.cal-surface .fc-list { border-color: var(--fc-border-color); }
+.cal-surface .fc-list-day-cushion { background: color-mix(in srgb, var(--if-ink, #16232a) 5%, var(--if-surface, #fff)); font-weight: 600; }
+.cal-surface .fc-list-day-cushion a { color: var(--if-ink, #16232a); text-decoration: none; }
+.cal-surface .fc-list-event td { padding: 9px 12px; }
+.cal-surface .fc-list-event a { color: var(--if-ink, #16232a); text-decoration: none; font-weight: 500; }
+.cal-surface .fc-list-event-dot { border-color: var(--ev-color, #64748b); }
+.cal-surface .fc-list-event:hover td { background: color-mix(in srgb, var(--ev-color, #64748b) 10%, var(--if-surface, #fff)); }
+.cal-surface .fc-list-empty { color: var(--if-muted, #5d6f76); }
+
+/* Legend: a check box per calendar with a coloured dot, so on/off is obvious and keyboard-operable */
+.cal-legend { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px 12px; }
+.cal-legend__row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.cal-legend__item { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; margin: 0; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: .875rem; }
+.cal-legend__item:hover { background: color-mix(in srgb, var(--if-ink, #16232a) 5%, transparent); }
+.cal-legend__check { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.cal-legend__dot { flex: none; width: 14px; height: 14px; border-radius: 4px; background: var(--c, #64748b); box-shadow: 0 0 0 2px color-mix(in srgb, var(--c, #64748b) 28%, transparent); display: inline-grid; place-items: center; transition: background-color .12s ease, box-shadow .12s ease; }
+.cal-legend__check:not(:checked) + .cal-legend__dot { background: transparent; box-shadow: inset 0 0 0 2px var(--c, #64748b); opacity: .75; }
+.cal-legend__check:checked + .cal-legend__dot::after { content: ""; width: 6px; height: 3px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg) translate(1px, -1px); }
+.cal-legend__check:not(:checked) ~ .cal-legend__label { color: var(--if-muted, #5d6f76); text-decoration: line-through; text-decoration-thickness: 1px; }
+.cal-legend__check:focus-visible + .cal-legend__dot { outline: 2px solid var(--if-primary, #1f5fbf); outline-offset: 2px; }
+.cal-legend__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-side .card + .card { margin-top: 16px; }
+.cal-sync-url { text-overflow: ellipsis; font-family: var(--if-mono, ui-monospace, monospace); font-size: .75rem; }
+.cal-side .copy-btn { min-width: 4.75rem; }
+@media (max-width: 991.98px) {
+  .cal-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .cal-side .card + .card { margin-top: 0; }
+  .cal-surface .fc-toolbar > .fc-toolbar-chunk:last-child { margin-left: 0; }
+}
+@media (max-width: 575.98px) {
+  .cal-surface .fc-header-toolbar { padding: 10px 10px 8px; }
+  .cal-surface .fc-toolbar-title { font-size: 1.05rem; flex-basis: 100%; margin: 0; }
+  .cal-surface .fc-daygrid-day-frame { min-height: 4.5rem; }
+}
+:root[data-bs-theme="dark"] .cal-surface .fc-daygrid-more-link { color: #9dbcff; background: color-mix(in srgb, #9dbcff 12%, transparent); }
+:root[data-bs-theme="dark"] .cal-surface .fc-button.fc-button-active { color: #9dbcff; }
+/* === end calendar === */

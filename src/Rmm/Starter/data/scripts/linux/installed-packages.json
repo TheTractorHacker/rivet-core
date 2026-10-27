@@ -1,0 +1,25 @@
+{
+  "id": "lin-installed-packages",
+  "name": "Installed packages (Linux)",
+  "description": "Lists installed package names and versions sorted by name.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "inventory",
+    "software"
+  ],
+  "timeout_s": 60,
+  "params": [
+    {
+      "name": "limit",
+      "type": "int",
+      "label": "Max packages",
+      "description": "Maximum number of packages to list.",
+      "default": 500,
+      "min": 50,
+      "max": 5000
+    }
+  ],
+  "output": "Total count and name-version lines (truncated). Exit 0."
+}

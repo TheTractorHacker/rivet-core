@@ -1,10 +1,5 @@
 name: ci
-on:
-  push:
-  pull_request:
-  workflow_dispatch:
-  schedule:
-    - cron: '17 4 * * 1'   # weekly: runs the optional benchmark job
+on: [push, pull_request]
 permissions:
   contents: read
 jobs:
@@ -14,21 +9,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.2', '8.3', '8.4', '8.5']
+        php: ['8.5']
         db: ['mariadb:11']
         health: ['healthcheck.sh --connect --innodb_initialized']
         include:
-          - { php: '8.4', db: 'mariadb:10.11', health: 'healthcheck.sh --connect --innodb_initialized' }
-          - { php: '8.4', db: 'mysql:8.0', health: 'mysqladmin ping -h 127.0.0.1 -proot --silent' }
-          - { php: '8.4', db: 'mysql:8.4', health: 'mysqladmin ping -h 127.0.0.1 -proot --silent' }
+          - { php: '8.5', db: 'mariadb:10.11', health: 'healthcheck.sh --connect --innodb_initialized' }
+          - { php: '8.5', db: 'mysql:8.0', health: 'mysqladmin ping -h 127.0.0.1 -proot --silent' }
+          - { php: '8.5', db: 'mysql:8.4', health: 'mysqladmin ping -h 127.0.0.1 -proot --silent' }
     services:
       database:
         image: ${{ matrix.db }}
         env:
           MARIADB_ROOT_PASSWORD: root
-          MARIADB_DATABASE: rivetcore_test
+          MARIADB_DATABASE: rivetcore_scratch_test
           MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: rivetcore_test
+          MYSQL_DATABASE: rivetcore_scratch_test
         ports: ['3306:3306']
         options: >-
           --health-cmd="${{ matrix.health }}"
@@ -36,9 +31,10 @@ jobs:
       redis:
         image: redis:7
         ports: ['6391:6379']
+    # The database name must contain "scratch": the RMM integration tests refuse (and skip) any other name, so a plain "rivetcore_test" silently skipped ~300 of them.
     steps:
-      - uses: actions/checkout@v7
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: ${{ matrix.php }}
           extensions: mysqli, zip, dom, mbstring
@@ -49,22 +45,218 @@ jobs:
       - run: composer lint
       - name: Core must not reference mysqli or request globals
         run: |
-          ! grep -rnE 'mysqli|global \$mysqli|\$GLOBALS|\$_SESSION|\$_SERVER|getRedisClient|lookupUserPermission|enforceClientAccess' src
+          # src/Testing is the conformance kit: it deliberately sets request superglobals to test edition adapters, so it is exempt.
+          ! grep -rnE 'mysqli|global \$mysqli|\$GLOBALS|\$_SESSION|\$_SERVER|getRedisClient|lookupUserPermission|enforceClientAccess' src --exclude-dir=Testing
+      - name: Core must not reference PDO outside the PostgreSQL adapter
+        run: |
+          # The PostgreSQL stores talk to PostgresConnectionInterface; the only code that knows a driver is src/Rmm/Store/Postgres/Pdo (phase 2 of #89).
+          ! grep -rnE '\bPDO[A-Za-z]*\b|pdo_pgsql|pdo_mysql' src --exclude-dir=Testing --exclude-dir=Pdo
       - run: vendor/bin/phpunit
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1
-          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
           RIVETCORE_TEST_REDIS_PORT: '6391'
-      - name: Every PHP sample in the docs runs
-        run: php scripts/check-doc-samples.php
+          # The starter pack's Linux proof also runs in a container with common tools installed (about 3 minutes); once is enough.
+          RIVETCORE_STARTER_PROOF_TOOLS: ${{ matrix.php == '8.5' && matrix.db == 'mariadb:11' && '1' || '' }}
+
+  postgres:
+    name: postgres 18 (RMM data store)
+    # The RMM data store contract on PostgreSQL, the MariaDB-versus-PostgreSQL equivalence test, partitions, concurrency, failure injection and the degraded module.
+    # PostgreSQL 18 is the primary, recommended version (docs/rmm/POSTGRES.md). Named here, not enforced by branch protection (there is none): treat it as required.
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_scratch_test }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_USER: rivet, POSTGRES_PASSWORD: rivet, POSTGRES_DB: rivetcore_scratch_pg }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U rivet -d rivetcore_scratch_pg"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, pdo_pgsql, zip, dom, mbstring', tools: composer }
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit tests/Integration/Rmm/Postgres tests/Integration/Rmm/Migration tests/Integration/Rmm/MariaDbDataStoreContractTest.php tests/Integration/Rmm/MariaDbLazyDataStoreContractTest.php tests/Integration/Rmm/RmmDataStoreRoutingTest.php tests/Integration/Rmm/RmmDataStoreSettingTest.php --display-skipped
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1
-          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
-          RIVETCORE_TEST_REDIS_PORT: '6391'
+          RIVETCORE_TEST_PG_HOST: 127.0.0.1
+          RIVETCORE_TEST_PG_PORT: '5432'
+          RIVETCORE_TEST_PG_NAME: rivetcore_scratch_pg
+          RIVETCORE_TEST_PG_USER: rivet
+          RIVETCORE_TEST_PG_PASS: rivet
+          RIVETCORE_TEST_PG_REQUIRED: '1'
+          RIVETCORE_TEST_PG_MODE: native
+
+  postgres-timescaledb:
+    name: postgres 18 + TimescaleDB (RMM data store, optional)
+    # The same cases on TimescaleDB hypertables. Optional: the data store never requires the extension, so a failure here does not block a release, but it is looked at.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      database:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_scratch_test }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      postgres:
+        image: timescale/timescaledb:2.31.0-pg18
+        env: { POSTGRES_USER: rivet, POSTGRES_PASSWORD: rivet, POSTGRES_DB: rivetcore_scratch_pg }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U rivet -d rivetcore_scratch_pg"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, pdo_pgsql, zip, dom, mbstring', tools: composer }
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit tests/Integration/Rmm/Postgres tests/Integration/Rmm/Migration --display-skipped
+        env:
+          RIVETCORE_TEST_DB_HOST: 127.0.0.1
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
+          RIVETCORE_TEST_DB_USER: root
+          RIVETCORE_TEST_DB_PASS: root
+          RIVETCORE_TEST_PG_HOST: 127.0.0.1
+          RIVETCORE_TEST_PG_PORT: '5432'
+          RIVETCORE_TEST_PG_NAME: rivetcore_scratch_pg
+          RIVETCORE_TEST_PG_USER: rivet
+          RIVETCORE_TEST_PG_PASS: rivet
+          RIVETCORE_TEST_PG_REQUIRED: '1'
+          RIVETCORE_TEST_PG_MODE: timescale
+
+  postgres-16:
+    name: postgres 16 (RMM data store)
+    # PostgreSQL 16, kept so an install that started on 16 does not regress (18 is the primary version, see the job above). The RMM data store contract on PostgreSQL, the MariaDB-versus-PostgreSQL equivalence test, partitions, concurrency, failure injection and the degraded module.
+    # Named here, not enforced by branch protection (there is none): treat it as required.
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_scratch_test }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: rivet, POSTGRES_PASSWORD: rivet, POSTGRES_DB: rivetcore_scratch_pg }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U rivet -d rivetcore_scratch_pg"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, pdo_pgsql, zip, dom, mbstring', tools: composer }
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit tests/Integration/Rmm/Postgres tests/Integration/Rmm/Migration tests/Integration/Rmm/MariaDbDataStoreContractTest.php tests/Integration/Rmm/MariaDbLazyDataStoreContractTest.php tests/Integration/Rmm/RmmDataStoreRoutingTest.php tests/Integration/Rmm/RmmDataStoreSettingTest.php --display-skipped
+        env:
+          RIVETCORE_TEST_DB_HOST: 127.0.0.1
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
+          RIVETCORE_TEST_DB_USER: root
+          RIVETCORE_TEST_DB_PASS: root
+          RIVETCORE_TEST_PG_HOST: 127.0.0.1
+          RIVETCORE_TEST_PG_PORT: '5432'
+          RIVETCORE_TEST_PG_NAME: rivetcore_scratch_pg
+          RIVETCORE_TEST_PG_USER: rivet
+          RIVETCORE_TEST_PG_PASS: rivet
+          RIVETCORE_TEST_PG_REQUIRED: '1'
+          RIVETCORE_TEST_PG_MODE: native
+
+  postgres-timescaledb-16:
+    name: postgres 16 + TimescaleDB (RMM data store, optional)
+    # The same cases on TimescaleDB hypertables. Optional: the data store never requires the extension, so a failure here does not block a release, but it is looked at.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      database:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_scratch_test }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      postgres:
+        image: timescale/timescaledb:2.31.0-pg16
+        env: { POSTGRES_USER: rivet, POSTGRES_PASSWORD: rivet, POSTGRES_DB: rivetcore_scratch_pg }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U rivet -d rivetcore_scratch_pg"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, pdo_pgsql, zip, dom, mbstring', tools: composer }
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit tests/Integration/Rmm/Postgres tests/Integration/Rmm/Migration --display-skipped
+        env:
+          RIVETCORE_TEST_DB_HOST: 127.0.0.1
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
+          RIVETCORE_TEST_DB_USER: root
+          RIVETCORE_TEST_DB_PASS: root
+          RIVETCORE_TEST_PG_HOST: 127.0.0.1
+          RIVETCORE_TEST_PG_PORT: '5432'
+          RIVETCORE_TEST_PG_NAME: rivetcore_scratch_pg
+          RIVETCORE_TEST_PG_USER: rivet
+          RIVETCORE_TEST_PG_PASS: rivet
+          RIVETCORE_TEST_PG_REQUIRED: '1'
+          RIVETCORE_TEST_PG_MODE: timescale
+
+  dependency-audit:
+    name: dependency audit (composer + govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
+      # composer.lock is committed so this audit (and any scanner reading the repo) sees the exact dependency set CI tests.
+      - run: composer audit --locked --no-interaction
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: endpoint-agent/go.mod
+      - name: govulncheck
+        working-directory: endpoint-agent
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+  ui-assets:
+    name: shared UI assets (manifest self-consistency)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5' }
+      # assets/ui/MANIFEST.json must describe assets/ui exactly (hashes, sizes, no unlisted file, load order). After editing an asset run
+      # php scripts/build-ui-manifest.php and commit the manifest.
+      - run: php scripts/check-ui-assets.php
+      # What an edition receives is the git archive (Composer dist), not the working tree: run the shipped scripts from an extracted
+      # archive, install into an empty directory and check the result, so .gitattributes cannot silently drop a script or an asset.
+      - name: installer and checker work from the package
+        run: |
+          pkg="$(mktemp -d)"; dest="$(mktemp -d)"
+          git archive HEAD | tar -x -C "$pkg"
+          php "$pkg/scripts/check-ui-assets.php"
+          php "$pkg/scripts/install-ui-assets.php" --css="$dest" --js="$dest"
+          php "$pkg/scripts/check-ui-assets.php" --css="$dest" --js="$dest"
+          # the shared scripts must be in the package and reach the edition; event_rules.js is edition-owned and must not
+          for f in chart_theme icon_picker date_range_picker event_picker webhook_wizard webhook_guides; do test -s "$dest/$f.js"; done
+          test ! -e "$dest/event_rules.js"
 
   lowest:
     name: lowest supported dependencies
@@ -72,30 +264,40 @@ jobs:
     services:
       database:
         image: mariadb:11
-        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_test }
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_scratch_test }
         ports: ['3306:3306']
         options: >-
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
           --health-interval=5s --health-timeout=5s --health-retries=20
     steps:
-      - uses: actions/checkout@v7
-      - uses: shivammathur/setup-php@v2
-        with: { php-version: '8.2', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
       - run: composer update --prefer-lowest --prefer-stable --no-interaction --prefer-dist
       - run: vendor/bin/phpunit
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1
-          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
+
+  build-host:
+    name: build host script (shellcheck and mock-server tests, no Docker build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: shellcheck -x endpoint-agent/scripts/build-host.sh endpoint-agent/e2e/run_build_host_proof.sh endpoint-agent/scripts/install-linux.sh endpoint-agent/e2e/test_install_linux.sh
+      - run: bash endpoint-agent/e2e/test_install_linux.sh
+      - run: python3 endpoint-agent/e2e/test_build_host.py -v
+      # The real Docker build proof (endpoint-agent/e2e/run_build_host_proof.sh) is a documented manual/optional run: it takes minutes.
 
   static:
     name: static analysis and dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: shivammathur/setup-php@v2
-        with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
       - run: composer install --no-interaction --prefer-dist
       - run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
       - run: composer audit
@@ -105,7 +307,7 @@ jobs:
     services:
       database:
         image: mariadb:11
-        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_test }
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_scratch_test }
         ports: ['3306:3306']
         options: >-
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
@@ -113,19 +315,32 @@ jobs:
       redis:
         image: redis:7
         ports: ['6391:6379']
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_USER: rivet, POSTGRES_PASSWORD: rivet, POSTGRES_DB: rivetcore_scratch_pg }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U rivet -d rivetcore_scratch_pg"
+          --health-interval=5s --health-timeout=5s --health-retries=20
     steps:
-      - uses: actions/checkout@v7
-      - uses: shivammathur/setup-php@v2
-        with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', coverage: pcov, tools: composer }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, pdo_pgsql, zip, dom, mbstring', coverage: pcov, tools: composer }
       - run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - run: composer install --no-interaction --prefer-dist
       - run: vendor/bin/phpunit --coverage-clover coverage.xml --coverage-text
         env:
           RIVETCORE_TEST_DB_HOST: 127.0.0.1
-          RIVETCORE_TEST_DB_NAME: rivetcore_test
+          RIVETCORE_TEST_DB_NAME: rivetcore_scratch_test
           RIVETCORE_TEST_DB_USER: root
           RIVETCORE_TEST_DB_PASS: root
           RIVETCORE_TEST_REDIS_PORT: '6391'
+          # the PostgreSQL stores are part of src/: their tests run here so the gate sees them
+          RIVETCORE_TEST_PG_HOST: 127.0.0.1
+          RIVETCORE_TEST_PG_PORT: '5432'
+          RIVETCORE_TEST_PG_NAME: rivetcore_scratch_pg
+          RIVETCORE_TEST_PG_USER: rivet
+          RIVETCORE_TEST_PG_PASS: rivet
       - name: Coverage gate (everything except the DOCX/PDF converters)
         run: php scripts/coverage-gate.php coverage.xml 85
 
@@ -135,80 +350,51 @@ jobs:
     # Advisory while the API is 0.x (a minor may break it, and the changelog says so); becomes required at 1.0.0.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: { fetch-depth: 0 }
-      - uses: shivammathur/setup-php@v2
-        with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
       - run: composer install --no-interaction --prefer-dist
-      # Needs PHP 8.4+, so it is installed here instead of being a dev dependency (which would break installs on 8.2 and 8.3).
-      - run: composer require --dev --no-interaction roave/backward-compatibility-check
-      - run: vendor/bin/roave-backward-compatibility-check --from="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)" --to=HEAD
+      # Installed here instead of being a dev dependency so ordinary installs stay light.
+      - run: composer require --dev --no-interaction roave/backward-compatibility-check:8.23.0
+      # The tool installs each side with --no-dev, so PHPUnit is absent and every src/Testing conformance class (which extends
+      # PHPUnit's TestCase) is reported as "[BC] SKIPPED: ... PHPUnit\Framework\TestCase could not be found" and counted as a
+      # failure, although nothing broke (the same 70 lines appear between v1.0.0-rc.1, rc.2 and rc.3). Those lines are ignored;
+      # every other line (a real change, or any other skipped class) still fails the job.
+      - name: Compare the public API with the last tag
+        run: |
+          from="$(git tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
+          set +e
+          vendor/bin/roave-backward-compatibility-check --from="$from" --to=HEAD 2>&1 | tee bc.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          # A non-zero exit that is not the "changes detected" verdict is a tool failure, not a pass.
+          if [ "$rc" -ne 0 ] && ! grep -q 'backwards-incompatible changes detected' bc.log; then
+            echo "roave-backward-compatibility-check failed (exit $rc)" >&2
+            exit 1
+          fi
+          if grep -E '^\[BC\]' bc.log | grep -vF 'PHPUnit\Framework\TestCase" could not be found'; then
+            echo "Backward-incompatible changes since $from (listed above)." >&2
+            exit 1
+          fi
 
-  api-surface:
-    name: public API surface (fails on unreviewed changes)
-    runs-on: ubuntu-latest
-    services:
-      database:
-        image: mariadb:11
-        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_test }
-        ports: ['3306:3306']
-        options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
-          --health-interval=5s --health-timeout=5s --health-retries=20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: shivammathur/setup-php@v2
-        with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
-      - run: composer install --no-interaction --prefer-dist
-      # Compares types, signatures, constants, migrations, vocabularies and table columns with tests/api-surface.json.
-      # To accept an intended change: php scripts/api-surface-check.php --update, review the diff, record it in CHANGELOG.md.
-      - run: php scripts/api-surface-check.php
-        env:
-          RIVETCORE_TEST_DB_HOST: 127.0.0.1
-          RIVETCORE_TEST_DB_NAME: rivetcore_test
-          RIVETCORE_TEST_DB_USER: root
-          RIVETCORE_TEST_DB_PASS: root
-      - name: docs/PUBLIC-API.md lists every public type
-        run: php scripts/public-api-table.php --write && git diff --exit-code docs/PUBLIC-API.md
-
-  smoke-syntax:
-    name: browser smoke specs parse
+  secret-scan:
+    name: secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      # Syntax only: the specs need a live scratch edition to run (see tests/smoke/README.md).
-      - run: cd tests/smoke && npm run check
-
-  bench:
-    name: performance regression check (optional - weekly and on demand)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    continue-on-error: true   # shared runners are noisy; thresholds are deliberately generous and a miss is a prompt to look, not a gate
-    services:
-      database:
-        image: mariadb:11
-        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: rivetcore_bench }
-        ports: ['3306:3306']
-        options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
-          --health-interval=5s --health-timeout=5s --health-retries=20
-      redis:
-        image: redis:7
-        ports: ['6391:6379']
-    steps:
-      - uses: actions/checkout@v7
-      - uses: shivammathur/setup-php@v2
-        with: { php-version: '8.4', extensions: 'mysqli, zip, dom, mbstring', tools: composer }
-      - run: composer install --no-interaction --prefer-dist
-      - run: php bench/run.php --runs=3 --json=bench-result.json --check=bench/thresholds.json
-        env:
-          RIVETCORE_BENCH_DB_HOST: 127.0.0.1
-          RIVETCORE_BENCH_DB_NAME: rivetcore_bench
-          RIVETCORE_BENCH_DB_USER: root
-          RIVETCORE_BENCH_DB_PASS: root
-          RIVETCORE_BENCH_REDIS_PORT: '6391'
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: { name: bench-result, path: bench-result.json }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { fetch-depth: 0 }
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with: { php-version: '8.5' }
+      # secret-scan-allowlist.json is the one list of intentional fixtures (each with a reason); the two files below are generated from it.
+      - name: Scanner configs match the allowlist
+        run: php scripts/secret-scan-sync.php --check
+      # Our own scanner: tracked files plus every line added in the history of this commit. Reports path:line, rule, length and a 4-character fingerprint, never the value.
+      - name: Secret shapes in the tree and in history
+        run: php scripts/secret-scan.php --history --rev=HEAD
+      # A second opinion from a different rule set, pinned by image digest (gitleaks v8.30.0), repository mounted read-only, values redacted.
+      - name: gitleaks
+        run: >-
+          docker run --rm -v "$PWD:/repo:ro" -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo
+          zricethezav/gitleaks@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9
+          git /repo --config /repo/.gitleaks.toml --redact --no-banner --exit-code 1

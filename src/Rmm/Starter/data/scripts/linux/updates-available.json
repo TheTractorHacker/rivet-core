@@ -1,0 +1,15 @@
+{
+  "id": "lin-updates-available",
+  "name": "Updates available (Linux)",
+  "description": "Lists pending package updates using apt, dnf, yum or zypper without refreshing indexes or installing anything.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "patching",
+    "updates"
+  ],
+  "timeout_s": 180,
+  "params": [],
+  "output": "Package manager name, index age (apt), and a list of upgradable packages (first 100). Exit 0."
+}

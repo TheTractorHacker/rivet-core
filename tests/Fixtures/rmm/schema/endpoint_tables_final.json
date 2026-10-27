@@ -1,0 +1,2396 @@
+{
+    "format": 1,
+    "tables": {
+        "endpoint_agent_binaries": {
+            "engine": "InnoDB",
+            "collation": "utf8mb4_general_ci",
+            "columns": [
+                {
+                    "name": "binary_id",
+                    "position": 1,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "auto_increment",
+                    "charset": null,
+                    "collation": null,
+                    "key": "PRI"
+                },
+                {
+                    "name": "version",
+                    "position": 2,
+                    "type": "varchar(40)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "MUL"
+                },
+                {
+                    "name": "arch",
+                    "position": 3,
+                    "type": "varchar(10)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "sha256",
+                    "position": 4,
+                    "type": "char(64)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "size_bytes",
+                    "position": 5,
+                    "type": "bigint(20)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "storage_name",
+                    "position": 6,
+                    "type": "varchar(64)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "uploaded_by",
+                    "position": 7,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "active",
+                    "position": 8,
+                    "type": "tinyint(1)",
+                    "nullable": false,
+                    "default": "1",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "is_current",
+                    "position": 9,
+                    "type": "tinyint(1)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "created_at",
+                    "position": 10,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": "current_timestamp()",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                }
+            ],
+            "indexes": [
+                {
+                    "name": "PRIMARY",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "binary_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "uniq_version_arch",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "version",
+                            "sub_part": null,
+                            "order": "A"
+                        },
+                        {
+                            "seq": 2,
+                            "column": "arch",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "PRIMARY",
+                    "type": "PRIMARY KEY",
+                    "columns": [
+                        "binary_id"
+                    ]
+                },
+                {
+                    "name": "uniq_version_arch",
+                    "type": "UNIQUE",
+                    "columns": [
+                        "version",
+                        "arch"
+                    ]
+                }
+            ]
+        },
+        "endpoint_agent_checkins": {
+            "engine": "InnoDB",
+            "collation": "utf8mb4_general_ci",
+            "columns": [
+                {
+                    "name": "device_id",
+                    "position": 1,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": "PRI"
+                },
+                {
+                    "name": "seq",
+                    "position": 2,
+                    "type": "bigint(20)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": "PRI"
+                },
+                {
+                    "name": "received_at",
+                    "position": 3,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": "current_timestamp()",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": "MUL"
+                },
+                {
+                    "name": "collected_at",
+                    "position": 4,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                }
+            ],
+            "indexes": [
+                {
+                    "name": "PRIMARY",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "device_id",
+                            "sub_part": null,
+                            "order": "A"
+                        },
+                        {
+                            "seq": 2,
+                            "column": "seq",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_received",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "received_at",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "PRIMARY",
+                    "type": "PRIMARY KEY",
+                    "columns": [
+                        "device_id",
+                        "seq"
+                    ]
+                }
+            ]
+        },
+        "endpoint_agent_checks": {
+            "engine": "InnoDB",
+            "collation": "utf8mb4_general_ci",
+            "columns": [
+                {
+                    "name": "device_id",
+                    "position": 1,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": "PRI"
+                },
+                {
+                    "name": "check_key",
+                    "position": 2,
+                    "type": "varchar(100)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "PRI"
+                },
+                {
+                    "name": "status",
+                    "position": 3,
+                    "type": "varchar(10)",
+                    "nullable": false,
+                    "default": "'unknown'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "detail",
+                    "position": 4,
+                    "type": "varchar(500)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "consecutive_failures",
+                    "position": 5,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "consecutive_ok",
+                    "position": 6,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "episode",
+                    "position": 7,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "alert_id",
+                    "position": 8,
+                    "type": "int(11)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "last_reported_at",
+                    "position": 9,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "last_changed_at",
+                    "position": 10,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                }
+            ],
+            "indexes": [
+                {
+                    "name": "PRIMARY",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "device_id",
+                            "sub_part": null,
+                            "order": "A"
+                        },
+                        {
+                            "seq": 2,
+                            "column": "check_key",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "PRIMARY",
+                    "type": "PRIMARY KEY",
+                    "columns": [
+                        "device_id",
+                        "check_key"
+                    ]
+                }
+            ]
+        },
+        "endpoint_agent_devices": {
+            "engine": "InnoDB",
+            "collation": "utf8mb4_general_ci",
+            "columns": [
+                {
+                    "name": "device_id",
+                    "position": 1,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "auto_increment",
+                    "charset": null,
+                    "collation": null,
+                    "key": "PRI"
+                },
+                {
+                    "name": "install_id",
+                    "position": 2,
+                    "type": "char(36)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "UNI"
+                },
+                {
+                    "name": "machine_guid",
+                    "position": 3,
+                    "type": "varchar(64)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "MUL"
+                },
+                {
+                    "name": "hostname",
+                    "position": 4,
+                    "type": "varchar(200)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "os",
+                    "position": 5,
+                    "type": "varchar(20)",
+                    "nullable": false,
+                    "default": "'windows'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "os_version",
+                    "position": 6,
+                    "type": "varchar(200)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "arch",
+                    "position": 7,
+                    "type": "varchar(10)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "serial",
+                    "position": 8,
+                    "type": "varchar(100)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "MUL"
+                },
+                {
+                    "name": "manufacturer",
+                    "position": 9,
+                    "type": "varchar(200)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "model",
+                    "position": 10,
+                    "type": "varchar(200)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "mac_addresses",
+                    "position": 11,
+                    "type": "text",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "agent_version",
+                    "position": 12,
+                    "type": "varchar(40)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "asset_id",
+                    "position": 13,
+                    "type": "int(11)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": "MUL"
+                },
+                {
+                    "name": "client_id",
+                    "position": 14,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": "MUL"
+                },
+                {
+                    "name": "location_id",
+                    "position": 15,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "ring",
+                    "position": 16,
+                    "type": "varchar(20)",
+                    "nullable": false,
+                    "default": "'stable'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "link_state",
+                    "position": 17,
+                    "type": "varchar(20)",
+                    "nullable": false,
+                    "default": "'pending_approval'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "match_reason",
+                    "position": 18,
+                    "type": "varchar(60)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "match_candidates_json",
+                    "position": 19,
+                    "type": "text",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "token_hash",
+                    "position": 20,
+                    "type": "char(64)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "MUL"
+                },
+                {
+                    "name": "token_issued_at",
+                    "position": 21,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "token_expires_at",
+                    "position": 22,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "revoked_at",
+                    "position": 23,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "revoked_reason",
+                    "position": 24,
+                    "type": "varchar(100)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "retired_at",
+                    "position": 25,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "enrolled_via_token_id",
+                    "position": 26,
+                    "type": "int(11)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "enroll_count",
+                    "position": 27,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "1",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "first_seen_at",
+                    "position": 28,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": "current_timestamp()",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "last_checkin_at",
+                    "position": 29,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "last_collected_at",
+                    "position": 30,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "last_inventory_at",
+                    "position": 31,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "last_ip",
+                    "position": 32,
+                    "type": "varchar(64)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "last_seq",
+                    "position": 33,
+                    "type": "bigint(20)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "inventory_json",
+                    "position": 34,
+                    "type": "mediumtext",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "last_metrics_json",
+                    "position": 35,
+                    "type": "text",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "logged_in_user",
+                    "position": 36,
+                    "type": "varchar(200)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "pending_reboot",
+                    "position": 37,
+                    "type": "tinyint(1)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "uptime_s",
+                    "position": 38,
+                    "type": "bigint(20)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "update_state_json",
+                    "position": 39,
+                    "type": "text",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "created_at",
+                    "position": 40,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": "current_timestamp()",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                }
+            ],
+            "indexes": [
+                {
+                    "name": "PRIMARY",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "device_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_asset",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "asset_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_client",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "client_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_machine_guid",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "machine_guid",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_serial",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "serial",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_token_hash",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "token_hash",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "uniq_install",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "install_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "PRIMARY",
+                    "type": "PRIMARY KEY",
+                    "columns": [
+                        "device_id"
+                    ]
+                },
+                {
+                    "name": "uniq_install",
+                    "type": "UNIQUE",
+                    "columns": [
+                        "install_id"
+                    ]
+                }
+            ]
+        },
+        "endpoint_agent_enroll_attempts": {
+            "engine": "InnoDB",
+            "collation": "utf8mb4_general_ci",
+            "columns": [
+                {
+                    "name": "attempt_id",
+                    "position": 1,
+                    "type": "bigint(20)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "auto_increment",
+                    "charset": null,
+                    "collation": null,
+                    "key": "PRI"
+                },
+                {
+                    "name": "ip_hash",
+                    "position": 2,
+                    "type": "char(64)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "MUL"
+                },
+                {
+                    "name": "ip_text",
+                    "position": 3,
+                    "type": "varchar(64)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "success",
+                    "position": 4,
+                    "type": "tinyint(1)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "reason",
+                    "position": 5,
+                    "type": "varchar(40)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "token_selector",
+                    "position": 6,
+                    "type": "varchar(12)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "attempted_at",
+                    "position": 7,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": "current_timestamp()",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": "MUL"
+                }
+            ],
+            "indexes": [
+                {
+                    "name": "PRIMARY",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "attempt_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_ip_time",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "ip_hash",
+                            "sub_part": null,
+                            "order": "A"
+                        },
+                        {
+                            "seq": 2,
+                            "column": "attempted_at",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_time",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "attempted_at",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "PRIMARY",
+                    "type": "PRIMARY KEY",
+                    "columns": [
+                        "attempt_id"
+                    ]
+                }
+            ]
+        },
+        "endpoint_agent_enrollment_tokens": {
+            "engine": "InnoDB",
+            "collation": "utf8mb4_general_ci",
+            "columns": [
+                {
+                    "name": "token_id",
+                    "position": 1,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "auto_increment",
+                    "charset": null,
+                    "collation": null,
+                    "key": "PRI"
+                },
+                {
+                    "name": "token_selector",
+                    "position": 2,
+                    "type": "char(12)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "UNI"
+                },
+                {
+                    "name": "token_hash",
+                    "position": 3,
+                    "type": "char(64)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "label",
+                    "position": 4,
+                    "type": "varchar(100)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "client_id",
+                    "position": 5,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "location_id",
+                    "position": 6,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "ring",
+                    "position": 7,
+                    "type": "varchar(20)",
+                    "nullable": false,
+                    "default": "'stable'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "expires_at",
+                    "position": 8,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "max_uses",
+                    "position": 9,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "1",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "use_count",
+                    "position": 10,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "revoked_at",
+                    "position": 11,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "revoked_by",
+                    "position": 12,
+                    "type": "int(11)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "last_used_at",
+                    "position": 13,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "created_by",
+                    "position": 14,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "created_at",
+                    "position": 15,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": "current_timestamp()",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                }
+            ],
+            "indexes": [
+                {
+                    "name": "PRIMARY",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "token_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "uniq_selector",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "token_selector",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "PRIMARY",
+                    "type": "PRIMARY KEY",
+                    "columns": [
+                        "token_id"
+                    ]
+                },
+                {
+                    "name": "uniq_selector",
+                    "type": "UNIQUE",
+                    "columns": [
+                        "token_selector"
+                    ]
+                }
+            ]
+        },
+        "endpoint_agent_jobs": {
+            "engine": "InnoDB",
+            "collation": "utf8mb4_general_ci",
+            "columns": [
+                {
+                    "name": "job_id",
+                    "position": 1,
+                    "type": "char(36)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "PRI"
+                },
+                {
+                    "name": "device_id",
+                    "position": 2,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": "MUL"
+                },
+                {
+                    "name": "asset_id",
+                    "position": 3,
+                    "type": "int(11)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "client_id",
+                    "position": 4,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "type",
+                    "position": 5,
+                    "type": "varchar(20)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "script",
+                    "position": 6,
+                    "type": "mediumtext",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "params_json",
+                    "position": 7,
+                    "type": "text",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "timeout_s",
+                    "position": 8,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "300",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "max_output_bytes",
+                    "position": 9,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "65536",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "destructive",
+                    "position": 10,
+                    "type": "tinyint(1)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "run_as",
+                    "position": 11,
+                    "type": "varchar(40)",
+                    "nullable": false,
+                    "default": "'SYSTEM'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "state",
+                    "position": 12,
+                    "type": "varchar(12)",
+                    "nullable": false,
+                    "default": "'queued'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "MUL"
+                },
+                {
+                    "name": "reason",
+                    "position": 13,
+                    "type": "varchar(60)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "attempt",
+                    "position": 14,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "1",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "offered_count",
+                    "position": 15,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "last_offered_at",
+                    "position": 16,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "issued_at",
+                    "position": 17,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "expires_at",
+                    "position": 18,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "started_at",
+                    "position": 19,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "finished_at",
+                    "position": 20,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "exit_code",
+                    "position": 21,
+                    "type": "int(11)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "output",
+                    "position": 22,
+                    "type": "mediumtext",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "output_truncated",
+                    "position": 23,
+                    "type": "tinyint(1)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "created_by",
+                    "position": 24,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "created_at",
+                    "position": 25,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": "current_timestamp()",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "updated_at",
+                    "position": 26,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "on update current_timestamp()",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                }
+            ],
+            "indexes": [
+                {
+                    "name": "PRIMARY",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "job_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_device_state",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "device_id",
+                            "sub_part": null,
+                            "order": "A"
+                        },
+                        {
+                            "seq": 2,
+                            "column": "state",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_state_updated",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "state",
+                            "sub_part": null,
+                            "order": "A"
+                        },
+                        {
+                            "seq": 2,
+                            "column": "updated_at",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "PRIMARY",
+                    "type": "PRIMARY KEY",
+                    "columns": [
+                        "job_id"
+                    ]
+                }
+            ]
+        },
+        "endpoint_agent_mesh_nodes": {
+            "engine": "InnoDB",
+            "collation": "utf8mb4_general_ci",
+            "columns": [
+                {
+                    "name": "device_id",
+                    "position": 1,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": "PRI"
+                },
+                {
+                    "name": "mesh_node_id",
+                    "position": 2,
+                    "type": "varchar(200)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "MUL"
+                },
+                {
+                    "name": "source",
+                    "position": 3,
+                    "type": "varchar(10)",
+                    "nullable": false,
+                    "default": "'manual'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "updated_at",
+                    "position": 4,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": "current_timestamp()",
+                    "extra": "on update current_timestamp()",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "updated_by",
+                    "position": 5,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                }
+            ],
+            "indexes": [
+                {
+                    "name": "PRIMARY",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "device_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "idx_node",
+                    "unique": false,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "mesh_node_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "PRIMARY",
+                    "type": "PRIMARY KEY",
+                    "columns": [
+                        "device_id"
+                    ]
+                }
+            ]
+        },
+        "endpoint_agent_releases": {
+            "engine": "InnoDB",
+            "collation": "utf8mb4_general_ci",
+            "columns": [
+                {
+                    "name": "release_id",
+                    "position": 1,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "auto_increment",
+                    "charset": null,
+                    "collation": null,
+                    "key": "PRI"
+                },
+                {
+                    "name": "version",
+                    "position": 2,
+                    "type": "varchar(40)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": "MUL"
+                },
+                {
+                    "name": "url",
+                    "position": 3,
+                    "type": "varchar(500)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "sha256",
+                    "position": 4,
+                    "type": "char(64)",
+                    "nullable": false,
+                    "default": null,
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "min_version",
+                    "position": 5,
+                    "type": "varchar(40)",
+                    "nullable": false,
+                    "default": "'0.0.0'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "ring",
+                    "position": 6,
+                    "type": "varchar(20)",
+                    "nullable": false,
+                    "default": "'stable'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "rollout_pct",
+                    "position": 7,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "active",
+                    "position": 8,
+                    "type": "tinyint(1)",
+                    "nullable": false,
+                    "default": "1",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "notes",
+                    "position": 9,
+                    "type": "varchar(500)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "created_by",
+                    "position": 10,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "created_at",
+                    "position": 11,
+                    "type": "datetime",
+                    "nullable": false,
+                    "default": "current_timestamp()",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "arch",
+                    "position": 12,
+                    "type": "varchar(10)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "binary_id",
+                    "position": 13,
+                    "type": "int(11)",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                }
+            ],
+            "indexes": [
+                {
+                    "name": "PRIMARY",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "release_id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                },
+                {
+                    "name": "uniq_version_ring_arch",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "version",
+                            "sub_part": null,
+                            "order": "A"
+                        },
+                        {
+                            "seq": 2,
+                            "column": "ring",
+                            "sub_part": null,
+                            "order": "A"
+                        },
+                        {
+                            "seq": 3,
+                            "column": "arch",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "PRIMARY",
+                    "type": "PRIMARY KEY",
+                    "columns": [
+                        "release_id"
+                    ]
+                },
+                {
+                    "name": "uniq_version_ring_arch",
+                    "type": "UNIQUE",
+                    "columns": [
+                        "version",
+                        "ring",
+                        "arch"
+                    ]
+                }
+            ]
+        },
+        "endpoint_agent_settings": {
+            "engine": "InnoDB",
+            "collation": "utf8mb4_general_ci",
+            "columns": [
+                {
+                    "name": "id",
+                    "position": 1,
+                    "type": "tinyint(4)",
+                    "nullable": false,
+                    "default": "1",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": "PRI"
+                },
+                {
+                    "name": "enabled",
+                    "position": 2,
+                    "type": "tinyint(1)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "service_url",
+                    "position": 3,
+                    "type": "varchar(500)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "integration_id",
+                    "position": 4,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "check_in_interval_s",
+                    "position": 5,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "300",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "collect_interval_s",
+                    "position": 6,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "60",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "offline_after_s",
+                    "position": 7,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "900",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "stale_after_s",
+                    "position": 8,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "604800",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "failure_debounce",
+                    "position": 9,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "3",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "recovery_debounce",
+                    "position": 10,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "2",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "retention_days",
+                    "position": 11,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "30",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "job_retention_days",
+                    "position": 12,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "180",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "job_output_max_bytes",
+                    "position": 13,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "65536",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "job_default_timeout_s",
+                    "position": 14,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "300",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "job_max_timeout_s",
+                    "position": 15,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "3600",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "job_expiry_s",
+                    "position": 16,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "3600",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "job_ack_timeout_s",
+                    "position": 17,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "120",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "job_max_attempts",
+                    "position": 18,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "3",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "enroll_max_ttl_h",
+                    "position": 19,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "72",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "unmatched_policy",
+                    "position": 20,
+                    "type": "varchar(20)",
+                    "nullable": false,
+                    "default": "'approval'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "checks_json",
+                    "position": 21,
+                    "type": "text",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "signing_key_id",
+                    "position": 22,
+                    "type": "varchar(32)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "signing_public_key",
+                    "position": 23,
+                    "type": "varchar(100)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "signing_private_key_enc",
+                    "position": 24,
+                    "type": "text",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "signing_key_created_at",
+                    "position": 25,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "mesh_enabled",
+                    "position": 26,
+                    "type": "tinyint(1)",
+                    "nullable": false,
+                    "default": "0",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "mesh_url",
+                    "position": 27,
+                    "type": "varchar(500)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "mesh_domain",
+                    "position": 28,
+                    "type": "varchar(100)",
+                    "nullable": false,
+                    "default": "''",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "mesh_login_key_enc",
+                    "position": 29,
+                    "type": "text",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "mesh_account_template",
+                    "position": 30,
+                    "type": "varchar(100)",
+                    "nullable": false,
+                    "default": "'rivetit-support'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "mesh_policy",
+                    "position": 31,
+                    "type": "varchar(20)",
+                    "nullable": false,
+                    "default": "'unattended'",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "mesh_token_ttl_s",
+                    "position": 32,
+                    "type": "int(11)",
+                    "nullable": false,
+                    "default": "300",
+                    "extra": "",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "coexistence_policy",
+                    "position": 33,
+                    "type": "text",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                },
+                {
+                    "name": "updated_at",
+                    "position": 34,
+                    "type": "datetime",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "on update current_timestamp()",
+                    "charset": null,
+                    "collation": null,
+                    "key": ""
+                },
+                {
+                    "name": "ca_pem",
+                    "position": 35,
+                    "type": "text",
+                    "nullable": true,
+                    "default": "NULL",
+                    "extra": "",
+                    "charset": "utf8mb4",
+                    "collation": "utf8mb4_general_ci",
+                    "key": ""
+                }
+            ],
+            "indexes": [
+                {
+                    "name": "PRIMARY",
+                    "unique": true,
+                    "type": "BTREE",
+                    "columns": [
+                        {
+                            "seq": 1,
+                            "column": "id",
+                            "sub_part": null,
+                            "order": "A"
+                        }
+                    ]
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "PRIMARY",
+                    "type": "PRIMARY KEY",
+                    "columns": [
+                        "id"
+                    ]
+                }
+            ]
+        }
+    }
+}

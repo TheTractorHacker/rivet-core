@@ -1,0 +1,188 @@
+{
+  "module": "rmm",
+  "repository": "https://github.com/TheTractorHacker/rivet-core",
+  "updated": "2026-10-18",
+  "issues": "https://github.com/TheTractorHacker/rivet-core/issues?q=label%3Armm",
+  "documents": [
+    {
+      "id": "features",
+      "title": "RMM feature list",
+      "summary": "What the RMM does and contains, by area, with the phase that delivers each feature (Phases 1, 2, 3, 4, 5, 6 and 8 are built in Core: statuses show Core)",
+      "path": "docs/rmm/FEATURES.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/FEATURES.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/FEATURES.md"
+    },
+    {
+      "id": "asset-page",
+      "title": "Asset page and fleet dashboard redesign",
+      "summary": "Gauges, graphs, checks, alerts, inventory, jobs; data sources, states, performance budget, task T10",
+      "path": "docs/rmm/ASSET_PAGE_REDESIGN.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/ASSET_PAGE_REDESIGN.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/ASSET_PAGE_REDESIGN.md"
+    },
+    {
+      "id": "asset-page-mockup",
+      "title": "Asset page mockup (interactive HTML)",
+      "summary": "Self-contained interactive mockup with fictional sample data",
+      "path": "docs/rmm/mockups/asset-page.html",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/mockups/asset-page.html",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/mockups/asset-page.html"
+    },
+    {
+      "id": "asset-page-mockup-app-style",
+      "title": "Asset page mockup in the app style (interactive HTML)",
+      "summary": "Same mockup built from the real RivetIT CSS and shell markup (Tabler, red accent, light and dark); self-contained, about 1.7 MB",
+      "path": "docs/rmm/mockups/asset-page-app-style.html",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/mockups/asset-page-app-style.html",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/mockups/asset-page-app-style.html"
+    },
+    {
+      "id": "design",
+      "title": "RMM module engineering design",
+      "summary": "Move into Core, contracts, database, wire protocol, module switch, capacity, phases",
+      "path": "docs/design/endpoint-module-extraction.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/design/endpoint-module-extraction.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/design/endpoint-module-extraction.md"
+    },
+    {
+      "id": "adr-010",
+      "title": "ADR-010: RMM module",
+      "summary": "Architecture decision record",
+      "path": "docs/architecture/ADR-010-endpoint-agent-module.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/architecture/ADR-010-endpoint-agent-module.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/architecture/ADR-010-endpoint-agent-module.md"
+    },
+    {
+      "id": "roadmap",
+      "title": "Roadmap",
+      "summary": "Project roadmap including the RMM phases",
+      "path": "ROADMAP.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/ROADMAP.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/ROADMAP.md"
+    },
+    {
+      "id": "scaling",
+      "title": "RMM scaling plan (5,000 to 10,000 devices)",
+      "summary": "Targets, load model, work items S1-S9 and the validation gate for leaving beta",
+      "path": "docs/rmm/SCALING.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/SCALING.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/SCALING.md"
+    },
+    {
+      "id": "capacity",
+      "title": "Capacity, module switch and load control",
+      "summary": "The module switch, limits and defaults, load shedding, queued ingest, the capacity panel, sizing, measurements; Phase 1 write paths; section 12: Phase 2 limits and measurements; 8.4: Phase 3 alerting cost; section 13: Phase 6 and 8 paths (file transfer, log collection)",
+      "path": "docs/rmm/CAPACITY.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/CAPACITY.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/CAPACITY.md"
+    },
+    {
+      "id": "remote-and-logs",
+      "title": "Remote tools, log collection and the optional MeshCentral agent install (at install time, or pushed to an enrolled device)",
+      "summary": "Operator guide: the service and process managers, file transfer, Mesh terminal and files, log collection and rules; the three sub-switches and their risk texts, limits, what is built and what remains; and (rc.12) installing the MeshCentral agent with the RivetIT agent: setup step by step (device group, meshid, certificate pin), node-id mapping rules, troubleshooting and what is unverified against a real MeshCentral; and (rc.16) pushing the MeshCentral agent install to an already enrolled device, one or in bulk, and removing it",
+      "path": "docs/rmm/REMOTE_AND_LOGS.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/REMOTE_AND_LOGS.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/REMOTE_AND_LOGS.md"
+    },
+    {
+      "id": "agent-build",
+      "title": "RMM endpoint agent: build, package, release and the Windows MSI template",
+      "summary": "How the Windows and Linux agent is built reproducibly, tested and released, the .deb and .rpm packages, and (rc.16) the MSI template built on Linux with msitools wixl: reproducibility, properties, upgrade, uninstall, architectures (amd64 only), and the honest limits",
+      "path": "docs/rmm/AGENT_BUILD.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/AGENT_BUILD.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/AGENT_BUILD.md"
+    },
+    {
+      "id": "msi-verify",
+      "title": "Verifying the Windows MSI on a real Windows PC",
+      "summary": "Checklist for the owner on a disposable Windows machine: exact msiexec commands, expected log lines, uninstall, and what was only parse-checked on Linux",
+      "path": "docs/rmm/MSI_VERIFY.md",
+      "status": "draft",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/MSI_VERIFY.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/MSI_VERIFY.md"
+    },
+    {
+      "id": "protocol",
+      "title": "RMM endpoint agent wire protocol",
+      "summary": "The frozen protocol: endpoints, credentials, signing, errors, installer trailer, generated constants, observed responses and examples; 3.2.2 policies and 3.2.3 Phase 3 check types and values (additive); 3.2.4 log collection offer, 3.6 remote-tool job types, 3.7 agent_transfer, 3.8 agent_logs (additive)",
+      "path": "docs/rmm/PROTOCOL.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/PROTOCOL.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/PROTOCOL.md"
+    },
+    {
+      "id": "openapi-device",
+      "title": "RMM device and technician API (OpenAPI 3.1)",
+      "summary": "Machine-readable description of the seven device endpoints and the technician REST API, including the Phase 2 policy, script library, approval, schedule and custom field routes, the Phase 3 alert, maintenance window, escalation policy and threshold routes, and the Phase 6 and 8 service, process, file transfer, Mesh, log and settings routes",
+      "path": "docs/rmm/openapi-device.yaml",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/openapi-device.yaml",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/openapi-device.yaml"
+    },
+    {
+      "id": "module",
+      "title": "RMM module page",
+      "summary": "What the module owns, the contracts and abilities an edition implements, key classes, examples that run, failure modes; Phase 2 section: policies, script library, schedules, approvals, custom fields; Phase 3 section: alerting; Phases 6 and 8 section: remote tools and log collection",
+      "path": "docs/modules/rmm.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/modules/rmm.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/modules/rmm.md"
+    },
+    {
+      "id": "patching",
+      "title": "RMM patch management (Phase 4)",
+      "summary": "Detect first, install gated: the scan on Windows and Linux, approvals, rings, rules, install windows, the restart policy, compliance and alerts, abilities, limits, safety defaults, what is not done and exactly what is proven",
+      "path": "docs/rmm/PATCHING.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/PATCHING.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/PATCHING.md"
+    },
+    {
+      "id": "software-deploy",
+      "title": "RMM software deployment and reporting (Phase 5)",
+      "summary": "The package catalog with immutable hash-pinned versions, the allowed download hosts, assignments with ring delays and two-person approval, detection, the scheduler and its safety defaults, the deployed-versus-expected report and CSV, abilities, limits, what is not done (winget, Chocolatey, scheduled and PDF reports) and exactly what is proven",
+      "path": "docs/rmm/SOFTWARE_DEPLOY.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/SOFTWARE_DEPLOY.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/SOFTWARE_DEPLOY.md"
+    },
+    {
+      "id": "change-monitor",
+      "title": "RMM change monitoring (registry, configuration files, groups, tasks, security logs)",
+      "summary": "What the agent watches and reports (Windows registry presets, local administrators, scheduled tasks, hosts file, Linux configuration files, Security log presets), the signed configuration, the watch policy that keeps credential stores out, privacy and redaction, rules and events, the timeline, scale numbers (measured row size, caps, retention), the security review and exactly what is proven (Linux) and not (Windows)",
+      "path": "docs/rmm/CHANGE_MONITOR.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/CHANGE_MONITOR.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/CHANGE_MONITOR.md"
+    },
+    {
+      "id": "starter-pack",
+      "title": "RMM starter pack",
+      "summary": "73 ready-made scripts (41 Windows PowerShell, 32 Linux bash) with risk classes and dry-run defaults, 3 check template sets and 3 policy drafts; the install, update and uninstall rules, the pack format for your own packs, the tests and what was executed",
+      "path": "docs/rmm/STARTER_PACK.md",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/STARTER_PACK.md",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/STARTER_PACK.md"
+    },
+    {
+      "id": "starter-pack-catalog",
+      "title": "RMM starter pack catalog (JSON)",
+      "summary": "The machine-readable catalog of the bundled pack: every script (without its text) with platform, risk, approval default, tags, parameters and content hash, the check template sets and the policy drafts; regenerated by scripts/build-starter-pack.php",
+      "path": "docs/rmm/starter-pack.manifest.json",
+      "status": "current",
+      "github": "https://github.com/TheTractorHacker/rivet-core/blob/main/docs/rmm/starter-pack.manifest.json",
+      "raw": "https://raw.githubusercontent.com/TheTractorHacker/rivet-core/main/docs/rmm/starter-pack.manifest.json"
+    }
+  ]
+}

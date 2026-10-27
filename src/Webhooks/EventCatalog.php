@@ -24,6 +24,7 @@ final class EventCatalog
         'workflows' => 'Workflows & lifecycle',
         'itil' => 'Problems, changes & knowledge',
         'assets' => 'Assets & network',
+        'rmm' => 'Endpoint agent (RMM)',
         'clients' => 'Clients & contacts',
         'billing' => 'Billing & invoices',
         'security' => 'Security & sign-in',
@@ -53,6 +54,60 @@ final class EventCatalog
         ['action', 'string', 'Action verb, e.g. create, update, delete'],
         ['entity_type', 'string', 'Kind of object affected'],
         ['entity_id', 'string', 'Id of the object affected'],
+    ];
+
+    /** Payload fields every `rmm.*` event carries (see {@see \RivetCore\Rmm\RmmEvent}). */
+    private const RMM_FIELDS = [
+        ['device_id', 'integer', 'Endpoint device id'],
+        ['asset_id', 'integer', 'Linked asset id (null when the device is not linked)'],
+        ['client_id', 'integer', 'Client the device belongs to'],
+        ['hostname', 'string', 'Device hostname'],
+        ['occurred_at', 'string', 'When it happened, RFC 3339 UTC'],
+    ];
+
+    /** The fields each `rmm.*` event adds to {@see RMM_FIELDS}. */
+    private const RMM_EXTRA = [
+        'rmm.device.enrolled' => [['link_state', 'string', 'linked or pending_approval'], ['os', 'string', 'windows or linux'], ['outcome', 'string', 'enrolled, re-enrolled or reinstalled']],
+        'rmm.device.offline' => [['last_checkin_at', 'string', 'Last check-in, RFC 3339 UTC']],
+        'rmm.device.clock_skew' => [['skew_s', 'integer', 'Device clock minus server clock, seconds'], ['direction', 'string', 'ahead or behind'], ['server_time', 'string', 'Server time when measured, RFC 3339 UTC']],
+        'rmm.device.online' => [['offline_since', 'string', 'When the device was reported offline, RFC 3339 UTC (null when unknown)']],
+        'rmm.check.failed' => [['check_key', 'string', 'Check key'], ['status', 'string', 'warn or fail'], ['detail', 'string', 'Check detail'], ['alert_id', 'integer', 'Alert opened'], ['episode', 'integer', 'Failure episode number']],
+        'rmm.check.recovered' => [['check_key', 'string', 'Check key'], ['alert_id', 'integer', 'Alert resolved'], ['episode', 'integer', 'Failure episode number']],
+        'rmm.job.completed' => [['job_id', 'string', 'Job id'], ['job_type', 'string', 'Job type'], ['exit_code', 'integer', 'Exit code (null when none)']],
+        'rmm.job.failed' => [['job_id', 'string', 'Job id'], ['job_type', 'string', 'Job type'], ['state', 'string', 'failed or timed_out'], ['exit_code', 'integer', 'Exit code (null when none)']],
+        'rmm.software.installed' => [['name', 'string', 'Software name'], ['version', 'string', 'Installed version'], ['publisher', 'string', 'Publisher (null when unknown)'], ['source', 'string', 'registry, registry32, appx, dpkg, rpm, snap or flatpak']],
+        'rmm.alert.opened' => [['alert_id', 'integer', 'Alert id in the edition'], ['check_key', 'string', 'Check key'], ['severity', 'string', 'warning or error'], ['episode', 'integer', 'Failure episode number'], ['message', 'string', 'Alert message'], ['group_key', 'string', 'Grouping key (client and check)']],
+        'rmm.alert.escalated' => [['alert_id', 'integer', 'Alert id'], ['check_key', 'string', 'Check key'], ['severity', 'string', 'warning or error'], ['reason', 'string', 'step, repeat or severity'], ['step', 'integer', 'Escalation step number (0 when the severity rose)'], ['policy_id', 'integer', 'Escalation policy (null when none)']],
+        'rmm.alert.acknowledged' => [['alert_id', 'integer', 'Alert id'], ['check_key', 'string', 'Check key'], ['user_id', 'integer', 'User who acknowledged it']],
+        'rmm.alert.resolved' => [['alert_id', 'integer', 'Alert id'], ['check_key', 'string', 'Check key'], ['reason', 'string', 'recovered, manual or device_retired'], ['user_id', 'integer', 'User who resolved it (null unless manual)']],
+        'rmm.maintenance.started' => [['window_id', 'integer', 'Maintenance window id'], ['name', 'string', 'Window name'], ['mode', 'string', 'mute or suppress'], ['scope_type', 'string', 'all, client, site, group, tag or device'], ['scope_id', 'integer', 'Id of the scope object (0 for all)'], ['ends_at', 'string', 'When this opening ends, RFC 3339 UTC']],
+        'rmm.maintenance.ended' => [['window_id', 'integer', 'Maintenance window id'], ['name', 'string', 'Window name'], ['mode', 'string', 'mute or suppress'], ['scope_type', 'string', 'all, client, site, group, tag or device'], ['scope_id', 'integer', 'Id of the scope object (0 for all)']],
+        'rmm.file.transferred' => [['transfer_id', 'string', 'Transfer id'], ['direction', 'string', 'download (device to server) or upload (server to device)'], ['path', 'string', 'Path on the device'], ['state', 'string', 'complete, delivered or failed'], ['size_bytes', 'integer', 'Bytes transferred'], ['sha256', 'string', 'SHA-256 of the file (null when it failed)']],
+        'rmm.starter.installed' => [['action', 'string', 'install or uninstall'], ['pack_id', 'string', 'Starter pack id (comma separated when several)'], ['added', 'integer', 'Items added'], ['updated', 'integer', 'Items updated'], ['staged', 'integer', 'Updates parked for review next to an edited script'], ['removed', 'integer', 'Scripts retired or policies deleted'], ['skipped', 'integer', 'Items skipped or blocked'], ['user_id', 'integer', 'Administrator who ran it']],
+        'rmm.log.rule_matched' => [['rule_id', 'integer', 'Log rule id'], ['rule_name', 'string', 'Log rule name'], ['match_count', 'integer', 'Matching log entries in the batch or window'], ['sample', 'string', 'First matching message (at most 200 characters)'], ['alert_check_key', 'string', 'Check key of the alert the rule drives']],
+        'rmm.mesh.agent_installed' => [['version', 'string', 'Mesh agent version (null when unknown)'], ['node_id', 'string', 'MeshCentral node id (null when not yet known)']],
+        'rmm.mesh.node_conflict' => [['node_id', 'string', 'MeshCentral node id the device reported'], ['other_device_id', 'integer', 'Device the node is already mapped to']],
+        'rmm.software.removed' => [['name', 'string', 'Software name'], ['version', 'string', 'Version that was installed'], ['publisher', 'string', 'Publisher (null when unknown)'], ['source', 'string', 'registry, registry32, appx, dpkg, rpm, snap or flatpak']],
+        'rmm.policy.assigned' => [['policy_id', 'integer', 'Policy id'], ['policy_name', 'string', 'Policy name'], ['scope_type', 'string', 'global, client, site, group, tag or device'], ['scope_id', 'integer', 'Id of the scope (0 for global)'], ['action', 'string', 'assigned or unassigned']],
+        'rmm.script.run' => [['script_id', 'integer', 'Library script id'], ['script_name', 'string', 'Library script name'], ['script_version', 'integer', 'Script version that was queued'], ['job_id', 'string', 'Job id'], ['origin', 'string', 'manual, schedule or approval']],
+        'rmm.approval.requested' => [['approval_id', 'integer', 'Approval id'], ['kind', 'string', 'run or schedule'], ['summary', 'string', 'What is to be run, on how many devices'], ['device_count', 'integer', 'Devices the request reaches'], ['requested_by', 'integer', 'User who asked']],
+        'rmm.patch.scan_completed' => [['manager', 'string', 'wua, apt, dnf, yum or zypper'], ['scan_state', 'string', 'ok or partial'], ['total', 'integer', 'Updates the scan found'], ['security', 'integer', 'Security and critical updates among them'], ['reboot_pending', 'boolean', 'The device is waiting for a restart'], ['new', 'integer', 'Updates not seen on this device before']],
+        'rmm.patch.approved' => [['update_id', 'string', 'Update id (Windows Update id or package name)'], ['title', 'string', 'Update title'], ['kind', 'string', 'critical, security, important, optional, driver or other'], ['source', 'string', 'manual or rule:<id>'], ['devices', 'integer', 'Device rows approved'], ['approved_by', 'integer', 'User who approved (null for a rule)']],
+        'rmm.patch.install_started' => [['job_id', 'string', 'Install job id'], ['mode', 'string', 'dry_run or install'], ['update_count', 'integer', 'Updates in the job'], ['source', 'string', 'manual or scheduler']],
+        'rmm.patch.install_finished' => [['job_id', 'string', 'Install job id'], ['mode', 'string', 'dry_run or install'], ['installed', 'integer', 'Updates installed (or that would be, in a dry run)'], ['skipped', 'integer', 'Updates skipped or no longer applicable'], ['reboot_required', 'boolean', 'A restart is needed to finish']],
+        'rmm.patch.install_failed' => [['job_id', 'string', 'Install job id'], ['mode', 'string', 'dry_run or install'], ['failed', 'integer', 'Updates that failed'], ['installed', 'integer', 'Updates that did install'], ['reason', 'string', 'Result code of the first failure']],
+        'rmm.deploy.started' => [['job_id', 'string', 'Job id'], ['package', 'string', 'Package name'], ['action', 'string', 'install or uninstall'], ['mode', 'string', 'dry_run or run'], ['source', 'string', 'manual or scheduler']],
+        'rmm.deploy.finished' => [['job_id', 'string', 'Job id'], ['package', 'string', 'Package name'], ['action', 'string', 'install or uninstall'], ['mode', 'string', 'dry_run or run'], ['result', 'string', 'installed, uninstalled, already_installed, not_installed, needs_reboot, would_install or would_uninstall'], ['version', 'string', 'Version found on the device after the job (may be empty)'], ['reboot_required', 'boolean', 'A restart is needed to finish']],
+        'rmm.deploy.failed' => [['job_id', 'string', 'Job id'], ['package', 'string', 'Package name'], ['action', 'string', 'install or uninstall'], ['mode', 'string', 'dry_run or run'], ['result', 'string', 'failed, hash_mismatch, download_failed, not_found, locked or verify_failed'], ['code', 'string', 'Short reason code']],
+        'rmm.change.detected' => [['kind', 'string', 'registry, file, group or task'], ['watch', 'string', 'Preset or custom watch id'], ['change', 'string', 'added, modified or removed'], ['target', 'string', 'Registry key, file path, group:<name> or scheduled-tasks'], ['item', 'string', 'Value name, group member or task path'], ['old_value', 'string', 'Previous value (cut, secrets masked)'], ['new_value', 'string', 'New value (cut, secrets masked)'], ['summary', 'string', 'For a file, the lines added and removed'], ['actor', 'string', 'The user Windows recorded for the change (blank when unknown)'], ['process', 'string', 'The program Windows recorded for the change (blank when unknown)']],
+        'rmm.change.rule_matched' => [['rule_id', 'integer', 'Change rule id'], ['rule_name', 'string', 'Change rule name'], ['match_count', 'integer', 'Matching changes in the batch or window'], ['watch', 'string', 'Watch id of the first match'], ['target', 'string', 'Target of the first match'], ['item', 'string', 'Item of the first match'], ['change', 'string', 'added, modified or removed'], ['sample', 'string', 'The first match in words (at most 200 characters)'], ['alert_check_key', 'string', 'Check key of the alert the rule drives']],
+        'rmm.hypervisor.vm_down' => [['vm_key', 'string', 'VM key (qemu/100, or the Hyper-V VM id)'], ['vm_name', 'string', 'VM name'], ['vm_type', 'string', 'qemu, lxc or hyperv'], ['host_device_id', 'integer', 'Device id of the hypervisor host'], ['from_state', 'string', 'Previous state'], ['to_state', 'string', 'New state'], ['node', 'string', 'Cluster node or host name'], ['alert_check_key', 'string', 'Check key of the alert']],
+        'rmm.hypervisor.backup_failed' => [['vm_key', 'string', 'VM key'], ['vm_name', 'string', 'VM name'], ['reason', 'string', 'failed, warning or stale'], ['last_backup_at', 'string', 'Last backup, RFC 3339 UTC (null when none)'], ['last_backup_result', 'string', 'ok, warning or failed (null when unknown)'], ['age_days', 'integer', 'Age of the last backup in days (null when none)'], ['threshold_days', 'integer', 'The hypervisor_backup_days limit'], ['alert_check_key', 'string', 'Check key of the alert']],
+        'rmm.hypervisor.snapshot_old' => [['vm_key', 'string', 'VM key'], ['vm_name', 'string', 'VM name'], ['snapshot_count', 'integer', 'Snapshots the VM has'], ['oldest_snapshot_at', 'string', 'Oldest snapshot, RFC 3339 UTC'], ['age_days', 'integer', 'Age of the oldest snapshot in days'], ['threshold_days', 'integer', 'The hypervisor_snapshot_days limit'], ['alert_check_key', 'string', 'Check key of the alert']],
+        'rmm.hypervisor.storage_low' => [['storage', 'string', 'Storage or pool name'], ['type', 'string', 'Storage type'], ['used_pct', 'integer', 'Percent used'], ['level', 'string', 'warn or fail'], ['total_bytes', 'integer', 'Size in bytes'], ['used_bytes', 'integer', 'Used bytes'], ['alert_check_key', 'string', 'Check key of the alert']],
+        'rmm.hypervisor.pool_degraded' => [['storage', 'string', 'Pool, Ceph or storage name'], ['type', 'string', 'zfs_pool, ceph or a Proxmox storage type'], ['health', 'string', 'warn or error'], ['alert_check_key', 'string', 'Check key of the alert']],
+        'rmm.hypervisor.cluster_quorum_lost' => [['cluster', 'string', 'Cluster name'], ['platform', 'string', 'proxmox or hyperv'], ['nodes_online', 'integer', 'Nodes online'], ['nodes_total', 'integer', 'Nodes in the cluster'], ['alert_check_key', 'string', 'Check key of the alert']],
+        'rmm.approval.decided' => [['approval_id', 'integer', 'Approval id'], ['kind', 'string', 'run or schedule'], ['state', 'string', 'approved, rejected, cancelled or expired'], ['decided_by', 'integer', 'User who decided (null when it lapsed)']],
     ];
 
     /** @var list<EventDefinition>|null */
@@ -249,7 +304,8 @@ final class EventCatalog
         $out = [];
         foreach (self::rows() as [$group, $id, $label, $desc, $sev, $fields, $tags, $since]) {
             $pf = [];
-            foreach ($fields === 'ticket' ? self::TICKET_FIELDS : ($fields === 'audit' ? self::AUDIT_FIELDS : []) as [$p, $ty, $d]) {
+            $shape = $fields === 'ticket' ? self::TICKET_FIELDS : ($fields === 'audit' ? self::AUDIT_FIELDS : ($fields === 'rmm' ? array_merge(self::RMM_FIELDS, self::RMM_EXTRA[$id] ?? []) : []));
+            foreach ($shape as [$p, $ty, $d]) {
                 $pf[] = ['path' => $p, 'type' => $ty, 'description' => $d];
             }
             $out[] = new EventDefinition($id, $group, self::GROUPS[$group], $label, $desc, $sev, $pf, $since, $tags === '' ? [] : explode(',', $tags));
@@ -312,6 +368,48 @@ final class EventCatalog
             ['assets', 'asset.created', 'Asset created', 'A new asset was added to the inventory.', 'info', 'audit', 'device,inventory,cmdb', $p],
             ['assets', 'asset.retired', 'Asset retired', 'An asset was archived or retired.', 'info', 'audit', 'decommission,device,inventory', $p],
             ['assets', 'asset.warranty_expiring', 'Asset warranty expiring', 'An asset warranty is about to expire.', 'warning', 'audit', 'renewal,expiry,device', $p],
+
+            ['rmm', 'rmm.device.enrolled', 'Device enrolled', 'An endpoint agent enrolled (or re-enrolled) a device; it may still wait for approval.', 'info', 'rmm', 'agent,endpoint,rmm,onboarding,install', null],
+            ['rmm', 'rmm.device.offline', 'Device offline', 'A device stopped checking in for longer than the offline threshold.', 'warning', 'rmm', 'agent,endpoint,rmm,down,unreachable,heartbeat', null],
+            ['rmm', 'rmm.device.online', 'Device back online', 'A device that was reported offline checked in again.', 'info', 'rmm', 'agent,endpoint,rmm,recovered,up', null],
+            ['rmm', 'rmm.check.failed', 'Device check failed', 'A device check stayed failing or warning long enough to open an alert.', 'warning', 'rmm', 'agent,endpoint,rmm,monitoring,alert,disk,service', null],
+            ['rmm', 'rmm.check.recovered', 'Device check recovered', 'A device check that had an open alert is healthy again.', 'info', 'rmm', 'agent,endpoint,rmm,monitoring,alert,resolved', null],
+            ['rmm', 'rmm.job.completed', 'Device job completed', 'A job ran to completion on a device.', 'info', 'rmm', 'agent,endpoint,rmm,script,reboot,collect', null],
+            ['rmm', 'rmm.job.failed', 'Device job failed', 'A job failed or timed out on a device.', 'warning', 'rmm', 'agent,endpoint,rmm,script,error,timeout', null],
+            ['rmm', 'rmm.software.installed', 'Software installed', 'New software appeared on a device (the first report of a device is a baseline and raises no event).', 'info', 'rmm', 'agent,endpoint,rmm,inventory,application,package', null],
+            ['rmm', 'rmm.policy.assigned', 'Policy assigned', 'A monitoring policy was assigned to, or removed from, a client, site, group, tag or device (not about one device: device_id is 0).', 'info', 'rmm', 'agent,endpoint,rmm,policy,configuration,assignment', null],
+            ['rmm', 'rmm.script.run', 'Library script queued', 'A script from the RMM script library was queued on a device (manually, by a schedule or after an approval).', 'info', 'rmm', 'agent,endpoint,rmm,script,automation,schedule', null],
+            ['rmm', 'rmm.approval.requested', 'Approval requested', 'A script run or schedule is waiting for a second person to approve it (not about one device: device_id is 0).', 'warning', 'rmm', 'agent,endpoint,rmm,approval,script,bulk', null],
+            ['rmm', 'rmm.approval.decided', 'Approval decided', 'A script run or schedule was approved, rejected, cancelled or lapsed (not about one device: device_id is 0).', 'info', 'rmm', 'agent,endpoint,rmm,approval,script,bulk', null],
+            ['rmm', 'rmm.alert.opened', 'Device alert opened', 'An alert episode opened for a device check (after debounce, maintenance and storm-control rules).', 'warning', 'rmm', 'agent,endpoint,rmm,alert,monitoring,threshold', null],
+            ['rmm', 'rmm.alert.escalated', 'Device alert escalated', 'An open alert reached an escalation step, was repeated, or became more severe.', 'warning', 'rmm', 'agent,endpoint,rmm,alert,escalation,oncall,notify', null],
+            ['rmm', 'rmm.alert.acknowledged', 'Device alert acknowledged', 'A technician acknowledged an open device alert, which pauses its escalation.', 'info', 'rmm', 'agent,endpoint,rmm,alert,acknowledge,ack', null],
+            ['rmm', 'rmm.alert.resolved', 'Device alert resolved', 'A device alert was resolved: the check recovered, a technician closed it, or the device was retired.', 'info', 'rmm', 'agent,endpoint,rmm,alert,resolved,recovered', null],
+            ['rmm', 'rmm.maintenance.started', 'Maintenance window started', 'A maintenance window opened; matching alerts are muted or checks suppressed until it ends.', 'info', 'rmm', 'agent,endpoint,rmm,maintenance,window,mute,suppress', null],
+            ['rmm', 'rmm.maintenance.ended', 'Maintenance window ended', 'A maintenance window closed and alerting for its scope is back to normal.', 'info', 'rmm', 'agent,endpoint,rmm,maintenance,window', null],
+            ['rmm', 'rmm.file.transferred', 'File transferred', 'A file was copied from a device to the server, or sent to a device, and its checksum was verified (or the transfer failed).', 'warning', 'rmm', 'agent,endpoint,rmm,file,transfer,download,upload', null],
+            ['rmm', 'rmm.log.rule_matched', 'Log rule matched', 'A log rule matched entries collected from a device and raised or kept an alert.', 'warning', 'rmm', 'agent,endpoint,rmm,log,eventlog,syslog,journal,alert', null],
+            ['rmm', 'rmm.starter.installed', 'Starter pack changed', 'Starter pack scripts or policy drafts were installed, updated, parked for review or removed (not about one device: device_id is 0).', 'info', 'rmm', 'agent,endpoint,rmm,starter,script,policy,library', null],
+            ['rmm', 'rmm.mesh.agent_installed', 'Mesh agent installed', 'The MeshCentral agent was installed on a device together with the RivetIT agent (or found there).', 'info', 'rmm', 'agent,endpoint,rmm,mesh,meshcentral,remote', null],
+            ['rmm', 'rmm.mesh.node_conflict', 'Mesh node conflict', 'A device reported a MeshCentral node id that is already mapped to another live device, so it was not mapped.', 'warning', 'rmm', 'agent,endpoint,rmm,mesh,meshcentral,conflict', null],
+            ['rmm', 'rmm.patch.scan_completed', 'Patch scan completed', 'A device reported which updates it is missing.', 'info', 'rmm', 'agent,endpoint,rmm,patch,update,windows update,apt,dnf', null],
+            ['rmm', 'rmm.patch.approved', 'Updates approved', 'Updates were approved for installation by a person or an approval rule.', 'info', 'rmm', 'agent,endpoint,rmm,patch,update,approval', null],
+            ['rmm', 'rmm.patch.install_started', 'Patch install queued', 'An installation (or a dry run) of approved updates was queued for a device.', 'info', 'rmm', 'agent,endpoint,rmm,patch,update,install', null],
+            ['rmm', 'rmm.patch.install_finished', 'Patch install finished', 'An installation of updates finished on a device.', 'info', 'rmm', 'agent,endpoint,rmm,patch,update,install', null],
+            ['rmm', 'rmm.patch.install_failed', 'Patch install failed', 'An installation of updates failed on a device, in whole or in part.', 'warning', 'rmm', 'agent,endpoint,rmm,patch,update,install,failed', null],
+            ['rmm', 'rmm.deploy.started', 'Software job queued', 'An installation or removal of a package (or a dry run) was queued for a device.', 'info', 'rmm', 'agent,endpoint,rmm,software,deploy,package,install,uninstall', null],
+            ['rmm', 'rmm.deploy.finished', 'Software job finished', 'A software installation or removal finished on a device.', 'info', 'rmm', 'agent,endpoint,rmm,software,deploy,package,install,uninstall', null],
+            ['rmm', 'rmm.deploy.failed', 'Software job failed', 'A software installation or removal failed on a device.', 'warning', 'rmm', 'agent,endpoint,rmm,software,deploy,package,install,uninstall,failed', null],
+            ['rmm', 'rmm.device.clock_skew', 'Device clock is wrong', 'A device clock differs from the server clock by more than two minutes (at most once a day per device). Check the PC time zone and time sync.', 'warning', 'rmm', 'agent,endpoint,rmm,device,clock,time,timezone,skew', null],
+            ['rmm', 'rmm.hypervisor.vm_down', 'Virtual machine stopped', 'A VM that was running on a Proxmox VE or Hyper-V host is no longer running.', 'warning', 'rmm', 'agent,endpoint,rmm,hypervisor,proxmox,hyperv,vm', null],
+            ['rmm', 'rmm.hypervisor.backup_failed', 'VM backup failed or missing', 'A VM backup failed, finished with warnings, or the last one is older than the configured number of days.', 'warning', 'rmm', 'agent,endpoint,rmm,hypervisor,proxmox,hyperv,vm,backup', null],
+            ['rmm', 'rmm.hypervisor.snapshot_old', 'Old VM snapshot', 'A VM has a snapshot older than the configured number of days.', 'warning', 'rmm', 'agent,endpoint,rmm,hypervisor,proxmox,hyperv,vm,snapshot', null],
+            ['rmm', 'rmm.hypervisor.storage_low', 'Hypervisor storage is filling up', 'A hypervisor storage or pool is above the warning or critical percentage.', 'warning', 'rmm', 'agent,endpoint,rmm,hypervisor,proxmox,hyperv,storage,disk', null],
+            ['rmm', 'rmm.hypervisor.pool_degraded', 'ZFS pool, Ceph or storage degraded', 'A ZFS pool or the Ceph cluster is degraded or faulted, or a Proxmox storage is unavailable.', 'critical', 'rmm', 'agent,endpoint,rmm,hypervisor,proxmox,zfs,ceph,storage', null],
+            ['rmm', 'rmm.hypervisor.cluster_quorum_lost', 'Cluster lost quorum', 'A Proxmox VE or Hyper-V failover cluster lost quorum as seen by the reporting host.', 'critical', 'rmm', 'agent,endpoint,rmm,hypervisor,proxmox,hyperv,cluster,quorum', null],
+            ['rmm', 'rmm.change.detected', 'Change detected', 'A registry value, configuration file, local group member or scheduled task changed on a device (change monitoring).', 'info', 'rmm', 'agent,endpoint,rmm,change,registry,config,file,group,task,audit', null],
+            ['rmm', 'rmm.change.rule_matched', 'Change rule matched', 'A change rule matched recorded changes of a device and raised or kept an alert.', 'warning', 'rmm', 'agent,endpoint,rmm,change,registry,config,alert', null],
+            ['rmm', 'rmm.software.removed', 'Software removed', 'Software disappeared from a device.', 'info', 'rmm', 'agent,endpoint,rmm,inventory,application,uninstall,package', null],
 
             ['clients', 'client.created', 'Client created', 'A new client was added.', 'info', 'audit', 'customer,organization,company', $p],
             ['clients', 'client.archived', 'Client archived', 'A client was archived.', 'warning', 'audit', 'customer,offboard,delete', $p],

@@ -1,0 +1,24 @@
+{
+  "id": "lin-cert-expiry",
+  "name": "Certificate expiry check (Linux)",
+  "description": "Shows subject, issuer and days left for a PEM certificate file. Refuses files containing private keys.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "certificates",
+    "security"
+  ],
+  "timeout_s": 30,
+  "params": [
+    {
+      "name": "cert_file",
+      "type": "string",
+      "label": "Certificate file",
+      "description": "Absolute path of a PEM or CRT certificate file.",
+      "max_length": 250,
+      "required": true
+    }
+  ],
+  "output": "Subject, issuer, expiry date and days left. Exit 0; 2 invalid path or private key file; NOT AVAILABLE without openssl."
+}

@@ -117,7 +117,10 @@ final class JobWorker
         return $out;
     }
 
-    /** @param array<string,mixed> $job @param array<string,int> $out */
+    /**
+     * @param array<string,mixed> $job
+     * @param array<string,int> $out
+     */
     private function runOne(array $job, array &$out, float $runDeadline): void
     {
         $id = (int) $job['job_id'];

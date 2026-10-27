@@ -1,0 +1,15 @@
+{
+  "id": "lin-time-sync",
+  "name": "Time synchronization (Linux)",
+  "description": "Reports clock sync state using timedatectl, chrony, ntpq or systemd-timesyncd.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "time",
+    "diagnostics"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "Prints 'SYNCHRONIZED: yes/no/unknown' plus tool output. Exit 0."
+}

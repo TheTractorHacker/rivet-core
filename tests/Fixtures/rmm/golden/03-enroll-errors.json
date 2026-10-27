@@ -1,0 +1,921 @@
+{
+    "scenario": "enrollment: transport, body, token and device validation errors",
+    "format": 1,
+    "steps": [
+        {
+            "id": "get-not-allowed",
+            "request": {
+                "method": "GET",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": []
+            },
+            "response": {
+                "status": 405,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "allow: POST",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Use POST.",
+                    "code": "method_not_allowed"
+                }
+            }
+        },
+        {
+            "id": "put-not-allowed",
+            "request": {
+                "method": "PUT",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": []
+            },
+            "response": {
+                "status": 405,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "allow: POST",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Use POST.",
+                    "code": "method_not_allowed"
+                }
+            }
+        },
+        {
+            "id": "body-not-json",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": [],
+                "body": {
+                    "raw": "not json"
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "A JSON object body is required.",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "body-json-list",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json_text": "[]"
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "enrollment_token and device are required",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "body-too-large",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "generated": {
+                        "bytes": 20000,
+                        "fill": "x"
+                    }
+                }
+            },
+            "response": {
+                "status": 413,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Request body too large.",
+                    "code": "too_large"
+                }
+            }
+        },
+        {
+            "id": "missing-device",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111"
+                    }
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "enrollment_token and device are required",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "token-garbage",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "garbage",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000901",
+                            "machine_guid": "470b150b658bfaec",
+                            "hostname": "GOLD-9E1D",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-E1",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-D0-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 401,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Invalid enrollment token.",
+                    "code": "invalid_token"
+                }
+            }
+        },
+        {
+            "id": "token-unknown-selector",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.cccccccccccc.dddddddddddddddddddddddddddddddddddddddd",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000901",
+                            "machine_guid": "470b150b658bfaec",
+                            "hostname": "GOLD-9E1D",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-E1",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-D0-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 401,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Invalid enrollment token.",
+                    "code": "invalid_token"
+                }
+            }
+        },
+        {
+            "id": "token-wrong-secret",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000901",
+                            "machine_guid": "470b150b658bfaec",
+                            "hostname": "GOLD-9E1D",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-E1",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-D0-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 401,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "Invalid enrollment token.",
+                    "code": "invalid_token"
+                }
+            }
+        },
+        {
+            "id": "token-expired",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a3a3a3a3a303.3333333333333333333333333333333333333333",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000901",
+                            "machine_guid": "470b150b658bfaec",
+                            "hostname": "GOLD-9E1D",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-E1",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-D0-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 401,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "This enrollment token has expired.",
+                    "code": "expired"
+                }
+            }
+        },
+        {
+            "id": "token-revoked",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a4a4a4a4a404.4444444444444444444444444444444444444444",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000901",
+                            "machine_guid": "470b150b658bfaec",
+                            "hostname": "GOLD-9E1D",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-E1",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-D0-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 401,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "This enrollment token was revoked.",
+                    "code": "revoked"
+                }
+            }
+        },
+        {
+            "id": "token-exhausted",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a5a5a5a5a505.5555555555555555555555555555555555555555",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000901",
+                            "machine_guid": "470b150b658bfaec",
+                            "hostname": "GOLD-9E1D",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-E1",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-D0-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 403,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "This enrollment token has no uses left.",
+                    "code": "forbidden"
+                }
+            }
+        },
+        {
+            "id": "hook:clear_attempts",
+            "hook": "clear_attempts",
+            "args": []
+        },
+        {
+            "id": "device-invalid-install_id",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "machine_guid": "8aad0279bf031070",
+                            "hostname": "GOLD-2F5B",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-E2",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-3B-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "device.install_id is invalid",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "device-invalid-machine_guid",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000902",
+                            "machine_guid": "not-hex!",
+                            "hostname": "GOLD-2F5B",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-E2",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-3B-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "device.machine_guid is invalid",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "device-invalid-arch",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000902",
+                            "machine_guid": "8aad0279bf031070",
+                            "hostname": "GOLD-2F5B",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "sparc",
+                            "serial": "GOLD-E2",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-3B-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "device.arch is invalid",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "device-invalid-os",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000902",
+                            "machine_guid": "8aad0279bf031070",
+                            "hostname": "GOLD-2F5B",
+                            "os": "linux",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-E2",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-3B-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "device.os is invalid",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "device-invalid-hostname",
+            "request": {
+                "method": "POST",
+                "path": "/api/v1/agent_enroll",
+                "base": "main",
+                "headers": {
+                    "content-type": "application/json"
+                },
+                "body": {
+                    "json": {
+                        "enrollment_token": "rvte1.a1a1a1a1a101.1111111111111111111111111111111111111111",
+                        "device": {
+                            "install_id": "00000000-0000-4000-8000-000000000902",
+                            "machine_guid": "8aad0279bf031070",
+                            "hostname": "",
+                            "os": "windows",
+                            "os_version": "Windows 11 23H2",
+                            "arch": "amd64",
+                            "serial": "GOLD-E2",
+                            "manufacturer": "Dell",
+                            "model": "Latitude 7440",
+                            "mac_addresses": [
+                                "AA-BB-CC-3B-00-01"
+                            ],
+                            "agent_version": "1.0.0"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "status": 422,
+                "headers": [
+                    "access-control-allow-headers: Authorization, Content-Type, X-Biometric, X-Api-Key",
+                    "access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS",
+                    "access-control-allow-origin: *",
+                    "cache-control: no-store",
+                    "connection: close",
+                    "content-type: application/json",
+                    "date: <DATE>",
+                    "host: <HOST>",
+                    "x-powered-by: PHP/<VERSION>"
+                ],
+                "body": {
+                    "error": "device.hostname is invalid",
+                    "code": "invalid"
+                }
+            }
+        },
+        {
+            "id": "hook:clear_attempts",
+            "hook": "clear_attempts",
+            "args": []
+        }
+    ],
+    "snapshots": {
+        "attempts-after-errors": {
+            "endpoint_agent_enroll_attempts_by_reason": [
+                {
+                    "reason": "exhausted",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "expired",
+                    "success": 0,
+                    "n": 1
+                },
+                {
+                    "reason": "invalid_token",
+                    "success": 0,
+                    "n": 3
+                },
+                {
+                    "reason": "malformed",
+                    "success": 0,
+                    "n": 2
+                },
+                {
+                    "reason": "revoked",
+                    "success": 0,
+                    "n": 1
+                }
+            ]
+        },
+        "attempts-after-invalid-device": {
+            "endpoint_agent_enroll_attempts_by_reason": [
+                {
+                    "reason": "invalid_device",
+                    "success": 0,
+                    "n": 5
+                }
+            ]
+        },
+        "tokens-use-count-unchanged-by-errors": {
+            "endpoint_agent_enrollment_tokens": [
+                {
+                    "token_id": "<TOKENROW#1>",
+                    "token_selector": "a1a1a1a1a101",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-c1",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#2>",
+                    "token_selector": "a2a2a2a2a202",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-c2",
+                    "client_id": 2,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#3>",
+                    "token_selector": "a3a3a3a3a303",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-expired",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 5,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#4>",
+                    "token_selector": "a4a4a4a4a404",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-revoked",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 5,
+                    "use_count": 0,
+                    "revoked_at": "<DT>",
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#5>",
+                    "token_selector": "a5a5a5a5a505",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-exhausted",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 1,
+                    "use_count": 1,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#6>",
+                    "token_selector": "a6a6a6a6a606",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-inst",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#7>",
+                    "token_selector": "a7a7a7a7a707",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-inst2",
+                    "client_id": 2,
+                    "location_id": 0,
+                    "ring": "pilot",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                },
+                {
+                    "token_id": "<TOKENROW#8>",
+                    "token_selector": "a8a8a8a8a808",
+                    "token_hash": "<TOKEN_HASH>",
+                    "label": "golden-ratelimit",
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "expires_at": "<DT>",
+                    "max_uses": 500,
+                    "use_count": 0,
+                    "revoked_at": null,
+                    "revoked_by": null,
+                    "last_used_at": null,
+                    "created_by": "<USER#1>",
+                    "created_at": "<DT>"
+                }
+            ]
+        }
+    }
+}

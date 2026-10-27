@@ -1,0 +1,38 @@
+{
+  "id": "win-cert-expiring",
+  "name": "Expiring certificates (Windows)",
+  "description": "Lists certificates in a LocalMachine store that are expired or expire within a number of days.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "certificates",
+    "security",
+    "expiry"
+  ],
+  "timeout_s": 60,
+  "params": [
+    {
+      "name": "days",
+      "type": "int",
+      "label": "Days ahead",
+      "description": "Report certificates expiring within this many days (expired ones are always included).",
+      "default": 30,
+      "min": 1,
+      "max": 3650
+    },
+    {
+      "name": "store",
+      "type": "choice",
+      "label": "Certificate store",
+      "description": "LocalMachine store to inspect.",
+      "default": "My",
+      "choices": [
+        "My",
+        "WebHosting",
+        "Remote Desktop"
+      ]
+    }
+  ],
+  "output": "Count and table of expired or expiring certificates (status, days left, subject, thumbprint). Exit 0; exit 2 on invalid parameters."
+}

@@ -29,7 +29,10 @@ final class Authentication
         'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'upgrade', 'expect', 'http2-settings',
     ];
 
-    /** @param array<string,mixed> $config @return array<string,string> */
+    /**
+     * @param array<string,mixed> $config
+     * @return array<string,string>
+     */
     public static function headers(array $config): array
     {
         $errors = self::validate($config);
@@ -130,7 +133,7 @@ final class Authentication
     /** RFC 7230 token. */
     public static function isValidHeaderName(string $name): bool
     {
-        return $name !== '' && preg_match('/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+$/', $name) === 1;
+        return $name !== '' && preg_match('/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+\z/D', $name) === 1;
     }
 
     /** Framing / hop-by-hop headers and anything that looks like one of our own signature or timestamp headers. */

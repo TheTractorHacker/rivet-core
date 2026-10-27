@@ -1,0 +1,252 @@
+{
+    "schema": 1,
+    "core_version": "1.0.0-rc.46",
+    "files": {
+        "css/file_upload.css": {
+            "sha256": "0643d5ce607c9634d8f74bc908136a037b03e5b96ef922f284eaa65e156ff9a7",
+            "bytes": 2081,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow.bind-tabler.css": {
+            "sha256": "1cd17cfec03663fb6d597b7de3db1576c589dee92aa0561a8100dd43c4b45485",
+            "bytes": 12154,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow.compat-color.css": {
+            "sha256": "2f73fbd2d89ead2f5ce6617cd91a57d03f885d19411132cfec627f31e8e5df6e",
+            "bytes": 10062,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow.shim-adminlte.css": {
+            "sha256": "b47eb8c81942c9b791875eea141ab7078a26a85de6a1f4f61ad285cccefa4bad",
+            "bytes": 18769,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow.shim-bs4.css": {
+            "sha256": "48c0fcb9f10bce08798320e6fc8150a90dc033c29240e0c591044f8ad5352c4b",
+            "bytes": 13759,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_bs5_bridge.css": {
+            "sha256": "b4d2c95980c1dff99ead8e9ffe07d7e5fa7f6b01f64114f7a060954ed2ebd620",
+            "bytes": 25860,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_custom.css": {
+            "sha256": "945ec7f6062813fea4418e7f404c934126c85a4770b40d8339441394a616aece",
+            "bytes": 164003,
+            "origin": "rivetit-split"
+        },
+        "css/itflow_design.css": {
+            "sha256": "af671f104466eefa46e528437bf9fc360237b058ee84d75ec3ecef06f53a9d6b",
+            "bytes": 61835,
+            "origin": "rivetit-split"
+        },
+        "css/itflow_metrics.css": {
+            "sha256": "6f877a8093e58902c0f16701bbf82448fc6e750e15a3cbcf99ee004ace1dee02",
+            "bytes": 8393,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_motion.css": {
+            "sha256": "9c9e612c4598e4da452d5344f2411f0235800b47e3f38b4c36981c6c39c8d1b2",
+            "bytes": 40659,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_rmm.css": {
+            "sha256": "82e38823de12e6cd8396520b1dd16b85555fd286dfd16d6f12f88c1050b357f3",
+            "bytes": 4210,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_rmm_automation.css": {
+            "sha256": "613ec8f79c5cd8a9d71034404310d44badda97ee0ba5150b7b405a78c58ae7b5",
+            "bytes": 4429,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_rmm_logs.css": {
+            "sha256": "ae225db0ef85bb0d63c3097976e6d99c317d076a813bc76fac97c72dbbe72708",
+            "bytes": 2162,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_rmm_patches.css": {
+            "sha256": "911caf082fd18b58004d5a485f8041346a122235124048fcfafbc1e9f8a8f073",
+            "bytes": 1130,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_rmm_remote.css": {
+            "sha256": "02f3e15c308a8ed441160ef901633fababcbac773938ca1b9e3a49b647d24654",
+            "bytes": 1942,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_rmm_scale.css": {
+            "sha256": "99071e0c1d87a4fe1f52c08effa48a9148e7dc97c59df99124991cca7c6d15ef",
+            "bytes": 1757,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_rmm_software.css": {
+            "sha256": "5d0219e13531330e89a3e5dec37bf480ff2cade4c645635f72545262a84abcb9",
+            "bytes": 1077,
+            "origin": "rivetit-verbatim"
+        },
+        "css/itflow_rmm_ui.css": {
+            "sha256": "d8c6ee3c46148e57dd0b24fa4b1ac4237d53115bff9f114cfbc11c1ded117810",
+            "bytes": 20409,
+            "origin": "rivetit-verbatim"
+        },
+        "css/webhook_form.css": {
+            "sha256": "54d224d7006cfb1725024478b02ddb9bde4f5522a44d6d19f6d57db1ebe31bc5",
+            "bytes": 15872,
+            "origin": "core"
+        },
+        "css/webhook_guides.css": {
+            "sha256": "3ddd81fc6b81d3465808c467ef07e2d04a9ab8325e3b732622a003689f5d700b",
+            "bytes": 17098,
+            "origin": "core"
+        },
+        "js/chart_theme.js": {
+            "sha256": "070865bb4ceb8e29db408bec92dbc683c8ff350fb77f308b504c30ea0632e7ea",
+            "bytes": 6125,
+            "origin": "rivetit-verbatim"
+        },
+        "js/date_range_picker.js": {
+            "sha256": "fd0445c9ca151dfbb968c1d262f5a4ea5ebf5e37e6d127425de8960b63700d0e",
+            "bytes": 12305,
+            "origin": "core"
+        },
+        "js/event_picker.js": {
+            "sha256": "4b5da886f94f68343265942092b8dec4dacf440c3f4c7fb21bcd7245b2a04855",
+            "bytes": 19913,
+            "origin": "core"
+        },
+        "js/icon_picker.js": {
+            "sha256": "3dde00674bb3970314aac1c5ffea56461a888ef0f0dba492d3fbba25668e7d0b",
+            "bytes": 9604,
+            "origin": "core"
+        },
+        "js/webhook_guides.js": {
+            "sha256": "7744477f9ea686efe58122dd4bf8021eec898f00e0ecf5a8213a78815e745cd5",
+            "bytes": 13798,
+            "origin": "core"
+        },
+        "js/webhook_wizard.js": {
+            "sha256": "64a1b7e820d048ff3d04c143b34283fe7cf6452f8c75b380ad0e649067bc973e",
+            "bytes": 56022,
+            "origin": "core"
+        }
+    },
+    "load_order": [
+        {
+            "file": "plugins/tabler/css/tabler.min.css",
+            "owner": "vendor",
+            "note": "Tabler 1.5 and the other plugin sheets (tom-select, tempus-dominus, simple-datatables, toastr, intl-tel-input) load before every Rivet sheet"
+        },
+        {
+            "file": "css/itflow.shim-bs4.css",
+            "owner": "core",
+            "note": "before itflow.bind-tabler.css"
+        },
+        {
+            "file": "css/itflow.shim-adminlte.css",
+            "owner": "core",
+            "note": "before itflow.bind-tabler.css"
+        },
+        {
+            "file": "css/itflow_bs5_bridge.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/itflow_custom.css",
+            "owner": "core",
+            "note": "declares --color-*"
+        },
+        {
+            "file": "css/itflow_custom.edition.css",
+            "owner": "edition",
+            "note": "optional: the edition rules cut out of itflow_custom.css (RivetIT: client-portal chrome, KB utility classes)"
+        },
+        {
+            "file": "css/itflow_design.css",
+            "owner": "core",
+            "note": "declares --if-* and the .it-* layer"
+        },
+        {
+            "file": "css/itflow_design.edition.css",
+            "owner": "edition",
+            "note": "optional: the edition rules cut out of itflow_design.css (RivetIT: company-logo chip on portal navbar and login)"
+        },
+        {
+            "file": "css/file_upload.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/itflow_motion.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/itflow.compat-color.css",
+            "owner": "core",
+            "note": "MUST follow both itflow_custom.css and itflow_design.css"
+        },
+        {
+            "file": "css/itflow_metrics.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/itflow_rmm.css",
+            "owner": "core",
+            "note": "after itflow_metrics.css"
+        },
+        {
+            "file": "css/itflow_rmm_ui.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/itflow_rmm_automation.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/itflow_rmm_remote.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/itflow_rmm_logs.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/itflow_rmm_patches.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/itflow_rmm_software.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/itflow_rmm_scale.css",
+            "owner": "core"
+        },
+        {
+            "file": "css/webhook_form.css",
+            "owner": "core",
+            "note": "webhook admin pages only (wizard .wz-*), after itflow_design.css"
+        },
+        {
+            "file": "css/webhook_guides.css",
+            "owner": "core",
+            "note": "webhook admin pages only (guide hub .wg-*), after itflow_design.css"
+        },
+        {
+            "file": "css/itflow.bind-tabler.css",
+            "owner": "core",
+            "note": "MUST follow the shims, the design layer and the RMM sheets; MUST precede the inline accent style"
+        },
+        {
+            "file": "css/*",
+            "owner": "edition",
+            "note": "the edition's own sheets: KB, portal, training, per-page extras"
+        },
+        {
+            "file": "inline <style>",
+            "owner": "inline",
+            "note": "per-company accent and radius, emitted last"
+        }
+    ]
+}

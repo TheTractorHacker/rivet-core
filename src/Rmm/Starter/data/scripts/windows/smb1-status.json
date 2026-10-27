@@ -1,0 +1,16 @@
+{
+  "id": "win-smb1-status",
+  "name": "SMB1 status (Windows)",
+  "description": "Checks the SMB1 server and client features and the SMB server configuration, and gives a plain-language verdict.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "smb",
+    "security",
+    "network"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Feature and configuration lines followed by a Verdict line. Exit 0."
+}

@@ -1,0 +1,15 @@
+{
+  "id": "lin-memory-swap",
+  "name": "Memory, swap and pressure (Linux)",
+  "description": "Reports free memory, swap devices, the top memory consumers and pressure stall information when present.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "memory",
+    "diagnostics"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "free output, swap devices, top 5 processes by memory, PSI if present. Exit 0."
+}

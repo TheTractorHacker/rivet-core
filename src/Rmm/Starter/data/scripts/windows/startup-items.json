@@ -1,0 +1,16 @@
+{
+  "id": "win-startup-items",
+  "name": "Startup items (Windows)",
+  "description": "Lists Run and RunOnce registry entries (machine and loaded user hives), startup folders and Win32_StartupCommand entries.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "startup",
+    "inventory",
+    "security"
+  ],
+  "timeout_s": 90,
+  "params": [],
+  "output": "Sections for registry, folders and WMI startup commands. Exit 0."
+}

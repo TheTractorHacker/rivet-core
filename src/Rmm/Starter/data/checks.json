@@ -1,0 +1,678 @@
+{
+  "sets": [
+    {
+      "id": "workstation-baseline",
+      "name": "Workstation baseline (Windows)",
+      "description": "Disk, memory, sustained CPU, key services, pending reboot, clock, certificates, disk health, uptime and antivirus for Windows desktops and laptops.",
+      "platform": "windows",
+      "use": "workstation",
+      "params": [
+        {
+          "name": "ntp_server",
+          "type": "string",
+          "default": "pool.ntp.org",
+          "label": "Time server",
+          "description": "Server the time check compares against. On a domain use a domain controller."
+        },
+        {
+          "name": "uptime_warn_days",
+          "type": "int",
+          "default": 30,
+          "label": "Uptime warning (days)",
+          "description": "Warn when the machine has not restarted for this many days."
+        },
+        {
+          "name": "uptime_fail_days",
+          "type": "int",
+          "default": 60,
+          "label": "Uptime critical (days)",
+          "description": "Critical when the machine has not restarted for this many days."
+        }
+      ],
+      "checks": [
+        {
+          "key": "starter.disk_free",
+          "label": "Disk free space",
+          "type": "disk",
+          "interval_s": 300,
+          "params": {
+            "warn_free_pct": 20,
+            "fail_free_pct": 10
+          }
+        },
+        {
+          "key": "starter.memory",
+          "label": "Memory in use (sustained)",
+          "type": "memory",
+          "interval_s": 60,
+          "params": {
+            "metric": "mem_used_pct",
+            "warn_pct": 100,
+            "fail_pct": 100,
+            "thresholds": {
+              "warn": {
+                "op": "gt",
+                "value": 90
+              },
+              "crit": {
+                "op": "gt",
+                "value": 97
+              },
+              "hysteresis": 3,
+              "for_samples": 3,
+              "for_minutes": 15
+            }
+          }
+        },
+        {
+          "key": "starter.cpu_sustained",
+          "label": "CPU busy (sustained)",
+          "type": "cpu",
+          "interval_s": 60,
+          "params": {
+            "window_s": 30,
+            "warn_pct": 100,
+            "fail_pct": 100,
+            "thresholds": {
+              "warn": {
+                "op": "gt",
+                "value": 90
+              },
+              "crit": {
+                "op": "gt",
+                "value": 98
+              },
+              "hysteresis": 5,
+              "for_samples": 3,
+              "for_minutes": 15
+            }
+          }
+        },
+        {
+          "key": "starter.svc_eventlog",
+          "label": "Windows Event Log service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "EventLog",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.svc_firewall",
+          "label": "Windows Firewall service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "mpssvc",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.svc_dns_client",
+          "label": "DNS Client service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "Dnscache",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.svc_wmi",
+          "label": "WMI service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "Winmgmt",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.pending_reboot",
+          "label": "Reboot pending",
+          "type": "pending_reboot",
+          "interval_s": 3600,
+          "params": {}
+        },
+        {
+          "key": "starter.time_skew",
+          "label": "Clock offset",
+          "type": "ntp",
+          "interval_s": 3600,
+          "params": {
+            "server": {
+              "$param": "ntp_server"
+            },
+            "warn_ms": 1000,
+            "fail_ms": 5000,
+            "timeout_ms": 3000
+          }
+        },
+        {
+          "key": "starter.cert_expiry",
+          "label": "Machine certificates expiring",
+          "type": "cert",
+          "interval_s": 21600,
+          "params": {
+            "store": "LocalMachine\\My",
+            "warn_days": 30,
+            "fail_days": 7
+          }
+        },
+        {
+          "key": "starter.smart",
+          "label": "Disk health (SMART)",
+          "type": "smart",
+          "interval_s": 21600,
+          "params": {}
+        },
+        {
+          "key": "starter.uptime",
+          "label": "Uptime too long",
+          "type": "script",
+          "interval_s": 3600,
+          "params": {
+            "script": {
+              "$file": "checks/uptime-windows.ps1"
+            },
+            "timeout_s": 30
+          }
+        },
+        {
+          "key": "starter.av",
+          "label": "Antivirus status",
+          "type": "av",
+          "interval_s": 3600,
+          "params": {
+            "max_signature_age_days": 7,
+            "require_realtime": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "windows-server-baseline",
+      "name": "Server baseline (Windows)",
+      "description": "The workstation checks with stricter disk limits, the server, time and scheduler services and an optional backup agent service.",
+      "platform": "windows",
+      "use": "windows-server",
+      "params": [
+        {
+          "name": "ntp_server",
+          "type": "string",
+          "default": "pool.ntp.org",
+          "label": "Time server",
+          "description": "Server the time check compares against. On a domain use a domain controller."
+        },
+        {
+          "name": "uptime_warn_days",
+          "type": "int",
+          "default": 45,
+          "label": "Uptime warning (days)",
+          "description": "Warn when the machine has not restarted for this many days."
+        },
+        {
+          "name": "uptime_fail_days",
+          "type": "int",
+          "default": 90,
+          "label": "Uptime critical (days)",
+          "description": "Critical when the machine has not restarted for this many days."
+        },
+        {
+          "name": "backup_service",
+          "type": "string",
+          "default": null,
+          "label": "Backup agent service",
+          "description": "Name of your backup agent's service. Leave empty to skip the check.",
+          "example": "VeeamEndpointBackupSvc"
+        }
+      ],
+      "checks": [
+        {
+          "key": "starter.disk_free",
+          "label": "Disk free space",
+          "type": "disk",
+          "interval_s": 300,
+          "params": {
+            "warn_free_pct": 20,
+            "fail_free_pct": 10,
+            "warn_free_gb": 10,
+            "fail_free_gb": 3
+          }
+        },
+        {
+          "key": "starter.memory",
+          "label": "Memory in use (sustained)",
+          "type": "memory",
+          "interval_s": 60,
+          "params": {
+            "metric": "mem_used_pct",
+            "warn_pct": 100,
+            "fail_pct": 100,
+            "thresholds": {
+              "warn": {
+                "op": "gt",
+                "value": 90
+              },
+              "crit": {
+                "op": "gt",
+                "value": 97
+              },
+              "hysteresis": 3,
+              "for_samples": 3,
+              "for_minutes": 15
+            }
+          }
+        },
+        {
+          "key": "starter.cpu_sustained",
+          "label": "CPU busy (sustained)",
+          "type": "cpu",
+          "interval_s": 60,
+          "params": {
+            "window_s": 30,
+            "warn_pct": 100,
+            "fail_pct": 100,
+            "thresholds": {
+              "warn": {
+                "op": "gt",
+                "value": 90
+              },
+              "crit": {
+                "op": "gt",
+                "value": 98
+              },
+              "hysteresis": 5,
+              "for_samples": 3,
+              "for_minutes": 15
+            }
+          }
+        },
+        {
+          "key": "starter.svc_eventlog",
+          "label": "Windows Event Log service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "EventLog",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.svc_firewall",
+          "label": "Windows Firewall service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "mpssvc",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.svc_dns_client",
+          "label": "DNS Client service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "Dnscache",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.svc_wmi",
+          "label": "WMI service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "Winmgmt",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.svc_server",
+          "label": "Server service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "LanmanServer",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.svc_time",
+          "label": "Windows Time service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "W32Time",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.svc_scheduler",
+          "label": "Task Scheduler service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": "Schedule",
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.pending_reboot",
+          "label": "Reboot pending",
+          "type": "pending_reboot",
+          "interval_s": 3600,
+          "params": {}
+        },
+        {
+          "key": "starter.time_skew",
+          "label": "Clock offset",
+          "type": "ntp",
+          "interval_s": 3600,
+          "params": {
+            "server": {
+              "$param": "ntp_server"
+            },
+            "warn_ms": 1000,
+            "fail_ms": 5000,
+            "timeout_ms": 3000
+          }
+        },
+        {
+          "key": "starter.cert_expiry",
+          "label": "Machine certificates expiring",
+          "type": "cert",
+          "interval_s": 21600,
+          "params": {
+            "store": "LocalMachine\\My",
+            "warn_days": 30,
+            "fail_days": 7
+          }
+        },
+        {
+          "key": "starter.smart",
+          "label": "Disk health (SMART)",
+          "type": "smart",
+          "interval_s": 21600,
+          "params": {}
+        },
+        {
+          "key": "starter.uptime",
+          "label": "Uptime too long",
+          "type": "script",
+          "interval_s": 3600,
+          "params": {
+            "script": {
+              "$file": "checks/uptime-windows.ps1"
+            },
+            "timeout_s": 30
+          }
+        },
+        {
+          "key": "starter.av",
+          "label": "Antivirus status",
+          "type": "av",
+          "interval_s": 3600,
+          "params": {
+            "max_signature_age_days": 7,
+            "require_realtime": true
+          }
+        },
+        {
+          "key": "starter.backup_service",
+          "label": "Backup agent service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": {
+              "$param": "backup_service"
+            },
+            "expected": "running"
+          },
+          "when": "backup_service"
+        }
+      ]
+    },
+    {
+      "id": "linux-server-baseline",
+      "name": "Server baseline (Linux)",
+      "description": "Disk and inode space, memory, swap, sustained CPU, failed systemd units, SSH, pending reboot, clock, certificates, disk health, uptime and an optional backup service.",
+      "platform": "linux",
+      "use": "linux-server",
+      "params": [
+        {
+          "name": "ntp_server",
+          "type": "string",
+          "default": "pool.ntp.org",
+          "label": "Time server",
+          "description": "Server the time check compares against. On a domain use a domain controller."
+        },
+        {
+          "name": "ssh_service",
+          "type": "string",
+          "default": "sshd",
+          "label": "SSH service",
+          "description": "systemd unit of the SSH server (ssh on some Debian releases)."
+        },
+        {
+          "name": "cert_paths",
+          "type": "list",
+          "default": null,
+          "label": "Certificate files or folders",
+          "description": "Absolute paths of certificates to watch (for example /etc/letsencrypt/live/example.org/fullchain.pem). Leave empty to skip the check.",
+          "example": [
+            "/etc/ssl/certs/ca-certificates.crt"
+          ]
+        },
+        {
+          "name": "uptime_warn_days",
+          "type": "int",
+          "default": 45,
+          "label": "Uptime warning (days)",
+          "description": "Warn when the machine has not restarted for this many days."
+        },
+        {
+          "name": "uptime_fail_days",
+          "type": "int",
+          "default": 90,
+          "label": "Uptime critical (days)",
+          "description": "Critical when the machine has not restarted for this many days."
+        },
+        {
+          "name": "backup_service",
+          "type": "string",
+          "default": null,
+          "label": "Backup agent service",
+          "description": "Name of your backup agent's service. Leave empty to skip the check.",
+          "example": "VeeamEndpointBackupSvc"
+        }
+      ],
+      "checks": [
+        {
+          "key": "starter.disk_free",
+          "label": "Disk free space",
+          "type": "disk",
+          "interval_s": 300,
+          "params": {
+            "warn_free_pct": 20,
+            "fail_free_pct": 10,
+            "warn_free_gb": 5,
+            "fail_free_gb": 1
+          }
+        },
+        {
+          "key": "starter.inodes",
+          "label": "Inode usage",
+          "type": "inodes",
+          "interval_s": 600,
+          "params": {
+            "warn_pct": 85,
+            "fail_pct": 95
+          }
+        },
+        {
+          "key": "starter.memory",
+          "label": "Memory in use (sustained)",
+          "type": "memory",
+          "interval_s": 60,
+          "params": {
+            "metric": "mem_used_pct",
+            "warn_pct": 100,
+            "fail_pct": 100,
+            "thresholds": {
+              "warn": {
+                "op": "gt",
+                "value": 90
+              },
+              "crit": {
+                "op": "gt",
+                "value": 97
+              },
+              "hysteresis": 3,
+              "for_samples": 3,
+              "for_minutes": 15
+            }
+          }
+        },
+        {
+          "key": "starter.swap",
+          "label": "Swap in use (sustained)",
+          "type": "memory",
+          "interval_s": 300,
+          "params": {
+            "metric": "swap_used_pct",
+            "warn_pct": 100,
+            "fail_pct": 100,
+            "thresholds": {
+              "warn": {
+                "op": "gt",
+                "value": 60
+              },
+              "crit": {
+                "op": "gt",
+                "value": 85
+              },
+              "hysteresis": 5,
+              "for_samples": 3,
+              "for_minutes": 30
+            }
+          }
+        },
+        {
+          "key": "starter.cpu_sustained",
+          "label": "CPU busy (sustained)",
+          "type": "cpu",
+          "interval_s": 60,
+          "params": {
+            "window_s": 30,
+            "warn_pct": 100,
+            "fail_pct": 100,
+            "thresholds": {
+              "warn": {
+                "op": "gt",
+                "value": 90
+              },
+              "crit": {
+                "op": "gt",
+                "value": 98
+              },
+              "hysteresis": 5,
+              "for_samples": 3,
+              "for_minutes": 15
+            }
+          }
+        },
+        {
+          "key": "starter.systemd_failed",
+          "label": "Failed systemd units",
+          "type": "systemd_failed",
+          "interval_s": 300,
+          "params": {
+            "max_failed": 0
+          }
+        },
+        {
+          "key": "starter.svc_ssh",
+          "label": "SSH service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": {
+              "$param": "ssh_service"
+            },
+            "expected": "running"
+          }
+        },
+        {
+          "key": "starter.pending_reboot",
+          "label": "Reboot pending",
+          "type": "pending_reboot",
+          "interval_s": 3600,
+          "params": {}
+        },
+        {
+          "key": "starter.time_skew",
+          "label": "Clock offset",
+          "type": "ntp",
+          "interval_s": 3600,
+          "params": {
+            "server": {
+              "$param": "ntp_server"
+            },
+            "warn_ms": 1000,
+            "fail_ms": 5000,
+            "timeout_ms": 3000
+          }
+        },
+        {
+          "key": "starter.cert_expiry",
+          "label": "Certificates expiring",
+          "type": "cert",
+          "interval_s": 21600,
+          "params": {
+            "paths": {
+              "$param": "cert_paths"
+            },
+            "warn_days": 30,
+            "fail_days": 7
+          },
+          "when": "cert_paths"
+        },
+        {
+          "key": "starter.smart",
+          "label": "Disk health (SMART)",
+          "type": "smart",
+          "interval_s": 21600,
+          "params": {}
+        },
+        {
+          "key": "starter.uptime",
+          "label": "Uptime too long",
+          "type": "script",
+          "interval_s": 3600,
+          "params": {
+            "script": {
+              "$file": "checks/uptime-linux.sh"
+            },
+            "timeout_s": 30
+          }
+        },
+        {
+          "key": "starter.backup_service",
+          "label": "Backup service",
+          "type": "service",
+          "interval_s": 300,
+          "params": {
+            "name": {
+              "$param": "backup_service"
+            },
+            "expected": "running"
+          },
+          "when": "backup_service"
+        }
+      ]
+    }
+  ]
+}

@@ -12,6 +12,9 @@ use RivetCore\Database\DatabaseInterface;
  * administrator can pick the agent from a list instead of copying subject ids by hand. Only tokens that
  * already passed signature, issuer, audience, scope and expiry checks are ever recorded.
  *
+ * Logging: $logError accepts a PSR-3 LoggerInterface (preferred) or null (ErrorLogLogger). The Closure form (receives the
+ * message string) is @deprecated: kept working through all of 1.x, removed in 2.0.
+ *
  * @api
  */
 final class UnlinkedIdentityStore
@@ -19,6 +22,7 @@ final class UnlinkedIdentityStore
     public const MAX_PENDING = 200;
     public const KEEP_DAYS = 30;
 
+    /** @param \Closure|\Psr\Log\LoggerInterface|null $logError the Closure form is @deprecated (kept through 1.x, removed in 2.0); pass a PSR-3 logger */
     public function __construct(private DatabaseInterface $database, private \Closure|\Psr\Log\LoggerInterface|null $logError = null)
     {
     }
@@ -33,7 +37,11 @@ final class UnlinkedIdentityStore
         return $v === '' ? null : mb_substr($v, 0, 200);
     }
 
-    /** Remember an unlinked but valid identity. Never throws: a failure here must not change the 403. */
+    /**
+     * Remember an unlinked but valid identity. Never throws: a failure here must not change the 403.
+     *
+     * @param array<string,mixed> $claims
+     */
     public function record(string $issuer, string $subject, array $claims): void
     {
         try {

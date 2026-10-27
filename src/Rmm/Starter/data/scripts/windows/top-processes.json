@@ -1,0 +1,26 @@
+{
+  "id": "win-top-processes",
+  "name": "Top processes by CPU and memory (Windows)",
+  "description": "Lists the busiest processes by current CPU use and by working set memory.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "diagnostics",
+    "performance",
+    "processes"
+  ],
+  "timeout_s": 60,
+  "params": [
+    {
+      "name": "top_n",
+      "type": "int",
+      "label": "Number of processes",
+      "description": "How many processes to list in each ranking (1 to 50).",
+      "default": 10,
+      "min": 1,
+      "max": 50
+    }
+  ],
+  "output": "Two tables: top CPU and top memory. CPU is a one-moment sample summed across cores. Exit 0; exit 2 on a bad top_n."
+}

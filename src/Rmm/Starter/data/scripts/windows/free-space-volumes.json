@@ -1,0 +1,16 @@
+{
+  "id": "win-free-space-volumes",
+  "name": "Free space by volume (Windows)",
+  "description": "Lists each fixed volume with size, free space and percent free.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "storage",
+    "disk",
+    "inventory"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Table of volumes with total, free and percent free. Exit 0."
+}

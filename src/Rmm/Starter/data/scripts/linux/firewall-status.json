@@ -1,0 +1,15 @@
+{
+  "id": "lin-firewall-status",
+  "name": "Firewall status (Linux)",
+  "description": "Reports the state and rules summary of ufw, firewalld, nftables and iptables, whichever exist.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "network",
+    "security"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Per-tool status and a trimmed rule listing. Exit 0."
+}

@@ -1,0 +1,68 @@
+{
+    "description": "RivetIT endpoint agent signing vectors. Canonical JSON: UTF-8, object keys sorted by their UTF-8 bytes (recursively), arrays in order, no whitespace, strings escape only \\\" \\\\ \\b \\f \\n \\r \\t and other code points below U+0020 as \\u00xx (lowercase hex), everything else raw (including / < > & U+007F U+2028 U+2029), integers only, true/false/null. The signed message is the canonical form of the job object WITHOUT its \"signature\" member; the signature is Ed25519, base64 (standard alphabet, padded).",
+    "test_key": {
+        "seed_derivation": "SHA-256 of the ASCII string RivetIT-agent-TEST-seed (raw 32 bytes)",
+        "seed_hex": "2855f44e7a032bdd5138f11eb4b6b7b7da9841d6ce6fe1d15d28908ba32e5cdd",
+        "public_key_base64": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
+        "secret_key_base64_libsodium": "KFX0TnoDK91ROPEetLa3t9qYQdbOb+HRXSiQi6MuXN2IxvVRWzmx8eyZzy5GLjPu8+BQzACYpwx3Z0JCPwTkEQ=="
+    },
+    "jobs": [
+        {
+            "name": "minimal reboot job (null script, empty params object)",
+            "job_json": "{\"job_id\":\"11111111-2222-4333-8444-555555555555\",\"attempt\":1,\"type\":\"reboot\",\"script\":null,\"params\":{},\"timeout_s\":60,\"max_output_bytes\":65536,\"issued_at\":\"2026-10-06T12:00:00Z\",\"expires_at\":\"2026-10-06T13:00:00Z\"}",
+            "canonical": "{\"attempt\":1,\"expires_at\":\"2026-10-06T13:00:00Z\",\"issued_at\":\"2026-10-06T12:00:00Z\",\"job_id\":\"11111111-2222-4333-8444-555555555555\",\"max_output_bytes\":65536,\"params\":{},\"script\":null,\"timeout_s\":60,\"type\":\"reboot\"}",
+            "signature": "GmDruTsLDp0Zt2rUHBlULPmdVW9OvwdnhzcjWdYlYMrHiJ61oWoJ8ma2Bni3uA10DaTyF8XgRElOQWsaXzPICQ=="
+        },
+        {
+            "name": "powershell job, unsorted input keys, nested params",
+            "job_json": "{\"expires_at\":\"2026-10-06T13:00:00Z\",\"issued_at\":\"2026-10-06T12:00:00Z\",\"max_output_bytes\":65536,\"timeout_s\":300,\"params\":{\"Zeta\":true,\"Alpha\":\"x\",\"Mid\":{\"b\":2,\"a\":[3,2,1]},\"N\":null},\"script\":\"Get-Service | Where-Object Status -eq 'Running'\",\"type\":\"powershell\",\"attempt\":2,\"job_id\":\"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\"}",
+            "canonical": "{\"attempt\":2,\"expires_at\":\"2026-10-06T13:00:00Z\",\"issued_at\":\"2026-10-06T12:00:00Z\",\"job_id\":\"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\",\"max_output_bytes\":65536,\"params\":{\"Alpha\":\"x\",\"Mid\":{\"a\":[3,2,1],\"b\":2},\"N\":null,\"Zeta\":true},\"script\":\"Get-Service | Where-Object Status -eq 'Running'\",\"timeout_s\":300,\"type\":\"powershell\"}",
+            "signature": "VO15Yr8++/hxCO/byRONzB/4uW1Ot9n3xxojPX3abs3nj6ZC92KlDvU/vE6cOjUEj+hxSFqS8qQtoPFaneN6AQ=="
+        },
+        {
+            "name": "script with quotes, backslashes, control characters and unicode",
+            "job_json": "{\"job_id\":\"99999999-8888-4777-8666-555555555555\",\"attempt\":1,\"type\":\"powershell\",\"script\":\"Write-Host \\\"a\\\\b\\\"\\n\\t\\u0001 café \u2028 <&> / 😀\",\"params\":{},\"timeout_s\":5,\"max_output_bytes\":1024,\"issued_at\":\"2026-10-06T12:00:00Z\",\"expires_at\":\"2026-10-06T12:05:00Z\"}",
+            "canonical": "{\"attempt\":1,\"expires_at\":\"2026-10-06T12:05:00Z\",\"issued_at\":\"2026-10-06T12:00:00Z\",\"job_id\":\"99999999-8888-4777-8666-555555555555\",\"max_output_bytes\":1024,\"params\":{},\"script\":\"Write-Host \\\"a\\\\b\\\"\\n\\t\\u0001 café \u2028 <&> / 😀\",\"timeout_s\":5,\"type\":\"powershell\"}",
+            "signature": "kwIcLuGSzxJTrzwgEHnW+ZfFaoIgIiar5fB7WcI0WkjFP9BRCjYZlfaZOVuBahjam8/8wi7ZQ/U3pavNDt+ZCw=="
+        },
+        {
+            "name": "collect job with parameters of every scalar type",
+            "job_json": "{\"job_id\":\"01010101-0202-4303-8404-050505050505\",\"attempt\":3,\"type\":\"collect\",\"script\":null,\"params\":{\"Count\":5,\"Flag\":false,\"Name\":\"Ünï\",\"Nothing\":null},\"timeout_s\":30,\"max_output_bytes\":4096,\"issued_at\":\"2026-10-06T00:00:00Z\",\"expires_at\":\"2026-10-06T01:00:00Z\"}",
+            "canonical": "{\"attempt\":3,\"expires_at\":\"2026-10-06T01:00:00Z\",\"issued_at\":\"2026-10-06T00:00:00Z\",\"job_id\":\"01010101-0202-4303-8404-050505050505\",\"max_output_bytes\":4096,\"params\":{\"Count\":5,\"Flag\":false,\"Name\":\"Ünï\",\"Nothing\":null},\"script\":null,\"timeout_s\":30,\"type\":\"collect\"}",
+            "signature": "8EoB73FH8x12Mvmcn49038tMKUQXLmgwRHhr2oLgQcE/B2UN9HzGuL3LP8UBtZp5BFw0fn9U14GO1EgNUscWCg=="
+        }
+    ],
+    "canonical_only": [
+        {
+            "name": "keys sort by UTF-8 bytes",
+            "input": "{\"b\":1,\"a\":2,\"B\":3,\"é\":4,\"aa\":5}",
+            "canonical": "{\"B\":3,\"a\":2,\"aa\":5,\"b\":1,\"é\":4}"
+        },
+        {
+            "name": "empty containers stay distinct",
+            "input": "{\"o\":{},\"a\":[]}",
+            "canonical": "{\"a\":[],\"o\":{}}"
+        },
+        {
+            "name": "string escaping",
+            "input": "[\"\\\"\",\"\\\\\",\"\\b\\f\\n\\r\\t\",\"\\u0000\\u001f\\u007f\",\"\u2028\u2029\",\"/\"]",
+            "canonical": "[\"\\\"\",\"\\\\\",\"\\b\\f\\n\\r\\t\",\"\\u0000\\u001f\",\"\u2028\u2029\",\"/\"]"
+        },
+        {
+            "name": "integers and literals",
+            "input": "[0,-5,9007199254740991,true,false,null]",
+            "canonical": "[0,-5,9007199254740991,true,false,null]"
+        }
+    ],
+    "update_manifest": {
+        "description": "The signature is Ed25519 over the lowercase hex SHA-256 string of the package, as ASCII bytes.",
+        "sha256": "41bd721afc5d8bef8ca2e70db010e1ecfbd6e30c9014fcae2bfc977396251454",
+        "signature": "Slhm+BRVWF9/H/Owg1ipvCJIZanBDsR342gqUbjeOUkyNpmYZcLUiURn/7y9uspHxxn+HHTMWSOxsb/M7lWaBg=="
+    },
+    "check_definition": {
+        "description": "Check definitions are signed the same way as jobs (canonical JSON of the object without \"signature\").",
+        "check_json": "{\"key\":\"disk_c\",\"type\":\"disk\",\"params\":{\"mount\":\"C:\",\"warn_pct\":85,\"fail_pct\":95},\"interval_s\":300}",
+        "canonical": "{\"interval_s\":300,\"key\":\"disk_c\",\"params\":{\"fail_pct\":95,\"mount\":\"C:\",\"warn_pct\":85},\"type\":\"disk\"}",
+        "signature": "TM3LCmezTpCTlNKuEXpI+KMv+s5tY/cjXWz0b2DVtLpObUAXUGOweirufCOp9fPoQxUqr527EbEuptr39fLMDw=="
+    }
+}

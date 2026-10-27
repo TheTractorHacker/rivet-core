@@ -9,9 +9,13 @@ namespace RivetCore\Redis;
  * TLS. Editions resolve these from their own sources (environment, settings table), build a config, and let Core turn it
  * into Predis parameters, validate it and test it. The password is never part of var_dump()/print_r() output or error text.
  *
+ * The constructor has ten parameters that grew over time: named arguments are the supported calling style
+ * (`new RedisConnectionConfig(host: 'r', tls: true)`). Positional order is kept for compatibility but only host and
+ * port are guaranteed positional; new options are only ever appended.
+ *
  * @api
  */
-final class RedisConnectionConfig
+final class RedisConnectionConfig implements \JsonSerializable
 {
     public function __construct(
         public readonly string $host,
@@ -58,7 +62,7 @@ final class RedisConnectionConfig
      */
     public function validate(bool $checkFiles = false): ?string
     {
-        if ($this->host === '' || strlen($this->host) > 253 || !preg_match('/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$|^\[?[0-9A-Fa-f:]+\]?$/', $this->host)) {
+        if ($this->host === '' || strlen($this->host) > 253 || !preg_match('/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\z|^\[?[0-9A-Fa-f:]+\]?\z/D', $this->host)) {
             return 'Enter a host name or IP address.';
         }
         if ($this->port < 1 || $this->port > 65535) {
@@ -71,7 +75,7 @@ final class RedisConnectionConfig
             return 'The password is too long or contains a line break.';
         }
         if ($this->username !== null) {
-            if (strlen($this->username) > 128 || !preg_match('/^[A-Za-z0-9._@:-]+$/', $this->username)) {
+            if (strlen($this->username) > 128 || !preg_match('/^[A-Za-z0-9._@:-]+\z/D', $this->username)) {
                 return 'The username may use letters, digits and . _ @ : - only (up to 128 characters).';
             }
             if ($this->password === null) {
@@ -100,6 +104,26 @@ final class RedisConnectionConfig
     }
 
     /**
+     * The password never leaves through json_encode().
+     *
+     * @return array<string,mixed>
+     */
+    public function jsonSerialize(): array
+    {
+        return [
+            'host' => $this->host, 'port' => $this->port, 'db' => $this->db, 'password' => $this->password === null ? null : '********',
+            'username' => $this->username, 'tls' => $this->tls, 'verify_peer' => $this->verifyPeer,
+            'ca_file' => $this->caFile, 'cert_file' => $this->certFile, 'key_file' => $this->keyFile,
+        ];
+    }
+
+    /** Serialising would write the password into a cache or session; rebuild the object from the settings instead. */
+    public function __serialize(): array
+    {
+        throw new \LogicException('A RedisConnectionConfig holds the password and must not be serialised.');
+    }
+
+    /**
      * Parameters for `new Predis\Client(...)`.
      *
      * @return array<string,mixed>
@@ -112,6 +136,9 @@ final class RedisConnectionConfig
             'port' => $this->port,
             'database' => $this->db,
             'timeout' => $timeout,
+            // Predis applies 'timeout' to the connect only; without this a Redis that accepts and never answers blocks each call for
+            // default_socket_timeout (60 s) and the "fail open" arrives a minute late (CORE-04).
+            'read_write_timeout' => $timeout,
         ];
         if ($this->password !== null) {
             $parameters['password'] = $this->password;

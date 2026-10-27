@@ -1,0 +1,32 @@
+{
+  "id": "lin-reboot-if-required",
+  "name": "Reboot if required (Linux)",
+  "description": "Schedules a delayed reboot with a wall message only if a reboot is required and none is already scheduled.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "disruptive",
+  "tags": [
+    "patching",
+    "reboot"
+  ],
+  "timeout_s": 60,
+  "params": [
+    {
+      "name": "delay_minutes",
+      "type": "int",
+      "label": "Delay minutes",
+      "description": "Minutes until the reboot.",
+      "default": 15,
+      "min": 1,
+      "max": 1440
+    },
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When true (default) only reports whether a reboot would be scheduled."
+    }
+  ],
+  "output": "[DRY-RUN]/[DONE]/[SKIP] lines. Exit 0; 3 if scheduling fails."
+}

@@ -1,0 +1,24 @@
+{
+  "id": "win-defender-update-signatures",
+  "name": "Update Microsoft Defender signatures (Windows)",
+  "description": "Asks Defender to update its antimalware signatures with Update-MpSignature. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "changes_system",
+  "tags": [
+    "security",
+    "defender",
+    "antivirus"
+  ],
+  "timeout_s": 300,
+  "params": [
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When enabled, nothing is changed and the script only prints what it would do."
+    }
+  ],
+  "output": "[DRY-RUN] or [DONE]/[SKIP] lines with signature version before and after. Exit 0; exit 1 if the update failed."
+}

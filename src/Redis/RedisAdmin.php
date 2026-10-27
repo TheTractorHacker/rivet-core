@@ -95,7 +95,11 @@ final class RedisAdmin
         return 'unreachable';
     }
 
-    /** Flatten INFO sections, tolerating Predis returning either capitalised or lower-case section names. */
+    /**
+     * Flatten INFO sections, tolerating Predis returning either capitalised or lower-case section names.
+     *
+     * @return array{version:string, uptime_seconds:int, clients:int, memory_used:string, maxmemory:int, policy:string, ops_per_sec:int, hit_rate:float|null, keys:int, aof:bool, last_save:int}
+     */
     public function stats(Client $c): array
     {
         $info = $c->info();
@@ -125,7 +129,11 @@ final class RedisAdmin
         ];
     }
 
-    /** Count keys per clearable group (bounded SCAN so a huge keyspace cannot stall the page). @return array<string,int> */
+    /**
+     * Count keys per clearable group (bounded SCAN so a huge keyspace cannot stall the page).
+     *
+     * @return array<string,int>
+     */
     public function groupCounts(Client $c, int $cap = 5000): array
     {
         $out = [];

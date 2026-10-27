@@ -5,7 +5,7 @@ Install from the Git tag (rivet-core is not on Packagist):
 ```json
 {
   "repositories": [{ "type": "vcs", "url": "https://github.com/TheTractorHacker/rivet-core.git", "no-api": true }],
-  "require": { "rivet/rivet-core": "^0.19" }
+  "require": { "rivet/rivet-core": "^0.21" }
 }
 ```
 
@@ -52,3 +52,7 @@ Prove your adapters with the [conformance kit](adapters.md#conformance-kit) befo
   [writing an edition adapter](adapters.md)).
 - Redis is optional. Helpers fail open: if Redis is down the work simply goes ahead.
 - Migrations only touch Core-owned tables and are recorded in `rivet_core_migrations`.
+
+## Next
+
+[Module reference](modules/README.md) | [Upgrading](../UPGRADING.md) | [Edition checklist](EDITION_CHECKLIST.md) | [Versioning policy](architecture/ADR-004-versioning-and-compatibility.md)

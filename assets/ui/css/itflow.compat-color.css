@@ -1,0 +1,178 @@
+/* =============================================================================
+   RivetIT — --color-* DEPRECATION SHIM  (compat layer, scheduled for deletion)
+
+   WHY THIS FILE EXISTS
+   The app has grown two parallel token namespaces that name the same things:
+
+     --color-*   the older "Alga" palette. Declared in css/itflow_custom.css on
+                 :root (light) and on body.dark-mode (dark). Roughly 500 live
+                 var(--color-…) reads across css/ and inline <style> blocks in
+                 admin/settings_notification.php, agent/tickets.php,
+                 agent/ticket.php, agent/ticket_list.php, agent/user/…, login.php.
+
+     --if-*      the current design layer. Declared in css/itflow_design.css on
+                 :root and on :root[data-bs-theme="dark"], and the only namespace
+                 css/itflow.bind-tabler.css exports onto Tabler's --tblr-*.
+
+   They DISAGREED in dark mode, and the disagreement was visible:
+        --color-surface : #343a40   (AdminLTE-era grey)
+        --if-surface    : #14201f   (design-layer surface)
+   itflow_custom.css also pins
+        .card-header { background: var(--color-surface) !important; }
+   so a card header rendered #343a40 while its own card body rendered #14201f —
+   a card in two different greys, confirmed in a headless browser.
+
+   WHAT THIS FILE DOES
+   Makes --color-* a pure ALIAS of --if-*. Nothing here invents a colour; every
+   value is a var() read of the design layer, so there is exactly ONE source of
+   truth per token and the ~500 existing var(--color-…) reads keep resolving
+   without touching a single call site. When the last var(--color-…) read is gone,
+   delete this file and its <link>.
+
+   *** LOAD ORDER — THIS FILE MUST LOAD AFTER css/itflow_custom.css ***
+   The aliases below have the SAME specificity as the declarations they replace
+   (:root vs :root, body.dark-mode vs body.dark-mode), so they win on cascade
+   ORDER alone. Linked before itflow_custom.css they do nothing at all — silently,
+   with no error. Recommended position in includes/header.php (and the client /
+   guest / login / mfa headers that link the same stack):
+
+        tabler.min.css
+        css/itflow_bs5_bridge.css
+        css/itflow.shim-bs4.css
+        css/itflow.shim-adminlte.css
+        css/itflow_custom.css
+        css/itflow_design.css
+        css/itflow.compat-color.css      <- HERE
+        css/itflow.bind-tabler.css
+        <style nonce> per-company accent  (header.php, emitted last)
+
+   *** WHY THE ACCENT TOKENS ARE DELIBERATELY *NOT* ALIASED HERE ***
+   For the accent the arrow already points the other way and must keep pointing
+   that way:
+        includes/header.php  writes  --color-accent (per company, :root + body.dark-mode)
+        itflow_design.css    body { --if-primary: var(--color-accent, …) }
+        itflow.bind-tabler.css      --tblr-primary: var(--if-primary, …)
+   Adding ":root { --color-accent: var(--if-primary) }" would close that into a
+   CYCLIC custom-property dependency. Per CSS Variables, a cycle makes every
+   property in it compute to the guaranteed-invalid value, so --color-accent and
+   --if-primary would BOTH die and every accent read would silently collapse to
+   its hard-coded fallback — i.e. the per-company accent would stop working for
+   any company that has not set a custom hex (that is the case where header.php
+   emits no override to break the cycle). So --color-accent stays the source of
+   truth for the accent family and --if-primary stays its alias. That is still
+   one source of truth per token family, which is the point of this file; only
+   the direction differs, and the direction is forced by header.php.
+   ============================================================================= */
+
+/* ---- Neutrals: --color-* now READ from --if-*. One source of truth. --------
+   The fallbacks are the design layer's own light values, so this file still
+   degrades to something sane if itflow_design.css ever fails to load. */
+:root {
+    --color-surface:      var(--if-surface, #ffffff);
+    --color-surface-alt:  var(--if-bg, #eef2f2);
+    --color-border:       var(--if-border, #e3e9ea);
+    --color-border-soft:  var(--if-border, #e3e9ea);
+    --color-text:         var(--if-ink, #16232a);
+    --color-text-muted:   var(--if-muted, #5d6f76);
+    --card-shadow:        var(--if-shadow, 0 1px 2px rgba(20,35,42,.04), 0 3px 10px rgba(20,35,42,.05));
+}
+
+/* ---- Dark mode -------------------------------------------------------------
+   --if-* already switches on :root[data-bs-theme="dark"] (itflow_design.css), so
+   the :root aliases above are theme-correct on their own. This block exists ONLY
+   to out-cascade itflow_custom.css's hard-coded `body.dark-mode { --color-surface:
+   #343a40; … }` set, which is more specific (0,1,1) than :root (0,0,1) and would
+   otherwise re-introduce the exact AdminLTE-era greys this file removes.
+
+   NOTE the accent tokens itflow_custom.css also declares in that same block
+   (--color-accent / -hover / -soft / -rgb) are intentionally left alone here —
+   see the header comment. */
+body.dark-mode {
+    --color-surface:      var(--if-surface, #14201f);
+    --color-surface-alt:  var(--if-bg, #0d1417);
+    --color-border:       var(--if-border, #24332f);
+    --color-border-soft:  var(--if-border, #24332f);
+    --color-text:         var(--if-ink, #e7eeef);
+    --color-text-muted:   var(--if-muted, #93a6ab);
+    --card-shadow:        var(--if-shadow, 0 1px 2px rgba(0,0,0,.35), 0 3px 12px rgba(0,0,0,.4));
+}
+
+/* The client portal emits no <body class="dark-mode"> at all, so it never got the
+   dark --color-* set and its dark mode was broken. Keying the same aliases off the
+   root-level trigger the portal DOES render fixes it for free, and costs nothing
+   for agent/admin pages where it is simply redundant with the :root block. */
+:root[data-bs-theme="dark"] {
+    --color-surface:      var(--if-surface, #14201f);
+    --color-surface-alt:  var(--if-bg, #0d1417);
+    --color-border:       var(--if-border, #24332f);
+    --color-border-soft:  var(--if-border, #24332f);
+    --color-text:         var(--if-ink, #e7eeef);
+    --color-text-muted:   var(--if-muted, #93a6ab);
+}
+
+/* ---- Retire itflow_custom.css's `.card-header { … !important }` -------------
+   itflow_custom.css:269-276 forces
+       .card-header, .card-dark .card-header, .card.card-dark {
+           background: var(--color-surface) !important;
+           border-radius: var(--card-radius) var(--card-radius) 0 0 !important;
+       }
+   Two problems under Tabler, both of which survive the alias above:
+
+     1. Tabler's own .card-header is `--tblr-card-header-bg: transparent`, and
+        css/itflow_design.css restates that as `.card > .card-header { background:
+        transparent }`. That non-!important rule can never beat an !important one
+        no matter how specific it is, so the header stayed an opaque painted
+        panel instead of reading through the card.
+     2. The forced radius uses --card-radius (default 14px, overridable per
+        company from includes/header.php) while the card itself is rounded with
+        --if-radius (12px) by itflow_design.css. 14 inside 12 leaves the header's
+        corners visibly overhanging the card's.
+
+   itflow_custom.css belongs to another owner, so the declarations are neutralised
+   here instead of deleted there: same-or-higher specificity, also !important, and
+   loaded later. When itflow_custom.css:269-276 is finally removed, delete this
+   block with it — the design layer already says the same thing without !important.
+
+   The :not([class*="bg-"]) guard is load-bearing: seven headers app-wide opt in
+   to a painted header with a Bootstrap/Tabler background utility
+   (six `card-header bg-dark` — client/ticket.php, guest/guest_view_item.php and
+   friends — plus one `card-header bg-light`). Those utilities are themselves
+   !important at specificity 0,1,0, so an unguarded 0,2,0 !important rule here
+   would out-rank and silently erase all seven. */
+.card > .card-header:not([class*="bg-"]) {
+    background: transparent !important;
+}
+
+/* Restore the seven opted-in painted headers that itflow_custom.css's !important
+   was already silently erasing before this split. Verified in a headless browser:
+   `.card-header.bg-dark` computed to rgb(255,255,255) in LIGHT mode, because
+   Tabler's `.bg-dark { background-color: … !important }` and itflow_custom.css's
+   `.card-header { background: … !important }` are BOTH specificity 0,1,0 and
+   itflow_custom.css is linked after tabler.min.css — so load order handed it to
+   itflow_custom.css. Only two variants exist app-wide (bg-dark x6, bg-light x1),
+   so they are restored explicitly rather than with a wildcard that could not know
+   which colour to re-apply. The explicit `color` on bg-dark matters too:
+   itflow_custom.css also forces `.card-header { color: var(--color-text) !important }`,
+   which is near-black ink on a near-black fill. */
+.card > .card-header.bg-dark {
+    background-color: var(--tblr-dark, #1f2937) !important;
+    color: #fff !important;
+}
+.card > .card-header.bg-light {
+    background-color: var(--tblr-gray-100, #f8f9fa) !important;
+    color: var(--if-ink, #16232a) !important;
+}
+
+/* Corner radius. This must track the radius the CARD actually renders with, which
+   is --card-radius (default 14px, overridable per company from includes/header.php)
+   because itflow_custom.css's `.card:not(.card-outline)` / `.card-outline` rules
+   are specificity 0,2,0 and out-rank itflow_design.css's plain `.card` (0,1,0)
+   --if-radius. Reading --if-radius here would leave a 12px header inside a 14px
+   card, i.e. the same overhang the other way round. --if-radius stays as the
+   fallback so this still lines up if the --card-radius layer is ever retired. */
+.card > .card-header {
+    border-radius: 0 !important;
+}
+.card > .card-header:first-child {
+    border-radius: var(--card-radius, var(--if-radius, 12px)) var(--card-radius, var(--if-radius, 12px)) 0 0 !important;
+}

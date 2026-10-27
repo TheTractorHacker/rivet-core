@@ -1,0 +1,160 @@
+// measures.dax: ready-to-paste DAX measures over the Core `rpt_` views (Modeling > New measure; paste one measure at a time).
+// The tables must be loaded under their view names (rpt_devices, rpt_alerts, ...) and related as described in docs/reporting/POWER_BI.md section 5.
+// NOT VERIFIED in Power BI Desktop: written from the DAX reference. A test only checks that every rpt_x[column] named here exists in the view catalog.
+// Measures that need tickets or SLAs are in measures-edition.dax (the edition owns those tables).
+
+// ---------------------------------------------------------------- fleet
+Active Devices =
+CALCULATE (
+    DISTINCTCOUNT ( rpt_devices[device_id] ),
+    rpt_devices[status] IN { "online", "offline", "stale", "never" }
+)
+
+Online Devices =
+CALCULATE ( DISTINCTCOUNT ( rpt_devices[device_id] ), rpt_devices[status] = "online" )
+
+Active Devices Last 7 Days =
+VAR cutoff = UTCNOW () - 7
+RETURN
+    CALCULATE (
+        DISTINCTCOUNT ( rpt_devices[device_id] ),
+        rpt_devices[last_checkin_at] >= cutoff,
+        rpt_devices[status] IN { "online", "offline", "stale" }
+    )
+
+Linked Devices =
+CALCULATE (
+    DISTINCTCOUNTNOBLANK ( rpt_devices[asset_id] ),
+    rpt_devices[status] IN { "online", "offline", "stale", "never" }
+)
+
+// ---------------------------------------------------------------- availability (from the hourly roll-up: one row per asset and hour in which the device reported)
+Reported Device Hours =
+CALCULATE (
+    COUNTROWS ( rpt_device_health_hourly ),
+    rpt_device_health_hourly[metric_name] = "cpu.utilization"
+)
+
+Period Hours =
+VAR firstHour = CALCULATE ( MIN ( rpt_device_health_hourly[hour_start] ), ALLSELECTED ( rpt_device_health_hourly[hour_start] ) )
+VAR lastHour = CALCULATE ( MAX ( rpt_device_health_hourly[hour_start] ), ALLSELECTED ( rpt_device_health_hourly[hour_start] ) )
+RETURN
+    DATEDIFF ( firstHour, lastHour, HOUR ) + 1
+
+// 100% = every linked device reported in every hour of the selected period. A device enrolled in the middle of the period counts against it.
+Device Availability % =
+DIVIDE ( [Reported Device Hours], [Linked Devices] * [Period Hours] )
+
+// ---------------------------------------------------------------- health (weighted by sample count, not an average of averages)
+Avg CPU % =
+DIVIDE (
+    CALCULATE ( SUM ( rpt_device_health_daily[sum_value] ), rpt_device_health_daily[metric_name] = "cpu.utilization" ),
+    CALCULATE ( SUM ( rpt_device_health_daily[samples] ), rpt_device_health_daily[metric_name] = "cpu.utilization" )
+)
+
+Peak CPU % =
+CALCULATE ( MAX ( rpt_device_health_daily[max_value] ), rpt_device_health_daily[metric_name] = "cpu.utilization" )
+
+Avg Memory % =
+DIVIDE (
+    CALCULATE ( SUM ( rpt_device_health_daily[sum_value] ), rpt_device_health_daily[metric_name] = "memory.utilization" ),
+    CALCULATE ( SUM ( rpt_device_health_daily[samples] ), rpt_device_health_daily[metric_name] = "memory.utilization" )
+)
+
+// ---------------------------------------------------------------- storage
+// Each disk (instance) of each device is one row per day; summing the daily means of the LAST day in the filter gives the fleet total in bytes
+// (on a chart with a day axis, that is the value of each day).
+Disk Total Bytes =
+VAR lastDay = MAX ( rpt_device_health_daily[day_start] )
+RETURN
+    CALCULATE ( SUM ( rpt_device_health_daily[avg_value] ), rpt_device_health_daily[metric_name] = "disk.total_bytes", rpt_device_health_daily[day_start] = lastDay )
+
+Disk Free Bytes =
+VAR lastDay = MAX ( rpt_device_health_daily[day_start] )
+RETURN
+    CALCULATE ( SUM ( rpt_device_health_daily[avg_value] ), rpt_device_health_daily[metric_name] = "disk.free_bytes", rpt_device_health_daily[day_start] = lastDay )
+
+Disk Used Bytes =
+[Disk Total Bytes] - [Disk Free Bytes]
+
+// Growth per day over the selected period = (used on the last day - used on the first day) / days between them. Use it with a date filter and, usually, one client.
+Storage Growth Per Day (bytes) =
+VAR firstDay = MIN ( rpt_device_health_daily[day_start] )
+VAR lastDay = MAX ( rpt_device_health_daily[day_start] )
+VAR days = DATEDIFF ( firstDay, lastDay, DAY )
+VAR usedFirst = CALCULATE ( [Disk Used Bytes], rpt_device_health_daily[day_start] = firstDay )
+VAR usedLast = CALCULATE ( [Disk Used Bytes], rpt_device_health_daily[day_start] = lastDay )
+RETURN
+    DIVIDE ( usedLast - usedFirst, days )
+
+// ---------------------------------------------------------------- patching
+// "Important" = critical or security. A device is compliant when it was scanned and has no important update missing for longer than [Overdue Days].
+Overdue Days = 14
+
+Patch Compliant Devices =
+VAR cutoff = UTCNOW () - [Overdue Days]
+RETURN
+    COUNTROWS (
+        FILTER (
+            rpt_patch_compliance,
+            NOT ISBLANK ( rpt_patch_compliance[scanned_at] )
+                && ( rpt_patch_compliance[missing_important_count] = 0 || rpt_patch_compliance[oldest_missing_important_at] > cutoff )
+        )
+    )
+
+Patch Compliance % =
+DIVIDE ( [Patch Compliant Devices], COUNTROWS ( rpt_patch_compliance ) )
+
+Devices Missing Important Updates =
+CALCULATE ( COUNTROWS ( rpt_patch_compliance ), rpt_patch_compliance[missing_important_count] > 0 )
+
+Failed Update Installs =
+SUM ( rpt_patch_compliance[failed_update_count] )
+
+// ---------------------------------------------------------------- alerts
+Alerts =
+COUNTROWS ( rpt_alerts )
+
+Open Alerts =
+CALCULATE ( COUNTROWS ( rpt_alerts ), rpt_alerts[is_open] = 1 )
+
+// Both in hours, over resolved alerts / acknowledged alerts only.
+Mean Time To Resolve (h) =
+DIVIDE ( CALCULATE ( AVERAGE ( rpt_alerts[duration_s] ), rpt_alerts[is_open] = 0 ), 3600 )
+
+Mean Time To Acknowledge (h) =
+DIVIDE ( AVERAGE ( rpt_alerts[time_to_ack_s] ), 3600 )
+
+Alerts per 100 Devices =
+DIVIDE ( [Alerts], [Active Devices] ) * 100
+
+// Top noisy checks: put rpt_alerts[check_name] and [Alerts] in a bar chart, filter the visual to Top N 10 by [Alerts]; the rank helps in tables.
+Noisy Check Rank =
+RANKX ( ALLSELECTED ( rpt_alerts[check_name] ), [Alerts], , DESC, DENSE )
+
+Flapping Checks =
+CALCULATE ( COUNTROWS ( rpt_check_status ), rpt_check_status[flapping] = 1 )
+
+Failing Checks =
+CALCULATE ( COUNTROWS ( rpt_check_status ), rpt_check_status[status] = "fail" )
+
+// ---------------------------------------------------------------- software, changes, virtualization
+Software Installs =
+CALCULATE ( COUNTROWS ( rpt_software_changes ), rpt_software_changes[change_type] = "added" )
+
+Config Changes =
+COUNTROWS ( rpt_change_events )
+
+VMs Without Backup =
+CALCULATE (
+    COUNTROWS ( rpt_hypervisor_vms ),
+    rpt_hypervisor_vms[backup_covered] = 0,
+    rpt_hypervisor_vms[is_template] = 0,
+    rpt_hypervisor_vms[ignored] = 0,
+    ISBLANK ( rpt_hypervisor_vms[missing_since] )
+)
+
+Old Snapshots (7d+) =
+VAR cutoff = UTCNOW () - 7
+RETURN
+    CALCULATE ( COUNTROWS ( rpt_hypervisor_vms ), rpt_hypervisor_vms[oldest_snapshot_at] < cutoff )

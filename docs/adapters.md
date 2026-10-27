@@ -14,6 +14,8 @@ thin layer that implements Core's interfaces on top of the application. Keep ada
 | `Webhooks\WebhookSubscriptionsInterface` / `WebhookSubscriptionLookupInterface` | which endpoints want which events | `WebhooksTableSubscriptions` |
 | `ITSM\TicketProblemLinkInterface` | link a ticket to a problem | `TicketsProblemLink` |
 | `Mcp\AgentDirectoryInterface` | map an identity to an agent | `UsersAgentDirectory` (RivetIT) |
+| `Rmm\Contracts\RmmTenancyInterface`, `RmmAssetsInterface`, `RmmBridgeInterface`, `SecretBoxInterface` (+ optional `RmmMetricSinkInterface` and `RmmMetricReaderInterface` (`DatabaseMetricSink` implements both), `RmmAuditInterface`, `RmmModuleStateInterface`, `RmmEventsInterface`, `RmmEscalationInterface` (Phase 3), and, Phase 2, `ScheduleGateInterface` for maintenance windows) and your `AccessPolicyInterface` (now also asked about `rmm.job.approve`) | clients and scope, asset matching, the RMM tables (links, alerts, saved scripts, session log), key encryption; the abilities `rmm.*` | `Testing\InMemoryRmm*` and the `Testing\Rmm*ConformanceTestCase` kit; see [modules/rmm.md](modules/rmm.md) |
+| `Crypto\RewrapSource` (and, if you wrap it, `Crypto\EnvelopeInterface`) | one encrypted column: ordered paging after a cursor and an atomic compare-and-set write; the key file path is passed to `KeyRingLoader` | `Testing\InMemoryRewrapSource`, `Testing\InMemoryRewrapStateStore`, `Testing\RewrapSourceConformanceTestCase` and `Testing\EnvelopeConformanceTestCase`; see [modules/crypto.md](modules/crypto.md) and [ADR-011](architecture/ADR-011-envelope-and-key-standard.md) |
 | `Compliance\AttestationProviderInterface`, `CheckInterface` | what the edition can prove automatically | edition `ComplianceCatalog` |
 
 ## Rules

@@ -1,0 +1,24 @@
+{
+  "id": "win-print-spooler-restart",
+  "name": "Restart Print Spooler (Windows)",
+  "description": "Restarts the Print Spooler service and reports its state before and after. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "disruptive",
+  "tags": [
+    "print",
+    "spooler",
+    "restart"
+  ],
+  "timeout_s": 120,
+  "params": [
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When true (default) nothing is changed and the script only reports what it would do."
+    }
+  ],
+  "output": "State before/after with [DONE]/[SKIP] lines, or a [DRY-RUN] line. Exit 0; 3 if the spooler is not running afterwards."
+}

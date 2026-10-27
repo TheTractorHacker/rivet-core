@@ -1,0 +1,34 @@
+{
+  "id": "win-network-diagnostics",
+  "name": "Network diagnostics to a target (Windows)",
+  "description": "Runs ping, a traceroute (max 15 hops, no name lookups) and a DNS lookup against one validated host name or IP address.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "network",
+    "diagnostics",
+    "dns"
+  ],
+  "timeout_s": 180,
+  "params": [
+    {
+      "name": "target",
+      "type": "string",
+      "label": "Target host or IP",
+      "description": "Host name or IP address to test.",
+      "required": true,
+      "max_length": 253
+    },
+    {
+      "name": "count",
+      "type": "int",
+      "label": "Ping count",
+      "description": "Number of ping packets (1 to 10).",
+      "default": 4,
+      "min": 1,
+      "max": 10
+    }
+  ],
+  "output": "Ping output, traceroute output and DNS answers. Exit 0; exit 2 on an invalid target or count."
+}

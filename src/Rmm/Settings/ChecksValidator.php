@@ -1,0 +1,167 @@
+<?php
+
+declare(strict_types=1);
+
+namespace RivetCore\Rmm\Settings;
+
+use RivetCore\Rmm\Alerting\FlapDetector;
+use RivetCore\Rmm\Checks\CheckCatalog;
+use RivetCore\Rmm\Checks\RmmChecks;
+use RivetCore\Rmm\RmmProtocol;
+
+/**
+ * Validation and normalisation of the admin-supplied check definition list (the checks_json setting). Ported 1:1 from RivetIT
+ * Config::validateChecks. Check types: service, disk, pending_reboot, script (script checks execute code on the endpoint, so
+ * the delivered definitions are signed; see Crypto\Signer::checkMessage). Values must be integers (canonical JSON refuses floats).
+ *
+ * @api
+ */
+final class ChecksValidator
+{
+    /** Every check type: the four original ones, then the Phase 3 types of {@see CheckCatalog}. */
+    public const TYPES = ['service', 'disk', 'pending_reboot', 'script', 'cpu', 'memory', 'process', 'port', 'ping', 'http', 'cert', 'ntp', 'smart', 'av', 'systemd_failed', 'inodes'];
+    public const MAX_CHECKS = 50;
+    public const MIN_INTERVAL_S = 30;
+    public const MAX_INTERVAL_S = 86400;
+    public const MAX_SCRIPT_BYTES = 8192;
+    public const SCRIPT_TIMEOUT_DEFAULT_S = 30;
+    public const SCRIPT_TIMEOUT_MAX_S = 60;
+
+    /**
+     * @return array{0:?list<array{key:mixed,type:string,params:array<mixed>,interval_s:int,os?:string}>,1:?string} [normalised list, error]
+     */
+    public static function validate(string $json): array
+    {
+        $list = json_decode($json, true);
+        if (!is_array($list) || !array_is_list($list) || count($list) > self::MAX_CHECKS) {
+            return [null, 'Checks must be a JSON list of at most 50 items.'];
+        }
+        $seen = [];
+        $out = [];
+        foreach ($list as $c) {
+            $key = is_array($c) ? ($c['key'] ?? '') : '';
+            if (!is_array($c) || !RmmProtocol::matches(RmmProtocol::CHECK_KEY_RE, self::str($key))) {
+                return [null, 'Each check needs a key of letters, digits and _ . : -'];
+            }
+            $key = self::str($c['key']);
+            if (isset($seen[$key])) {
+                return [null, 'Duplicate check key ' . $key];
+            }
+            $seen[$key] = 1;
+            $type = $c['type'] ?? '';
+            if (!is_string($type) || !in_array($type, self::TYPES, true)) {
+                return [null, 'Check type must be one of ' . implode(', ', self::TYPES) . '.'];
+            }
+            $iv = self::int($c['interval_s'] ?? 0);
+            if ($iv < self::MIN_INTERVAL_S || $iv > self::MAX_INTERVAL_S) {
+                return [null, 'Check interval_s must be 30 to 86400.'];
+            }
+            $params = $c['params'] ?? [];
+            if (self::hasFloat($c)) {
+                return [null, 'Check values must be whole numbers (no decimals).'];
+            }
+            if (!is_array($params)) {
+                return [null, 'Check params must be an object.'];
+            }
+            if ($type === 'script') {
+                $body = self::str($params['script'] ?? '');
+                if ($body === '' || strlen($body) > self::MAX_SCRIPT_BYTES) {
+                    return [null, 'Script checks need params.script (at most 8 KiB).'];
+                }
+                $params['timeout_s'] = max(1, min(self::SCRIPT_TIMEOUT_MAX_S, self::int($params['timeout_s'] ?? self::SCRIPT_TIMEOUT_DEFAULT_S)));
+            }
+            if (!CheckCatalog::isLegacy($type)) {
+                [$clean, $err] = CheckCatalog::validateParams($type, $params);
+                if ($clean === null) {
+                    return [null, 'Check ' . $key . ': ' . $err];
+                }
+                $params = $clean;
+            } else {
+                // The alert behaviour fields are checked on every type; the legacy types' own params never were.
+                if (array_key_exists('thresholds', $params)) {
+                    return [null, 'Check ' . $key . ': ' . $type . ' checks do not report a value, so they cannot have thresholds.'];
+                }
+                if (array_key_exists('flap', $params)) {
+                    [$flap, $flapErr] = FlapDetector::normalize($params['flap']);
+                    if ($flap === null) {
+                        return [null, 'Check ' . $key . ': ' . $flapErr];
+                    }
+                    $params['flap'] = $flap;
+                }
+            }
+            [$os, $osErr] = RmmChecks::normalizeOs($c['os'] ?? null);
+            if ($osErr !== null) {
+                return [null, 'Check ' . $key . ': ' . $osErr];
+            }
+            $item = ['key' => $c['key'], 'type' => $type, 'params' => $params, 'interval_s' => $iv];
+            if ($os !== null) {
+                $item['os'] = $os;   // only windows or linux is stored; "any" is the absence of the member
+            }
+            $out[] = $item;
+        }
+
+        return [$out, null];
+    }
+
+    private static function hasFloat(mixed $v): bool
+    {
+        if (is_float($v)) {
+            return true;
+        }
+        if (is_array($v)) {
+            foreach ($v as $x) {
+                if (self::hasFloat($x)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /** PHP's (string) cast for scalars; arrays and null become '' (the original cast would warn on arrays). */
+    private static function str(mixed $v): string
+    {
+        return is_scalar($v) ? (string) $v : '';
+    }
+
+    private static function int(mixed $v): int
+    {
+        return is_scalar($v) ? (int) $v : 0;
+    }
+
+    /**
+     * The wire/storage form of a check list: an empty params array becomes an object ({}), because the agent protocol and the signed message
+     * require params to be an object. Inside the module a check's params is always an array; this is the only place it turns into \stdClass.
+     *
+     * @param list<array<string,mixed>> $checks
+     * @return list<array<string,mixed>>
+     */
+    public static function toWire(array $checks): array
+    {
+        foreach ($checks as $i => $c) {
+            $p = $c['params'] ?? [];
+            if ($p instanceof \stdClass || $p === []) {
+                $checks[$i]['params'] = new \stdClass();
+            }
+        }
+
+        return $checks;
+    }
+
+    /**
+     * A check definition's params as an array, whatever shape it arrived in (array, \stdClass from a hand-built definition, or absent).
+     *
+     * @param array<string,mixed> $check
+     * @return array<string,mixed>
+     */
+    public static function paramsOf(array $check): array
+    {
+        $p = $check['params'] ?? [];
+        if ($p instanceof \stdClass) {
+            $p = json_decode((string) json_encode($p), true);
+        }
+
+        return is_array($p) ? $p : [];
+    }
+}

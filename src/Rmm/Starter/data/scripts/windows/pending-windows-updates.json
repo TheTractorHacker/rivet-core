@@ -1,0 +1,16 @@
+{
+  "id": "win-pending-windows-updates",
+  "name": "Pending Windows updates (Windows)",
+  "description": "Lists updates not yet installed and not hidden, using the Windows Update Agent search. May take a few minutes.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "updates",
+    "patching",
+    "diagnostics"
+  ],
+  "timeout_s": 420,
+  "params": [],
+  "output": "List of pending updates with KB and size, or a note if the search failed or timed out. Exit 0."
+}

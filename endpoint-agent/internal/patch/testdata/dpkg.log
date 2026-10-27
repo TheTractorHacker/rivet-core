@@ -1,0 +1,5 @@
+2024-05-01 10:00:00 startup archives unpack
+2024-05-01 10:00:02 install nano:amd64 <none> 7.2-1
+2024-05-01 10:00:03 status installed nano:amd64 7.2-1
+2024-05-02 06:25:11 status half-configured openssl:amd64 3.0.2-0ubuntu1.15
+2024-05-02 06:25:12 status installed openssl:amd64 3.0.2-0ubuntu1.15

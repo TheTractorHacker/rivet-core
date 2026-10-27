@@ -8,7 +8,8 @@ namespace RivetCore\Webhooks;
  * Vets a webhook endpoint URL (SSRF guard) and returns the vetted target so the caller can PIN the connection to
  * the addresses that were checked (CURLOPT_RESOLVE), which stops DNS rebinding between check and connect.
  *
- * Accepted: http/https, no userinfo, no backslash / control characters / whitespace, and a host that resolves ONLY to
+ * Accepted: http/https, no userinfo, no backslash / control characters / whitespace, a host made only of DNS label characters
+ * (letters, digits, hyphen, underscore, dots; an internationalised name must be given as xn-- punycode) and a host that resolves ONLY to
  * public addresses. Rejected addresses: loopback, private (10/8, 172.16/12, 192.168/16, fc00::/7), link-local
  * (169.254/16 incl. cloud metadata 169.254.169.254, fe80::/10), reserved/unspecified, CGNAT 100.64/10, and IPv4 embedded
  * in IPv4-mapped / NAT64 IPv6 forms when the embedded address is itself not public. Also rejected: documentation, benchmarking
@@ -74,6 +75,11 @@ final class UrlPolicy
         if (filter_var($host, FILTER_VALIDATE_IP)) {
             $ips = [$host];
         } else {
+            // curl percent-decodes and IDN-converts the host of a URL, while the pin (CURLOPT_RESOLVE) is keyed on this exact text: a name that
+            // is not plain DNS label characters (a%62c.example, a non-ASCII name) would be resolved by curl itself and escape the pin.
+            if (preg_match('/^[a-z0-9_]([a-z0-9_.-]*[a-z0-9_])?$/D', $host) !== 1) {
+                return null;
+            }
             try {
                 $ips = ($this->resolver)($host);
             } catch (\Throwable) {

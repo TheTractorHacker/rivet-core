@@ -1,0 +1,34 @@
+{
+  "id": "win-largest-folders",
+  "name": "Largest top-level folders (Windows)",
+  "description": "Totals disk usage of each top-level folder under a root directory (one level deep) and lists the largest, within a time budget.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "storage",
+    "diagnostics",
+    "disk"
+  ],
+  "timeout_s": 600,
+  "params": [
+    {
+      "name": "root_dir",
+      "type": "string",
+      "label": "Root directory",
+      "description": "Absolute Windows path whose immediate sub-folders are measured.",
+      "default": "C:\\",
+      "max_length": 250
+    },
+    {
+      "name": "top_n",
+      "type": "int",
+      "label": "Number of folders",
+      "description": "How many folders to list (1 to 50).",
+      "default": 15,
+      "min": 1,
+      "max": 50
+    }
+  ],
+  "output": "Table of the largest sub-folders with sizes and a note if the time budget cut the scan short. Exit 0; exit 2 on an invalid parameter."
+}

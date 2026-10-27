@@ -1,0 +1,7 @@
+PING example.test (93.184.216.34): 56 data bytes
+64 bytes from 93.184.216.34: seq=0 ttl=55 time=11.250 ms
+64 bytes from 93.184.216.34: seq=1 ttl=55 time=12.750 ms
+
+--- example.test ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 11.250/12.000/12.750 ms

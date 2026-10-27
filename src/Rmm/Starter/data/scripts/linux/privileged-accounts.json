@@ -1,0 +1,16 @@
+{
+  "id": "lin-privileged-accounts",
+  "name": "Privileged accounts audit (Linux)",
+  "description": "Lists uid 0 accounts, sudo/wheel/admin members, sudoers entries, NOPASSWD rules, login shells and password-less accounts without printing hashes.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "security",
+    "audit",
+    "accounts"
+  ],
+  "timeout_s": 60,
+  "params": [],
+  "output": "Sections per check. Exit 0."
+}

@@ -78,7 +78,11 @@ final class AuditReader
         }
     }
 
-    /** Event group (text before the first dot) => number of events, unfiltered. @return array<string,int> */
+    /**
+     * Event group (text before the first dot) => number of events, unfiltered.
+     *
+     * @return array<string,int>
+     */
     public function groups(): array
     {
         $out = [];
@@ -89,7 +93,11 @@ final class AuditReader
         return $out;
     }
 
-    /** Distinct non-null actor user ids, ascending. @return list<int> */
+    /**
+     * Distinct non-null actor user ids, ascending.
+     *
+     * @return list<int>
+     */
     public function actors(): array
     {
         return array_map(
@@ -113,7 +121,10 @@ final class AuditReader
         return is_array($v) ? $v : null;
     }
 
-    /** @param array<string,mixed> $row @return array<string,mixed> */
+    /**
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
     private static function decode(array $row): array
     {
         $row['metadata'] = self::decodeMetadata($row['metadata_json'] ?? null);

@@ -1,0 +1,4 @@
+[{"storage":"local","type":"dir","content":"iso,vztmpl,backup","active":1,"enabled":1,"shared":0,"total":105088212992,"used":22548578304,"avail":77168746496,"used_fraction":0.2146},
+ {"storage":"local-zfs","type":"zfspool","content":"images,rootdir","active":1,"enabled":1,"shared":0,"total":500107862016,"used":451096576000,"avail":49011286016},
+ {"storage":"nas-backup","type":"nfs","content":"backup","active":0,"enabled":1,"shared":1,"total":0,"used":0},
+ {"storage":"old","type":"dir","content":"iso","active":0,"enabled":0,"shared":0}]

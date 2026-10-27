@@ -1,0 +1,33 @@
+{
+  "id": "lin-largest-dirs",
+  "name": "Largest directories under a path (Linux)",
+  "description": "Shows the largest first-level directories under a root directory, staying on one filesystem. Aborts after 120 seconds.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "disk",
+    "diagnostics"
+  ],
+  "timeout_s": 180,
+  "params": [
+    {
+      "name": "root_dir",
+      "type": "string",
+      "label": "Root directory",
+      "description": "Absolute path whose first-level subdirectories are measured.",
+      "max_length": 250,
+      "default": "/"
+    },
+    {
+      "name": "top_n",
+      "type": "int",
+      "label": "Rows to show",
+      "description": "How many directories to list.",
+      "default": 15,
+      "min": 1,
+      "max": 50
+    }
+  ],
+  "output": "Sorted size list. Exit 0; exit 2 on an invalid path or number; notes when the scan timed out."
+}

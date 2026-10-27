@@ -1,0 +1,33 @@
+{
+  "id": "win-clean-temp",
+  "name": "Clean Windows and user temp files (Windows)",
+  "description": "Removes files older than N days from C:\\Windows\\Temp and each profile Temp folder, reports bytes freed. Does not touch SoftwareDistribution. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "changes_system",
+  "tags": [
+    "cleanup",
+    "storage",
+    "maintenance"
+  ],
+  "timeout_s": 600,
+  "params": [
+    {
+      "name": "age_days",
+      "type": "int",
+      "label": "Minimum age in days",
+      "description": "Only files last modified more than this many days ago are removed (1 to 365).",
+      "default": 7,
+      "min": 1,
+      "max": 365
+    },
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When enabled, nothing is changed and the script only prints what it would do."
+    }
+  ],
+  "output": "Per-location [DRY-RUN]/[DONE]/[SKIP] lines and a total of bytes freed. Exit 0; exit 2 on a bad parameter."
+}

@@ -1,0 +1,5 @@
+Listing...
+curl/noble-updates,noble-security 8.5.0-2ubuntu10.4 amd64 [upgradable from: 8.5.0-2ubuntu10.1]
+libcurl4t64/noble-updates,noble-security 8.5.0-2ubuntu10.4 amd64 [upgradable from: 8.5.0-2ubuntu10.1]
+python3-pip/noble-updates 24.0+dfsg-1ubuntu1.1 all [upgradable from: 24.0+dfsg-1ubuntu1]
+systemd/noble-updates,noble-security 255.4-1ubuntu8.4 amd64 [upgradable from: 255.4-1ubuntu8.1]

@@ -28,6 +28,8 @@ final class ComplianceAssessor
         private ClockInterface $clock,
         /** @var array<string,string> responsibility assignments, key => party name (see ResponsibilityStore::names()) */
         private array $responsible = [],
+        /** the framework profile the checks were built for; its name and version are recorded in the assessment (and so in snapshots and reports) */
+        private ?\RivetCore\Compliance\Profile\RequirementsProviderInterface $profile = null,
     ) {
     }
 
@@ -64,10 +66,28 @@ final class ComplianceAssessor
             $manual[] = $this->manualState($item, $latest[$item->id] ?? null, $now);
         }
 
-        return new Assessment($now, $automatic, $manual, self::summarize($automatic, $manual));
+        return new Assessment($now, $automatic, $manual, self::summarize($automatic, $manual), $this->meta());
     }
 
-    /** @param array<string,mixed>|null $last */
+    /** @return array<string,mixed> */
+    private function meta(): array
+    {
+        if ($this->profile === null) {
+            return [];
+        }
+        try {
+            $p = $this->profile->selectedProfile();
+        } catch (\Throwable) {
+            return ['profile' => ['error' => true]];
+        }
+
+        return $p === null ? [] : ['profile' => ['key' => $p->key, 'label' => $p->label, 'version' => $p->version, 'built_in' => $p->builtin]];
+    }
+
+    /**
+     * @param array<string,mixed>|null $last
+     * @return array<string,mixed>
+     */
     private function manualState(ManualItem $item, ?array $last, \DateTimeImmutable $now): array
     {
         $state = 'never';
@@ -120,6 +140,8 @@ final class ComplianceAssessor
      * @param list<array<string,mixed>> $automatic
      * @param list<array<string,mixed>> $manual
      * @return array<string, array<string,mixed>>
+     *
+     * @internal used by assess(); not part of the supported API
      */
     public static function summarize(array $automatic, array $manual): array
     {

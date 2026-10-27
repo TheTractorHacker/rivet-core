@@ -21,7 +21,8 @@ final class ScratchDb
             getenv('RIVETCORE_TEST_DB_HOST') ?: 'localhost',
             getenv('RIVETCORE_TEST_DB_USER') ?: 'root',
             getenv('RIVETCORE_TEST_DB_PASS') ?: '',
-            $db
+            $db,
+            (int) (getenv('RIVETCORE_TEST_DB_PORT') ?: 0)
         );
         $m->set_charset('utf8mb4');
 

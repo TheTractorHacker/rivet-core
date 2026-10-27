@@ -12,6 +12,13 @@ namespace RivetCore\Webhooks;
  */
 interface WebhookSubscriptionsInterface
 {
-    /** @return list<WebhookSubscription> enabled endpoints subscribed to $eventType */
+    /**
+     * Enabled endpoints subscribed to $eventType, with their secret decrypted. Disabled and deleted endpoints are never returned.
+     * An event matches when it is listed exactly or covered by a stored pattern ("*" = every event, "ticket.*" = every event of
+     * that group, see EventCatalog); anything else, including an empty or hostile $eventType, matches nothing and does not throw.
+     * Checked by Testing\WebhookSubscriptionsConformanceTestCase.
+     *
+     * @return list<WebhookSubscription>
+     */
     public function forEvent(string $eventType): array;
 }

@@ -1,0 +1,16 @@
+bash	5.2.21-2ubuntu4	Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>	ii 
+curl	8.5.0-2ubuntu10.6	Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>	ii 
+
+oldconf	1.0-1	Someone <a@b.c>	rc 
+halfinst	2.0-1	Someone <a@b.c>	Hi 
+unpacked	2.0-1	Someone <a@b.c>	un 
+held-pkg	3.1	Holder <h@x.y>	hi 
+reinst	1.1	M <m@x.y>	iiR
+notabs-line-here
+two	fields
+libc6:amd64	2.39-0ubuntu8.3	Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>	ii 
+libc6:i386	2.39-0ubuntu8.3	Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>	ii 
+fonts-übung	1.0	Grüße GmbH <info@grusse.de>	ii 
+no-maintainer	0.1		ii 
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx	1.0	Long Name Inc	ii 
+crlf-pkg	1.2	Win <w@x.y>	ii 

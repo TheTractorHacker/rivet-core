@@ -1,0 +1,41 @@
+// measures-edition.dax: measures that need the EDITION's tickets and SLA data (RivetIT / RivetMSP own those tables, not RivetCore).
+// They assume the edition views proposed in docs/design/reporting.md ("Edition views"), loaded under the names rpt_tickets and rpt_clients, with
+// rpt_tickets[client_id] related to your Clients dimension and rpt_tickets[asset_id] to rpt_devices[asset_id] (set the relationship to "many to many, single direction"
+// if several devices share an asset). The edition ships these views in phase 4; until then these measures have nothing to read.
+// NOT VERIFIED in Power BI Desktop, and the view columns are the PROPOSED ones: check them against what the edition ships.
+
+Tickets =
+COUNTROWS ( rpt_tickets )
+
+Open Tickets =
+CALCULATE ( COUNTROWS ( rpt_tickets ), rpt_tickets[is_open] = 1 )
+
+// Tickets opened in the selected period per 100 active devices ([Active Devices] is in measures.dax).
+Tickets per 100 Devices =
+DIVIDE ( [Tickets], [Active Devices] ) * 100
+
+Mean Time To Resolve Tickets (h) =
+DIVIDE ( CALCULATE ( AVERAGE ( rpt_tickets[resolution_s] ), NOT ISBLANK ( rpt_tickets[resolved_at] ) ), 3600 )
+
+First Response Time (h) =
+DIVIDE ( AVERAGE ( rpt_tickets[first_response_s] ), 3600 )
+
+// SLA breach rate = resolved-or-due tickets whose resolution target was missed / tickets with a resolution target.
+Tickets With SLA =
+CALCULATE ( COUNTROWS ( rpt_tickets ), NOT ISBLANK ( rpt_tickets[sla_resolution_due_at] ) )
+
+SLA Resolution Breaches =
+CALCULATE ( COUNTROWS ( rpt_tickets ), rpt_tickets[sla_resolution_met] = 0 )
+
+SLA Breach Rate =
+DIVIDE ( [SLA Resolution Breaches], [Tickets With SLA] )
+
+SLA Response Breach Rate =
+DIVIDE ( CALCULATE ( COUNTROWS ( rpt_tickets ), rpt_tickets[sla_response_met] = 0 ), CALCULATE ( COUNTROWS ( rpt_tickets ), NOT ISBLANK ( rpt_tickets[sla_response_due_at] ) ) )
+
+// Ties alerts to tickets: the edition's rpt_alert_tickets (alert_id, ticket_id) related to rpt_alerts[alert_id] (many to one) and to rpt_tickets[ticket_id].
+Alerts With Ticket =
+COUNTROWS ( rpt_alert_tickets )
+
+Alert Ticket Rate =
+DIVIDE ( [Alerts With Ticket], [Alerts] )

@@ -1,0 +1,63 @@
+{
+    "description": "Per-OS check targeting (1.0.0-rc.24). signed_checks: check definitions as the server delivers them, each signed by the test key over the canonical JSON of the entry INCLUDING its optional os member (windows or linux; absent means every OS). The agent verifies the object exactly as delivered. delivered: the keys the server delivers to a device of that os (RmmChecks::forOs); the agent must run exactly these keys from the same list (it drops any check whose os is not its own GOOS). missing_values: the service check param missing (fail, warn, ignore; default fail).",
+    "test_key": {
+        "public_key_base64": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE="
+    },
+    "signed_checks": [
+        {
+            "key": "svc_eventlog",
+            "type": "service",
+            "params": {
+                "name": "EventLog",
+                "expected": "running"
+            },
+            "interval_s": 300,
+            "os": "windows",
+            "signature": "G17nqhQKKsAXpTqwYTcNq7DZOJdd08P/SNmoYb8ooz0g4Z7AlX+DwaRqvicLVuh2I7CiwjH42BKGd3JcMpqXDg=="
+        },
+        {
+            "key": "svc_cron",
+            "type": "service",
+            "params": {
+                "name": "cron",
+                "missing": "warn"
+            },
+            "interval_s": 300,
+            "os": "linux",
+            "signature": "y8xQ5x7Be5a3jxXIhi2Wj3kd7FUdTJn7W/gcTJo1jFycZ78cIYC5IgMsah7dubpLtXnvCv7LCdRCpwfmAd+sCg=="
+        },
+        {
+            "key": "disk_any",
+            "type": "disk",
+            "params": {
+                "mount": "/"
+            },
+            "interval_s": 600,
+            "signature": "j1RuMSgfAd2sji1+Ogfrvmi7zVOVtRQMiFociDiBIPE+n1uVfUt070BPNaY34yvHoYFyWGYTuAes/yGVqqNSAA=="
+        },
+        {
+            "key": "pending_reboot",
+            "type": "pending_reboot",
+            "params": {},
+            "interval_s": 3600,
+            "os": "windows",
+            "signature": "WFzZ3LrTYx2XE1ot2YhZ0COr9RLfuu4E8dPzUxr4Sc8SX56QvEMX+/hUlmVQOPNG595jizoJQdP2eJ1XuoxZCQ=="
+        }
+    ],
+    "delivered": {
+        "windows": [
+            "svc_eventlog",
+            "disk_any",
+            "pending_reboot"
+        ],
+        "linux": [
+            "svc_cron",
+            "disk_any"
+        ]
+    },
+    "missing_values": [
+        "fail",
+        "warn",
+        "ignore"
+    ]
+}

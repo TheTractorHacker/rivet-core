@@ -1,0 +1,79 @@
+/*
+ * RMM asset panel and agent fleet page (includes/rmm_ui_render.php, agent/rmm_fleet.php).
+ *
+ * Scoped under .rmm-*; the gauges, summary tiles, banners and chart chrome are the existing .ifm-* rules in css/itflow_metrics.css and the
+ * .it-* layer of css/itflow_design.css. Every colour is an existing token (--if-*, --tblr-*), so light, dark and the per-company accent
+ * come for free and this file adds no colour literal.
+ *
+ * Load order: after css/itflow_metrics.css, before css/itflow.bind-tabler.css (see includes/header.php).
+ */
+
+.min-w-0 { min-width: 0; }
+
+/* The coloured edge of the device strip: state is also a word and an icon in the markup, never colour alone. */
+.rmm-strip { border-left: 5px solid var(--rmm-edge, var(--if-muted)); border-radius: 4px; }
+.rmm-strip-ok { --rmm-edge: var(--tblr-success); }
+.rmm-strip-crit { --rmm-edge: var(--tblr-danger); }
+.rmm-strip-off { --rmm-edge: var(--if-muted); }
+
+.rmm-gauge { flex: none; }
+.rmm-dim { opacity: .6; }
+.rmm-wrap { overflow-wrap: anywhere; }
+.rmm-thead { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--if-muted); }
+.rmm-dl-key { width: 40%; white-space: nowrap; }
+.rmm-usedcell { min-width: 140px; }
+.rmm-legend { min-width: 12rem; }
+.rmm-ib-sub { font-size: 10px; }
+.ifm-legend-swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; flex: none; }
+
+/* Dimmed gauge cards keep their "last reading" chip flush with the card edge. */
+.rmm-card-meta-flush { padding-left: .75rem; }
+
+/* Job output: monospace, wrapped, scrollable; shown with textContent only. */
+.rmm-pre {
+  max-height: 22rem;
+  overflow: auto;
+  padding: .6rem .75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--if-mono);
+  font-size: .78rem;
+  background: var(--if-bg);
+  color: var(--if-ink);
+  border: 1px solid var(--if-border);
+  border-radius: var(--if-radius-sm);
+}
+
+/* Tabs scroll inside their own container; the page never scrolls sideways. */
+.rmm-tabbar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
+.rmm-tabbar .nav-link { white-space: nowrap; background: none; }
+
+.rmm-actions .btn { min-height: 2.25rem; }
+.rmm-reasons li { margin-top: .15rem; }
+
+/* Tags and groups on the device strip and the fleet list: the name is the content, the colour only a swatch on the edge. */
+.badge.rmm-tag, .badge.rmm-group { font-weight: 500; font-size: .78rem; display: inline-flex; align-items: center; gap: .35rem; color: var(--if-ink); background: var(--if-bg); border: 1px solid var(--if-border); text-transform: none; letter-spacing: normal; }
+.rmm-tag-x { border: 0; background: none; padding: 0 .1rem; margin: 0; line-height: 1; color: var(--if-muted); cursor: pointer; min-width: 1.25rem; min-height: 1.25rem; }
+.rmm-tag-x:hover, .rmm-tag-x:focus-visible { color: var(--tblr-danger); }
+.rmm-tag-input { width: 11rem; max-width: 100%; }
+
+/* Per-check history: a strip of status segments (height also encodes the status) with the availability under it. */
+.rmm-trend-cell { min-width: 150px; }
+.rmm-spark { display: block; width: 120px; max-width: 100%; height: 16px; border-radius: 2px; background: var(--if-bg); }
+.rmm-trend { position: relative; }   /* the visually-hidden text inside is absolutely positioned: keep it inside the scrolling table container, or it widens the page */
+.rmm-trend summary { cursor: pointer; color: var(--if-muted); }
+
+/* The Run script dialog: two panes (library / free-form) that each wrap their own body and footer, so the body still scrolls inside the dialog. */
+.rmm-run-pane { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.rmm-run-pane[hidden] { display: none; }
+.rmm-run-pane > .modal-body { overflow-y: auto; }
+#rmm-run-lib-script { max-height: 14rem; }
+#rmm-run-lib-detail:empty { display: none; }
+
+/* Phone width: the strip stacks (identity, then the action row wrapping), tables sit in their own scroll container. */
+@media (max-width: 767.98px) {
+  .rmm-strip-row { align-items: flex-start !important; }
+  .rmm-actions { width: 100%; }
+  .rmm-actions .btn { flex: 1 1 auto; }
+  .rmm-dl-key { width: auto; white-space: normal; }
+}

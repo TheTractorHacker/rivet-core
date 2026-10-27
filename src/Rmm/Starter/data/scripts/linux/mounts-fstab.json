@@ -1,0 +1,15 @@
+{
+  "id": "lin-mounts-fstab",
+  "name": "Mounts and fstab review (Linux)",
+  "description": "Lists mounts, read-only mounts, fstab contents and filesystems at 90 percent or more.",
+  "platform": "linux",
+  "language": "bash",
+  "risk": "read_only",
+  "tags": [
+    "disk",
+    "diagnostics"
+  ],
+  "timeout_s": 30,
+  "params": [],
+  "output": "Mount table, flags and warnings. Exit 0."
+}

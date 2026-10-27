@@ -1,0 +1,64 @@
+/*
+ * RMM Phase 2 and 3 pages (policies, script library, schedules, approvals, custom fields, agent alerts, maintenance windows, escalation policies) and the
+ * Policy / Alerting tabs of the asset panel. Scoped under .rmm-*; every colour is an existing token (--if-*, --tblr-*), so light, dark and the per-company
+ * accent come for free. Load order: right after css/itflow_rmm.css, before css/itflow.bind-tabler.css (see includes/header.php).
+ *
+ * One section per area; add rules inside your own section only.
+ */
+
+/* ---- shared */
+.rmm-scope [data-rmm-scope-for] { margin-bottom: .25rem; }
+.rmm-row { border: 1px solid var(--if-border); border-radius: var(--if-radius-sm); padding: .6rem .75rem; margin-bottom: .5rem; background: var(--if-bg); }
+.rmm-row-remove { min-width: 2.25rem; min-height: 2.25rem; }
+.rmm-mono { font-family: var(--if-mono); font-size: .8rem; }
+.rmm-code { font-family: var(--if-mono); font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rmm-table-actions { white-space: nowrap; }
+.rmm-table-actions form { display: inline-block; }
+.rmm-sticky-form { position: sticky; bottom: 0; background: var(--if-bg); padding: .5rem 0; border-top: 1px solid var(--if-border); z-index: 2; }
+
+/* ---- policies and custom fields (Group A) */
+/* A visually-hidden caption or label is absolutely positioned; without a positioned ancestor its box escapes the scroll container and widens the page on a phone. */
+#rmm-pane-policy .table-responsive, #pol-list .table-responsive, #fld-defs .table-responsive, #rmm-policy-fields form { position: relative; }
+.rmm-row details > summary { cursor: pointer; }
+#pol-form .rmm-row { background: var(--if-bg); }
+#pol-explain table th[scope="row"] { min-width: 8rem; }
+
+/* ---- script library, schedules and approvals (Group B) */
+.rmm-pre { max-height: 28rem; overflow: auto; background: var(--if-bg); border: 1px solid var(--if-border); border-radius: var(--if-radius-sm); padding: .6rem .75rem; color: var(--tblr-body-color); }
+.rmm-preview { max-height: 14rem; }
+.rmm-diff-wrap { max-height: 40rem; overflow: auto; border: 1px solid var(--if-border); border-radius: var(--if-radius-sm); }
+.rmm-diff { font-family: var(--if-mono); font-size: .8rem; margin: 0; }
+.rmm-diff td { padding: .05rem .4rem; border: 0; vertical-align: top; color: var(--tblr-body-color); }
+.rmm-diff .rmm-diff-no { width: 3rem; text-align: right; color: var(--tblr-secondary-color, var(--tblr-muted)); user-select: none; opacity: .75; }
+.rmm-diff .rmm-diff-sign { width: 1.5rem; font-weight: 700; text-align: center; user-select: none; }
+.rmm-diff .rmm-diff-text { white-space: pre-wrap; overflow-wrap: anywhere; width: 100%; }
+.rmm-diff .rmm-diff-add td { background: rgba(var(--tblr-success-rgb), .20); }
+.rmm-diff .rmm-diff-del td { background: rgba(var(--tblr-danger-rgb), .20); }
+.rmm-diff .rmm-diff-add .rmm-diff-sign { color: var(--tblr-success); }
+.rmm-diff .rmm-diff-del .rmm-diff-sign { color: var(--tblr-danger); }
+.rmm-diff .rmm-diff-fold td { background: rgba(var(--tblr-secondary-rgb, 128, 128, 128), .10); font-family: var(--tblr-font-sans-serif, inherit); }
+.rmm-approval-detail > td { background: transparent; }
+.rmm-approval-detail summary { cursor: pointer; }
+#scr-editor textarea.rmm-code { min-height: 18rem; resize: vertical; white-space: pre; overflow: auto; }
+
+/* ---- alerts, maintenance windows and escalation policies (Group C) */
+.rmm-alr-kpi-n { font-size: 1.6rem; font-weight: 600; line-height: 1.1; }
+.rmm-alr-form .form-check-label { overflow-wrap: anywhere; }
+.rmm-alr-target select, .rmm-alr-target input { min-width: 9rem; max-width: 100%; }
+.rmm-wrap { overflow-wrap: anywhere; }
+
+@media (max-width: 767.98px) {
+  .rmm-table-actions { white-space: normal; }
+  .rmm-row .row > [class*="col-"] { margin-bottom: .35rem; }
+}
+
+/* ---- starter pack page and the Starter badge in the script library (RivetCore 1.0.0-rc.13) */
+.rmm-starter-badge, .rmm-risk-chip, .rmm-starter-waiting { white-space: nowrap; }
+#starter-scripts td, #starter-policies td { vertical-align: top; }
+#starter-scripts .form-check-input, #starter-policies .form-check-input { width: 1.15rem; height: 1.15rem; }
+#starter-actions .btn[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+#starter-blocker { border-left-width: 5px; }
+@media (max-width: 575.98px) {
+  #starter-actions .btn { flex: 1 1 auto; min-height: 2.5rem; }
+  #starter-counts .badge { white-space: normal; }
+}

@@ -41,6 +41,8 @@ class AutomationRuleEvaluator
      * All conditions AND together. No conditions (null/empty/'{}') always matches. A key missing from $eventData
      * never matches - missing is not treated as equal to any expected value, including null. Malformed JSON
      * fails closed.
+     *
+     * @param array<string,mixed> $eventData
      */
     public function conditionsMatch(?string $conditionJson, array $eventData): bool
     {

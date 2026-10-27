@@ -1,0 +1,144 @@
+<?php
+
+declare(strict_types=1);
+
+namespace RivetCore\Rmm\Enrollment;
+
+use RivetCore\Rmm\Assets\DeviceTypeClassifier;
+use RivetCore\Rmm\Http\ApiError;
+use RivetCore\Rmm\RmmProtocol;
+
+/**
+ * The pure validation and normalisation rules for the device block an agent sends at enrollment (and the text helpers the
+ * check-in uses). No database, no clock. Ported 1:1 from RivetIT Enrollment::{normalizeMac,cleanSerial,cleanText,validateDevice}.
+ *
+ * @api
+ */
+final class DeviceValidator
+{
+    /** Serial numbers firmware vendors ship as placeholders; a match on one of these is never an identity. */
+    public const JUNK_SERIALS = RmmProtocol::JUNK_SERIALS;
+
+    /** Lower-case colon form of a MAC, or null for anything else including the null MAC. */
+    public static function normalizeMac(string $mac): ?string
+    {
+        $m = strtolower(str_replace('-', ':', trim($mac)));
+        if (!RmmProtocol::matches(RmmProtocol::MAC_RE, $m) || $m === RmmProtocol::NULL_MAC) {
+            return null;
+        }
+
+        return $m;
+    }
+
+    /** The trimmed serial, or null when it is empty or one of JUNK_SERIALS (case-insensitive). */
+    public static function cleanSerial(?string $s): ?string
+    {
+        if ($s === null) {
+            return null;
+        }
+        $s = trim($s);
+
+        return in_array(strtolower($s), self::JUNK_SERIALS, true) ? null : $s;
+    }
+
+    /** Control characters become spaces, the result is trimmed and cut to $max characters; null for non-strings and empty text. */
+    public static function cleanText(mixed $v, int $max): ?string
+    {
+        if (!is_string($v)) {
+            return null;
+        }
+        $v = preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $v) ?? '';
+        $v = trim($v);
+
+        return $v === '' ? null : mb_substr($v, 0, $max);
+    }
+
+    /**
+     * The optional hardware facts of an enrollment device block or a check-in inventory (rc.29): anything outside the closed vocabularies, or of the
+     * wrong type, is left out (never a rejection: an old or odd agent must still enroll).
+     *
+     * @param array<string,mixed> $d
+     * @return array{chassis_type:?string,has_battery:?bool,is_virtual:?bool,virtualization:?string,role_hints:list<string>}
+     */
+    public static function cleanHardware(array $d): array
+    {
+        $in = static fn (mixed $v, array $allowed): ?string => is_string($v) && in_array($v, $allowed, true) ? $v : null;
+        $roles = [];
+        if (is_array($d['role_hints'] ?? null)) {
+            foreach (array_slice($d['role_hints'], 0, 16) as $r) {
+                if (is_string($r) && in_array($r, DeviceTypeClassifier::ROLE_HINTS, true)) {
+                    $roles[$r] = $r;
+                }
+            }
+        }
+
+        return [
+            'chassis_type' => $in($d['chassis_type'] ?? null, DeviceTypeClassifier::CHASSIS),
+            'has_battery' => is_bool($d['has_battery'] ?? null) ? $d['has_battery'] : null,
+            'is_virtual' => is_bool($d['is_virtual'] ?? null) ? $d['is_virtual'] : null,
+            'virtualization' => $in($d['virtualization'] ?? null, DeviceTypeClassifier::VIRTUALIZATION),
+            'role_hints' => array_values($roles),
+        ];
+    }
+
+    /**
+     * Validate and normalise the device block of an enrollment request.
+     *
+     * @param array<string,mixed> $d
+     * @param bool $allowLinux admit os "linux" (RivetIT's EA_ALLOW_NON_WINDOWS test flag; never true in production)
+     * @return array{install_id:string,machine_guid:?string,hostname:string,os_version:string,arch:string,serial:?string,manufacturer:?string,model:?string,macs:list<string>,agent_version:string,chassis_type?:string,has_battery?:bool,is_virtual?:bool,virtualization?:string,role_hints?:list<string>}
+     * @throws ApiError 422 invalid, message "device.<field> is invalid"
+     */
+    public static function validateDevice(array $d, bool $allowLinux = false): array
+    {
+        $bad = static fn (string $f): ApiError => new ApiError(422, 'invalid', "device.$f is invalid");
+        $install = $d['install_id'] ?? null;
+        if (!is_string($install) || !RmmProtocol::matches(RmmProtocol::INSTALL_ID_RE, $install)) {
+            throw $bad('install_id');
+        }
+        $guid = $d['machine_guid'] ?? null;
+        if ($guid !== null && (!is_string($guid) || !RmmProtocol::matches(RmmProtocol::MACHINE_GUID_RE, $guid))) {
+            throw $bad('machine_guid');
+        }
+        $host = self::cleanText($d['hostname'] ?? null, 200);
+        if ($host === null) {
+            throw $bad('hostname');
+        }
+        $os = $d['os'] ?? '';
+        if (!($os === 'windows' || ($allowLinux && $os === 'linux'))) {
+            throw $bad('os');
+        }
+        $arch = $d['arch'] ?? '';
+        if (!is_string($arch) || !array_key_exists($arch, RmmProtocol::ARCHS)) {
+            throw $bad('arch');
+        }
+        $ver = $d['agent_version'] ?? null;
+        if (!is_string($ver) || !RmmProtocol::matches(RmmProtocol::AGENT_VERSION_RE, $ver)) {
+            throw $bad('agent_version');
+        }
+        $macsIn = $d['mac_addresses'] ?? [];
+        if (!is_array($macsIn) || count($macsIn) > 32) {
+            throw $bad('mac_addresses');
+        }
+        $macs = [];
+        foreach ($macsIn as $m) {
+            $n = is_string($m) ? self::normalizeMac($m) : null;
+            if ($n !== null) {
+                $macs[$n] = $n;
+            }
+        }
+
+        return [
+            'install_id' => strtolower($install),
+            'machine_guid' => $guid === null ? null : strtolower($guid),
+            'hostname' => $host,
+            'os_version' => self::cleanText($d['os_version'] ?? '', 200) ?? '',
+            'arch' => $arch,
+            'serial' => self::cleanSerial(self::cleanText($d['serial'] ?? null, 100)),
+            'manufacturer' => self::cleanText($d['manufacturer'] ?? null, 200),
+            'model' => self::cleanText($d['model'] ?? null, 200),
+            'macs' => array_values($macs),
+            'agent_version' => $ver,
+        ] + array_filter(self::cleanHardware($d), static fn (mixed $v): bool => $v !== null && $v !== []);   // only the facts that were sent and valid
+    }
+}

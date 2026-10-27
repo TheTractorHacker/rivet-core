@@ -1,0 +1,16 @@
+{
+  "id": "win-firewall-status",
+  "name": "Windows Firewall status (Windows)",
+  "description": "Shows each firewall profile with enabled state and default actions, plus counts of enabled rules.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "read_only",
+  "tags": [
+    "security",
+    "firewall",
+    "network"
+  ],
+  "timeout_s": 90,
+  "params": [],
+  "output": "Profile table and rule counts by direction and action. Exit 0; prints NOT AVAILABLE if the cmdlets are missing."
+}

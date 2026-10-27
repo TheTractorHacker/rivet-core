@@ -18,11 +18,13 @@ final class McpDiagnostics
     /** @param string $envVarName shown to the admin when the kill switch is set, e.g. MYAPP_MCP_ENABLED */
     public function __construct(private AgentDirectoryInterface $agents, private ClientInterface $http, private string $envVarName = 'MCP_ENABLED', private string $appName = 'this app') {}
 
+    /** @return array{status:string,label:string,detail:string} */
     private static function check(string $status, string $label, string $detail): array
     {
         return ['status' => $status, 'label' => $label, 'detail' => $detail];
     }
 
+    /** @return array<string,mixed> */
     private function getJson(string $url): array
     {
         $res = $this->http->request('GET', $url, ['timeout' => 5, 'allow_redirects' => false, 'http_errors' => false, 'headers' => ['Accept' => 'application/json']]);
@@ -32,7 +34,10 @@ final class McpDiagnostics
         return $data;
     }
 
-    /** @return list<array{status:string,label:string,detail:string}> */
+    /**
+     * @param array{schema_ready:bool, module_on:bool, killed:bool, enabled:bool, issuer:string, audience:string, issuer_from_env:bool, audience_from_env:bool, configured:bool} $cfg as returned by McpConfig::resolve()
+     * @return list<array{status:string,label:string,detail:string}>
+     */
     public function run(array $cfg, string $baseHost): array
     {
         $out = [];
@@ -93,6 +98,7 @@ final class McpDiagnostics
         return $out;
     }
 
+    /** @return array{status:string,label:string,detail:string} */
     private function routeCheck(string $host, string $issuer): array
     {
         $label = 'This server answers /mcp';

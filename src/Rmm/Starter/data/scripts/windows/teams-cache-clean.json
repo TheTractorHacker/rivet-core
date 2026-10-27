@@ -1,0 +1,31 @@
+{
+  "id": "win-teams-cache-clean",
+  "name": "Clean Microsoft Teams cache (Windows)",
+  "description": "Clears classic Teams cache folders and the new Teams local cache for all user profiles. Skips everything if Teams is running and skip_running is true. Dry run by default.",
+  "platform": "windows",
+  "language": "powershell",
+  "risk": "changes_system",
+  "tags": [
+    "teams",
+    "cache",
+    "cleanup"
+  ],
+  "timeout_s": 300,
+  "params": [
+    {
+      "name": "skip_running",
+      "type": "bool",
+      "default": true,
+      "label": "Skip if Teams is running",
+      "description": "When true, nothing is cleaned while Teams is running."
+    },
+    {
+      "name": "dry_run",
+      "type": "bool",
+      "default": true,
+      "label": "Dry run (only report what would happen)",
+      "description": "When true (default) nothing is changed and the script only reports what it would do."
+    }
+  ],
+  "output": "Per-folder [DONE]/[DRY-RUN]/[SKIP] lines and total bytes. Exit 0."
+}

@@ -1,0 +1,833 @@
+<?php
+
+declare(strict_types=1);
+
+namespace RivetCore\Rmm\Checkin;
+
+use RivetCore\Rmm\Alerting\AlertingEngine;
+use RivetCore\Rmm\Assets\DeviceTypeClassifier;
+use RivetCore\Rmm\Assets\DeviceTypes;
+use RivetCore\Rmm\Capacity\LoadShedder;
+use RivetCore\Rmm\Checks\CheckCatalog;
+use RivetCore\Rmm\Checks\CheckEvaluator;
+use RivetCore\Rmm\Checks\CheckReconciler;
+use RivetCore\Rmm\Checks\RmmChecks;
+use RivetCore\Rmm\Contracts\RmmAssetsInterface;
+use RivetCore\Rmm\Contracts\RmmMetricSinkInterface;
+use RivetCore\Rmm\Device\DeviceRepository;
+use RivetCore\Rmm\Device\DeviceState;
+use RivetCore\Rmm\Enrollment\DeviceValidator;
+use RivetCore\Rmm\Http\ApiError;
+use RivetCore\Rmm\Job\JobService;
+use RivetCore\Rmm\Link\RmmLinker;
+use RivetCore\Rmm\Policy\EffectivePolicy;
+use RivetCore\Rmm\Remote\RemoteProtocol;
+use RivetCore\Rmm\Remote\RemoteSettings;
+use RivetCore\Rmm\RmmEvent;
+use RivetCore\Rmm\RmmProtocol;
+use RivetCore\Rmm\Software\SoftwareService;
+use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\RmmEventPublisher;
+use RivetCore\Rmm\Support\Sql;
+use RivetCore\Rmm\Update\UpdateService;
+
+/**
+ * POST agent_checkin processing: validation, idempotency by (device_id, seq), inventory, metrics (through the edition's sink),
+ * checks (debounced alerts) and the response.
+ *
+ * A missing metric (null or absent) produces NO sample. It is never stored as 0. Out-of-range readings are dropped, never clamped.
+ *
+ * @api
+ */
+final class CheckinService
+{
+    public const MAX_BODY_BYTES = RmmProtocol::CHECKIN_MAX_BODY;
+    public const MAX_CHECKS = RmmProtocol::CHECKIN_MAX_CHECKS;
+    public const MAX_BUFFERED = RmmProtocol::CHECKIN_MAX_BUFFERED;
+    public const MAX_DISKS = RmmProtocol::CHECKIN_MAX_DISKS;
+    public const MAX_CORES = RmmProtocol::CHECKIN_MAX_CORES;
+    public const MAX_INVENTORY_BYTES = RmmProtocol::CHECKIN_MAX_INVENTORY_BYTES;
+    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
+    /** At load-shedding level 1 buffered samples older than this are acknowledged but not ingested. */
+    private const SHED_STALE_SAMPLE_S = 900;
+    /** Above this many bytes of work a check-in is processed inline even in queued mode (the job payload column is text). */
+    public const MAX_QUEUED_PAYLOAD_BYTES = 60000;
+
+    public function __construct(
+        private readonly Sql $sql,
+        private readonly RmmSettings $settings,
+        private readonly DeviceRepository $devices,
+        private readonly CheckEvaluator $checks,
+        private readonly JobService $jobs,
+        private readonly UpdateService $updates,
+        private readonly RmmLinker $linker,
+        private readonly RmmAssetsInterface $assets,
+        private readonly RmmMetricSinkInterface $metrics,
+        /** @var (\Closure(array<string,mixed>): void)|null enqueues the heavy part of a check-in (ingest_mode queued); null = always inline */
+        private readonly ?\Closure $enqueue = null,
+        private readonly ?DeviceState $deviceState = null,
+        private readonly ?SoftwareService $software = null,
+        private readonly ?RmmEventPublisher $events = null,
+        private readonly ?EffectivePolicy $policies = null,
+        private readonly ?RemoteSettings $remote = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
+        private readonly ?\RivetCore\Rmm\Change\ChangeSettings $change = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfter = null,
+        private readonly ?\RivetCore\Rmm\Hypervisor\HypervisorSettings $hypervisor = null,
+        private readonly ?\RivetCore\Rmm\Hypervisor\HypervisorService $hypervisorService = null,
+    ) {
+    }
+
+    /**
+     * @param array<string,mixed> $dev the authenticated device row
+     * @param array<string,mixed> $body the decoded request body
+     * @return array<string,mixed> the 200 body
+     * @throws ApiError
+     */
+    public function handle(array $dev, array $body, string $ip): array
+    {
+        $cfg = $this->settings->get();
+        $features = $this->settings->features();
+
+        $seq = $body['seq'] ?? null;
+        if (!is_int($seq) || $seq < 0 || $seq > 9007199254740991) {
+            throw new ApiError(422, 'invalid', 'seq must be a non-negative integer');
+        }
+        try {
+            $collected = $this->parseTime($body['collected_at'] ?? null, 'collected_at', $cfg);
+        } catch (ApiError $e) {
+            $this->noteRejected($dev, $e);   // why this device is not checking in, for the technician (best effort, never changes the answer)
+            throw $e;
+        }
+        $ver = $body['agent_version'] ?? null;
+        if (!is_string($ver) || !RmmProtocol::matches(RmmProtocol::AGENT_VERSION_RE, $ver)) {
+            throw new ApiError(422, 'invalid', 'agent_version is invalid');
+        }
+        $inventory = $body['inventory'] ?? null;
+        if ($inventory !== null) {
+            if (!is_array($inventory) || array_is_list($inventory) || strlen((string) json_encode($inventory)) > self::MAX_INVENTORY_BYTES) {
+                throw new ApiError(422, 'invalid', 'inventory must be an object under ' . self::MAX_INVENTORY_BYTES . ' bytes');
+            }
+        }
+        $metrics = $body['metrics'] ?? null;
+        if ($metrics !== null && (!is_array($metrics) || (array_is_list($metrics) && $metrics !== []))) {
+            throw new ApiError(422, 'invalid', 'metrics must be an object');
+        }
+        $checks = $body['checks'] ?? [];
+        if (!is_array($checks) || !array_is_list($checks) || count($checks) > self::MAX_CHECKS) {
+            throw new ApiError(422, 'invalid', 'checks must be a list of at most ' . self::MAX_CHECKS . ' items');
+        }
+        $buffered = $body['buffered'] ?? [];
+        if (!is_array($buffered) || !array_is_list($buffered) || count($buffered) > self::MAX_BUFFERED) {
+            throw new ApiError(422, 'invalid', 'buffered must be a list of at most ' . self::MAX_BUFFERED . ' samples');
+        }
+        $primaryChecks = $this->cleanChecks($checks, true);
+        $this->shedIfOverloaded($dev, $cfg);
+        // Phase 1, all optional and never an error: what the agent announced and the software report it may carry.
+        $announce = ['clock_offset' => self::clockOffset($body['clock_offset_s'] ?? null), 'caps' => DeviceState::cleanCapabilities($body['capabilities'] ?? null), 'platform' => is_string($body['platform'] ?? null) ? $body['platform'] : null, 'software' => null];
+        // The optional MeshCentral agent report: read here, applied in process() (tiny, so it is never queued). Never an error.
+        $announce['mesh_agent'] = $this->meshAgents !== null && array_key_exists(RmmProtocol::CHECKIN_MESH_AGENT, $body) ? $body[RmmProtocol::CHECKIN_MESH_AGENT] : null;
+        // The optional hypervisor report (Proxmox VE / Hyper-V host): read only while the `hypervisor` sub-switch is on, no load is being shed and the device announced `hypervisor`. A bad block is dropped, never an error.
+        $announce['hypervisor'] = null;
+        if (($features['hypervisor'] ?? false) && $this->hypervisorService !== null && array_key_exists('hypervisor', $body) && (int) ($cfg['shed_level'] ?? 0) === 0
+            && in_array(\RivetCore\Rmm\Hypervisor\HypervisorProtocol::CAP, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
+            $announce['hypervisor'] = \RivetCore\Rmm\Hypervisor\HypervisorService::cleanReport($body['hypervisor'], $this->sql->time());
+        }
+        $wantsSoftware = $features['inventory_software'] && $this->software !== null && $announce['caps'] !== null && in_array(DeviceState::CAP_SOFTWARE_INVENTORY, $announce['caps'], true);
+        // Phase 2: the policies that reach this device (one read, only while the `policies` sub-switch is on).
+        $policy = null;
+        $knowsPolicies = false;
+        if ($features['policies'] && $this->policies !== null) {
+            $caps = $announce['caps'] ?? ($this->deviceState === null ? [] : DeviceState::capabilitiesOf($this->deviceState->get((int) $dev['device_id'])));
+            $policy = $this->policies->forDevice($dev, $caps);
+            $knowsPolicies = in_array(DeviceState::CAP_POLICIES, $caps, true);
+            $wantsSoftware = $wantsSoftware && $policy['features']['software_inventory'];
+            if ($features['alerting']) {
+                $announce['alert_defs'] = AlertingEngine::definitionsOf($policy['checks']);   // thresholds and flap come from the device's effective list, not the global one
+            }
+        }
+        if ($wantsSoftware) {
+            $announce['software'] = SoftwareService::cleanReport($body['software'] ?? null);
+        }
+
+        $this->events?->hold();
+        try {
+            /** @var array<string,mixed> $dev the device row as this check-in leaves it (mirrored in memory; re-read only when something else may have changed it) */
+            $dev = $this->sql->transaction(function () use ($dev, $seq, $collected, $ver, $inventory, $metrics, $primaryChecks, $buffered, $cfg, $features, $ip, $body, $announce): array {
+                // Serialise check-ins of ONE device; different devices never contend.
+                $cur = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ? FOR UPDATE', [$dev['device_id']]);
+                if ($cur === null || $cur['revoked_at'] !== null || $cur['retired_at'] !== null || $cur['token_hash'] !== $dev['token_hash']) {
+                    throw new ApiError(401, 'revoked', 'This device credential was revoked.');
+                }
+                $now = $this->sql->utcNow();
+                $fresh = $this->sql->run('INSERT IGNORE INTO endpoint_agent_checkins (device_id, seq, received_at, collected_at) VALUES (?, ?, ?, ?)',
+                    [$cur['device_id'], $seq, $now, $collected->format('Y-m-d H:i:s')]);
+                // Liveness is real even for a duplicate delivery. A fresh check-in writes it together with the rest of the device row (one UPDATE, see process()).
+                $live = ['last_checkin_at' => $now, 'last_ip' => substr($ip, 0, 64)];
+                if ($fresh === 1) {
+
+                    return $this->process($cur, $seq, $collected, $ver, $inventory, $metrics, $primaryChecks, $buffered, $cfg, $features, $body['update_result'] ?? null, $announce, $live);
+                }
+                $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ? WHERE device_id = ?', [$live['last_checkin_at'], $live['last_ip'], $cur['device_id']]);
+
+                return array_merge($cur, $live);
+            });
+        } catch (\Throwable $e) {
+            $this->events?->discard();
+            throw $e;
+        }
+        $this->events?->release();
+        // The Mesh agent an enrollment token asked for installs once the device is linked and has announced it can (a no-op for every device without a plan; never fails a check-in).
+        $this->meshAfter?->advance($dev);
+
+        $interval = $policy === null ? (int) $cfg['check_in_interval_s'] : $policy['check_in_interval_s'];
+        if ((int) ($cfg['shed_level'] ?? 0) >= 2) {
+            $interval = min(RmmSettings::CHECK_IN_INTERVAL_MAX_S * 2, $interval * 2);   // level 2: lengthen the intervals
+        }
+        $out = [
+            'ok' => true,
+            'status' => $dev['link_state'] === 'linked' ? 'linked' : 'pending_approval',
+            'matched_asset_id' => ($dev['link_state'] === 'linked' && !empty($dev['asset_id'])) ? (int) $dev['asset_id'] : null,
+            'next_check_in_s' => $interval,
+            'jobs_pending' => $features['jobs'] ? $this->jobs->pendingCount((int) $dev['device_id']) : 0,
+            'config' => $policy === null
+                ? ['checks' => $this->settings->signedChecks($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null, RmmChecks::deviceOs($dev)), 'collect_interval_s' => (int) $cfg['collect_interval_s']]
+                : ['checks' => $this->settings->signCheckList($policy['checks'], $this->capsOf($dev, $announce['caps']) ?? [], RmmChecks::deviceOs($dev)), 'collect_interval_s' => $policy['collect_interval_s']],
+        ];
+        $this->reconcileDelivered($dev, $out['config']['checks'], $policy === null ? ($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null) : ($this->capsOf($dev, $announce['caps']) ?? []));
+        if ($knowsPolicies) {
+            // Additive, offered only to an agent that announced `policies`: every other response is byte-identical to before.
+            $out['config']['policy'] = ['version' => $policy['version'], 'applied' => $policy['applied'], 'features' => $policy['features']];
+        }
+        if ($features['updates']) {
+            $out['update'] = $this->updates->manifestFor($policy !== null && $policy['ring'] !== null ? ['ring' => $policy['ring']] + $dev : $dev);
+        }
+        $out['server_time'] = $this->sql->isoNow();
+        $out['signing_key_id'] = $this->settings->get()['signing_key_id'];
+        $offered = [];
+        if ($knowsPolicies) {
+            $offered[] = DeviceState::CAP_POLICIES;
+        }
+        if ($wantsSoftware && $this->deviceState !== null) {
+            $offered[] = DeviceState::CAP_SOFTWARE_INVENTORY;
+        }
+        // Phase 8, additive: only an agent that announced `logs:collect`, while the `logs` sub-switch is on, no load is being shed (log ingest goes first) and at
+        // least one source is configured for its platform. Every other response is byte-identical to before.
+        if ($features['logs'] && $this->remote !== null && (int) ($cfg['shed_level'] ?? 0) === 0 && in_array(RemoteProtocol::CAP_LOGS, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
+            $logConfig = $this->remote->agentLogConfig((string) ($dev['os'] ?? 'windows'), $this->capsOf($dev, $announce['caps']));
+            if ($logConfig !== null) {
+                $offered[] = RemoteProtocol::CAP_LOGS;
+                $out['config']['logs'] = $logConfig;
+            }
+        }
+        // Change monitoring, additive: only an agent that announced `change:monitor`, while the `change_monitor` sub-switch is on, below load shedding level 2 and with at
+        // least one watch for its platform. The configuration is signed; an unsigned one is never offered. Every other response is byte-identical to before.
+        if (($features['change_monitor'] ?? false) && $this->change !== null && (int) ($cfg['shed_level'] ?? 0) < 2 && in_array(\RivetCore\Rmm\Change\ChangeProtocol::CAP, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
+            $changeConfig = $this->change->agentConfig((string) ($dev['os'] ?? 'windows'));
+            if ($changeConfig !== null) {
+                $offered[] = \RivetCore\Rmm\Change\ChangeProtocol::CAP;
+                $out['config']['change'] = $changeConfig;
+            }
+        }
+        // Hypervisor visibility, additive: only an agent that announced `hypervisor`, while the `hypervisor` sub-switch is on, below load shedding level 2, with a usable signing key. The
+        // configuration is signed; an unsigned one is never offered. The agent itself decides whether the machine is a Proxmox VE or Hyper-V host. Every other response is byte-identical to before.
+        if (($features['hypervisor'] ?? false) && $this->hypervisor !== null && (int) ($cfg['shed_level'] ?? 0) < 2 && in_array(\RivetCore\Rmm\Hypervisor\HypervisorProtocol::CAP, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
+            $hvConfig = $this->hypervisor->agentConfig((string) ($dev['os'] ?? 'windows'));
+            if ($hvConfig !== null) {
+                $offered[] = \RivetCore\Rmm\Hypervisor\HypervisorProtocol::CAP;
+                $out['config']['hypervisor'] = $hvConfig;
+            }
+        }
+        if ($offered !== []) {
+            sort($offered, SORT_STRING);
+            $out['features'] = $offered;
+        }
+        if ($wantsSoftware && $this->deviceState !== null) {
+            // Offered only to an agent that announced it AND while the sub-switch is on; every other response is byte-identical to before.
+            if ((int) ($this->deviceState->get((int) $dev['device_id'])['software_resync'] ?? 0) === 1) {
+                $out['resync'] = ['software'];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * The capabilities this device announced (this request's list, else the stored one). Read only when the check list has a Phase 3 type.
+     *
+     * @param array<string,mixed> $dev
+     * @param list<string>|null $fromRequest
+     * @return list<string>|null
+     */
+    private function capsOf(array $dev, ?array $fromRequest): ?array
+    {
+        if ($fromRequest !== null) {
+            return $fromRequest;
+        }
+
+        return $this->deviceState === null ? null : DeviceState::capabilitiesOf($this->deviceState->get((int) $dev['device_id']));
+    }
+
+    /**
+     * Load shedding level 3 refuses new work: the device is told to come back later (503 + Retry-After with jitter) before any
+     * work is done. Enrollment, job reports and revocation never pass through here. Levels 1 (optional samples dropped) and 2
+     * (longer intervals) answer normally.
+     *
+     * @param array<string,mixed> $dev
+     * @param array<string,mixed> $cfg
+     */
+    private function shedIfOverloaded(array $dev, array $cfg): void
+    {
+        if ((int) ($cfg['shed_level'] ?? 0) < 3) {
+            return;
+        }
+        throw LoadShedder::refusal($this->settings->limits());
+    }
+
+    /**
+     * The request's share of a fresh check-in: the device-state writes every mode does inside the request, then either the
+     * heavy part inline (ingest_mode sync, the default) or one `rmm.ingest` job (ingest_mode queued, payloads up to
+     * {@see MAX_QUEUED_PAYLOAD_BYTES}; a larger one is processed inline).
+     *
+     * @param array<string,mixed> $dev
+     * @param array<string,mixed>|null $inventory
+     * @param array<string,mixed>|null $metrics
+     * @param list<array{key:string,status:string,detail:string,at:string}> $primaryChecks
+     * @param array<mixed> $buffered
+     * @param array<string,mixed> $cfg
+     * @param array<string,bool> $features
+     * @param array{clock_offset?:?int,caps?:?list<string>,platform?:?string,software?:?array<string,mixed>,alert_defs?:array<string,array<string,mixed>>,mesh_agent?:mixed,hypervisor?:mixed} $announce what the agent announced (capabilities, platform) and its validated software report
+     * @param array{last_checkin_at:string,last_ip:string} $live the liveness columns, written with the rest of the device row in ONE statement
+     * @return array<string,mixed> the device row as the check-in leaves it
+     */
+    private function process(array $dev, int $seq, \DateTimeImmutable $collected, string $ver, ?array $inventory, ?array $metrics, array $primaryChecks, array $buffered, array $cfg, array $features, mixed $updateResult, array $announce, array $live): array
+    {
+        $deviceId = (int) $dev['device_id'];
+        $collectedSql = $collected->format('Y-m-d H:i:s');
+        $newer = $dev['last_collected_at'] === null || $collectedSql >= $dev['last_collected_at'];
+        $this->updates->recordResult($dev, $updateResult);
+        $row = array_merge($dev, $live, ['last_seq' => max((int) $dev['last_seq'], $seq)]);
+        // Clock skew rides on the same UPDATE (no extra statement): device collected_at minus server now, the agent's own estimate, and a cleared refusal.
+        $skew = $collected->getTimestamp() - $this->sql->time();
+        $offset = $announce['clock_offset'] ?? null;
+        if ($newer) {
+            $metricsJson = $metrics === null ? null : json_encode(self::cleanMetrics($metrics));
+            $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ?, agent_version = ?, last_collected_at = ?, last_seq = GREATEST(last_seq, ?),
+                last_metrics_json = ?, clock_skew_s = ?, clock_skew_at = ?, clock_offset_s = ?, last_reject_reason = NULL, last_reject_at = NULL WHERE device_id = ?',
+                [$live['last_checkin_at'], $live['last_ip'], $ver, $collectedSql, $seq, $metricsJson, $skew, $live['last_checkin_at'], $offset, $deviceId]);
+            $row = array_merge($row, ['agent_version' => $ver, 'last_collected_at' => $collectedSql, 'last_metrics_json' => $metricsJson, 'clock_skew_s' => $skew, 'clock_skew_at' => $live['last_checkin_at']]);
+            $this->announceSkew($row, $skew);
+        } else {
+            $this->sql->run('UPDATE endpoint_agent_devices SET last_checkin_at = ?, last_ip = ?, last_seq = GREATEST(last_seq, ?), last_reject_reason = NULL, last_reject_at = NULL WHERE device_id = ?', [$live['last_checkin_at'], $live['last_ip'], $seq, $deviceId]);
+        }
+        if ($this->deviceState !== null) {
+            $state = ($announce['caps'] ?? null) !== null ? $this->deviceState->note($deviceId, $announce['platform'] ?? null, $announce['caps']) : null;
+            if ($this->events !== null && $this->events->enabled()) {
+                $state ??= $this->deviceState->get($deviceId);
+                if ($state !== null && $state['presence'] === 'offline') {
+                    $since = $this->deviceState->markOnline($deviceId, $state);
+                    $this->events->emit(RmmEvent::DEVICE_ONLINE, $dev, ['offline_since' => $since]);
+                }
+            }
+        }
+        if (($announce['mesh_agent'] ?? null) !== null && $this->meshAgents !== null) {
+            $this->meshAgents->report($row, $announce['mesh_agent']);
+        }
+        $work = ['device_id' => $deviceId, 'seq' => $seq, 'collected' => $collectedSql, 'received' => $this->sql->time(), 'newer' => $newer, 'inventory' => $inventory,
+            'metrics' => $metrics, 'checks' => $primaryChecks, 'buffered' => $buffered, 'shed' => (int) ($cfg['shed_level'] ?? 0) >= 1];
+        if (($announce['software'] ?? null) !== null) {
+            $work['software'] = $announce['software'];
+        }
+        if (($announce['hypervisor'] ?? null) !== null) {
+            $work['hypervisor'] = $announce['hypervisor'];
+        }
+        if (isset($announce['alert_defs'])) {
+            $work['alert_defs'] = $announce['alert_defs'];
+        }
+        if ($this->enqueue !== null && ($cfg['ingest_mode'] ?? 'sync') === 'queued') {
+            $encoded = json_encode($work);
+            if (is_string($encoded) && strlen($encoded) <= self::MAX_QUEUED_PAYLOAD_BYTES) {
+                ($this->enqueue)($work);
+
+                return $this->withUpdateBookkeeping($row, $updateResult);
+            }
+        }
+        $this->applyWork($work, false, $row);
+
+        // The inline path may have rewritten more of the row (inventory) and recordResult() rewrote update_state_json: read it back only then.
+        return ($inventory !== null && $newer) || is_array($updateResult) ? ($this->devices->find($deviceId) ?? $row) : $row;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    private function withUpdateBookkeeping(array $row, mixed $updateResult): array
+    {
+        return is_array($updateResult) ? ($this->devices->find((int) $row['device_id']) ?? $row) : $row;   // recordResult() rewrote update_state_json
+    }
+
+    /**
+     * The heavy part of a check-in, shared by the inline path and the `rmm.ingest` job (Capacity\IngestQueue): apply the inventory,
+     * update the edition's asset blanks, build the metric samples (current batch plus buffered backlog), push the health to the
+     * edition's RMM link and evaluate the checks. Every step is idempotent, so a retried job repeats them safely. The samples go to the
+     * edition's sink here unless $deferSamples is set, in which case they are RETURNED (the caller delivers them last, and may merge
+     * the samples of many check-ins into one sink call).
+     *
+     * @param array<string,mixed> $w work as built by {@see process()} (it is the job payload)
+     * @param array<string,mixed>|null $dev the device row when the caller just read it (saves one SELECT)
+     * @return list<array{asset_id:int,key:string,instance:?string,value:int|float,at:\DateTimeImmutable,label:?string}>|null samples not yet delivered; null when the device no longer exists or was revoked (nothing to do)
+     */
+    public function applyWork(array $w, bool $deferSamples = false, ?array $dev = null): ?array
+    {
+        $deviceId = (int) $w['device_id'];
+        $cfg = $this->settings->get();
+        $features = $this->settings->features();
+        $dev ??= $this->devices->find($deviceId);
+        if ($dev === null || $dev['revoked_at'] !== null || $dev['retired_at'] !== null) {
+            return null;
+        }
+        $collected = new \DateTimeImmutable((string) $w['collected'] . ' UTC');
+        $inventory = is_array($w['inventory'] ?? null) ? $w['inventory'] : null;
+        $metrics = is_array($w['metrics'] ?? null) ? $w['metrics'] : null;
+        $buffered = is_array($w['buffered'] ?? null) ? $w['buffered'] : [];
+        /** @var list<array{key:string,status:string,detail:string,at:string}> $primaryChecks */
+        $primaryChecks = is_array($w['checks'] ?? null) ? $w['checks'] : [];
+
+        // ---- inventory ----
+        $cleanInv = null;
+        if ($inventory !== null && !empty($w['newer'])) {
+            $cleanInv = $this->applyInventory($dev, $inventory);
+        }
+        if ($cleanInv !== null) {
+            $dev = $this->devices->find($deviceId) ?? $dev;   // the inventory rewrote hostname, model, uptime ...; nothing else in this method changes the row
+        }
+        if (is_array($w['software'] ?? null) && $features['inventory_software'] && $this->software !== null && $this->deviceState !== null) {
+            if (!empty($w['shed'])) {
+                $this->deviceState->requestSoftwareResync($deviceId);   // load shedding: acknowledged, not ingested, so ask again later
+            } else {
+                $this->software->apply($dev, $w['software']);
+            }
+        }
+        if (is_array($w['hypervisor'] ?? null) && ($features['hypervisor'] ?? false) && $this->hypervisorService !== null) {
+            try {
+                $this->hypervisorService->apply($dev, $w['hypervisor']);
+            } catch (\Throwable $e) {
+                error_log('rmm hypervisor ingest: ' . get_class($e) . ': ' . $e->getMessage());   // never fails the check-in (e.g. migration 0036 not applied yet)
+            }
+        }
+        $linked = $dev['link_state'] === 'linked' && !empty($dev['asset_id']);
+        if ($cleanInv !== null && $linked) {
+            $this->assets->fillBlanks((int) $dev['asset_id'], [
+                'type' => (new DeviceTypes($this->sql))->forDevice($dev)['type'],
+                'serial' => DeviceValidator::cleanSerial($cleanInv['serial']) ?? ($dev['serial'] === null ? null : (string) $dev['serial']),
+                'model' => $cleanInv['model'],
+                'manufacturer' => $cleanInv['manufacturer'],
+                'os' => (($dev['os'] ?? 'windows') === 'linux' ? 'Linux' : 'Windows') . ' ' . ($cleanInv['os_version'] ?? $dev['os_version']),
+            ]);
+        }
+
+        // ---- metrics, current sample and buffered backlog ----
+        $assetId = $linked ? (int) $dev['asset_id'] : 0;
+        $batches = [[$collected, $metrics, $inventory]];
+        $bufChecks = [];
+        foreach ($buffered as $b) {
+            if (!is_array($b)) {
+                continue;
+            }
+            try {
+                $bt = $this->parseTime($b['collected_at'] ?? null, 'buffered.collected_at', $cfg);
+            } catch (ApiError) {
+                continue;   // a bad backlog entry is dropped on its own; the request still succeeds
+            }
+            $bm = $b['metrics'] ?? null;
+            $batches[] = [$bt, is_array($bm) ? $bm : null, null];
+            if (isset($b['checks']) && is_array($b['checks']) && array_is_list($b['checks'])) {
+                foreach ($this->cleanChecks(array_slice($b['checks'], 0, self::MAX_CHECKS), false) as $c) {
+                    $c['at'] = $bt->format('Y-m-d H:i:s');
+                    $bufChecks[] = $c;
+                }
+            }
+        }
+        $samples = [];
+        if ($assetId > 0 && $features['metrics']) {
+            $staleBefore = (int) ($w['received'] ?? $this->sql->time()) - self::SHED_STALE_SAMPLE_S;
+            $shed = !empty($w['shed']);
+            $extended = (int) ($this->settings->limits()['metrics_extended'] ?? 1) === 1;
+            foreach ($batches as $i => [$at, $m, $inv]) {
+                if ($shed && $i > 0 && $at->getTimestamp() < $staleBefore) {
+                    continue;   // acknowledged, not ingested
+                }
+                foreach ($this->samplesFor($assetId, $at, $m, $inv, $extended) as $s) {
+                    $samples[] = $s;
+                }
+            }
+            if ($samples !== [] && !$deferSamples) {
+                $this->metrics->ingest($samples, $this->settings->integrationId());
+                $samples = [];
+            }
+        }
+
+        // ---- health columns on the edition's RMM link ----
+        $health = ['cpu' => self::num($metrics['cpu_pct'] ?? null), 'mem' => self::num($metrics['mem_pct'] ?? null), 'disk' => null];
+        $disks = is_array($metrics['disk'] ?? null) ? $metrics['disk'] : [];
+        foreach ($disks as $dk) {
+            $u = is_array($dk) ? self::num($dk['used_pct'] ?? null) : null;
+            if ($u !== null && ($health['disk'] === null || $u > $health['disk'])) {
+                $health['disk'] = $u;
+            }
+        }
+        if ($features['monitoring']) {
+            $this->linker->applyCheckin($dev, $health);
+
+            // ---- checks: backlog oldest first, then the current results ----
+            usort($bufChecks, static fn (array $a, array $b): int => strcmp($a['at'], $b['at']));
+            $this->checks->apply($dev, array_merge($bufChecks, $primaryChecks), is_array($w['alert_defs'] ?? null) ? $w['alert_defs'] : null);
+        }
+
+        return $samples;
+    }
+
+    /**
+     * @param array<string,mixed> $dev
+     * @param array<string,mixed> $inv
+     * @return array{hostname:?string,os:?string,os_version:?string,manufacturer:?string,model:?string,serial:?string,uptime_s:?int,pending_reboot:?bool}
+     */
+    private function applyInventory(array $dev, array $inv): array
+    {
+        $txt = static fn (mixed $v, int $n): ?string => DeviceValidator::cleanText($v, $n);
+        $deviceId = (int) $dev['device_id'];
+        $macs = [];
+        $nics = is_array($inv['network'] ?? null) ? array_slice($inv['network'], 0, 32) : [];
+        foreach ($nics as $nic) {
+            $mac = is_array($nic) && is_string($nic['mac'] ?? null) ? DeviceValidator::normalizeMac($nic['mac']) : null;
+            if ($mac !== null) {
+                $macs[$mac] = $mac;
+            }
+        }
+        $cpu = is_array($inv['cpu'] ?? null) ? $inv['cpu'] : [];
+        $clean = [
+            'hostname' => $txt($inv['hostname'] ?? null, 200),
+            'os' => $txt($inv['os'] ?? null, 50),
+            'os_version' => $txt($inv['os_version'] ?? null, 200),
+            'manufacturer' => $txt($inv['manufacturer'] ?? null, 200),
+            'model' => $txt($inv['model'] ?? null, 200),
+            'serial' => $txt($inv['serial'] ?? null, 100),
+            'cpu' => ['model' => $txt($cpu['model'] ?? null, 200), 'cores' => self::intOrNull($cpu['cores'] ?? null)],
+            'memory_total_bytes' => self::intOrNull($inv['memory_total_bytes'] ?? null),
+            'uptime_s' => self::intOrNull($inv['uptime_s'] ?? null),
+            'logged_in_user' => $txt($inv['logged_in_user'] ?? null, 200),
+            'pending_reboot' => isset($inv['pending_reboot']) ? (bool) $inv['pending_reboot'] : null,
+            'disks' => [],
+            'network' => [],
+        ];
+        $hw = DeviceValidator::cleanHardware($inv);
+        $hasHw = $hw['chassis_type'] !== null || $hw['has_battery'] !== null || $hw['is_virtual'] !== null || $hw['virtualization'] !== null || $hw['role_hints'] !== [];
+        if ($hasHw) {
+            $clean += $hw;   // additive keys of inventory_json, only when the agent sent facts
+        }
+        if (is_bool($inv['desktop_session'] ?? null)) {
+            $clean['desktop_session'] = $inv['desktop_session'];   // additive: a graphical session or display manager exists; absent from an older agent (never stored as null)
+        }
+        $disks = is_array($inv['disks'] ?? null) ? array_slice($inv['disks'], 0, self::MAX_DISKS) : [];
+        foreach ($disks as $d) {
+            if (is_array($d) && ($mount = $txt($d['mount'] ?? null, 64)) !== null) {
+                $clean['disks'][] = ['mount' => $mount, 'total_bytes' => self::intOrNull($d['total_bytes'] ?? null), 'free_bytes' => self::intOrNull($d['free_bytes'] ?? null), 'fs' => $txt($d['fs'] ?? null, 20)]
+                    + array_filter(['source' => $txt($d['source'] ?? null, 200), 'label' => $txt($d['label'] ?? null, 100)], static fn ($v): bool => $v !== null);   // additive: the file-system source (rpool/data/x, /dev/sda2) and the volume label
+            }
+        }
+        foreach ($nics as $n) {
+            if (!is_array($n)) {
+                continue;
+            }
+            $ips = [];
+            $rawIps = is_array($n['ips'] ?? null) ? array_slice($n['ips'], 0, 16) : [];
+            foreach ($rawIps as $ip) {
+                if (is_string($ip) && filter_var($ip, FILTER_VALIDATE_IP) !== false) {
+                    $ips[] = $ip;
+                }
+            }
+            $clean['network'][] = ['name' => $txt($n['name'] ?? null, 100), 'mac' => is_string($n['mac'] ?? null) ? DeviceValidator::normalizeMac($n['mac']) : null, 'ips' => $ips];
+        }
+        $meshNode = $inv['mesh_node_id'] ?? null;
+
+        $this->sql->run('UPDATE endpoint_agent_devices SET inventory_json = ?, last_inventory_at = ?, hostname = COALESCE(?, hostname), os_version = COALESCE(?, os_version),
+            manufacturer = COALESCE(?, manufacturer), model = COALESCE(?, model), serial = COALESCE(serial, ?), mac_addresses = ?, logged_in_user = ?, pending_reboot = ?, uptime_s = ?
+            WHERE device_id = ?',
+            [json_encode($clean), $this->sql->utcNow(), $clean['hostname'], $clean['os_version'], $clean['manufacturer'], $clean['model'], DeviceValidator::cleanSerial($clean['serial']),
+                $macs !== [] ? json_encode(array_values($macs)) : $dev['mac_addresses'], $clean['logged_in_user'], $clean['pending_reboot'] === null ? null : (int) $clean['pending_reboot'], $clean['uptime_s'], $deviceId]);
+
+        if ($hasHw) {
+            // The type follows the hardware facts the agent reports now; it is only ever used to fill a BLANK asset type, never to overwrite.
+            (new DeviceTypes($this->sql))->saveDetected($deviceId, DeviceTypeClassifier::classify(
+                ['os' => $dev['os'] ?? null, 'os_version' => $clean['os_version'] ?? ($dev['os_version'] ?? '')] + $hw));
+        }
+
+        if (is_string($meshNode) && DeviceRepository::validMeshNodeId($meshNode) && $this->meshAgents !== null) {
+            // The same rules as a `mesh_agent` report: what the device says about its own node id never maps it by itself (cross-tenant node claims).
+            $this->meshAgents->claimFromInventory($dev, $meshNode);
+        }
+
+        return ['hostname' => $clean['hostname'], 'os' => $clean['os'], 'os_version' => $clean['os_version'], 'manufacturer' => $clean['manufacturer'], 'model' => $clean['model'],
+            'serial' => $clean['serial'], 'uptime_s' => $clean['uptime_s'], 'pending_reboot' => $clean['pending_reboot']];
+    }
+
+    /**
+     * @param array<string,mixed>|null $m
+     * @param array<string,mixed>|null $inv
+     * @return list<array{asset_id:int,key:string,instance:?string,value:int|float,at:\DateTimeImmutable,label:?string}>
+     */
+    private function samplesFor(int $assetId, \DateTimeImmutable $at, ?array $m, ?array $inv, bool $extended = true): array
+    {
+        $out = [];
+        $add = static function (string $key, ?string $inst, int|float|null $val, ?string $label = null) use (&$out, $assetId, $at): void {
+            if ($val === null) {
+                return;   // a missing reading is a missing sample, never zero
+            }
+            if (!is_finite((float) $val) || $val < 0 || (str_ends_with($key, '.utilization') && $val > 100)) {
+                return;   // out of range: dropped, never clamped
+            }
+            $out[] = ['asset_id' => $assetId, 'key' => $key, 'instance' => $inst, 'value' => $val, 'at' => $at, 'label' => $label];
+        };
+        if ($m !== null) {
+            $add('cpu.utilization', null, self::num($m['cpu_pct'] ?? null));
+            $add('memory.utilization', null, self::num($m['mem_pct'] ?? null));
+            $disks = is_array($m['disk'] ?? null) ? array_slice($m['disk'], 0, self::MAX_DISKS) : [];
+            foreach ($disks as $d) {
+                if (is_array($d) && is_string($d['mount'] ?? null) && $d['mount'] !== '') {
+                    $mt = mb_substr($d['mount'], 0, 64);
+                    $add('disk.utilization', $mt, self::num($d['used_pct'] ?? null), $mt);
+                    if ($extended) {
+                        $add('disk.free_bytes', $mt, self::intOrNull($d['free_bytes'] ?? null), $mt);
+                        $add('disk.total_bytes', $mt, self::intOrNull($d['total_bytes'] ?? null), $mt);
+                    }
+                }
+            }
+            if ($extended) {
+                $this->extendedSamples($m, $add);
+            }
+            // The agent reports BITS per second; the metric registry stores bytes per second.
+            $rx = self::num($m['net_rx_bps'] ?? null);
+            $tx = self::num($m['net_tx_bps'] ?? null);
+            $add('network.rx_bytes_per_s', 'total', $rx === null ? null : $rx / 8, 'All adapters');
+            $add('network.tx_bytes_per_s', 'total', $tx === null ? null : $tx / 8, 'All adapters');
+        }
+        if ($inv !== null) {
+            $add('system.uptime_seconds', null, self::intOrNull($inv['uptime_s'] ?? null));
+            if (isset($inv['pending_reboot'])) {
+                $add('system.pending_reboot', null, $inv['pending_reboot'] ? 1 : 0);
+            }
+            $add('memory.total_bytes', null, self::intOrNull($inv['memory_total_bytes'] ?? null));
+            $disks = is_array($inv['disks'] ?? null) ? array_slice($inv['disks'], 0, self::MAX_DISKS) : [];
+            foreach ($disks as $d) {
+                if (is_array($d) && is_string($d['mount'] ?? null) && $d['mount'] !== '') {
+                    $mt = mb_substr($d['mount'], 0, 64);
+                    $add('disk.total_bytes', $mt, self::intOrNull($d['total_bytes'] ?? null), $mt);
+                    $add('disk.free_bytes', $mt, self::intOrNull($d['free_bytes'] ?? null), $mt);
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * The optional per-check-in fields added in rc.25 (protocol 1 stays frozen: an agent that does not send them simply produces no sample for them). Every
+     * value is validated on its own, so one bad field never costs the others; the `metrics_extended` limit (default on) turns the whole group off.
+     *
+     * @param array<string,mixed> $m
+     * @param \Closure(string,?string,int|float|null,?string=):void $add
+     */
+    private function extendedSamples(array $m, \Closure $add): void
+    {
+        $add('memory.used_bytes', null, self::intOrNull($m['mem_used_bytes'] ?? null));
+        $add('memory.available_bytes', null, self::intOrNull($m['mem_available_bytes'] ?? null));
+        $add('memory.total_bytes', null, self::intOrNull($m['mem_total_bytes'] ?? null));
+        $add('system.uptime_seconds', null, self::intOrNull($m['uptime_s'] ?? null));
+        $pr = $m['pending_reboot'] ?? null;
+        if ($pr === 0 || $pr === 1) {
+            $add('system.pending_reboot', null, $pr);
+        }
+        $cores = $m['cpu_core_pct'] ?? null;
+        if (is_array($cores) && array_is_list($cores)) {
+            foreach (array_slice($cores, 0, self::MAX_CORES) as $i => $v) {
+                $add('cpu.core.utilization', (string) $i, self::num($v), 'Core ' . $i);
+            }
+        }
+        $add('disk.read_iops', 'total', self::num($m['disk_read_iops'] ?? null), 'All disks');
+        $add('disk.write_iops', 'total', self::num($m['disk_write_iops'] ?? null), 'All disks');
+        $add('disk.queue_length', 'total', self::num($m['disk_queue'] ?? null), 'All disks');
+        $add('network.errors', 'total', self::intOrNull($m['net_errors'] ?? null), 'All adapters');
+        $bat = self::num($m['battery_pct'] ?? null);
+        $add('battery.charge_percent', null, $bat !== null && $bat <= 100 ? $bat : null);   // a percentage: out of range is dropped, never clamped
+    }
+
+    // ------------------------------------------------------------------ clock skew
+
+    /** The agent's own server-minus-local estimate: an integer within one day, else ignored (it is a hint for the technician, never an error). */
+    private static function clockOffset(mixed $v): ?int
+    {
+        return is_int($v) && abs($v) <= RmmProtocol::CLOCK_OFFSET_MAX_S ? $v : null;
+    }
+
+    /**
+     * Raise `rmm.device.clock_skew` when the device's clock differs from the server's by more than the `clock_skew_alert_s` limit (0 = off), at most once a day per
+     * device, so a device that stays wrong never flaps. The day guard is a column, so it survives restarts and works across workers.
+     *
+     * @param array<string,mixed> $dev the device row (device_id, asset_id, client_id, hostname, clock_skew_event_at)
+     */
+    private function announceSkew(array $dev, int $skew): void
+    {
+        $limit = (int) ($this->settings->limits()['clock_skew_alert_s'] ?? 0);
+        if ($limit <= 0 || abs($skew) <= $limit || $this->events === null || !$this->events->enabled()) {
+            return;
+        }
+        $deviceId = (int) $dev['device_id'];
+        $before = $this->sql->utcAt(-86400);
+        // Claim the day atomically: only the statement that moves the stamp past the guard publishes.
+        if ($this->sql->run('UPDATE endpoint_agent_devices SET clock_skew_event_at = ? WHERE device_id = ? AND (clock_skew_event_at IS NULL OR clock_skew_event_at < ?)', [$this->sql->utcNow(), $deviceId, $before]) === 1) {
+            $this->events->emit(RmmEvent::DEVICE_CLOCK_SKEW, $dev, ['skew_s' => $skew, 'direction' => $skew > 0 ? 'ahead' : 'behind', 'server_time' => $this->sql->isoNow()]);
+        }
+    }
+
+    /**
+     * Remember why a check-in was refused for its time (first one, then at most hourly), and announce a large skew. Best effort: a failure here never changes the 422.
+     *
+     * @param array<string,mixed> $dev the authenticated device row
+     */
+    private function noteRejected(array $dev, ApiError $e): void
+    {
+        $skew = $e->extra['skew_s'] ?? null;
+        if (!is_int($skew)) {
+            return;
+        }
+        try {
+            $reason = mb_substr($e->getMessage(), 0, 200);
+            $lastAt = $dev['last_reject_at'] ?? null;
+            if (($dev['last_reject_reason'] ?? null) === $reason && is_string($lastAt) && $lastAt >= $this->sql->utcAt(-3600)) {
+                return;
+            }
+            $now = $this->sql->utcNow();
+            $this->sql->run('UPDATE endpoint_agent_devices SET last_reject_reason = ?, last_reject_at = ?, clock_skew_s = ?, clock_skew_at = ? WHERE device_id = ?', [$reason, $now, $skew, $now, $dev['device_id']]);
+            $this->announceSkew($dev, $skew);
+        } catch (\Throwable $x) {
+            error_log('rmm clock skew note: ' . $x->getMessage());
+        }
+    }
+
+    // ------------------------------------------------------------------ small validators
+
+    /**
+     * @param array<string,mixed> $cfg
+     * @throws ApiError 422
+     */
+    public function parseTime(mixed $raw, string $field, array $cfg): \DateTimeImmutable
+    {
+        if (!is_string($raw) || preg_match(self::TIME_RE, $raw) !== 1) {
+            throw new ApiError(422, 'invalid', "$field must be an RFC 3339 timestamp");
+        }
+        try {
+            $dt = (new \DateTimeImmutable($raw))->setTimezone(new \DateTimeZone('UTC'));
+        } catch (\Exception) {
+            throw new ApiError(422, 'invalid', "$field must be an RFC 3339 timestamp");
+        }
+        $ts = $dt->getTimestamp();
+        $now = $this->sql->time();
+        if ($ts > $now + RmmProtocol::CHECKIN_FUTURE_SKEW_S) {
+            throw ApiError::badTime("$field is in the future", $ts, $now);
+        }
+        if ($ts < $now - (int) $cfg['retention_days'] * 86400) {
+            throw ApiError::badTime("$field is older than the retention window", $ts, $now);
+        }
+
+        return $dt->setTime((int) $dt->format('H'), (int) $dt->format('i'), (int) $dt->format('s'));
+    }
+
+    /**
+     * Checks that stopped applying to the device (other OS, off the schedule, removed by a policy) lose their row and their open alert. One primary
+     * key read per check-in; the work happens only when the delivered set changed. Never fails the check-in. A check the schedule still has for
+     * this OS but that was left out only because the device did not announce `check:<type>` is kept: it stopped reporting, it did not stop applying.
+     *
+     * @param array<string,mixed> $dev
+     * @param list<array<string,mixed>> $delivered
+     * @param list<string>|null $caps the capabilities the delivery was filtered by
+     */
+    private function reconcileDelivered(array $dev, array $delivered, ?array $caps): void
+    {
+        try {
+            $schedule = $this->settings->checks();
+            $keys = array_map(static fn (array $c): string => (string) $c['key'], $delivered);
+            $os = RmmChecks::deviceOs($dev);
+            foreach ($os === null ? $schedule : RmmChecks::forOs($schedule, $os) as $c) {
+                if (!CheckCatalog::offeredTo((string) $c['type'], $caps)) {
+                    $keys[] = (string) $c['key'];
+                }
+            }
+            (new CheckReconciler($this->sql, $this->checks))->reconcile($dev, $keys, array_map(static fn (array $c): string => (string) $c['key'], $schedule));
+        } catch (\Throwable $e) {
+            error_log('rmm check-in (stale check cleanup): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0031 not applied yet
+        }
+    }
+
+    /**
+     * @param array<mixed> $checks
+     * @return list<array{key:string,status:string,detail:string,at:string,value?:float}>
+     */
+    private function cleanChecks(array $checks, bool $strict): array
+    {
+        $out = [];
+        $seen = [];
+        foreach ($checks as $c) {
+            $key = is_array($c) ? ($c['key'] ?? null) : null;
+            $status = is_array($c) ? ($c['status'] ?? null) : null;
+            if (!is_string($key) || !RmmProtocol::matches(RmmProtocol::CHECK_KEY_RE, $key) || !is_string($status) || !in_array($status, RmmProtocol::CHECK_STATUSES, true)) {
+                if ($strict) {
+                    throw new ApiError(422, 'invalid', 'each check needs a valid key and a status of ok, warn, fail or unknown');
+                }
+                continue;
+            }
+            if (isset($seen[$key])) {
+                continue;   // one result per check per check-in
+            }
+            $seen[$key] = 1;
+            /** @var array<string,mixed> $c */
+            $detail = DeviceValidator::cleanText($c['detail'] ?? '', 500) ?? '';
+            $row = ['key' => $key, 'status' => $status, 'detail' => $detail, 'at' => $this->sql->utcNow()];
+            $value = $c['value'] ?? null;
+            if ((is_int($value) || is_float($value)) && is_finite((float) $value) && abs((float) $value) < 1.0e12) {
+                $row['value'] = (float) $value;   // Phase 3: the number a threshold is compared with; ignored by a server that has no thresholds
+            }
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $m
+     * @return array<string,mixed>
+     */
+    private static function cleanMetrics(array $m): array
+    {
+        $o = ['cpu_pct' => self::num($m['cpu_pct'] ?? null), 'mem_pct' => self::num($m['mem_pct'] ?? null), 'disk' => [],
+            'net_rx_bps' => self::num($m['net_rx_bps'] ?? null), 'net_tx_bps' => self::num($m['net_tx_bps'] ?? null)];
+        $disks = is_array($m['disk'] ?? null) ? array_slice($m['disk'], 0, self::MAX_DISKS) : [];
+        foreach ($disks as $d) {
+            if (is_array($d) && is_string($d['mount'] ?? null)) {
+                $o['disk'][] = ['mount' => mb_substr($d['mount'], 0, 64), 'used_pct' => self::num($d['used_pct'] ?? null)];
+            }
+        }
+
+        return $o;
+    }
+
+    private static function num(mixed $v): ?float
+    {
+        return (is_int($v) || is_float($v)) && is_finite((float) $v) ? (float) $v : null;
+    }
+
+    private static function intOrNull(mixed $v): ?int
+    {
+        return (is_int($v) && $v >= 0) ? $v : ((is_float($v) && is_finite($v) && $v >= 0 && $v < 9e15) ? (int) $v : null);
+    }
+}
