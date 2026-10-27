@@ -2,8 +2,15 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
-## Unreleased
-Quality gates toward 1.0 (docs, tests and tooling; no public API change, no new migration).
+## 1.0.0-rc.47 (security baseline, quality gates, PHPUnit 13; no migration)
+
+Adds the published, CI-checked security baseline and the quality gates toward 1.0. Additive: no existing public signature or constant value changed, no migration, the device protocol is untouched.
+
+- **Security baseline.** `docs/security/BASELINE.md` and `baseline.json` (62 controls built to OWASP ASVS 4.0.3 Level 2, self-assessed: 29 enforced, 16 partial, 12 edition-responsibility, 1 not applicable, 4 gaps, with a published gap list), `CONTROL_MAPPING.md` (SOC 2 Trust Services Criteria and ISO/IEC 27001:2022 Annex A, generated from the control list), `CLAIMS.md` (the only wording that may be used publicly, and the phrases that must not be). `scripts/baseline-check.php` and `scripts/baseline-map.php`, and a `security baseline` CI job that fails when a control loses its file or test. New `RivetCore\Security\SecurityBaseline` (secure defaults, non-lowerable floors, locked settings), `BaselineChanges` (every accepted or refused change is audit-logged) and `BaselineViolation`. Edition prompts: `docs/design/security-baseline-edition-prompts.md`.
+- **Tests:** `WebhookAutomationWorkflowTest` asks the kernel for a free port and fails loudly if its local server does not start (it flaked twice in CI).
+- **Dev dependencies:** PHPUnit `^11.5 || ^13.0` (13.4.5 in the lock; 13.4.3 carried an advisory); the test harness no longer relies on a suppressed warning in a destructor. Dependabot bumps of the CI actions.
+
+Quality gates toward 1.0 (part of rc.47) (docs, tests and tooling; no public API change, no new migration).
 - **Fix:** `Redis\RedisAdmin::setMemory()` reported "Applied now" when the server refused `CONFIG SET` (for example an ACL user without `config|set`): `executeRaw()` returns the error text instead of throwing. It now returns `ok: false`. Test: `RedisAuthFailOpenTest::testSetMemoryReportsAnAclRefusalInsteadOfClaimingSuccess`.
 - **Docs:** `scripts/verify-upgrade.php` (checks the 0.x upgrade path in the root `UPGRADING.md` from old tags), `docs/PUBLIC-API.md`, `docs/REDIS.md`, `docs/PERFORMANCE.md`, `docs/SECURITY-REVIEW-2.md`, one page per module under `docs/modules/`, a runnable minimal edition in `docs/examples/`, the conformance-kit guide in `docs/adapters.md`, `docs/testing/installers.md`.
 - **Tooling:** `bench/` (benchmark harness with optional CI thresholds); `scripts/api-surface-check.php` with the committed snapshot `tests/api-surface.json` and an `api-surface` CI job that fails on any unreviewed surface change; `scripts/check-doc-samples.php` (runs every PHP sample in the docs, also in CI); `scripts/verify-upgrade.php`, `migrate-with.php`, `schema-fingerprint.php`; `docker/ubuntu24/` clean-container install harness; `tests/smoke/` Playwright scaffold and a RivetIT spec (syntax-checked only, never run against a live instance).
