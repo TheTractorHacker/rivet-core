@@ -54,8 +54,7 @@ small hooks that arrange data in its own storage, and the case checks the behavi
 
 Reference runs live next to the cases: `tests/Conformance/Reference/` has in-memory adapters (request context, webhook subscriptions, agent
 directory, ticket link, access policy, Redis provider) and `MysqliDatabaseConformanceTest` runs the database case against a real MariaDB or
-MySQL in this repository's CI. `KitDetectsBrokenAdaptersTest` proves the kit fails on deliberately wrong adapters (a settings adapter that
-ignores defaults, a request context that trusts a client id, an allow-all policy, a case-insensitive agent directory).
+MySQL in this repository's CI. `KitMutationTest` proves the kit fails on deliberately wrong adapters.
 
 ### Using it from an edition
 
