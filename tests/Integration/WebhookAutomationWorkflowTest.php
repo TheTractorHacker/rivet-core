@@ -132,15 +132,24 @@ final class WebhookAutomationWorkflowTest extends TestCase
         $dir = sys_get_temp_dir() . '/rc-hook-' . bin2hex(random_bytes(4));
         mkdir($dir);
         file_put_contents($dir . '/router.php', '<?php file_put_contents(__DIR__."/got.json", json_encode(["body"=>file_get_contents("php://input"),"sig"=>$_SERVER["HTTP_X_RIVETCORE_SIGNATURE"]??null,"method"=>$_SERVER["REQUEST_METHOD"]])); http_response_code(202); echo "accepted";');
-        $port = random_int(20000, 40000);
+        // Ask the kernel for a free port instead of guessing one that may already be taken.
+        $probe = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+        $this->assertNotFalse($probe, (string) $errstr);
+        $port = (int) substr((string) strrchr((string) stream_socket_get_name($probe, false), ':'), 1);
+        fclose($probe);
         $proc = proc_open([PHP_BINARY, '-S', "127.0.0.1:$port", $dir . '/router.php'], [['pipe', 'r'], ['file', '/dev/null', 'w'], ['file', '/dev/null', 'w']], $pipes);
         try {
-            for ($i = 0; $i < 50; $i++) {
-                if (@fsockopen('127.0.0.1', $port)) {
-                    break;
+            $up = false;
+            for ($i = 0; $i < 100 && !$up; $i++) {
+                $c = @fsockopen('127.0.0.1', $port);
+                if ($c) {
+                    fclose($c);
+                    $up = true;
+                } else {
+                    usleep(100000);
                 }
-                usleep(100000);
             }
+            $this->assertTrue($up, 'local PHP test server did not start');
             $d = new WebhookDispatcher($this->db, $this->subs([new WebhookSubscription(3, "http://127.0.0.1:$port/hook", 'k')]), new FixedClock());
             $r = $d->deliver('asset.updated', ['a' => 1]);
             $this->assertSame(202, $r[0]['http_status'], (string) $r[0]['error']);
