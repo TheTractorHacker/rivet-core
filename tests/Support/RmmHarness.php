@@ -155,10 +155,18 @@ final class RmmHarness
 
     public function __destruct()
     {
-        foreach (glob($this->binaryDir . '/*') ?: [] as $f) {
-            @unlink($f);
+        // No error suppression: PHPUnit 13 routes even @-suppressed warnings through its handler, which throws when no test is running (destructors run at GC/shutdown).
+        if (!is_dir($this->binaryDir)) {
+            return;
         }
-        @rmdir($this->binaryDir);
+        foreach (glob($this->binaryDir . '/*') ?: [] as $f) {
+            if (is_file($f)) {
+                unlink($f);
+            }
+        }
+        if (count(scandir($this->binaryDir) ?: []) <= 2) {
+            rmdir($this->binaryDir);
+        }
     }
 
     private function rateLimit(string $bucket, int $limit, int $window): bool
