@@ -1038,7 +1038,7 @@ tr.asset-inline-moved-out > td {
 .btn-info:hover    { background-color: #21588f; border-color: #21588f; }
 
 /* Links that sit inside running text must not rely on colour alone */
-main p a:not(.btn), main small a:not(.btn), main .small a:not(.btn), main li > a:not(.btn):not(.nav-link):not(.dropdown-item):not(.list-group-item) { text-decoration: underline; }
+main p a:not(.btn), main small a:not(.btn), main .small a:not(.btn), main li > a:not(.btn):not(.nav-link):not(.dropdown-item):not(.list-group-item):not(nav a):not(.admin-directory a):not(.breadcrumb a):not(.list-group a):not([role="tab"]):not(.card-header a) { text-decoration: underline; }
 :root[data-bs-theme="dark"] .fc .fc-event .fc-event-time, :root[data-bs-theme="dark"] .fc .fc-event .fc-event-title, :root[data-bs-theme="dark"] .fc .fc-daygrid-dot-event .fc-event-time { color: #e7eeef !important; }
 :root[data-bs-theme="dark"] .trb-node .trb-node__name, :root[data-bs-theme="dark"] .trb-node__open .trb-node__name { color: #9dbcff !important; }
 
@@ -1051,7 +1051,8 @@ main p a:not(.btn), main small a:not(.btn), main .small a:not(.btn), main li > a
 :root:not([data-bs-theme="dark"]) .alert-danger { color: #8f1d1d; }
 :root[data-bs-theme="dark"] a[aria-current="true"]:not(.btn) { color: #9dbcff; }
 main .form-text a, main .text-secondary a, main .text-muted a, main .alert a { text-decoration: underline; }
-.admin-breadcrumb a { text-decoration: underline; }
+/* Navigation links (breadcrumb, section jump list) are not running text: underline on hover and keyboard focus only */
+.admin-breadcrumb a:hover, .admin-breadcrumb a:focus-visible, .admin-directory__nav a:hover, .admin-directory__nav a:focus-visible { text-decoration: underline; }
 
 /* Contrast (RMM pages): help text, tab links, tinted alerts and outline-primary buttons */
 :root:not([data-bs-theme="dark"]) .form-text, :root:not([data-bs-theme="dark"]) .form-hint { color: #566570; }
