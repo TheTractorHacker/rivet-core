@@ -61,6 +61,7 @@ class WebhookDispatcher
         private int $timeoutSeconds = self::DEFAULT_TIMEOUT_SECONDS,
         ?UrlPolicy $urlPolicy = null,
         bool $requireUrlPolicy = false,
+        private bool $requireHttps = false,
     ) {
         $this->transport = $transport ?? self::curlTransport(...);
         $this->urlPolicy = $urlPolicy ?? ($requireUrlPolicy ? new UrlPolicy() : null);
@@ -248,13 +249,17 @@ class WebhookDispatcher
         $start = microtime(true);
         try {
             $target = null;
-            if ($this->urlPolicy !== null) {
-                $target = $this->urlPolicy->vet($url);
-            }
-            if ($this->urlPolicy !== null && $target === null) {
-                $r = ['status' => null, 'body' => null, 'error' => 'endpoint URL not allowed'];
+            if ($this->requireHttps && !$subscriber->allowsHttp() && UrlPolicy::isPlainHttp($url)) {
+                $r = ['status' => null, 'body' => null, 'error' => 'plain http endpoint not allowed'];
             } else {
-                $r = ($this->transport)($url, $body, $headers, $this->timeoutSeconds, $target, $method);
+                if ($this->urlPolicy !== null) {
+                    $target = $this->urlPolicy->vet($url);
+                }
+                if ($this->urlPolicy !== null && $target === null) {
+                    $r = ['status' => null, 'body' => null, 'error' => 'endpoint URL not allowed'];
+                } else {
+                    $r = ($this->transport)($url, $body, $headers, $this->timeoutSeconds, $target, $method);
+                }
             }
         } catch (\Throwable $e) {
             $r = ['status' => null, 'body' => null, 'error' => 'transport failed'];

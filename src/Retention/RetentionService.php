@@ -6,12 +6,16 @@ namespace RivetCore\Retention;
 
 use RivetCore\Compliance\RetentionPolicy;
 use RivetCore\Database\DatabaseInterface;
+use RivetCore\Security\SecurityBaseline;
 
 /**
  * Prunes the Core-owned log tables so they cannot grow without bound. The edition decides the horizons (in days) and when
  * to call it (its hourly cron); a horizon below 1 means "keep everything" for that table. Use
  * Compliance\RetentionPolicy::effectiveDays() to turn a stored setting into the horizon to pass here, so a compliance
  * preset's minimum is always honoured.
+ *
+ * The audit horizon is clamped to at least {@see SecurityBaseline::MIN_AUDIT_RETENTION_DAYS} (90) inside prune() and plan(): a smaller value, including one
+ * from an edition that did not call SecurityBaseline::auditRetentionDays(), still keeps 90 days. Webhook deliveries and jobs have no such floor.
  *
  * Only these rows are ever deleted, with fixed SQL (no identifiers come from the caller):
  *  - audit_events older than the audit horizon (which may differ from the others);
@@ -86,6 +90,11 @@ final class RetentionService
             foreach ($horizons as $table => $d) {
                 $horizons[$table] = RetentionPolicy::effectiveDaysFor($this->profile, $kinds[$table], $d);
             }
+        }
+        // The baseline floor holds here too, so an edition that forgets SecurityBaseline::auditRetentionDays() still cannot prune audit rows younger than 90 days.
+        // A horizon below 1 keeps meaning "keep everything" and is left alone.
+        if ($horizons['audit_events'] >= 1) {
+            $horizons['audit_events'] = max($horizons['audit_events'], SecurityBaseline::MIN_AUDIT_RETENTION_DAYS);
         }
         if (max($horizons) < 1) {
             return [];

@@ -129,6 +129,45 @@
                 "record": "record(string $itemId, ?int $reviewedByUserId, string $reviewerName, string $reviewedOn, ?string $nextDueOn, ?string $note, ?DateTimeImmutable $today = NULL): int"
             }
         },
+        "RivetCore\\Compliance\\Backup\\ArtifactCheckedBackupFactsProvider": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Compliance\\Backup\\BackupFactsProviderInterface"
+            ],
+            "methods": {
+                "__construct": "__construct(RivetCore\\Compliance\\Backup\\BackupFactsProviderInterface $inner, Closure $artifactPaths, RivetCore\\Compliance\\Backup\\BackupEncryptionInspector $inspector = RivetCore\\Compliance\\Backup\\BackupEncryptionInspector)",
+                "backupFacts": "backupFacts(): RivetCore\\Compliance\\Backup\\BackupFacts"
+            }
+        },
+        "RivetCore\\Compliance\\Backup\\BackupEncryptionInspector": {
+            "kind": "final class",
+            "constants": {
+                "ENCRYPTED": "encrypted",
+                "HEADER_BYTES": 512,
+                "PLAINTEXT": "plaintext",
+                "UNKNOWN": "unknown"
+            },
+            "methods": {
+                "allEncrypted": "allEncrypted(array $paths): ?bool",
+                "inspectFile": "inspectFile(string $path): RivetCore\\Compliance\\Backup\\BackupEncryptionReport",
+                "inspectHeader": "inspectHeader(string $head, ?string $suffixHint = NULL): RivetCore\\Compliance\\Backup\\BackupEncryptionReport",
+                "suffixHint": "static suffixHint(string $path): ?string"
+            }
+        },
+        "RivetCore\\Compliance\\Backup\\BackupEncryptionReport": {
+            "kind": "final class readonly",
+            "methods": {
+                "__construct": "__construct(string $state, ?string $method = NULL, ?string $suffixHint = NULL, string $detail = '')",
+                "isEncrypted": "isEncrypted(): bool",
+                "suffixLies": "suffixLies(): bool"
+            },
+            "properties": {
+                "detail": "readonly string",
+                "method": "readonly ?string",
+                "state": "readonly string",
+                "suffixHint": "readonly ?string"
+            }
+        },
         "RivetCore\\Compliance\\Backup\\BackupFacts": {
             "kind": "final class readonly",
             "constants": {
@@ -7362,6 +7401,7 @@
         "RivetCore\\Rmm\\Store\\DataStoreSwitch": {
             "kind": "final class",
             "constants": {
+                "ACK_INSECURE_KEY": "allow_insecure_transport",
                 "MIN_POSTGRES_MAJOR": 14,
                 "NO_DATA_MOVE_NOTICE": "Switching the data store does not move existing history. Everything the RMM recorded so far stays in the current store and is no longer shown; new data is written to the new one. Use \"Migrate data\" to copy the history first (recommended), or accept that it stays behind. Switching back makes the old history visible again.",
                 "RECOMMENDED_POSTGRES_MAJOR": 18
@@ -7555,6 +7595,7 @@
         "RivetCore\\Rmm\\Store\\Postgres\\PostgresConfig": {
             "kind": "final class",
             "constants": {
+                "DEFAULT_REMOTE_SSL_MODE": "verify-full",
                 "SSL_MODES": [
                     "disable",
                     "allow",
@@ -7562,6 +7603,11 @@
                     "require",
                     "verify-ca",
                     "verify-full"
+                ],
+                "WEAK_SSL_MODES": [
+                    "disable",
+                    "allow",
+                    "prefer"
                 ]
             },
             "methods": {
@@ -7570,7 +7616,10 @@
                 "fromArray": "static fromArray(array $c): RivetCore\\Rmm\\Store\\Postgres\\PostgresConfig",
                 "fromSealed": "static fromSealed(array $c, RivetCore\\Rmm\\Contracts\\SecretBoxInterface $box): RivetCore\\Rmm\\Store\\Postgres\\PostgresConfig",
                 "identity": "identity(): string",
-                "password": "password(): string"
+                "isLocal": "isLocal(): bool",
+                "isLocalHost": "static isLocalHost(string $host): bool",
+                "password": "password(): string",
+                "usesWeakTransport": "usesWeakTransport(): bool"
             },
             "properties": {
                 "applicationName": "readonly string",
@@ -9195,9 +9244,11 @@
             "kind": "final class",
             "methods": {
                 "__construct": "__construct(bool $allowPrivate = false, ?Closure $resolver = NULL, array $allowedNetworks = [])",
+                "destinationProblem": "destinationProblem(string $url, bool $allowHttp = false): ?string",
+                "isPlainHttp": "static isPlainHttp(string $url): bool",
                 "isPublicIp": "static isPublicIp(string $ip): bool",
-                "isSafe": "isSafe(string $url): bool",
-                "vet": "vet(string $url): ?array"
+                "isSafe": "isSafe(string $url, bool $allowHttp = true): bool",
+                "vet": "vet(string $url, bool $allowHttp = true): ?array"
             }
         },
         "RivetCore\\Webhooks\\WebhookDispatcher": {
@@ -9206,7 +9257,7 @@
                 "DEFAULT_TIMEOUT_SECONDS": 10
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, RivetCore\\Webhooks\\WebhookSubscriptionsInterface $subscriptions, RivetCore\\Contracts\\ClockInterface $clock, array $headerPrefixes = array, ?Closure $transport = NULL, int $timeoutSeconds = 10, ?RivetCore\\Webhooks\\UrlPolicy $urlPolicy = NULL, bool $requireUrlPolicy = false)",
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, RivetCore\\Webhooks\\WebhookSubscriptionsInterface $subscriptions, RivetCore\\Contracts\\ClockInterface $clock, array $headerPrefixes = array, ?Closure $transport = NULL, int $timeoutSeconds = 10, ?RivetCore\\Webhooks\\UrlPolicy $urlPolicy = NULL, bool $requireUrlPolicy = false, bool $requireHttps = false)",
                 "curlOptions": "static curlOptions(string $body, array $headers, int $timeout, ?array $target = NULL, string $method = 'POST'): array",
                 "deliver": "deliver(string $eventType, array $payload): array",
                 "deliverTo": "deliverTo(int $webhookId, string $eventType, array $payload, int $attempt = 1, ?string $emittedAt = NULL, ?int $signedAt = NULL, ?array $options = NULL): array",
@@ -9217,7 +9268,8 @@
         "RivetCore\\Webhooks\\WebhookSubscription": {
             "kind": "final class readonly",
             "methods": {
-                "__construct": "__construct(int $webhookId, string $url, string $secret, array $options = [])"
+                "__construct": "__construct(int $webhookId, string $url, string $secret, array $options = [])",
+                "allowsHttp": "allowsHttp(): bool"
             },
             "properties": {
                 "options": "readonly array",

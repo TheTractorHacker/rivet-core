@@ -23,6 +23,12 @@ final class PostgresConfig
 
     public const SSL_MODES = ['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'];
 
+    /** sslmode values that can fall back to (or only use) an unencrypted connection; {@see usesWeakTransport()}. */
+    public const WEAK_SSL_MODES = ['disable', 'allow', 'prefer'];
+
+    /** The sslmode a NEW connection to a remote host starts with where a default is chosen (the constructor default stays `prefer` for compatibility). */
+    public const DEFAULT_REMOTE_SSL_MODE = 'verify-full';
+
     /**
      * @param string $host a host name, an IP address or, when it starts with `/`, the directory of the server's unix socket (the recommended same-server setup)
      * @param string $schema schema the tables live in (created by the migrator; must exist and be writable for the role)
@@ -128,6 +134,27 @@ final class PostgresConfig
         }
 
         return self::fromArray($c);
+    }
+
+    /** Whether the server is on this machine: a unix socket directory, `localhost`, `127.0.0.1` or `::1`. */
+    public function isLocal(): bool
+    {
+        return self::isLocalHost($this->host);
+    }
+
+    /** Same test for a bare host string (also `[::1]`). */
+    public static function isLocalHost(string $host): bool
+    {
+        return $host === 'localhost' || $host === '127.0.0.1' || $host === '::1' || $host === '[::1]' || str_starts_with($host, '/');
+    }
+
+    /**
+     * True for a REMOTE host whose sslmode (disable, allow, prefer) lets the connection run unencrypted or downgraded. Reading such a stored connection still works;
+     * {@see \RivetCore\Rmm\Store\DataStoreSwitch} refuses to save or test a new one unless the operator acknowledges it.
+     */
+    public function usesWeakTransport(): bool
+    {
+        return !$this->isLocal() && in_array($this->sslMode, self::WEAK_SSL_MODES, true);
     }
 
     /** The libpq connection string without credentials: `pgsql:host=...;port=...;dbname=...`. */

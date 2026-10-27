@@ -40,6 +40,12 @@ final class DataStoreSwitch
     public const NO_DATA_MOVE_NOTICE = 'Switching the data store does not move existing history. Everything the RMM recorded so far stays in the current store and is no longer shown; '
         . 'new data is written to the new one. Use "Migrate data" to copy the history first (recommended), or accept that it stays behind. Switching back makes the old history visible again.';
 
+    /**
+     * Optional input key of {@see saveConnection()} / {@see testConnection()}: true acknowledges that a REMOTE host is reached with sslmode disable, allow or prefer
+     * (traffic may be unencrypted or downgradable). Without it such a connection is refused. The acknowledgement is audited and is not stored: it has to be given again.
+     */
+    public const ACK_INSECURE_KEY = 'allow_insecure_transport';
+
     /** @var \Closure(PostgresConfig): PostgresConnectionInterface */
     private \Closure $connect;
     private readonly bool $defaultConnect;
@@ -405,19 +411,20 @@ final class DataStoreSwitch
      */
     private function prepare(#[\SensitiveParameter] array $in): array
     {
-        $known = ['host', 'port', 'database', 'user', 'password', 'sslmode', 'sslrootcert', 'schema'];
+        $known = ['host', 'port', 'database', 'user', 'password', 'sslmode', 'sslrootcert', 'schema', self::ACK_INSECURE_KEY];
         $unknown = array_diff(array_keys($in), $known);
         if ($unknown !== []) {
             throw new \InvalidArgumentException('Unknown connection setting(s): ' . implode(', ', array_map('strval', $unknown)) . '.');
         }
         $stored = $this->row();
         $pick = static fn (string $k, string $col, mixed $default) => array_key_exists($k, $in) ? $in[$k] : ($stored !== null ? $stored[$col] : $default);
+        $host = trim((string) $pick('host', 'host', '127.0.0.1'));
         $cfg = [
-            'host' => trim((string) $pick('host', 'host', '127.0.0.1')),
+            'host' => $host,
             'port' => (int) $pick('port', 'port', 5432),
             'database' => trim((string) $pick('database', 'db_name', '')),
             'user' => trim((string) $pick('user', 'db_user', '')),
-            'sslmode' => trim((string) $pick('sslmode', 'sslmode', 'prefer')),
+            'sslmode' => trim((string) $pick('sslmode', 'sslmode', self::isLocalHost($host) ? 'prefer' : PostgresConfig::DEFAULT_REMOTE_SSL_MODE)),
             'schema' => trim((string) $pick('schema', 'schema_name', 'public')),
         ];
         $root = $pick('sslrootcert', 'sslrootcert', null);
@@ -425,8 +432,10 @@ final class DataStoreSwitch
             $cfg['sslrootcert'] = trim((string) $root);
         }
         $password = array_key_exists('password', $in) ? (string) $in['password'] : '';
-        PostgresConfig::fromArray($cfg + ['password' => $password]);   // validates every field; throws with a message that names the field
+        $checked = PostgresConfig::fromArray($cfg + ['password' => $password]);   // validates every field; throws with a message that names the field
         if ($password !== '') {
+            $this->requireAcknowledgedTransport($checked, $in);
+
             return [$cfg, $this->box->encrypt($password)];
         }
         $reuse = $stored !== null ? (string) ($stored['password_sealed'] ?? '') : '';
@@ -444,8 +453,29 @@ final class DataStoreSwitch
             // verified TLS connection. A local socket or loopback host (peer authentication) is the legitimate empty-password case.
             throw new \InvalidArgumentException('A remote host with no password needs a verified TLS connection: set sslmode to verify-full (or verify-ca), or enter a password.');
         }
+        $this->requireAcknowledgedTransport($checked, $in);
 
         return [$cfg, $reuse];
+    }
+
+    /**
+     * COMM-01: a remote host reached with sslmode disable, allow or prefer is refused unless the input carries the explicit, audited acknowledgement.
+     *
+     * @param array<string,mixed> $in
+     * @throws \InvalidArgumentException
+     */
+    private function requireAcknowledgedTransport(PostgresConfig $c, #[\SensitiveParameter] array $in): void
+    {
+        if (!$c->usesWeakTransport()) {
+            return;
+        }
+        $cfg = ['host' => $c->host, 'port' => $c->port, 'sslmode' => $c->sslMode];
+        if (($in[self::ACK_INSECURE_KEY] ?? false) !== true) {
+            throw new \InvalidArgumentException('The server ' . $cfg['host'] . ' is not on this machine and sslmode "' . $cfg['sslmode'] . '" can send the traffic unencrypted or let it be downgraded. '
+                . 'Use sslmode verify-full (with the server CA in sslrootcert), or verify-ca; or use a unix socket on the same server. '
+                . 'To accept the risk anyway, acknowledge it explicitly (' . self::ACK_INSECURE_KEY . ').');
+        }
+        $this->note('rmm.data_store.insecure_transport_ack', 'Unverified PostgreSQL transport acknowledged for remote host ' . $cfg['host'] . ':' . $cfg['port'] . ' (sslmode ' . $cfg['sslmode'] . ').');
     }
 
     /**
@@ -482,7 +512,7 @@ final class DataStoreSwitch
 
     private static function isLocalHost(string $host): bool
     {
-        return $host === 'localhost' || $host === '127.0.0.1' || $host === '::1' || $host === '[::1]' || str_starts_with($host, '/');
+        return PostgresConfig::isLocalHost($host);
     }
 
     /** Messages come from the driver (the server's primary message only) and from our own validation; never let a password ride along in one. */

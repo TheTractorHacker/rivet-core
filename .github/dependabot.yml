@@ -15,3 +15,7 @@ updates:
   - package-ecosystem: docker
     directory: /endpoint-agent/packaging/msi
     schedule: { interval: monthly }
+    # The MSI build pins exact apt package versions per Ubuntu release and non-LTS releases go end of life within months: only move this image on purpose (to an LTS), never by bot.
+    ignore:
+      - dependency-name: ubuntu
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
