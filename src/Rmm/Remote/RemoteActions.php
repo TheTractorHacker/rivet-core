@@ -729,10 +729,29 @@ final class RemoteActions
     }
 
     /**
+     * The "apply compliance baseline" button: stores the recommended Windows log presets next to the ones already chosen (administrators; audited by
+     * {@see RemoteSettings::applyComplianceBaseline()}). It does not turn log collection on and does not touch any source.
+     */
+    public function applyLogPresetBaseline(RmmPrincipal $who): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::ADMIN, 0, false);
+        if ($denied !== null) {
+            $this->audit->record('Remote Settings Denied', "User {$who->userId} denied applying the log preset baseline: $denied", 0, 0);
+
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        $this->remote->applyComplianceBaseline($who->userId, $who->userName);
+        $this->remote->refresh();
+
+        return ActionResult::ok('Saved.', 200, 'saved', $this->settingsView());
+    }
+
+    /**
      * Change the remote-tools settings. Turning `filetransfer` on needs `accept_filetransfer_risk: true`, turning `logs` on needs `accept_logs_storage: true`: the
      * request is refused with the plain-language text when the acknowledgement is missing, so no client can switch them on by accident.
      *
-     * @param array<string,mixed> $in features {remote_tools, filetransfer, logs}, transfer_allow, logs_collect, limits, accept_filetransfer_risk, accept_logs_storage
+     * @param array<string,mixed> $in features {remote_tools, filetransfer, logs}, transfer_allow, logs_collect, limits, accept_filetransfer_risk, accept_logs_storage,
+     *        compliance_baseline_if_unset (true with the first enable: store the compliance log-preset baseline if no preset choice was ever saved)
      */
     public function updateSettings(RmmPrincipal $who, array $in): ActionResult
     {
@@ -742,7 +761,7 @@ final class RemoteActions
 
             return ActionResult::fail(403, 'forbidden', $denied);
         }
-        $known = ['features', 'transfer_allow', 'logs_collect', 'limits', 'accept_filetransfer_risk', 'accept_logs_storage'];
+        $known = ['features', 'transfer_allow', 'logs_collect', 'limits', 'accept_filetransfer_risk', 'accept_logs_storage', 'compliance_baseline_if_unset'];
         foreach (array_keys($in) as $k) {
             if (!in_array($k, $known, true)) {
                 return ActionResult::fail(422, 'invalid', 'Unknown setting ' . mb_substr((string) $k, 0, 40) . '.');
@@ -768,7 +787,7 @@ final class RemoteActions
         if (($changed[RemoteProtocol::FEATURE_LOGS] ?? false) === true && empty($in['accept_logs_storage'])) {
             return ActionResult::fail(422, 'confirmation_required', RemoteSettings::LOGS_STORAGE_WARNING . ' Send accept_logs_storage: true to turn log collection on.');
         }
-        $errors = $this->remote->update(array_intersect_key($in, array_flip(['transfer_allow', 'logs_collect', 'limits'])), $who->userId);
+        $errors = $this->remote->update(array_intersect_key($in, array_flip(['transfer_allow', 'logs_collect', 'limits', 'compliance_baseline_if_unset'])), $who->userId);
         if ($errors !== []) {
             return ActionResult::fail(422, 'invalid', implode(' ', $errors));
         }
@@ -786,6 +805,9 @@ final class RemoteActions
             if (array_key_exists($k, $in)) {
                 $what[] = "$k updated";
             }
+        }
+        if (($in['compliance_baseline_if_unset'] ?? false) === true && !array_key_exists('logs_collect', $in)) {
+            $what[] = 'log presets: compliance baseline stored if none was chosen';
         }
         $this->audit->record('Remote Settings Changed', "{$who->userName}: " . ($what === [] ? 'no change' : implode(', ', $what)), 0, 0);
         $this->settings->refresh();

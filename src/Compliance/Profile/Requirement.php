@@ -26,7 +26,7 @@ final readonly class Requirement
         } elseif ($dataClass !== null) {
             throw new \InvalidArgumentException('Requirement "' . RequirementType::label($type) . '" does not take a kind of data.');
         }
-        $meta = RequirementType::ALL[$type];
+        $meta = RequirementType::meta($type) ?? throw new \InvalidArgumentException('Unknown requirement type.');
         if ($value < $meta['min'] || $value > $meta['max']) {
             throw new \InvalidArgumentException('Requirement "' . RequirementType::label($type) . '" must be from ' . $meta['min'] . ' to ' . $meta['max'] . ' ' . ($meta['unit'] === 'flag' ? '(yes/no)' : $meta['unit']) . '.');
         }

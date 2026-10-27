@@ -693,6 +693,7 @@ final class RmmModule
         if ($this->remoteSettings === null) {
             $this->remoteSettings = new RemoteSettings($this->sql());
             $this->remoteSettings->setRetentionFloors($this->options['retention_floors'] ?? null);
+            $this->remoteSettings->setAudit($this->audit);
         }
 
         return $this->remoteSettings;

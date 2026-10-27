@@ -114,6 +114,8 @@ Named presets add ordinary `eventlog` sources to the Windows log configuration (
 | `win.sec.audit_policy` | Security 4719 |
 | `win.sec.devices` | Security 6416 (needs "Audit PNP Activity") |
 
+Which presets are recommended for compliance, and how "never chosen" differs from "chose none": [REMOTE_AND_LOGS.md](REMOTE_AND_LOGS.md) (Compliance baseline).
+
 The aggregated source is offered only to an agent that announced `logs:presets`: an older agent would ship every failed logon of a password-spraying run one by one. The aggregation lives in memory on the device (a restart loses at most the open window), is capped at 200 groups per window and 8 windows, and sends one entry per group: `7 events in 300s: TargetUserName=bob IpAddress=10.0.0.9`. The existing log rules (`logs/rules`) alert on these entries by event id.
 
 ## 7. What is recorded, and what is not

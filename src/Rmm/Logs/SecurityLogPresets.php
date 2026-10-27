@@ -21,6 +21,10 @@ final class SecurityLogPresets
     /** The most sources the presets add to one device's configuration (the agent reads at most 24 in all). */
     public const MAX_SOURCES = 4;
 
+    /** Shown wherever presets are chosen: a preset reads events, it cannot make Windows write them. */
+    public const AUDIT_POLICY_NOTE = 'A preset only reads events that Windows writes. If the matching Advanced Audit Policy subcategory is off on a device, that preset collects nothing from it. '
+        . 'RivetIT does not read the audit policy of a device, so it cannot tell you which subcategories are on.';
+
     /**
      * @return array<string,array{title:string,description:string,platform:string,aggregate:bool,sources:list<array<string,mixed>>}>
      */
@@ -54,6 +58,64 @@ final class SecurityLogPresets
                 'description' => 'A new plug and play device was recognised (6416). Needs "Audit PNP Activity" in the audit policy.',
                 'sources' => [$sec([6416])]],
         ];
+    }
+
+    /**
+     * The presets recommended for compliance: everything except `win.sec.devices`, which needs an extra audit subcategory ("Audit PNP Activity") that most baselines
+     * leave off. Nothing is switched on by this list: an edition pre-ticks it for an install that has never chosen, and
+     * {@see \RivetCore\Rmm\Remote\RemoteSettings::applyComplianceBaseline()} stores it on request.
+     *
+     * @return list<string>
+     */
+    public static function complianceBaseline(): array
+    {
+        return ['win.sec.accounts', 'win.sec.groups', 'win.sec.logon_failures', 'win.sec.log_cleared', 'win.sec.scheduled_tasks', 'win.sec.new_service', 'win.sec.audit_policy'];
+    }
+
+    /**
+     * The control references each preset supports, as "Framework reference" strings (indicative, for a badge or a report; not a certification claim).
+     *
+     * @return array<string,list<string>>
+     */
+    public static function frameworkReferences(): array
+    {
+        $log = ['HIPAA 164.312(b)', 'PCI DSS 10.2', 'CIS Controls 8.2', 'NIST 800-171 3.3.1', 'SOC 2 CC7.2', 'ISO 27001 A.8.15', 'NIST CSF DE.CM'];
+
+        return [
+            'win.sec.accounts' => [...$log, 'NIST 800-171 3.3.2', 'PCI DSS 10.2.1.5'],
+            'win.sec.groups' => [...$log, 'NIST 800-171 3.3.2', 'PCI DSS 10.2.1.5'],
+            'win.sec.logon_failures' => [...$log, 'CIS Controls 8.5', 'NIST 800-171 3.3.2', 'PCI DSS 10.2.1.4'],
+            'win.sec.log_cleared' => [...$log, 'CIS Controls 8.5', 'PCI DSS 10.2.1.6', 'PCI DSS 10.3.2'],
+            'win.sec.scheduled_tasks' => [...$log, 'CIS Controls 8.5', 'NIST 800-171 3.3.2'],
+            'win.sec.new_service' => [...$log, 'CIS Controls 8.5', 'NIST 800-171 3.3.2'],
+            'win.sec.audit_policy' => [...$log, 'PCI DSS 10.2.1.6'],
+            'win.sec.devices' => ['CIS Controls 8.2', 'NIST CSF DE.CM'],
+        ];
+    }
+
+    /**
+     * What Windows must audit for a preset to see anything. A preset reads events; it cannot make Windows write them. Keyed by preset id.
+     *
+     * @return array<string,string>
+     */
+    public static function auditPolicyNeeds(): array
+    {
+        return [
+            'win.sec.accounts' => 'Audit User Account Management (Success)',
+            'win.sec.groups' => 'Audit Security Group Management (Success)',
+            'win.sec.logon_failures' => 'Audit Logon (Failure)',
+            'win.sec.log_cleared' => 'nothing extra (Windows writes 1102 and 104 by default)',
+            'win.sec.scheduled_tasks' => 'Audit Other Object Access Events (Success)',
+            'win.sec.new_service' => 'Audit Security System Extension (Success) for 4697; System 7045 needs nothing extra',
+            'win.sec.audit_policy' => 'Audit Audit Policy Change (Success)',
+            'win.sec.devices' => 'Audit PNP Activity (Success)',
+        ];
+    }
+
+    /** The one-line remediation for a preset that is not enabled, for example "Enable preset win.sec.accounts (needs Windows audit policy: Audit User Account Management (Success))". */
+    public static function remediation(string $id): string
+    {
+        return 'Enable preset ' . $id . ' (needs Windows audit policy: ' . (self::auditPolicyNeeds()[$id] ?? 'see the preset description') . ')';
     }
 
     /** @return list<string> */

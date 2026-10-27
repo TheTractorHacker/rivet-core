@@ -64,6 +64,7 @@ Decisions:
 | `backup_encrypted` | yes/no | `BackupEncryptedCheck` (`backup_encrypted`) | `BackupFacts::$encrypted` |
 | `restore_test_max_age` | days | `RestoreTestRecencyCheck` (`restore_test_recency`) | `RestoreTestStore` and the edition's own scheduled test |
 | `tamper_evidence` | yes/no | `IntegrityChainCheck` (`integrity_chain`) | nothing yet: phase 3. A profile that asks for it gets a failure that says "Not available: not implemented in this release", never a pass |
+| `log_presets_baseline` | yes/no | `SecurityLogPresetsCheck` (`security_log_presets`) | `RemoteSettings::logPresets()` and the `logs` switch against `SecurityLogPresets::complianceBaseline()`. Cannot see the Windows audit policy (frozen protocol): a pass always carries that caveat. Not in the built-ins; `BuiltInProfiles::suggestedExtras()` |
 
 `time-to-availability` (PCI "three months immediately available") from the issue is left out of phases 1 and 2: it needs a notion of online versus archived storage that does not exist yet. Adding a type is additive; an older Core rejects a file that uses it (strict import), which is the safe direction.
 

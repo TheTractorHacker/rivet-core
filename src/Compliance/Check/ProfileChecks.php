@@ -87,6 +87,9 @@ final class ProfileChecks
         if ($this->stores !== null && $this->settings !== null && $this->remote !== null && $this->change !== null) {
             $checks[] = new DataStoreRetentionCheck($p, $this->clock, $this->stores, $this->settings, $this->remote, $this->change, $this->settingsPath);
         }
+        if ($this->settings !== null && $this->remote !== null) {
+            $checks[] = new SecurityLogPresetsCheck($p, $this->clock, $this->remote, $this->settings, $this->settingsPath);
+        }
         if ($this->auditDays !== null) {
             $checks[] = new AuditRetentionCheck($p, $this->clock, $this->auditDays, $this->settingsPath);
         }
