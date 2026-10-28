@@ -9,3 +9,8 @@
 .rmm-pat-policy { background: var(--if-bg); border-color: var(--if-border) !important; border-radius: var(--if-radius-sm); }
 .rmm-pat-filter .form-control, .rmm-pat-filter .form-select { min-width: 0; }
 #pol-form .form-text { overflow-wrap: anywhere; }
+
+/* Short cells (kind, status, size, restart, age) stay on one line; only the update title column wraps, so pills and "86.1 GB" never break mid-word. */
+.rmm-pat-table th, .rmm-pat-table td { white-space: nowrap; }
+.rmm-pat-table td:has(> .rmm-wrap) { white-space: normal; min-width: 16rem; }
+.rmm-pat-table .rmm-pill, .rmm-pat-table .badge { white-space: nowrap; }

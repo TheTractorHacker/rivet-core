@@ -2,6 +2,10 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## Unreleased
+
+- **RMM patches table**: the Kind, Status, Size, Restart and First seen cells no longer wrap mid-word ("Securi ty", "86.1 / GB"); only the update title column wraps (`itflow_rmm_patches.css`).
+
 ## 1.0.0-rc.54 (log presets: compliance baseline recommended by default; no protocol change)
 
 No migration (`req_type` is `varchar(40)`; `log_presets_baseline` fits). No change to the RMM device protocol. Existing installs behave exactly as before: nothing is switched on, stored, or sent to an agent unless an administrator saves it.
