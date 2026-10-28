@@ -195,6 +195,8 @@ code, kbd, samp, pre, .text-monospace, .font-monospace, .if-mono { font-family: 
 .table > tbody > tr > td { padding: .7rem .75rem; border-bottom: 1px solid var(--if-border); vertical-align: middle; }
 .table-hover > tbody > tr:hover > td { background-color: rgba(var(--if-primary-rgb),.045); }
 :root[data-bs-theme="dark"] .table-hover > tbody > tr:hover > td { background-color: rgba(var(--if-primary-rgb),.06); }
+/* The older full-row accent fill (itflow_custom.css) stacked on the td tint above and turned a hovered row solid pink/teal; the td tint alone is the hover. */
+.table.table-hover > tbody > tr:hover { background-color: transparent; }
 
 /* Contextual rows (awaiting reply, overdue, etc.): a muted tint + left accent
    reads as "this needs attention" without Bootstrap's default saturated fill. */

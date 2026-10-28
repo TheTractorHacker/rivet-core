@@ -4,6 +4,7 @@ All notable changes to RivetCore. Semantic versioning.
 
 ## Unreleased
 
+- **Table row hover**: a hovered row in a `.table-hover` list (e.g. Departments) no longer gets a solid accent-colour fill on top of the subtle tint; the tint alone is the hover (`itflow_design.css`).
 - **RMM patches table**: the Kind, Status, Size, Restart and First seen cells no longer wrap mid-word ("Securi ty", "86.1 / GB"); only the update title column wraps (`itflow_rmm_patches.css`).
 
 ## 1.0.0-rc.54 (log presets: compliance baseline recommended by default; no protocol change)
