@@ -75,7 +75,7 @@ final class UiAssetsTest extends TestCase
      * 'outline-primary buttons use one colour': the label follows the theme accent) and again for rc.50 / rc.51 (navigation links, breadcrumbs and section tabs never underlined, commits 4e47bde, 6f55276, 2be7750). Any further change to this file must update this value
      * and say why; promote edition changes with scripts/promote-ui-assets.php so the manifest is rebuilt in the same step.
      */
-    private const DESIGN_CSS_RIVETIT_SPLIT_SHA256 = 'ac7a673acc5a749e32fa43c3f46b04d26e58987a3c2281ff0d413ba5b6eb2cbc';
+    private const DESIGN_CSS_RIVETIT_SPLIT_SHA256 = '01bb4643d669730a4a0bd7262a5508784f9ecf1e5bcd36a4426e4ff9768b6f4d';
 
     /** SHA-256 of RivetIT 26.10.68's js/<file>; Core's copy must be byte identical (the wizard: after reversing its reviewed deviation). */
     private const RIVETIT_JS_SHA256 = [
