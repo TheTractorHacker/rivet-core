@@ -536,8 +536,9 @@ final class ChangeMonitorTest extends RemoteTestCase
         $actors = array_column($j['actors'], 'count', 'actor');
         ksort($actors);
         $this->assertSame(['' => 3, 'CORP\\bob' => 1], $actors, 'who: the people Windows recorded, and the changes with no recorded actor');
-        $this->assertCount(1, $j['days']);
-        $this->assertSame(4, $j['days'][0]['count']);
+        // The seeded events are up to 50 minutes old, so in the first hour after 00:00 UTC they fall on two calendar days.
+        $this->assertLessThanOrEqual(2, count($j['days']));
+        $this->assertSame(4, array_sum(array_column($j['days'], 'count')));
         $this->assertSame('W1', $j['hostname']);
     }
 
