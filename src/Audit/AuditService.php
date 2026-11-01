@@ -39,11 +39,14 @@ final class AuditService
      * @param (\Closure(string,?int,?string,?string,string,?string,array<string,mixed>):void)|null $afterLog called after a row is recorded
      *        with (eventType, actorUserId, entityType, entityId, action, summary, metadata); lets an edition fan the event out to
      *        webhooks and automation rules. Whatever it does or throws, the audit write and the caller are unaffected.
+     * @param AuditChainWriter|null $chain when given, every row is added to the tamper-evident hash chain (ERR-04, needs migration
+     *        0048); without it rows are plain, exactly as before. If the chain cannot be extended the row is still stored, unchained.
      */
     public function __construct(
         private DatabaseInterface $database,
         private RequestContextInterface $request,
         private ?\Closure $afterLog = null,
+        private ?AuditChainWriter $chain = null,
     ) {
     }
 
@@ -63,23 +66,32 @@ final class AuditService
         $userAgent = $this->request->userAgent();
         $entityIdStr = $entityId === null ? null : self::clamp((string) $entityId, self::ENTITY_ID_MAX);
 
-        $this->database->execute(
-            'INSERT INTO audit_events
+        $sql = 'INSERT INTO audit_events
                 (event_type, actor_user_id, entity_type, entity_id, action, summary, metadata_json, ip_address, user_agent, request_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [
-                self::clamp($eventType, self::EVENT_TYPE_MAX),
-                $actorUserId,
-                $entityType === null ? null : self::clamp($entityType, self::ENTITY_TYPE_MAX),
-                $entityIdStr,
-                self::clamp($action, self::ACTION_MAX),
-                $summary === null ? null : mb_substr($summary, 0, self::SUMMARY_MAX),
-                $metadata ? self::encodeMetadata($metadata) : null,
-                self::clampNullable($this->request->ipAddress(), self::IP_MAX),
-                $userAgent === null ? null : mb_substr($userAgent, 0, self::USER_AGENT_MAX),
-                self::clampNullable($this->request->requestId(), self::REQUEST_ID_MAX),
-            ]
-        );
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        $params = [
+            self::clamp($eventType, self::EVENT_TYPE_MAX),
+            $actorUserId,
+            $entityType === null ? null : self::clamp($entityType, self::ENTITY_TYPE_MAX),
+            $entityIdStr,
+            self::clamp($action, self::ACTION_MAX),
+            $summary === null ? null : mb_substr($summary, 0, self::SUMMARY_MAX),
+            $metadata ? self::encodeMetadata($metadata) : null,
+            self::clampNullable($this->request->ipAddress(), self::IP_MAX),
+            $userAgent === null ? null : mb_substr($userAgent, 0, self::USER_AGENT_MAX),
+            self::clampNullable($this->request->requestId(), self::REQUEST_ID_MAX),
+        ];
+        if ($this->chain !== null) {
+            try {
+                $this->chain->append($sql, $params);
+            } catch (\Throwable $e) {
+                // The event must not be lost because the chain could not be extended: store it unchained (the verifier reports it).
+                error_log('rivetcore audit chain not extended (' . $e::class . ' ' . $e->getCode() . '); the event was stored unchained');
+                $this->database->execute($sql, $params);
+            }
+        } else {
+            $this->database->execute($sql, $params);
+        }
 
         if ($this->afterLog !== null) {
             try {
