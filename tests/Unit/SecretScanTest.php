@@ -156,6 +156,49 @@ final class SecretScanTest extends TestCase
         }
     }
 
+    /**
+     * Simulates the vendored layout: <edition>/vendor/rivet/rivet-core/scripts/secret-scan.php, invoked
+     * from the EDITION's own repo root. The scan root must be the edition's repo (the caller's cwd), not
+     * rivet-core's own vendored subdirectory - see the fix for the packaging gap this test guards against.
+     */
+    public function testAVendoredCopyInvokedFromAnEditionRepoScansTheEditionNotRivetCore(): void
+    {
+        $tmp = sys_get_temp_dir() . '/secret-scan-vendored-' . bin2hex(random_bytes(8));
+        $editionRoot = $tmp . '/fake-edition';
+        $vendoredScripts = $editionRoot . '/vendor/rivet/rivet-core/scripts';
+        mkdir($vendoredScripts, 0777, true);
+        mkdir($editionRoot . '/src', 0777, true);
+        copy(self::root() . '/scripts/secret-scan.php', $vendoredScripts . '/secret-scan.php');
+        copy(self::root() . '/secret-scan-allowlist.json', dirname($vendoredScripts) . '/secret-scan-allowlist.json');
+
+        // A real-looking fixture secret, assembled at run time so this file is not itself a fixture of the thing it tests.
+        $fixture = 'id=' . 'AKIA' . 'ABCDEFGHIJKLMNOP';
+        file_put_contents($editionRoot . '/src/config.php', "<?php\n// $fixture\n");
+
+        $cwd = getcwd();
+        try {
+            chdir($editionRoot);
+            exec('git init -q 2>&1', $out, $rc);
+            $this->assertSame(0, $rc, implode("\n", $out));
+            exec('git -c user.email=t@t.com -c user.name=t add -A 2>&1', $out2, $rc2);
+            $this->assertSame(0, $rc2, implode("\n", $out2));
+            exec('git -c user.email=t@t.com -c user.name=t commit -q -m init 2>&1', $out3, $rc3);
+            $this->assertSame(0, $rc3, implode("\n", $out3));
+
+            $vendoredOut = [];
+            exec('php ' . escapeshellarg($vendoredScripts . '/secret-scan.php') . ' 2>&1', $vendoredOut, $vendoredRc);
+            $report = implode("\n", $vendoredOut);
+            $this->assertSame(1, $vendoredRc, $report);
+            $this->assertStringContainsString('src/config.php', $report, 'the vendored copy must find the fixture in the EDITION\'s own tree');
+            $this->assertStringContainsString('aws-access-key-id', $report);
+            // Nothing in rivet-core's own vendored tree (e.g. its scripts) is reported - the scan root is the edition, not vendor/rivet/rivet-core.
+            $this->assertStringNotContainsString('vendor/rivet/rivet-core', $report);
+        } finally {
+            chdir($cwd);
+            exec('rm -rf ' . escapeshellarg($tmp));
+        }
+    }
+
     public function testGeneratedScannerConfigsAreUpToDate(): void
     {
         $out = secret_scan_render(self::root() . '/secret-scan-allowlist.json');

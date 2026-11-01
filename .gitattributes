@@ -13,6 +13,10 @@
 /scripts/rmm-postgres-restore.sh -export-ignore
 /scripts/rmm-store-migrate.php -export-ignore
 /scripts/rmm-store-verify.php -export-ignore
+# The secret scanner ships too, so an edition can run it against its OWN repo from vendor/rivet/rivet-core/scripts/
+# (secret-scan.php scans the caller's current working directory, not its own location - see its docblock).
+# Its allowlist lives at the repository root (not under scripts/) and already ships unconditionally.
+/scripts/secret-scan.php -export-ignore
 /endpoint-agent export-ignore
 /phpunit.xml.dist export-ignore
 /phpstan.neon   export-ignore
