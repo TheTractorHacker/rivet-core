@@ -3,20 +3,30 @@
 declare(strict_types=1);
 
 /**
- * Secret-shape scanner for this repository (no external download, no network).
+ * Secret-shape scanner (no external download, no network). Ships two ways:
  *
- *   php scripts/secret-scan.php                 scan every tracked file in the working tree
+ *  - Dev checkout: run from this repository's own root directory to scan rivet-core itself.
+ *      php scripts/secret-scan.php                 scan every tracked file in the working tree
+ *  - Vendored: an edition (RivetIT, RivetMSP, ...) runs the copy composer installed into vendor/rivet/rivet-core
+ *    to scan ITS OWN repository. `cd` into the edition's repo root first - the scan root is the current
+ *    working directory, not the script's own location:
+ *      cd /path/to/your/repo && php vendor/rivet/rivet-core/scripts/secret-scan.php
+ *
  *   php scripts/secret-scan.php --history       also scan every line ever added on any ref (git log --all -p)
  *   php scripts/secret-scan.php --history --rev=HEAD   limit the history scan to the commits reachable from a revision (CI: other branches are not this change's business)
  *   php scripts/secret-scan.php --path=src      limit the working-tree scan to a path prefix (repeatable)
  *   php scripts/secret-scan.php --no-allowlist  show the allowlisted fixtures too (audit mode)
+ *   php scripts/secret-scan.php --root=/path    scan a different directory instead of the current working directory
+ *   php scripts/secret-scan.php --allowlist=/path/to/allowlist.json   use an edition's own allowlist instead of this tool's
  *
- * Exit status 1 when a real-looking secret remains outside secret-scan-allowlist.json. The report NEVER prints a matched value: a hit is
+ * Exit status 1 when a real-looking secret remains outside the allowlist. The report NEVER prints a matched value: a hit is
  * path:line, rule, length and the first 4 hex characters of the SHA-256 of the value (enough to tell two hits apart, useless to recover it).
  *
- * The allowlist is path-scoped on purpose: every intentional fixture is listed with the reason it is not a credential, and a new fixture
- * cannot hide by carrying a magic comment. .gitleaks.toml and .semgrepignore mirror the same paths for the external scanners;
- * tests/Unit/SecretScanTest.php fails when the three drift apart.
+ * The allowlist defaults to secret-scan-allowlist.json next to this tool's own root (dirname(__DIR__) - rivet-core's dev checkout root,
+ * or vendor/rivet/rivet-core when vendored), since it is this tool's own false-positive list; an edition that wants to allowlist its own
+ * fixtures without patching rivet-core passes --allowlist= to point at one of its own. It is path-scoped on purpose: every intentional
+ * fixture is listed with the reason it is not a credential, and a new fixture cannot hide by carrying a magic comment. .gitleaks.toml and
+ * .semgrepignore mirror the same paths for the external scanners; tests/Unit/SecretScanTest.php fails when the three drift apart.
  */
 
 /** @return list<array{id:string,re:string,min_entropy:float,group:int}> */
@@ -140,10 +150,18 @@ function secret_scan_allowed(array $allow, string $path, string $rule): bool
 }
 
 if (PHP_SAPI === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FILE__) {
-    $root = dirname(__DIR__);
+    $toolRoot = dirname(__DIR__);   // this tool's own root: rivet-core's dev checkout, or vendor/rivet/rivet-core when vendored
+    $opts = getopt('', ['history', 'no-allowlist', 'path::', 'rev::', 'root::', 'allowlist::']);
+    // The scan root is the CALLER's working directory by default, not this file's own location: a copy of this
+    // script vendored into an edition's vendor/rivet/rivet-core/scripts/ must scan the edition's repo, not itself.
+    $root = isset($opts['root']) ? (string) $opts['root'] : getcwd();
+    if ($root === false) {
+        fwrite(STDERR, "secret-scan: could not determine the current working directory; pass --root=<path>\n");
+        exit(1);
+    }
     chdir($root);
-    $opts = getopt('', ['history', 'no-allowlist', 'path::', 'rev::']);
-    $allow = isset($opts['no-allowlist']) ? ['rules' => []] : secret_scan_load_allowlist($root . '/secret-scan-allowlist.json');
+    $allowlistFile = isset($opts['allowlist']) ? (string) $opts['allowlist'] : $toolRoot . '/secret-scan-allowlist.json';
+    $allow = isset($opts['no-allowlist']) ? ['rules' => []] : secret_scan_load_allowlist($allowlistFile);
     $prefixes = isset($opts['path']) ? (array) $opts['path'] : [];
     $bad = 0;
     $suppressed = 0;
