@@ -1,6 +1,82 @@
 {
     "format": 1,
     "types": {
+        "RivetCore\\Audit\\AuditChainCheckpoints": {
+            "kind": "final class",
+            "methods": {
+                "record": "static record(RivetCore\\Database\\DatabaseInterface $database, int $rowsPruned): bool"
+            }
+        },
+        "RivetCore\\Audit\\AuditChainHasher": {
+            "kind": "final class",
+            "constants": {
+                "FIELDS": [
+                    "audit_id",
+                    "event_type",
+                    "actor_user_id",
+                    "entity_type",
+                    "entity_id",
+                    "action",
+                    "summary",
+                    "metadata_json",
+                    "ip_address",
+                    "user_agent",
+                    "request_id",
+                    "created_at"
+                ],
+                "GENESIS": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "methods": {
+                "deriveKey": "static deriveKey(string $kek): string",
+                "keyTag": "static keyTag(?string $key): string",
+                "mode": "static mode(?string $key): string",
+                "rowHash": "static rowHash(array $row, string $prevHash, ?string $key = NULL): string"
+            }
+        },
+        "RivetCore\\Audit\\AuditChainResult": {
+            "kind": "final class readonly",
+            "constants": {
+                "BROKEN": "broken",
+                "EMPTY": "empty",
+                "KEY_MISMATCH": "key_mismatch",
+                "KEY_UNAVAILABLE": "key_unavailable",
+                "NOT_INSTALLED": "not_installed",
+                "OK": "ok",
+                "UNCHAINED_ROWS": "unchained_rows"
+            },
+            "methods": {
+                "__construct": "__construct(string $status, int $chained = 0, int $legacyUnchained = 0, int $unchainedAfterStart = 0, ?int $firstBrokenId = NULL, string $reason = '', ?int $firstChainedId = NULL, ?int $headId = NULL, ?string $headHash = NULL, string $anchor = 'none')",
+                "toArray": "toArray(): array"
+            },
+            "properties": {
+                "anchor": "readonly string",
+                "chained": "readonly int",
+                "firstBrokenId": "readonly ?int",
+                "firstChainedId": "readonly ?int",
+                "headHash": "readonly ?string",
+                "headId": "readonly ?int",
+                "legacyUnchained": "readonly int",
+                "ok": "readonly bool",
+                "reason": "readonly string",
+                "status": "readonly string",
+                "unchainedAfterStart": "readonly int"
+            }
+        },
+        "RivetCore\\Audit\\AuditChainVerifier": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, ?string $key = NULL, int $batchSize = 1000)",
+                "exportHead": "exportHead(): ?array",
+                "verify": "verify(?array $anchor = NULL): RivetCore\\Audit\\AuditChainResult"
+            }
+        },
+        "RivetCore\\Audit\\AuditChainWriter": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, ?string $key = NULL)",
+                "append": "append(string $insertSql, array $params): int"
+            }
+        },
         "RivetCore\\Audit\\AuditPage": {
             "kind": "final class",
             "methods": {
@@ -33,7 +109,7 @@
         "RivetCore\\Audit\\AuditService": {
             "kind": "final class",
             "methods": {
-                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, RivetCore\\Contracts\\RequestContextInterface $request, ?Closure $afterLog = NULL)",
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, RivetCore\\Contracts\\RequestContextInterface $request, ?Closure $afterLog = NULL, ?RivetCore\\Audit\\AuditChainWriter $chain = NULL)",
                 "log": "log(string $eventType, ?int $actorUserId, ?string $entityType, mixed $entityId, string $action, ?string $summary = NULL, array $metadata = []): void"
             }
         },
@@ -313,6 +389,21 @@
                 "metrics": "readonly array",
                 "status": "readonly RivetCore\\Compliance\\Status",
                 "summary": "readonly string"
+            }
+        },
+        "RivetCore\\Compliance\\Check\\AuditChainIntactCheck": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Compliance\\CheckInterface"
+            ],
+            "methods": {
+                "__construct": "__construct(RivetCore\\Audit\\AuditChainVerifier $verifier, string $fixPath = '')",
+                "category": "category(): string",
+                "controls": "controls(): array",
+                "id": "id(): string",
+                "run": "run(): RivetCore\\Compliance\\CheckResult",
+                "title": "title(): string",
+                "why": "why(): string"
             }
         },
         "RivetCore\\Compliance\\Check\\AuditRetentionCheck": {
@@ -1373,6 +1464,7 @@
         "RivetCore\\Crypto\\KeyPurpose": {
             "kind": "final class",
             "constants": {
+                "AUDIT_CHAIN": "audit-chain",
                 "MEDIA_TOKEN": "media-token",
                 "SETTINGS": "settings",
                 "SIGNING_SEAL": "signing-seal",
@@ -9304,6 +9396,7 @@
     },
     "internal": [
         "RivetCore\\Audit\\Migration\\Migration0001AuditEvents",
+        "RivetCore\\Audit\\Migration\\Migration0048AuditHashChain",
         "RivetCore\\Automation\\Migration\\Migration0006AutomationRules",
         "RivetCore\\Compliance\\Check\\AbstractBackupCheck",
         "RivetCore\\Compliance\\Check\\AbstractProfileCheck",
@@ -9492,9 +9585,24 @@
         "0043_rmm_store_denormalisation",
         "0044_rmm_store_switch",
         "0046_compliance_framework_profiles",
-        "0047_reporting_views"
+        "0047_reporting_views",
+        "0048_audit_hash_chain"
     ],
     "tables": {
+        "audit_chain_checkpoint": {
+            "anchor_hash": "char(64) not null",
+            "checkpoint_id": "int(11) not null",
+            "created_at": "datetime not null",
+            "rows_pruned": "int(11) not null"
+        },
+        "audit_chain_head": {
+            "hash_mode": "varchar(8) not null",
+            "head_audit_id": "int(11) null",
+            "head_hash": "char(64) not null",
+            "id": "tinyint(4) not null",
+            "key_fp": "varchar(16) not null",
+            "updated_at": "datetime null"
+        },
         "audit_events": {
             "action": "varchar(50) not null",
             "actor_user_id": "int(11) null",
@@ -9505,7 +9613,9 @@
             "event_type": "varchar(100) not null",
             "ip_address": "varchar(64) null",
             "metadata_json": "text null",
+            "prev_hash": "char(64) null",
             "request_id": "varchar(64) null",
+            "row_hash": "char(64) null",
             "summary": "varchar(500) null",
             "user_agent": "varchar(255) null"
         },

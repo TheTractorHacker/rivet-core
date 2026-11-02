@@ -76,6 +76,7 @@ Note that `RetentionService` without a profile applies no floor at all (not even
 
 - Deletion is limited to three fixed tables and fixed `WHERE` clauses with bound cutoffs; caller input is only integers.
 - Passing the compliance profile is the way to guarantee a regulated installation cannot configure retention below its floor, even through a stale setting or direct call.
+- When the audit hash chain is in use, `prune()` records a checkpoint after deleting audit rows (oldest first) so the chain still verifies from its new oldest row; see [../security/AUDIT_CHAIN.md](../security/AUDIT_CHAIN.md).
 - Pruning the audit trail is irreversible; run `plan()` first when changing horizons, and keep backups for the horizon you need.
 
 ## Used by

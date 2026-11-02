@@ -76,6 +76,19 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Adopting the audit log hash chain (1.0.0-rc.57; migration 0048; optional)
+
+**An edition that changes nothing keeps running exactly as before** (plain audit rows). The migration only adds two nullable columns and two small tables; code before the migration is safe. Full description and limits: [docs/security/AUDIT_CHAIN.md](docs/security/AUDIT_CHAIN.md).
+
+1. **Run Core migration 0048** (`0048_audit_hash_chain`) through your normal DB-update step, and mirror `audit_events.prev_hash`/`row_hash` (`char(64) NULL`), `audit_chain_head` and `audit_chain_checkpoint` in `db.sql`. Existing rows stay unchained; the verifier reports them as "unchained legacy rows".
+2. **Turn the chain on** where you build `AuditService`: pass `new AuditChainWriter($database, $key)` as the new fourth argument. `$key` is `AuditChainHasher::deriveKey($kek)` from the install's master key (HMAC), or `null` (plain SHA-256; detects accidental and partial tampering only). Do not change the key later: a different key is reported as `key_mismatch`, and new rows would fall back to unchained.
+3. **Do not insert into `audit_events` with your own SQL.** Such rows are not chained and are reported as unchained after the start. RivetIT's earlier edition-side chain (`src/Audit/AuditChain.php`, sealed after insert) uses a different key derivation and mode records; retire it or keep it off for the rows Core now chains.
+4. **Call the verifier from a health page or cron:** `new AuditChainVerifier($database, $key)`, `->verify()` returns an `AuditChainResult` (`ok`, `status`, `firstBrokenId`, `chained`, `legacyUnchained`, `unchainedAfterStart`). Show `empty` as "not started", not as OK. `php vendor/rivet/rivet-core/scripts/audit-verify.php` does the same from the command line. Optionally add `Compliance\Check\AuditChainIntactCheck` to your compliance catalog.
+5. **Store the head hash off the database:** on a schedule save `AuditChainVerifier::exportHead()` (or `audit-verify.php --export-head`) somewhere the database administrator cannot also write, and pass a stored one to `verify($anchor)`. Without this, a database administrator who rewrites the whole chain is not detected.
+6. **Pruning:** keep using `RetentionService::prune()`; it records the checkpoint that keeps the chain valid. Your own `DELETE FROM audit_events` is reported as a break.
+7. **Logging inside a transaction:** audit writes lock one head row until their transaction ends. Log after the commit where you can.
+8. **No public signature or constant value changed.** New: `Audit\{AuditChainHasher, AuditChainWriter, AuditChainVerifier, AuditChainResult, AuditChainCheckpoints}`, `Compliance\Check\AuditChainIntactCheck` (`@api`), `Audit\Migration\Migration0048AuditHashChain` (`@internal`), `KeyPurpose::AUDIT_CHAIN`, one appended optional parameter on `AuditService::__construct()`. A test that lists the applied migration ids needs `0048_audit_hash_chain`.
+
 ## Security audit 2026-10 (1.0.0-rc.46; nothing required)
 
 No migration and no API removal. Things an edition may notice, none needs a code change:

@@ -18,6 +18,7 @@ final class KeyPurpose
     public const TRAINING_PIN = 'training-pin';
     public const VAULT_WRAP = 'vault-wrap';
     public const SIGNING_SEAL = 'signing-seal';
+    public const AUDIT_CHAIN = 'audit-chain';
 
     private const HKDF_PREFIX = 'rivetcore-crypto|v1|';
 

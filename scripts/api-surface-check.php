@@ -145,7 +145,7 @@ $dbName = (string) getenv('RIVETCORE_TEST_DB_NAME');
 $haveDb = $dbName !== '' && preg_match('/scratch|test|bench/i', $dbName) === 1;
 if ($haveDb) {
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-    $m = new mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: '127.0.0.1', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '', $dbName);
+    $m = new mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: '127.0.0.1', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '', $dbName, (int) (getenv('RIVETCORE_TEST_DB_PORT') ?: 0));
     require_once __DIR__ . '/../tests/Support/MysqliDatabase.php';
     (new RivetCore\Migration\MigrationRunner(new RivetCore\Tests\Support\MysqliDatabase($m), CoreMigrations::all(), new RivetCore\Support\SystemClock()))->run();
     $ownTables = [];
@@ -155,7 +155,7 @@ if ($haveDb) {
     $cols = $q->get_result()->fetch_all(MYSQLI_ASSOC);
     // Only tables Core owns: those created by Core migrations are exactly the ones present after running them on an empty
     // database, so keep the known list (a scratch database may hold other tables from other tests).
-    $core = ['audit_events', 'integration_jobs', 'mcp_unlinked_identities', 'problems', 'changes', 'webhook_deliveries', 'automation_rules', 'workflow_templates', 'workflow_template_tasks', 'workflow_runs', 'workflow_run_tasks', 'compliance_attestations', 'compliance_snapshots', 'compliance_subjects', 'compliance_shared_report', 'compliance_responsibilities', 'rivet_core_migrations'];
+    $core = ['audit_events', 'audit_chain_head', 'audit_chain_checkpoint', 'integration_jobs', 'mcp_unlinked_identities', 'problems', 'changes', 'webhook_deliveries', 'automation_rules', 'workflow_templates', 'workflow_template_tasks', 'workflow_runs', 'workflow_run_tasks', 'compliance_attestations', 'compliance_snapshots', 'compliance_subjects', 'compliance_shared_report', 'compliance_responsibilities', 'rivet_core_migrations'];
     foreach ($cols as $c) {
         if (in_array($c['TABLE_NAME'], $core, true)) {
             $ownTables[$c['TABLE_NAME']][$c['COLUMN_NAME']] = preg_replace('/\s+/', ' ', strtolower($c['COLUMN_TYPE'])) . ($c['IS_NULLABLE'] === 'YES' ? ' null' : ' not null');

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Retention;
 
+use RivetCore\Audit\AuditChainCheckpoints;
 use RivetCore\Compliance\RetentionPolicy;
 use RivetCore\Database\DatabaseInterface;
 use RivetCore\Security\SecurityBaseline;
@@ -22,6 +23,9 @@ use RivetCore\Security\SecurityBaseline;
  *  - webhook_deliveries older than the horizon;
  *  - integration_jobs that are finished (completed or dead_letter) and older than the horizon.
  * Pending and running jobs are never touched.
+ *
+ * After deleting audit rows it records a checkpoint for the audit hash chain (Audit\AuditChainCheckpoints), so the chain still verifies
+ * from its new oldest row; the audit rows are deleted oldest first so the remaining chain stays contiguous.
  *
  * @api
  */
@@ -53,10 +57,14 @@ final class RetentionService
         foreach ($this->targets($days, $auditDays, $deliveryDays, $jobDays) as $table => [$where, $params]) {
             $total = 0;
             do {
-                $n = $this->database->execute("DELETE FROM {$table} WHERE {$where} LIMIT {$batchSize}", $params)->affectedRows;
+                $n = $this->database->execute("DELETE FROM {$table} WHERE {$where}" . ($table === 'audit_events' ? ' ORDER BY audit_id' : '') . " LIMIT {$batchSize}", $params)->affectedRows;
                 $total += $n;
             } while ($n >= $batchSize);
             $deleted[$table] = $total;
+            if ($table === 'audit_events' && $total > 0) {
+                // Keeps the audit hash chain verifiable across the prune (a no-op when the chain is not in use).
+                AuditChainCheckpoints::record($this->database, $total);
+            }
         }
 
         return $deleted;

@@ -2,6 +2,19 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.57 (audit log hash chain; migration 0048)
+
+Closes the baseline gap ERR-04 / GAP-02 / INFO-08 as far as Core can: audit rows can be hash-chained, tampering is detectable, and the chain survives retention pruning. Additive: no public signature or constant value changed, the RMM device protocol and its tables are untouched. **Opt-in:** an edition that changes nothing keeps writing plain rows exactly as before.
+
+- **Migration `0048_audit_hash_chain`** (`Audit\Migration\Migration0048AuditHashChain`, `@internal`): adds nullable `audit_events.prev_hash` and `row_hash` (no existing row is rewritten; a no-op where an edition already has the columns) and the tables `audit_chain_head` and `audit_chain_checkpoint`. MariaDB and MySQL; nothing in the PostgreSQL RMM store.
+- **`Audit\AuditChainWriter`** (new, `@api`) and an appended optional `AuditService` constructor parameter `?AuditChainWriter $chain = null`. With a writer, every row gets `prev_hash` and `row_hash` (SHA-256, or HMAC-SHA-256 with a key from `AuditChainHasher::deriveKey($kek)`). One transaction locks the single `audit_chain_head` row (`SELECT ... FOR UPDATE`), so concurrent writers cannot fork the chain. If the chain cannot be extended the event is still stored, unchained (and logged to `error_log`). New constant `KeyPurpose::AUDIT_CHAIN`.
+- **`Audit\AuditChainVerifier`**, **`AuditChainResult`** (new, `@api`): finds an edited row, a deleted or reordered row, a removed tail, oldest rows removed without a recorded prune, and unchained rows after the chain started; counts unchained legacy rows; `exportHead()` returns the newest chained row to store off the database and `verify($anchor)` checks against it. `AuditChainHasher` holds the canonical hash; `AuditChainCheckpoints` the prune checkpoints.
+- **`RetentionService::prune()`** now deletes audit rows oldest first (`ORDER BY audit_id`) and records a checkpoint when it removed chained rows, so legitimate pruning keeps the chain verifiable. Behaviour is otherwise unchanged and it is a no-op for an install that does not use the chain.
+- **`scripts/audit-verify.php`** (ships to editions): read-only verification, `--json`, `--export-head`, `--anchor=`; exit 0/1/2. **`Compliance\Check\AuditChainIntactCheck`** (not in any built-in profile).
+- **Baseline.** ERR-04 changes from `gap` to `partial` (opt-in; legacy rows unchained; a database administrator who rewrites the whole chain is not detected unless the head hash is kept off the database). GAP-02 reworded; `CONTROL_MAPPING.md` and the `BASELINE.md` table regenerated. `CLAIMS.md` needs no change and no new public claim is made.
+- **Tests.** `tests/Unit/AuditChainUnitTest.php`, `tests/Integration/AuditChainTest.php` (edit, middle delete, tail delete, manual old-row delete, retention prune, prune of everything, legacy rows, unchained rows, keys, external anchor), `tests/Integration/AuditChainConcurrencyTest.php` (six processes writing at once). Docs: `docs/security/AUDIT_CHAIN.md`.
+- **Tooling.** `scripts/api-surface-check.php` reads `RIVETCORE_TEST_DB_PORT` (like the test helper) and snapshots the two new chain tables; `tests/api-surface.json` records the two new `audit_events` columns.
+
 ## 1.0.0-rc.56 (dev tooling: scripts/secret-scan.php now ships to editions and scans their OWN repo; no protocol/runtime/migration impact)
 
 - **Tests.** `ChangeMonitorTest` no longer fails in the first hour after 00:00 UTC (it seeded events up to 50 minutes old and asserted one calendar day). The pinned hash of the shared design CSS was re-pinned after the rc.55 UI changes, which had turned `main` CI red.

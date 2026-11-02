@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Migration;
 
 use RivetCore\Audit\Migration\Migration0001AuditEvents;
+use RivetCore\Audit\Migration\Migration0048AuditHashChain;
 use RivetCore\Jobs\Migration\Migration0002IntegrationJobs;
 use RivetCore\Jobs\Migration\Migration0012JobHeartbeat;
 use RivetCore\Automation\Migration\Migration0006AutomationRules;
@@ -107,6 +108,7 @@ final class CoreMigrations
             new Migration0044RmmStoreSwitch(),
             new Migration0046FrameworkProfiles(),
             new Migration0047ReportingViews(),
+            new Migration0048AuditHashChain(),
         ];
     }
 }

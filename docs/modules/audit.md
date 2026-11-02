@@ -8,6 +8,7 @@
 - **Write side:** `AuditService::log()`. It never reads, updates or deletes.
 - **Read side:** `AuditReader` (filtered pages, chunked export, group and actor lists) and `AuditPage` (the value object a page returns).
 - **Deleting old rows** is not done here; see [retention.md](retention.md).
+- **Tamper evidence (optional):** pass an `AuditChainWriter` to `AuditService` to hash-chain every row; `AuditChainVerifier` checks it. Migration `0048_audit_hash_chain`. See [../security/AUDIT_CHAIN.md](../security/AUDIT_CHAIN.md) for the design, the limits and what an edition must do.
 
 Columns: `audit_id`, `event_type`, `actor_user_id`, `entity_type`, `entity_id`, `action`, `summary`, `metadata_json`, `ip_address`, `user_agent`, `request_id`, `created_at`.
 

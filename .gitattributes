@@ -17,6 +17,8 @@
 # (secret-scan.php scans the caller's current working directory, not its own location - see its docblock).
 # Its allowlist lives at the repository root (not under scripts/) and already ships unconditionally.
 /scripts/secret-scan.php -export-ignore
+# The audit hash chain verifier ships too, so an edition can run it from vendor/rivet/rivet-core/scripts/ (docs/security/AUDIT_CHAIN.md).
+/scripts/audit-verify.php -export-ignore
 /endpoint-agent export-ignore
 /phpunit.xml.dist export-ignore
 /phpstan.neon   export-ignore
