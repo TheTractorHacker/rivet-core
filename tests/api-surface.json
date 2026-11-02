@@ -9589,6 +9589,20 @@
         "0048_audit_hash_chain"
     ],
     "tables": {
+        "audit_chain_checkpoint": {
+            "anchor_hash": "char(64) not null",
+            "checkpoint_id": "int(11) not null",
+            "created_at": "datetime not null",
+            "rows_pruned": "int(11) not null"
+        },
+        "audit_chain_head": {
+            "hash_mode": "varchar(8) not null",
+            "head_audit_id": "int(11) null",
+            "head_hash": "char(64) not null",
+            "id": "tinyint(4) not null",
+            "key_fp": "varchar(16) not null",
+            "updated_at": "datetime null"
+        },
         "audit_events": {
             "action": "varchar(50) not null",
             "actor_user_id": "int(11) null",
@@ -9599,7 +9613,9 @@
             "event_type": "varchar(100) not null",
             "ip_address": "varchar(64) null",
             "metadata_json": "text null",
+            "prev_hash": "char(64) null",
             "request_id": "varchar(64) null",
+            "row_hash": "char(64) null",
             "summary": "varchar(500) null",
             "user_agent": "varchar(255) null"
         },

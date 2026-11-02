@@ -13,6 +13,7 @@ Closes the baseline gap ERR-04 / GAP-02 / INFO-08 as far as Core can: audit rows
 - **`scripts/audit-verify.php`** (ships to editions): read-only verification, `--json`, `--export-head`, `--anchor=`; exit 0/1/2. **`Compliance\Check\AuditChainIntactCheck`** (not in any built-in profile).
 - **Baseline.** ERR-04 changes from `gap` to `partial` (opt-in; legacy rows unchained; a database administrator who rewrites the whole chain is not detected unless the head hash is kept off the database). GAP-02 reworded; `CONTROL_MAPPING.md` and the `BASELINE.md` table regenerated. `CLAIMS.md` needs no change and no new public claim is made.
 - **Tests.** `tests/Unit/AuditChainUnitTest.php`, `tests/Integration/AuditChainTest.php` (edit, middle delete, tail delete, manual old-row delete, retention prune, prune of everything, legacy rows, unchained rows, keys, external anchor), `tests/Integration/AuditChainConcurrencyTest.php` (six processes writing at once). Docs: `docs/security/AUDIT_CHAIN.md`.
+- **Tooling.** `scripts/api-surface-check.php` reads `RIVETCORE_TEST_DB_PORT` (like the test helper) and snapshots the two new chain tables; `tests/api-surface.json` records the two new `audit_events` columns.
 
 ## 1.0.0-rc.56 (dev tooling: scripts/secret-scan.php now ships to editions and scans their OWN repo; no protocol/runtime/migration impact)
 
