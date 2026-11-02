@@ -45,6 +45,7 @@ The migration does not rewrite history. Rows before the first chained row are **
 
 ## Verifying
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 $verifier = new \RivetCore\Audit\AuditChainVerifier($database, $key /* or null */);
 $result = $verifier->verify();      // AuditChainResult
