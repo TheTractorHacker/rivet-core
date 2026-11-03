@@ -2370,7 +2370,7 @@ main, main :where(div, span, a, p, li, strong, small, h1, h2, h3, h4, h5, h6, td
 @media (min-width: 992px) { .mdm-toolbar > form:first-child { flex-wrap: nowrap; } }
 
 /* 24. A badge inside a table cell with a very long value (a pasted colour string, a 300-character label) kept `white-space: nowrap` and widened the whole page; let it wrap when it has to. */
-.table td .badge, .table th .badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.table td .badge, .table th .badge { max-width: 22rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; text-align: left; vertical-align: middle; }
 
 /* === list-ui (qa-b): sortable headers, filter chips, status badge, sticky list header === */
 .status-badge {

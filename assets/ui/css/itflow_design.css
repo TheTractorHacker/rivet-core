@@ -1071,3 +1071,12 @@ main .form-text a, main .text-secondary a, main .text-muted a, main .alert a { t
 :root[data-bs-theme="dark"] .btn-outline-primary { color: var(--color-accent); }
 :root[data-bs-theme="dark"] .btn-outline-primary:hover, :root[data-bs-theme="dark"] .btn-outline-primary:focus-visible, :root[data-bs-theme="dark"] .btn-outline-primary:active, :root[data-bs-theme="dark"] .btn-outline-primary.active, :root[data-bs-theme="dark"] .btn-check:checked + .btn-outline-primary { color: #fff; }
 :root:not([data-bs-theme="dark"]) .btn-check:checked + .btn-outline-primary, :root:not([data-bs-theme="dark"]) .btn-outline-primary.active, :root:not([data-bs-theme="dark"]) .btn-outline-primary:hover { color: #fff; }
+
+/* Buttons (and badges, see itflow_custom.css) are short labels: never break them mid-word. Some list cells inherit overflow-wrap:anywhere, which lets a table
+   squeeze a column until "Unassigned" reads "Unassig / ned" and "TCK-257" breaks after the dash. Link-style buttons (.btn-link) hold titles and may still wrap. */
+.btn:not(.btn-link) { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+.btn-link { overflow-wrap: normal; word-break: normal; }
+/* .table-tight lists (tickets and similar) have ~12 columns: a narrower cell gutter keeps the last column inside the card instead of being clipped. */
+.table.table-tight > tbody > tr > td, .table.table-tight > thead > tr > th { padding-left: .4rem; padding-right: .4rem; }
+/* Tabler's amber (#f59f00) is 2.1:1 on white: unreadable as text ("5 stale"). Darker amber on light surfaces; the dark theme keeps the bright one. */
+:root:not([data-bs-theme="dark"]) .text-warning { color: #b45309 !important; }
