@@ -27,6 +27,7 @@ Closes the baseline gap ERR-04 / GAP-02 / INFO-08 as far as Core can: audit rows
 
 ## Unreleased
 
+- **Command palette** (`js/command_palette.js` + styles in `itflow_design.css`): Ctrl/Cmd+K (or `/` outside a field) opens one box to jump to any page in the user's own navigation, to recent destinations, and, while typing, to records through the existing live-search endpoint. Pure front end: no endpoint, schema or permission change (pages come from the sidebar the user already sees); recents live in `localStorage`. Editions load it from their footer; the header search shows a `Ctrl K` chip.
 - **Table badges and buttons** no longer break mid-word ("Uncatego / rized", "Ope / n", "TCK- / 257"): `.table td .badge` is one line (ellipsis past 22rem) instead of `overflow-wrap:anywhere`, and `.btn` (not `.btn-link`) is `nowrap` (`itflow_custom.css`, `itflow_design.css`).
 - **`.table-tight`** lists get a narrower cell gutter so 12-column lists (Tickets) fit their card.
 - **`.text-warning`** on light surfaces is a darker amber (was 2.1:1 on white).

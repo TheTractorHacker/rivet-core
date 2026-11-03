@@ -1080,3 +1080,36 @@ main .form-text a, main .text-secondary a, main .text-muted a, main .alert a { t
 .table.table-tight > tbody > tr > td, .table.table-tight > thead > tr > th { padding-left: .4rem; padding-right: .4rem; }
 /* Tabler's amber (#f59f00) is 2.1:1 on white: unreadable as text ("5 stale"). Darker amber on light surfaces; the dark theme keeps the bright one. */
 :root:not([data-bs-theme="dark"]) .text-warning { color: #b45309 !important; }
+
+/* ===== Command palette (js/command_palette.js): Ctrl/Cmd+K ===== */
+html.rvp-open { overflow: hidden; }
+.rvp-overlay { position: fixed; inset: 0; z-index: 2000; display: flex; justify-content: center; align-items: flex-start; padding: 12vh 1rem 1rem; background: rgba(13,20,23,.45); backdrop-filter: blur(3px); animation: rvp-fade .12s ease-out; }
+.rvp-overlay[hidden] { display: none; }
+.rvp-box { width: min(640px, 100%); max-height: min(70vh, 620px); display: flex; flex-direction: column; background: var(--if-surface); color: var(--if-ink); border: 1px solid var(--if-border-strong); border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,.35); overflow: hidden; animation: rvp-pop .14s ease-out; }
+.rvp-top { display: flex; align-items: center; gap: .75rem; padding: .9rem 1rem; border-bottom: 1px solid var(--if-border); }
+.rvp-search-ic { color: var(--if-muted); }
+.rvp-input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: inherit; font-size: 1.05rem; font-family: inherit; }
+.rvp-input::placeholder { color: var(--if-muted); }
+.rvp-box kbd { font-family: var(--if-mono); font-size: .72rem; padding: .1rem .4rem; border: 1px solid var(--if-border-strong); border-bottom-width: 2px; border-radius: 5px; background: var(--if-bg); color: var(--if-muted); }
+.rvp-list { overflow-y: auto; padding: .4rem; }
+.rvp-section { padding: .6rem .7rem .25rem; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--if-muted); }
+.rvp-row { display: flex; align-items: center; gap: .75rem; padding: .5rem .7rem; border-radius: 9px; color: inherit; text-decoration: none; cursor: pointer; }
+.rvp-row.is-active { background: rgba(var(--if-primary-rgb), .12); box-shadow: inset 3px 0 0 var(--if-primary); }
+.rvp-ic { flex: none; width: 2rem; height: 2rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--if-bg); color: var(--if-muted); }
+.rvp-row.is-active .rvp-ic { background: var(--if-primary); color: #fff; }
+.rvp-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.rvp-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rvp-title mark { background: transparent; color: var(--if-primary); font-weight: 800; padding: 0; }
+.rvp-sub { font-size: .78rem; color: var(--if-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rvp-go { flex: none; font-size: .72rem; color: var(--if-muted); opacity: 0; }
+.rvp-row.is-active .rvp-go { opacity: 1; }
+.rvp-tip { padding: .6rem .8rem; font-size: .82rem; color: var(--if-muted); }
+.rvp-foot { display: flex; gap: 1rem; padding: .5rem 1rem; border-top: 1px solid var(--if-border); font-size: .76rem; color: var(--if-muted); background: var(--if-bg); }
+.rvp-has-chip { position: relative; }
+.rvp-chip { position: absolute; right: 2.6rem; top: 50%; transform: translateY(-50%); border: 0; background: transparent; padding: 0; cursor: pointer; line-height: 1; }
+.rvp-chip kbd { font-family: var(--if-mono); font-size: .68rem; padding: .08rem .35rem; border: 1px solid rgba(255,255,255,.28); border-radius: 5px; color: rgba(255,255,255,.7); background: rgba(255,255,255,.08); }
+.rvp-has-chip .form-control-navbar { padding-right: 5.2rem; }
+.rvp-has-chip:focus-within .rvp-chip { display: none; }
+@keyframes rvp-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rvp-pop { from { opacity: 0; transform: translateY(-8px) scale(.985); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .rvp-overlay, .rvp-box { animation: none; } }
