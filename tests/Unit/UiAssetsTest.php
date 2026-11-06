@@ -75,7 +75,7 @@ final class UiAssetsTest extends TestCase
      * 'outline-primary buttons use one colour': the label follows the theme accent) and again for rc.50 / rc.51 (navigation links, breadcrumbs and section tabs never underlined, commits 4e47bde, 6f55276, 2be7750). Any further change to this file must update this value
      * and say why; promote edition changes with scripts/promote-ui-assets.php so the manifest is rebuilt in the same step.
      */
-    private const DESIGN_CSS_RIVETIT_SPLIT_SHA256 = '01bb4643d669730a4a0bd7262a5508784f9ecf1e5bcd36a4426e4ff9768b6f4d';
+    private const DESIGN_CSS_RIVETIT_SPLIT_SHA256 = '77d7affade1079eedff23a434a25a9d38beba76135a76af3f1f8dba16a1989a3';
 
     /** SHA-256 of RivetIT 26.10.68's js/<file>; Core's copy must be byte identical (the wizard: after reversing its reviewed deviation). */
     private const RIVETIT_JS_SHA256 = [
@@ -107,8 +107,8 @@ final class UiAssetsTest extends TestCase
     public function testWebhookWizardDeviationFallsBackToTheOriginalLiterals(): void
     {
         $js = (string) file_get_contents(ui_assets_root() . '/js/webhook_wizard.js');
-        self::assertStringContainsString("root.getAttribute('data-wz-networks') || 'settings_webhooks.php#internal-networks'", $js);
-        self::assertStringContainsString("root.getAttribute('data-wz-edit') || 'webhook_edit.php'", $js);
+        self::assertStringContainsString("sameOriginPath(root.getAttribute('data-wz-networks'), 'settings_webhooks.php#internal-networks')", $js);
+        self::assertStringContainsString("sameOriginPath(root.getAttribute('data-wz-edit'), 'webhook_edit.php')", $js);
         self::assertSame(0, substr_count($js, "'webhook_edit.php?id='"), 'no other hard-coded edit page left');
         self::assertSame(1, substr_count($js, "'settings_webhooks.php#internal-networks'"), 'only the fallback names the networks page');
     }
@@ -116,7 +116,8 @@ final class UiAssetsTest extends TestCase
     private function reverseWizardDeviation(string $js): string
     {
         $pairs = [
-            ["  var networksUrl = root.getAttribute('data-wz-networks') || 'settings_webhooks.php#internal-networks';\n  var editUrl = root.getAttribute('data-wz-edit') || 'webhook_edit.php';\n", ''],
+            // rc.59 (CodeQL js/xss-through-dom): the two attributes are reduced to a same-origin path by sameOriginPath()
+            ["  // a navigation target taken from the page must stay on this origin: never a scheme (javascript:, data:) or another host\n  function sameOriginPath(href, fallback) {\n    try { var u = new URL(String(href || ''), location.href); if (u.origin === location.origin) { return u.pathname + u.search + u.hash; } } catch (e) { /* fall through */ }\n    return fallback;\n  }\n  var networksUrl = sameOriginPath(root.getAttribute('data-wz-networks'), 'settings_webhooks.php#internal-networks');\n  var editUrl = sameOriginPath(root.getAttribute('data-wz-edit'), 'webhook_edit.php');\n", ''],
             ['a.href = networksUrl;', "a.href = 'settings_webhooks.php#internal-networks';"],
             ["dl.href = editUrl + '?id=' +", "dl.href = 'webhook_edit.php?id=' +"],
             ["'', editUrl + '?id=' +", "'', 'webhook_edit.php?id=' +"],
