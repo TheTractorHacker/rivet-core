@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "core_version": "1.0.0-rc.58",
+    "core_version": "1.0.0-rc.59",
     "files": {
         "css/file_upload.css": {
             "sha256": "0643d5ce607c9634d8f74bc908136a037b03e5b96ef922f284eaa65e156ff9a7",
@@ -108,8 +108,8 @@
             "origin": "rivetit-verbatim"
         },
         "js/command_palette.js": {
-            "sha256": "a34354d19a07dc8d92bd1b71200ed1d59f7389ebc1a717638c93c19e1420e75c",
-            "bytes": 15530,
+            "sha256": "ab466ed86e3f661cf6a4aa92ffd5f32ace9ad7741edb45cb394576916ffa032e",
+            "bytes": 15615,
             "origin": "core"
         },
         "js/date_range_picker.js": {
@@ -133,8 +133,8 @@
             "origin": "core"
         },
         "js/webhook_wizard.js": {
-            "sha256": "64a1b7e820d048ff3d04c143b34283fe7cf6452f8c75b380ad0e649067bc973e",
-            "bytes": 56022,
+            "sha256": "7f3c1105c42ad9d154d699f1b57259d20c08a49608979cfa8f42a8856996bed3",
+            "bytes": 56416,
             "origin": "core"
         }
     },

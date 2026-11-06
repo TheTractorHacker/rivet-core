@@ -2,6 +2,12 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.59 (XSS-through-DOM hardening from CodeQL; dependency bumps; no migration)
+
+- **Fix.** `command_palette.js`: a result's URL is now resolved with `sameOrigin()` before it is used as a link target (`a.href`) and before Enter navigates, so a record or page URL can never carry a `javascript:`/`data:` scheme or another origin. Closes CodeQL `js/xss-through-dom` at the two `it.url` sinks.
+- **Fix.** `webhook_wizard.js`: the `data-wz-networks` and `data-wz-edit` attributes are reduced to a same-origin path (`sameOriginPath()`) when read, so the links and `replaceState` built from them stay on this origin.
+- **Dependencies.** `guzzlehttp/guzzle` 8.3.1, `phpstan/phpstan` 2.3.4 (dev), MSI packaging base image digest.
+
 ## 1.0.0-rc.57 (audit log hash chain; migration 0048)
 
 Closes the baseline gap ERR-04 / GAP-02 / INFO-08 as far as Core can: audit rows can be hash-chained, tampering is detectable, and the chain survives retention pruning. Additive: no public signature or constant value changed, the RMM device protocol and its tables are untouched. **Opt-in:** an edition that changes nothing keeps writing plain rows exactly as before.
