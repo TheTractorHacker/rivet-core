@@ -2,6 +2,11 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.60 (UI: no link underlines on hover anywhere; sticky table header sits flush; no migration)
+
+- **No underline on hover, app-wide.** Tabler's bare `a:hover { text-decoration: underline }` and the per-page hover underlines that copied it (asset names, interface links, report links, header "see all", webhook steps) are overridden by one last `!important` rule in `itflow_design.css`; new pages cannot bring one back. Resting underlines on prose links (an accessibility choice) are untouched.
+- **Sticky table header (`.table-sticky-head`, the Assets list)** no longer lets scrolled rows show through a sliver above it: collapsed borders painted the sticky cells about a pixel low, so the table now uses separate borders, the header cells drop their own bottom border (the inset line stays) and extend their fill upward.
+
 ## 1.0.0-rc.59 (XSS-through-DOM hardening from CodeQL; dependency bumps; no migration)
 
 - **Fix.** `command_palette.js`: a result's URL is now resolved with `sameOrigin()` before it is used as a link target (`a.href`) and before Enter navigates, so a record or page URL can never carry a `javascript:`/`data:` scheme or another origin. Closes CodeQL `js/xss-through-dom` at the two `it.url` sinks.
