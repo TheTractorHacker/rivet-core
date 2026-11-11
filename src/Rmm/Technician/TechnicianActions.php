@@ -14,6 +14,7 @@ use RivetCore\Rmm\Device\DeviceService;
 use RivetCore\Rmm\Enrollment\EnrollmentService;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Mesh\MeshService;
+use RivetCore\Rmm\Remote\BackgroundSessionService;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Update\UpdateService;
 
@@ -46,6 +47,7 @@ final class TechnicianActions
         private readonly string $clientLabel = 'client',
         private readonly ?ScriptActions $library = null,
         private readonly ?\RivetCore\Rmm\Settings\RmmSettings $settings = null,
+        private readonly ?BackgroundSessionService $background = null,
     ) {
     }
 
@@ -184,9 +186,23 @@ final class TechnicianActions
      * Launch a MeshCentral session. The session id is the only identifier stored (through the edition's remote-session log): the login
      * token and URL are never written anywhere. `$view` is desktop (the default), terminal or files; the last two (Phase 6) need `rmm.remote.manage` as well
      * and the `remote_tools` sub-switch, because a terminal is a shell on the device.
+     *
+     * `$mode = 'background'` (with `$view = 'console'`, and only then) is Background Mode: the `background_mode` switch, `rmm.remote.launch`, `rmm.remote.manage`,
+     * `rmm.remote.background` and the {@see BackgroundModePolicy} must all allow it, and every outcome (started, denied, failed) writes exactly one `Background Session ...`
+     * audit row; see {@see BackgroundSessionService}. The result carries `check_token` for the Mesh plugin's session check.
      */
-    public function launchRemote(RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = null, ?string $userAgent = null, string $view = 'desktop'): ActionResult
+    public function launchRemote(RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = null, ?string $userAgent = null, string $view = 'desktop', string $mode = 'standard'): ActionResult
     {
+        if (!in_array($mode, ['standard', 'background'], true)) {
+            return ActionResult::fail(422, 'invalid', 'The mode must be standard or background.');
+        }
+        if ($mode === 'background' || $view === 'console') {
+            if ($mode !== 'background' || $view !== 'console') {
+                return ActionResult::fail(422, 'invalid', 'The console view is used with mode background, and mode background only with the console view.');
+            }
+
+            return $this->launchBackground($who, $deviceId, $force, $ip, $userAgent);
+        }
         if (!isset(MeshService::VIEWMODES[$view])) {
             return ActionResult::fail(422, 'invalid', 'The view must be desktop, terminal or files.');
         }
@@ -226,6 +242,40 @@ final class TechnicianActions
         $this->audit->record('Remote Session', "{$who->userName} opened MeshCentral " . ($view === 'desktop' ? '' : "$view ") . "session $sessionId on device $deviceId" . ($force ? ' (forced while offline)' : ''), $client, $asset);
 
         return ActionResult::ok('Opening the remote session.', 200, 'ok', ['url' => (string) ($r['url'] ?? ''), 'session_id' => $sessionId]);
+    }
+
+    /** The Background Mode branch of {@see launchRemote()}: nothing here may end without exactly one audit row. */
+    private function launchBackground(RmmPrincipal $who, int $deviceId, bool $force, ?string $ip, ?string $userAgent): ActionResult
+    {
+        $name = trim((string) preg_replace('/[^\p{L}\p{N} ._@-]/u', '', $who->userName));
+        $label = 'user ' . $who->userId . ' (' . ($name === '' ? 'unnamed' : mb_substr($name, 0, 60)) . ')';
+        [$dev, $err] = $this->deviceFor($who->userId, $deviceId);
+        if ($err !== null || $dev === null) {
+            $err ??= ActionResult::fail(404, 'not_found', 'Device not found.');
+            $this->audit->record('Background Session Denied', "$label was denied a Background Session on device $deviceId: {$err->code}", 0, 0);
+
+            return $err;
+        }
+        if ($this->background === null) {
+            // No service means no session store and no check token: refuse rather than start a session that cannot be tracked.
+            $this->audit->record('Background Session Denied', "$label was denied a Background Session on device $deviceId: not available", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+
+            return ActionResult::fail(409, 'unsupported', 'Background Mode is not available.');
+        }
+
+        return $this->background->launch($who, $dev, fn (): array => $this->mesh->launch($dev, $who->userName, $who->userId, $force, 'desktop'), $ip, $userAgent);
+    }
+
+    /** The Mesh plugin's session check (single-use token). See {@see BackgroundSessionService::check()}. */
+    public function checkBackgroundSession(RmmPrincipal $caller, string $token): ActionResult
+    {
+        return $this->background === null ? ActionResult::fail(403, 'feature_disabled', 'Background Mode is not available.', ['allow' => false]) : $this->background->check($caller, $token);
+    }
+
+    /** Record the end of a Background Mode session. See {@see BackgroundSessionService::end()}. */
+    public function endBackgroundSession(RmmPrincipal $who, string $sessionId, string $reason = 'user_closed'): ActionResult
+    {
+        return $this->background === null ? ActionResult::fail(404, 'not_found', 'Session not found.') : $this->background->end($who, $sessionId, $reason);
     }
 
     /** Map (or, with an empty id, clear) the MeshCentral node of a device. Administrators only. */

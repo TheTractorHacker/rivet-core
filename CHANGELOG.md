@@ -2,6 +2,18 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.60 (Background Mode: authorization and audit plumbing; migration 0049)
+
+Core side of the technician console's Background Mode (steps A1 to A5 of the integration plan). **Off by default and authorization plus audit only:** nothing here runs on an endpoint, hides a session from the person at the device or can skip the audit log. Details: docs/modules/rmm.md, "Background Mode".
+
+- **Ability and switch.** `RmmAbility::REMOTE_BACKGROUND` (`rmm.remote.background`, in `all()`), sub-switch `background_mode` (default off) with a risk acknowledgement (`accept_background_risk`, `RemoteSettings::BACKGROUND_MODE_RISK`).
+- **Migration `0049_rmm_background_mode`** (additive, idempotent): `rmm_background_settings`, `rmm_client_remote_policy`, `rmm_background_sessions`, `rmm_background_tokens`. History check: `0045` was never in this repository's history (the history is a single commit and the only branches are `main` and this one); `docs/design/compliance-frameworks.md` and the rc.43 changelog show it was reserved for the reporting views, which shipped as `0047`, so the gap is expected and 0049 follows 0048.
+- **`Remote\BackgroundModePolicy`** (`internal` or `per_client`, `allow`/`notify`/`approve`; everything unconfigured or unknown denies; never "any signed-in user"), `BackgroundDecision`, `DbBackgroundModeConfig`, `NoBackgroundGroups`, contracts `BackgroundModeConfigInterface`, `BackgroundGroupMembershipInterface`, `BackgroundSessionStoreInterface`.
+- **`Remote\BackgroundSessionService`** and `DbBackgroundSessionStore`: `TechnicianActions::launchRemote()` takes `view = console` with `mode = background` (REST `POST endpoint_devices/{id}/remote`), one `Background Session Started|Denied|Failed` audit row per outcome, `endBackgroundSession()` writes `Ended`, and `POST endpoint_devices/background/session-check` (60 s, single use, hashed at rest, replay and revoked users refused, switch off is 403) and `.../session-end` serve the Mesh plugin. `RmmModule::backgroundConfig()`, `backgroundSessions()` and the options `background_groups`, `background_config`, `background_store`.
+- **API surface.** Additive, except that `TechnicianActions::__construct()` and `launchRemote()` gained a trailing optional parameter (`$background`, `$mode`); no existing call changes. The snapshot flags them BREAKING by signature text. `tests/api-surface.json` was regenerated without a scratch database, so its table section does not list the four new tables: rerun `php scripts/api-surface-check.php --update` with `RIVETCORE_TEST_DB_*` set.
+- **Tests.** 83 unit tests (policy matrix, gate, audit rows, check/replay/expiry/revoked/switch off, end once, migration and SQL shape), `BackgroundModeTest` and a Background column in `RoleMatrixTest` (scratch database; not run where this was built, no database and no mysqli extension). `RoleMatrixPolicy` models `rmm.remote.manage` (`remote >= 2`) and `rmm.remote.background`.
+- **Not in this change.** Edition mapping of the ability and group, admin UI, `RmmEvent` webhook events, per-client end-user approval (an `approve` client is refused), the console and the Mesh plugin.
+
 ## 1.0.0-rc.59 (XSS-through-DOM hardening from CodeQL; dependency bumps; no migration)
 
 - **Fix.** `command_palette.js`: a result's URL is now resolved with `sameOrigin()` before it is used as a link target (`a.href`) and before Enter navigates, so a record or page URL can never carry a `javascript:`/`data:` scheme or another origin. Closes CodeQL `js/xss-through-dom` at the two `it.url` sinks.

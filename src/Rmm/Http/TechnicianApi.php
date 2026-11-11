@@ -26,6 +26,9 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   POST endpoint_devices/{id}/jobs            {type: powershell|reboot|collect, script|script_id, params, timeout_s, destructive, confirm}
  *   POST endpoint_devices/{id}/jobs/{job}/cancel
  *   POST endpoint_devices/{id}/remote          {force?} -> {url, session_id}
+ *   POST endpoint_devices/{id}/remote          {mode: "background", view: "console", force?} -> {url, session_id, mode, check_token, check_expires_in, notice} (Background Mode)
+ *   POST endpoint_devices/background/session-check  {token} -> 200 {allow: true, session_id, device_id, notice} | 403 {allow: false, error, code}; the token is single use and valid 60 s
+ *   POST endpoint_devices/background/session-end    {session_id, reason?} -> 200 {ended: true} (records the end of a Background Mode session)
  *
  * Phase 1 additions (all additive; the routes above are unchanged, and the list also accepts the filters tag, group, software and
  * location_id):
@@ -127,6 +130,9 @@ final class TechnicianApi
         $op = $seg[3] ?? null;
 
         if ($id === null) {
+            if (($seg[0] ?? null) === 'background' && isset($seg[1]) && !isset($seg[2])) {
+                return $this->backgroundRoute($req, $who, $method, $seg[1]);
+            }
             if ($seg !== [] && $this->alerting !== null && in_array($seg[0], AlertingApi::FLEET, true)) {
                 return $this->alerting->fleet($req, $who, $seg);
             }
@@ -233,7 +239,15 @@ final class TechnicianApi
             if (!is_string($view)) {
                 return self::json(422, ['error' => 'The view must be desktop, terminal or files.', 'code' => 'invalid']);
             }
-            $r = $this->actions->launchRemote($who, $id, !empty($in['force']), $req->clientIp, $req->userAgent, $view);
+            $mode = $in['mode'] ?? 'standard';
+            if (!is_string($mode)) {
+                return self::json(422, ['error' => 'The mode must be standard or background.', 'code' => 'invalid']);
+            }
+            $r = $this->actions->launchRemote($who, $id, !empty($in['force']), $req->clientIp, $req->userAgent, $view, $mode);
+            if ($r->ok && $mode === 'background') {
+                return self::json(200, ['url' => $r->data['url'] ?? null, 'session_id' => $r->data['session_id'] ?? null, 'mode' => 'background', 'check_token' => $r->data['check_token'] ?? null,
+                    'check_expires_in' => $r->data['check_expires_in'] ?? null, 'notice' => $r->data['notice'] ?? 'none']);
+            }
 
             return $r->ok ? self::json(200, ['url' => $r->data['url'] ?? null, 'session_id' => $r->data['session_id'] ?? null]) : self::failure($r);
         }
@@ -884,6 +898,33 @@ final class TechnicianApi
 
         /** @var array<string,mixed> $body */
         return [$body, null];
+    }
+
+    /** `background/session-check` and `background/session-end`: POST only, JSON body. The caller is already authenticated by the edition. */
+    private function backgroundRoute(RmmRequest $req, RmmPrincipal $who, string $method, string $op): RmmResponse
+    {
+        if (!in_array($op, ['session-check', 'session-end'], true)) {
+            return self::notFound();
+        }
+        if ($method !== 'POST') {
+            return self::json(405, ['error' => 'Method not allowed', 'code' => 'method_not_allowed']);
+        }
+        [$in, $bad] = $this->jsonBody($req);
+        if ($bad !== null) {
+            return $bad;
+        }
+        if ($op === 'session-check') {
+            $token = $in['token'] ?? '';
+            $r = $this->actions->checkBackgroundSession($who, is_string($token) ? $token : '');
+
+            return $r->ok ? self::json(200, ['allow' => true, 'session_id' => $r->data['session_id'] ?? null, 'device_id' => $r->data['device_id'] ?? null, 'notice' => $r->data['notice'] ?? 'none'])
+                : self::json($r->http, ['allow' => false, 'error' => $r->message, 'code' => $r->code]);
+        }
+        $sid = $in['session_id'] ?? '';
+        $reason = $in['reason'] ?? 'user_closed';
+        $r = $this->actions->endBackgroundSession($who, is_string($sid) ? $sid : '', is_string($reason) ? $reason : 'other');
+
+        return $r->ok ? self::json(200, ['ended' => true, 'session_id' => $r->data['session_id'] ?? null]) : self::failure($r);
     }
 
     private static function failure(ActionResult $r): RmmResponse

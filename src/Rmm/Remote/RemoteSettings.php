@@ -34,6 +34,11 @@ final class RemoteSettings
         . 'Password databases, private keys, system credential stores and the agent\'s own files are never transferable, and every transfer is written to the audit log, '
         . 'but a copied file cannot be un-copied. Allow only the folders you need, keep the size limit low, and turn this on only if your security policy permits it.';
 
+    public const BACKGROUND_MODE_RISK = 'Background Mode lets technicians open a remote console (desktop, terminal and files) on a managed device where the policy allows it without asking the person at the device first. '
+        . 'It is for IT staff supporting their own organisation, or for clients that agreed to it in their contract. Use it only where the people at those devices have been told it exists. '
+        . 'Every session is written to the audit log with the technician\'s name, in every mode, and that cannot be switched off, but the console can read and change anything the device\'s '
+        . 'account can. Give the Background Mode ability to as few people as you can and turn this on only if your security and privacy policy permits it.';
+
     public const LOGS_STORAGE_WARNING = 'Log collection stores the text of event-log and system-log entries from every device that sends them, in this server\'s database. '
         . 'It is the heaviest optional part of the RMM: it multiplies database size and write load by the number of devices, and log text can contain user names, addresses and other personal data. '
         . 'Collection is capped per device and for the whole fleet and old entries are deleted, but choose narrow sources (warnings and errors from a few channels or services), '
@@ -260,6 +265,7 @@ final class RemoteSettings
             'log_presets_audit_note' => SecurityLogPresets::AUDIT_POLICY_NOTE,
             'limits' => $l,
             'file_transfer_risk' => self::FILE_TRANSFER_RISK,
+            'background_mode_risk' => self::BACKGROUND_MODE_RISK,
             'logs_storage_warning' => self::LOGS_STORAGE_WARNING,
             'logs_worst_case_bytes_per_device' => $l['logs_device_max_rows'] * $perRow,
             'logs_fleet_cap_bytes' => $l['logs_fleet_max_rows'] * $perRow,

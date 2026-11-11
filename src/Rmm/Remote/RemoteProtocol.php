@@ -43,6 +43,8 @@ final class RemoteProtocol
     public const FEATURE_REMOTE_TOOLS = 'remote_tools';
     public const FEATURE_FILE_TRANSFER = 'filetransfer';
     public const FEATURE_LOGS = 'logs';
+    /** Background Mode (the technician console): off by default, switching it on needs the risk acknowledgement. */
+    public const FEATURE_BACKGROUND_MODE = 'background_mode';
 
     // ---- service and process manager
     public const SERVICE_ACTIONS = ['start', 'stop', 'restart', 'enable', 'disable', 'manual'];
