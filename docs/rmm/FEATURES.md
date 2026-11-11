@@ -52,7 +52,7 @@ Note on Linux timing: the ROADMAP table puts "Linux agent" in Phase 0 (issue #65
 | 2.3 | Link to an existing asset, or auto-create one; blanks on the asset are filled, human-entered values are never overwritten | Shipped | Shipped | P0 | P7 | |
 | 2.4 | Approval queue: ambiguous or out-of-scope matches wait for a technician | Shipped | all | all | all | |
 | 2.5 | Per-client stamped installer (the token and CA are embedded in the download) | Shipped | Shipped | P1 | P7 | Linux uses an install script in P1. |
-| 2.6 | Reinstall detection, rotate credential, revoke, retire, transfer to another client | Shipped | all | all | all | |
+| 2.6 | Reinstall detection, rotate credential, revoke, retire, transfer to another client (rc.59: the transfer moves jobs, patch, package, deploy and alert state too; the credential stays) | Shipped | all | all | all | |
 | 2.7 | Maximum enrolled devices limit (new installs suggest 500) | P0 | all | all | all | `max_devices`; retired and revoked devices do not count. |
 | 2.8 | Site, group and tag chosen at enrollment, auto-tagging | P1 | P1 | P1 | P7 | Tags and groups exist (11.3); choosing them in the enrollment token and automatic tags are still to do. |
 | 2.9 | Bulk-deployment helper scripts (Intune, GPO) | Not planned | - | - | - | |
