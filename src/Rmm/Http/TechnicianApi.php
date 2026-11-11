@@ -185,11 +185,16 @@ final class TechnicianApi
         }
 
         $denied = $this->authz->check($uid, RmmAbility::DEVICE_VIEW, 0);
-        if ($denied !== null) {
-            return self::json(403, ['error' => $denied, 'code' => 'forbidden']);
-        }
-        $dev = $this->actions->visibleDevice($uid, $id);
-        if ($dev === null) {
+        $dev = $denied === null ? $this->actions->visibleDevice($uid, $id) : null;
+        if ($denied !== null || $dev === null) {
+            // A Background Mode launch that is refused here still owes its one audit row: hand it to the launch, which refuses it with the same status and records it.
+            if ($what === 'remote' && $method === 'POST' && $job === null && ($refused = $this->refusedBackgroundLaunch($req, $who, $id)) !== null) {
+                return $refused;
+            }
+            if ($denied !== null) {
+                return self::json(403, ['error' => $denied, 'code' => 'forbidden']);
+            }
+
             return self::json(404, ['error' => 'Device not found.', 'code' => 'not_found']);
         }
         $canSeeOutput = $this->authz->allowed($uid, RmmAbility::JOB_RUN_SAVED, (int) $dev['client_id']);
@@ -907,6 +912,21 @@ final class TechnicianApi
 
         /** @var array<string,mixed> $body */
         return [$body, null];
+    }
+
+    /**
+     * A `mode: background` launch by someone who may not see the device (no `rmm.device.view`, or another client's device). Returns the refusal after the launch has
+     * audited it, or null when the request is not a Background Mode launch (the caller then answers as for any other device route).
+     */
+    private function refusedBackgroundLaunch(RmmRequest $req, RmmPrincipal $who, int $id): ?RmmResponse
+    {
+        [$in, $bad] = $this->jsonBody($req);
+        if ($bad !== null || ($in['mode'] ?? null) !== 'background') {
+            return null;
+        }
+        $r = $this->actions->launchRemote($who, $id, false, $req->clientIp, $req->userAgent, 'console', 'background');
+
+        return $r->ok ? null : self::failure($r);
     }
 
     /** `background/session-check` and `background/session-end`: POST only, JSON body. The caller is already authenticated by the edition. */
