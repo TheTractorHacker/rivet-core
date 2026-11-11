@@ -134,6 +134,8 @@ final class EnrollmentService
     /**
      * A token issued with "managed by another RMM": switch automation off for the device it just placed (a new device, a re-enrollment or a reinstall alike; never
      * switched back on here) and write one audit row. A device that already had automation off writes nothing.
+     *
+     * @param array<string,mixed> $token the enrollment token row
      */
     private function applyManagedExternally(int $deviceId, array $token): void
     {
