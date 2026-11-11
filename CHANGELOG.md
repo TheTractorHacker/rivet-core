@@ -13,6 +13,7 @@ All notable changes to RivetCore. Semantic versioning.
 
 - **No underline on hover, app-wide.** Tabler's bare `a:hover { text-decoration: underline }` and the per-page hover underlines that copied it (asset names, interface links, report links, header "see all", webhook steps) are overridden by one last `!important` rule in `itflow_design.css`; new pages cannot bring one back. Resting underlines on prose links (an accessibility choice) are untouched.
 - **Sticky table header (`.table-sticky-head`, the Assets list)** no longer lets scrolled rows show through a sliver above it: collapsed borders painted the sticky cells about a pixel low, so the table now uses separate borders, the header cells drop their own bottom border (the inset line stays) and extend their fill upward.
+- **Proxmox: an unused Ceph is no longer a collector error.** `ceph-common` is installed on every Proxmox host and `ceph health` exits 1 where no Ceph cluster exists, so hosts that never used Ceph showed "ceph: /usr/bin/ceph exited with status 1" as a collector error. The endpoint agent now queries Ceph only when `/etc/pve/ceph.conf` or `/etc/ceph/ceph.conf` exists (new agent build), and the server drops that exact message from reports sent by agents already deployed. A Ceph problem on a host that really runs Ceph (another exit status, a timeout, a degraded cluster) still comes through.
 
 ## 1.0.0-rc.59 (XSS-through-DOM hardening from CodeQL; dependency bumps; no migration)
 

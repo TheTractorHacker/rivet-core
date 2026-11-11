@@ -54,7 +54,7 @@ final class HypervisorService
             'platform' => $platform,
             'version' => HypervisorProtocol::text($raw['version'] ?? null, HypervisorProtocol::VERSION_MAX),
             'collected_at' => self::time($raw['collected_at'] ?? null, $now, true) ?? gmdate('Y-m-d H:i:s', $now),
-            'error' => HypervisorProtocol::text($raw['error'] ?? null, HypervisorProtocol::ERROR_MAX),
+            'error' => HypervisorProtocol::text(self::withoutUnconfiguredCeph($raw['error'] ?? null), HypervisorProtocol::ERROR_MAX),
             'truncated' => !empty($raw['truncated']),
             'cfg_version' => preg_match('/^[0-9a-f]{16}$/D', (string) ($raw['cfg_version'] ?? '')) === 1 ? (string) $raw['cfg_version'] : '',
             'cluster' => self::cleanCluster($raw['cluster'] ?? null),
@@ -276,6 +276,21 @@ final class HypervisorService
                 $this->alerts->evaluate($dev, $r['mode'] === 'full', $touched);
             }
         });
+    }
+
+    /**
+     * Older agents reported "ceph: /usr/bin/ceph exited with status 1" on every Proxmox host that has ceph-common installed but no Ceph
+     * cluster (the command exits 1 there). That is not a collector error, so it is dropped here; a Ceph problem on a host that really runs
+     * Ceph (another exit status, a timeout, a degraded cluster) still comes through.
+     */
+    private static function withoutUnconfiguredCeph(mixed $error): mixed
+    {
+        if (!is_string($error) || stripos($error, 'ceph') === false) {
+            return $error;
+        }
+        $keep = array_filter(explode('; ', $error), static fn (string $part): bool => preg_match('/^ceph: \S*ceph exited with status 1$/D', trim($part)) !== 1);
+
+        return implode('; ', $keep);
     }
 
     /**

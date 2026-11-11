@@ -23,6 +23,9 @@ const (
 	pveDir     = "/etc/pve"
 )
 
+// A configured Ceph cluster has one of these files (the Proxmox-managed one, or a plain Ceph one).
+var cephConfPaths = []string{"/etc/pve/ceph.conf", "/etc/ceph/ceph.conf"}
+
 var (
 	zpoolPaths = []string{"/usr/sbin/zpool", "/sbin/zpool", "/usr/bin/zpool"}
 	cephPaths  = []string{"/usr/bin/ceph"}
@@ -302,7 +305,9 @@ func (p *Proxmox) appendPools(ctx context.Context, rep *api.HypervisorReport, pr
 			rep.Storage = append(rep.Storage, parseZpool(out)...)
 		}
 	}
-	if cp := p.first(cephPaths); cp != "" {
+	// ceph-common ships with every Proxmox install, but `ceph health` only means something where a Ceph cluster is configured:
+	// without one it exits 1, which used to be reported as a collector error on hosts that never used Ceph.
+	if cp := p.first(cephPaths); cp != "" && p.first(cephConfPaths) != "" {
 		out, err := run(ctx, p.R, 15*time.Second, cp, "health", "--format", "json")
 		if err != nil {
 			*problems = append(*problems, "ceph: "+errText(err))
