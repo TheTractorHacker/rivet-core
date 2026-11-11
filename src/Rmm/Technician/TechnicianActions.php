@@ -288,6 +288,20 @@ final class TechnicianActions
         return $this->background->launch($who, $dev, fn (): array => $this->mesh->launch($dev, $who->userName, $who->userId, $force, 'desktop'), $ip, $userAgent);
     }
 
+    /**
+     * Audit only: record the one `Background Session Denied` row a refused Background Mode launch owes when the caller may not see the device (`$http` 403 no
+     * `rmm.device.view`, 404 not visible). It starts nothing: no Mesh call, no session, no token. Client and asset are 0 (the device is not the caller's to know about).
+     *
+     * @internal used by TechnicianApi
+     */
+    public function auditRefusedBackgroundLaunch(RmmPrincipal $who, int $deviceId, ?string $ip, ?string $userAgent, int $http): void
+    {
+        $name = trim((string) preg_replace('/[^\p{L}\p{N} ._@-]/u', '', $who->userName));
+        $label = 'user ' . $who->userId . ' (' . ($name === '' ? 'unnamed' : mb_substr($name, 0, 60)) . ')';
+        $code = $http === 403 ? 'forbidden' : 'not_found';
+        $this->audit->record('Background Session Denied', "$label was denied a Background Session on device $deviceId: $code", 0, 0);
+    }
+
     /** The Mesh plugin's session check (single-use token). See {@see BackgroundSessionService::check()}. */
     public function checkBackgroundSession(RmmPrincipal $caller, string $token): ActionResult
     {

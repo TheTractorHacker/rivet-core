@@ -260,4 +260,28 @@ final class BackgroundModeTest extends RmmTestCase
         [$c, $j] = $this->launchBg('bgtech');
         $this->assertSame([403, 'approval_required'], [$c, $j['code']]);
     }
+
+    /** @return array<string,array{0:string,1:?int,2:int,3:string}> */
+    public static function refusedBeforeTheLaunch(): array
+    {
+        return ['no rmm.device.view' => ['normo', null, 403, 'forbidden'], 'unknown device' => ['bgtech', 999999, 404, 'not_found']];
+    }
+
+    /** The denied-visibility path only audits: no Mesh call, no session, no token, and the HTTP answer is the generic 403 / 404. */
+    #[DataProvider('refusedBeforeTheLaunch')]
+    public function testRefusedForVisibilityWritesOneDeniedRowAndStartsNothing(string $who, ?int $device, int $status, string $code): void
+    {
+        $this->switchOn();
+        $this->mesh?->stop();   // a launch attempted on this path would now end as "Background Session Failed"
+        $sql = $this->h->module->sql();
+        [$c, $j] = $this->launchBg($who, $device);
+        $this->assertSame($status, $c);
+        $this->assertSame($code, $j['code']);
+        $this->assertArrayNotHasKey('check_token', $j);
+        $this->assertArrayNotHasKey('url', $j);
+        $this->assertSame(['Background Session Denied'], $this->bgRows());
+        $this->assertSame(0, (int) $sql->val('SELECT COUNT(*) FROM rmm_background_sessions'));
+        $this->assertSame(0, (int) $sql->val('SELECT COUNT(*) FROM rmm_background_tokens'));
+        $this->assertSame([], array_values(array_filter(array_column($this->h->audit->records(), 'action'), static fn (string $a): bool => str_starts_with($a, 'Remote Session') || $a === 'Remote Failed')));
+    }
 }

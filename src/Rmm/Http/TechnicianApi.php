@@ -187,9 +187,9 @@ final class TechnicianApi
         $denied = $this->authz->check($uid, RmmAbility::DEVICE_VIEW, 0);
         $dev = $denied === null ? $this->actions->visibleDevice($uid, $id) : null;
         if ($denied !== null || $dev === null) {
-            // A Background Mode launch that is refused here still owes its one audit row: hand it to the launch, which refuses it with the same status and records it.
-            if ($what === 'remote' && $method === 'POST' && $job === null && ($refused = $this->refusedBackgroundLaunch($req, $who, $id)) !== null) {
-                return $refused;
+            // A Background Mode launch that is refused here still owes its one audit row. Audit only: nothing is launched on this path.
+            if ($what === 'remote' && $method === 'POST' && $job === null) {
+                $this->auditRefusedBackgroundLaunch($req, $who, $id, $denied !== null ? 403 : 404);
             }
             if ($denied !== null) {
                 return self::json(403, ['error' => $denied, 'code' => 'forbidden']);
@@ -914,19 +914,13 @@ final class TechnicianApi
         return [$body, null];
     }
 
-    /**
-     * A `mode: background` launch by someone who may not see the device (no `rmm.device.view`, or another client's device). Returns the refusal after the launch has
-     * audited it, or null when the request is not a Background Mode launch (the caller then answers as for any other device route).
-     */
-    private function refusedBackgroundLaunch(RmmRequest $req, RmmPrincipal $who, int $id): ?RmmResponse
+    /** A `mode: background` launch by someone who may not see the device: writes the one Denied audit row it owes and starts nothing. The caller answers 403 or 404 as before. */
+    private function auditRefusedBackgroundLaunch(RmmRequest $req, RmmPrincipal $who, int $id, int $http): void
     {
         [$in, $bad] = $this->jsonBody($req);
-        if ($bad !== null || ($in['mode'] ?? null) !== 'background') {
-            return null;
+        if ($bad === null && ($in['mode'] ?? null) === 'background') {
+            $this->actions->auditRefusedBackgroundLaunch($who, $id, $req->clientIp, $req->userAgent, $http);
         }
-        $r = $this->actions->launchRemote($who, $id, false, $req->clientIp, $req->userAgent, 'console', 'background');
-
-        return $r->ok ? null : self::failure($r);
     }
 
     /** `background/session-check` and `background/session-end`: POST only, JSON body. The caller is already authenticated by the edition. */
