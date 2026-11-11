@@ -15,6 +15,8 @@ use RivetCore\Rmm\Enrollment\EnrollmentService;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Mesh\MeshService;
 use RivetCore\Rmm\Remote\BackgroundSessionService;
+use RivetCore\Rmm\Remote\ConsoleLink;
+use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Update\UpdateService;
 
@@ -189,9 +191,15 @@ final class TechnicianActions
      *
      * `$mode = 'background'` (with `$view = 'console'`, and only then) is Background Mode: the `background_mode` switch, `rmm.remote.launch`, `rmm.remote.manage`,
      * `rmm.remote.background` and the {@see BackgroundModePolicy} must all allow it, and every outcome (started, denied, failed) writes exactly one `Background Session ...`
-     * audit row; see {@see BackgroundSessionService}. The result carries `check_token` for the Mesh plugin's session check.
+     * audit row; see {@see BackgroundSessionService}. The result carries `check_token` for the Mesh plugin's session check. Background sessions need the optional
+     * Rivet Console, so they are denied (audited) while the `remote_console` switch is off.
+     *
+     * `$console = true` asks for the optional Rivet Console. With the `remote_console` switch OFF (the default) the flag is ignored and the result is exactly the stock
+     * one (`url`, `session_id`). With it ON the same checks and the same stock URL apply and the result also carries `console` ({@see ConsoleLink::descriptor()}):
+     * `kind`, `url` (the credential-free `rivetconsole://` deep link) and `fallback_url` (the stock URL, for when the app is not installed). `$consoleKind` may be
+     * `terminal-ps` for a terminal view; by default the kind follows `$view`. `console` is null when no deep link can be built (e.g. an unacceptable node id).
      */
-    public function launchRemote(RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = null, ?string $userAgent = null, string $view = 'desktop', string $mode = 'standard'): ActionResult
+    public function launchRemote(RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = null, ?string $userAgent = null, string $view = 'desktop', string $mode = 'standard', bool $console = false, ?string $consoleKind = null): ActionResult
     {
         if (!in_array($mode, ['standard', 'background'], true)) {
             return ActionResult::fail(422, 'invalid', 'The mode must be standard or background.');
@@ -229,6 +237,14 @@ final class TechnicianActions
                 return ActionResult::fail(409, 'feature_disabled', 'The Mesh terminal and file views are switched off. An administrator can turn the remote tools on in the RMM remote-tools settings.');
             }
         }
+        $wantConsole = $console && $this->settings !== null && $this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_CONSOLE);
+        $kind = null;
+        if ($wantConsole) {
+            $kind = ConsoleLink::kindFor($view, $consoleKind);
+            if ($kind === null) {
+                return ActionResult::fail(422, 'invalid', 'The console kind must be desktop, terminal, terminal-ps or files, and fit the view.');
+            }
+        }
         $r = $this->mesh->launch($dev, $who->userName, $who->userId, $force, $view);
         if (!$r['ok']) {
             $this->audit->record('Remote Failed', "{$who->userName} remote session on device $deviceId did not start: {$r['code']}", $client, $asset);
@@ -239,9 +255,15 @@ final class TechnicianActions
         $sessionId = (string) ($r['session_id'] ?? '');
         $this->bridge->recordRemoteSession($asset, $client, $who->userId, 'meshcentral', 'meshcentral:session:' . $sessionId,
             $ip === null ? null : substr($ip, 0, 100), $userAgent === null ? null : substr($userAgent, 0, 300));
-        $this->audit->record('Remote Session', "{$who->userName} opened MeshCentral " . ($view === 'desktop' ? '' : "$view ") . "session $sessionId on device $deviceId" . ($force ? ' (forced while offline)' : ''), $client, $asset);
+        $this->audit->record('Remote Session', "{$who->userName} opened MeshCentral " . ($view === 'desktop' ? '' : "$view ") . "session $sessionId on device $deviceId" . ($force ? ' (forced while offline)' : '') . ($kind !== null ? " (Rivet Console link, $kind)" : ''), $client, $asset);
 
-        return ActionResult::ok('Opening the remote session.', 200, 'ok', ['url' => (string) ($r['url'] ?? ''), 'session_id' => $sessionId]);
+        $data = ['url' => (string) ($r['url'] ?? ''), 'session_id' => $sessionId];
+        if ($kind !== null) {
+            // Only with the switch on: the deep link names the device and carries nothing else; the stock URL stays as the fallback.
+            $data['console'] = ConsoleLink::descriptor($kind, $this->mesh->nodeFor($deviceId), $data['url']);
+        }
+
+        return ActionResult::ok('Opening the remote session.', 200, 'ok', $data);
     }
 
     /** The Background Mode branch of {@see launchRemote()}: nothing here may end without exactly one audit row. */

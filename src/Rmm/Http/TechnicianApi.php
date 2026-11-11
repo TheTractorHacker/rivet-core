@@ -26,6 +26,7 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   POST endpoint_devices/{id}/jobs            {type: powershell|reboot|collect, script|script_id, params, timeout_s, destructive, confirm}
  *   POST endpoint_devices/{id}/jobs/{job}/cancel
  *   POST endpoint_devices/{id}/remote          {force?} -> {url, session_id}
+ *   POST endpoint_devices/{id}/remote          {console: true, console_kind?, view?, force?} -> {url, session_id, console: {kind, url, fallback_url}} (only with the remote_console switch on; otherwise the plain result)
  *   POST endpoint_devices/{id}/remote          {mode: "background", view: "console", force?} -> {url, session_id, mode, check_token, check_expires_in, notice} (Background Mode)
  *   POST endpoint_devices/background/session-check  {token} -> 200 {allow: true, session_id, device_id, notice} | 403 {allow: false, error, code}; the token is single use and valid 60 s
  *   POST endpoint_devices/background/session-end    {session_id, reason?} -> 200 {ended: true} (records the end of a Background Mode session)
@@ -243,10 +244,18 @@ final class TechnicianApi
             if (!is_string($mode)) {
                 return self::json(422, ['error' => 'The mode must be standard or background.', 'code' => 'invalid']);
             }
-            $r = $this->actions->launchRemote($who, $id, !empty($in['force']), $req->clientIp, $req->userAgent, $view, $mode);
+            $consoleKind = $in['console_kind'] ?? null;
+            if ($consoleKind !== null && !is_string($consoleKind)) {
+                return self::json(422, ['error' => 'The console kind must be desktop, terminal, terminal-ps or files.', 'code' => 'invalid']);
+            }
+            $r = $this->actions->launchRemote($who, $id, !empty($in['force']), $req->clientIp, $req->userAgent, $view, $mode, ($in['console'] ?? false) === true, $consoleKind);
             if ($r->ok && $mode === 'background') {
                 return self::json(200, ['url' => $r->data['url'] ?? null, 'session_id' => $r->data['session_id'] ?? null, 'mode' => 'background', 'check_token' => $r->data['check_token'] ?? null,
                     'check_expires_in' => $r->data['check_expires_in'] ?? null, 'notice' => $r->data['notice'] ?? 'none']);
+            }
+
+            if ($r->ok && array_key_exists('console', $r->data)) {
+                return self::json(200, ['url' => $r->data['url'] ?? null, 'session_id' => $r->data['session_id'] ?? null, 'console' => $r->data['console']]);
             }
 
             return $r->ok ? self::json(200, ['url' => $r->data['url'] ?? null, 'session_id' => $r->data['session_id'] ?? null]) : self::failure($r);

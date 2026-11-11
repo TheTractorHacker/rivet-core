@@ -76,7 +76,7 @@ final class BackgroundSessionServiceTest extends TestCase
         $this->bridge = new InMemoryRmmBridge($this->clock);
         $this->store = new InMemoryBackgroundSessionStore($this->clock);
         $this->config = new StubBackgroundConfig('internal', 'Remote Admins', [$this->clientA => 'notify'], ['Remote Admins' => [self::GROUP_MEMBER, self::GROUP_MEMBER_NO_ABILITY]]);
-        $this->features = ['background_mode' => true, 'remote_tools' => true];
+        $this->features = ['background_mode' => true, 'remote_tools' => true, 'remote_console' => true];
         $this->moduleOn = true;
         $this->meshCalls = 0;
         $this->meshAnswer = ['ok' => true, 'code' => 'ok', 'message' => 'Opening the remote session.', 'url' => self::SECRET_URL, 'session_id' => self::SESSION];
@@ -125,6 +125,42 @@ final class BackgroundSessionServiceTest extends TestCase
         $this->assertSame(0, $this->meshCalls);
         $this->assertSame([], $this->store->sessions);
         $this->assertSame(['Background Session Denied', 'Background Session Denied'], $this->actions());
+    }
+
+    public function testBackgroundNeedsTheConsoleSwitchAndADenialIsAuditedWithAClearReason(): void
+    {
+        $this->features = ['background_mode' => true, 'remote_tools' => true];   // remote_console off (the default)
+        $r = $this->launch(self::GROUP_MEMBER);
+        $this->assertFalse($r->ok);
+        $this->assertSame([403, 'feature_disabled'], [$r->http, $r->code]);
+        $this->assertStringContainsString('Rivet Console', $r->message);
+        $this->assertStringContainsString('Use Rivet Console (desktop app)', $r->message);
+        $this->assertSame(0, $this->meshCalls, 'no Mesh login is minted');
+        $this->assertSame([], $this->store->sessions);
+        $this->assertSame(['Background Session Denied'], $this->actions(), 'exactly one Denied row');
+        $this->features['remote_console'] = true;
+        $this->assertTrue($this->launch(self::GROUP_MEMBER)->ok, 'with the console on the very same launch is allowed');
+    }
+
+    public function testTheConsoleSwitchAloneNeverAllowsBackgroundAndEveryOtherCheckStillApplies(): void
+    {
+        $this->features = ['remote_console' => true];   // background_mode off
+        $this->assertSame('feature_disabled', $this->launch(self::ADMIN)->code);
+        $this->features = ['remote_console' => true, 'background_mode' => true, 'remote_tools' => true];
+        $this->assertSame('forbidden', $this->launch(self::TECH_NO_BG)->code, 'the ability is still required');
+        $this->assertSame('forbidden', $this->launch(self::GROUP_MEMBER_NO_ABILITY)->code);
+        $this->assertSame(0, $this->meshCalls);
+        $this->assertSame(array_fill(0, 3, 'Background Session Denied'), $this->actions());
+    }
+
+    public function testTurningTheConsoleOffAfterTheLaunchRefusesTheSessionCheck(): void
+    {
+        $t = $this->token();
+        $this->features['remote_console'] = false;
+        $r = $this->svc->check(new RmmPrincipal(self::GROUP_MEMBER, 'Gina'), $t);
+        $this->assertFalse($r->ok);
+        $this->assertSame([403, 'feature_disabled', false], [$r->http, $r->code, $r->data['allow']]);
+        $this->assertSame('Background Session Denied', $this->actions()[1], 'the audit stays on');
     }
 
     public function testAThrowingFeatureLookupCountsAsOff(): void
@@ -304,7 +340,7 @@ final class BackgroundSessionServiceTest extends TestCase
         // there is no setting that skips the audit: with every switch off the denial is still a row; with them on, success and failure are rows
         $this->features = [];
         $this->launch(self::ADMIN);
-        $this->features = ['background_mode' => true, 'remote_tools' => true];
+        $this->features = ['background_mode' => true, 'remote_tools' => true, 'remote_console' => true];
         $this->launch(self::ADMIN);
         $this->meshAnswer = ['ok' => false, 'code' => 'not_configured', 'message' => 'x'];
         $this->launch(self::ADMIN);

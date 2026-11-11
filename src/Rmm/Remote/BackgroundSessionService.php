@@ -63,6 +63,9 @@ final class BackgroundSessionService
         if (!$this->featureIsOn(RemoteProtocol::FEATURE_BACKGROUND_MODE)) {
             return $deny(403, 'feature_disabled', 'Background Mode is switched off. An administrator can turn it on in the RMM remote-tools settings.');
         }
+        if (!$this->featureIsOn(RemoteProtocol::FEATURE_REMOTE_CONSOLE)) {
+            return $deny(403, 'feature_disabled', 'Background Mode needs the Rivet Console, and it is switched off. An administrator can turn on "Use Rivet Console (desktop app)" in the RMM remote-tools settings.');
+        }
         foreach ([RmmAbility::REMOTE_LAUNCH, RmmAbility::REMOTE_MANAGE, RmmAbility::REMOTE_BACKGROUND] as $ability) {
             $why = $this->authz->check($userId, $ability, $clientId);
             if ($why !== null) {

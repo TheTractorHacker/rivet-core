@@ -80,7 +80,7 @@ final class BackgroundModeTest extends RmmTestCase
     /** Turn the switch on the supported way, with the acknowledgement. */
     private function switchOn(bool $remoteTools = true): void
     {
-        $r = $this->h->module->remoteActions()->updateSettings($this->who['admin'], ['features' => ['remote_tools' => $remoteTools, 'background_mode' => true], 'accept_background_risk' => true]);
+        $r = $this->h->module->remoteActions()->updateSettings($this->who['admin'], ['features' => ['remote_tools' => $remoteTools, 'background_mode' => true, 'remote_console' => true], 'accept_background_risk' => true]);
         $this->assertTrue($r->ok, $r->message);
     }
 

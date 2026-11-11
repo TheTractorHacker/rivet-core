@@ -154,7 +154,7 @@ final class RoleMatrixTest extends RmmTestCase
         $cfg = new \RivetCore\Rmm\Remote\DbBackgroundModeConfig($this->h->module->sql());
         $this->assertTrue($cfg->setPolicyMode('internal', 1));
         $this->assertTrue($cfg->setInternalGroup('Ops', 1));
-        $r = $this->h->module->remoteActions()->updateSettings($this->who['admin'], ['features' => ['remote_tools' => true, 'background_mode' => true], 'accept_background_risk' => true]);
+        $r = $this->h->module->remoteActions()->updateSettings($this->who['admin'], ['features' => ['remote_tools' => true, 'background_mode' => true, 'remote_console' => true], 'accept_background_risk' => true]);
         $this->assertTrue($r->ok, $r->message);
         [$c] = $this->api($who, 'POST', [(string) $this->D1, 'remote'], ['mode' => 'background', 'view' => 'console']);
         $this->assertSame($expect, $c, "$who: background launch");

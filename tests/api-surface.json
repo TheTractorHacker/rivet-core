@@ -5867,6 +5867,26 @@
                 "launch": "launch(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $dev, Closure $meshLaunch, ?string $ip = NULL, ?string $userAgent = NULL): RivetCore\\Rmm\\Technician\\ActionResult"
             }
         },
+        "RivetCore\\Rmm\\Remote\\ConsoleLink": {
+            "kind": "final class",
+            "constants": {
+                "KINDS": [
+                    "desktop",
+                    "terminal",
+                    "terminal-ps",
+                    "files"
+                ],
+                "NODE_RE": "/^node\\/\\/[A-Za-z0-9@$_-]{20,100}$/D",
+                "SCHEME": "rivetconsole"
+            },
+            "methods": {
+                "build": "static build(string $kind, string $nodeId): ?string",
+                "descriptor": "static descriptor(string $kind, ?string $nodeId, string $fallbackUrl): ?array",
+                "kindFor": "static kindFor(string $view, ?string $requested = NULL): ?string",
+                "validKind": "static validKind(string $kind): bool",
+                "validNode": "static validNode(string $node): bool"
+            }
+        },
         "RivetCore\\Rmm\\Remote\\DbBackgroundModeConfig": {
             "kind": "final class",
             "implements": [
@@ -6007,6 +6027,7 @@
                 "FEATURE_BACKGROUND_MODE": "background_mode",
                 "FEATURE_FILE_TRANSFER": "filetransfer",
                 "FEATURE_LOGS": "logs",
+                "FEATURE_REMOTE_CONSOLE": "remote_console",
                 "FEATURE_REMOTE_TOOLS": "remote_tools",
                 "JOB_FILE_GET": "file_get",
                 "JOB_FILE_PUT": "file_put",
@@ -6867,7 +6888,8 @@
                     "alerting",
                     "remote_tools",
                     "filetransfer",
-                    "background_mode"
+                    "background_mode",
+                    "remote_console"
                 ],
                 "INGEST_MODES": [
                     "sync",
@@ -8360,7 +8382,7 @@
                 "clearUpdateFailures": "clearUpdateFailures(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "createToken": "createToken(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label): RivetCore\\Rmm\\Technician\\ActionResult",
                 "endBackgroundSession": "endBackgroundSession(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, string $sessionId, string $reason = 'user_closed'): RivetCore\\Rmm\\Technician\\ActionResult",
-                "launchRemote": "launchRemote(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = NULL, ?string $userAgent = NULL, string $view = 'desktop', string $mode = 'standard'): RivetCore\\Rmm\\Technician\\ActionResult",
+                "launchRemote": "launchRemote(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = NULL, ?string $userAgent = NULL, string $view = 'desktop', string $mode = 'standard', bool $console = false, ?string $consoleKind = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
                 "resolvePending": "resolvePending(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $action, ?int $assetId = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
                 "retire": "retire(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "revoke": "revoke(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $reason = ''): RivetCore\\Rmm\\Technician\\ActionResult",

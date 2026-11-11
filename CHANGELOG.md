@@ -2,6 +2,17 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.61 (optional Rivet Console: `remote_console` switch; no migration)
+
+Makes the desktop Rivet Console **optional** through an administrator switch. Details: docs/modules/rmm.md, "Optional Rivet Console".
+
+- **Switch.** Sub-switch `remote_console` (`RemoteProtocol::FEATURE_REMOTE_CONSOLE`, in `RmmSettings::FEATURES`, **default off**, no migration: it lives in `features_json`), set through `RemoteActions::updateSettings()` and returned by `settings()`. No risk acknowledgement (it grants nothing).
+- **Off = unchanged.** `launchRemote()` and `POST endpoint_devices/{id}/remote` return exactly what they did before (stock MeshCentral login-token URL, `url` + `session_id`), and the audit text is unchanged; the new `console` request flag is ignored.
+- **On.** With `console: true` the result also carries `console` = `{kind, url, fallback_url}`: `url` is the credential-free deep link `rivetconsole://connect?kind=<desktop|terminal|terminal-ps|files>&node=<node id>` (`Remote\ConsoleLink`: kind allow-list, node pattern `^node//[A-Za-z0-9@$_-]{20,100}$`), `fallback_url` the stock URL. Same abilities, scope and audit as before.
+- **Background Mode stays independent but needs the console.** The console switch never enables Background Mode; with `remote_console` off a Background launch is denied with an audited `Background Session Denied` row (`feature_disabled`) and the session check refuses issued tokens. **Behaviour change:** installations that already switched `background_mode` on must also switch `remote_console` on, or Background launches are denied.
+- **API surface.** Additive: `ConsoleLink`, `RemoteProtocol::FEATURE_REMOTE_CONSOLE`, `RmmSettings::FEATURES` gained `remote_console`, `TechnicianActions::launchRemote()` two trailing optional parameters (`$console`, `$consoleKind`). Snapshot and docs/api-surface.md regenerated.
+- **Tests.** `ConsoleLinkTest` and three gate tests (unit, no database); `RemoteConsoleTest` (integration, written but not run: no MySQL where this was built).
+
 ## 1.0.0-rc.60 (Background Mode: authorization and audit plumbing; migration 0049)
 
 Core side of the technician console's Background Mode (steps A1 to A5 of the integration plan). **Off by default and authorization plus audit only:** nothing here runs on an endpoint, hides a session from the person at the device or can skip the audit log. Details: docs/modules/rmm.md, "Background Mode".

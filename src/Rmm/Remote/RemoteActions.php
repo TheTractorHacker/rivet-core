@@ -715,7 +715,8 @@ final class RemoteActions
         $f = $this->settings->features();
 
         return ['features' => [RemoteProtocol::FEATURE_REMOTE_TOOLS => $f[RemoteProtocol::FEATURE_REMOTE_TOOLS], RemoteProtocol::FEATURE_FILE_TRANSFER => $f[RemoteProtocol::FEATURE_FILE_TRANSFER],
-            RemoteProtocol::FEATURE_LOGS => $f[RemoteProtocol::FEATURE_LOGS], RemoteProtocol::FEATURE_BACKGROUND_MODE => $f[RemoteProtocol::FEATURE_BACKGROUND_MODE]], 'transfer_storage_error' => $this->transfers->unavailable()] + $this->remote->summary();
+            RemoteProtocol::FEATURE_LOGS => $f[RemoteProtocol::FEATURE_LOGS], RemoteProtocol::FEATURE_BACKGROUND_MODE => $f[RemoteProtocol::FEATURE_BACKGROUND_MODE],
+            RemoteProtocol::FEATURE_REMOTE_CONSOLE => $f[RemoteProtocol::FEATURE_REMOTE_CONSOLE]], 'transfer_storage_error' => $this->transfers->unavailable()] + $this->remote->summary();
     }
 
     public function settings(RmmPrincipal $who): ActionResult
@@ -750,9 +751,10 @@ final class RemoteActions
      * Change the remote-tools settings. Turning `filetransfer` on needs `accept_filetransfer_risk: true`, turning `logs` on needs `accept_logs_storage: true`: the
      * request is refused with the plain-language text when the acknowledgement is missing, so no client can switch them on by accident.
      *
-     * Turning `background_mode` on needs `accept_background_risk: true` the same way.
+     * Turning `background_mode` on needs `accept_background_risk: true` the same way. `remote_console` (the optional Rivet Console desktop app) needs no acknowledgement:
+     * it grants nothing (the same abilities apply, the deep link carries no credential) and it never turns Background Mode on; turning it off denies Background launches.
      *
-     * @param array<string,mixed> $in features {remote_tools, filetransfer, logs, background_mode}, transfer_allow, logs_collect, limits, accept_filetransfer_risk, accept_logs_storage, accept_background_risk,
+     * @param array<string,mixed> $in features {remote_tools, filetransfer, logs, background_mode, remote_console}, transfer_allow, logs_collect, limits, accept_filetransfer_risk, accept_logs_storage, accept_background_risk,
      *        compliance_baseline_if_unset (true with the first enable: store the compliance log-preset baseline if no preset choice was ever saved)
      */
     public function updateSettings(RmmPrincipal $who, array $in): ActionResult
@@ -776,8 +778,8 @@ final class RemoteActions
         }
         $changed = [];
         foreach ($wanted as $k => $v) {
-            if (!in_array($k, [RemoteProtocol::FEATURE_REMOTE_TOOLS, RemoteProtocol::FEATURE_FILE_TRANSFER, RemoteProtocol::FEATURE_LOGS, RemoteProtocol::FEATURE_BACKGROUND_MODE], true) || !is_bool($v)) {
-                return ActionResult::fail(422, 'invalid', 'features takes remote_tools, filetransfer, logs and background_mode, each true or false.');
+            if (!in_array($k, [RemoteProtocol::FEATURE_REMOTE_TOOLS, RemoteProtocol::FEATURE_FILE_TRANSFER, RemoteProtocol::FEATURE_LOGS, RemoteProtocol::FEATURE_BACKGROUND_MODE, RemoteProtocol::FEATURE_REMOTE_CONSOLE], true) || !is_bool($v)) {
+                return ActionResult::fail(422, 'invalid', 'features takes remote_tools, filetransfer, logs, background_mode and remote_console, each true or false.');
             }
             if ($features[$k] !== $v) {
                 $changed[$k] = $v;
