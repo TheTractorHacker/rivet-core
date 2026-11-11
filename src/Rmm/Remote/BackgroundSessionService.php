@@ -10,6 +10,8 @@ use RivetCore\Rmm\Authz\RmmPrincipal;
 use RivetCore\Rmm\Contracts\BackgroundSessionStoreInterface;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Contracts\RmmBridgeInterface;
+use RivetCore\Rmm\RmmEvent;
+use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Technician\ActionResult;
 
 /**
@@ -41,6 +43,7 @@ final class BackgroundSessionService
 
     /**
      * @param \Closure(string):bool $featureOn whether a sub-switch is on (RmmSettings::featureOn); a closure that throws counts as off
+     * @param RmmEventPublisher|null $events publishes the `rmm.background.*` events after the audit row of the same outcome was written (never a secret, URL or token); null publishes nothing
      */
     public function __construct(
         private readonly RmmAuthorizer $authz,
@@ -49,6 +52,7 @@ final class BackgroundSessionService
         private readonly RmmAuditInterface $audit,
         private readonly RmmBridgeInterface $bridge,
         private readonly \Closure $featureOn,
+        private readonly ?RmmEventPublisher $events = null,
     ) {
     }
 
@@ -97,6 +101,7 @@ final class BackgroundSessionService
         $gate = $this->gate($who->userId, $client);
         if (!$gate['allowed']) {
             $this->audit->record('Background Session Denied', $this->who($who) . " was denied a Background Session on device $deviceId: {$gate['code']}, {$gate['message']}", $client, $asset);
+            $this->emit(RmmEvent::BACKGROUND_SESSION_DENIED, $deviceId, $client, $asset, ['session_id' => null, 'user_id' => $who->userId, 'stage' => 'launch', 'code' => $gate['code']]);
 
             return ActionResult::fail($gate['http'], $gate['code'], $gate['message']);
         }
@@ -104,6 +109,7 @@ final class BackgroundSessionService
         if (empty($r['ok'])) {
             $code = (string) ($r['code'] ?? 'mesh_unavailable');
             $this->audit->record('Background Session Failed', $this->who($who) . " Background Session on device $deviceId did not start: $code", $client, $asset);
+            $this->emit(RmmEvent::BACKGROUND_SESSION_FAILED, $deviceId, $client, $asset, ['session_id' => null, 'user_id' => $who->userId, 'code' => $code]);
             $http = ['unmapped' => 404, 'device_offline' => 409, 'not_configured' => 409, 'device_retired' => 409, 'mesh_unavailable' => 503][$code] ?? 409;
 
             return ActionResult::fail($http, $code, (string) ($r['message'] ?? 'The session could not be started.'));
@@ -117,6 +123,8 @@ final class BackgroundSessionService
             $this->audit->record('Background Session Started', $this->who($who) . " started Background Session $sessionId on device $deviceId (policy {$gate['policy']}, end-user notice {$gate['notice']})", $client, $asset);
             $this->bridge->recordRemoteSession($asset, $client, $who->userId, 'meshcentral', 'meshcentral:session:' . $sessionId,
                 $ip === null ? null : substr($ip, 0, 100), $userAgent === null ? null : substr($userAgent, 0, 300));
+            $this->emit(RmmEvent::BACKGROUND_SESSION_STARTED, $deviceId, $client, $asset, ['session_id' => $sessionId, 'user_id' => $who->userId, 'user_name' => self::cleanName($who->userName),
+                'policy' => $gate['policy'], 'notice' => $gate['notice']]);
         } catch (\Throwable $e) {
             try {
                 $this->store->endSession($sessionId, 'start_failed');
@@ -162,6 +170,7 @@ final class BackgroundSessionService
         }
         $this->audit->record('Background Session Verified', 'Session check allowed Background Session ' . $sid . ' for user ' . $session['user_id'] . ' (' . self::cleanName($session['user_name']) . ') on device ' . $row['device_id']
             . ', checked by ' . $this->who($caller), $client, $session['asset_id']);
+        $this->emit(RmmEvent::BACKGROUND_SESSION_VERIFIED, $row['device_id'], $client, $session['asset_id'], ['session_id' => $sid, 'user_id' => $session['user_id'], 'notice' => $gate['notice']]);
 
         return ActionResult::ok('Allowed.', 200, 'ok', ['allow' => true, 'session_id' => $sid, 'device_id' => $row['device_id'], 'notice' => $gate['notice']]);
     }
@@ -182,6 +191,7 @@ final class BackgroundSessionService
         }
         $this->audit->record('Background Session Ended', 'Background Session ' . $sessionId . ' of user ' . $session['user_id'] . ' (' . self::cleanName($session['user_name']) . ') on device ' . $session['device_id']
             . " ended ($reason), reported by " . $this->who($who), $session['client_id'], $session['asset_id']);
+        $this->emit(RmmEvent::BACKGROUND_SESSION_ENDED, $session['device_id'], $session['client_id'], $session['asset_id'], ['session_id' => $sessionId, 'user_id' => $session['user_id'], 'reason' => $reason, 'reported_by' => $who->userId]);
 
         return ActionResult::ok('Session ended.', 200, 'ended', ['session_id' => $sessionId]);
     }
@@ -189,8 +199,20 @@ final class BackgroundSessionService
     private function checkDenied(RmmPrincipal $caller, int $deviceId, int $clientId, int $assetId, string $code, string $message, string $why): ActionResult
     {
         $this->audit->record('Background Session Denied', 'Session check refused for ' . $this->who($caller) . ' on device ' . $deviceId . ': ' . $why, $clientId, $assetId);
+        $this->emit(RmmEvent::BACKGROUND_SESSION_DENIED, $deviceId, $clientId, $assetId, ['session_id' => null, 'user_id' => $caller->userId, 'stage' => 'check', 'code' => $code]);
 
         return ActionResult::fail(403, $code, $message, ['allow' => false]);
+    }
+
+    /**
+     * Publish one `rmm.background.*` event, after the audit row of the same outcome. `$fields` are the event's own fields and never hold a URL, a login or check token, a hash or
+     * a key. A failing bus is the publisher's to swallow; nothing here can change the outcome.
+     *
+     * @param array<string,mixed> $fields
+     */
+    private function emit(string $event, int $deviceId, int $clientId, int $assetId, array $fields): void
+    {
+        $this->events?->emit($event, ['device_id' => $deviceId, 'asset_id' => $assetId, 'client_id' => $clientId, 'hostname' => ''], $fields);
     }
 
     private function assetOf(string $sessionId): int

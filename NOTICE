@@ -1,0 +1,21 @@
+RivetCore
+Licensed under the GNU General Public License, version 3 only (GPL-3.0-only); see LICENSE.
+
+THIRD-PARTY SOFTWARE
+
+MeshCentral
+  Used, not bundled: RivetCore's remote tools (technician console launch, Background Mode, the
+  optional Mesh agent install) talk to a MeshCentral server that the operator runs, and the Mesh
+  agent installer is downloaded from that operator's own server. No MeshCentral source or binary
+  is part of this repository (the files under endpoint-agent/internal/mesh/testdata are small
+  fixtures written for the tests).
+  MeshCentral is licensed under the Apache License, Version 2.0
+  (https://www.apache.org/licenses/LICENSE-2.0) by its authors (Ylian Saint-Hilaire, Intel
+  Corporation and contributors). Its own copyright and licence notices stay with MeshCentral:
+  keep them intact wherever you redistribute MeshCentral or its agents, and see
+  https://github.com/Ylianst/MeshCentral for the authoritative text. "MeshCentral" is the name
+  of that project; RivetCore is not affiliated with or endorsed by it.
+
+Composer and Go dependencies
+  Each is licensed by its own authors under its own terms (see composer.lock and
+  endpoint-agent/go.sum, and the licence files inside each package).

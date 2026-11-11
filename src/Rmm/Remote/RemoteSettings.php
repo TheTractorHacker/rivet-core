@@ -27,6 +27,8 @@ final class RemoteSettings
         'logs_fleet_max_rows' => [1000, 200000000, 2000000],
         'logs_rate_per_min' => [10, 6000, 600],
         'logs_interval_s' => [30, 3600, 60],
+        // Ended Background Mode session rows (never active ones, never the audit log, which has its own retention).
+        'background_session_retention_days' => [30, 3650, 365],
     ];
 
     public const FILE_TRANSFER_RISK = 'File transfer lets technicians copy files off managed devices and lets administrators put files onto them. '

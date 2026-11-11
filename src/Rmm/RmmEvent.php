@@ -120,6 +120,25 @@ final class RmmEvent
     /** A Proxmox or Hyper-V cluster lost quorum (as seen by the reporting host). Fields: cluster, platform, nodes_online, nodes_total, alert_check_key. */
     public const HYPERVISOR_CLUSTER_QUORUM_LOST = 'rmm.hypervisor.cluster_quorum_lost';
 
+    /**
+     * Background Mode (`background_mode` switch): a technician was allowed to open the console on a device. Written after its `Background Session Started` audit row.
+     * Fields: session_id, user_id, user_name, policy ("internal", "allow" or "notify"), notice ("none" or "notify"). Never a URL, login token, check token or key.
+     */
+    public const BACKGROUND_SESSION_STARTED = 'rmm.background.session_started';
+    /** A Background Mode launch or the plugin's session check was refused. Fields: session_id (always null), user_id, stage ("launch" or "check"), code. device_id is 0 when the device is unknown. */
+    public const BACKGROUND_SESSION_DENIED = 'rmm.background.session_denied';
+    /** A Background Mode launch was allowed but the Mesh session could not be created. Fields: session_id (always null), user_id, code. */
+    public const BACKGROUND_SESSION_FAILED = 'rmm.background.session_failed';
+    /** The Mesh plugin's session check was allowed (the session may open). Fields: session_id, user_id, notice. */
+    public const BACKGROUND_SESSION_VERIFIED = 'rmm.background.session_verified';
+    /** A session ended, whatever the cause (the reason says closed, timeout, revoked, error, plugin or other). Fields: session_id, user_id, reason, reported_by. */
+    public const BACKGROUND_SESSION_ENDED = 'rmm.background.session_ended';
+    /**
+     * An administrator changed Background Mode's policy (mode, internal group or one client's policy). Not about one device: device_id is 0, asset_id null, hostname empty,
+     * client_id the client of a client policy (else 0). Fields: setting ("policy_mode", "internal_group" or "client_policy"), client_id_changed, old_value, new_value (null when none), changed_by.
+     */
+    public const BACKGROUND_POLICY_CHANGED = 'rmm.background.policy_changed';
+
     /** @return list<string> */
     public static function all(): array
     {
@@ -130,6 +149,7 @@ final class RmmEvent
             self::PATCH_SCAN_COMPLETED, self::PATCH_APPROVED, self::PATCH_INSTALL_STARTED, self::PATCH_INSTALL_FINISHED, self::PATCH_INSTALL_FAILED,
             self::DEPLOY_STARTED, self::DEPLOY_FINISHED, self::DEPLOY_FAILED,
             self::CHANGE_DETECTED, self::CHANGE_RULE_MATCHED, self::DEVICE_CLOCK_SKEW,
-            self::HYPERVISOR_VM_DOWN, self::HYPERVISOR_BACKUP_FAILED, self::HYPERVISOR_SNAPSHOT_OLD, self::HYPERVISOR_STORAGE_LOW, self::HYPERVISOR_POOL_DEGRADED, self::HYPERVISOR_CLUSTER_QUORUM_LOST];
+            self::HYPERVISOR_VM_DOWN, self::HYPERVISOR_BACKUP_FAILED, self::HYPERVISOR_SNAPSHOT_OLD, self::HYPERVISOR_STORAGE_LOW, self::HYPERVISOR_POOL_DEGRADED, self::HYPERVISOR_CLUSTER_QUORUM_LOST,
+            self::BACKGROUND_SESSION_STARTED, self::BACKGROUND_SESSION_DENIED, self::BACKGROUND_SESSION_FAILED, self::BACKGROUND_SESSION_VERIFIED, self::BACKGROUND_SESSION_ENDED, self::BACKGROUND_POLICY_CHANGED];
     }
 }

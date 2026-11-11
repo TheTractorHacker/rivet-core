@@ -185,6 +185,7 @@ final class RmmModule
     private ?TechnicianActions $technician = null;
     private ?\RivetCore\Rmm\Remote\BackgroundSessionService $backgroundSessions = null;
     private ?\RivetCore\Rmm\Remote\DbBackgroundModeConfig $backgroundDbConfig = null;
+    private ?\RivetCore\Rmm\Remote\BackgroundSettingsService $backgroundSettingsService = null;
     private ?RmmAdmin $admin = null;
     private ?DeviceState $deviceState = null;
     private ?SoftwareService $software = null;
@@ -961,7 +962,7 @@ final class RmmModule
             null, $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), null, $this->cache(), $this->externalSink(),
             $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules(), $this->hypervisorService(),
-            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores());
+            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores(), new \RivetCore\Rmm\Remote\BackgroundSessionRetention($this->sql()), $this->remoteSettings());
     }
 
     /**
@@ -1454,7 +1455,21 @@ final class RmmModule
             $this->audit,
             $this->bridge,
             fn (string $feature): bool => $this->settings()->featureOn($feature),
+            $this->eventPublisher(),
         );
+    }
+
+    /**
+     * Changing Background Mode's policy: administrator check, audit row with the old and the new value, fail closed, event. Uses Core's tables, so it is only available
+     * when the edition did not pass its own `background_config` (then it manages its own policy storage and its own audit).
+     */
+    public function backgroundSettings(): \RivetCore\Rmm\Remote\BackgroundSettingsService
+    {
+        if (isset($this->options['background_config'])) {
+            throw new \LogicException('The edition supplied its own background_config; it changes that policy itself.');
+        }
+
+        return $this->backgroundSettingsService ??= new \RivetCore\Rmm\Remote\BackgroundSettingsService($this->authorizer(), $this->backgroundDbConfig ??= new \RivetCore\Rmm\Remote\DbBackgroundModeConfig($this->sql()), $this->audit, $this->eventPublisher());
     }
 
     /** The validated administration operations (settings, MeshCentral, signing key, binaries, releases, installers). */

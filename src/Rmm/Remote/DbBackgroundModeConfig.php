@@ -10,12 +10,16 @@ use RivetCore\Rmm\Support\Sql;
 /**
  * Background Mode's policy settings in the Core tables of migration 0049: the one settings row (`rmm_background_settings`: mode and the named internal group) and the
  * per-client policy (`rmm_client_remote_policy`). Reads never create anything and an absent row reads as "not configured" (which denies). The setters validate and return
- * false on a refused value; they do not check who is asking, the caller (an edition's administration page or Core's settings action) must require `rmm.admin` first.
+ * false on a refused value; they do not check who is asking and do not audit. Change settings through {@see BackgroundSettingsService} (admin check, audit with old and
+ * new value, fail closed); the raw setters are internal to Core.
  *
  * @api
  */
 final class DbBackgroundModeConfig implements BackgroundModeConfigInterface
 {
+    /** Letters, digits, space and `._-`, 1 to 100 characters. */
+    public const GROUP_PATTERN = '/^[\p{L}\p{N} ._-]{1,100}$/u';
+
     /** @var array<string,mixed>|null */
     private ?array $row = null;
 
@@ -48,6 +52,7 @@ final class DbBackgroundModeConfig implements BackgroundModeConfigInterface
         return is_string($p) && in_array($p, BackgroundModePolicy::CLIENT_POLICIES, true) ? $p : null;
     }
 
+    /** @internal no caller check, no audit: use {@see BackgroundSettingsService::setPolicyMode()} */
     public function setPolicyMode(string $mode, int $userId): bool
     {
         if (!in_array($mode, BackgroundModePolicy::MODES, true)) {
@@ -58,11 +63,11 @@ final class DbBackgroundModeConfig implements BackgroundModeConfigInterface
         return true;
     }
 
-    /** Name of the role or group Internal mode allows besides site administrators; an empty string clears it. Letters, digits, space and `._-` only, at most 100. */
+    /** Name of the role or group Internal mode allows besides site administrators; an empty string clears it. Letters, digits, space and `._-` only, at most 100. @internal no caller check, no audit: use {@see BackgroundSettingsService::setInternalGroup()} */
     public function setInternalGroup(string $group, int $userId): bool
     {
         $group = trim($group);
-        if ($group !== '' && preg_match('/^[\p{L}\p{N} ._-]{1,100}$/u', $group) !== 1) {
+        if ($group !== '' && preg_match(self::GROUP_PATTERN, $group) !== 1) {
             return false;
         }
         $this->upsertSetting('internal_group', $group, $userId);
@@ -70,7 +75,7 @@ final class DbBackgroundModeConfig implements BackgroundModeConfigInterface
         return true;
     }
 
-    /** Set the policy of one client; null removes it (the client is then denied). */
+    /** Set the policy of one client; null removes it (the client is then denied). @internal no caller check, no audit: use {@see BackgroundSettingsService::setClientPolicy()} */
     public function setClientPolicy(int $clientId, ?string $policy, int $userId): bool
     {
         if ($clientId <= 0 || ($policy !== null && !in_array($policy, BackgroundModePolicy::CLIENT_POLICIES, true))) {

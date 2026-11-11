@@ -4930,7 +4930,7 @@
                 "PRUNE_RUN_CAP": 200000
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Job\\JobService $jobs, ?Closure $pause = NULL, ?RivetCore\\Rmm\\Capacity\\LoadShedder $shedder = NULL, ?RivetCore\\Rmm\\Capacity\\IngestQueue $ingest = NULL, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Device\\DeviceState $deviceState = NULL, ?RivetCore\\Rmm\\Support\\DatabaseMetricSink $metricSink = NULL, ?RivetCore\\Rmm\\Scripts\\ScheduleRunner $schedules = NULL, ?RivetCore\\Rmm\\Approvals\\ApprovalService $approvals = NULL, ?RivetCore\\Rmm\\Scripts\\ApprovedRunExecutor $approvedRuns = NULL, ?RivetCore\\Rmm\\Job\\JobExtras $extras = NULL, ?RivetCore\\Rmm\\Policy\\PolicyStore $policies = NULL, ?RivetCore\\Rmm\\Alerting\\AlertingHousekeeping $alerting = NULL, ?RivetCore\\Rmm\\Storage\\StorageMaintenance $storage = NULL, ?RivetCore\\Rmm\\Support\\RmmCache $cache = NULL, ?RivetCore\\Rmm\\Metrics\\ExternalMetricSink $external = NULL, ?RivetCore\\Rmm\\Logs\\LogService $logs = NULL, ?RivetCore\\Rmm\\Logs\\LogRuleService $logRules = NULL, ?RivetCore\\Rmm\\Remote\\TransferService $transfers = NULL, ?RivetCore\\Rmm\\Patch\\PatchScheduler $patches = NULL, ?RivetCore\\Rmm\\Deploy\\DeployScheduler $deploy = NULL, ?RivetCore\\Rmm\\Change\\ChangeService $changes = NULL, ?RivetCore\\Rmm\\Change\\ChangeRuleService $changeRules = NULL, ?RivetCore\\Rmm\\Hypervisor\\HypervisorService $hypervisor = NULL, ?RivetCore\\Rmm\\Store\\CheckHistoryStore $checkHistory = NULL, ?RivetCore\\Rmm\\Store\\SoftwareHistoryStore $softwareHistory = NULL, ?RivetCore\\Rmm\\Store\\MetricStore $metricStore = NULL, ?RivetCore\\Rmm\\Store\\StoreMaintenance $storeMaintenance = NULL, ?RivetCore\\Rmm\\Store\\RmmDataStores $stores = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Job\\JobService $jobs, ?Closure $pause = NULL, ?RivetCore\\Rmm\\Capacity\\LoadShedder $shedder = NULL, ?RivetCore\\Rmm\\Capacity\\IngestQueue $ingest = NULL, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Device\\DeviceState $deviceState = NULL, ?RivetCore\\Rmm\\Support\\DatabaseMetricSink $metricSink = NULL, ?RivetCore\\Rmm\\Scripts\\ScheduleRunner $schedules = NULL, ?RivetCore\\Rmm\\Approvals\\ApprovalService $approvals = NULL, ?RivetCore\\Rmm\\Scripts\\ApprovedRunExecutor $approvedRuns = NULL, ?RivetCore\\Rmm\\Job\\JobExtras $extras = NULL, ?RivetCore\\Rmm\\Policy\\PolicyStore $policies = NULL, ?RivetCore\\Rmm\\Alerting\\AlertingHousekeeping $alerting = NULL, ?RivetCore\\Rmm\\Storage\\StorageMaintenance $storage = NULL, ?RivetCore\\Rmm\\Support\\RmmCache $cache = NULL, ?RivetCore\\Rmm\\Metrics\\ExternalMetricSink $external = NULL, ?RivetCore\\Rmm\\Logs\\LogService $logs = NULL, ?RivetCore\\Rmm\\Logs\\LogRuleService $logRules = NULL, ?RivetCore\\Rmm\\Remote\\TransferService $transfers = NULL, ?RivetCore\\Rmm\\Patch\\PatchScheduler $patches = NULL, ?RivetCore\\Rmm\\Deploy\\DeployScheduler $deploy = NULL, ?RivetCore\\Rmm\\Change\\ChangeService $changes = NULL, ?RivetCore\\Rmm\\Change\\ChangeRuleService $changeRules = NULL, ?RivetCore\\Rmm\\Hypervisor\\HypervisorService $hypervisor = NULL, ?RivetCore\\Rmm\\Store\\CheckHistoryStore $checkHistory = NULL, ?RivetCore\\Rmm\\Store\\SoftwareHistoryStore $softwareHistory = NULL, ?RivetCore\\Rmm\\Store\\MetricStore $metricStore = NULL, ?RivetCore\\Rmm\\Store\\StoreMaintenance $storeMaintenance = NULL, ?RivetCore\\Rmm\\Store\\RmmDataStores $stores = NULL, ?RivetCore\\Rmm\\Remote\\BackgroundSessionRetention $backgroundSessions = NULL, ?RivetCore\\Rmm\\Remote\\RemoteSettings $remoteSettings = NULL)",
                 "run": "run(): array"
             }
         },
@@ -5847,6 +5847,17 @@
                 "decide": "decide(int $userId, int $clientId, bool $isSiteAdmin): RivetCore\\Rmm\\Remote\\BackgroundDecision"
             }
         },
+        "RivetCore\\Rmm\\Remote\\BackgroundSessionRetention": {
+            "kind": "final class",
+            "constants": {
+                "BATCH": 1000,
+                "RUN_CAP": 20000
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
+                "prune": "prune(int $retentionDays): array"
+            }
+        },
         "RivetCore\\Rmm\\Remote\\BackgroundSessionService": {
             "kind": "final class",
             "constants": {
@@ -5860,11 +5871,20 @@
                 "TOKEN_TTL_S": 60
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Remote\\BackgroundModePolicy $policy, RivetCore\\Rmm\\Contracts\\BackgroundSessionStoreInterface $store, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, Closure $featureOn)",
+                "__construct": "__construct(RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Remote\\BackgroundModePolicy $policy, RivetCore\\Rmm\\Contracts\\BackgroundSessionStoreInterface $store, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, Closure $featureOn, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL)",
                 "check": "check(RivetCore\\Rmm\\Authz\\RmmPrincipal $caller, string $token): RivetCore\\Rmm\\Technician\\ActionResult",
                 "end": "end(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, string $sessionId, string $reason = 'user_closed'): RivetCore\\Rmm\\Technician\\ActionResult",
                 "gate": "gate(int $userId, int $clientId): array",
                 "launch": "launch(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $dev, Closure $meshLaunch, ?string $ip = NULL, ?string $userAgent = NULL): RivetCore\\Rmm\\Technician\\ActionResult"
+            }
+        },
+        "RivetCore\\Rmm\\Remote\\BackgroundSettingsService": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Remote\\DbBackgroundModeConfig $config, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL)",
+                "setClientPolicy": "setClientPolicy(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $clientId, ?string $policy): RivetCore\\Rmm\\Technician\\ActionResult",
+                "setInternalGroup": "setInternalGroup(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, string $group): RivetCore\\Rmm\\Technician\\ActionResult",
+                "setPolicyMode": "setPolicyMode(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, string $mode): RivetCore\\Rmm\\Technician\\ActionResult"
             }
         },
         "RivetCore\\Rmm\\Remote\\ConsoleLink": {
@@ -5892,6 +5912,9 @@
             "implements": [
                 "RivetCore\\Rmm\\Contracts\\BackgroundModeConfigInterface"
             ],
+            "constants": {
+                "GROUP_PATTERN": "/^[\\p{L}\\p{N} ._-]{1,100}$/u"
+            },
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
                 "clientPolicy": "clientPolicy(int $clientId): ?string",
@@ -6158,6 +6181,11 @@
                         30,
                         3600,
                         60
+                    ],
+                    "background_session_retention_days": [
+                        30,
+                        3650,
+                        365
                     ]
                 },
                 "LOGS_STORAGE_WARNING": "Log collection stores the text of event-log and system-log entries from every device that sends them, in this server's database. It is the heaviest optional part of the RMM: it multiplies database size and write load by the number of devices, and log text can contain user names, addresses and other personal data. Collection is capped per device and for the whole fleet and old entries are deleted, but choose narrow sources (warnings and errors from a few channels or services), keep retention short and watch the storage figure shown here before you turn it on for a large fleet."
@@ -6206,6 +6234,12 @@
                 "ALERT_RESOLVED": "rmm.alert.resolved",
                 "APPROVAL_DECIDED": "rmm.approval.decided",
                 "APPROVAL_REQUESTED": "rmm.approval.requested",
+                "BACKGROUND_POLICY_CHANGED": "rmm.background.policy_changed",
+                "BACKGROUND_SESSION_DENIED": "rmm.background.session_denied",
+                "BACKGROUND_SESSION_ENDED": "rmm.background.session_ended",
+                "BACKGROUND_SESSION_FAILED": "rmm.background.session_failed",
+                "BACKGROUND_SESSION_STARTED": "rmm.background.session_started",
+                "BACKGROUND_SESSION_VERIFIED": "rmm.background.session_verified",
                 "CHANGE_DETECTED": "rmm.change.detected",
                 "CHANGE_RULE_MATCHED": "rmm.change.rule_matched",
                 "CHECK_FAILED": "rmm.check.failed",
@@ -6265,6 +6299,7 @@
                 "automationReader": "automationReader(): RivetCore\\Rmm\\Read\\AutomationReader",
                 "backgroundConfig": "backgroundConfig(): RivetCore\\Rmm\\Contracts\\BackgroundModeConfigInterface",
                 "backgroundSessions": "backgroundSessions(): RivetCore\\Rmm\\Remote\\BackgroundSessionService",
+                "backgroundSettings": "backgroundSettings(): RivetCore\\Rmm\\Remote\\BackgroundSettingsService",
                 "binaryStore": "binaryStore(): RivetCore\\Rmm\\Binaries\\BinaryStore",
                 "bulkRunner": "bulkRunner(): RivetCore\\Rmm\\Scripts\\BulkRunner",
                 "cache": "cache(): RivetCore\\Rmm\\Support\\RmmCache",
@@ -8377,6 +8412,7 @@
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Device\\DeviceService $deviceService, RivetCore\\Rmm\\Enrollment\\EnrollmentService $enrollment, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Update\\UpdateService $updates, RivetCore\\Rmm\\Mesh\\MeshService $mesh, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, string $clientLabel = 'client', ?RivetCore\\Rmm\\Technician\\ScriptActions $library = NULL, ?RivetCore\\Rmm\\Settings\\RmmSettings $settings = NULL, ?RivetCore\\Rmm\\Remote\\BackgroundSessionService $background = NULL)",
                 "allowReenroll": "allowReenroll(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
+                "auditRefusedBackgroundLaunch": "auditRefusedBackgroundLaunch(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, ?string $ip, ?string $userAgent, int $http): void",
                 "cancelJob": "cancelJob(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $jobId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "checkBackgroundSession": "checkBackgroundSession(RivetCore\\Rmm\\Authz\\RmmPrincipal $caller, string $token): RivetCore\\Rmm\\Technician\\ActionResult",
                 "clearUpdateFailures": "clearUpdateFailures(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
@@ -10004,6 +10040,12 @@
             "rmm.alert.resolved",
             "rmm.approval.decided",
             "rmm.approval.requested",
+            "rmm.background.policy_changed",
+            "rmm.background.session_denied",
+            "rmm.background.session_ended",
+            "rmm.background.session_failed",
+            "rmm.background.session_started",
+            "rmm.background.session_verified",
             "rmm.change.detected",
             "rmm.change.rule_matched",
             "rmm.check.failed",
