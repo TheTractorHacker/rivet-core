@@ -46,6 +46,7 @@ final class RemoteActions
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentSettings $meshSettings = null,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
         private readonly ?\RivetCore\Rmm\Scripts\TargetResolver $targets = null,
+        private readonly ?ConsoleSettings $console = null,
     ) {
     }
 
@@ -716,7 +717,8 @@ final class RemoteActions
 
         return ['features' => [RemoteProtocol::FEATURE_REMOTE_TOOLS => $f[RemoteProtocol::FEATURE_REMOTE_TOOLS], RemoteProtocol::FEATURE_FILE_TRANSFER => $f[RemoteProtocol::FEATURE_FILE_TRANSFER],
             RemoteProtocol::FEATURE_LOGS => $f[RemoteProtocol::FEATURE_LOGS], RemoteProtocol::FEATURE_BACKGROUND_MODE => $f[RemoteProtocol::FEATURE_BACKGROUND_MODE],
-            RemoteProtocol::FEATURE_REMOTE_CONSOLE => $f[RemoteProtocol::FEATURE_REMOTE_CONSOLE]], 'transfer_storage_error' => $this->transfers->unavailable()] + $this->remote->summary();
+            RemoteProtocol::FEATURE_REMOTE_CONSOLE => $f[RemoteProtocol::FEATURE_REMOTE_CONSOLE]], 'transfer_storage_error' => $this->transfers->unavailable()] + $this->remote->summary()
+            + ($this->console?->view() ?? ['console_public_url' => '', 'min_console_version' => '', 'console_log_file_paths' => false, 'console_cookie_once' => true]);
     }
 
     public function settings(RmmPrincipal $who): ActionResult
@@ -754,7 +756,11 @@ final class RemoteActions
      * Turning `background_mode` on needs `accept_background_risk: true` the same way. `remote_console` (the optional Rivet Console desktop app) needs no acknowledgement:
      * it grants nothing (the same abilities apply, the deep link carries no credential) and it never turns Background Mode on; turning it off denies Background launches.
      *
-     * @param array<string,mixed> $in features {remote_tools, filetransfer, logs, background_mode, remote_console}, transfer_allow, logs_collect, limits, accept_filetransfer_risk, accept_logs_storage, accept_background_risk,
+     * The Rivet Console settings ride along as flat keys ({@see ConsoleSettings}): `console_public_url` (a bare https origin, empty clears it), `min_console_version` (`x.y.z`, empty
+     * enforces nothing), `console_log_file_paths` and `console_cookie_once` (booleans). They are validated before anything is written, audited as `Remote Settings Changed` (no
+     * secret is involved) and read back by {@see settings()}. Only administrators can change them; the audit row cannot be turned off.
+     *
+     * @param array<string,mixed> $in features {remote_tools, filetransfer, logs, background_mode, remote_console}, console_public_url, min_console_version, console_log_file_paths, console_cookie_once, transfer_allow, logs_collect, limits, accept_filetransfer_risk, accept_logs_storage, accept_background_risk,
      *        compliance_baseline_if_unset (true with the first enable: store the compliance log-preset baseline if no preset choice was ever saved)
      */
     public function updateSettings(RmmPrincipal $who, array $in): ActionResult
@@ -765,7 +771,7 @@ final class RemoteActions
 
             return ActionResult::fail(403, 'forbidden', $denied);
         }
-        $known = ['features', 'transfer_allow', 'logs_collect', 'limits', 'accept_filetransfer_risk', 'accept_logs_storage', 'accept_background_risk', 'compliance_baseline_if_unset'];
+        $known = ['features', 'transfer_allow', 'logs_collect', 'limits', 'accept_filetransfer_risk', 'accept_logs_storage', 'accept_background_risk', 'compliance_baseline_if_unset', ...ConsoleSettings::KEYS];
         foreach (array_keys($in) as $k) {
             if (!in_array($k, $known, true)) {
                 return ActionResult::fail(422, 'invalid', 'Unknown setting ' . mb_substr((string) $k, 0, 40) . '.');
@@ -794,6 +800,17 @@ final class RemoteActions
         if (($changed[RemoteProtocol::FEATURE_LOGS] ?? false) === true && empty($in['accept_logs_storage'])) {
             return ActionResult::fail(422, 'confirmation_required', RemoteSettings::LOGS_STORAGE_WARNING . ' Send accept_logs_storage: true to turn log collection on.');
         }
+        $consoleIn = array_intersect_key($in, array_flip(ConsoleSettings::KEYS));
+        $consoleVals = [];
+        if ($consoleIn !== []) {
+            if ($this->console === null) {
+                return ActionResult::fail(422, 'invalid', 'The Rivet Console settings are not available.');
+            }
+            [$consoleVals, $consoleErr] = $this->console->validate($consoleIn);
+            if ($consoleErr !== []) {
+                return ActionResult::fail(422, 'invalid', implode(' ', $consoleErr));
+            }
+        }
         $errors = $this->remote->update(array_intersect_key($in, array_flip(['transfer_allow', 'logs_collect', 'limits', 'compliance_baseline_if_unset'])), $who->userId);
         if ($errors !== []) {
             return ActionResult::fail(422, 'invalid', implode(' ', $errors));
@@ -807,6 +824,12 @@ final class RemoteActions
         $what = [];
         foreach ($changed as $k => $v) {
             $what[] = "$k " . ($v ? 'ON' : 'off');
+        }
+        if ($consoleVals !== []) {
+            $this->console->save($consoleVals, $who->userId);
+            foreach ($consoleVals as $k => $v) {
+                $what[] = is_bool($v) ? "$k " . ($v ? 'ON' : 'off') : ($v === '' ? "$k cleared" : "$k set to $v");
+            }
         }
         foreach (['transfer_allow', 'logs_collect', 'limits'] as $k) {
             if (array_key_exists($k, $in)) {

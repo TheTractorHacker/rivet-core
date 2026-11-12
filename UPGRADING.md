@@ -76,6 +76,25 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Adopting the Rivet Console redeem and events routes (1.0.0-rc.66, provisional; migration 0051; optional, off by default)
+
+Needs the Background Mode / Rivet Console release (rc.64 and rc.65, PR #130) first. Nothing is required: with `remote_console` off (the default) every existing call behaves as before.
+
+| Signature | Change | Intentional | Edition action |
+|---|---|---|---|
+| `Technician\TechnicianActions::__construct()` | trailing optional `?ConsoleSessionService $consoleSessions = null` | yes: mints the redeem code | none through `RmmModule::technician()`; hand-built without it a console launch answers 409 `not_configured` |
+| `Remote\RemoteActions::__construct()` | trailing optional `?ConsoleSettings $console = null` | yes: the four console settings | none through `RmmModule::remoteActions()`; hand-built without it the console keys of `updateSettings()` answer 422 |
+| `Maintenance\Housekeeping::__construct()` | trailing optional `?ConsoleRetention $console = null` | yes: prunes codes and sessions | none through `RmmModule::housekeeping()` |
+| `Mesh\MeshCookie::login()` | trailing optional `bool $once = false` | yes: the redeem cookie's `once` claim | none: the default is the stock payload |
+| `Remote\ConsoleLink::build()`, `descriptor()` | new parameters (origin, code): the rc.65 `(kind, node)` forms are gone | yes: the v1 link shape | none: the class never left a release candidate; editions use the launch result's `console.url` and `console.fallback_url` |
+
+1. **Migration.** `CoreMigrations::all()` gains `0051_rmm_console_sessions` after `0050_rmm_background_mode`: three new tables (`rmm_console_settings`, `rmm_console_codes`, `rmm_console_sessions`), `CREATE TABLE IF NOT EXISTS`, nothing altered. Mirror them in your `db.sql` and updater with your own numbering, and do not mirror the codes or sessions anywhere else (they hold SHA-256 hashes only). Code before the migration is safe: reading the settings falls back to the defaults, and a console launch needs the switch on and the URL set.
+2. **Mount the two routes** as public, POST-only, JSON-only routes, no CORS headers: `POST /api/v1/endpoint_console/redeem` -> `RmmModule::consoleApi($rateLimit)->redeem($request)`, `POST /api/v1/endpoint_console/events` -> `->events($request)` (or `->handle($request)` with the path segment). Build the `RmmRequest` with the client address from your trusted-proxy rule only. **Never log the request body anywhere** (it is a login code or a bearer token): check the web server log format, the WAF, request-logging middleware and your API request log table. Behind a real reverse proxy the per-address limits are per client address; verify on beta.
+3. **Settings page.** Four settings through `RemoteActions::updateSettings()` (administrators; Core validates and audits): `console_public_url` (set it before turning the console on, or launches are refused), `min_console_version`, `console_log_file_paths`, `console_cookie_once`; read them back from `settings()`. The new limit `console_session_retention_days` (default 365).
+4. **Launch.** The `console` object is now `{url, fallback_url}` (no `kind`); open `console.url` by assigning `window.location`. Show Core's refusal message verbatim: 409 `not_configured` (no public URL, or an unacceptable node id or Mesh domain, `unsupported`).
+5. **Events.** Four new ids in `RmmEvent` and `Webhooks\EventCatalog`: `rmm.console.link_redeemed`, `link_denied`, `session_ended`, `events_reported` (51 `rmm.*` events in all). New audit actions: `Console Link Redeemed`, `Console Link Denied`, `Console Event Reported`, `Console Events Truncated`, `Console Session Ended`; list them wherever the edition lists audit rows.
+6. **Operators.** Mesh accounts, groups and rights are created in MeshCentral, not by Rivet. A `notify` client policy is a banner for the technician, an `approve` policy is currently a refusal (403 `approval_required`). The console's direct mode is not a security control. See docs/modules/rmm.md, "Rivet Console redeem and events".
+
 ## Adopting Background Mode and the optional Rivet Console (1.0.0-rc.64 and rc.65; migration 0050; optional, off by default)
 
 Nothing is required: with the switches off (the default) every existing call behaves as before. Signature changes the API checker reports as BREAKING by its text comparison, and why none of them breaks a correct caller (each only appends optional trailing parameters to a `final` class, so no positional call changes and nothing can override them):

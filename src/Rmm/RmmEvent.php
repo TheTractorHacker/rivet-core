@@ -139,6 +139,18 @@ final class RmmEvent
      */
     public const BACKGROUND_POLICY_CHANGED = 'rmm.background.policy_changed';
 
+    /**
+     * Rivet Console (`remote_console` switch): a console redeemed its single-use link and received the MeshCentral login. Written after its `Console Link Redeemed` audit row.
+     * Fields: session_id, user_id, user_name, kind. Never the code, its hash, the cookie or the report token.
+     */
+    public const CONSOLE_LINK_REDEEMED = 'rmm.console.link_redeemed';
+    /** A redeem was refused (unknown, expired or used code, a technician no longer allowed, or `approval_required`). Throttled per client address like its audit row. Fields: user_id and kind (null for an unknown code), reason. */
+    public const CONSOLE_LINK_DENIED = 'rmm.console.link_denied';
+    /** The console reported that its session ended (unverified). Fields: session_id, user_id, kind, result (ok, error, cancelled or null). */
+    public const CONSOLE_SESSION_ENDED = 'rmm.console.session_ended';
+    /** The console reported activity (unverified). Counts only, never the events themselves. Fields: session_id, accepted, dropped, truncated. */
+    public const CONSOLE_EVENTS_REPORTED = 'rmm.console.events_reported';
+
     /** @return list<string> */
     public static function all(): array
     {
@@ -150,6 +162,7 @@ final class RmmEvent
             self::DEPLOY_STARTED, self::DEPLOY_FINISHED, self::DEPLOY_FAILED,
             self::CHANGE_DETECTED, self::CHANGE_RULE_MATCHED, self::DEVICE_CLOCK_SKEW,
             self::HYPERVISOR_VM_DOWN, self::HYPERVISOR_BACKUP_FAILED, self::HYPERVISOR_SNAPSHOT_OLD, self::HYPERVISOR_STORAGE_LOW, self::HYPERVISOR_POOL_DEGRADED, self::HYPERVISOR_CLUSTER_QUORUM_LOST,
-            self::BACKGROUND_SESSION_STARTED, self::BACKGROUND_SESSION_DENIED, self::BACKGROUND_SESSION_FAILED, self::BACKGROUND_SESSION_VERIFIED, self::BACKGROUND_SESSION_ENDED, self::BACKGROUND_POLICY_CHANGED];
+            self::BACKGROUND_SESSION_STARTED, self::BACKGROUND_SESSION_DENIED, self::BACKGROUND_SESSION_FAILED, self::BACKGROUND_SESSION_VERIFIED, self::BACKGROUND_SESSION_ENDED, self::BACKGROUND_POLICY_CHANGED,
+            self::CONSOLE_LINK_REDEEMED, self::CONSOLE_LINK_DENIED, self::CONSOLE_SESSION_ENDED, self::CONSOLE_EVENTS_REPORTED];
     }
 }

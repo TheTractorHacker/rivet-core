@@ -186,6 +186,9 @@ final class RmmModule
     private ?\RivetCore\Rmm\Remote\BackgroundSessionService $backgroundSessions = null;
     private ?\RivetCore\Rmm\Remote\DbBackgroundModeConfig $backgroundDbConfig = null;
     private ?\RivetCore\Rmm\Remote\BackgroundSettingsService $backgroundSettingsService = null;
+    private ?\RivetCore\Rmm\Remote\ConsoleSettings $consoleSettings = null;
+    private ?\RivetCore\Rmm\Remote\ConsoleStore $consoleStore = null;
+    private ?\RivetCore\Rmm\Remote\ConsoleSessionService $consoleSessions = null;
     private ?RmmAdmin $admin = null;
     private ?DeviceState $deviceState = null;
     private ?SoftwareService $software = null;
@@ -728,7 +731,7 @@ final class RmmModule
     /** Service and process managers, file transfer, Mesh view information and the remote-tools settings (shared by the REST API and the edition's pages). */
     public function remoteActions(): RemoteActions
     {
-        return $this->remoteActions ??= new RemoteActions($this->sql(), $this->devices(), $this->authorizer(), $this->settings(), $this->jobs(), $this->transfers(), $this->remoteSettings(), $this->mesh(), $this->audit, $this->meshAgentSettings(), $this->meshAgents(), $this->targets());
+        return $this->remoteActions ??= new RemoteActions($this->sql(), $this->devices(), $this->authorizer(), $this->settings(), $this->jobs(), $this->transfers(), $this->remoteSettings(), $this->mesh(), $this->audit, $this->meshAgentSettings(), $this->meshAgents(), $this->targets(), $this->consoleSettings());
     }
 
     /** Reading collected logs and managing log rules. */
@@ -962,7 +965,7 @@ final class RmmModule
             null, $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), null, $this->cache(), $this->externalSink(),
             $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules(), $this->hypervisorService(),
-            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores(), new \RivetCore\Rmm\Remote\BackgroundSessionRetention($this->sql()), $this->remoteSettings());
+            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores(), new \RivetCore\Rmm\Remote\BackgroundSessionRetention($this->sql()), $this->remoteSettings(), new \RivetCore\Rmm\Remote\ConsoleRetention($this->sql()));
     }
 
     /**
@@ -1433,7 +1436,7 @@ final class RmmModule
     public function technician(): TechnicianActions
     {
         return $this->technician ??= new TechnicianActions($this->sql(), $this->devices(), $this->deviceService(), $this->enrollment(), $this->jobs(), $this->updates(),
-            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings(), $this->backgroundSessions());
+            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings(), $this->backgroundSessions(), $this->consoleSessions());
     }
 
     /**
@@ -1443,6 +1446,39 @@ final class RmmModule
     public function backgroundConfig(): \RivetCore\Rmm\Contracts\BackgroundModeConfigInterface
     {
         return $this->options['background_config'] ?? ($this->backgroundDbConfig ??= new \RivetCore\Rmm\Remote\DbBackgroundModeConfig($this->sql()));
+    }
+
+    /** The Rivet Console settings (migration 0051): public URL, minimum version, file-path logging, cookie `once` claim. Changed through {@see remoteActions()}. */
+    public function consoleSettings(): \RivetCore\Rmm\Remote\ConsoleSettings
+    {
+        return $this->consoleSettings ??= new \RivetCore\Rmm\Remote\ConsoleSettings($this->sql(), $this->options['allow_insecure_http'] ?? false);
+    }
+
+    /** Database access of the console's codes and sessions. */
+    public function consoleStore(): \RivetCore\Rmm\Remote\ConsoleStore
+    {
+        return $this->consoleStore ??= new \RivetCore\Rmm\Remote\ConsoleStore($this->sql());
+    }
+
+    /** Mints the single-use redeem code of a Rivet Console launch (used by {@see technician()}). */
+    public function consoleSessions(): \RivetCore\Rmm\Remote\ConsoleSessionService
+    {
+        return $this->consoleSessions ??= new \RivetCore\Rmm\Remote\ConsoleSessionService($this->consoleStore(), $this->consoleSettings());
+    }
+
+    /**
+     * The two public Rivet Console endpoints (redeem and events): mount them as public, POST-only, JSON-only routes, see {@see \RivetCore\Rmm\Http\ConsoleApi}.
+     *
+     * @param \Closure(string,int,int):bool $rateLimit (bucket, limit, windowSeconds): true when within budget, the same kind of limiter {@see deviceApi()} takes
+     * @param bool|null $allowInsecureHttp serve plain http (loopback test servers only); null follows the module's `allow_insecure_http` option
+     */
+    public function consoleApi(\Closure $rateLimit, ?bool $allowInsecureHttp = null): \RivetCore\Rmm\Http\ConsoleApi
+    {
+        return new \RivetCore\Rmm\Http\ConsoleApi(
+            new \RivetCore\Rmm\Remote\ConsoleRedeemService($this->consoleStore(), $this->consoleSettings(), $this->authorizer(), $this->settings(), $this->devices(), $this->mesh(), $this->backgroundConfig(), $this->audit, $rateLimit, $this->eventPublisher()),
+            new \RivetCore\Rmm\Remote\ConsoleEventsService($this->consoleStore(), $this->consoleSettings(), $this->audit, $rateLimit, $this->eventPublisher()),
+            $allowInsecureHttp ?? ($this->options['allow_insecure_http'] ?? false),
+        );
     }
 
     /** Authorization, audit and the session-check tokens of Background Mode. The audit is the module's audit: there is no option to turn it off. */

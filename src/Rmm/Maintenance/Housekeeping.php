@@ -97,6 +97,7 @@ final class Housekeeping
         private readonly ?\RivetCore\Rmm\Store\RmmDataStores $stores = null,
         private readonly ?\RivetCore\Rmm\Remote\BackgroundSessionRetention $backgroundSessions = null,
         private readonly ?\RivetCore\Rmm\Remote\RemoteSettings $remoteSettings = null,
+        private readonly ?\RivetCore\Rmm\Remote\ConsoleRetention $console = null,
     ) {
         $this->metrics = $metricStore ?? $metricSink;
         $this->maintenance = $storeMaintenance ?? $storage;
@@ -244,6 +245,12 @@ final class Housekeeping
             if ($this->backgroundSessions !== null && $this->remoteSettings !== null) {
                 foreach ($this->backgroundSessions->prune($this->remoteSettings->limits()['background_session_retention_days']) as $k => $v) {
                     $out['pruned_background_' . $k] = $v;
+                }
+            }
+            // Rivet Console redeem codes and sessions past their retention (whatever the switch says); the audit log is never touched.
+            if ($this->console !== null && $this->remoteSettings !== null) {
+                foreach ($this->console->prune($this->remoteSettings->limits()['console_session_retention_days']) as $k => $v) {
+                    $out['pruned_console_' . $k] = $v;
                 }
             }
         } catch (\Throwable $e) {
