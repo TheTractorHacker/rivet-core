@@ -29,6 +29,31 @@ final class PackageCatalog
     {
     }
 
+    /**
+     * CORE-15: does something install the NEWEST version of this package by itself? An install assignment without a pinned version, or an enabled
+     * auto-install policy ({@see DeployExpectations::versionFor()} follows the newest non-retired version in both cases).
+     */
+    public function followsNewest(int $packageId): bool
+    {
+        return $this->sql->one("SELECT 1 AS x FROM rmm_package_assignments WHERE package_id = ? AND action = 'install' AND version_id IS NULL LIMIT 1", [$packageId]) !== null
+            || $this->autoInstalls($packageId);
+    }
+
+    /**
+     * CORE-15: is any install of this package set up to happen without a person starting it (any install assignment, pinned or not, or an
+     * enabled auto-install policy)? Its vendor parameters feed the install command of every such install.
+     */
+    public function installsByItself(int $packageId): bool
+    {
+        return $this->sql->one("SELECT 1 AS x FROM rmm_package_assignments WHERE package_id = ? AND action = 'install' LIMIT 1", [$packageId]) !== null
+            || $this->autoInstalls($packageId);
+    }
+
+    private function autoInstalls(int $packageId): bool
+    {
+        return $this->sql->one("SELECT 1 AS x FROM rmm_package_auto WHERE package_id = ? AND scope <> 'off' LIMIT 1", [$packageId]) !== null;
+    }
+
     public function sources(): PackageSourcePolicyInterface
     {
         return $this->sources;

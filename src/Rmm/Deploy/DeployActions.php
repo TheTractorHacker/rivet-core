@@ -237,9 +237,7 @@ final class DeployActions
      */
     private function liveVersionGate(RmmPrincipal $who, int $packageId): ?ActionResult
     {
-        $floating = $this->sql->one("SELECT 1 AS x FROM rmm_package_assignments WHERE package_id = ? AND action = 'install' AND version_id IS NULL LIMIT 1", [$packageId]) !== null
-            || $this->sql->one("SELECT 1 AS x FROM rmm_package_auto WHERE package_id = ? AND scope <> 'off' LIMIT 1", [$packageId]) !== null;
-        if (!$floating) {
+        if (!$this->catalog->followsNewest($packageId)) {
             return null;
         }
         if (($e = $this->fleetRole($who, RmmAbility::SOFTWARE_DEPLOY)) !== null) {
