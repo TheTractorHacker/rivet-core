@@ -122,6 +122,10 @@ final class MeshService
         }
         $keyHex = $this->box->decrypt((string) $cfg['mesh_login_key_enc']);
         $domain = (string) $cfg['mesh_domain'];
+        if (MeshCookie::usesDisplayName((string) $cfg['mesh_account_template'])) {
+            // CORE-13: the display name is user-editable, so it must not pick the Mesh account. Fail closed until an administrator changes the template.
+            return self::fail('not_configured', 'The MeshCentral account name uses {username}, which is no longer allowed (a technician could rename themselves into another Mesh account). An administrator must change it to use {user_id} in the RMM MeshCentral settings.');
+        }
         $account = MeshCookie::accountName((string) $cfg['mesh_account_template'], $userId, $username);
         if ($keyHex === '' || $account === '') {
             return self::fail('not_configured', 'The MeshCentral login key or account is missing.');

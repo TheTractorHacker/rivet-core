@@ -26,9 +26,20 @@ final class MeshSharedAccountWarningTest extends RmmTestCase
 
     public function testPerTechnicianNamesAndDisabledMeshAreNotWarnedAbout(): void
     {
-        foreach (['rivet-{user_id}', '{username}'] as $tpl) {
+        foreach (['rivet-{user_id}'] as $tpl) {
             $this->assertSame([], array_filter($this->save(['mesh_account_template' => $tpl]), static fn ($x) => str_contains((string) $x, 'same Mesh account')), $tpl);
         }
         $this->assertSame([], $this->save(['mesh_account_template' => 'support', 'mesh_enabled' => 0, 'mesh_url' => '']));
+    }
+
+    /** CORE-13: the display name is user-editable, so a {username} template is refused at save time. */
+    public function testTheDisplayNamePlaceholderIsRefused(): void
+    {
+        foreach (['{username}', 'rit-{username}', 'svc-{user_id}-{username}'] as $tpl) {
+            $r = $this->h->module->admin()->saveMesh($this->h->principal(), ['mesh_enabled' => 1, 'mesh_url' => 'https://mesh.example.test', 'mesh_account_template' => $tpl]);
+            $this->assertFalse($r->ok, $tpl);
+            $this->assertSame(422, $r->http);
+            $this->assertStringContainsString('{user_id}', $r->message);
+        }
     }
 }

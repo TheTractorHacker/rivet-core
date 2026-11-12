@@ -313,6 +313,30 @@ final class RemoteToolsTest extends RemoteTestCase
         }
     }
 
+    /** CORE-13: an install that stored a {username} template before the fix cannot launch, and a renamed technician never reaches another account. */
+    public function testALegacyUsernameTemplateRefusesTheLaunchInsteadOfTrustingTheDisplayName(): void
+    {
+        $mock = new \RivetCore\Tests\Support\MockMeshServer();
+        try {
+            $key = \RivetCore\Rmm\Mesh\MeshCookie::newLoginKey();
+            $this->assertTrue($this->h->module->admin()->saveMesh($this->admin, ['mesh_enabled' => 1, 'mesh_url' => $mock->url(), 'mesh_login_key' => $key, 'mesh_account_template' => 'rit-{user_id}'])->ok);
+            $this->assertSame(200, $this->api('PUT', [$this->d(), 'remote', 'node'], $this->admin, ['node_id' => 'node//' . str_repeat('A', 64)])[0]);
+            [$c, $j] = $this->api('POST', [$this->d(), 'remote'], $this->tech, ['force' => true]);
+            $this->assertSame(200, $c);
+            $login = \RivetCore\Rmm\Mesh\MeshCookie::decode((string) urldecode((string) preg_replace('/^.*[?&]login=([^&]*).*$/', '$1', $j['url'])), $key);
+            $this->assertSame('rit-' . $this->tech->userId, substr((string) ($login['u'] ?? ''), -strlen('rit-' . $this->tech->userId)), 'derived from the immutable user id');
+            // a row written by an older release
+            $this->h->q("UPDATE endpoint_agent_settings SET mesh_account_template='{username}' WHERE id=1");
+            $this->h->module->settings()->get(true);
+            [$c, $j] = $this->api('POST', [$this->d(), 'remote'], $this->tech, ['force' => true]);
+            $this->assertSame([409, 'not_configured'], [$c, $j['code']]);
+            $this->assertStringContainsString('{user_id}', $j['error']);
+            $this->assertArrayNotHasKey('url', $j);
+        } finally {
+            $mock->stop();
+        }
+    }
+
     public function testMeshTerminalAndFilesViews(): void
     {
         $mock = new \RivetCore\Tests\Support\MockMeshServer();

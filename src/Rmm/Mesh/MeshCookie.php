@@ -79,10 +79,26 @@ final class MeshCookie
         return is_array($data) ? $data : null;
     }
 
-    /** The MeshCentral account name for a technician: template placeholders replaced, then reduced to [A-Za-z0-9._-]. */
+    /** True when the template uses the retired `{username}` placeholder (CORE-13): see {@see self::accountName()}. */
+    public static function usesDisplayName(string $template): bool
+    {
+        return str_contains($template, '{username}');
+    }
+
+    /**
+     * The MeshCentral account name for a technician: `{user_id}` replaced, then reduced to [A-Za-z0-9._-].
+     *
+     * CORE-13: `{username}` is no longer substituted. The name is the technician's display name, which the technician can edit, and the
+     * login token signs in as whatever account is named: renaming oneself "admin" yielded a token for the Mesh admin. A template that
+     * still contains `{username}` now yields '' (the launch is refused, fail closed) instead of an account chosen by the caller.
+     * `$username` is kept only for signature compatibility and is ignored.
+     */
     public static function accountName(string $template, int $userId, string $username): string
     {
-        $account = str_replace(['{user_id}', '{username}'], [(string) $userId, (string) preg_replace('/[^A-Za-z0-9._-]/', '', $username)], $template);
+        if (self::usesDisplayName($template)) {
+            return '';
+        }
+        $account = str_replace('{user_id}', (string) $userId, $template);
 
         return (string) preg_replace('/[^A-Za-z0-9._-]/', '', $account);
     }

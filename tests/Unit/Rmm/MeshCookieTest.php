@@ -74,8 +74,13 @@ final class MeshCookieTest extends TestCase
     public function testAccountName(): void
     {
         $this->assertSame('rivetit-support', M::accountName('rivetit-support', 5, 'bob'));
-        $this->assertSame('svc-5-bob.smith', M::accountName('svc-{user_id}-{username}', 5, 'bob.smith'));
-        $this->assertSame('svc-5-bobevil', M::accountName('svc-{user_id}-{username}', 5, "bob/ evil\n"));
+        $this->assertSame('svc-5', M::accountName('svc-{user_id}', 5, 'bob.smith'));
+        // CORE-13: the editable display name never picks the Mesh account; a {username} template yields no account at all.
+        foreach (['{username}', 'rit-{username}', 'svc-{user_id}-{username}'] as $tpl) {
+            $this->assertSame('', M::accountName($tpl, 5, 'admin'), $tpl);
+            $this->assertTrue(M::usesDisplayName($tpl));
+        }
+        $this->assertFalse(M::usesDisplayName('svc-{user_id}'));
         $this->assertSame('ab', M::accountName('a b/', 1, 'x'));
         $this->assertSame('', M::accountName('///', 1, 'x'));
     }
