@@ -1433,6 +1433,53 @@ final class TenantIsolationMatrixTest extends TestCase
         }
     }
 
+    /** TEN-12: the scope id is normalised once; no spelling of client B's id (or of anything else odd) gets a window or an escalation policy past a caller limited to client A. */
+    public function testScopeIdSpellingsCannotSmuggleAnotherClientIntoAWindowOrPolicy(): void
+    {
+        $e = self::env();
+        $aa = $e->h->module->alertingActions();
+        $b = $e->clientB();
+        $spellings = [(string) $b, '0' . $b, ' ' . $b, $b . ' ', (float) $b, true, [], null, -$b, 99999999999999, (string) PHP_INT_MAX, '1e1', (string) $b . 'x'];
+        $win = static fn (array $over): array => $over + ['name' => 'Sp' . random_int(1, 1 << 30), 'kind' => 'once', 'starts_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 3600),
+            'ends_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 7200)];
+        $pol = static fn (array $over): array => $over + ['name' => 'Sp' . random_int(1, 1 << 30), 'steps' => [['after_min' => 0, 'targets' => [['type' => 'user', 'ref' => '1']]]]];
+        $ownWindow = $e->get(E::OWN, 'window_client');
+        $ownPolicy = $e->get(E::OWN, 'esc_client');
+        foreach (['client', 'device'] as $type) {
+            foreach ($spellings as $i => $sp) {
+                $label = "$type spelling #$i " . json_encode($sp);
+                $before = $e->snapshot();
+                $calls = [
+                    'createWindow' => fn () => $aa->createWindow($e->tech, $win(['scope_type' => $type, 'scope_id' => $sp])),
+                    'updateWindow' => fn () => $aa->updateWindow($e->tech, $ownWindow, ['scope_type' => $type, 'scope_id' => $sp]),
+                    'createPolicy' => fn () => $aa->createPolicy($e->tech, $pol(['scope_type' => $type, 'scope_id' => $sp])),
+                    'updatePolicy' => fn () => $aa->updatePolicy($e->tech, $ownPolicy, ['scope_type' => $type, 'scope_id' => $sp]),
+                ];
+                foreach ($calls as $what => $call) {
+                    $r = $call();
+                    $this->assertFalse($r->ok, "$what $label must be refused");
+                    $this->assertContains($r->http, [403, 404, 422], "$what $label");
+                }
+                $this->assertSame([], E::diff($before, $e->snapshot()), "$label: nothing may change");
+            }
+            // the same ids as clean integers or digit strings of the caller's OWN client pass (the control), and "05" style padding is read as the number
+            $devA = (string) $e->devA;
+            foreach ([$type === 'client' ? [$e->clientA(), (string) $e->clientA(), '0' . $e->clientA()] : [$e->devA, $devA]][0] as $good) {
+                $this->assertTrue($aa->createWindow($e->tech, $win(['scope_type' => $type, 'scope_id' => $good]))->ok, "control: $type " . json_encode($good));
+                $this->assertTrue($aa->createPolicy($e->tech, $pol(['scope_type' => $type, 'scope_id' => $good]))->ok, "control: policy $type " . json_encode($good));
+            }
+            $rows = $e->h->rows("SELECT scope_id FROM rmm_maintenance_windows WHERE scope_type = '$type' AND scope_id = " . ($type === 'client' ? $e->clientA() : $e->devA));
+            $this->assertNotSame([], $rows);
+        }
+        // a string "B" id in the store's own terms: a stored window/policy never lands on client B
+        $this->assertSame('0', (string) $e->h->one("SELECT COUNT(*) FROM rmm_maintenance_windows WHERE scope_type = 'client' AND scope_id = $b AND window_id <> " . (int) $e->b['window_client']));
+        // global scope still needs rmm.admin AND a caller who sees every client
+        $this->assertSame(403, $aa->createWindow($e->tech, $win(['scope_type' => 'all']))->http);
+        $this->assertSame(403, $aa->createPolicy($e->tech, $pol(['scope_type' => 'all']))->http);
+        $this->assertTrue($aa->createWindow($e->admin, $win(['scope_type' => 'all']))->ok);
+        $this->assertSame(403, $aa->createWindow(new RmmPrincipal(30, 'NoAdmin'), $win(['scope_type' => 'all']))->http);
+    }
+
     public function testEveryIdBearingMethodIsInTheMatrix(): void
     {
         $covered = [];
