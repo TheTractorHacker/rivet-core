@@ -226,11 +226,11 @@ func TestExtractJSON(t *testing.T) {
 }
 
 func TestJobTypeNamesMatchTheJobsPackage(t *testing.T) {
-	if JobScan != jobs.TypePatchScan || JobInstall != jobs.TypePatchInstall {
+	if JobScan != jobs.TypePatchScan || JobInstall != jobs.TypePatchInstall || JobConfigure != jobs.TypePatchConfigure {
 		t.Fatal("patch and jobs disagree on the wire names")
 	}
 	h := (Engine{}).Handlers()
-	if h[JobScan] == nil || h[JobInstall] == nil || len(h) != 2 {
+	if h[JobScan] == nil || h[JobInstall] == nil || h[JobConfigure] == nil || len(h) != 3 {
 		t.Fatal("handlers")
 	}
 }

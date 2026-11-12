@@ -5183,10 +5183,11 @@
         "RivetCore\\Rmm\\Patch\\PatchActions": {
             "kind": "final class",
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Patch\\PatchScanService $scans, RivetCore\\Rmm\\Patch\\PatchInstallService $installs, RivetCore\\Rmm\\Patch\\PatchApprovalService $approvals, RivetCore\\Rmm\\Patch\\PatchPolicyStore $policies, RivetCore\\Rmm\\Patch\\PatchReader $reader, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Patch\\PatchScanService $scans, RivetCore\\Rmm\\Patch\\PatchInstallService $installs, RivetCore\\Rmm\\Patch\\PatchApprovalService $approvals, RivetCore\\Rmm\\Patch\\PatchPolicyStore $policies, RivetCore\\Rmm\\Patch\\PatchReader $reader, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Patch\\PatchConfigureService $configure = NULL)",
                 "approve": "approve(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
                 "assignPolicy": "assignPolicy(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $policyId, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
                 "compliance": "compliance(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $filters): RivetCore\\Rmm\\Technician\\ActionResult",
+                "configure": "configure(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
                 "decideApproval": "decideApproval(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $approval, array $request, bool $approve, Closure $decide): RivetCore\\Rmm\\Technician\\ActionResult",
                 "decline": "decline(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
                 "deletePolicy": "deletePolicy(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $policyId): RivetCore\\Rmm\\Technician\\ActionResult",
@@ -5232,8 +5233,25 @@
         "RivetCore\\Rmm\\Patch\\PatchComplianceService": {
             "kind": "final class",
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Checks\\CheckEvaluator $checks)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Checks\\CheckEvaluator $checks, ?RivetCore\\Rmm\\Patch\\PatchPolicyStore $policies = NULL)",
                 "evaluate": "evaluate(array $dev): array"
+            }
+        },
+        "RivetCore\\Rmm\\Patch\\PatchConfigureService": {
+            "kind": "final class",
+            "constants": {
+                "LOOK_S": 600,
+                "QUIET_S": 86400,
+                "RETRY_S": 3600
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Patch\\PatchScanService $scans, RivetCore\\Rmm\\Patch\\PatchPolicyStore $policies, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, ?RivetCore\\Rmm\\Patch\\PatchComplianceService $compliance = NULL)",
+                "applyJob": "applyJob(array $dev, array $job): bool",
+                "capable": "capable(array $dev): bool",
+                "lastResult": "lastResult(int $deviceId): ?array",
+                "queue": "queue(array $dev, string $mode, array $opts = []): array",
+                "reconcileDue": "reconcileDue(array $limits, int $batch): array",
+                "state": "state(int $deviceId): ?array"
             }
         },
         "RivetCore\\Rmm\\Patch\\PatchInstallService": {
@@ -5253,6 +5271,7 @@
         "RivetCore\\Rmm\\Patch\\PatchJobTypes": {
             "kind": "final class",
             "methods": {
+                "configure": "static configure(array $p): array",
                 "install": "static install(array $p): array",
                 "register": "static register(RivetCore\\Rmm\\Job\\JobTypeRegistry $r): void",
                 "scan": "static scan(array $p): array"
@@ -5275,6 +5294,11 @@
                     "reboot_confirm": false,
                     "max_minutes": 60,
                     "two_person": false
+                },
+                "WINDOWS_DEFAULTS": {
+                    "windows_update_mode": "leave",
+                    "windows_feature_target": "none",
+                    "windows_quality_defer_days": 0
                 }
             },
             "methods": {
@@ -5302,6 +5326,11 @@
                     "fri",
                     "sat",
                     "sun"
+                ],
+                "WINDOWS_KEYS": [
+                    "windows_update_mode",
+                    "windows_feature_target",
+                    "windows_quality_defer_days"
                 ]
             },
             "methods": {
@@ -5338,10 +5367,16 @@
         "RivetCore\\Rmm\\Patch\\PatchProtocol": {
             "kind": "final class",
             "constants": {
+                "ALL_JOB_TYPES": [
+                    "patch_scan",
+                    "patch_install",
+                    "patch_configure"
+                ],
                 "APPROVAL_MODES": [
                     "manual",
                     "auto"
                 ],
+                "CAP_CONFIGURE": "patch:configure",
                 "CAP_INSTALL": "patch:install",
                 "CAP_SCAN": "patch:scan",
                 "CATEGORIES": [
@@ -5355,7 +5390,28 @@
                     "other"
                 ],
                 "CHECK_COMPLIANCE": "patch.compliance",
+                "CHECK_FEATURE_VERSION": "patch.feature_version",
                 "CHECK_INSTALL_FAILED": "patch.install_failed",
+                "CONFIGURE_MODES": [
+                    "dry_run",
+                    "apply"
+                ],
+                "CONFIGURE_OUTCOMES": [
+                    "unchanged",
+                    "changed",
+                    "restored",
+                    "would_change",
+                    "would_restore",
+                    "externally_managed",
+                    "cannot_hold"
+                ],
+                "DEFER_DAYS_MAX": 30,
+                "EXTERNAL_SOURCES": [
+                    "wsus",
+                    "gpo",
+                    "mdm",
+                    "changed_since"
+                ],
                 "FAILED_RESULTS": [
                     "failed",
                     "eula_required",
@@ -5363,8 +5419,12 @@
                     "locked"
                 ],
                 "FEATURE": "patching",
+                "FEATURE_TARGET_HOLD": "hold",
+                "FEATURE_TARGET_NONE": "none",
+                "FEATURE_VERSION_RE": "/^[0-9]{2}H[12]$/D",
                 "IDS_MAX": 40,
                 "IDS_MAX_CHARS": 1000,
+                "JOB_CONFIGURE": "patch_configure",
                 "JOB_INSTALL": "patch_install",
                 "JOB_SCAN": "patch_scan",
                 "JOB_TYPES": [
@@ -5379,6 +5439,8 @@
                     "driver",
                     "other"
                 ],
+                "LEDGER_CONFIGURE": "configure",
+                "LEDGER_WU_STATE": "wu_state",
                 "MANAGERS": [
                     "wua",
                     "apt",
@@ -5439,6 +5501,10 @@
                     "maintenance",
                     "daily"
                 ],
+                "WU_MODES": [
+                    "leave",
+                    "managed"
+                ],
                 "WU_STATES": [
                     "running",
                     "stopped",
@@ -5448,8 +5514,11 @@
             },
             "methods": {
                 "capabilityFor": "static capabilityFor(string $jobType): ?string",
+                "compareFeatureVersions": "static compareFeatureVersions(string $a, string $b): int",
                 "isPatchJob": "static isPatchJob(mixed $type): bool",
-                "validId": "static validId(mixed $id, string $os): bool"
+                "validFeatureVersion": "static validFeatureVersion(mixed $v): bool",
+                "validId": "static validId(mixed $id, string $os): bool",
+                "wuStateRowId": "static wuStateRowId(int $deviceId): string"
             }
         },
         "RivetCore\\Rmm\\Patch\\PatchReader": {
@@ -5458,7 +5527,7 @@
                 "RING_SAMPLE": 1000
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Patch\\PatchPolicyStore $policies, ?RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy = NULL, ?RivetCore\\Rmm\\Store\\PatchHistoryStore $history = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Patch\\PatchPolicyStore $policies, ?RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy = NULL, ?RivetCore\\Rmm\\Store\\PatchHistoryStore $history = NULL, ?RivetCore\\Rmm\\Patch\\PatchConfigureService $configure = NULL)",
                 "deviceHistory": "deviceHistory(int $deviceId, int $limit = 100, int $offset = 0): array",
                 "deviceUpdates": "deviceUpdates(int $deviceId, array $f = [], int $limit = 100, int $offset = 0): array",
                 "fleetUpdates": "fleetUpdates(?array $visible, ?int $clientId, string $status = 'available', int $limit = 100, int $offset = 0): array",
@@ -5475,18 +5544,40 @@
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Device\\DeviceRepository $devices, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Patch\\PatchApprovalService $approvals = NULL, ?RivetCore\\Rmm\\Patch\\PatchComplianceService $compliance = NULL)",
                 "apply": "apply(array $dev, array $r, ?string $jobId): array",
                 "applyJob": "applyJob(array $dev, array $job): bool",
-                "applyPending": "applyPending(int $limit, ?RivetCore\\Rmm\\Patch\\PatchInstallService $installs): int",
+                "applyPending": "applyPending(int $limit, ?RivetCore\\Rmm\\Patch\\PatchInstallService $installs, ?RivetCore\\Rmm\\Patch\\PatchConfigureService $configures = NULL): int",
                 "cleanReport": "static cleanReport(mixed $raw, string $os): array",
                 "pendingJob": "pendingJob(int $deviceId, string $type): ?string",
                 "recordFailure": "recordFailure(array $dev, string $error, ?string $jobId): void",
-                "request": "request(array $dev, ?int $userId, string $source = 'manual'): array"
+                "request": "request(array $dev, ?int $userId, string $source = 'manual'): array",
+                "storeWindowsState": "storeWindowsState(array $dev, array $state, bool $due): void"
             }
         },
         "RivetCore\\Rmm\\Patch\\PatchScheduler": {
             "kind": "final class",
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Patch\\PatchScanService $scans, RivetCore\\Rmm\\Patch\\PatchInstallService $installs, RivetCore\\Rmm\\Patch\\PatchApprovalService $approvals, RivetCore\\Rmm\\Patch\\PatchComplianceService $compliance, RivetCore\\Rmm\\Patch\\PatchPolicyStore $policies, ?RivetCore\\Rmm\\Alerting\\MaintenanceService $maintenance = NULL, ?RivetCore\\Rmm\\Contracts\\ScheduleGateInterface $gate = NULL, ?RivetCore\\Rmm\\Store\\PatchHistoryStore $history = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Patch\\PatchScanService $scans, RivetCore\\Rmm\\Patch\\PatchInstallService $installs, RivetCore\\Rmm\\Patch\\PatchApprovalService $approvals, RivetCore\\Rmm\\Patch\\PatchComplianceService $compliance, RivetCore\\Rmm\\Patch\\PatchPolicyStore $policies, ?RivetCore\\Rmm\\Alerting\\MaintenanceService $maintenance = NULL, ?RivetCore\\Rmm\\Contracts\\ScheduleGateInterface $gate = NULL, ?RivetCore\\Rmm\\Store\\PatchHistoryStore $history = NULL, ?RivetCore\\Rmm\\Patch\\PatchConfigureService $configures = NULL)",
                 "run": "run(): array"
+            }
+        },
+        "RivetCore\\Rmm\\Patch\\WindowsUpdatePlan": {
+            "kind": "final class",
+            "constants": {
+                "KEYS": {
+                    "no_auto_update": "i",
+                    "au_options": "i",
+                    "target_release_version": "i",
+                    "target_release_version_info": "s",
+                    "product_version": "s",
+                    "defer_quality_updates": "i",
+                    "defer_quality_days": "i"
+                }
+            },
+            "methods": {
+                "cleanResult": "static cleanResult(string $output): ?array",
+                "cleanState": "static cleanState(mixed $raw): ?array",
+                "desired": "static desired(array $w, ?array $state): array",
+                "evaluate": "static evaluate(array $w, ?array $state, bool $capable): array",
+                "targetVersion": "static targetVersion(array $w, ?array $state): ?string"
             }
         },
         "RivetCore\\Rmm\\Policy\\EffectiveConfig": {
@@ -6191,6 +6282,7 @@
                 "patchApi": "patchApi(): RivetCore\\Rmm\\Http\\PatchApi",
                 "patchApprovals": "patchApprovals(): RivetCore\\Rmm\\Patch\\PatchApprovalService",
                 "patchCompliance": "patchCompliance(): RivetCore\\Rmm\\Patch\\PatchComplianceService",
+                "patchConfigure": "patchConfigure(): RivetCore\\Rmm\\Patch\\PatchConfigureService",
                 "patchInstalls": "patchInstalls(): RivetCore\\Rmm\\Patch\\PatchInstallService",
                 "patchPolicies": "patchPolicies(): RivetCore\\Rmm\\Patch\\PatchPolicyStore",
                 "patchReader": "patchReader(): RivetCore\\Rmm\\Patch\\PatchReader",

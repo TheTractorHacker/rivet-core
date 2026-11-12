@@ -89,11 +89,14 @@ abstract class PatchTestCase extends RmmTestCase
     }
 
     /** @return list<string> */
-    protected static function caps(string $os = 'windows', bool $patch = true): array
+    protected static function caps(string $os = 'windows', bool $patch = true, bool $configure = false): array
     {
         $caps = ['job:collect', 'job:reboot', $os === 'windows' ? 'job:powershell' : 'job:shell'];
         if ($patch) {
             array_push($caps, 'job:patch_scan', 'job:patch_install', 'patch:scan', 'patch:install');
+        }
+        if ($configure) {
+            array_push($caps, 'job:patch_configure', 'patch:configure');   // Windows Update control (1.0.0-rc.65): only an agent that has it announces it
         }
         sort($caps);
 

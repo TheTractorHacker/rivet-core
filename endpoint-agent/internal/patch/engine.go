@@ -53,6 +53,7 @@ type Engine struct {
 	FS    FS               // nil = the real file system
 	Now   func() time.Time // nil = time.Now
 	Local *time.Location   // zone of the zone-less timestamps in the Linux logs; nil = time.Local
+	Reg   Registry         // the Windows registry (patch_configure and the policy state of a scan); nil = the real one on Windows, none elsewhere
 }
 
 // installMu serialises patch_install on one machine (the executor may run several jobs at once): a second concurrent install fails fast with busy.
@@ -95,7 +96,48 @@ func (e Engine) ps() PSRunner {
 
 // Handlers returns the job handlers by job type for the executor.
 func (e Engine) Handlers() map[string]remote.Handler {
-	return map[string]remote.Handler{JobScan: e.Scan, JobInstall: e.Install}
+	return map[string]remote.Handler{JobScan: e.Scan, JobInstall: e.Install, JobConfigure: e.Configure}
+}
+
+func (e Engine) reg() Registry {
+	if e.Reg != nil {
+		return e.Reg
+	}
+	return defaultRegistry()
+}
+
+// configureMu serialises patch_configure on one machine.
+var configureMu sync.Mutex
+
+// Configure is patch_configure (Windows only): see wupolicy.go.
+func (e Engine) Configure(ctx context.Context, raw json.RawMessage, maxOut int) remote.Result {
+	if e.goos() != "windows" {
+		return remote.Cannot(DetailUnsupported)
+	}
+	p, err := ParseConfigureParams(raw)
+	if err != nil {
+		return remote.Cannot(DetailInvalidParams)
+	}
+	r := e.reg()
+	if r == nil {
+		return remote.Cannot(DetailUnsupported)
+	}
+	if !configureMu.TryLock() {
+		return remote.Fail(DetailBusy, nil)
+	}
+	defer configureMu.Unlock()
+	if ctx.Err() != nil {
+		return remote.Fail("cancelled", nil)
+	}
+	out, err := Configure(r, p, e.now())
+	if err != nil {
+		return remote.Fail("registry_error", map[string]any{"message": clip(err.Error(), maxDetail)})
+	}
+	b, err := json.Marshal(out)
+	if err != nil || len(b) > maxOut {
+		return remote.Fail("output_cap_too_small", nil)
+	}
+	return remote.Result{OK: true, Output: string(b)}
 }
 
 // Scan is patch_scan.
