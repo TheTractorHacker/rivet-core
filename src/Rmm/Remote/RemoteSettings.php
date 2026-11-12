@@ -29,6 +29,8 @@ final class RemoteSettings
         'logs_interval_s' => [30, 3600, 60],
         // Ended Background Mode session rows (never active ones, never the audit log, which has its own retention).
         'background_session_retention_days' => [30, 3650, 365],
+        // Rivet Console sessions (ended, or never ended and past their token's 12 hour cap); redeem codes go after a day. Never the audit log.
+        'console_session_retention_days' => [30, 3650, 365],
     ];
 
     public const FILE_TRANSFER_RISK = 'File transfer lets technicians copy files off managed devices and lets administrators put files onto them. '

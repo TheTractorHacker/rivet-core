@@ -135,6 +135,54 @@ final class MeshService
     }
 
     /**
+     * What the Rivet Console redeem hands the console: the Mesh server (the configured address, normalised to a bare origin), the domain, the technician's account id and a
+     * login cookie for it. Core's own record decides every value (`mesh_url`, `mesh_domain`, `mesh_account_template`, the technician's id and name), never the caller. No network
+     * call is made (the launch already probed the server) and nothing here is stored or logged. `userid` is the cookie's `u` claim, byte for byte.
+     *
+     * @param bool $once add the random `once` claim (setting `console_cookie_once`)
+     * @return array{ok:true,server:string,domain:string,account:string,userid:string,cookie:string}|array{ok:false,code:string}
+     */
+    public function consoleCredentials(int $userId, string $username, bool $once): array
+    {
+        $cfg = $this->settings->get();
+        if ((int) $cfg['mesh_enabled'] !== 1 || (string) $cfg['mesh_url'] === '' || empty($cfg['mesh_login_key_enc'])) {
+            return ['ok' => false, 'code' => 'not_configured'];
+        }
+        $base = $this->normalizeUrl((string) $cfg['mesh_url']);
+        $p = $base === null ? false : parse_url($base);
+        if ($base === null || $p === false || empty($p['scheme']) || empty($p['host'])) {
+            return ['ok' => false, 'code' => 'not_configured'];
+        }
+        $server = $p['scheme'] . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '');
+        $domain = (string) $cfg['mesh_domain'];
+        $account = MeshCookie::accountName((string) $cfg['mesh_account_template'], $userId, $username);
+        $keyHex = $this->box->decrypt((string) $cfg['mesh_login_key_enc']);
+        if ($keyHex === '' || $account === '') {
+            return ['ok' => false, 'code' => 'not_configured'];
+        }
+        $cookie = MeshCookie::login($keyHex, $domain, $account, $this->sql->time(), null, $once);
+        if ($cookie === null) {
+            return ['ok' => false, 'code' => 'not_configured'];
+        }
+
+        return ['ok' => true, 'server' => $server, 'domain' => $domain, 'account' => $account, 'userid' => MeshCookie::userId($domain, $account), 'cookie' => $cookie];
+    }
+
+    /** True when the configured Mesh address is https, or the module allows insecure http (the Rivet Console refuses a non-https `mesh.server`). */
+    public function consoleServerAllowed(): bool
+    {
+        $url = trim((string) $this->settings->get()['mesh_url']);
+
+        return $this->allowInsecureHttp || str_starts_with(strtolower($url), 'https://');
+    }
+
+    /** The MeshCentral domain id the launch uses (`mesh_domain`, empty for the default domain). */
+    public function domain(): string
+    {
+        return (string) $this->settings->get()['mesh_domain'];
+    }
+
+    /**
      * @return array{ok:bool,code:string,message:string}
      */
     private static function fail(string $code, string $message): array

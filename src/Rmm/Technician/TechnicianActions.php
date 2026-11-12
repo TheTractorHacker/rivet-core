@@ -16,6 +16,7 @@ use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Mesh\MeshService;
 use RivetCore\Rmm\Remote\BackgroundSessionService;
 use RivetCore\Rmm\Remote\ConsoleLink;
+use RivetCore\Rmm\Remote\ConsoleSessionService;
 use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Update\UpdateService;
@@ -50,6 +51,7 @@ final class TechnicianActions
         private readonly ?ScriptActions $library = null,
         private readonly ?\RivetCore\Rmm\Settings\RmmSettings $settings = null,
         private readonly ?BackgroundSessionService $background = null,
+        private readonly ?ConsoleSessionService $consoleSessions = null,
     ) {
     }
 
@@ -196,8 +198,9 @@ final class TechnicianActions
      *
      * `$console = true` asks for the optional Rivet Console. With the `remote_console` switch OFF (the default) the flag is ignored and the result is exactly the stock
      * one (`url`, `session_id`). With it ON the same checks and the same stock URL apply and the result also carries `console` ({@see ConsoleLink::descriptor()}):
-     * `kind`, `url` (the credential-free `rivetconsole://` deep link) and `fallback_url` (the stock URL, for when the app is not installed). `$consoleKind` may be
-     * `terminal-ps` for a terminal view; by default the kind follows `$view`. `console` is null when no deep link can be built (e.g. an unacceptable node id).
+     * `url` (the `rivetconsole://connect?v=1&origin=...&code=...` deep link, carrying a single-use code valid 60 seconds and no login token, see {@see ConsoleSessionService})
+     * and `fallback_url` (the stock URL, for when the app is not installed). `$consoleKind` may be `terminal-ps` for a terminal view; by default the kind follows `$view`.
+     * Without a configured `console_public_url` the launch is refused (409 `not_configured`, audited, nothing minted); a denied launch mints nothing.
      */
     public function launchRemote(RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = null, ?string $userAgent = null, string $view = 'desktop', string $mode = 'standard', bool $console = false, ?string $consoleKind = null): ActionResult
     {
@@ -245,6 +248,21 @@ final class TechnicianActions
                 return ActionResult::fail(422, 'invalid', 'The console kind must be desktop, terminal, terminal-ps or files, and fit the view.');
             }
         }
+        if ($kind !== null && ($this->consoleSessions === null || $this->consoleSessions->origin() === null)) {
+            $this->audit->record('Remote Failed', "{$who->userName} Rivet Console launch on device $deviceId did not start: not_configured", $client, $asset);
+
+            return ActionResult::fail(409, 'not_configured', 'The Rivet Console is not configured: an administrator has to set its public address (console_public_url) in the RMM remote-tools settings.');
+        }
+        if ($kind !== null && !$this->mesh->consoleServerAllowed()) {
+            $this->audit->record('Remote Failed', "{$who->userName} Rivet Console launch on device $deviceId did not start: MeshCentral address is not https", $client, $asset);
+
+            return ActionResult::fail(409, 'not_configured', 'The Rivet Console needs an https MeshCentral address; the configured one is not https. Use the MeshCentral link, or ask an administrator to change the MeshCentral address.');
+        }
+        if ($kind !== null && $this->consoleSessions->approvalRequired($client)) {
+            $this->audit->record('Remote Denied', "User {$who->userId} denied Rivet Console session on device $deviceId: approval_required", $client, $asset);
+
+            return ActionResult::fail(403, 'approval_required', ConsoleSessionService::APPROVAL_MESSAGE);
+        }
         $r = $this->mesh->launch($dev, $who->userName, $who->userId, $force, $view);
         if (!$r['ok']) {
             $this->audit->record('Remote Failed', "{$who->userName} remote session on device $deviceId did not start: {$r['code']}", $client, $asset);
@@ -253,14 +271,24 @@ final class TechnicianActions
             return ActionResult::fail($http, $r['code'], $r['message']);
         }
         $sessionId = (string) ($r['session_id'] ?? '');
+        $url = (string) ($r['url'] ?? '');
+        $console = null;
+        if ($kind !== null) {
+            // Only with the switch on, and only now that every check passed: the single-use code is minted here. Nothing about the code is logged.
+            $console = $this->consoleSessions->issue($who, $dev, $kind, (string) $this->mesh->nodeFor($deviceId), $this->mesh->domain(), $sessionId, $url, $ip);
+            if ($console === null) {
+                $this->audit->record('Remote Failed', "{$who->userName} Rivet Console launch on device $deviceId did not start: unsupported node or Mesh domain", $client, $asset);
+
+                return ActionResult::fail(409, 'unsupported', 'The Rivet Console cannot open this device: its MeshCentral node id or domain is not acceptable. Use the MeshCentral link instead.');
+            }
+        }
         $this->bridge->recordRemoteSession($asset, $client, $who->userId, 'meshcentral', 'meshcentral:session:' . $sessionId,
             $ip === null ? null : substr($ip, 0, 100), $userAgent === null ? null : substr($userAgent, 0, 300));
         $this->audit->record('Remote Session', "{$who->userName} opened MeshCentral " . ($view === 'desktop' ? '' : "$view ") . "session $sessionId on device $deviceId" . ($force ? ' (forced while offline)' : '') . ($kind !== null ? " (Rivet Console link, $kind)" : ''), $client, $asset);
 
-        $data = ['url' => (string) ($r['url'] ?? ''), 'session_id' => $sessionId];
-        if ($kind !== null) {
-            // Only with the switch on: the deep link names the device and carries nothing else; the stock URL stays as the fallback.
-            $data['console'] = ConsoleLink::descriptor($kind, $this->mesh->nodeFor($deviceId), $data['url']);
+        $data = ['url' => $url, 'session_id' => $sessionId];
+        if ($console !== null) {
+            $data['console'] = $console;
         }
 
         return ActionResult::ok('Opening the remote session.', 200, 'ok', $data);

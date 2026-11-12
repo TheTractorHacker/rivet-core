@@ -26,7 +26,7 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   POST endpoint_devices/{id}/jobs            {type: powershell|reboot|collect, script|script_id, params, timeout_s, destructive, confirm}
  *   POST endpoint_devices/{id}/jobs/{job}/cancel
  *   POST endpoint_devices/{id}/remote          {force?} -> {url, session_id}
- *   POST endpoint_devices/{id}/remote          {console: true, console_kind?, view?, force?} -> {url, session_id, console: {kind, url, fallback_url}} (only with the remote_console switch on; otherwise the plain result)
+ *   POST endpoint_devices/{id}/remote          {console: true, console_kind?, view?, force?} -> {url, session_id, console: {url, fallback_url}} (only with the remote_console switch on and console_public_url set; otherwise the plain result or 409 not_configured)
  *   POST endpoint_devices/{id}/remote          {mode: "background", view: "console", force?} -> {url, session_id, mode, check_token, check_expires_in, notice} (Background Mode)
  *   POST endpoint_devices/background/session-check  {token} -> 200 {allow: true, session_id, device_id, notice} | 403 {allow: false, error, code}; the token is single use and valid 60 s
  *   POST endpoint_devices/background/session-end    {session_id, reason?} -> 200 {ended: true} (records the end of a Background Mode session)
