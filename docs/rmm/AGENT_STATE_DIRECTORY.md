@@ -23,7 +23,7 @@ The message is `refusing to use the agent state directory: <what is wrong>. ...`
 
 Repair (elevated PowerShell). Recommended, because the contents cannot be trusted; the device must be enrolled again:
 
-    Stop-Service rivetit-agent -ErrorAction SilentlyContinue
+    Stop-Service RivetITAgent -ErrorAction SilentlyContinue
     takeown /F "C:\ProgramData\RivetIT" /R /D Y
     Remove-Item -Recurse -Force "C:\ProgramData\RivetIT"
     # then run the installer / "rivetit-agent install" again

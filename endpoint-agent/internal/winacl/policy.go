@@ -145,7 +145,7 @@ func ChainBelow(root, target string) []string {
 func RepairHint(dir string) string {
 	return fmt.Sprintf(`The directory (or a parent) was probably created by a standard user before the agent was installed, so nothing in it can be trusted `+
 		`(config.json, mesh_agent_path, server_url, ca_file, device.token). To repair it, run from an elevated PowerShell: `+
-		`Stop-Service rivetit-agent -ErrorAction SilentlyContinue; takeown /F "%[1]s" /R /D Y; Remove-Item -Recurse -Force "%[1]s"; `+
+		`Stop-Service RivetITAgent -ErrorAction SilentlyContinue; takeown /F "%[1]s" /R /D Y; Remove-Item -Recurse -Force "%[1]s"; `+
 		`then re-run the installer or "rivetit-agent install" (the agent re-creates the directory with the correct owner and permissions and must be enrolled again). `+
 		`If you have verified the contents yourself and only want to keep them, take ownership instead: `+
 		`takeown /F "%[1]s" /R /D Y; icacls "%[1]s" /setowner "*S-1-5-18" /T /C; icacls "%[1]s" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /C`, dir)
