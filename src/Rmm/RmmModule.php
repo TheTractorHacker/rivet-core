@@ -139,7 +139,7 @@ use RivetCore\Webhooks\UrlPolicy;
  * edition's five-line REST bridges call {@see deviceApi()}; its cron entry calls {@see housekeeping()}.
  *
  * Options: `binary_dir` (where hosted agent binaries live, default none), `transfer_dir` (where file transfers are stored, default `<binary_dir>/transfers`; without either, file transfer answers not_configured), `allow_insecure_http` (loopback test servers only),
- * `legacy_identity_reinstall` (CORE-17: true restores the pre-rc.62 rule that a new install id with a known MachineGuid or serial silently takes over the linked device and rotates its credential; for golden-transcript replay only, never for production), `allow_linux` (admit the Linux test agent), `host_fallback`, `integration_name`, `installer_prefix`, `max_upload_bytes` (size cap of one
+ * `allow_linux` (admit the Linux test agent), `host_fallback`, `integration_name`, `installer_prefix`, `max_upload_bytes` (size cap of one
  * hosted agent binary, default 64 MiB), `client_label` (what the edition calls a client in user-facing text, default "client"; RivetIT: "department"),
  * `denial_reasons` (ability => sentence, replaces the generic denial text of that ability, see {@see RmmAuthorizer}), `escalation` (a
  * {@see RmmEscalationInterface}: the edition's delivery of escalation notices, default none) and `threshold_resolver` (a
@@ -273,7 +273,7 @@ final class RmmModule
     private readonly RmmEventsInterface $events;
 
     /**
-     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,hosted_max_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>,retention_floors?:\RivetCore\Rmm\Settings\RetentionFloorsInterface,legacy_identity_reinstall?:bool,postgres?:PostgresConnectionInterface|PostgresConfig|\Closure():(PostgresConnectionInterface|PostgresConfig|null)|null} $options
+     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,hosted_max_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>,retention_floors?:\RivetCore\Rmm\Settings\RetentionFloorsInterface,postgres?:PostgresConnectionInterface|PostgresConfig|\Closure():(PostgresConnectionInterface|PostgresConfig|null)|null} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -815,7 +815,7 @@ final class RmmModule
     public function enrollment(): EnrollmentService
     {
         if ($this->enrollment === null) {
-            $this->enrollment = new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel(), $this->eventPublisher(), $this->cache(), $this->herd(), $this->dataStores(), $this->options['legacy_identity_reinstall'] ?? false);
+            $this->enrollment = new EnrollmentService($this->sql(), $this->settings(), $this->assets, $this->tenancy, $this->linker(), $this->audit, $this->attempts(), $this->options['allow_linux'] ?? false, $this->clientLabel(), $this->eventPublisher(), $this->cache(), $this->herd(), $this->dataStores());
             // Install apps when the agent installs: plan the catalog apps of a device that has just enrolled (a no-op while `software_deploy` is off).
             $this->enrollment->onEnrolled(function (int $deviceId, int $tokenId, string $event): void {
                 if ($this->settings()->featureOn(DeployProtocol::FEATURE) && ($dev = $this->devices()->find($deviceId)) !== null) {

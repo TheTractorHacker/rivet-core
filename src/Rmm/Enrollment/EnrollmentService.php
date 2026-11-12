@@ -51,7 +51,6 @@ final class EnrollmentService
         private readonly ?RmmCache $cache = null,
         private readonly ?HerdControl $herd = null,
         private readonly ?\RivetCore\Rmm\Store\RmmDataStores $stores = null,
-        private readonly bool $legacyIdentityReinstall = false,
     ) {
     }
 
@@ -316,7 +315,7 @@ final class EnrollmentService
             if (self::identityConflict($dev, $d)) {
                 throw new ApiError(409, 'conflict', 'This install id is already bound to a different machine.');
             }
-            if (!$this->legacyIdentityReinstall && $d['machine_guid'] === null && $d['serial'] === null && ($dev['machine_guid'] !== null || $dev['serial'] !== null) && $dev['link_state'] === 'linked') {
+            if ($d['machine_guid'] === null && $d['serial'] === null && ($dev['machine_guid'] !== null || $dev['serial'] !== null) && $dev['link_state'] === 'linked') {
                 // CORE-17: the stored machine has an identity and this enrollment reports none, so the install id alone would rotate the credential of a
                 // linked device. Refuse, and leave the row (and its real agent) untouched.
                 throw new ApiError(409, 'conflict', 'This install id is already bound to a different machine.');
@@ -327,7 +326,7 @@ final class EnrollmentService
             if ($dev !== null) {
                 $this->refuseIfBlocked($dev);
                 $event = 'reinstalled';
-                if ($dev['link_state'] === 'linked' && !$this->legacyIdentityReinstall) {
+                if ($dev['link_state'] === 'linked') {
                     // CORE-17: a new install_id plus a known MachineGuid or serial is NOT proof of the same machine (both are readable by any user on the
                     // box and the enrollment token is multi-use). The linked row keeps its credential, its install id and its jobs, so the real agent keeps
                     // working; the newcomer becomes a pending device of its own that an administrator can approve (it then takes the row over) or reject.

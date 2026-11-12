@@ -79,7 +79,7 @@ final class GoldenEdition
         $db = new MysqliDatabase($m);
         $this->module = new RmmModule($db, $this->clock, $this->tenancy, $this->assets, $this->bridge, $this->box, $this->audit, $this->metrics,
             $withModuleState ? new \RivetCore\Testing\InMemoryRmmModuleState(true) : null,
-            ['binary_dir' => $stateDir . '/bin', 'allow_insecure_http' => $insecureHttp, 'allow_linux' => getenv('RMM_GOLDEN_ALLOW_LINUX') === '1', 'legacy_identity_reinstall' => true], null, new AllowUsersPolicy([self::ADMIN_USER_ID => true]));
+            ['binary_dir' => $stateDir . '/bin', 'allow_insecure_http' => $insecureHttp, 'allow_linux' => getenv('RMM_GOLDEN_ALLOW_LINUX') === '1'], null, new AllowUsersPolicy([self::ADMIN_USER_ID => true]));
         $limiter = TestRedis::available() ? new RateLimiter(new TestRedis(), 'rmm-golden:') : null;
         $this->api = $this->module->deviceApi(
             static fn (string $bucket, int $limit, int $window): bool => $limiter === null || $limiter->hit($bucket, $limit, $window)['allowed'],
