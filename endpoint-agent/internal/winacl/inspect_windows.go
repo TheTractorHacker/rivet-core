@@ -34,6 +34,9 @@ func Inspect(path string, wantDir bool) (Info, error) {
 	}
 	if owner, _, err := sd.Owner(); err == nil && owner != nil {
 		i.Owner = owner.String()
+		if !Trusted(i.Owner) {
+			i.OwnerIsAdmin = OwnerIsAdminMember(i.Owner)
+		}
 	}
 	dacl, _, err := sd.DACL()
 	if err != nil && !errors.Is(err, windows.ERROR_OBJECT_NOT_FOUND) {

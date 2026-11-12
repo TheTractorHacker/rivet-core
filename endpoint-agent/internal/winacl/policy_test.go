@@ -178,3 +178,43 @@ func TestCheckTreeRefusesPlantedOrLinkedEntries(t *testing.T) {
 		t.Error("an unknown owner was accepted")
 	}
 }
+
+// A named administrator account as owner (elevated installer, MSI/GPO/RMM service account) must not brick an upgraded agent.
+func TestClassifyNamedAdminOwnerIsRepairableStandardUserIsNot(t *testing.T) {
+	mk := func(owner string, admin bool) Info {
+		i := good()
+		i.Owner, i.OwnerIsAdmin = owner, admin
+		i.ACEs = append(i.ACEs, ACE{SID: sidUsers, Allow: true, Mask: 0x4})
+		return i
+	}
+	if v, err := Classify(mk(sidAttacker, true)); v != Repairable {
+		t.Errorf("named admin owner: %v (%v), want Repairable", v, err)
+	}
+	if v, _ := Classify(mk(sidAttacker, false)); v != Refuse {
+		t.Errorf("standard-user owner: %v, want Refuse", v)
+	}
+	// the strict check (state directory) still does not accept the admin-member owner until it has been re-owned; the mesh variant does
+	i := good()
+	i.Owner, i.OwnerIsAdmin = sidAttacker, true
+	if Check(i) == nil {
+		t.Error("Check accepted a non-well-known owner")
+	}
+	if err := CheckAllowAdminOwner(i); err != nil {
+		t.Errorf("CheckAllowAdminOwner: %v", err)
+	}
+	i.OwnerIsAdmin = false
+	if CheckAllowAdminOwner(i) == nil {
+		t.Error("CheckAllowAdminOwner accepted a standard user")
+	}
+}
+
+func TestCheckTreeAdminOwnerWithPlantedStandardUserFile(t *testing.T) {
+	adminFile := Info{Path: `C:\ProgramData\RivetIT\Agent\state.json`, Owner: sidAttacker, OwnerIsAdmin: true}
+	planted := Info{Path: `C:\ProgramData\RivetIT\Agent\config.json`, Owner: "S-1-5-21-9-9-9-1500"}
+	if err := CheckTree([]Info{adminFile}); err != nil {
+		t.Errorf("admin-member-owned entry refused: %v", err)
+	}
+	if err := CheckTree([]Info{adminFile, planted}); err == nil || !strings.Contains(err.Error(), "config.json") {
+		t.Errorf("standard-user file next to admin-owned ones not refused: %v", err)
+	}
+}

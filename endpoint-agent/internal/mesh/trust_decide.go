@@ -45,7 +45,7 @@ func meshTrust(path string, roots []string, inspect inspectFunc) error {
 		if err != nil {
 			return err
 		}
-		if err := winacl.Check(info); err != nil {
+		if err := winacl.CheckAllowAdminOwner(info); err != nil {
 			return err
 		}
 	}

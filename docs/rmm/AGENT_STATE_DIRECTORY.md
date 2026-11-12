@@ -1,6 +1,6 @@
 # Agent state directory and Mesh executable trust (Windows, CORE-16)
 
-Pentest 2026-11-08, CORE-16. Applies to the Windows endpoint agent from 1.0.0-rc.62. Not yet run on a real Windows host: the decision logic is unit-tested on Linux, the Windows calls are built and vetted only.
+Pentest 2026-11-08, CORE-16. Applies to the Windows endpoint agent from 1.0.0-rc.62. **CORE-16 has NOT been run on Windows and is unverified until the manual plan in `AGENT_STATE_DIRECTORY_WINDOWS_TEST.md` has been executed.** The decision logic is unit-tested on Linux; the Windows calls (ACL reads, owner/DACL writes, the local-group lookup, the event log) are built and `go vet`ed only.
 
 ## Why
 
@@ -22,8 +22,9 @@ The upgraded agent therefore tells the benign legacy shape from the attack by th
 | --- | --- |
 | Owner SYSTEM/Administrators/TrustedInstaller, DACL tight | used as is |
 | Owner trusted, DACL looser than wanted (inherited ProgramData ACL, NULL DACL) | the agent, running as SYSTEM, applies the protected DACL itself, then verifies every file and folder inside is owned by a trusted SID and none is a reparse point; one notice line says it repaired (stderr and, for the service, Application event log source `RivetIT Agent`, event id 2) |
-| Owner is not trusted, or the directory is a junction/link | refused, loudly, with the repair command |
-| Owner trusted but a file or folder inside is owned by someone else (planted while the directory was still loose) or is a link | refused, loudly, naming the entry; never adopted |
+| Owner is a named account that is a member of the local Administrators group (direct, nested or domain group; looked up with `NetUserGetLocalGroups`) | same as the row above, plus the agent re-owns the directory to the Administrators group |
+| Owner is a standard user, or the directory is a junction/link | refused, loudly, with the repair command |
+| Owner trusted (or admin member) but a file or folder inside is owned by someone else (planted while the directory was still loose) or is a link | refused, loudly, naming the entry; never adopted |
 
 The tree check runs on every start, so a planted file is caught even after the DACL has been tightened. Because it refuses on any foreign-owned entry, a user-created subfolder in the legacy `RivetIT` parent also needs the repair below.
 
@@ -49,7 +50,7 @@ Only if you have inspected every file yourself and want to keep the enrollment, 
     icacls "C:\ProgramData\RivetIT" /setowner "*S-1-5-18" /T /C
     icacls "C:\ProgramData\RivetIT" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /C
 
-A false refusal is possible where a policy makes the object creator (a named administrator account) the default owner of folders instead of the Administrators group; the repair above fixes that too.
+If the group lookup fails (for example a domain controller is unreachable and the owner is a domain account) the owner counts as not an administrator and the directory is refused; the repair above applies.
 
 For the Mesh executable a refusal is logged once per path and reason at error level in the agent log (`refusing to run the Mesh agent executable ...`); Mesh features stay off until the file is under Program Files with normal permissions.
 

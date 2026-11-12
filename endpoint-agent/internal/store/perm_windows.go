@@ -63,7 +63,8 @@ func ensureTrustedDir(dir string) error {
 	// Tighten first, verify afterwards: once the protected DACL is on, nobody else can add anything, so the tree check below sees everything that could
 	// ever have been planted. Older agents created %ProgramData%\RivetIT with the ProgramData ACL inherited (users may create files and folders there);
 	// the owner is SYSTEM or Administrators, which is what separates that benign shape from a folder a user pre-created.
-	if err := setDirDACL(dir); err != nil {
+	// A named administrator account as owner is re-owned to the Administrators group (the agent runs as SYSTEM and may do that).
+	if err := setDirDACL(dir, !winacl.Trusted(info.Owner)); err != nil {
 		return fmt.Errorf("tighten permissions of %s: %w", dir, err)
 	}
 	if verdict == winacl.Repairable {
@@ -132,7 +133,7 @@ func createSecureDir(dir string) error {
 }
 
 // setDirDACL re-applies the protected DACL of an already verified directory (idempotent; also repairs an agent-created directory from an older version).
-func setDirDACL(dir string) error {
+func setDirDACL(dir string, reown bool) error {
 	sd, err := windows.SecurityDescriptorFromString(dirSDDL)
 	if err != nil {
 		return err
@@ -141,9 +142,15 @@ func setDirDACL(dir string) error {
 	if err != nil {
 		return err
 	}
-	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		nil, nil, dacl, nil)
+	flags := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION)
+	var owner *windows.SID
+	if reown {
+		if owner, err = windows.StringToSid(winacl.SIDAdministrator); err != nil {
+			return err
+		}
+		flags |= windows.OWNER_SECURITY_INFORMATION
+	}
+	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, flags, owner, nil, dacl, nil)
 }
 
 func syncDir(string)                       {}

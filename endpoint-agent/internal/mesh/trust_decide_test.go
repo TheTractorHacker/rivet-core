@@ -95,3 +95,16 @@ func TestReportUntrustedOncePerReason(t *testing.T) {
 		t.Errorf("reports: %v", got)
 	}
 }
+
+func TestMeshTrustAcceptsAdminMemberOwnerButNotStandardUser(t *testing.T) {
+	roots := []string{`C:\Program Files`}
+	const exe = `C:\Program Files\Mesh Agent\MeshAgent.exe`
+	for _, admin := range []bool{true, false} {
+		d, f := obj("S-1-5-21-1-2-3-1001", true), obj("S-1-5-21-1-2-3-1001", false)
+		d.OwnerIsAdmin, f.OwnerIsAdmin = admin, admin
+		err := meshTrust(exe, roots, fakeFS(map[string]winacl.Info{`c:\program files\mesh agent`: d, `c:\program files\mesh agent\meshagent.exe`: f}))
+		if admin && err != nil || !admin && err == nil {
+			t.Errorf("admin member=%v: err=%v", admin, err)
+		}
+	}
+}

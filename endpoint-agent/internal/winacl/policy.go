@@ -41,14 +41,17 @@ type ACE struct {
 
 // Info is what was read from one object.
 type Info struct {
-	Path     string
-	Owner    string
-	HasDACL  bool // false: a NULL DACL, which grants everyone full control
-	ACEs     []ACE
-	Reparse  bool // symbolic link, junction or other reparse point
-	IsDir    bool
-	WantDir  bool // the caller expects a directory (false: a file)
-	NotFound bool
+	Path  string
+	Owner string
+	// OwnerIsAdmin: Owner is not one of the well-known trusted SIDs but is a member (direct or through a group) of the local Administrators group. The
+	// Windows lookup is inspect_windows.go; it is an input here so the decision stays testable on every OS.
+	OwnerIsAdmin bool
+	HasDACL      bool // false: a NULL DACL, which grants everyone full control
+	ACEs         []ACE
+	Reparse      bool // symbolic link, junction or other reparse point
+	IsDir        bool
+	WantDir      bool // the caller expects a directory (false: a file)
+	NotFound     bool
 }
 
 // Trusted reports whether sid is SYSTEM, the Administrators group or TrustedInstaller.
@@ -62,7 +65,14 @@ func Trusted(sid string) bool {
 
 // Check returns nil when the object is safe to read from and to act on as SYSTEM: not a reparse point, the right kind of object, owned by a trusted
 // principal, with a real DACL that grants write/delete/take-ownership to nobody else. The error says exactly what is wrong.
-func Check(i Info) error {
+func Check(i Info) error { return check(i, false) }
+
+// CheckAllowAdminOwner is Check where an owner that is a member of the local Administrators group also counts as trusted (used for the Mesh executable chain,
+// where a named administrator may have installed the files; an administrator can change them anyway).
+func CheckAllowAdminOwner(i Info) error { return check(i, true) }
+
+func check(i Info, adminOwnerOK bool) error {
+	ownerOK := Trusted(i.Owner) || (adminOwnerOK && i.OwnerIsAdmin)
 	switch {
 	case i.NotFound:
 		return fmt.Errorf("%s does not exist", i.Path)
@@ -72,7 +82,7 @@ func Check(i Info) error {
 		return fmt.Errorf("%s is not a directory", i.Path)
 	case !i.WantDir && i.IsDir:
 		return fmt.Errorf("%s is a directory, not a file", i.Path)
-	case !Trusted(i.Owner):
+	case !ownerOK:
 		return fmt.Errorf("%s is owned by %s, not SYSTEM or Administrators (an owner can always rewrite the permissions)", i.Path, orUnknown(i.Owner))
 	case !i.HasDACL:
 		return fmt.Errorf("%s has no DACL, which gives every user full control", i.Path)
@@ -105,7 +115,9 @@ func Classify(i Info) (Verdict, error) {
 	if err == nil {
 		return VerdictTrusted, nil
 	}
-	if i.NotFound || i.Reparse || i.WantDir != i.IsDir || !Trusted(i.Owner) {
+	// A named administrator account as owner (an installer run from an elevated session, MSI/GPO/RMM under a service account) is repairable: the agent
+	// re-owns the directory to Administrators. A standard user as owner is the attack and is refused.
+	if i.NotFound || i.Reparse || i.WantDir != i.IsDir || !(Trusted(i.Owner) || i.OwnerIsAdmin) {
 		return Refuse, err
 	}
 	return Repairable, err
@@ -118,8 +130,8 @@ func CheckTree(entries []Info) error {
 		switch {
 		case e.Reparse:
 			return fmt.Errorf("%s inside the directory is a reparse point (symbolic link or junction)", e.Path)
-		case !Trusted(e.Owner):
-			return fmt.Errorf("%s inside the directory is owned by %s, not SYSTEM or Administrators (planted by a standard user?)", e.Path, orUnknown(e.Owner))
+		case !Trusted(e.Owner) && !e.OwnerIsAdmin:
+			return fmt.Errorf("%s inside the directory is owned by %s, not SYSTEM, Administrators or a member of the Administrators group (planted by a standard user?)", e.Path, orUnknown(e.Owner))
 		}
 	}
 	return nil
