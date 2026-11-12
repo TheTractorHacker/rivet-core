@@ -2600,9 +2600,9 @@
                 "applyFeaturePreset": "applyFeaturePreset(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, string $preset): RivetCore\\Rmm\\Technician\\ActionResult",
                 "binaryAction": "binaryAction(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, int $binaryId, string $action, string $ring = 'pilot', int $pct = 10): RivetCore\\Rmm\\Technician\\ActionResult",
                 "clearUpdateFailures": "clearUpdateFailures(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, ?int $deviceId = NULL, ?string $version = NULL, ?string $os = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
-                "deploymentCommands": "deploymentCommands(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = 'exe', array $appIds = [], string $deviceType = 'auto'): RivetCore\\Rmm\\Technician\\ActionResult",
+                "deploymentCommands": "deploymentCommands(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = 'exe', array $appIds = [], string $deviceType = 'auto', bool $managedExternally = false): RivetCore\\Rmm\\Technician\\ActionResult",
                 "disable": "disable(RivetCore\\Rmm\\Authz\\RmmPrincipal $by): RivetCore\\Rmm\\Technician\\ActionResult",
-                "downloadInstaller": "downloadInstaller(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = 'exe', array $appIds = [], string $deviceType = 'auto'): RivetCore\\Rmm\\Technician\\ActionResult",
+                "downloadInstaller": "downloadInstaller(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, bool $installMeshAgent = false, string $format = 'exe', array $appIds = [], string $deviceType = 'auto', bool $managedExternally = false): RivetCore\\Rmm\\Technician\\ActionResult",
                 "enable": "enable(RivetCore\\Rmm\\Authz\\RmmPrincipal $by): RivetCore\\Rmm\\Technician\\ActionResult",
                 "keyFacts": "keyFacts(): array",
                 "msiTemplateAction": "msiTemplateAction(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, int $templateId, string $action): RivetCore\\Rmm\\Technician\\ActionResult",
@@ -4146,6 +4146,9 @@
         },
         "RivetCore\\Rmm\\Device\\DeviceService": {
             "kind": "final class",
+            "constants": {
+                "BULK_MAX": 500
+            },
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Checks\\CheckEvaluator $checks, RivetCore\\Rmm\\Link\\RmmLinker $linker, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Contracts\\RmmAssetsInterface $assets, RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, RivetCore\\Rmm\\Enrollment\\EnrollmentService $enrollment, ?RivetCore\\Rmm\\Support\\RmmCache $cache = NULL, ?RivetCore\\Rmm\\Store\\RmmDataStores $stores = NULL)",
                 "allowReenroll": "allowReenroll(int $deviceId, int $userId): bool",
@@ -4156,6 +4159,7 @@
                 "revoke": "revoke(int $deviceId, string $reason, int $userId): bool",
                 "rotate": "rotate(int $deviceId, int $userId): bool",
                 "setAutomationDisabled": "setAutomationDisabled(int $deviceId, bool $disabled, ?int $userId = NULL): bool",
+                "setAutomationDisabledBulk": "setAutomationDisabledBulk(array $deviceIds, bool $disabled, ?int $userId = NULL): array",
                 "setRing": "setRing(int $deviceId, string $ring): bool",
                 "transfer": "transfer(int $deviceId, int $clientId, int $locationId, int $userId): bool"
             }
@@ -4223,13 +4227,14 @@
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Contracts\\RmmAssetsInterface $assets, RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy, RivetCore\\Rmm\\Link\\RmmLinker $linker, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, RivetCore\\Rmm\\Enrollment\\AttemptLog $attempts, bool $allowLinux = false, string $clientLabel = 'client', ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Support\\RmmCache $cache = NULL, ?RivetCore\\Rmm\\Capacity\\HerdControl $herd = NULL, ?RivetCore\\Rmm\\Store\\RmmDataStores $stores = NULL)",
                 "assetClientId": "assetClientId(int $assetId): ?int",
-                "createToken": "createToken(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, int $userId): array",
+                "createToken": "createToken(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, int $userId, bool $managedExternally = false): array",
                 "enroll": "enroll(array $body, string $ip): array",
                 "matchAsset": "matchAsset(array $d, int $clientId): array",
                 "onApproved": "onApproved(Closure $f): void",
                 "onEnrolled": "onEnrolled(Closure $f): void",
                 "resolvePending": "resolvePending(int $deviceId, string $action, ?int $assetId, int $userId): array",
-                "revokeToken": "revokeToken(int $tokenId, int $userId): bool"
+                "revokeToken": "revokeToken(int $tokenId, int $userId): bool",
+                "tokenManagedExternally": "tokenManagedExternally(int $tokenId): bool"
             }
         },
         "RivetCore\\Rmm\\Fields\\CustomFieldService": {
@@ -4723,8 +4728,8 @@
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Update\\UpdateService $updates, RivetCore\\Rmm\\Installer\\InstallerDownload $installer, RivetCore\\Rmm\\Enrollment\\EnrollmentService $enrollment, RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, RivetCore\\Rmm\\Binaries\\BinaryStore $binaries, string $clientLabel = 'client', ?RivetCore\\Rmm\\Mesh\\MeshAgentService $meshAgents = NULL, ?RivetCore\\Rmm\\AutoInstall\\AutoInstallService $autoInstall = NULL)",
                 "deploymentCommands": "deploymentCommands(array $issued, string $arch, bool $installMeshAgent = false, string $format = 'exe'): ?array",
-                "issue": "issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = 'exe', array $appIds = [], string $deviceType = 'auto'): array",
-                "issueDownload": "issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = 'exe', array $appIds = [], string $deviceType = 'auto'): RivetCore\\Rmm\\Http\\RmmResponse|string",
+                "issue": "issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = 'exe', array $appIds = [], string $deviceType = 'auto', bool $managedExternally = false): array",
+                "issueDownload": "issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = 'exe', array $appIds = [], string $deviceType = 'auto', bool $managedExternally = false): RivetCore\\Rmm\\Http\\RmmResponse|string",
                 "linuxSnippet": "static linuxSnippet(string $serverUrl, string $token, string $arch, string $department, ?string $caPem = NULL, ?array $mesh = NULL): string",
                 "msiPropertiesCommand": "static msiPropertiesCommand(string $serverUrl, string $token): string",
                 "msiexecCommand": "static msiexecCommand(string $filename): string",
@@ -8233,7 +8238,7 @@
                 "allowReenroll": "allowReenroll(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "cancelJob": "cancelJob(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $jobId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "clearUpdateFailures": "clearUpdateFailures(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
-                "createToken": "createToken(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label): RivetCore\\Rmm\\Technician\\ActionResult",
+                "createToken": "createToken(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, bool $managedExternally = false): RivetCore\\Rmm\\Technician\\ActionResult",
                 "launchRemote": "launchRemote(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = NULL, ?string $userAgent = NULL, string $view = 'desktop'): RivetCore\\Rmm\\Technician\\ActionResult",
                 "resolvePending": "resolvePending(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $action, ?int $assetId = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
                 "retire": "retire(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
@@ -8241,6 +8246,7 @@
                 "revokeToken": "revokeToken(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $tokenId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "rotateCredential": "rotateCredential(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "setAutomationDisabled": "setAutomationDisabled(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, bool $disabled): RivetCore\\Rmm\\Technician\\ActionResult",
+                "setAutomationDisabledBulk": "setAutomationDisabledBulk(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $deviceIds, bool $disabled, ?int $clientId = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
                 "setMeshNode": "setMeshNode(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $nodeId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "setRing": "setRing(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $ring): RivetCore\\Rmm\\Technician\\ActionResult",
                 "submitJob": "submitJob(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
@@ -9460,6 +9466,7 @@
         "RivetCore\\Rmm\\Migration\\Migration0042RmmDataStore",
         "RivetCore\\Rmm\\Migration\\Migration0043RmmStoreDenormalisation",
         "RivetCore\\Rmm\\Migration\\Migration0044RmmStoreSwitch",
+        "RivetCore\\Rmm\\Migration\\Migration0049InstallerManagedExternally",
         "RivetCore\\Rmm\\Migration\\MsiTemplateSchema",
         "RivetCore\\Rmm\\Migration\\PatchSchema",
         "RivetCore\\Rmm\\Migration\\RemoteSchema",
@@ -9593,7 +9600,8 @@
         "0044_rmm_store_switch",
         "0046_compliance_framework_profiles",
         "0047_reporting_views",
-        "0048_audit_hash_chain"
+        "0048_audit_hash_chain",
+        "0049_rmm_installer_managed_externally"
     ],
     "tables": {
         "audit_chain_checkpoint": {

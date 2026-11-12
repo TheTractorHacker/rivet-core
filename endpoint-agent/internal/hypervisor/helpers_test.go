@@ -87,7 +87,7 @@ func pveFake(t testing.TB) (*fakeRunner, *Proxmox) {
 	f.on(pv+"/nodes/pve2/qemu/300/snapshot"+js, "[]")
 	f.on("/usr/sbin/zpool list -H -p -o name,size,allocated,free,health", fixture(t, "zpool_list.txt"))
 	f.on("/usr/bin/ceph health --format json", fixture(t, "ceph_health.json"))
-	have := map[string]bool{pveshPath: true, pveDir: true, "/usr/sbin/zpool": true, "/usr/bin/ceph": true}
+	have := map[string]bool{pveshPath: true, pveDir: true, "/usr/sbin/zpool": true, "/usr/bin/ceph": true, "/etc/pve/ceph.conf": true}
 	p := &Proxmox{R: f, Exists: func(x string) bool { return have[x] }, Hostname: func() string { return "devpve.lan" },
 		Now: func() time.Time { return time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC) }}
 	return f, p

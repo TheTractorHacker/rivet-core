@@ -65,9 +65,12 @@ final class InstallerService
      *
      * @param list<int> $appIds
      * @param string $deviceType 'auto' or a DeviceTypeClassifier label: stored by token (never in the installer file), audited, validated against the fixed list
-     * @return array{ok:bool,error?:string,token?:array<string,mixed>,token_plain?:string,payload?:string,installer_id?:string,department?:string,mesh_after_approval?:bool}
+     * @param bool $managedExternally "managed by another RMM" (1.0.0-rc.59): stored by token (never in the installer file); every device enrolled with the token starts with Core automation
+     *        disabled ({@see \RivetCore\Rmm\Enrollment\EnrollmentService::createToken()}), and the audit row of the installer says so. The token-gated download reads nothing new: it serves the
+     *        same token, whose option row is already there.
+     * @return array{ok:bool,error?:string,token?:array<string,mixed>,token_plain?:string,payload?:string,installer_id?:string,department?:string,mesh_after_approval?:bool,managed_externally?:bool}
      */
-    public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = [], string $deviceType = 'auto'): array
+    public function issue(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = [], string $deviceType = 'auto', bool $managedExternally = false): array
     {
         if (!InstallerFormat::valid($format)) {
             return ['ok' => false, 'error' => 'Choose the installer format: exe or msi.'];
@@ -95,7 +98,11 @@ final class InstallerService
             return ['ok' => false, 'error' => 'Installing apps with the agent is not available on this module.'];
         }
         $installerId = JobService::uuid();
-        $t = $this->enrollment->createToken($clientId, $locationId, $ring, $ttlHours, $maxUses, $label !== '' ? $label : 'Installer ' . substr($installerId, 0, 8), $userId);
+        try {
+            $t = $this->enrollment->createToken($clientId, $locationId, $ring, $ttlHours, $maxUses, $label !== '' ? $label : 'Installer ' . substr($installerId, 0, 8), $userId, $managedExternally);
+        } catch (\InvalidArgumentException $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
         $row = $this->sql->one('SELECT * FROM endpoint_agent_enrollment_tokens WHERE token_id = ?', [$t['token_id']]);
         if ($row === null) {
             return ['ok' => false, 'error' => 'The enrollment token could not be created.'];
@@ -128,9 +135,9 @@ final class InstallerService
         }
         $dept = $this->installer->departmentName($clientId);
         $this->audit->record('Installer Created', "$actorName created installer $installerId ($arch" . ($format === InstallerFormat::MSI ? ', msi' : '') . ") for {$this->clientLabel} \"$dept\" with enrollment token #{$t['token_id']} ({$row['token_selector']}), "
-            . "{$row['max_uses']} uses, expires {$row['expires_at']} UTC" . ($installMeshAgent ? ', installs the MeshCentral agent after the device is approved' : '') . ($deviceType !== 'auto' ? ", new assets get the type \"$deviceType\"" : ''), $clientId, 0);
+            . "{$row['max_uses']} uses, expires {$row['expires_at']} UTC" . ($installMeshAgent ? ', installs the MeshCentral agent after the device is approved' : '') . ($deviceType !== 'auto' ? ", new assets get the type \"$deviceType\"" : '') . ($managedExternally ? ', devices enrolled with it are managed by another RMM (Core automation disabled on them)' : ''), $clientId, 0);
 
-        return ['ok' => true, 'token' => $row, 'token_plain' => $t['token'], 'payload' => $payload, 'installer_id' => $installerId, 'department' => $dept, 'mesh_after_approval' => $installMeshAgent];
+        return ['ok' => true, 'token' => $row, 'token_plain' => $t['token'], 'payload' => $payload, 'installer_id' => $installerId, 'department' => $dept, 'mesh_after_approval' => $installMeshAgent, 'managed_externally' => $managedExternally];
     }
 
     /**
@@ -140,9 +147,9 @@ final class InstallerService
      * @param list<int> $appIds see {@see issue()}
      * @return RmmResponse|string the download, or the refusal message
      */
-    public function issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = [], string $deviceType = 'auto'): RmmResponse|string
+    public function issueDownload(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, string $arch, int $userId, string $actorName, bool $installMeshAgent = false, string $format = InstallerFormat::EXE, array $appIds = [], string $deviceType = 'auto', bool $managedExternally = false): RmmResponse|string
     {
-        $r = $this->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, $label, $arch, $userId, $actorName, $installMeshAgent, $format, $appIds, $deviceType);
+        $r = $this->issue($clientId, $locationId, $ring, $ttlHours, $maxUses, $label, $arch, $userId, $actorName, $installMeshAgent, $format, $appIds, $deviceType, $managedExternally);
         if (!$r['ok'] || !isset($r['token'], $r['payload'], $r['department'])) {
             return (string) ($r['error'] ?? 'The installer could not be created.');
         }

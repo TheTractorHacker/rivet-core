@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "core_version": "1.0.0-rc.59",
+    "core_version": "1.0.0-rc.60",
     "files": {
         "css/file_upload.css": {
             "sha256": "0643d5ce607c9634d8f74bc908136a037b03e5b96ef922f284eaa65e156ff9a7",
@@ -28,18 +28,18 @@
             "origin": "rivetit-verbatim"
         },
         "css/itflow_bs5_bridge.css": {
-            "sha256": "b4d2c95980c1dff99ead8e9ffe07d7e5fa7f6b01f64114f7a060954ed2ebd620",
-            "bytes": 25860,
+            "sha256": "ad0472747f3bd6ba59b779ca99844706fed1162c366bed4251a68440772ec634",
+            "bytes": 25850,
             "origin": "rivetit-verbatim"
         },
         "css/itflow_custom.css": {
-            "sha256": "8da36fdd581dfe23b674b693b81fddf6dc34836dcb9851d4812cdbbd5b58c92c",
-            "bytes": 164069,
+            "sha256": "6af3bbb7eed66d97ee234c0223953e655e77be8ef22ba2012f23605ac9b0681b",
+            "bytes": 164585,
             "origin": "rivetit-split"
         },
         "css/itflow_design.css": {
-            "sha256": "fe3ce14ce47b09ec26f69481526f41e0ef6cddd13d50735a32b97dc3f75cc4ce",
-            "bytes": 67325,
+            "sha256": "ed750585442d303575824d59f8f0b274c9aff5075944fae224e3c8c0f92e2079",
+            "bytes": 67929,
             "origin": "rivetit-split"
         },
         "css/itflow_metrics.css": {
@@ -93,8 +93,8 @@
             "origin": "rivetit-verbatim"
         },
         "css/webhook_form.css": {
-            "sha256": "54d224d7006cfb1725024478b02ddb9bde4f5522a44d6d19f6d57db1ebe31bc5",
-            "bytes": 15872,
+            "sha256": "f3388f8ee9df5bef82d5da1cd4f1c027f29a3976b4bae15fdbc80cebec6d9c54",
+            "bytes": 15867,
             "origin": "core"
         },
         "css/webhook_guides.css": {
