@@ -738,6 +738,10 @@ final class RmmReadModel
             'offered_release' => $offered === null ? null : ['version' => $offered['version'], 'ring' => $offered['ring'], 'rollout_pct' => (int) $offered['rollout_pct'], 'arch' => $offered['arch']],
             'match_reason_text' => $this->matchReasonText((string) $d['match_reason']),
             'candidates' => self::candidates($d),
+            // additive (rc.62, CORE-17): the open pending reinstalls of this (linked) device, and what linking this one (when pending) will do
+            'pending_reinstalls' => (new \RivetCore\Rmm\Enrollment\PendingReinstalls($this->sql))->of($deviceId),
+            'replaces_device_id' => \RivetCore\Rmm\Enrollment\PendingReinstalls::claimedDevice($d),
+            'link_consequence' => (new \RivetCore\Rmm\Enrollment\PendingReinstalls($this->sql))->linkConsequence($d),
         ];
     }
 
@@ -1105,6 +1109,10 @@ final class RmmReadModel
             'candidates' => self::candidates($d),
             // additive (rc.29): what a "create asset" would make, for the approval screen's type dropdown to prefill
             'suggested_type' => $this->suggestedType($d),
+            // additive (rc.62, CORE-17): where the enrollment came from, and, for a pending reinstall of a linked device, what the "link" action will do
+            'source_ip' => $d['last_ip'] === null ? null : (string) $d['last_ip'],
+            'replaces_device_id' => \RivetCore\Rmm\Enrollment\PendingReinstalls::claimedDevice($d),
+            'link_consequence' => (new \RivetCore\Rmm\Enrollment\PendingReinstalls($this->sql))->linkConsequence($d),
         ], $rows);
     }
 

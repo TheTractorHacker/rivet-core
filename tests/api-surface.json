@@ -4224,6 +4224,9 @@
         },
         "RivetCore\\Rmm\\Enrollment\\EnrollmentService": {
             "kind": "final class",
+            "constants": {
+                "REINSTALL_PENDING_MAX": 5
+            },
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Contracts\\RmmAssetsInterface $assets, RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy, RivetCore\\Rmm\\Link\\RmmLinker $linker, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, RivetCore\\Rmm\\Enrollment\\AttemptLog $attempts, bool $allowLinux = false, string $clientLabel = 'client', ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Support\\RmmCache $cache = NULL, ?RivetCore\\Rmm\\Capacity\\HerdControl $herd = NULL, ?RivetCore\\Rmm\\Store\\RmmDataStores $stores = NULL)",
                 "assetClientId": "assetClientId(int $assetId): ?int",
@@ -4235,6 +4238,16 @@
                 "resolvePending": "resolvePending(int $deviceId, string $action, ?int $assetId, int $userId): array",
                 "revokeToken": "revokeToken(int $tokenId, int $userId): bool",
                 "tokenManagedExternally": "tokenManagedExternally(int $tokenId): bool"
+            }
+        },
+        "RivetCore\\Rmm\\Enrollment\\PendingReinstalls": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
+                "claimedDevice": "static claimedDevice(array $dev): ?int",
+                "linkConsequence": "linkConsequence(array $new): ?string",
+                "of": "of(int $deviceId): array",
+                "replacedDeviceFor": "replacedDeviceFor(array $new, int $assetId): ?array"
             }
         },
         "RivetCore\\Rmm\\Fields\\CustomFieldService": {

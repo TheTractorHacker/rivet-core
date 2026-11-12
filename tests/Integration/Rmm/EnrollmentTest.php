@@ -206,10 +206,10 @@ final class EnrollmentTest extends RmmTestCase
         $this->assertSame(401, $jobs($evil)[0]);
         $this->assertSame(200, $this->h->checkin($real)[0]);
 
-        // a second attempt supersedes nothing that matters; a third supersedes the second
+        // pending reinstalls of the same device coexist (a newer one does not knock an older one out)
         [, , $j2] = $this->h->enroll($tok, $this->h::device(['machine_guid' => $d1['machine_guid'], 'serial' => null, 'hostname' => 'REINSTALLED']));
         [, , $j3] = $this->h->enroll($tok, $this->h::device(['machine_guid' => $d1['machine_guid'], 'serial' => null, 'hostname' => 'REINSTALLED2']));
-        $this->assertSame(401, $jobs((string) $j2['device_token'])[0], 'one open request per machine');
+        $this->assertSame(200, $jobs((string) $j2['device_token'])[0], 'the older pending reinstall is still there');
         $newest = (int) $j3['device_id'];
 
         // approval (link to the asset of the device it replaces): the old device is retired, the newcomer keeps ITS id and credential and is linked
