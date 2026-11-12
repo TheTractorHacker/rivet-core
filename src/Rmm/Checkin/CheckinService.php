@@ -789,6 +789,9 @@ final class CheckinService
             if (isset($seen[$key])) {
                 continue;   // one result per check per check-in
             }
+            if (RmmChecks::isServerKey($key)) {
+                continue;   // CORE-18: log.rule_*, change.rule_*, patch.* and hv.* are written by the server only; an agent report under them is dropped, never stored or evaluated
+            }
             $seen[$key] = 1;
             /** @var array<string,mixed> $c */
             $detail = DeviceValidator::cleanText($c['detail'] ?? '', 500) ?? '';
