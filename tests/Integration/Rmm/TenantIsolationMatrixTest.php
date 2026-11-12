@@ -290,13 +290,21 @@ final class TenantIsolationMatrixTest extends TestCase
                 }),
             $mk('clearUpdateFailures', [A::DEVICE_MANAGE], 'manage()', false,
                 fn (E $e, string $t, RmmPrincipal $p) => fn () => self::ta($e)->clearUpdateFailures($p, $e->dev($t))),
-            $mk('transfer', [A::DEVICE_MANAGE], 'manage() on the device (404): a device of another client is never reached', true,
+            $mk('setAutomationDisabledBulk#devices', [A::DEVICE_MANAGE], 'each device must be inside the caller\'s clients and manageable; any other is "skipped" exactly like an unknown id', true,
+                function (E $e, string $t, RmmPrincipal $p) {
+                    $d = $e->get($t, 'device');
+
+                    return fn () => self::ta($e)->setAutomationDisabledBulk($p, [$d], true);
+                }, ['list' => true]),
+            $mk('setAutomationDisabledBulk#client', [A::DEVICE_MANAGE], 'a client selection needs clientOk + DEVICE_MANAGE for that client -> 403 (same for an unknown client); the control re-enables, a no-op, so it does not switch client A off for the other rows', false,
+                fn (E $e, string $t, RmmPrincipal $p) => fn () => self::ta($e)->setAutomationDisabledBulk($p, [], false, $e->client($t))),
+            $mk('transfer', [A::DEVICE_MANAGE], 'manage() on the device (404): a device of another client is never reached (moving into the device\'s own client is a no-op, so no change is asserted)', false,
                 function (E $e, string $t, RmmPrincipal $p) {
                     $d = $e->get($t, 'device');
 
                     return fn () => self::ta($e)->transfer($p, $d, $e->clientA());
                 }),
-            $mk('transfer#target', [A::DEVICE_MANAGE], 'manage() on the device, then the TARGET client: clientOk + DEVICE_MANAGE(target) -> 403', true,
+            $mk('transfer#target', [A::DEVICE_MANAGE], 'manage() on the device, then the TARGET client: clientOk + DEVICE_MANAGE(target) -> 403 (the control moves into the device\'s own client: a no-op)', false,
                 function (E $e, string $t, RmmPrincipal $p) {
                     $d = $e->get('own', 'device');
 

@@ -586,10 +586,11 @@ MeshCentral does not separate clients: one Mesh account reaches every device of 
 | `TechnicianActions::revokeToken` | `rmm.token.manage` | yes | the token's client is checked (clientOk + TOKEN_MANAGE) before it is revoked: missing and foreign both 404 |
 | `TechnicianActions::rotateCredential` | `rmm.device.manage` | yes | manage() |
 | `TechnicianActions::setAutomationDisabled` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::setAutomationDisabledBulk` | `rmm.device.manage` | yes | (devices) each device must be inside the caller's clients and manageable; any other is "skipped" exactly like an unknown id; (client) a client selection needs clientOk + DEVICE_MANAGE for that client -> 403 (same for an unknown client) |
 | `TechnicianActions::setMeshNode` | `rmm.device.manage` | yes | manage(): deviceFor(administrative) -> 404 |
 | `TechnicianActions::setRing` | `rmm.device.manage` | yes | manage() |
 | `TechnicianActions::submitJob` | `rmm.job.run_script`, `rmm.job.run_saved`, `rmm.job.reboot` | yes | deviceFor(): clientOk + DEVICE_VIEW(client) -> 404, then the ability for the client; (saved) deviceFor() as above (saved script path); (reboot) deviceFor() as above (reboot); (library) delegates to ScriptActions::runOnDevice() |
-| `TechnicianActions::transfer` | `rmm.device.manage` | yes | manage() on the device (404): a device of another client is never reached; (target) manage() on the device, then the TARGET client: clientOk + DEVICE_MANAGE(target) -> 403 |
+| `TechnicianActions::transfer` | `rmm.device.manage` | yes | manage() on the device (404): a device of another client is never reached (moving into the device's own client is a no-op, so no change is asserted); (target) manage() on the device, then the TARGET client: clientOk + DEVICE_MANAGE(target) -> 403 (the control moves into the device's own client: a no-op) |
 | `TechnicianActions::visibleDevice` | `rmm.device.view` | yes | visibleDevice(): authz->check(DEVICE_VIEW, client) incl. clientOk -> null |
 | `TransferService::find` | none | yes | keyed by (transfer, device): the transfer of another device is never returned for this one |
 | `DeployActions::package` | n/a | no (not client-scoped) | Reads one package of the catalog, which is shared by every client; the installer address is masked for a caller who is not fleet-wide. Writes are in the matrix. |
