@@ -21,6 +21,21 @@ final class HypervisorVectorsTest extends TestCase
         return $d;
     }
 
+    private static function dropCeph(mixed $error): mixed
+    {
+        return (new \ReflectionMethod(HypervisorService::class, 'withoutUnconfiguredCeph'))->invoke(null, $error);
+    }
+
+    public function testAnUnconfiguredCephIsNotACollectorError(): void
+    {
+        // ceph-common is on every Proxmox host and `ceph health` exits 1 where no cluster exists: older agents reported that as an error.
+        $this->assertSame('', self::dropCeph('ceph: /usr/bin/ceph exited with status 1'));
+        $this->assertSame('zpool: x', self::dropCeph('zpool: x; ceph: /usr/bin/ceph exited with status 1'));
+        // a real Ceph problem still comes through
+        $this->assertSame('ceph: /usr/bin/ceph exited with status 2', self::dropCeph('ceph: /usr/bin/ceph exited with status 2'));
+        $this->assertNull(self::dropCeph(null));
+    }
+
     public function testTheSignedConfigurationVerifiesAndAChangedCharacterBreaksIt(): void
     {
         $v = self::vectors();
