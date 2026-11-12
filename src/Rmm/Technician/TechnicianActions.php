@@ -46,6 +46,8 @@ final class TechnicianActions
         private readonly string $clientLabel = 'client',
         private readonly ?ScriptActions $library = null,
         private readonly ?\RivetCore\Rmm\Settings\RmmSettings $settings = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshMapping $meshMapping = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
     ) {
     }
 
@@ -240,6 +242,130 @@ final class TechnicianActions
 
             return ActionResult::ok('Saved.');
         });
+    }
+
+    /** The most devices one {@see approveMeshNodes()} call takes. */
+    public const MESH_APPROVE_MAX = 200;
+
+    /**
+     * Why each linked device is (not) mapped to a MeshCentral node, for the fleet "Mesh mapping" page. Scope: the caller's clients only, and only those where it may
+     * view devices; a device of another client is simply absent (and a `client_id` filter outside the scope answers as an empty list). `can_approve` is true only
+     * when the caller may also manage devices of that client.
+     *
+     * @param array{state?:string,client_id?:int,q?:string} $filters
+     */
+    public function meshMappings(RmmPrincipal $who, array $filters = [], int $limit = 100, int $offset = 0): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::DEVICE_VIEW, 0);
+        if ($denied !== null) {
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        if ($this->meshMapping === null) {
+            return ActionResult::fail(409, 'not_configured', 'The Mesh mapping view is not available.');
+        }
+        if (isset($filters['state']) && $filters['state'] !== '' && !in_array($filters['state'], \RivetCore\Rmm\Mesh\MeshMapping::STATES, true)) {
+            return ActionResult::fail(422, 'invalid', 'state must be one of ' . implode(', ', \RivetCore\Rmm\Mesh\MeshMapping::STATES) . '.');
+        }
+        $visible = $this->authz->visibleClientIds($who->userId);
+        $candidates = $visible ?? array_map('intval', array_column($this->sql->all("SELECT DISTINCT client_id FROM endpoint_agent_devices WHERE link_state = 'linked'"), 'client_id'));
+        $clients = array_values(array_filter($candidates, fn (int $c): bool => $this->authz->allowed($who->userId, RmmAbility::DEVICE_VIEW, $c)));
+        $r = $this->meshMapping->fleet($clients, $filters, max(1, min(500, $limit)), max(0, $offset));
+        $manage = [];
+        foreach ($r['items'] as &$item) {
+            $c = (int) $item['client_id'];
+            $manage[$c] ??= $this->authz->allowed($who->userId, RmmAbility::DEVICE_MANAGE, $c);
+            $item['can_approve'] = $item['can_approve'] && $manage[$c];
+        }
+        unset($item);
+
+        return ActionResult::ok('ok', 200, 'ok', $r + ['limit' => max(1, min(500, $limit)), 'offset' => max(0, $offset)]);
+    }
+
+    /**
+     * Bulk "approve and map": for each device id, map the node THE DEVICE ITSELF REPORTED (the one stored in its Mesh agent state, never a typed one) through the same
+     * audited action as a single approval ({@see setMeshNode()}: `rmm.device.manage` for the device's client). Per device the result is `changed`, `skipped` (nothing
+     * to approve: not waiting for approval, already mapped, a different node kept by hand) or `refused` (not found or not yours, not permitted, or a CONFLICT: a node
+     * another live device holds or also reports is never moved or overridden). At most {@see MESH_APPROVE_MAX} ids per call.
+     *
+     * @param array<mixed> $deviceIds
+     */
+    public function approveMeshNodes(RmmPrincipal $who, array $deviceIds): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::DEVICE_MANAGE, 0, false);
+        if ($denied !== null) {
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        if ($this->meshAgents === null) {
+            return ActionResult::fail(409, 'not_configured', 'The Mesh mapping is not available.');
+        }
+        if ($deviceIds === [] || !array_is_list($deviceIds) || count($deviceIds) > self::MESH_APPROVE_MAX) {
+            return ActionResult::fail(422, 'invalid', 'Send a list of 1 to ' . self::MESH_APPROVE_MAX . ' device ids.');
+        }
+        $ids = [];
+        foreach ($deviceIds as $id) {
+            if (!is_int($id) || $id < 1) {
+                return ActionResult::fail(422, 'invalid', 'Every device id must be a positive whole number.');
+            }
+            $ids[$id] = $id;
+        }
+        $results = [];
+        $n = ['changed' => 0, 'skipped' => 0, 'refused' => 0];
+        foreach ($ids as $id) {
+            $r = $this->approveOneMeshNode($who, $id);
+            ++$n[$r['result']];
+            $results[] = ['device_id' => $id] + $r;
+        }
+        $this->audit->record('Mesh Nodes Bulk Approved', "{$who->userName} approved the reported MeshCentral node of {$n['changed']} of " . count($ids) . " device(s) ({$n['skipped']} skipped, {$n['refused']} refused)", 0, 0);
+
+        return ActionResult::ok("{$n['changed']} device(s) mapped.", 200, 'ok', ['requested' => count($ids)] + $n + ['results' => $results]);
+    }
+
+    /** @return array{result:string,code:string,message:string} */
+    private function approveOneMeshNode(RmmPrincipal $who, int $deviceId): array
+    {
+        $out = ['result' => 'refused', 'code' => 'not_found', 'message' => 'Device not found.'];
+        $ran = false;
+        $res = $this->manage($who, $deviceId, function (array $dev) use ($who, $deviceId, &$out, &$ran): ActionResult {
+            $ran = true;
+            $state = $this->meshAgents?->stateFor($deviceId);
+            $node = $state['node_id'] ?? null;
+            if ($state === null || !$state['installed'] || $node === null || $state['map_state'] !== \RivetCore\Rmm\Mesh\MeshAgentService::MAP_NEEDS_APPROVAL) {
+                $out = ['result' => 'skipped', 'code' => 'not_awaiting_approval', 'message' => 'This device has no reported Mesh node waiting for approval.'];
+
+                return ActionResult::ok('skipped');
+            }
+            $d = $this->meshAgents->claimDecision($dev, $node);   // re-checked now: the world may have changed since the page was drawn
+            if ($d['action'] === 'conflict') {
+                $out = ['result' => 'refused', 'code' => 'conflict', 'message' => 'Another device holds or also reports this node. It was not mapped.'];
+                $this->audit->record('Mesh Node Approval Refused', "Approving MeshCentral node $node for device $deviceId was refused: it is {$d['why']}", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+
+                return ActionResult::fail(409, 'conflict', 'conflict');
+            }
+            if ($d['action'] !== 'needs_approval' && $d['action'] !== 'move') {
+                $out = ['result' => 'skipped', 'code' => $d['action'] === 'same' ? 'already_mapped' : 'kept_manual', 'message' => $d['action'] === 'same' ? 'This device is already mapped to that node.' : 'A node mapped by hand differs from the reported one and was kept.'];
+
+                return ActionResult::ok('skipped');
+            }
+            if ($d['action'] === 'move' && $d['other'] !== null) {
+                $this->devices->setMeshNode((int) $d['other']['device_id'], null, $who->userId);   // the retired device of the same client and asset releases it
+            }
+            $r = $this->setMeshNode($who, $deviceId, $node);
+            if (!$r->ok) {
+                $out = ['result' => 'refused', 'code' => $r->code, 'message' => $r->message];
+
+                return $r;
+            }
+            $this->meshAgents->markMapped($deviceId);
+            $this->audit->record('Mesh Node Approved', "{$who->userName} approved MeshCentral node $node, which device $deviceId reported itself, and mapped it", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+            $out = ['result' => 'changed', 'code' => 'mapped', 'message' => 'Mapped.'];
+
+            return $r;
+        });
+        if (!$ran) {
+            $out = ['result' => 'refused', 'code' => $res->code, 'message' => $res->message];   // 404 (missing or not yours: the same answer) or 403
+        }
+
+        return $out;
     }
 
     // ------------------------------------------------------------------ administration of one device

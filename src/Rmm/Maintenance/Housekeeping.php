@@ -95,6 +95,7 @@ final class Housekeeping
         ?MetricStore $metricStore = null,
         ?StoreMaintenance $storeMaintenance = null,
         private readonly ?\RivetCore\Rmm\Store\RmmDataStores $stores = null,
+        private readonly ?\Closure $meshVerify = null,
     ) {
         $this->metrics = $metricStore ?? $metricSink;
         $this->maintenance = $storeMaintenance ?? $storage;
@@ -205,6 +206,15 @@ final class Housekeeping
                 }
             } catch (\Throwable $e) {
                 error_log('rmm housekeeping (hypervisor): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0036 not applied yet
+            }
+        }
+        // Verified Mesh node mapping (rc.67): off unless an administrator turned it on; one Mesh connection per run, at most MAX_DEVICES_PER_RUN devices, never inside a launch.
+        if ($this->meshVerify !== null) {
+            try {
+                $v = ($this->meshVerify)()->run();
+                $out['mesh_verified'] = $v['mapped'];
+            } catch (\Throwable $e) {
+                error_log('rmm housekeeping (mesh verify): ' . get_class($e));   // the class only: nothing the Mesh server sent
             }
         }
         if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {

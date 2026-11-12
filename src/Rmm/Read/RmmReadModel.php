@@ -83,6 +83,7 @@ final class RmmReadModel
         private readonly ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfterApproval = null,
         ?\RivetCore\Rmm\Store\CheckHistoryStore $checkHistory = null,
         ?\RivetCore\Rmm\Store\SoftwareHistoryStore $softwareHistory = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshMapping $meshMapping = null,
     ) {
         $this->checkHistoryStore = $checkHistory ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbCheckHistoryStore($sql);
         $this->softwareHistoryStore = $softwareHistory ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbSoftwareHistoryStore($sql);
@@ -348,6 +349,10 @@ final class RmmReadModel
         // {installed, version, node_id, error, map_state (mapped|conflict|kept_manual|needs_approval|null), conflict_device_id, first_installed_at, reported_at}.
         if (($meshAgent = $this->meshAgents?->stateFor((int) $d['device_id'])) !== null) {
             $out['mesh_agent'] = $meshAgent;
+        }
+        // Additive (1.0.0-rc.67): why this device is or is not mapped to a Mesh node {state, reason, reported_node_id, mapped_node_id, mapped_source, conflict_device_id, can_approve, verification}.
+        if ($this->meshMapping !== null && ($mapping = $this->meshMapping->forDevice((int) $d['device_id'])) !== null) {
+            $out['mesh_mapping'] = $mapping;
         }
         // Additive and only present while the MeshCentral agent install is available (Mesh enabled with an https address and a device group), so every other detail is byte
         // for byte what it was: whether a pushed install can be offered for this device. `agent_supports` is whether its agent announced `job:mesh_install` (older agents

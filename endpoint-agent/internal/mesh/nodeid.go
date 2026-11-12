@@ -123,6 +123,12 @@ type Probe struct {
 	// ExtraPaths is an operator-configured agent executable (config mesh_agent_path), tried before the defaults. Only an absolute
 	// path whose file name contains "meshagent" is accepted; nothing else is ever executed.
 	ExtraPaths []string
+	// ReadDir lists a directory and Env reads an environment variable (hooks for the discovery of a renamed or portable install, see discover.go).
+	ReadDir func(string) ([]DirEntry, error)
+	Env     func(string) string
+
+	discover bool // Paths was left to the defaults: the service manager and the usual directories are searched too
+	realFS   bool // the real file system (the discovery is then cached)
 }
 
 // trustCheck is the default Probe.Trusted. A variable only so that this package's tests, which put fake agents in a temporary directory, can relax it.
@@ -162,7 +168,10 @@ func DefaultPaths(goos string) []string {
 
 // registryKeys are queried (Windows) when running the agent yields nothing.
 // UNVERIFIED: whether a MeshAgent version stores its node id there.
-var registryKeys = []string{`HKLM\SOFTWARE\Open Source\MeshAgent2`}
+var registryKeys = []string{`HKLM\SOFTWARE\Open Source\MeshAgent2`, `HKLM\SOFTWARE\WOW6432Node\Open Source\MeshAgent2`}
+
+// registryViews are the registry views tried for each key, after the plain query: a 32-bit key written by a 32-bit agent on 64-bit Windows lives in the other view.
+var registryViews = []string{"/reg:64", "/reg:32"}
 
 func (p *Probe) defaults() {
 	if p.GOOS == "" {
@@ -170,6 +179,7 @@ func (p *Probe) defaults() {
 	}
 	if p.Paths == nil {
 		p.Paths = DefaultPaths(p.GOOS)
+		p.discover = true
 	}
 	if len(p.ExtraPaths) > 0 {
 		var ex []string
@@ -187,7 +197,14 @@ func (p *Probe) defaults() {
 	if p.ReadFile == nil {
 		p.ReadFile = os.ReadFile
 	}
+	if p.ReadDir == nil {
+		p.ReadDir = readDirOS
+	}
+	if p.Env == nil {
+		p.Env = envFromOS
+	}
 	if p.Exists == nil {
+		p.realFS = true
 		p.Exists = func(s string) bool { st, err := os.Stat(s); return err == nil && !st.IsDir() }
 		if p.Trusted == nil {
 			p.Trusted = trustCheck
@@ -203,6 +220,12 @@ func (p Probe) Found() string {
 	p.defaults()
 	for _, c := range p.Paths {
 		if c != "" && p.Exists(c) && (p.Trusted == nil || p.Trusted(c)) {
+			return c
+		}
+	}
+	// Not in a default place: a renamed or portable install is found through its service, its uninstall entry or its directory.
+	for _, c := range p.discovered() {
+		if p.Exists(c) && (p.Trusted == nil || p.Trusted(c)) {
 			return c
 		}
 	}
@@ -228,7 +251,7 @@ func (p Probe) NodeID(ctx context.Context) (id, source string) {
 			}
 		}
 	}
-	for _, name := range []string{"MeshAgent.msh", "meshagent.msh"} {
+	for _, name := range mshNames(exe) {
 		if b, err := p.ReadFile(filepath.Join(filepath.Dir(exe), name)); err == nil && len(b) < 64*1024 {
 			if m := ParseMSH(string(b)); m.NodeID != "" {
 				return m.NodeID, "msh"
@@ -237,12 +260,18 @@ func (p Probe) NodeID(ctx context.Context) (id, source string) {
 	}
 	if p.GOOS == "windows" {
 		for _, k := range registryKeys {
-			rctx, cancel := context.WithTimeout(ctx, p.Timeout)
-			exit, out, err := p.Run(rctx, "", "reg.exe", []string{"query", k})
-			cancel()
-			if err == nil && exit == 0 {
-				if id, ok := ParseRegistryText(out); ok {
-					return id, "registry"
+			for _, view := range append([]string{""}, registryViews...) {
+				args := []string{"query", k}
+				if view != "" {
+					args = append(args, view)
+				}
+				rctx, cancel := context.WithTimeout(ctx, p.Timeout)
+				exit, out, err := p.Run(rctx, "", "reg.exe", args)
+				cancel()
+				if err == nil && exit == 0 {
+					if id, ok := ParseRegistryText(out); ok {
+						return id, "registry"
+					}
 				}
 			}
 		}

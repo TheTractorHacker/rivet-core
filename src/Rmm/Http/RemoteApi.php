@@ -31,6 +31,11 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   POST   endpoint_devices/{id}/mesh/install                          {force?} -> 202 {job_id} | 200 {skipped: already_installed|already_queued} (idempotent); the job carries only the stored Mesh settings
  *   POST   endpoint_devices/{id}/mesh/uninstall                        {confirm} (needed) -> 202 {job_id}; runs the Mesh agent's own uninstaller, never touches the RivetIT agent
  *   POST   endpoint_devices/mesh/install                               {target:{type,id}, force?, confirm} (needed) -> 201 {device_count, created, skipped_*}; capped by bulk_run_max
+ * Mesh node mapping (1.0.0-rc.67):
+ *   GET    endpoint_devices/mesh/mapping                               why each linked device is or is not mapped (state not_installed|installed_no_node_reported|reported_needs_approval|conflict|kept_manual|mapped, reason text, evidence); ?state=&client_id=&q=&limit=&offset=; the caller's clients only
+ *   POST   endpoint_devices/mesh/approve                               {device_ids:[...]} (1 to 200) -> 200 {changed, skipped, refused, results[]}: maps the node each device REPORTED, per device `rmm.device.manage`, a conflict is never overridden
+ *   GET    endpoint_devices/mesh/verify                                the verified-mapping settings (administrators)
+ *   PUT    endpoint_devices/mesh/verify                                {mesh_verify_nodes?, mesh_service_account?, mesh_group_map?} (administrators, audited)
  * File transfer (needs the `filetransfer` sub-switch):
  *   GET    endpoint_devices/{id}/files                                 the device's transfers
  *   POST   endpoint_devices/{id}/files/download                        {path} -> 202 {transfer_id, job_id}
@@ -77,13 +82,45 @@ final class RemoteApi
         $limit = max(1, min(500, (int) ($req->query['limit'] ?? 100)));
         $offset = max(0, (int) ($req->query['offset'] ?? 0));
         if ($seg[0] === 'mesh') {
-            if (($seg[1] ?? null) !== 'install' || isset($seg[2])) {
+            $second = $seg[1] ?? null;
+            if (isset($seg[2]) || !in_array($second, ['install', 'mapping', 'approve', 'verify'], true)) {
                 return self::notFound();
+            }
+            if ($second === 'mapping') {
+                if ($m !== 'GET') {
+                    return self::method();
+                }
+                $f = array_filter(['state' => $req->query['state'] ?? null, 'client_id' => isset($req->query['client_id']) ? (int) $req->query['client_id'] : null,
+                    'q' => $req->query['q'] ?? null], static fn ($v): bool => $v !== null);
+
+                return self::result($this->technician->meshMappings($who, $f, $limit, $offset));
+            }
+            if ($second === 'verify') {
+                if ($m === 'GET') {
+                    return self::result($this->remote->meshVerifySettings($who));
+                }
+                if (in_array($m, ['PUT', 'PATCH', 'POST'], true)) {
+                    [$in, $bad] = $this->body($req);
+
+                    return $bad ?? self::result($this->remote->updateMeshVerifySettings($who, $in));
+                }
+
+                return self::method();
             }
             if ($m !== 'POST') {
                 return self::method();
             }
             [$in, $bad] = $this->body($req);
+            if ($second === 'approve') {
+                if ($bad !== null) {
+                    return $bad;
+                }
+                if (array_diff(array_keys($in), ['device_ids']) !== [] || !is_array($in['device_ids'] ?? null)) {
+                    return self::json(422, ['error' => 'Send {"device_ids": [1, 2, ...]} and nothing else: the node mapped is the one each device reported.', 'code' => 'invalid']);
+                }
+
+                return self::result($this->technician->approveMeshNodes($who, $in['device_ids']));
+            }
 
             return $bad ?? self::result($this->remote->installMeshAgentBulk($who, $in));
         }

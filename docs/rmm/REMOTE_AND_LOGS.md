@@ -239,6 +239,48 @@ Not tested against a real MeshCentral server: the flow and the checks are exerci
 
 What was proven: the whole flow on Linux in a container against a mock Mesh server that serves a fake `meshagent` (download, pin, run, node id report, no-fail, uninstall behaviour); the pinning, size, redirect and error handling and the parsers with unit tests; the server rules with integration tests. See `endpoint-agent/e2e/run_linux_container_e2e.sh` and `endpoint-agent/internal/mesh`.
 
+## Mesh node mapping: why a device is not mapped, bulk approval, verified auto-map (1.0.0-rc.67)
+
+A device that has the MeshCentral agent reports which node it is. That is only what the device SAYS, so a report alone never creates a mapping: a new claim is `needs_approval` until an administrator maps it, or (opt-in, below) MeshCentral itself confirms it. MeshCentral does not separate clients: one server can hold every client's devices, so a wrong mapping would open another client's machine from this client's device page.
+
+### The reason a device is not mapped
+
+`RivetCore\Rmm\Mesh\MeshMapping` answers, for every linked device, exactly one of six states and a sentence a person can read:
+
+| state | meaning |
+|---|---|
+| `not_installed` | the device has not reported a MeshCentral agent and has no node mapped |
+| `installed_no_node_reported` | the agent is installed but the device has not said which node it is yet |
+| `reported_needs_approval` | the device reported a node nobody approved, so nothing was mapped ("This device reported a Mesh node that has not been approved yet, so nothing was mapped. Check this node in MeshCentral, then map it.") |
+| `conflict` | the reported node is held by, or also reported by, another device (named only when it is in the same client) |
+| `kept_manual` | the device reported a different node than the one an administrator mapped by hand, which was kept |
+| `mapped` | a node is mapped (by hand, by an approval, or verified against MeshCentral: `mapped_source` says which) |
+
+Each item also carries `reported_node_id`, `mapped_node_id`, `can_approve`, and `verification` (the evidence of the last verified look, or null). It is additive in the device detail as `mesh_mapping`, and the fleet list is `GET endpoint_devices/mesh/mapping?state=&client_id=&q=&limit=&offset=` (`TechnicianActions::meshMappings()`): the caller's clients only, and another client's device is simply absent, exactly like a missing one. `counts` gives the number of devices per state for the filter chips.
+
+### Bulk "approve and map"
+
+`POST endpoint_devices/mesh/approve {"device_ids":[...]}` (`TechnicianActions::approveMeshNodes()`), 1 to 200 ids per call. For each device it maps THE NODE THE DEVICE REPORTED (stored in its Mesh agent state; a typed node id is rejected) through the same audited action as the single approval (`setMeshNode`, ability `rmm.device.manage` for that device's client). The answer lists `changed`, `skipped` (not waiting for approval, already mapped, a different node kept by hand) and `refused` (not found or not yours, not permitted, or a conflict). A conflict is re-checked at approval time and is never overridden or moved. Audit rows: `Mesh Node Approved` (per device), `Mesh Node Approval Refused`, `Mesh Nodes Bulk Approved` (the call).
+
+### Verified auto-map (off by default)
+
+Settings (administrators only, audited): `GET`/`PUT endpoint_devices/mesh/verify` with `mesh_verify_nodes` (default false), `mesh_service_account` (a MeshCentral account name, letters, digits, dot, underscore, hyphen) and `mesh_group_map` (client id => the MeshCentral device group of that client). They live in `endpoint_agent_mesh_settings.verify_json` (**migration `0052_rmm_mesh_verify`**, two nullable text columns; without it the feature stays off and says so).
+
+When on, the housekeeping job (never a launch) makes ONE control connection per run (`MeshControlClient`: RFC 6455 over TLS to `/control.ashx?moreargs=1`, the same network policy and pinned addresses as the reachability probe, certificate verified, no redirects, 12 s overall deadline, 8 MiB per frame, 16 MiB per run, at most 20000 nodes), signs in with a login cookie minted for the service account from the stored login key (never put in the URL, never stored, never logged, fresh per connection), waits for `serverinfo` and for `userinfo` naming exactly that account, asks for `meshes` and `nodes`, and looks at at most 50 `reported_needs_approval` devices, none twice within 10 minutes. A device is mapped ONLY when all of these hold:
+
+1. the node it reported exists on the Mesh server;
+2. the node's name or host equals the device host name (case-insensitive) and exactly one node of that group does (a node whose `host` is an IP simply does not match by host);
+3. the node is in the Mesh group configured for the device's client (the group is the KEY of the `nodes` answer: a node carries no `meshid`; groups are matched by id, never by name, because names are not unique); a client without an entry is never mapped, and a group configured for two clients is refused;
+4. nobody else holds or claims the node (the same decision the check-in uses must still say `needs_approval`).
+
+Otherwise the device stays `reported_needs_approval` and the reason is stored as evidence (`verification.code`: `no_group_configured`, `group_shared`, `node_missing`, `wrong_group`, `hostname_differs`, `hostname_not_unique`, `claimed`) for the administrator. A server that is unreachable, answers wrongly, closes the connection (`noauth`), signs in another account or is silent for the deadline maps nothing (`Mesh Verification Failed`, audited once a day). A mapped node has `source` `verified` and the audit row `Mesh Node Verified And Mapped` carries the reason.
+
+What is verified: all of it against `tests/Support/MockMeshControl.php`, a fake control channel speaking the shapes MeshCentral 1.3.1 uses (as reported by the Console lane); the protocol facts come from a working client there. What was never run: any real MeshCentral from this code, a TLS control connection (the fake speaks plain TCP on loopback), a Mesh domain other than the default one, a server that pages `nodes` (`maxdeviceview`), and the housekeeping job against a production-sized fleet.
+
+### Detecting an already installed MeshAgent (agent side)
+
+The endpoint agent (`endpoint-agent/internal/mesh`) used to look only in the default install locations. It now also finds the agent through its Windows service (any service whose name contains "mesh": the registry `ImagePath`), the uninstall entry in the 64-bit and the 32-bit registry view, systemd units and SysV init scripts named like a Mesh agent (`ExecStart`), and directories named like a Mesh agent under the program folders, `/usr/local`, `/opt` (renamed or portable copies), and reads the node id from a `.msh` named after a renamed executable and from the `WOW6432Node` key and both registry views. A discovered path under a user profile, a temporary directory or `/home` is never followed, and on Linux the usual root-ownership check still runs before anything is executed. The wire shape is unchanged (the same `mesh_agent` member). Verified on fixtures only (table-driven tests), never on a real Windows or Linux machine with a renamed install.
+
 ## What is built, what is verified, what remains
 
 Built and tested on a scratch database (unit, integration with client-scoped principals for every new route, golden replay of the old agents unchanged): the job types and registry flags, `rmm.remote.manage`, the settings and switches, file transfer end to end on the server, the Mesh terminal and files views (the URL logic against the mock Mesh server), log ingest, retention and caps, search, rules and alerts, events, audit, read-model methods and the REST routes.

@@ -180,6 +180,9 @@ final class RmmModule
     private ?MeshService $mesh = null;
     private ?MeshAgentSettings $meshAgentSettings = null;
     private ?MeshAgentService $meshAgents = null;
+    private ?\RivetCore\Rmm\Mesh\MeshMapping $meshMapping = null;
+    private ?\RivetCore\Rmm\Mesh\MeshVerifySettings $meshVerifySettings = null;
+    private ?\RivetCore\Rmm\Mesh\MeshVerifyService $meshVerifyService = null;
     private ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfterApproval = null;
     private ?InstallerService $installerService = null;
     private ?TechnicianActions $technician = null;
@@ -725,7 +728,7 @@ final class RmmModule
     /** Service and process managers, file transfer, Mesh view information and the remote-tools settings (shared by the REST API and the edition's pages). */
     public function remoteActions(): RemoteActions
     {
-        return $this->remoteActions ??= new RemoteActions($this->sql(), $this->devices(), $this->authorizer(), $this->settings(), $this->jobs(), $this->transfers(), $this->remoteSettings(), $this->mesh(), $this->audit, $this->meshAgentSettings(), $this->meshAgents(), $this->targets());
+        return $this->remoteActions ??= new RemoteActions($this->sql(), $this->devices(), $this->authorizer(), $this->settings(), $this->jobs(), $this->transfers(), $this->remoteSettings(), $this->mesh(), $this->audit, $this->meshAgentSettings(), $this->meshAgents(), $this->targets(), $this->meshVerifySettings());
     }
 
     /** Reading collected logs and managing log rules. */
@@ -959,7 +962,7 @@ final class RmmModule
             null, $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), null, $this->cache(), $this->externalSink(),
             $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules(), $this->hypervisorService(),
-            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores());
+            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores(), fn () => $this->meshVerifyService());
     }
 
     /**
@@ -1388,7 +1391,7 @@ final class RmmModule
         return $this->readModel ??= new RmmReadModel($this->sql(), $this->settings(), $this->devices(), $this->updates(), $this->binaryStore(),
             $this->assets instanceof RmmAssetNamesInterface ? $this->assets : null, $this->clientLabel(),
             $this->policy === null ? null : $this->authorizer(), $this->tags(), $this->groups(), $this->metricReader(), $this->automationReader(), $this->cache(), $this->logService(), $this->transfers(), $this->meshAgents(), $this->patchReader(), $this->deployReader(), $this->changeService(), $this->meshAfterApproval(),
-            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory());
+            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->meshMapping());
     }
 
     /** Hosted agent binaries: validate, store, publish, serve. */
@@ -1404,6 +1407,24 @@ final class RmmModule
     }
 
     /** The install settings of the optional MeshCentral agent (device group, certificate pin, overwrite switch, table corrections). */
+    public function meshMapping(): \RivetCore\Rmm\Mesh\MeshMapping
+    {
+        return $this->meshMapping ??= new \RivetCore\Rmm\Mesh\MeshMapping($this->sql());
+    }
+
+    public function meshVerifySettings(): \RivetCore\Rmm\Mesh\MeshVerifySettings
+    {
+        return $this->meshVerifySettings ??= new \RivetCore\Rmm\Mesh\MeshVerifySettings($this->sql());
+    }
+
+    /** The verified Mesh node mapping (off unless an administrator turned it on); the housekeeping job runs it. */
+    public function meshVerifyService(): \RivetCore\Rmm\Mesh\MeshVerifyService
+    {
+        $insecure = $this->options['allow_insecure_http'] ?? false;
+
+        return $this->meshVerifyService ??= new \RivetCore\Rmm\Mesh\MeshVerifyService($this->sql(), $this->settings(), $this->meshVerifySettings(), new \RivetCore\Rmm\Mesh\MeshControlClient($this->urlPolicy ?? new UrlPolicy(false), $insecure), $this->meshAgents(), $this->devices(), $this->audit, $this->box, $insecure);
+    }
+
     public function meshAgentSettings(): MeshAgentSettings
     {
         return $this->meshAgentSettings ??= new MeshAgentSettings($this->sql(), $this->settings());
@@ -1430,7 +1451,7 @@ final class RmmModule
     public function technician(): TechnicianActions
     {
         return $this->technician ??= new TechnicianActions($this->sql(), $this->devices(), $this->deviceService(), $this->enrollment(), $this->jobs(), $this->updates(),
-            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings());
+            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings(), $this->meshMapping(), $this->meshAgents());
     }
 
     /** The validated administration operations (settings, MeshCentral, signing key, binaries, releases, installers). */
