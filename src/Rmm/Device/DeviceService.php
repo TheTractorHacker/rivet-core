@@ -135,7 +135,26 @@ final class DeviceService
         return true;
     }
 
-    /** Move a device (and its asset) to another client. Open alerts follow it. False when the device or the client does not exist. */
+    /**
+     * Tables keyed by `device_id` that carry their own `client_id`, so a move must rewrite it (every row, whatever its state: queued, running or finished jobs and
+     * the per-device history belong to the device, same precedent as the hot-store logs and changes in {@see \RivetCore\Rmm\Store\ClientMoves}). `rmm_alert_meta` is
+     * NOT in this list: only its open (unresolved) rows follow, like the alerts themselves ({@see RmmBridgeInterface::reassignAlerts()}). Tables with only a `device_id`
+     * (check-ins, hypervisor data, software inventory, device state, ...) are scoped through the device row and follow automatically.
+     */
+    private const CLIENT_CARRYING_TABLES = [
+        'endpoint_agent_jobs', 'endpoint_agent_transfers', 'rmm_deploy_state', 'rmm_device_apps', 'rmm_package_installs', 'rmm_package_jobs', 'rmm_package_history',
+        'rmm_patch_available', 'rmm_patch_jobs', 'rmm_patch_history', 'rmm_patch_scans',
+    ];
+
+    /**
+     * Move a device (and its asset) to another client. False when the device or the client does not exist.
+     *
+     * Everything that belongs to the device follows in one transaction: the asset, open alerts and their `rmm_alert_meta` rows (resolved alerts and audit rows keep
+     * the client they were written under), jobs in every state, deployment, package and patch state and history, and file transfers; the stored logs and change
+     * records follow through the hot-store hook. The credential, `install_id` and the agent link are NOT touched, so the machine keeps checking in with the
+     * same device token and never re-enrolls. A device that already belongs to `$clientId` is a no-op: true, nothing written, no audit row (only a different, valid `$locationId` is applied, to the device and its asset, with a `Device Site Changed` audit row). A retired or revoked
+     * device can be moved (its history and asset follow like any other); it stays retired or revoked.
+     */
     public function transfer(int $deviceId, int $clientId, int $locationId, int $userId): bool
     {
         $dev = $this->devices->find($deviceId);
@@ -145,9 +164,24 @@ final class DeviceService
         if ($locationId > 0 && !$this->tenancy->locationInClient($locationId, $clientId)) {
             $locationId = 0;
         }
+        if ((int) $dev['client_id'] === $clientId) {
+            // Already in this client. Without a (new, valid) site that is a no-op; with one, only the site changes (device and asset), audited as such.
+            if ($locationId > 0 && (int) $dev['location_id'] !== $locationId) {
+                $this->sql->run('UPDATE endpoint_agent_devices SET location_id = ? WHERE device_id = ?', [$locationId, $deviceId]);
+                if (!empty($dev['asset_id'])) {
+                    $this->assets->moveToClient((int) $dev['asset_id'], $clientId, $locationId);
+                }
+                $this->audit->record('Device Site Changed', "Device $deviceId moved to site $locationId within department $clientId by user $userId", $clientId, (int) ($dev['asset_id'] ?? 0));
+            }
+
+            return true;
+        }
         $this->sql->transaction(function () use ($deviceId, $clientId, $locationId, $dev): void {
             $this->sql->run('UPDATE endpoint_agent_devices SET client_id = ?, location_id = ? WHERE device_id = ?', [$clientId, $locationId, $deviceId]);
-            $this->sql->run('UPDATE endpoint_agent_jobs SET client_id = ? WHERE device_id = ?', [$clientId, $deviceId]);
+            foreach (self::CLIENT_CARRYING_TABLES as $table) {
+                $this->moveRows("UPDATE `$table` SET client_id = ? WHERE device_id = ?", [$clientId, $deviceId]);
+            }
+            $this->moveRows('UPDATE rmm_alert_meta SET client_id = ? WHERE device_id = ? AND resolved_at IS NULL', [$clientId, $deviceId]);
             if (!empty($dev['asset_id'])) {
                 $this->assets->moveToClient((int) $dev['asset_id'], $clientId, $locationId);
                 $this->bridge->reassignAlerts($this->settings->integrationId(), (int) $dev['asset_id'], $clientId);
@@ -160,6 +194,22 @@ final class DeviceService
         $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
 
         return true;
+    }
+
+    /**
+     * One move statement; a table that does not exist on this install (module migration not applied) has nothing to move.
+     *
+     * @param list<int|string> $params
+     */
+    private function moveRows(string $sql, array $params): void
+    {
+        try {
+            $this->sql->run($sql, $params);
+        } catch (\Throwable $e) {
+            if ($e->getCode() !== 1146 && !str_contains($e->getMessage(), "doesn't exist")) {
+                throw $e;
+            }
+        }
     }
 
     /** False for an unknown ring or a device that does not exist. */
@@ -207,6 +257,39 @@ final class DeviceService
         }
 
         return true;
+    }
+
+    /** Most devices one {@see setAutomationDisabledBulk()} call takes. */
+    public const BULK_MAX = 500;
+
+    /**
+     * {@see setAutomationDisabled()} for many devices (1.0.0-rc.59): each device goes through the single-device call, so queued automated jobs are cancelled when the switch
+     * goes on and every actual flip writes its own audit row; a device already in the wanted state is reported as unchanged and writes nothing, so re-running is harmless.
+     * Ids are de-duplicated and non-positive ones ignored. No permission check here: the technician action ({@see \RivetCore\Rmm\Technician\TechnicianActions::setAutomationDisabledBulk()}) filters first.
+     *
+     * @param list<int> $deviceIds
+     * @return array{changed:list<int>,unchanged:list<int>,not_found:list<int>}
+     * @throws \InvalidArgumentException when more than {@see BULK_MAX} distinct devices are given (nothing is changed)
+     */
+    public function setAutomationDisabledBulk(array $deviceIds, bool $disabled, ?int $userId = null): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $deviceIds), static fn (int $i): bool => $i > 0)));
+        if (count($ids) > self::BULK_MAX) {
+            throw new \InvalidArgumentException('At most ' . self::BULK_MAX . ' devices at a time.');
+        }
+        $out = ['changed' => [], 'unchanged' => [], 'not_found' => []];
+        foreach ($ids as $id) {
+            $dev = $this->devices->find($id);
+            if ($dev === null) {
+                $out['not_found'][] = $id;
+                continue;
+            }
+            $was = (int) ($dev['device_automation_disabled'] ?? 0) === 1;
+            $this->setAutomationDisabled($id, $disabled, $userId);
+            $out[$was === $disabled ? 'unchanged' : 'changed'][] = $id;
+        }
+
+        return $out;
     }
 
     /**

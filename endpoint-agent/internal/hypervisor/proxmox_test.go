@@ -109,6 +109,26 @@ func TestProxmoxPartialFailureStillReports(t *testing.T) {
 	}
 }
 
+func TestProxmoxCephWithoutConfigIsNotAnError(t *testing.T) {
+	// ceph-common is installed on every Proxmox host; `ceph health` exits 1 where no cluster is configured, which is not a collector error.
+	f, p := pveFake(t)
+	f.fail("/usr/bin/ceph health --format json", 1)
+	had := p.Exists
+	p.Exists = func(x string) bool { return x != "/etc/pve/ceph.conf" && x != "/etc/ceph/ceph.conf" && had(x) }
+	rep, err := p.Full(context.Background(), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rep.Error, "ceph") {
+		t.Fatalf("an unconfigured Ceph must not be reported: %q", rep.Error)
+	}
+	for _, st := range rep.Storage {
+		if st.Type == "ceph" {
+			t.Fatal("no Ceph storage entry without a Ceph cluster")
+		}
+	}
+}
+
 func TestProxmoxGuestListFailureIsAnErrorReport(t *testing.T) {
 	for name, out := range map[string]string{"malformed": `{"data": [`, "empty-output": ``, "html": `<html>502</html>`} {
 		f, p := pveFake(t)
