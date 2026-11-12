@@ -85,10 +85,13 @@ final class EnrollmentService
     // ------------------------------------------------------------------ enrollment tokens
 
     /**
+     * @param bool $managedExternally the machines this token enrolls are already managed by another RMM or patch tool (1.0.0-rc.59): each is created with
+     *        `device_automation_disabled = 1` (see {@see DeviceService::setAutomationDisabled()}) and an audit row says so. Kept server-side by token in
+     *        `endpoint_agent_installer_options.managed_externally`; the installer file and the device protocol do not carry it.
      * @return array{token_id:int,token:string} the plaintext token is shown once and never stored
-     * @throws \InvalidArgumentException when the client does not exist
+     * @throws \InvalidArgumentException when the client does not exist, or `$managedExternally` is asked for before migration 0049 is applied
      */
-    public function createToken(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, int $userId): array
+    public function createToken(int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, int $userId, bool $managedExternally = false): array
     {
         if ($this->tenancy->clientName($clientId) === null) {
             throw new \InvalidArgumentException('Choose the ' . $this->clientLabel . ' the devices belong to.');
@@ -105,8 +108,49 @@ final class EnrollmentService
         $id = $this->sql->insert('INSERT INTO endpoint_agent_enrollment_tokens (token_selector, token_hash, label, client_id, location_id, ring, expires_at, max_uses, created_by, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [$selector, hash('sha256', $secret), mb_substr($label, 0, 100), $clientId, $locationId, $ring, $this->sql->utcAt($ttlHours * 3600), $maxUses, $userId, $this->sql->utcNow()]);
+        if ($managedExternally) {
+            try {
+                $this->sql->run('INSERT INTO endpoint_agent_installer_options (token_id, managed_externally, created_at) VALUES (?, 1, ?) ON DUPLICATE KEY UPDATE managed_externally = 1', [$id, $this->sql->utcNow()]);
+            } catch (\Throwable) {
+                $this->revokeToken($id, $userId);   // migration 0049 not applied: never hand out a token that would silently ignore the choice
+
+                throw new \InvalidArgumentException('The "managed by another RMM" option is not available until the database is updated.');
+            }
+        }
 
         return ['token_id' => $id, 'token' => RmmProtocol::ENROLL_TOKEN_PREFIX . '.' . $selector . '.' . $secret];
+    }
+
+    /** Whether devices enrolled with this token are created with Core automation switched off (false for an unknown token or before migration 0049). */
+    public function tokenManagedExternally(int $tokenId): bool
+    {
+        try {
+            return (int) $this->sql->val('SELECT managed_externally FROM endpoint_agent_installer_options WHERE token_id = ?', [$tokenId]) === 1;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * A token issued with "managed by another RMM": switch automation off for the device it just placed (a new device, a re-enrollment or a reinstall alike; never
+     * switched back on here) and write one audit row. A device that already had automation off writes nothing.
+     *
+     * @param array<string,mixed> $token the enrollment token row
+     */
+    private function applyManagedExternally(int $deviceId, array $token): void
+    {
+        if (!$this->tokenManagedExternally((int) $token['token_id'])) {
+            return;
+        }
+        try {
+            $changed = $this->sql->run('UPDATE endpoint_agent_devices SET device_automation_disabled = 1 WHERE device_id = ? AND device_automation_disabled = 0', [$deviceId]);
+        } catch (\Throwable) {
+            return;   // migration 0039 not applied: nothing to switch
+        }
+        if ($changed > 0) {
+            $this->audit->record('Device Automation Disabled', "Automation disabled for device $deviceId at enrollment: token {$token['token_selector']} was issued as \"managed by another RMM\", so scheduled scripts, patch installs and software deployment never run on it",
+                (int) $token['client_id'], 0);
+        }
     }
 
     public function revokeToken(int $tokenId, int $userId): bool
@@ -294,6 +338,7 @@ final class EnrollmentService
             $this->sql->run('DELETE FROM endpoint_agent_checkins WHERE device_id = ?', [$dev['device_id']]);
             $deviceId = (int) $dev['device_id'];
             $types->saveDetected($deviceId, $detected);
+            $this->applyManagedExternally($deviceId, $token);
             $dev = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ?', [$deviceId]) ?? $dev;
             if ($dev['link_state'] === 'linked' && !empty($dev['asset_id'])) {
                 $asset = $this->assets->find((int) $dev['asset_id']);
@@ -338,6 +383,7 @@ final class EnrollmentService
                 $d['agent_version'], $assetId, (int) $token['client_id'], (int) $token['location_id'], $token['ring'], $state, $reason,
                 $match['candidates'] !== [] ? json_encode($match['candidates']) : null, $hash, $now, $expires, $token['token_id'], $now, substr($ip, 0, 64), $now]);
         $types->saveDetected($deviceId, $detected);
+        $this->applyManagedExternally($deviceId, $token);
         if ($assetId !== null) {
             $this->linker->ensure($deviceId, $assetId);
         }
