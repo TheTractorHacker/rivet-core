@@ -5,20 +5,135 @@ package store
 import (
 	"encoding/base64"
 	"errors"
-	"os"
+	"fmt"
+	"io/fs"
+	"path/filepath"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"rivetit-agent/internal/winacl"
 )
 
 // Directory DACL: protected (no inherited ACEs), SYSTEM and Administrators
 // full control, nobody else. UNVERIFIED on real Windows (built, not run).
 const dirSDDL = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 
+// ownedDirSDDL is dirSDDL plus an explicit owner (Administrators): a directory created with it can never be owned by the creating standard user.
+const ownedDirSDDL = "O:BA" + dirSDDL
+
+// ensureDir returns a state directory that only SYSTEM and Administrators own and can write (CORE-16). A directory that already exists is not
+// trusted merely because it is there: a standard user may create folders under %ProgramData% and owns what it creates, so it could have pre-created
+// RivetIT\Agent and filled it with a config.json (mesh_agent_path, server_url, ca_file ...) before the agent was installed. Such a directory, a
+// reparse point, or one whose parent RivetIT directory is untrusted, is refused with an actionable error and nothing is read from it.
 func ensureDir(dir string) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir = filepath.Clean(dir)
+	chain := []string{dir}
+	if parent := filepath.Dir(dir); strings.EqualFold(filepath.Base(parent), "RivetIT") {
+		chain = []string{parent, dir} // the default layout %ProgramData%\RivetIT\Agent: both levels are the agent's
+	}
+	for _, d := range chain {
+		if err := ensureTrustedDir(d); err != nil {
+			return fmt.Errorf("refusing to use the agent state directory: %w. %s", err, winacl.RepairHint(chain[0]))
+		}
+	}
+	return nil
+}
+
+func ensureTrustedDir(dir string) error {
+	info, err := winacl.Inspect(dir, true)
+	if err != nil {
 		return err
 	}
+	if info.NotFound {
+		// Create it atomically with an explicit owner and DACL, so there is no window in which it is owned by someone else. The parent of
+		// the first level is %ProgramData% (or a directory chosen with --state-dir) and must exist.
+		if err := createSecureDir(dir); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+			return fmt.Errorf("create %s: %w", dir, err)
+		}
+		if info, err = winacl.Inspect(dir, true); err != nil {
+			return err
+		}
+	}
+	verdict, why := winacl.Classify(info)
+	if verdict == winacl.Refuse {
+		return why // untrusted owner, reparse point, wrong kind: created or changed by somebody else
+	}
+	// Tighten first, verify afterwards: once the protected DACL is on, nobody else can add anything, so the tree check below sees everything that could
+	// ever have been planted. Older agents created %ProgramData%\RivetIT with the ProgramData ACL inherited (users may create files and folders there);
+	// the owner is SYSTEM or Administrators, which is what separates that benign shape from a folder a user pre-created.
+	// A named administrator account as owner is re-owned to the Administrators group (the agent runs as SYSTEM and may do that).
+	if err := setDirDACL(dir, !winacl.Trusted(info.Owner)); err != nil {
+		return fmt.Errorf("tighten permissions of %s: %w", dir, err)
+	}
+	if verdict == winacl.Repairable {
+		if info, err = winacl.Inspect(dir, true); err != nil {
+			return err
+		}
+		if err := winacl.Check(info); err != nil {
+			return fmt.Errorf("permissions of %s are still not safe after tightening: %w", dir, err)
+		}
+	}
+	entries, err := treeInfos(dir)
+	if err != nil {
+		return err
+	}
+	if err := winacl.CheckTree(entries); err != nil {
+		return err
+	}
+	if verdict == winacl.Repairable && OnRepair != nil {
+		OnRepair(fmt.Sprintf("repaired the permissions of %s in place (%v); owner is SYSTEM/Administrators and all %d entries inside are owned by SYSTEM/Administrators", dir, why, len(entries)))
+	}
+	return nil
+}
+
+// treeInfos inspects every entry below dir without following links (a reparse point is reported, not entered).
+func treeInfos(dir string) ([]winacl.Info, error) {
+	var out []winacl.Info
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p == dir {
+			return nil
+		}
+		i, err := winacl.Inspect(p, d.IsDir())
+		if err != nil {
+			return err
+		}
+		out = append(out, i)
+		if i.Reparse && d.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	return out, err
+}
+
+func createSecureDir(dir string) error {
+	// Missing ancestors (a custom --state-dir several levels deep) are created the same way, outermost first.
+	if parent := filepath.Dir(dir); parent != dir {
+		if pi, err := winacl.Inspect(parent, true); err == nil && pi.NotFound {
+			if err := createSecureDir(parent); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+				return err
+			}
+		}
+	}
+	sd, err := windows.SecurityDescriptorFromString(ownedDirSDDL)
+	if err != nil {
+		return err
+	}
+	p, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return err
+	}
+	sa := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+	return windows.CreateDirectory(p, sa)
+}
+
+// setDirDACL re-applies the protected DACL of an already verified directory (idempotent; also repairs an agent-created directory from an older version).
+func setDirDACL(dir string, reown bool) error {
 	sd, err := windows.SecurityDescriptorFromString(dirSDDL)
 	if err != nil {
 		return err
@@ -27,9 +142,15 @@ func ensureDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		nil, nil, dacl, nil)
+	flags := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION)
+	var owner *windows.SID
+	if reown {
+		if owner, err = windows.StringToSid(winacl.SIDAdministrator); err != nil {
+			return err
+		}
+		flags |= windows.OWNER_SECURITY_INFORMATION
+	}
+	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, flags, owner, nil, dacl, nil)
 }
 
 func syncDir(string)                       {}

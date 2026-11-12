@@ -163,6 +163,9 @@ type Inflight struct {
 	WithHypervisor bool `json:"with_hypervisor,omitempty"`
 }
 
+// OnRepair, when set, is told when (Windows only) an existing state directory of the legacy shape (trusted owner, loose inherited DACL) was tightened in place.
+var OnRepair func(msg string)
+
 // Store is a directory of agent files.
 type Store struct {
 	Dir string
