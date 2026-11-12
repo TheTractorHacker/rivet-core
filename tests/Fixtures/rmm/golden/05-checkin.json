@@ -113,7 +113,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>"
+                    "authorization": "Bearer <TOKEN#3>"
                 }
             },
             "response": {
@@ -143,7 +143,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>"
+                    "authorization": "Bearer <TOKEN#3>"
                 },
                 "body": {
                     "raw": "nope"
@@ -175,7 +175,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -208,7 +208,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -259,7 +259,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -310,7 +310,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -361,7 +361,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -412,7 +412,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -465,7 +465,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -518,7 +518,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -574,7 +574,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -614,7 +614,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -657,7 +657,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -717,7 +717,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -859,7 +859,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -982,7 +982,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -1107,7 +1107,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -1192,7 +1192,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -1294,7 +1294,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -1396,7 +1396,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -1498,7 +1498,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -1600,7 +1600,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -1702,7 +1702,7 @@
                 "path": "/api/v1/agent_checkin",
                 "base": "main",
                 "headers": {
-                    "authorization": "Bearer <TOKEN#5>",
+                    "authorization": "Bearer <TOKEN#3>",
                     "content-type": "application/json"
                 },
                 "body": {
@@ -1968,8 +1968,8 @@
                 },
                 {
                     "device_id": "<DEVICE:dev2>",
-                    "install_id": "00000000-0000-4000-8000-000000000012",
-                    "machine_guid": "ffffffffffff0001",
+                    "install_id": "00000000-0000-4000-8000-000000000002",
+                    "machine_guid": "a985e21143e883c4",
                     "hostname": "GOLD-INV",
                     "os": "windows",
                     "os_version": "Windows 11 23H2",
@@ -2005,7 +2005,7 @@
                     "revoked_reason": null,
                     "retired_at": null,
                     "enrolled_via_token_id": "<TOKENROW#1>",
-                    "enroll_count": 3,
+                    "enroll_count": 2,
                     "first_seen_at": "<DT>",
                     "last_checkin_at": "<DT>",
                     "last_collected_at": "<DT>",
@@ -2049,6 +2049,56 @@
                     "logged_in_user": "<script>alert(1)</script>",
                     "pending_reboot": 0,
                     "uptime_s": 7200,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2r>",
+                    "install_id": "00000000-0000-4000-8000-000000000012",
+                    "machine_guid": "ffffffffffff0001",
+                    "hostname": "GOLD-7A01",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-LINK",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:4e:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "reinstall_identity",
+                    "match_candidates_json": [
+                        {
+                            "asset_id": "<ASSET:linkable>",
+                            "matched_by": [
+                                "reinstall"
+                            ],
+                            "device_id": "<DEVICE:dev2>"
+                        }
+                    ],
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
                     "update_state_json": null,
                     "created_at": "<DT>"
                 },
@@ -2369,8 +2419,8 @@
                 },
                 {
                     "device_id": "<DEVICE:dev2>",
-                    "install_id": "00000000-0000-4000-8000-000000000012",
-                    "machine_guid": "ffffffffffff0001",
+                    "install_id": "00000000-0000-4000-8000-000000000002",
+                    "machine_guid": "a985e21143e883c4",
                     "hostname": "GOLD-INV",
                     "os": "windows",
                     "os_version": "Windows 11 23H2",
@@ -2406,7 +2456,7 @@
                     "revoked_reason": null,
                     "retired_at": null,
                     "enrolled_via_token_id": "<TOKENROW#1>",
-                    "enroll_count": 3,
+                    "enroll_count": 2,
                     "first_seen_at": "<DT>",
                     "last_checkin_at": "<DT>",
                     "last_collected_at": "<DT>",
@@ -2461,6 +2511,56 @@
                     "logged_in_user": "<script>alert(1)</script>",
                     "pending_reboot": 0,
                     "uptime_s": 7200,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2r>",
+                    "install_id": "00000000-0000-4000-8000-000000000012",
+                    "machine_guid": "ffffffffffff0001",
+                    "hostname": "GOLD-7A01",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-LINK",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:4e:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "reinstall_identity",
+                    "match_candidates_json": [
+                        {
+                            "asset_id": "<ASSET:linkable>",
+                            "matched_by": [
+                                "reinstall"
+                            ],
+                            "device_id": "<DEVICE:dev2>"
+                        }
+                    ],
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
                     "update_state_json": null,
                     "created_at": "<DT>"
                 },
@@ -2799,8 +2899,8 @@
                 },
                 {
                     "device_id": "<DEVICE:dev2>",
-                    "install_id": "00000000-0000-4000-8000-000000000012",
-                    "machine_guid": "ffffffffffff0001",
+                    "install_id": "00000000-0000-4000-8000-000000000002",
+                    "machine_guid": "a985e21143e883c4",
                     "hostname": "GOLD-INV",
                     "os": "windows",
                     "os_version": "Windows 11 23H2",
@@ -2836,7 +2936,7 @@
                     "revoked_reason": null,
                     "retired_at": null,
                     "enrolled_via_token_id": "<TOKENROW#1>",
-                    "enroll_count": 3,
+                    "enroll_count": 2,
                     "first_seen_at": "<DT>",
                     "last_checkin_at": "<DT>",
                     "last_collected_at": "<DT>",
@@ -2891,6 +2991,56 @@
                     "logged_in_user": "<script>alert(1)</script>",
                     "pending_reboot": 0,
                     "uptime_s": 7200,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2r>",
+                    "install_id": "00000000-0000-4000-8000-000000000012",
+                    "machine_guid": "ffffffffffff0001",
+                    "hostname": "GOLD-7A01",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-LINK",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:4e:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "reinstall_identity",
+                    "match_candidates_json": [
+                        {
+                            "asset_id": "<ASSET:linkable>",
+                            "matched_by": [
+                                "reinstall"
+                            ],
+                            "device_id": "<DEVICE:dev2>"
+                        }
+                    ],
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
                     "update_state_json": null,
                     "created_at": "<DT>"
                 },
@@ -3247,8 +3397,8 @@
                 },
                 {
                     "device_id": "<DEVICE:dev2>",
-                    "install_id": "00000000-0000-4000-8000-000000000012",
-                    "machine_guid": "ffffffffffff0001",
+                    "install_id": "00000000-0000-4000-8000-000000000002",
+                    "machine_guid": "a985e21143e883c4",
                     "hostname": "GOLD-INV",
                     "os": "windows",
                     "os_version": "Windows 11 23H2",
@@ -3284,7 +3434,7 @@
                     "revoked_reason": null,
                     "retired_at": null,
                     "enrolled_via_token_id": "<TOKENROW#1>",
-                    "enroll_count": 3,
+                    "enroll_count": 2,
                     "first_seen_at": "<DT>",
                     "last_checkin_at": "<DT>",
                     "last_collected_at": "<DT>",
@@ -3339,6 +3489,56 @@
                     "logged_in_user": "<script>alert(1)</script>",
                     "pending_reboot": 0,
                     "uptime_s": 7200,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2r>",
+                    "install_id": "00000000-0000-4000-8000-000000000012",
+                    "machine_guid": "ffffffffffff0001",
+                    "hostname": "GOLD-7A01",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-LINK",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:4e:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "reinstall_identity",
+                    "match_candidates_json": [
+                        {
+                            "asset_id": "<ASSET:linkable>",
+                            "matched_by": [
+                                "reinstall"
+                            ],
+                            "device_id": "<DEVICE:dev2>"
+                        }
+                    ],
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
                     "update_state_json": null,
                     "created_at": "<DT>"
                 },

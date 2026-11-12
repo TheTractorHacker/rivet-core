@@ -212,15 +212,17 @@ final class EnrollmentTest extends RmmTestCase
         $this->assertSame(401, $jobs((string) $j2['device_token'])[0], 'one open request per machine');
         $newest = (int) $j3['device_id'];
 
-        // approval: the new credential replaces the old one on the original row, atomically
+        // approval (link to the asset of the device it replaces): the old device is retired, the newcomer keeps ITS id and credential and is linked
         $r = $this->h->module->deviceService()->approve($newest, $asset, 1);
         $this->assertTrue($r['ok'], $r['message']);
         $this->assertSame(401, $jobs($real)[0], 'the old credential is gone');
-        $job2 = (string) $this->h->module->jobs()->create($this->h->module->devices()->find($dev) ?? [], 'collect', null, [], null, false, 1)['job_id'];
+        $this->assertNotNull($this->h->one("SELECT retired_at FROM endpoint_agent_devices WHERE device_id=$dev"));
+        $this->assertSame('cancelled', $this->h->one("SELECT state FROM endpoint_agent_jobs WHERE job_id='$jobId'"), 'what was queued for the replaced device is cancelled');
+        $this->assertSame(['linked', $asset], [$this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$newest"), (int) $this->h->one("SELECT asset_id FROM endpoint_agent_devices WHERE device_id=$newest")]);
+        $job2 = (string) $this->h->module->jobs()->create($this->h->module->devices()->find($newest) ?? [], 'collect', null, [], null, false, 1)['job_id'];
         [$c, , $jj] = $jobs((string) $j3['device_token']);
-        $this->assertSame([200, [$job2]], [$c, array_column($jj['jobs'], 'job_id')], 'the new credential is the original device');
-        $this->assertSame(['linked', 'REINSTALLED2', $asset], [$this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$dev"), $this->h->one("SELECT hostname FROM endpoint_agent_devices WHERE device_id=$dev"), (int) $this->h->one("SELECT asset_id FROM endpoint_agent_devices WHERE device_id=$dev")]);
-        $this->assertSame('rejected', $this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$newest"));
+        $this->assertSame([200, [$job2]], [$c, array_column($jj['jobs'], 'job_id')], 'the newcomer is offered jobs signed for its own device id, which is the id its agent stored');
+        $this->assertSame($newest, (int) $j3['device_id']);
     }
 
     /** CORE-17: an install_id re-enrollment that reports no identity at all, for a row that has one, never rotates the linked credential. */
