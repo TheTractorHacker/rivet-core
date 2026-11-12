@@ -8,7 +8,7 @@ use RivetCore\Rmm\Contracts\BackgroundModeConfigInterface;
 use RivetCore\Rmm\Support\Sql;
 
 /**
- * Background Mode's policy settings in the Core tables of migration 0049: the one settings row (`rmm_background_settings`: mode and the named internal group) and the
+ * Background Mode's policy settings in the Core tables of migration 0050: the one settings row (`rmm_background_settings`: mode and the named internal group) and the
  * per-client policy (`rmm_client_remote_policy`). Reads never create anything and an absent row reads as "not configured" (which denies). The setters validate and return
  * false on a refused value; they do not check who is asking and do not audit. Change settings through {@see BackgroundSettingsService} (admin check, audit with old and
  * new value, fail closed); the raw setters are internal to Core.

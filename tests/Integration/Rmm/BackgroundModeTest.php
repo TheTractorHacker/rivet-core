@@ -7,7 +7,7 @@ namespace RivetCore\Tests\Integration\Rmm;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RivetCore\Rmm\Authz\RmmPrincipal;
 use RivetCore\Rmm\Mesh\MeshCookie;
-use RivetCore\Rmm\Migration\Migration0049BackgroundMode;
+use RivetCore\Rmm\Migration\Migration0050BackgroundMode;
 use RivetCore\Rmm\Remote\DbBackgroundModeConfig;
 use RivetCore\Tests\Support\MockMeshServer;
 use RivetCore\Tests\Support\RmmHarness;
@@ -238,11 +238,11 @@ final class BackgroundModeTest extends RmmTestCase
         $this->assertSame(['Background Session Started', 'Background Session Ended'], $this->bgRows());
     }
 
-    public function testMigration0049RunsAgainWithoutError(): void
+    public function testMigration0050RunsAgainWithoutError(): void
     {
         $db = $this->h->module->sql()->database();
-        (new Migration0049BackgroundMode())->up($db);
-        (new Migration0049BackgroundMode())->up($db);
+        (new Migration0050BackgroundMode())->up($db);
+        (new Migration0050BackgroundMode())->up($db);
         $this->assertSame('internal', (new DbBackgroundModeConfig($this->h->module->sql()))->policyMode(), 'a second run keeps the stored settings');
     }
 

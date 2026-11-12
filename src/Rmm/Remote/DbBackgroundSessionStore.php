@@ -8,7 +8,7 @@ use RivetCore\Rmm\Contracts\BackgroundSessionStoreInterface;
 use RivetCore\Rmm\Support\Sql;
 
 /**
- * Database store of Background Mode sessions (`rmm_background_sessions`) and single-use check tokens (`rmm_background_tokens`, migration 0049). A token is consumed by one
+ * Database store of Background Mode sessions (`rmm_background_sessions`) and single-use check tokens (`rmm_background_tokens`, migration 0050). A token is consumed by one
  * conditional UPDATE (`used_at IS NULL AND expires_at > now`), so two concurrent callers cannot both win. Expired rows are removed when a token is issued.
  *
  * @api

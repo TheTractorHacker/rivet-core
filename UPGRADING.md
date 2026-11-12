@@ -76,7 +76,7 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
-## Adopting Background Mode and the optional Rivet Console (1.0.0-rc.60 and rc.61; migration 0049; optional, off by default)
+## Adopting Background Mode and the optional Rivet Console (1.0.0-rc.64 and rc.65; migration 0050; optional, off by default)
 
 Nothing is required: with the switches off (the default) every existing call behaves as before. Signature changes the API checker reports as BREAKING by its text comparison, and why none of them breaks a correct caller (each only appends optional trailing parameters to a `final` class, so no positional call changes and nothing can override them):
 
@@ -86,7 +86,7 @@ Nothing is required: with the switches off (the default) every existing call beh
 | `Technician\TechnicianActions::launchRemote()` | trailing optional `$mode = 'standard'`, `$console = false`, `$consoleKind = null` | yes: `mode: background` and the console deep link | none: positional calls are unchanged; the defaults give the stock launch |
 | `Maintenance\Housekeeping::__construct()` | trailing optional `?BackgroundSessionRetention`, `?RemoteSettings` | yes: prunes ended Background sessions | none through `RmmModule::housekeeping()`; hand-built: without them nothing is pruned |
 
-1. **Migration.** `CoreMigrations::all()` gains `0049_rmm_background_mode` (four new tables, `CREATE TABLE IF NOT EXISTS`, nothing altered). Note that open work (device-move installer, `Migration0049InstallerManagedExternally`) also claims 0049: whichever lands second must be renumbered before release.
+1. **Migration.** `CoreMigrations::all()` gains `0050_rmm_background_mode` (four new tables, `CREATE TABLE IF NOT EXISTS`, nothing altered). It is numbered 0050 and registered after `0049_rmm_installer_managed_externally`; the migration is additive and idempotent, and it never ran in a released version, so no installation has applied it under another id.
 2. **Ability.** Map `rmm.remote.background` in your access policy to an explicit grant. Never map it to "any signed-in user"; Core denies when the policy says no, the switch is off or no policy mode is configured.
 3. **Policy changes** go through `RmmModule::backgroundSettings()` (`Remote\BackgroundSettingsService`: `rmm.admin` required, audited with old and new value, fails closed if the audit write fails). The raw setters on `DbBackgroundModeConfig` are for Core only; calling them from edition code skips the check and the audit.
 4. **Events.** Six new ids in `RmmEvent` and `Webhooks\EventCatalog`: `rmm.background.session_started`, `session_denied`, `session_failed`, `session_verified`, `session_ended`, `policy_changed` (47 `rmm.*` events in all). Payloads never carry a URL, token or key.

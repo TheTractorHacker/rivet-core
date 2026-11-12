@@ -1437,7 +1437,7 @@ final class RmmModule
     }
 
     /**
-     * Background Mode's policy settings: the Core tables (migration 0049) unless the edition passes its own `background_config` option. An edition passes
+     * Background Mode's policy settings: the Core tables (migration 0050) unless the edition passes its own `background_config` option. An edition passes
      * `background_groups` to say who is in the named internal group; without it only site administrators pass Internal mode.
      */
     public function backgroundConfig(): \RivetCore\Rmm\Contracts\BackgroundModeConfigInterface

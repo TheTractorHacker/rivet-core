@@ -390,6 +390,46 @@ final class TechnicianActions
             : ActionResult::fail(404, 'not_found', 'Device not found.'));
     }
 
+    /**
+     * The "managed by another RMM" switch on many devices (1.0.0-rc.59), for a selection on the device list or for every device of one client.
+     * Needs `rmm.device.manage` for EACH device's client: a device the caller may not manage, one that does not exist and one outside the caller's clients are all reported
+     * the same way (`skipped`) and never changed, so the answer says nothing about other clients. With `$clientId` the selection is every device of that client (the caller must
+     * manage it, else 403) and `$deviceIds` is ignored. At most {@see DeviceService::BULK_MAX} devices (422 `too_many` above, nothing changed).
+     * Data: `changed`, `unchanged`, `skipped` (lists of the ids asked for) and the three counts.
+     *
+     * @param list<int> $deviceIds
+     */
+    public function setAutomationDisabledBulk(RmmPrincipal $who, array $deviceIds, bool $disabled, ?int $clientId = null): ActionResult
+    {
+        if ($clientId !== null) {
+            if (!$this->authz->clientOk($who->userId, $clientId) || $this->authz->check($who->userId, RmmAbility::DEVICE_MANAGE, $clientId, false) !== null) {
+                return ActionResult::fail(403, 'forbidden', 'You do not have access to that ' . $this->clientLabel . '.');
+            }
+            $deviceIds = array_map(static fn (array $r): int => (int) $r['device_id'], $this->sql->all('SELECT device_id FROM endpoint_agent_devices WHERE client_id = ? AND link_state <> \'panel\' ORDER BY device_id LIMIT ' . (DeviceService::BULK_MAX + 1), [$clientId]));
+        }
+        $ids = array_values(array_unique(array_filter(array_map('intval', $deviceIds), static fn (int $i): bool => $i > 0)));
+        if (count($ids) > DeviceService::BULK_MAX) {
+            return ActionResult::fail(422, 'too_many', 'That reaches more than ' . DeviceService::BULK_MAX . ' devices; change at most ' . DeviceService::BULK_MAX . ' at a time.');
+        }
+        $allowed = [];
+        $skipped = [];
+        foreach ($ids as $id) {
+            $dev = $this->devices->find($id);
+            if ($dev === null || !$this->authz->clientOk($who->userId, (int) $dev['client_id']) || $this->authz->check($who->userId, RmmAbility::DEVICE_MANAGE, (int) $dev['client_id'], false) !== null) {
+                $skipped[] = $id;
+            } else {
+                $allowed[] = $id;
+            }
+        }
+        $r = $this->deviceService->setAutomationDisabledBulk($allowed, $disabled, $who->userId);
+        $skipped = array_merge($skipped, $r['not_found']);
+        sort($skipped);
+        $msg = count($r['changed']) . ' changed, ' . count($r['unchanged']) . ' already ' . ($disabled ? 'managed by another RMM' : 'under RivetCore automation') . ', ' . count($skipped) . ' skipped.';
+
+        return ActionResult::ok($msg, 200, 'ok', ['changed' => $r['changed'], 'unchanged' => $r['unchanged'], 'skipped' => $skipped,
+            'counts' => ['changed' => count($r['changed']), 'unchanged' => count($r['unchanged']), 'skipped' => count($skipped)]]);
+    }
+
     public function clearUpdateFailures(RmmPrincipal $who, int $deviceId): ActionResult
     {
         return $this->manage($who, $deviceId, function () use ($deviceId): ActionResult {
@@ -431,19 +471,24 @@ final class TechnicianActions
 
     // ------------------------------------------------------------------ enrollment tokens
 
-    /** Create an enrollment token for a client. The plaintext token is in `data['token']` and is shown once. */
-    public function createToken(RmmPrincipal $who, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label): ActionResult
+    /**
+     * Create an enrollment token for a client. The plaintext token is in `data['token']` and is shown once.
+     *
+     * @param bool $managedExternally the machines enrolled with this token are already managed by another RMM or patch tool: they start with Core automation disabled
+     *        ({@see \RivetCore\Rmm\Enrollment\EnrollmentService::createToken()}). An edition's REST body may accept it as the optional boolean `managed_externally`.
+     */
+    public function createToken(RmmPrincipal $who, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, bool $managedExternally = false): ActionResult
     {
         $denied = $this->authz->check($who->userId, RmmAbility::TOKEN_MANAGE, $clientId, false);
         if ($denied !== null) {
             return ActionResult::fail(403, 'forbidden', $denied);
         }
         try {
-            $t = $this->enrollment->createToken($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $who->userId);
+            $t = $this->enrollment->createToken($clientId, $locationId, $ring, $ttlHours, $maxUses, trim($label), $who->userId, $managedExternally);
         } catch (\InvalidArgumentException $e) {
             return ActionResult::fail(422, 'invalid', $e->getMessage());
         }
-        $this->audit->record('Enrollment Token Created', "{$who->userName} created enrollment token #{$t['token_id']} for client $clientId", $clientId, 0);
+        $this->audit->record('Enrollment Token Created', "{$who->userName} created enrollment token #{$t['token_id']} for client $clientId" . ($managedExternally ? ' (devices enrolled with it are managed by another RMM: Core automation disabled on them)' : ''), $clientId, 0);
 
         return ActionResult::ok('Enrollment token created. Copy it now: it is shown only once.', 201, 'created', ['token_id' => $t['token_id'], 'token' => $t['token']]);
     }

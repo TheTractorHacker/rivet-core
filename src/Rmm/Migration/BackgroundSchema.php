@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Migration;
 
 /**
- * The tables of Background Mode, created by migration 0049. Every statement is CREATE TABLE IF NOT EXISTS with an explicit engine, charset and collation; nothing existing is
+ * The tables of Background Mode, created by migration 0050. Every statement is CREATE TABLE IF NOT EXISTS with an explicit engine, charset and collation; nothing existing is
  * altered (`rmm_remote_sessions` belongs to the edition, ADR-002, so the mode of a session lives in `rmm_background_sessions`, keyed by the same session id the edition's log
  * carries in `meshcentral:session:<id>`). Do not edit a released statement, add a new migration instead.
  *

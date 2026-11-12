@@ -30,7 +30,7 @@
 .wz-steps li.is-current .wz-stepbtn { color: var(--tblr-body-color, inherit); }
 .wz-steps li.is-done .wz-num { background: var(--wz-ok); border-color: var(--wz-ok); color: #fff; }
 .wz-steps li.is-done .wz-stepbtn { cursor: pointer; color: var(--tblr-body-color, inherit); }
-.wz-steps li.is-done .wz-stepbtn:hover .wz-steplabel { text-decoration: underline; }
+.wz-steps li.is-done .wz-stepbtn:hover .wz-steplabel { text-decoration: none; }
 .wz-stepbtn:focus-visible, .wz-tab:focus-visible, .wz-pcard:focus-visible, .wz-chip:focus-visible { outline: 2px solid var(--wz-primary); outline-offset: 2px; }
 .wz-stepcount { display: none; font-size: .8rem; color: var(--wz-muted); }
 

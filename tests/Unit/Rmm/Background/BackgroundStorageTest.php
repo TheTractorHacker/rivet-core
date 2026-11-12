@@ -9,7 +9,7 @@ use RivetCore\Database\DatabaseInterface;
 use RivetCore\Database\ExecutionResult;
 use RivetCore\Migration\CoreMigrations;
 use RivetCore\Rmm\Migration\BackgroundSchema;
-use RivetCore\Rmm\Migration\Migration0049BackgroundMode;
+use RivetCore\Rmm\Migration\Migration0050BackgroundMode;
 use RivetCore\Rmm\Remote\DbBackgroundModeConfig;
 use RivetCore\Rmm\Remote\DbBackgroundSessionStore;
 use RivetCore\Rmm\Remote\RemoteProtocol;
@@ -18,7 +18,7 @@ use RivetCore\Rmm\Settings\RmmSettings;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Tests\Support\FixedClock;
 
-/** A1 (switch, risk text), A2 (migration 0049) and the SQL of the two database classes, against a recording database (no real database is needed or used). */
+/** A1 (switch, risk text), A2 (migration 0050) and the SQL of the two database classes, against a recording database (no real database is needed or used). */
 final class BackgroundStorageTest extends TestCase
 {
     /** @return DatabaseInterface&object{calls:list<array{sql:string,params:array<mixed>}>,affected:int,row:?array<string,mixed>} */
@@ -95,20 +95,20 @@ final class BackgroundStorageTest extends TestCase
     public function testTheMigrationIsRegisteredLastWithAUniqueIdAndSkipsTheMissing0045(): void
     {
         $ids = array_map(static fn ($m): string => $m->id(), CoreMigrations::all());
-        $this->assertSame('0049_rmm_background_mode', end($ids));
+        $this->assertSame('0050_rmm_background_mode', end($ids));
         $this->assertSame($ids, array_values(array_unique($ids)));
         $nums = array_map(static fn (string $id): int => (int) substr($id, 0, 4), $ids);
         $sorted = $nums;
         sort($sorted);
         $this->assertSame($sorted, $nums, 'ordered');
         $this->assertNotContains(45, $nums, '0045 was never shipped (the reporting views became 0047)');
-        $this->assertNotContains(49, array_slice($nums, 0, -1));
+        $this->assertNotContains(50, array_slice($nums, 0, -1));
     }
 
     public function testTheMigrationIsAdditiveAndIdempotent(): void
     {
         $db = $this->db();
-        $m = new Migration0049BackgroundMode();
+        $m = new Migration0050BackgroundMode();
         $m->up($db);
         $first = $db->calls;
         $m->up($db);

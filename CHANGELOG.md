@@ -2,7 +2,7 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
-## 1.0.0-rc.61 (optional Rivet Console: `remote_console` switch; no migration)
+## 1.0.0-rc.65 (optional Rivet Console: `remote_console` switch; no migration)
 
 Makes the desktop Rivet Console **optional** through an administrator switch. Details: docs/modules/rmm.md, "Optional Rivet Console".
 
@@ -13,12 +13,12 @@ Makes the desktop Rivet Console **optional** through an administrator switch. De
 - **API surface.** Additive: `ConsoleLink`, `RemoteProtocol::FEATURE_REMOTE_CONSOLE`, `RmmSettings::FEATURES` gained `remote_console`, `TechnicianActions::launchRemote()` two trailing optional parameters (`$console`, `$consoleKind`). Snapshot and docs/api-surface.md regenerated.
 - **Tests.** `ConsoleLinkTest` and three gate tests (unit, no database); `RemoteConsoleTest` (integration, written but not run: no MySQL where this was built).
 
-## 1.0.0-rc.60 (Background Mode: authorization and audit plumbing; migration 0049)
+## 1.0.0-rc.64 (Background Mode: authorization and audit plumbing; migration 0050)
 
 Core side of the technician console's Background Mode (steps A1 to A5 of the integration plan). **Off by default and authorization plus audit only:** nothing here runs on an endpoint, hides a session from the person at the device or can skip the audit log. Details: docs/modules/rmm.md, "Background Mode".
 
 - **Ability and switch.** `RmmAbility::REMOTE_BACKGROUND` (`rmm.remote.background`, in `all()`), sub-switch `background_mode` (default off) with a risk acknowledgement (`accept_background_risk`, `RemoteSettings::BACKGROUND_MODE_RISK`).
-- **Migration `0049_rmm_background_mode`** (additive, idempotent): `rmm_background_settings`, `rmm_client_remote_policy`, `rmm_background_sessions`, `rmm_background_tokens`. History check: `0045` was never in this repository's history (the history is a single commit and the only branches are `main` and this one); `docs/design/compliance-frameworks.md` and the rc.43 changelog show it was reserved for the reporting views, which shipped as `0047`, so the gap is expected and 0049 follows 0048.
+- **Migration `0050_rmm_background_mode`** (additive, idempotent): `rmm_background_settings`, `rmm_client_remote_policy`, `rmm_background_sessions`, `rmm_background_tokens`. History check: `0045` was never in this repository's history (the history is a single commit and the only branches are `main` and this one); `docs/design/compliance-frameworks.md` and the rc.43 changelog show it was reserved for the reporting views, which shipped as `0047`, so the gap is expected and 0049 follows 0048.
 - **`Remote\BackgroundModePolicy`** (`internal` or `per_client`, `allow`/`notify`/`approve`; everything unconfigured or unknown denies; never "any signed-in user"), `BackgroundDecision`, `DbBackgroundModeConfig`, `NoBackgroundGroups`, contracts `BackgroundModeConfigInterface`, `BackgroundGroupMembershipInterface`, `BackgroundSessionStoreInterface`.
 - **`Remote\BackgroundSessionService`** and `DbBackgroundSessionStore`: `TechnicianActions::launchRemote()` takes `view = console` with `mode = background` (REST `POST endpoint_devices/{id}/remote`), one `Background Session Started|Denied|Failed` audit row per outcome, `endBackgroundSession()` writes `Ended`, and `POST endpoint_devices/background/session-check` (60 s, single use, hashed at rest, replay and revoked users refused, switch off is 403) and `.../session-end` serve the Mesh plugin. `RmmModule::backgroundConfig()`, `backgroundSessions()` and the options `background_groups`, `background_config`, `background_store`.
 - **API surface.** Additive, except that `TechnicianActions::__construct()` and `launchRemote()` gained a trailing optional parameter (`$background`, `$mode`); no existing call changes. The snapshot flags them BREAKING by signature text. `tests/api-surface.json` was regenerated without a scratch database, so its table section does not list the four new tables: rerun `php scripts/api-surface-check.php --update` with `RIVETCORE_TEST_DB_*` set.
@@ -31,6 +31,18 @@ Core side of the technician console's Background Mode (steps A1 to A5 of the int
   - **Tests.** `BackgroundGovernanceTest` (8), the denied-visibility cases in `BackgroundModeTest`; `EventsTest` and `RemoteProtocolTest` updated for the new events and limit.
   - **Licence and notices.** New `NOTICE` (third-party components: MeshCentral, Apache-2.0, is used but not bundled) and a README note that use needs the authorization of each machine's owner.
 - **Not in this change.** Edition mapping of the ability and group, admin UI, per-client end-user approval (an `approve` client is refused), the console and the Mesh plugin.
+
+## 1.0.0-rc.59 (device move completeness; installer: managed by another RMM)
+
+- **Fix: a device transfer left client-keyed rows behind.** `DeviceService::transfer()` (and `TechnicianActions::transfer()`) now also moves `rmm_alert_meta` (open rows only), `rmm_deploy_state`, `rmm_device_apps`, `rmm_package_installs`, `rmm_package_jobs`, `rmm_package_history`, `rmm_patch_available`, `rmm_patch_jobs`, `rmm_patch_history`, `rmm_patch_scans` and `endpoint_agent_transfers`, in the same transaction. Resolved alerts and audit rows keep their client; the credential, `install_id` and the agent link are untouched, so the machine keeps checking in. A move to the client the device is already in is a no-op (`true`, no audit row); a retired device can be moved. Signatures unchanged. A test fails when a new table with `device_id` and `client_id` appears that the transfer does not know about.
+- **New: installer option "managed by another RMM".** Optional trailing `bool $managedExternally = false` on `InstallerService::issue()`/`issueDownload()`, `RmmAdmin::downloadInstaller()`/`deploymentCommands()`, `TechnicianActions::createToken()` and `EnrollmentService::createToken()`. Devices enrolled with such a token start with `device_automation_disabled = 1` (monitoring, inventory and patch scanning unaffected) and one `Device Automation Disabled` audit row records why. Kept server-side by token; the installer file and the device protocol are unchanged. New `EnrollmentService::tokenManagedExternally()`.
+- **New: bulk "managed by another RMM" on existing devices.** `DeviceService::setAutomationDisabledBulk(array $deviceIds, bool $disabled, ?int $userId = null)` (per-device `changed` / `unchanged` / `not_found`, at most `DeviceService::BULK_MAX` = 500, reuses `setAutomationDisabled()` per device so queued automated jobs are cancelled and each flip writes one audit row) and `TechnicianActions::setAutomationDisabledBulk(RmmPrincipal $who, array $deviceIds, bool $disabled, ?int $clientId = null)`: needs `rmm.device.manage` for each device's client; devices the caller may not manage, outside their clients or missing are reported identically as `skipped` and never changed; with `$clientId` the selection is every device of that client.
+- **Migration `0049_rmm_installer_managed_externally`** (`Rmm\Migration\Migration0049InstallerManagedExternally`, `@internal`): adds `endpoint_agent_installer_options.managed_externally tinyint(1) NOT NULL DEFAULT 0`; idempotent. Without it, issuing with the option is refused and every other path is unchanged. Editions: run the Core migrations, add the check box, and see `docs/design/edition-prompts-rc59.md`.
+
+## 1.0.0-rc.60 (UI: no link underlines on hover anywhere; sticky table header sits flush; no migration)
+
+- **No underline on hover, app-wide.** Tabler's bare `a:hover { text-decoration: underline }` and the per-page hover underlines that copied it (asset names, interface links, report links, header "see all", webhook steps) are overridden by one last `!important` rule in `itflow_design.css`; new pages cannot bring one back. Resting underlines on prose links (an accessibility choice) are untouched.
+- **Sticky table header (`.table-sticky-head`, the Assets list)** no longer lets scrolled rows show through a sliver above it: collapsed borders painted the sticky cells about a pixel low, so the table now uses separate borders, the header cells drop their own bottom border (the inset line stays) and extend their fill upward.
 
 ## 1.0.0-rc.59 (XSS-through-DOM hardening from CodeQL; dependency bumps; no migration)
 
