@@ -76,6 +76,18 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Pentest 2026-11-08 fixes (1.0.0-rc.62; no migration; read before updating)
+
+Behaviour an edition can see:
+
+* **CORE-13, Mesh account template.** A template containing `{username}` (for example `{username}` or `rit-{username}`) is refused when saving the MeshCentral settings (422), and on an install that already stored one, Remote launches fail with `not_configured` ("uses {username}, which is no longer allowed") until an administrator changes it. Switch to `{user_id}` (for example `rivetit-{user_id}`) and create the matching Mesh accounts; accounts named after display names will not be reached. This fails closed on purpose: a technician could rename themselves into any Mesh account. `MeshCookie::accountName()` ignores its `$username` argument and returns `''` for such a template. If your Rivet Console contract reports `technician.username` "as in the Mesh account template" from Core's own record, that string is now only meaningful for `{user_id}` templates.
+* **CORE-3, token lifetime.** `mesh_token_ttl_s` now shortens the login cookie when set to anything other than the stored default of 300 (which keeps the old ~58 minutes). Expect shorter cookies only on installs where an administrator changed it.
+* **CORE-15, software versions.** Adding or restoring a package version where an assignment (without a pinned version) or an auto-install policy follows the package now needs `rmm.software.deploy`; a `two_person` package refuses it (409) until its assignment is pinned. If your role mapping gives `rmm.software.manage` to a level below `rmm.software.deploy` (both editions do), those users lose the ability to add versions to live packages. Retiring a version is unchanged.
+* **CORE-17, reinstalls.** A reinstall of a linked machine (a new install_id with the same MachineGuid or serial) now waits for approval on the existing pending-devices screen, with the asset kept on the row. Expect one approval click per genuine OS reinstall. Devices that are not linked are offered no jobs. Docs/screens that list `match_reason` values may want `reinstall_identity`.
+* **CORE-18 / CORE-19.** Agents reporting `log.rule_*`, `change.rule_*`, `patch.*` or `hv.*` check keys are ignored; pending devices no longer store logs, changes, software or hypervisor data (they get `accepted: 0`) and cannot long-poll jobs. These data resume the moment the device is approved.
+* **CORE-24.** `ScriptActions::createScript()` returns 403 for a client-restricted user, like `updateScript` and `retireScript` already did.
+* **CORE-39.** `Housekeeping::run()` can return `retention_held => 1` and skips the history, log, change and metric prunes for that run when the compliance retention floors could not be read. It also holds when the compliance tables do not exist yet (code deployed before migration 0046); it resumes once they are readable.
+
 ## Adopting the audit log hash chain (1.0.0-rc.57; migration 0048; optional)
 
 **An edition that changes nothing keeps running exactly as before** (plain audit rows). The migration only adds two nullable columns and two small tables; code before the migration is safe. Full description and limits: [docs/security/AUDIT_CHAIN.md](docs/security/AUDIT_CHAIN.md).

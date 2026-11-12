@@ -2,6 +2,19 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.62 (security: pentest 2026-11-08 fixes)
+
+No migration. No public signature changed incompatibly (trailing optional parameters and new methods only), the RMM device protocol (paths, shapes, status codes) is untouched. Release number is provisional. See UPGRADING.md ("Pentest 2026-11-08 fixes") for what an edition must know.
+
+- **Security (CORE-13).** The MeshCentral account is never derived from the technician's display name any more. `{username}` in the Mesh account template is no longer substituted: `MeshCookie::accountName()` returns `''` for such a template, `MeshService::launch()` refuses with a `not_configured` message, and `RmmAdmin::saveMesh()` rejects saving one. `{user_id}` is the supported placeholder. Before this a technician could rename themselves to a Mesh account name (for example `admin`) and receive a login token for that account. New `MeshCookie::usesDisplayName()`.
+- **Fix (CORE-3 / CORE-14).** `mesh_token_ttl_s` is honoured for the Mesh login cookie lifetime: `MeshCookie::login()` has a trailing optional `$ttlS`, and a new `MeshCookie::backdate()`. The stored default (300) keeps the original ~58 minute window, so nothing changes unless an administrator set another value. Per-client Mesh group separation is an operator setup, now documented in `docs/rmm/REMOTE_AND_LOGS.md`; Core cannot enforce it inside MeshCentral.
+- **Security (CORE-15).** Adding a version to, or restoring a retired version of, a package that an assignment without a pinned version (or an auto-install policy) follows now needs `rmm.software.deploy` as well as `rmm.software.manage`; for a `two_person` package it is refused until the assignment is pinned. Before this a catalog-level user could change what an approved assignment installs as SYSTEM on every device in scope.
+- **Security (CORE-17).** A reinstall matched only by MachineGuid or serial (a new install_id) leaves the device `pending_approval` (`match_reason` `reinstall_identity`) instead of silently taking over the linked row, and a device that is not linked is never offered jobs (`JobService::offer()`).
+- **Security (CORE-18).** An agent can no longer report the server-owned check keys (`log.rule_*`, `change.rule_*`, `patch.*`, `hv.*`): they are dropped at check-in.
+- **Security (CORE-19, part).** Devices that are not linked get no log, change, software or hypervisor ingest (`agent_logs` and `agent_changes` answer 200 with `accepted: 0`) and no `wait` long-polling on `agent_jobs`.
+- **Security (CORE-24).** `ScriptActions::createScript()` applies the fleet-wide guard like update and retire: a technician restricted to some clients cannot publish a library script.
+- **Security (CORE-39).** `RetentionFloors` logs the database error code, and exposes `unavailable()`; `Housekeeping::run()` skips the history, log, change and metric prunes (result key `retention_held`) when the framework floors could not be read, instead of pruning below them.
+
 ## 1.0.0-rc.59 (XSS-through-DOM hardening from CodeQL; dependency bumps; no migration)
 
 - **Fix.** `command_palette.js`: a result's URL is now resolved with `sameOrigin()` before it is used as a link target (`a.href`) and before Enter navigates, so a record or page URL can never carry a `javascript:`/`data:` scheme or another origin. Closes CodeQL `js/xss-through-dom` at the two `it.url` sinks.
