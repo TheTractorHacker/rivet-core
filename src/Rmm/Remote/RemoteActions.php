@@ -46,6 +46,7 @@ final class RemoteActions
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentSettings $meshSettings = null,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
         private readonly ?\RivetCore\Rmm\Scripts\TargetResolver $targets = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshVerifySettings $meshVerify = null,
     ) {
     }
 
@@ -881,5 +882,63 @@ final class RemoteActions
         }
 
         return ActionResult::ok('Saved.', 200, 'saved', $data);
+    }
+
+    // ------------------------------------------------------------------ verified node mapping (administrators)
+
+    public const MESH_VERIFY_WARNING = 'MeshCentral does not separate clients: every client\'s devices can live in one Mesh server. A node is mapped automatically ONLY when MeshCentral itself confirms that it exists, that its name or host matches the device host name, and that it is in the Mesh device group configured for that device\'s client below. A client without a group here is never mapped automatically, and a group listed for two clients is refused.';
+
+    /** @return array<string,mixed> */
+    private function meshVerifyView(): array
+    {
+        $v = $this->meshVerify?->get() ?? ['enabled' => false, 'service_account' => '', 'group_map' => []];
+        $cfg = $this->settings->get();
+
+        return ['mesh_verify_nodes' => $v['enabled'], 'mesh_service_account' => $v['service_account'], 'mesh_group_map' => (object) array_map(static fn (string $g): string => $g, array_combine(array_map('strval', array_keys($v['group_map'])), array_values($v['group_map']))),
+            'available' => $this->meshVerify !== null && $this->meshVerify->available(), 'mesh_enabled' => (int) $cfg['mesh_enabled'] === 1, 'login_key_set' => !empty($cfg['mesh_login_key_enc']),
+            'per_run_max' => \RivetCore\Rmm\Mesh\MeshVerifyService::MAX_DEVICES_PER_RUN, 'warning' => self::MESH_VERIFY_WARNING];
+    }
+
+    public function meshVerifySettings(RmmPrincipal $who): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::ADMIN, 0, false);
+        if ($denied !== null) {
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+
+        return ActionResult::ok('ok', 200, 'ok', $this->meshVerifyView());
+    }
+
+    /**
+     * Change the verified mapping settings: `mesh_verify_nodes` (off by default), `mesh_service_account` and `mesh_group_map` (client id => Mesh device group id). Administrators
+     * only, audited (the keys changed, never a value that could be a secret: there is none). Switching it on needs Mesh enabled with a login key and a service account.
+     *
+     * @param array<string,mixed> $in
+     */
+    public function updateMeshVerifySettings(RmmPrincipal $who, array $in): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::ADMIN, 0, false);
+        if ($denied !== null) {
+            $this->audit->record('Remote Settings Denied', "User {$who->userId} denied Mesh verification settings change: $denied", 0, 0);
+
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        if ($this->meshVerify === null) {
+            return ActionResult::fail(409, 'unsupported', 'The verified Mesh mapping is not available.');
+        }
+        $cfg = $this->settings->get();
+        if (($in['mesh_verify_nodes'] ?? false) === true && ((int) $cfg['mesh_enabled'] !== 1 || empty($cfg['mesh_login_key_enc']))) {
+            return ActionResult::fail(409, 'not_configured', 'Switch MeshCentral on and set its login key before turning the verification on.');
+        }
+        $errors = $this->meshVerify->update($in, $who->userId);
+        if ($errors !== []) {
+            return ActionResult::fail(422, 'invalid', implode(' ', $errors));
+        }
+        if ($in !== []) {
+            $flag = ($in['mesh_verify_nodes'] ?? null) === true ? ': automatic mapping is ON' : (($in['mesh_verify_nodes'] ?? null) === false ? ': automatic mapping is OFF' : '');
+            $this->audit->record('Settings', "{$who->userName} changed the Mesh verification settings (" . implode(', ', array_keys($in)) . ')' . $flag, 0, 0);
+        }
+
+        return ActionResult::ok('Saved.', 200, 'saved', $this->meshVerifyView());
     }
 }

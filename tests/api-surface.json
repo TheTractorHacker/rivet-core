@@ -4909,7 +4909,7 @@
                 "PRUNE_RUN_CAP": 200000
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Job\\JobService $jobs, ?Closure $pause = NULL, ?RivetCore\\Rmm\\Capacity\\LoadShedder $shedder = NULL, ?RivetCore\\Rmm\\Capacity\\IngestQueue $ingest = NULL, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Device\\DeviceState $deviceState = NULL, ?RivetCore\\Rmm\\Support\\DatabaseMetricSink $metricSink = NULL, ?RivetCore\\Rmm\\Scripts\\ScheduleRunner $schedules = NULL, ?RivetCore\\Rmm\\Approvals\\ApprovalService $approvals = NULL, ?RivetCore\\Rmm\\Scripts\\ApprovedRunExecutor $approvedRuns = NULL, ?RivetCore\\Rmm\\Job\\JobExtras $extras = NULL, ?RivetCore\\Rmm\\Policy\\PolicyStore $policies = NULL, ?RivetCore\\Rmm\\Alerting\\AlertingHousekeeping $alerting = NULL, ?RivetCore\\Rmm\\Storage\\StorageMaintenance $storage = NULL, ?RivetCore\\Rmm\\Support\\RmmCache $cache = NULL, ?RivetCore\\Rmm\\Metrics\\ExternalMetricSink $external = NULL, ?RivetCore\\Rmm\\Logs\\LogService $logs = NULL, ?RivetCore\\Rmm\\Logs\\LogRuleService $logRules = NULL, ?RivetCore\\Rmm\\Remote\\TransferService $transfers = NULL, ?RivetCore\\Rmm\\Patch\\PatchScheduler $patches = NULL, ?RivetCore\\Rmm\\Deploy\\DeployScheduler $deploy = NULL, ?RivetCore\\Rmm\\Change\\ChangeService $changes = NULL, ?RivetCore\\Rmm\\Change\\ChangeRuleService $changeRules = NULL, ?RivetCore\\Rmm\\Hypervisor\\HypervisorService $hypervisor = NULL, ?RivetCore\\Rmm\\Store\\CheckHistoryStore $checkHistory = NULL, ?RivetCore\\Rmm\\Store\\SoftwareHistoryStore $softwareHistory = NULL, ?RivetCore\\Rmm\\Store\\MetricStore $metricStore = NULL, ?RivetCore\\Rmm\\Store\\StoreMaintenance $storeMaintenance = NULL, ?RivetCore\\Rmm\\Store\\RmmDataStores $stores = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Job\\JobService $jobs, ?Closure $pause = NULL, ?RivetCore\\Rmm\\Capacity\\LoadShedder $shedder = NULL, ?RivetCore\\Rmm\\Capacity\\IngestQueue $ingest = NULL, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Device\\DeviceState $deviceState = NULL, ?RivetCore\\Rmm\\Support\\DatabaseMetricSink $metricSink = NULL, ?RivetCore\\Rmm\\Scripts\\ScheduleRunner $schedules = NULL, ?RivetCore\\Rmm\\Approvals\\ApprovalService $approvals = NULL, ?RivetCore\\Rmm\\Scripts\\ApprovedRunExecutor $approvedRuns = NULL, ?RivetCore\\Rmm\\Job\\JobExtras $extras = NULL, ?RivetCore\\Rmm\\Policy\\PolicyStore $policies = NULL, ?RivetCore\\Rmm\\Alerting\\AlertingHousekeeping $alerting = NULL, ?RivetCore\\Rmm\\Storage\\StorageMaintenance $storage = NULL, ?RivetCore\\Rmm\\Support\\RmmCache $cache = NULL, ?RivetCore\\Rmm\\Metrics\\ExternalMetricSink $external = NULL, ?RivetCore\\Rmm\\Logs\\LogService $logs = NULL, ?RivetCore\\Rmm\\Logs\\LogRuleService $logRules = NULL, ?RivetCore\\Rmm\\Remote\\TransferService $transfers = NULL, ?RivetCore\\Rmm\\Patch\\PatchScheduler $patches = NULL, ?RivetCore\\Rmm\\Deploy\\DeployScheduler $deploy = NULL, ?RivetCore\\Rmm\\Change\\ChangeService $changes = NULL, ?RivetCore\\Rmm\\Change\\ChangeRuleService $changeRules = NULL, ?RivetCore\\Rmm\\Hypervisor\\HypervisorService $hypervisor = NULL, ?RivetCore\\Rmm\\Store\\CheckHistoryStore $checkHistory = NULL, ?RivetCore\\Rmm\\Store\\SoftwareHistoryStore $softwareHistory = NULL, ?RivetCore\\Rmm\\Store\\MetricStore $metricStore = NULL, ?RivetCore\\Rmm\\Store\\StoreMaintenance $storeMaintenance = NULL, ?RivetCore\\Rmm\\Store\\RmmDataStores $stores = NULL, ?Closure $meshVerify = NULL)",
                 "run": "run(): array"
             }
         },
@@ -4981,10 +4981,12 @@
             },
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Mesh\\MeshAgentSettings $meshSettings, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL)",
+                "claimDecision": "claimDecision(array $dev, string $node): array",
                 "claimFromInventory": "claimFromInventory(array $dev, string $nodeId): void",
                 "installBlock": "installBlock(): ?array",
                 "installRefusal": "installRefusal(): ?string",
                 "jobParams": "jobParams(bool $force = false): ?array",
+                "markMapped": "markMapped(int $deviceId): void",
                 "report": "report(array $dev, mixed $raw): void",
                 "stateFor": "stateFor(int $deviceId): ?array"
             }
@@ -5006,6 +5008,21 @@
                 "update": "update(array $in, int $userId, ?string $meshUrl = NULL): array"
             }
         },
+        "RivetCore\\Rmm\\Mesh\\MeshControlClient": {
+            "kind": "final class",
+            "constants": {
+                "CONNECT_TIMEOUT_S": 3,
+                "DEADLINE_S": 12,
+                "MAX_FRAME_BYTES": 8388608,
+                "MAX_HEADER_BYTES": 8192,
+                "MAX_NODES": 20000,
+                "MAX_TOTAL_BYTES": 16777216
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Webhooks\\UrlPolicy $urlPolicy, bool $allowInsecureHttp = false, int $deadlineS = 12)",
+                "fetch": "fetch(string $base, string $domain, string $cookie, string $expectUser): array"
+            }
+        },
         "RivetCore\\Rmm\\Mesh\\MeshCookie": {
             "kind": "final class",
             "constants": {
@@ -5020,6 +5037,31 @@
                 "launchUrl": "static launchUrl(string $base, string $domain, string $cookie, string $nodeId, int $viewmode = 11, int $hide = 0): string",
                 "login": "static login(string $keyHex, string $domain, string $account, int $now, ?string $iv = NULL): ?string",
                 "newLoginKey": "static newLoginKey(): string"
+            }
+        },
+        "RivetCore\\Rmm\\Mesh\\MeshMapping": {
+            "kind": "final class",
+            "constants": {
+                "CONFLICT": "conflict",
+                "KEPT_MANUAL": "kept_manual",
+                "MAPPED": "mapped",
+                "NEEDS_APPROVAL": "reported_needs_approval",
+                "NOT_INSTALLED": "not_installed",
+                "NO_NODE": "installed_no_node_reported",
+                "STATES": [
+                    "not_installed",
+                    "installed_no_node_reported",
+                    "reported_needs_approval",
+                    "conflict",
+                    "kept_manual",
+                    "mapped"
+                ],
+                "TEXT_NEEDS_APPROVAL": "This device reported a Mesh node that has not been approved yet, so nothing was mapped. Check this node in MeshCentral, then map it."
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
+                "fleet": "fleet(?array $clients, array $filters, int $limit, int $offset): array",
+                "forDevice": "forDevice(int $deviceId): ?array"
             }
         },
         "RivetCore\\Rmm\\Mesh\\MeshNodeId": {
@@ -5062,6 +5104,35 @@
                 "probe": "probe(string $base): ?string",
                 "probePin": "probePin(string $base): array",
                 "validNodeId": "static validNodeId(string $id): bool"
+            }
+        },
+        "RivetCore\\Rmm\\Mesh\\MeshVerifyService": {
+            "kind": "final class",
+            "constants": {
+                "MAX_DEVICES_PER_RUN": 50,
+                "RECHECK_S": 600,
+                "SOURCE": "verified"
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Mesh\\MeshVerifySettings $verify, RivetCore\\Rmm\\Mesh\\MeshControlClient $client, RivetCore\\Rmm\\Mesh\\MeshAgentService $agents, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, RivetCore\\Rmm\\Contracts\\SecretBoxInterface $box, bool $allowInsecureHttp = false)",
+                "run": "run(int $maxDevices = 50): array"
+            }
+        },
+        "RivetCore\\Rmm\\Mesh\\MeshVerifySettings": {
+            "kind": "final class",
+            "constants": {
+                "MAX_ACCOUNT": 64,
+                "MAX_MAP": 500
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
+                "available": "available(): bool",
+                "get": "get(): array",
+                "groupFor": "groupFor(int $clientId): ?string",
+                "groupHex": "static groupHex(string $in): ?string",
+                "refresh": "refresh(): void",
+                "update": "update(array $in, int $userId): array",
+                "validAccount": "static validAccount(string $a): bool"
             }
         },
         "RivetCore\\Rmm\\Metrics\\CompositeMetricSink": {
@@ -5818,6 +5889,7 @@
         "RivetCore\\Rmm\\Remote\\RemoteActions": {
             "kind": "final class",
             "constants": {
+                "MESH_VERIFY_WARNING": "MeshCentral does not separate clients: every client's devices can live in one Mesh server. A node is mapped automatically ONLY when MeshCentral itself confirms that it exists, that its name or host matches the device host name, and that it is in the Mesh device group configured for that device's client below. A client without a group here is never mapped automatically, and a group listed for two clients is refused.",
                 "PROTECTED_SERVICES": [
                     "rivetit-agent",
                     "rivetit-agent.service",
@@ -5826,7 +5898,7 @@
                 ]
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Remote\\TransferService $transfers, RivetCore\\Rmm\\Remote\\RemoteSettings $remote, RivetCore\\Rmm\\Mesh\\MeshService $mesh, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, ?RivetCore\\Rmm\\Mesh\\MeshAgentSettings $meshSettings = NULL, ?RivetCore\\Rmm\\Mesh\\MeshAgentService $meshAgents = NULL, ?RivetCore\\Rmm\\Scripts\\TargetResolver $targets = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Remote\\TransferService $transfers, RivetCore\\Rmm\\Remote\\RemoteSettings $remote, RivetCore\\Rmm\\Mesh\\MeshService $mesh, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, ?RivetCore\\Rmm\\Mesh\\MeshAgentSettings $meshSettings = NULL, ?RivetCore\\Rmm\\Mesh\\MeshAgentService $meshAgents = NULL, ?RivetCore\\Rmm\\Scripts\\TargetResolver $targets = NULL, ?RivetCore\\Rmm\\Mesh\\MeshVerifySettings $meshVerify = NULL)",
                 "applyLogPresetBaseline": "applyLogPresetBaseline(RivetCore\\Rmm\\Authz\\RmmPrincipal $who): RivetCore\\Rmm\\Technician\\ActionResult",
                 "controlService": "controlService(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, mixed $name, mixed $action, bool $confirm): RivetCore\\Rmm\\Technician\\ActionResult",
                 "createUpload": "createUpload(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, mixed $path, mixed $size, mixed $sha256, bool $overwrite, bool $confirm): RivetCore\\Rmm\\Technician\\ActionResult",
@@ -5843,12 +5915,14 @@
                 "listTransfers": "listTransfers(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "meshInfo": "meshInfo(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "meshSettings": "meshSettings(RivetCore\\Rmm\\Authz\\RmmPrincipal $who): RivetCore\\Rmm\\Technician\\ActionResult",
+                "meshVerifySettings": "meshVerifySettings(RivetCore\\Rmm\\Authz\\RmmPrincipal $who): RivetCore\\Rmm\\Technician\\ActionResult",
                 "requestDownload": "requestDownload(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, mixed $path): RivetCore\\Rmm\\Technician\\ActionResult",
                 "settings": "settings(RivetCore\\Rmm\\Authz\\RmmPrincipal $who): RivetCore\\Rmm\\Technician\\ActionResult",
                 "snapshot": "snapshot(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $kind): RivetCore\\Rmm\\Technician\\ActionResult",
                 "transfer": "transfer(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $transferId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "uninstallMeshAgent": "uninstallMeshAgent(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, bool $confirm): RivetCore\\Rmm\\Technician\\ActionResult",
                 "updateMeshSettings": "updateMeshSettings(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
+                "updateMeshVerifySettings": "updateMeshVerifySettings(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
                 "updateSettings": "updateSettings(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
                 "uploadContent": "uploadContent(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $transferId, mixed $stream): RivetCore\\Rmm\\Technician\\ActionResult"
             }
@@ -6184,6 +6258,9 @@
                 "meshAfterApproval": "meshAfterApproval(): RivetCore\\Rmm\\Mesh\\MeshAfterApproval",
                 "meshAgentSettings": "meshAgentSettings(): RivetCore\\Rmm\\Mesh\\MeshAgentSettings",
                 "meshAgents": "meshAgents(): RivetCore\\Rmm\\Mesh\\MeshAgentService",
+                "meshMapping": "meshMapping(): RivetCore\\Rmm\\Mesh\\MeshMapping",
+                "meshVerifyService": "meshVerifyService(): RivetCore\\Rmm\\Mesh\\MeshVerifyService",
+                "meshVerifySettings": "meshVerifySettings(): RivetCore\\Rmm\\Mesh\\MeshVerifySettings",
                 "packageCatalog": "packageCatalog(): RivetCore\\Rmm\\Deploy\\PackageCatalog",
                 "packageParams": "packageParams(): RivetCore\\Rmm\\Deploy\\PackageParams",
                 "partitions": "partitions(): RivetCore\\Rmm\\Storage\\PartitionMaintenance",
@@ -8226,13 +8303,19 @@
         },
         "RivetCore\\Rmm\\Technician\\TechnicianActions": {
             "kind": "final class",
+            "constants": {
+                "MESH_APPROVE_MAX": 200
+            },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Device\\DeviceService $deviceService, RivetCore\\Rmm\\Enrollment\\EnrollmentService $enrollment, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Update\\UpdateService $updates, RivetCore\\Rmm\\Mesh\\MeshService $mesh, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, string $clientLabel = 'client', ?RivetCore\\Rmm\\Technician\\ScriptActions $library = NULL, ?RivetCore\\Rmm\\Settings\\RmmSettings $settings = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Device\\DeviceService $deviceService, RivetCore\\Rmm\\Enrollment\\EnrollmentService $enrollment, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Update\\UpdateService $updates, RivetCore\\Rmm\\Mesh\\MeshService $mesh, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, string $clientLabel = 'client', ?RivetCore\\Rmm\\Technician\\ScriptActions $library = NULL, ?RivetCore\\Rmm\\Settings\\RmmSettings $settings = NULL, ?RivetCore\\Rmm\\Mesh\\MeshMapping $meshMapping = NULL, ?RivetCore\\Rmm\\Mesh\\MeshAgentService $meshAgents = NULL)",
                 "allowReenroll": "allowReenroll(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
+                "approveMeshNodes": "approveMeshNodes(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $deviceIds): RivetCore\\Rmm\\Technician\\ActionResult",
                 "cancelJob": "cancelJob(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $jobId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "clearUpdateFailures": "clearUpdateFailures(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "createToken": "createToken(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, bool $managedExternally = false): RivetCore\\Rmm\\Technician\\ActionResult",
                 "launchRemote": "launchRemote(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = NULL, ?string $userAgent = NULL, string $view = 'desktop'): RivetCore\\Rmm\\Technician\\ActionResult",
+                "meshMapping": "meshMapping(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
+                "meshMappings": "meshMappings(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $filters = [], int $limit = 100, int $offset = 0): RivetCore\\Rmm\\Technician\\ActionResult",
                 "resolvePending": "resolvePending(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $action, ?int $assetId = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
                 "retire": "retire(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "revoke": "revoke(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $reason = ''): RivetCore\\Rmm\\Technician\\ActionResult",
@@ -9460,6 +9543,7 @@
         "RivetCore\\Rmm\\Migration\\Migration0043RmmStoreDenormalisation",
         "RivetCore\\Rmm\\Migration\\Migration0044RmmStoreSwitch",
         "RivetCore\\Rmm\\Migration\\Migration0049InstallerManagedExternally",
+        "RivetCore\\Rmm\\Migration\\Migration0052MeshVerify",
         "RivetCore\\Rmm\\Migration\\MsiTemplateSchema",
         "RivetCore\\Rmm\\Migration\\PatchSchema",
         "RivetCore\\Rmm\\Migration\\RemoteSchema",
@@ -9594,7 +9678,8 @@
         "0046_compliance_framework_profiles",
         "0047_reporting_views",
         "0048_audit_hash_chain",
-        "0049_rmm_installer_managed_externally"
+        "0049_rmm_installer_managed_externally",
+        "0052_rmm_mesh_verify"
     ],
     "tables": {
         "audit_chain_checkpoint": {

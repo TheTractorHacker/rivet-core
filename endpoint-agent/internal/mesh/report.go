@@ -153,6 +153,11 @@ func (r *Reporter) Current(ctx context.Context) *Report {
 func (r *Reporter) build(ctx context.Context, exe string) *Report {
 	res := LoadResult(r.StateDir)
 	if res == nil && exe == "" {
+		// Nothing may be run, but a Mesh agent left in a place the agent does not trust can still say who it is in its `.msh`: reported as a claim (the server maps
+		// nothing from a device's own claim without an approval).
+		if id, ok := NormalizeNodeID(r.Probe.ClaimNodeID()); ok {
+			return &Report{Installed: true, NodeID: id, State: StateReady}
+		}
 		return nil
 	}
 	rep := &Report{Installed: exe != "" || (res != nil && res.Installed)}
