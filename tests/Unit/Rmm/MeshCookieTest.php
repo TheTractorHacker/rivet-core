@@ -83,6 +83,36 @@ final class MeshCookieTest extends TestCase
         $this->assertSame(10000 - 3300, (M::decode((string) M::login(self::KEY, 'd', 'a', 10000, null, 300), self::KEY) ?? [])['time']);
     }
 
+    /**
+     * CORE-13 follow-up: whatever the template says, the only technician-supplied input that can reach the account (and so the cookie's u claim) is the
+     * immutable user id. A placeholder is substituted only if it is exactly {user_id}; every other word in braces is plain text of the template, which only an
+     * administrator writes; and the display name argument is never used.
+     */
+    public function testOnlyTheUserIdEverSubstitutes(): void
+    {
+        $names = ['{username}', '{email}', '{name}', '{display}', '{display_name}', '{user}', '{user_name}', '{login}', '{first}', '{last}', '{USER_ID}', '{User_Id}', '{userid}', '{ user_id }', '{user_id }', '{{username}}', '{user_{user_id}}'];
+        foreach ($names as $ph) {
+            foreach (['rit-' . $ph, $ph, $ph . '-x'] as $tpl) {
+                $a = M::accountName($tpl, 5, 'alice');
+                $b = M::accountName($tpl, 5, "admin' OR 1=1 /../ {user_id} {username}");
+                $this->assertSame($a, $b, "$tpl: the display name never changes the account");
+                $this->assertDoesNotMatchRegularExpression('/[^A-Za-z0-9._-]/', $a);
+                $this->assertStringNotContainsStringIgnoringCase('alice', $a);
+                $this->assertStringNotContainsString('admin', $a);
+            }
+        }
+        // the id is the only varying input, and only through the exact {user_id}
+        $this->assertSame('rit-5', M::accountName('rit-{user_id}', 5, 'x'));
+        $this->assertSame('rit-6', M::accountName('rit-{user_id}', 6, 'x'));
+        $this->assertSame('rit-userid', M::accountName('rit-{userid}', 6, 'x'), 'an unknown word is literal text, not a lookup');
+        $this->assertSame('rit-USER_ID', M::accountName('rit-{USER_ID}', 6, 'x'));
+        $this->assertSame('rit-user5', M::accountName('rit-{user{user_id}}', 5, 'x'), 'substitution cannot build a {username} from its output');
+        // and the cookie claim carries exactly that account
+        $c = M::login(self::KEY, 'dom', M::accountName('rit-{user_id}', 5, 'admin'), 10000);
+        $this->assertSame('user/dom/rit-5', (M::decode((string) $c, self::KEY) ?? [])['u'] ?? null);
+        $this->assertNull(M::login(self::KEY, 'dom', M::accountName('{username}', 5, 'admin'), 10000), 'no account, no cookie');
+    }
+
     public function testAccountName(): void
     {
         $this->assertSame('rivetit-support', M::accountName('rivetit-support', 5, 'bob'));
