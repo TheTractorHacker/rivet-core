@@ -5095,6 +5095,7 @@
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Contracts\\SecretBoxInterface $box, RivetCore\\Webhooks\\UrlPolicy $urlPolicy, bool $allowInsecureHttp = false, ?RivetCore\\Rmm\\Mesh\\MeshAgentSettings $viewSettings = NULL)",
                 "consoleCredentials": "consoleCredentials(int $userId, string $username, bool $once): array",
+                "consoleServerAllowed": "consoleServerAllowed(): bool",
                 "domain": "domain(): string",
                 "launch": "launch(array $dev, string $username, int $userId, bool $force = false, string $view = 'desktop'): array",
                 "nodeFor": "nodeFor(int $deviceId): ?string",
@@ -5995,8 +5996,12 @@
         },
         "RivetCore\\Rmm\\Remote\\ConsoleSessionService": {
             "kind": "final class",
+            "constants": {
+                "APPROVAL_MESSAGE": "This client requires approval before a remote session can start."
+            },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Remote\\ConsoleStore $store, RivetCore\\Rmm\\Remote\\ConsoleSettings $settings)",
+                "__construct": "__construct(RivetCore\\Rmm\\Remote\\ConsoleStore $store, RivetCore\\Rmm\\Remote\\ConsoleSettings $settings, ?RivetCore\\Rmm\\Contracts\\BackgroundModeConfigInterface $policy = NULL)",
+                "approvalRequired": "approvalRequired(int $clientId): bool",
                 "consoleNode": "static consoleNode(string $storedNode, string $meshDomain): ?string",
                 "issue": "issue(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $dev, string $kind, string $storedNode, string $meshDomain, string $sessionId, string $fallbackUrl, ?string $ip): ?array",
                 "origin": "origin(): ?string"

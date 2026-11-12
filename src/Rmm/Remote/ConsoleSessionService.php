@@ -18,8 +18,24 @@ use RivetCore\Rmm\Authz\RmmPrincipal;
  */
 final class ConsoleSessionService
 {
-    public function __construct(private readonly ConsoleStore $store, private readonly ConsoleSettings $settings)
+    public function __construct(private readonly ConsoleStore $store, private readonly ConsoleSettings $settings, private readonly ?\RivetCore\Rmm\Contracts\BackgroundModeConfigInterface $policy = null)
     {
+    }
+
+    /** The refusal text of a client whose policy is `approve` (the same at launch and at redeem). */
+    public const APPROVAL_MESSAGE = 'This client requires approval before a remote session can start.';
+
+    /**
+     * True when Background Mode's policy mode is `per_client` and the client's policy is `approve`: Core cannot arrange the approval, so a console launch is refused (a lookup that
+     * fails does not refuse here; the redeem re-checks and denies on failure).
+     */
+    public function approvalRequired(int $clientId): bool
+    {
+        try {
+            return $this->policy !== null && $this->policy->policyMode() === BackgroundModePolicy::MODE_PER_CLIENT && $this->policy->clientPolicy($clientId) === BackgroundModePolicy::CLIENT_APPROVE;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /** The configured origin, or null when `console_public_url` is not set. */

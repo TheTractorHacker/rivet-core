@@ -187,23 +187,64 @@ final class ConsoleRedeemTest extends ConsoleTestCase
         }
     }
 
-    public function testApprovalRequiredIsReturnedOnlyForAValidCode(): void
+    public function testApprovalRequiredRefusesTheLaunchAndMintsNothing(): void
     {
         $cfg = $this->h->module->backgroundConfig();
         $this->assertTrue($cfg->setPolicyMode('per_client', 1));
         $this->assertTrue($cfg->setClientPolicy($this->h->clientA, 'approve', 1));
+        $r = $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true);
+        $this->assertSame([false, 403, 'approval_required', 'This client requires approval before a remote session can start.'], [$r->ok, $r->http, $r->code, $r->message]);
+        $this->assertSame(0, (int) $this->h->module->sql()->val('SELECT COUNT(*) FROM rmm_console_codes'));
+        $this->assertSame([], $this->sessionRowsOf());
+        $denied = $this->auditOf('Remote Denied');
+        $this->assertCount(1, $denied);
+        $this->assertStringContainsString('approval_required', $denied[0]['description']);
+        [$c, $j] = $this->h->tech('POST', [(string) $this->devA, 'remote'], $this->tech, ['console' => true]);
+        $this->assertSame([403, 'approval_required'], [$c, $j['code']]);
+        // the stock launch (no console flag) and another client are unaffected
+        $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devA)->ok);
+        $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devB, false, null, null, 'desktop', 'standard', true)->ok);
+        // switch off: the console flag is ignored, the stock launch works
+        $this->assertTrue($this->h->module->remoteActions()->updateSettings($this->admin, ['features' => ['remote_console' => false]])->ok);
+        $off = $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true);
+        $this->assertSame([true, ['url', 'session_id']], [$off->ok, array_keys($off->data)]);
+        // internal mode: the client policy is not consulted
+        $this->assertTrue($this->h->module->remoteActions()->updateSettings($this->admin, ['features' => ['remote_console' => true]])->ok);
+        $this->assertTrue($cfg->setPolicyMode('internal', 1));
+        $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true)->ok);
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function sessionRowsOf(): array
+    {
+        return $this->auditOf('Remote Session');
+    }
+
+    public function testAnHttpMeshAddressRefusesAConsoleLaunchUnlessInsecureHttpIsAllowed(): void
+    {
+        $strict = new \RivetCore\Rmm\RmmModule($this->h->db, $this->h->clock, $this->h->tenancy, $this->h->assets, $this->h->bridge, $this->h->box, $this->h->audit, $this->h->metrics, new \RivetCore\Testing\InMemoryRmmModuleState(true), [], null, $this->policy);
+        $this->assertStringStartsWith('http://', (string) $strict->settings()->get()['mesh_url']);
+        $r = $strict->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true);
+        $this->assertSame([false, 409, 'not_configured'], [$r->ok, $r->http, $r->code]);
+        $this->assertStringContainsString('https', $r->message);
+        $this->assertSame(0, (int) $this->h->module->sql()->val('SELECT COUNT(*) FROM rmm_console_codes'));
+        $this->assertCount(1, $this->auditOf('Remote Failed'));
+        $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true)->ok, 'with allow_insecure_http (the test harness) it is allowed');
+    }
+
+    public function testApprovalRequiredAtRedeemIsReturnedOnlyForAValidCodeMintedBeforeThePolicyFlipped(): void
+    {
         [$code] = $this->launch($this->tech, $this->devA);
+        $cfg = $this->h->module->backgroundConfig();
+        $this->assertTrue($cfg->setPolicyMode('per_client', 1));
+        $this->assertTrue($cfg->setClientPolicy($this->h->clientA, 'approve', 1));
         $r = $this->redeemCode($code);
         $this->assertSame(403, $r->status);
         $this->assertSame('{"ok":false,"error":"approval_required","message":"This client requires approval before a remote session can start."}', $r->body);
         $this->assertSame('no-store', $r->headers['Cache-Control']);
         $this->assertSame(0, (int) $this->h->module->sql()->val('SELECT COUNT(*) FROM rmm_console_sessions'), 'no session, no cookie');
-        // a guess gets the plain 400: nothing leaks to someone without a code
-        $this->assertSame('{"ok":false,"error":"invalid_or_expired"}', $this->redeemCode(ConsoleLink::newCode())->body);
-        // the code is spent
-        $this->assertSame(400, $this->redeemCode($code)->status);
-        // another client (policy allow) is unaffected
-        $this->assertSame(200, $this->redeemCode($this->launch($this->tech, $this->devB)[0])->status);
+        $this->assertSame('{"ok":false,"error":"invalid_or_expired"}', $this->redeemCode(ConsoleLink::newCode())->body, 'a guess learns nothing');
+        $this->assertSame(400, $this->redeemCode($code)->status, 'the code is spent');
     }
 
     // ------------------------------------------------------------------ 405 415 426 429
@@ -448,7 +489,7 @@ final class ConsoleRedeemTest extends ConsoleTestCase
         $this->assertSame(43, strlen($distinct));
         $this->assertSame(400, $this->redeemCode($distinct)->status);
         $this->assertSame(400, $this->redeemCode($secrets[0])->status);
-        $this->assertSame(401, $this->report('Z' . substr($secrets[3], 1), 'abcdef0123456789', [])->status);
+        $this->assertSame(401, $this->report(($secrets[3][0] === 'Z' ? 'Y' : 'Z') . substr($secrets[3], 1), 'abcdef0123456789', [])->status);
         $this->assertSame(401, $this->report($secrets[3], 'abcdef0123456789', [], '203.0.113.50', null, 'Bearer ' . $distinct)->status);
         $secrets[] = $distinct;
         $throwing = $this->h->module->consoleApi(static function () use ($distinct): bool {

@@ -253,6 +253,16 @@ final class TechnicianActions
 
             return ActionResult::fail(409, 'not_configured', 'The Rivet Console is not configured: an administrator has to set its public address (console_public_url) in the RMM remote-tools settings.');
         }
+        if ($kind !== null && !$this->mesh->consoleServerAllowed()) {
+            $this->audit->record('Remote Failed', "{$who->userName} Rivet Console launch on device $deviceId did not start: MeshCentral address is not https", $client, $asset);
+
+            return ActionResult::fail(409, 'not_configured', 'The Rivet Console needs an https MeshCentral address; the configured one is not https. Use the MeshCentral link, or ask an administrator to change the MeshCentral address.');
+        }
+        if ($kind !== null && $this->consoleSessions->approvalRequired($client)) {
+            $this->audit->record('Remote Denied', "User {$who->userId} denied Rivet Console session on device $deviceId: approval_required", $client, $asset);
+
+            return ActionResult::fail(403, 'approval_required', ConsoleSessionService::APPROVAL_MESSAGE);
+        }
         $r = $this->mesh->launch($dev, $who->userName, $who->userId, $force, $view);
         if (!$r['ok']) {
             $this->audit->record('Remote Failed', "{$who->userName} remote session on device $deviceId did not start: {$r['code']}", $client, $asset);

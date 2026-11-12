@@ -220,7 +220,7 @@ final class ConsoleRedeemService
     {
         $this->denied($ipKey, $ip, $gate, $row['client_id'], $row['asset_id'], $row);
         if ($gate === 'approval_required') {
-            return ['http' => 403, 'body' => ['ok' => false, 'error' => 'approval_required', 'message' => 'This client requires approval before a remote session can start.'], 'headers' => []];
+            return ['http' => 403, 'body' => ['ok' => false, 'error' => 'approval_required', 'message' => ConsoleSessionService::APPROVAL_MESSAGE], 'headers' => []];
         }
 
         return self::invalidAnswer();

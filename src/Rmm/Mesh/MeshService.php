@@ -168,6 +168,14 @@ final class MeshService
         return ['ok' => true, 'server' => $server, 'domain' => $domain, 'account' => $account, 'userid' => MeshCookie::userId($domain, $account), 'cookie' => $cookie];
     }
 
+    /** True when the configured Mesh address is https, or the module allows insecure http (the Rivet Console refuses a non-https `mesh.server`). */
+    public function consoleServerAllowed(): bool
+    {
+        $url = trim((string) $this->settings->get()['mesh_url']);
+
+        return $this->allowInsecureHttp || str_starts_with(strtolower($url), 'https://');
+    }
+
     /** The MeshCentral domain id the launch uses (`mesh_domain`, empty for the default domain). */
     public function domain(): string
     {

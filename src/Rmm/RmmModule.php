@@ -1463,7 +1463,7 @@ final class RmmModule
     /** Mints the single-use redeem code of a Rivet Console launch (used by {@see technician()}). */
     public function consoleSessions(): \RivetCore\Rmm\Remote\ConsoleSessionService
     {
-        return $this->consoleSessions ??= new \RivetCore\Rmm\Remote\ConsoleSessionService($this->consoleStore(), $this->consoleSettings());
+        return $this->consoleSessions ??= new \RivetCore\Rmm\Remote\ConsoleSessionService($this->consoleStore(), $this->consoleSettings(), $this->backgroundConfig());
     }
 
     /**
