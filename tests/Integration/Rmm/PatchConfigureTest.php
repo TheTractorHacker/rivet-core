@@ -55,6 +55,7 @@ final class PatchConfigureTest extends PatchTestCase
     private function live(bool $on = true): void
     {
         $this->assertSame([], $this->h->module->settings()->update(['limits_json' => json_encode(['patch_live_install' => $on ? 1 : 0])]));
+        $this->h->module->settings()->refresh();
     }
 
     private function configureJobs(): array
@@ -345,6 +346,19 @@ final class PatchConfigureTest extends PatchTestCase
         $this->assertSame($job['job_id'], $this->configureJobs()[0]['job_id']);
     }
 
+    public function testMarkingTheDeviceAsManagedByAnotherRmmCancelsAQueuedJobAndStopsNewOnes(): void
+    {
+        $this->policy(['windows_update_mode' => 'managed']);
+        $this->scan($this->dev, $this->tok, self::wu());
+        $this->assertSame(1, $this->pass()['patch_configure_dry_runs_queued']);
+        $this->assertTrue($this->h->module->deviceService()->setAutomationDisabled($this->dev, true, 1));
+        $this->assertSame('cancelled', $this->h->one("SELECT state FROM endpoint_agent_jobs WHERE type = 'patch_configure'"), 'a job the scheduler queued is cancelled like a scheduled install');
+        $this->h->q("UPDATE rmm_patch_jobs SET applied_at = '2000-01-01 00:00:00' WHERE type = 'wu_state'");
+        $this->h->q("UPDATE rmm_patch_jobs SET idem_key = NULL, created_at = '" . gmdate('Y-m-d H:i:s', time() - 3 * 86400) . "' WHERE type = 'configure'");
+        $this->assertSame(0, $this->pass()['patch_configure_dry_runs_queued']);
+        $this->assertCount(1, $this->configureJobs());
+    }
+
     // ------------------------------------------------------------------ the manual route
 
     public function testTheManualRouteIsADryRunForAManagerAndARealChangeNeedsTheInstallGrantAndConfirm(): void
@@ -369,15 +383,14 @@ final class PatchConfigureTest extends PatchTestCase
         $this->live();
         [$c, $j] = $this->api('POST', [$d, 'patches', 'configure'], $this->installer, ['mode' => 'apply', 'confirm' => true]);
         $this->assertSame([202, 'apply'], [$c, $j['mode']]);
-        $row = $this->configureJobs();
-        $this->assertSame('apply', json_decode((string) end($row)['params_json'], true)['mode']);
+        $this->assertSame('apply', json_decode((string) $this->h->one("SELECT params_json FROM endpoint_agent_jobs WHERE job_id = '{$j['job_id']}'"), true)['mode']);
         $this->assertStringContainsString('Patch Configure Requested', $this->auditText());
         $this->assertSame(405, $this->api('GET', [$d, 'patches', 'configure'], $this->tech)[0]);
         // nothing a caller types reaches the job
         $this->h->q("UPDATE endpoint_agent_jobs SET state = 'cancelled'");
-        [$c] = $this->api('POST', [$d, 'patches', 'configure'], $this->installer, ['mode' => 'apply', 'confirm' => true, 'feature_target' => '99H9', 'key' => 'HKLM\\x']);
+        [$c, $j] = $this->api('POST', [$d, 'patches', 'configure'], $this->installer, ['mode' => 'apply', 'confirm' => true, 'feature_target' => '99H9', 'key' => 'HKLM\\x']);
         $this->assertSame(202, $c);
-        $this->assertStringNotContainsString('99H9', (string) $this->h->one("SELECT params_json FROM endpoint_agent_jobs WHERE type = 'patch_configure' ORDER BY created_at DESC, job_id LIMIT 1"));
+        $this->assertStringNotContainsString('99H9', (string) $this->h->one("SELECT params_json FROM endpoint_agent_jobs WHERE job_id = '{$j['job_id']}'"));
     }
 
     public function testTenantIsolationOnTheNewRoute(): void
