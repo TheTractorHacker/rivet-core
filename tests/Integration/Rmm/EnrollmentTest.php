@@ -161,6 +161,7 @@ final class EnrollmentTest extends RmmTestCase
         $d1 = $this->h::device(['hostname' => 'WS-ONE', 'serial' => 'SER-ONE-1']);
         [, , $j1] = $this->h->enroll($tok, $d1);
         $dev = (int) $j1['device_id'];
+        // CORE-17: while the first device is not linked (no asset matched) a reinstall still updates its own row
         [$c, , $j] = $this->h->enroll($tok, $this->h::device(['machine_guid' => $d1['machine_guid'], 'serial' => $d1['serial'], 'hostname' => 'WS-ONE-RENAMED']));
         $this->assertSame([201, $dev], [$c, $j['device_id']]);
         $this->assertSame('WS-ONE-RENAMED', $this->h->one("SELECT hostname FROM endpoint_agent_devices WHERE device_id=$dev"));
@@ -169,23 +170,71 @@ final class EnrollmentTest extends RmmTestCase
         $this->assertSame(1, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_devices'));
     }
 
-    /** CORE-17: a new install_id plus a known MachineGuid or serial is not proof of identity: the row is held for approval and offered no jobs. */
-    public function testAReinstallMatchedOnlyByMachineIdentityWaitsForApprovalAndGetsNoJobs(): void
+    /**
+     * CORE-17: a new install_id plus a known MachineGuid or serial is not proof of identity. The linked row keeps its credential (the real agent keeps
+     * working); the newcomer is a pending device that gets no jobs; approval swaps the credential, rejection discards the newcomer.
+     */
+    public function testAReinstallMatchedOnlyByMachineIdentityNeverLocksOutTheRealAgent(): void
     {
         $tok = $this->h->token(null, 24, 60);
-        $this->h->asset(['name' => 'Victim PC', 'serial' => 'SER-VICTIM-1']);
+        $asset = $this->h->asset(['name' => 'Victim PC', 'serial' => 'SER-VICTIM-1']);
         $d1 = $this->h::device(['hostname' => 'VICTIM', 'serial' => 'SER-VICTIM-1']);
         [, , $j1] = $this->h->enroll($tok, $d1);
         $dev = (int) $j1['device_id'];
+        $real = (string) $j1['device_token'];
         $this->assertSame('linked', $this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$dev"));
         $jobId = (string) $this->h->module->jobs()->create($this->h->module->devices()->find($dev) ?? [], 'collect', null, [], null, false, 1)['job_id'];
+        $hashBefore = $this->h->one("SELECT token_hash FROM endpoint_agent_devices WHERE device_id=$dev");
+        $jobs = fn (string $t): array => $this->h->call('GET', 'agent_jobs', null, $t);
+
         // the attacker enrolls with the victim's MachineGuid (a new install_id)
         [$c, , $j] = $this->h->enroll($tok, $this->h::device(['machine_guid' => $d1['machine_guid'], 'serial' => null, 'hostname' => 'ATTACKER']));
-        $this->assertSame([201, $dev, 'pending_approval', null], [$c, $j['device_id'], $j['status'], $j['matched_asset_id']]);
-        $this->assertSame(['pending_approval', 'reinstall_identity'], [$this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$dev"), $this->h->one("SELECT match_reason FROM endpoint_agent_devices WHERE device_id=$dev")]);
-        [$jc, , $jj] = $this->h->call('GET', 'agent_jobs', null, $j['device_token']);
-        $this->assertSame([200, []], [$jc, $jj['jobs']], 'a device that is not linked is offered no jobs, the queued one waits');
-        $this->assertSame('queued', $this->h->one("SELECT state FROM endpoint_agent_jobs WHERE job_id='$jobId'"));
+        $this->assertSame([201, 'pending_approval', null], [$c, $j['status'], $j['matched_asset_id']]);
+        $new = (int) $j['device_id'];
+        $evil = (string) $j['device_token'];
+        $this->assertNotSame($dev, $new, 'a row of its own');
+        $this->assertSame([$hashBefore, 'linked', 'VICTIM'], [$this->h->one("SELECT token_hash FROM endpoint_agent_devices WHERE device_id=$dev"), $this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$dev"), $this->h->one("SELECT hostname FROM endpoint_agent_devices WHERE device_id=$dev")], 'the victim row is untouched');
+        $this->assertSame(['pending_approval', 'reinstall_identity'], [$this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$new"), $this->h->one("SELECT match_reason FROM endpoint_agent_devices WHERE device_id=$new")]);
+        // the real agent keeps its credential and its jobs; the newcomer is offered nothing
+        $this->assertSame(200, $this->h->checkin($real)[0]);
+        [$c, , $jj] = $jobs($real);
+        $this->assertSame([200, [$jobId]], [$c, array_column($jj['jobs'], 'job_id')]);
+        $this->assertSame([200, []], [$jobs($evil)[0], $jobs($evil)[2]['jobs']]);
+
+        // rejection discards the newcomer and changes nothing for the real agent
+        $this->assertTrue($this->h->module->deviceService()->reject($new, 1)['ok']);
+        $this->assertSame(401, $jobs($evil)[0]);
+        $this->assertSame(200, $this->h->checkin($real)[0]);
+
+        // a second attempt supersedes nothing that matters; a third supersedes the second
+        [, , $j2] = $this->h->enroll($tok, $this->h::device(['machine_guid' => $d1['machine_guid'], 'serial' => null, 'hostname' => 'REINSTALLED']));
+        [, , $j3] = $this->h->enroll($tok, $this->h::device(['machine_guid' => $d1['machine_guid'], 'serial' => null, 'hostname' => 'REINSTALLED2']));
+        $this->assertSame(401, $jobs((string) $j2['device_token'])[0], 'one open request per machine');
+        $newest = (int) $j3['device_id'];
+
+        // approval: the new credential replaces the old one on the original row, atomically
+        $r = $this->h->module->deviceService()->approve($newest, $asset, 1);
+        $this->assertTrue($r['ok'], $r['message']);
+        $this->assertSame(401, $jobs($real)[0], 'the old credential is gone');
+        $job2 = (string) $this->h->module->jobs()->create($this->h->module->devices()->find($dev) ?? [], 'collect', null, [], null, false, 1)['job_id'];
+        [$c, , $jj] = $jobs((string) $j3['device_token']);
+        $this->assertSame([200, [$job2]], [$c, array_column($jj['jobs'], 'job_id')], 'the new credential is the original device');
+        $this->assertSame(['linked', 'REINSTALLED2', $asset], [$this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$dev"), $this->h->one("SELECT hostname FROM endpoint_agent_devices WHERE device_id=$dev"), (int) $this->h->one("SELECT asset_id FROM endpoint_agent_devices WHERE device_id=$dev")]);
+        $this->assertSame('rejected', $this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$newest"));
+    }
+
+    /** CORE-17: an install_id re-enrollment that reports no identity at all, for a row that has one, never rotates the linked credential. */
+    public function testAnInstallIdWithNoIdentityNeverRotatesALinkedCredential(): void
+    {
+        $tok = $this->h->token(null, 24, 60);
+        $this->h->asset(['name' => 'Victim PC', 'serial' => 'SER-VICTIM-2']);
+        $d1 = $this->h::device(['serial' => 'SER-VICTIM-2']);
+        [, , $j1] = $this->h->enroll($tok, $d1);
+        $before = $this->h->one('SELECT token_hash FROM endpoint_agent_devices WHERE device_id=' . $j1['device_id']);
+        [$c] = $this->h->enroll($tok, ['machine_guid' => null, 'serial' => null] + $d1);
+        $this->assertSame(409, $c);
+        $this->assertSame($before, $this->h->one('SELECT token_hash FROM endpoint_agent_devices WHERE device_id=' . $j1['device_id']));
+        $this->assertSame(200, $this->h->checkin((string) $j1['device_token'])[0]);
     }
 
     public function testReEnrollmentNeverCrossesClients(): void
@@ -208,7 +257,7 @@ final class EnrollmentTest extends RmmTestCase
         $this->assertSame('cross_client_identity', $this->h->one('SELECT match_reason FROM endpoint_agent_devices WHERE device_id=' . $jb['device_id']));
         $this->assertSame($this->h->clientB, (int) $this->h->one('SELECT client_id FROM endpoint_agent_devices WHERE device_id=' . $jb['device_id']));
         $this->assertSame($before, $this->h->one("SELECT token_hash FROM endpoint_agent_devices WHERE device_id=$victim"), 'the real agent keeps its credential');
-        // and the same client still reinstalls onto its own device
+        // and the same client still reinstalls onto its own device (the victim row is not linked here, so it is updated in place)
         [, , $again] = $this->h->enroll($tokA, $this->h::device(['serial' => $d['serial']]));
         $this->assertSame($victim, (int) $again['device_id']);
     }
@@ -251,7 +300,7 @@ final class EnrollmentTest extends RmmTestCase
         [, , $j] = $this->h->enroll($tok, $this->h::device(['serial' => 'DIFFERENT-BOX', 'mac_addresses' => ['aa:bb:cc:11:22:33']]));
         $this->assertSame(['ambiguous', null], [$j['status'], $j['matched_asset_id']]);
         $this->assertSame('asset_already_linked', $this->h->one('SELECT match_reason FROM endpoint_agent_devices WHERE device_id=' . $j['device_id']));
-        // a new install of the SAME serial is a reinstall: same device, same asset, but (CORE-17) it waits for a person
+        // a new install of the SAME serial is a reinstall of a linked device: (CORE-17) it waits for a person, the linked row is untouched
         [, , $j] = $this->h->enroll($tok, $this->h::device(['serial' => 'SER-MATCH-1']));
         $this->assertSame(['pending_approval', null], [$j['status'], $j['matched_asset_id']]);
         $this->assertSame(1, (int) $this->h->one("SELECT COUNT(DISTINCT device_id) FROM endpoint_agent_devices WHERE asset_id=$aSerial"));

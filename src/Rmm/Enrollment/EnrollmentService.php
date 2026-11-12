@@ -261,7 +261,7 @@ final class EnrollmentService
         $dev = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE install_id = ? FOR UPDATE', [$d['install_id']]);
         $event = 're-enrolled';
         $crossClient = false;
-        $unprovenIdentity = false;
+        $reinstallOf = null;
         if ($dev !== null) {
             if (!self::sameClient($dev, $token) || ($dev['kind'] ?? 'agent') !== 'agent') {   // another client's row, or a RivetPanel device, is never taken over
                 // install_id is unique, so another client's row cannot be duplicated; and it must not be taken over either.
@@ -271,13 +271,24 @@ final class EnrollmentService
             if (self::identityConflict($dev, $d)) {
                 throw new ApiError(409, 'conflict', 'This install id is already bound to a different machine.');
             }
-            $unprovenIdentity = $d['machine_guid'] === null && $d['serial'] === null && ($dev['machine_guid'] !== null || $dev['serial'] !== null);
+            if ($d['machine_guid'] === null && $d['serial'] === null && ($dev['machine_guid'] !== null || $dev['serial'] !== null) && $dev['link_state'] === 'linked') {
+                // CORE-17: the stored machine has an identity and this enrollment reports none, so the install id alone would rotate the credential of a
+                // linked device. Refuse, and leave the row (and its real agent) untouched.
+                throw new ApiError(409, 'conflict', 'This install id is already bound to a different machine.');
+            }
         } else {
             // 2. Reinstall of a known machine: same machine_guid, else same serial.
             $dev = $this->findReinstall($d, (int) $token['client_id']);
             if ($dev !== null) {
                 $this->refuseIfBlocked($dev);
                 $event = 'reinstalled';
+                if ($dev['link_state'] === 'linked') {
+                    // CORE-17: a new install_id plus a known MachineGuid or serial is NOT proof of the same machine (both are readable by any user on the
+                    // box and the enrollment token is multi-use). The linked row keeps its credential, its install id and its jobs, so the real agent keeps
+                    // working; the newcomer becomes a pending device of its own that an administrator can approve (it then takes the row over) or reject.
+                    $reinstallOf = $dev;
+                    $dev = null;
+                }
             } else {
                 // The same machine identity under ANOTHER client (a cloned image, or an attempted takeover) never reuses that
                 // device row: it becomes a new device of the token's client and waits for an administrator.
@@ -297,14 +308,6 @@ final class EnrollmentService
             $deviceId = (int) $dev['device_id'];
             $types->saveDetected($deviceId, $detected);
             $dev = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ?', [$deviceId]) ?? $dev;
-            if ($dev['link_state'] === 'linked' && ($event === 'reinstalled' || $unprovenIdentity)) {
-                // CORE-17: a new install_id plus a known MachineGuid or serial is NOT proof of the same machine (both are readable by any user on the
-                // box, and the enrollment token is multi-use), and an install_id re-enrollment that reports no identity at all proves nothing either.
-                // The row keeps its asset but waits for a person; until then it is offered no jobs ({@see \RivetCore\Rmm\Job\JobService::offer()}).
-                $this->sql->run("UPDATE endpoint_agent_devices SET link_state = 'pending_approval', match_reason = 'reinstall_identity' WHERE device_id = ?", [$deviceId]);
-                $dev['link_state'] = 'pending_approval';
-                $this->audit->record('Reinstall Held', "Device $deviceId re-enrolled with a new install id (" . ($event === 'reinstalled' ? 'matched by machine id or serial only' : 'no machine identity reported') . '); it waits for approval', (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
-            }
             if ($dev['link_state'] === 'linked' && !empty($dev['asset_id'])) {
                 $asset = $this->assets->find((int) $dev['asset_id']);
                 if ($asset === null || $asset['archived']) {
@@ -324,9 +327,18 @@ final class EnrollmentService
         if ($limit > 0 && (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_devices WHERE revoked_at IS NULL AND retired_at IS NULL AND link_state <> \'panel\'') >= $limit) {
             throw new ApiError(403, 'device_limit', 'The device limit of this installation has been reached.');
         }
-        $match = $crossClient
-            ? ['asset_id' => null, 'status' => 'pending_approval', 'reason' => 'cross_client_identity', 'candidates' => []]
-            : $this->matchAsset($d, (int) $token['client_id']);
+        if ($reinstallOf !== null) {
+            // one open request per machine: an older pending reinstall of the same row is superseded
+            $this->sql->run("UPDATE endpoint_agent_devices SET revoked_at = ?, revoked_reason = 'superseded by a newer reinstall request', link_state = 'rejected', token_hash = ''
+                WHERE link_state = 'pending_approval' AND match_reason = 'reinstall_identity' AND JSON_VALUE(match_candidates_json, '$[0].reinstall_of') = ?", [$now, (string) $reinstallOf['device_id']]);
+            $match = ['asset_id' => null, 'status' => 'pending_approval', 'reason' => 'reinstall_identity',
+                'candidates' => [['asset_id' => (int) ($reinstallOf['asset_id'] ?? 0), 'matched_by' => ['reinstall'], 'reinstall_of' => (int) $reinstallOf['device_id']]]];
+            $this->audit->record('Reinstall Held', 'Device ' . $reinstallOf['device_id'] . ' was enrolled again with a new install id (matched by machine id or serial only); the new enrollment waits for approval and the existing credential keeps working', (int) $reinstallOf['client_id'], (int) ($reinstallOf['asset_id'] ?? 0));
+        } else {
+            $match = $crossClient
+                ? ['asset_id' => null, 'status' => 'pending_approval', 'reason' => 'cross_client_identity', 'candidates' => []]
+                : $this->matchAsset($d, (int) $token['client_id']);
+        }
         $assetId = null;
         $state = 'pending_approval';
         $status = $match['status'];
@@ -532,6 +544,13 @@ final class EnrollmentService
 
             return ['ok' => true, 'message' => 'Device rejected and its credential revoked.'];
         }
+        $of = self::reinstallOf($dev);
+        if ($of !== null && in_array($action, ['link', 'create_asset'], true)) {
+            $merged = $this->mergeReinstall($dev, $of, $userId);
+            if ($merged !== null) {
+                return $merged;
+            }
+        }
         if ($action === 'create_asset') {
             $t = (new DeviceTypes($this->sql))->forDevice($dev);
             $asset = $this->createAsset([
@@ -572,5 +591,58 @@ final class EnrollmentService
         }
 
         return ['ok' => true, 'message' => 'Device linked to asset #' . $asset . '.'];
+    }
+
+    /**
+     * The device row a pending enrollment asks to take over (CORE-17), or null for any other pending device.
+     *
+     * @param array<string,mixed> $dev
+     */
+    private static function reinstallOf(array $dev): ?int
+    {
+        if ((string) ($dev['match_reason'] ?? '') !== 'reinstall_identity') {
+            return null;
+        }
+        $c = json_decode((string) ($dev['match_candidates_json'] ?? ''), true);
+        $id = is_array($c) && isset($c[0]['reinstall_of']) ? (int) $c[0]['reinstall_of'] : 0;
+
+        return $id > 0 ? $id : null;
+    }
+
+    /**
+     * Approve a pending reinstall: the credential, install id and facts the newcomer enrolled with replace those of the linked row, in one transaction; the
+     * newcomer's own row is retired with a note. Null when the original row is gone, retired or no longer linked, so the caller resolves the newcomer as an
+     * ordinary pending device.
+     *
+     * @param array<string,mixed> $new the pending row
+     * @return array{ok:bool,message:string}|null
+     */
+    private function mergeReinstall(array $new, int $oldId, int $userId): ?array
+    {
+        $done = $this->sql->transaction(function () use ($new, $oldId): bool {
+            $old = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ? FOR UPDATE', [$oldId]);
+            if ($old === null || $old['revoked_at'] !== null || $old['retired_at'] !== null || $old['link_state'] !== 'linked' || (int) $old['client_id'] !== (int) $new['client_id']) {
+                return false;
+            }
+            $now = $this->sql->utcNow();
+            $this->sql->run("UPDATE endpoint_agent_devices SET install_id = CONCAT('merged-', device_id), revoked_at = ?, revoked_reason = ?, link_state = 'rejected', token_hash = '' WHERE device_id = ?",
+                [$now, 'merged into device ' . $oldId . ' when its reinstall was approved', $new['device_id']]);
+            $this->sql->run('UPDATE endpoint_agent_devices SET install_id = ?, machine_guid = COALESCE(?, machine_guid), hostname = ?, os_version = ?, arch = ?,
+                serial = COALESCE(?, serial), manufacturer = COALESCE(?, manufacturer), model = COALESCE(?, model), mac_addresses = ?, agent_version = ?,
+                token_hash = ?, token_issued_at = ?, token_expires_at = ?, enroll_count = enroll_count + 1, enrolled_via_token_id = ?, last_ip = ?, last_seq = 0
+                WHERE device_id = ?',
+                [$new['install_id'], $new['machine_guid'], $new['hostname'], $new['os_version'], $new['arch'], $new['serial'], $new['manufacturer'], $new['model'], $new['mac_addresses'],
+                    $new['agent_version'], $new['token_hash'], $new['token_issued_at'], $new['token_expires_at'], $new['enrolled_via_token_id'], $new['last_ip'], $oldId]);
+            $this->sql->run('DELETE FROM endpoint_agent_checkins WHERE device_id = ?', [$oldId]);
+
+            return true;
+        });
+        if (!$done) {
+            return null;
+        }
+        $this->audit->record('Approved', "Reinstall of device $oldId approved by user $userId; the credential of pending device {$new['device_id']} replaced the old one", (int) $new['client_id'], 0);
+        $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
+
+        return ['ok' => true, 'message' => 'Reinstall approved: the new credential now belongs to device #' . $oldId . '.'];
     }
 }
