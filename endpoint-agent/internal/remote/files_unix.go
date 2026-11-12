@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strconv"
 	"syscall"
 
@@ -34,6 +35,15 @@ type putTemp struct {
 }
 
 func beginPut(dir, name string) (*putTemp, error) {
+	// Canonicalise the ANCESTORS only (a symlinked /var/tmp, a /tmp -> /private/tmp style link or a bind mount is legitimate), then open the final
+	// component with O_NOFOLLOW so that a symlinked destination directory itself is still refused.
+	if parent := filepath.Dir(dir); parent != dir {
+		rp, err := filepath.EvalSymlinks(parent)
+		if err != nil {
+			return nil, &fs.PathError{Op: "resolve", Path: parent, Err: err}
+		}
+		dir = filepath.Join(rp, filepath.Base(dir))
+	}
 	dfd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, &fs.PathError{Op: "open", Path: dir, Err: err}

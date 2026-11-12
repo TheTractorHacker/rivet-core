@@ -105,3 +105,29 @@ func TestBeginPutRefusesADirectorySymlink(t *testing.T) {
 		t.Errorf("a file was created through the link: %v", entries)
 	}
 }
+
+// The destination directory may sit below a symlinked ANCESTOR (a /tmp -> /private/tmp style link, a symlinked /var/tmp): that must keep working.
+func TestFilePutThroughASymlinkedAncestorSucceeds(t *testing.T) {
+	base := realDir(t)
+	real := filepath.Join(base, "real", "data")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "alias")
+	if err := os.Symlink(filepath.Join(base, "real"), alias); err != nil {
+		t.Fatal(err)
+	}
+	// beginPut directly with the unresolved path
+	pt, err := beginPut(filepath.Join(alias, "data"), "x.tmp")
+	if err != nil {
+		t.Fatalf("symlinked ancestor refused: %v", err)
+	}
+	pt.File.WriteString("hi")
+	if err := pt.Commit("out.bin", 0o640, true, false); err != nil {
+		t.Fatal(err)
+	}
+	pt.Close()
+	if b, err := os.ReadFile(filepath.Join(real, "out.bin")); err != nil || string(b) != "hi" {
+		t.Errorf("file not delivered: %q %v", b, err)
+	}
+}
