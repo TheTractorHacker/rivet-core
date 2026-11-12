@@ -169,6 +169,25 @@ final class EnrollmentTest extends RmmTestCase
         $this->assertSame(1, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_devices'));
     }
 
+    /** CORE-17: a new install_id plus a known MachineGuid or serial is not proof of identity: the row is held for approval and offered no jobs. */
+    public function testAReinstallMatchedOnlyByMachineIdentityWaitsForApprovalAndGetsNoJobs(): void
+    {
+        $tok = $this->h->token(null, 24, 60);
+        $this->h->asset(['name' => 'Victim PC', 'serial' => 'SER-VICTIM-1']);
+        $d1 = $this->h::device(['hostname' => 'VICTIM', 'serial' => 'SER-VICTIM-1']);
+        [, , $j1] = $this->h->enroll($tok, $d1);
+        $dev = (int) $j1['device_id'];
+        $this->assertSame('linked', $this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$dev"));
+        $jobId = (string) $this->h->module->jobs()->create($this->h->module->devices()->find($dev) ?? [], 'collect', null, [], null, false, 1)['job_id'];
+        // the attacker enrolls with the victim's MachineGuid (a new install_id)
+        [$c, , $j] = $this->h->enroll($tok, $this->h::device(['machine_guid' => $d1['machine_guid'], 'serial' => null, 'hostname' => 'ATTACKER']));
+        $this->assertSame([201, $dev, 'pending_approval', null], [$c, $j['device_id'], $j['status'], $j['matched_asset_id']]);
+        $this->assertSame(['pending_approval', 'reinstall_identity'], [$this->h->one("SELECT link_state FROM endpoint_agent_devices WHERE device_id=$dev"), $this->h->one("SELECT match_reason FROM endpoint_agent_devices WHERE device_id=$dev")]);
+        [$jc, , $jj] = $this->h->call('GET', 'agent_jobs', null, $j['device_token']);
+        $this->assertSame([200, []], [$jc, $jj['jobs']], 'a device that is not linked is offered no jobs, the queued one waits');
+        $this->assertSame('queued', $this->h->one("SELECT state FROM endpoint_agent_jobs WHERE job_id='$jobId'"));
+    }
+
     public function testReEnrollmentNeverCrossesClients(): void
     {
         $tokA = $this->h->token($this->h->clientA, 24, 60);
@@ -232,9 +251,9 @@ final class EnrollmentTest extends RmmTestCase
         [, , $j] = $this->h->enroll($tok, $this->h::device(['serial' => 'DIFFERENT-BOX', 'mac_addresses' => ['aa:bb:cc:11:22:33']]));
         $this->assertSame(['ambiguous', null], [$j['status'], $j['matched_asset_id']]);
         $this->assertSame('asset_already_linked', $this->h->one('SELECT match_reason FROM endpoint_agent_devices WHERE device_id=' . $j['device_id']));
-        // a new install of the SAME serial is a reinstall: same device, same asset
+        // a new install of the SAME serial is a reinstall: same device, same asset, but (CORE-17) it waits for a person
         [, , $j] = $this->h->enroll($tok, $this->h::device(['serial' => 'SER-MATCH-1']));
-        $this->assertSame(['linked', $aSerial], [$j['status'], $j['matched_asset_id']]);
+        $this->assertSame(['pending_approval', null], [$j['status'], $j['matched_asset_id']]);
         $this->assertSame(1, (int) $this->h->one("SELECT COUNT(DISTINCT device_id) FROM endpoint_agent_devices WHERE asset_id=$aSerial"));
         foreach (['00', '', 'To be filled by O.E.M.', 'Default string'] as $junk) {
             [, , $j] = $this->h->enroll($tok, $this->h::device(['serial' => $junk, 'hostname' => 'JUNK-' . bin2hex(random_bytes(2))]));

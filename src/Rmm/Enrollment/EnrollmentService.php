@@ -261,6 +261,7 @@ final class EnrollmentService
         $dev = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE install_id = ? FOR UPDATE', [$d['install_id']]);
         $event = 're-enrolled';
         $crossClient = false;
+        $unprovenIdentity = false;
         if ($dev !== null) {
             if (!self::sameClient($dev, $token) || ($dev['kind'] ?? 'agent') !== 'agent') {   // another client's row, or a RivetPanel device, is never taken over
                 // install_id is unique, so another client's row cannot be duplicated; and it must not be taken over either.
@@ -270,6 +271,7 @@ final class EnrollmentService
             if (self::identityConflict($dev, $d)) {
                 throw new ApiError(409, 'conflict', 'This install id is already bound to a different machine.');
             }
+            $unprovenIdentity = $d['machine_guid'] === null && $d['serial'] === null && ($dev['machine_guid'] !== null || $dev['serial'] !== null);
         } else {
             // 2. Reinstall of a known machine: same machine_guid, else same serial.
             $dev = $this->findReinstall($d, (int) $token['client_id']);
@@ -295,6 +297,14 @@ final class EnrollmentService
             $deviceId = (int) $dev['device_id'];
             $types->saveDetected($deviceId, $detected);
             $dev = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE device_id = ?', [$deviceId]) ?? $dev;
+            if ($dev['link_state'] === 'linked' && ($event === 'reinstalled' || $unprovenIdentity)) {
+                // CORE-17: a new install_id plus a known MachineGuid or serial is NOT proof of the same machine (both are readable by any user on the
+                // box, and the enrollment token is multi-use), and an install_id re-enrollment that reports no identity at all proves nothing either.
+                // The row keeps its asset but waits for a person; until then it is offered no jobs ({@see \RivetCore\Rmm\Job\JobService::offer()}).
+                $this->sql->run("UPDATE endpoint_agent_devices SET link_state = 'pending_approval', match_reason = 'reinstall_identity' WHERE device_id = ?", [$deviceId]);
+                $dev['link_state'] = 'pending_approval';
+                $this->audit->record('Reinstall Held', "Device $deviceId re-enrolled with a new install id (" . ($event === 'reinstalled' ? 'matched by machine id or serial only' : 'no machine identity reported') . '); it waits for approval', (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+            }
             if ($dev['link_state'] === 'linked' && !empty($dev['asset_id'])) {
                 $asset = $this->assets->find((int) $dev['asset_id']);
                 if ($asset === null || $asset['archived']) {
