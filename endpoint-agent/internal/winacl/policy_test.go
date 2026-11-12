@@ -120,3 +120,61 @@ func TestRepairHintNamesTheDirectoryAndTheCommands(t *testing.T) {
 		}
 	}
 }
+
+// Upgrade behaviour: an existing install must keep working, an attack must not.
+func TestClassifyLegacyBenignVersusAttack(t *testing.T) {
+	// what older agents left for %ProgramData%\RivetIT: created by an elevated installer (owner Administrators) with the ProgramData ACL inherited
+	legacyParent := func() Info {
+		i := good()
+		i.Path, i.Owner = `C:\ProgramData\RivetIT`, SIDAdministrator
+		i.ACEs = append(i.ACEs,
+			ACE{SID: sidUsers, Allow: true, Mask: maskRX},
+			ACE{SID: sidUsers, Allow: true, Mask: 0x4},                    // create folders / append data, this folder and subfolders
+			ACE{SID: sidUsers, Allow: true, Mask: 0x2, InheritOnly: true}, // create files, subfolders only
+			ACE{SID: sidCreator, Allow: true, Mask: genericAll, InheritOnly: true})
+		return i
+	}
+	cases := []struct {
+		name string
+		mod  func(*Info)
+		want Verdict
+	}{
+		{"legacy parent, trusted owner, inherited broad ACL: repair in place", func(i *Info) {}, Repairable},
+		{"legacy dir owned by SYSTEM with a NULL DACL: repair in place", func(i *Info) { i.Owner = SIDSystem; i.HasDACL = false; i.ACEs = nil }, Repairable},
+		{"already tight", func(i *Info) { *i = good() }, VerdictTrusted},
+		{"pre-created by a user (owner is the attacker): refuse", func(i *Info) { i.Owner = sidAttacker }, Refuse},
+		{"user-owned and ACL rewritten to look tight: refuse", func(i *Info) { *i = good(); i.Owner = sidAttacker }, Refuse},
+		{"trusted owner but a junction: refuse", func(i *Info) { i.Reparse = true }, Refuse},
+		{"a file where the directory should be: refuse", func(i *Info) { i.IsDir = false }, Refuse},
+		{"missing: refuse", func(i *Info) { i.NotFound = true }, Refuse},
+	}
+	for _, c := range cases {
+		i := legacyParent()
+		c.mod(&i)
+		if got, err := Classify(i); got != c.want || (got == Refuse && err == nil) {
+			t.Errorf("%s: verdict %v (%v), want %v", c.name, got, err, c.want)
+		}
+	}
+}
+
+func TestCheckTreeRefusesPlantedOrLinkedEntries(t *testing.T) {
+	ok := Info{Path: `C:\ProgramData\RivetIT\Agent\state.json`, Owner: SIDSystem}
+	ok2 := Info{Path: `C:\ProgramData\RivetIT\Agent\config.json`, Owner: SIDAdministrator}
+	planted := Info{Path: `C:\ProgramData\RivetIT\Agent\config.json`, Owner: sidAttacker}
+	link := Info{Path: `C:\ProgramData\RivetIT\Agent\x`, Owner: SIDSystem, Reparse: true}
+	if err := CheckTree([]Info{ok, ok2}); err != nil {
+		t.Errorf("files written by the agent were refused: %v", err)
+	}
+	if err := CheckTree(nil); err != nil {
+		t.Error(err)
+	}
+	if err := CheckTree([]Info{ok, planted}); err == nil || !strings.Contains(err.Error(), "config.json") || !strings.Contains(err.Error(), sidAttacker) {
+		t.Errorf("planted config.json not refused with its name and owner: %v", err)
+	}
+	if err := CheckTree([]Info{link}); err == nil {
+		t.Error("a reparse point inside was accepted")
+	}
+	if err := CheckTree([]Info{{Path: "x", Owner: ""}}); err == nil {
+		t.Error("an unknown owner was accepted")
+	}
+}

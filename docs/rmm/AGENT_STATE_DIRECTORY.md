@@ -12,7 +12,22 @@ On Windows a standard user may create folders under `C:\ProgramData` and owns wh
 * A missing directory is created atomically with owner Administrators and a protected DACL (SYSTEM and Administrators full control, nobody else). A directory that passes is re-protected (idempotent).
 * The Mesh agent executable (`mesh_agent_path`, or the default `Program Files\Mesh Agent\MeshAgent.exe`) must lie below `%ProgramFiles%`, `%ProgramW6432%` or `%ProgramFiles(x86)%`, and every folder below that root and the file itself must pass the same ownership and permission test. A `mesh_agent_path` outside Program Files is no longer run. The agent has no Authenticode verification, so location plus ownership is the whole policy.
 
-## What an operator sees on an existing install
+## Upgrading an existing install (no re-enrollment needed in the normal case)
+
+What earlier versions produced: `ensureDir` did `MkdirAll` and then set a protected DACL (SYSTEM and Administrators only) on the leaf `Agent` folder, so `Agent` is already tight. The parent `%ProgramData%\RivetIT` was created by the same `MkdirAll` and inherited the ProgramData ACL (Users may create files and folders there); `install-windows.ps1` did the same through `New-Item`. The MSI creates no ProgramData folder itself: its setup action runs the agent, which creates the directory, so going forward every route (MSI, setup, `install`, the script) gets the protected DACL and an Administrators owner.
+
+The upgraded agent therefore tells the benign legacy shape from the attack by the owner, not by the DACL (a folder a user pre-creates is owned by that user; one created by SYSTEM or an elevated installer is owned by SYSTEM or Administrators even with a broad inherited ACL):
+
+| Shape | Result |
+| --- | --- |
+| Owner SYSTEM/Administrators/TrustedInstaller, DACL tight | used as is |
+| Owner trusted, DACL looser than wanted (inherited ProgramData ACL, NULL DACL) | the agent, running as SYSTEM, applies the protected DACL itself, then verifies every file and folder inside is owned by a trusted SID and none is a reparse point; one notice line says it repaired (stderr and, for the service, Application event log source `RivetIT Agent`, event id 2) |
+| Owner is not trusted, or the directory is a junction/link | refused, loudly, with the repair command |
+| Owner trusted but a file or folder inside is owned by someone else (planted while the directory was still loose) or is a link | refused, loudly, naming the entry; never adopted |
+
+The tree check runs on every start, so a planted file is caught even after the DACL has been tightened. Because it refuses on any foreign-owned entry, a user-created subfolder in the legacy `RivetIT` parent also needs the repair below.
+
+## What an operator sees on a refusal
 
 If the directory is fine (created by the installer, which runs elevated) nothing changes. If it fails the check, the agent does not start and does not read anything from it. The reason and the repair command are written
 

@@ -85,6 +85,46 @@ func Check(i Info) error {
 	return nil
 }
 
+// Verdict is the outcome of Classify.
+type Verdict int
+
+const (
+	// Refuse: the object may have been created or changed by an untrusted principal (untrusted owner, reparse point, wrong kind, missing).
+	Refuse Verdict = iota
+	// VerdictTrusted: usable as is.
+	VerdictTrusted
+	// Repairable: the owner is trusted and it is a real object of the right kind, but the DACL is looser than wanted (the shape an older agent left for
+	// %ProgramData%\RivetIT, created by MkdirAll with the ProgramData ACL inherited). Whoever owns it can tighten the DACL; the contents must be verified (CheckTree).
+	Repairable
+)
+
+// Classify separates the attack shapes (Refuse) from the benign legacy shape (Repairable). Ownership, not the DACL, is what proves who created the object:
+// a user who pre-creates a folder owns it, whereas a folder created by SYSTEM or an elevated administrator is owned by SYSTEM or Administrators even when it inherited a broad ACL.
+func Classify(i Info) (Verdict, error) {
+	err := Check(i)
+	if err == nil {
+		return VerdictTrusted, nil
+	}
+	if i.NotFound || i.Reparse || i.WantDir != i.IsDir || !Trusted(i.Owner) {
+		return Refuse, err
+	}
+	return Repairable, err
+}
+
+// CheckTree verifies the contents of a directory about to be adopted: every entry must be a real (non-reparse) object owned by a trusted principal.
+// A file a user planted (owned by that user) makes the whole directory untrustworthy, because anything in it (config.json) is read as the agent's own.
+func CheckTree(entries []Info) error {
+	for _, e := range entries {
+		switch {
+		case e.Reparse:
+			return fmt.Errorf("%s inside the directory is a reparse point (symbolic link or junction)", e.Path)
+		case !Trusted(e.Owner):
+			return fmt.Errorf("%s inside the directory is owned by %s, not SYSTEM or Administrators (planted by a standard user?)", e.Path, orUnknown(e.Owner))
+		}
+	}
+	return nil
+}
+
 func orUnknown(s string) string {
 	if s == "" {
 		return "an unknown owner"

@@ -94,6 +94,12 @@ foreach ($sub in @('RivetIT', 'RivetIT\Setup', 'RivetIT\Agent')) {
     }
   }
 }
+# New-Item would create RivetIT with the ProgramData ACL inherited (users may add entries); create it protected, like the agent does.
+$vendorDir = Join-Path $env:ProgramData 'RivetIT'
+if (-not (Test-Path -LiteralPath $vendorDir)) {
+  New-Item -ItemType Directory -Path $vendorDir -Force | Out-Null
+  & icacls.exe $vendorDir /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null
+}
 $work = Join-Path $env:ProgramData ('RivetIT\Setup\' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 & icacls.exe $work /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null

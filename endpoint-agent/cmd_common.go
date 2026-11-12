@@ -31,6 +31,12 @@ func openStore(dir string) (*store.Store, error) {
 	if dir == "" {
 		return nil, errors.New("--state-dir is required on this OS (or set RIVETIT_AGENT_STATE_DIR)")
 	}
+	store.OnRepair = func(msg string) { // only ever called on Windows (a legacy state directory was tightened in place)
+		fmt.Fprintln(os.Stderr, "notice:", msg)
+		if svc.IsWindowsService() {
+			svc.ReportInfo("rivetit-agent: " + msg)
+		}
+	}
 	return store.Open(dir)
 }
 

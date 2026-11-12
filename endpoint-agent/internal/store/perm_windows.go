@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"unsafe"
@@ -55,11 +56,58 @@ func ensureTrustedDir(dir string) error {
 			return err
 		}
 	}
-	if err := winacl.Check(info); err != nil {
-		// A directory this very function created always passes; one that does not was created (or changed) by somebody else.
+	verdict, why := winacl.Classify(info)
+	if verdict == winacl.Refuse {
+		return why // untrusted owner, reparse point, wrong kind: created or changed by somebody else
+	}
+	// Tighten first, verify afterwards: once the protected DACL is on, nobody else can add anything, so the tree check below sees everything that could
+	// ever have been planted. Older agents created %ProgramData%\RivetIT with the ProgramData ACL inherited (users may create files and folders there);
+	// the owner is SYSTEM or Administrators, which is what separates that benign shape from a folder a user pre-created.
+	if err := setDirDACL(dir); err != nil {
+		return fmt.Errorf("tighten permissions of %s: %w", dir, err)
+	}
+	if verdict == winacl.Repairable {
+		if info, err = winacl.Inspect(dir, true); err != nil {
+			return err
+		}
+		if err := winacl.Check(info); err != nil {
+			return fmt.Errorf("permissions of %s are still not safe after tightening: %w", dir, err)
+		}
+	}
+	entries, err := treeInfos(dir)
+	if err != nil {
 		return err
 	}
-	return setDirDACL(dir)
+	if err := winacl.CheckTree(entries); err != nil {
+		return err
+	}
+	if verdict == winacl.Repairable && OnRepair != nil {
+		OnRepair(fmt.Sprintf("repaired the permissions of %s in place (%v); owner is SYSTEM/Administrators and all %d entries inside are owned by SYSTEM/Administrators", dir, why, len(entries)))
+	}
+	return nil
+}
+
+// treeInfos inspects every entry below dir without following links (a reparse point is reported, not entered).
+func treeInfos(dir string) ([]winacl.Info, error) {
+	var out []winacl.Info
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p == dir {
+			return nil
+		}
+		i, err := winacl.Inspect(p, d.IsDir())
+		if err != nil {
+			return err
+		}
+		out = append(out, i)
+		if i.Reparse && d.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	return out, err
 }
 
 func createSecureDir(dir string) error {
