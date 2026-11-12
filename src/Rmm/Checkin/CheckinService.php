@@ -402,14 +402,14 @@ final class CheckinService
         if ($cleanInv !== null) {
             $dev = $this->devices->find($deviceId) ?? $dev;   // the inventory rewrote hostname, model, uptime ...; nothing else in this method changes the row
         }
-        if (is_array($w['software'] ?? null) && $features['inventory_software'] && $this->software !== null && $this->deviceState !== null) {
+        if (is_array($w['software'] ?? null) && ($dev['link_state'] ?? 'linked') === 'linked' && $features['inventory_software'] && $this->software !== null && $this->deviceState !== null) {
             if (!empty($w['shed'])) {
                 $this->deviceState->requestSoftwareResync($deviceId);   // load shedding: acknowledged, not ingested, so ask again later
             } else {
                 $this->software->apply($dev, $w['software']);
             }
         }
-        if (is_array($w['hypervisor'] ?? null) && ($features['hypervisor'] ?? false) && $this->hypervisorService !== null) {
+        if (is_array($w['hypervisor'] ?? null) && ($dev['link_state'] ?? 'linked') === 'linked' && ($features['hypervisor'] ?? false) && $this->hypervisorService !== null) {
             try {
                 $this->hypervisorService->apply($dev, $w['hypervisor']);
             } catch (\Throwable $e) {
