@@ -408,6 +408,41 @@ final class DeployTest extends DeployTestCase
         }
     }
 
+    /** CORE-15: a version added to (or restored on) a package that an assignment follows is a deployment: it needs rmm.software.deploy. */
+    public function testAddingOrRestoringAVersionOfAFollowedPackageNeedsTheDeployAbility(): void
+    {
+        $this->allowHost();
+        $body = static fn (string $v): array => ['version' => $v, 'os' => 'windows', 'fmt' => 'msi', 'url' => 'https://' . self::HOST . "/acme/$v/acme.msi", 'sha256' => self::SHA, 'size_bytes' => 1048576, 'product_code' => self::CODE, 'detect_min' => $v];
+        $pkg = $this->package();
+        $v1 = $this->msi($pkg, '1.0');
+        $route = ['software_packages', (string) $pkg, 'versions'];
+        // nothing follows the package yet: the catalog role may still add versions
+        $this->assertSame(201, $this->api('POST', $route, $this->tech, $body('1.1'))[0]);
+        $old = (int) $this->api('POST', $route, $this->tech, $body('1.2'))[1]['version_id'];
+        $this->assertSame(200, $this->api('PATCH', [...$route, (string) $old], $this->tech, ['retired' => true])[0]);
+        // an assignment without a pinned version follows the newest one
+        $this->assertSame(201, $this->assign($pkg, 'global')[0]);
+        [$c] = $this->api('POST', $route, $this->tech, $body('99.0'));
+        $this->assertSame(403, $c, 'manage alone cannot change what an approved assignment installs');
+        $this->assertSame(403, $this->api('PATCH', [...$route, (string) $old], $this->tech, ['retired' => false])[0], 'restoring makes it the newest again');
+        $this->assertSame(200, $this->api('PATCH', [...$route, (string) $old], $this->tech, ['retired' => true])[0], 'retiring stays a manage matter');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_package_versions WHERE package_id = $pkg AND version = '99.0'"));
+        $this->assertSame(201, $this->api('POST', $route, $this->deployer, $body('2.0'))[0]);
+        $this->assertSame(200, $this->api('PATCH', [...$route, (string) $old], $this->deployer, ['retired' => false])[0]);
+        // a package whose assignments are all pinned does not move
+        $p2 = $this->package('Pinned');
+        $pv = $this->msi($p2, '1.0', ['product_code' => '{BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB}']);
+        $this->assertSame(201, $this->assign($p2, 'global', 0, 'install', $pv)[0]);
+        $this->assertSame(201, $this->api('POST', ['software_packages', (string) $p2, 'versions'], $this->tech, $body('3.0'))[0]);
+        // a two-person package that is followed cannot be moved by one person at all
+        $p3 = $this->package('Careful', true);
+        $this->msi($p3, '1.0', ['product_code' => '{CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC}']);
+        $this->assertSame(202, $this->assign($p3, 'client', $this->h->clientA)[0]);
+        [$c, $j] = $this->api('POST', ['software_packages', (string) $p3, 'versions'], $this->deployer, $body('4.0'));
+        $this->assertSame([409, 'conflict'], [$c, $j['code']]);
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_package_versions WHERE package_id = $p3 AND version = '4.0'"));
+    }
+
     public function testDeletingAPackageNeedsItsAssignmentsGoneFirstAndRemovesItsVersions(): void
     {
         $pkg = $this->package();

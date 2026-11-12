@@ -37,6 +37,9 @@ final class EnrollmentService
 {
     private const EXHAUSTED = 'This enrollment token has no uses left.';
 
+    /** CORE-17: how many pending reinstalls of one linked device may wait at the same time. */
+    public const REINSTALL_PENDING_MAX = 5;
+
     public function __construct(
         private readonly Sql $sql,
         private readonly RmmSettings $settings,
@@ -305,6 +308,7 @@ final class EnrollmentService
         $dev = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE install_id = ? FOR UPDATE', [$d['install_id']]);
         $event = 're-enrolled';
         $crossClient = false;
+        $reinstallOf = null;
         if ($dev !== null) {
             if (!self::sameClient($dev, $token) || ($dev['kind'] ?? 'agent') !== 'agent') {   // another client's row, or a RivetPanel device, is never taken over
                 // install_id is unique, so another client's row cannot be duplicated; and it must not be taken over either.
@@ -314,12 +318,24 @@ final class EnrollmentService
             if (self::identityConflict($dev, $d)) {
                 throw new ApiError(409, 'conflict', 'This install id is already bound to a different machine.');
             }
+            if ($d['machine_guid'] === null && $d['serial'] === null && ($dev['machine_guid'] !== null || $dev['serial'] !== null) && $dev['link_state'] === 'linked') {
+                // CORE-17: the stored machine has an identity and this enrollment reports none, so the install id alone would rotate the credential of a
+                // linked device. Refuse, and leave the row (and its real agent) untouched.
+                throw new ApiError(409, 'conflict', 'This install id is already bound to a different machine.');
+            }
         } else {
             // 2. Reinstall of a known machine: same machine_guid, else same serial.
             $dev = $this->findReinstall($d, (int) $token['client_id']);
             if ($dev !== null) {
                 $this->refuseIfBlocked($dev);
                 $event = 'reinstalled';
+                if ($dev['link_state'] === 'linked') {
+                    // CORE-17: a new install_id plus a known MachineGuid or serial is NOT proof of the same machine (both are readable by any user on the
+                    // box and the enrollment token is multi-use). The linked row keeps its credential, its install id and its jobs, so the real agent keeps
+                    // working; the newcomer becomes a pending device of its own that an administrator can approve (it then takes the row over) or reject.
+                    $reinstallOf = $dev;
+                    $dev = null;
+                }
             } else {
                 // The same machine identity under ANOTHER client (a cloned image, or an attempted takeover) never reuses that
                 // device row: it becomes a new device of the token's client and waits for an administrator.
@@ -359,9 +375,24 @@ final class EnrollmentService
         if ($limit > 0 && (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_devices WHERE revoked_at IS NULL AND retired_at IS NULL AND link_state <> \'panel\'') >= $limit) {
             throw new ApiError(403, 'device_limit', 'The device limit of this installation has been reached.');
         }
-        $match = $crossClient
-            ? ['asset_id' => null, 'status' => 'pending_approval', 'reason' => 'cross_client_identity', 'candidates' => []]
-            : $this->matchAsset($d, (int) $token['client_id']);
+        if ($reinstallOf !== null) {
+            // Up to REINSTALL_PENDING_MAX pending reinstalls of one linked row coexist (each is its own pending device with its own first_seen_at and last_ip, so the
+            // administrator sees every one). A newer one never knocks out an older one while there is room; when the cap is reached the OLDEST is dropped and audited.
+            $open = $this->sql->all("SELECT device_id FROM endpoint_agent_devices WHERE link_state = 'pending_approval' AND match_reason = 'reinstall_identity' AND revoked_at IS NULL
+                AND JSON_VALUE(match_candidates_json, '$[0].device_id') = ? ORDER BY first_seen_at, device_id", [(string) $reinstallOf['device_id']]);
+            while (count($open) >= self::REINSTALL_PENDING_MAX) {
+                $drop = (int) array_shift($open)['device_id'];
+                $this->sql->run("UPDATE endpoint_agent_devices SET revoked_at = ?, revoked_reason = 'dropped: more than " . self::REINSTALL_PENDING_MAX . " pending reinstalls of one device', link_state = 'rejected', token_hash = '' WHERE device_id = ?", [$now, $drop]);
+                $this->audit->record('Reinstall Dropped', "Pending reinstall $drop of device {$reinstallOf['device_id']} was dropped (the oldest of more than " . self::REINSTALL_PENDING_MAX . ' waiting)', (int) $reinstallOf['client_id'], (int) ($reinstallOf['asset_id'] ?? 0));
+            }
+            $match = ['asset_id' => null, 'status' => 'pending_approval', 'reason' => 'reinstall_identity',
+                'candidates' => [['asset_id' => (int) ($reinstallOf['asset_id'] ?? 0), 'matched_by' => ['reinstall'], 'device_id' => (int) $reinstallOf['device_id']]]];
+            $this->audit->record('Reinstall Held', 'Device ' . $reinstallOf['device_id'] . ' was enrolled again with a new install id (matched by machine id or serial only); the new enrollment waits for approval and the existing credential keeps working', (int) $reinstallOf['client_id'], (int) ($reinstallOf['asset_id'] ?? 0));
+        } else {
+            $match = $crossClient
+                ? ['asset_id' => null, 'status' => 'pending_approval', 'reason' => 'cross_client_identity', 'candidates' => []]
+                : $this->matchAsset($d, (int) $token['client_id']);
+        }
         $assetId = null;
         $state = 'pending_approval';
         $status = $match['status'];
@@ -568,6 +599,8 @@ final class EnrollmentService
 
             return ['ok' => true, 'message' => 'Device rejected and its credential revoked.'];
         }
+        // CORE-17: only an explicit link to the asset of the device this enrollment replaces retires that device (never create_asset, never another asset).
+        $retire = $action === 'link' && $assetId !== null ? (new PendingReinstalls($this->sql))->replacedDeviceFor($dev, $assetId) : null;
         if ($action === 'create_asset') {
             $t = (new DeviceTypes($this->sql))->forDevice($dev);
             $asset = $this->createAsset([
@@ -578,7 +611,7 @@ final class EnrollmentService
             if ($row === null || $row['archived']) {
                 return ['ok' => false, 'message' => 'That asset does not exist or is archived.'];
             }
-            $owner = $this->sql->one("SELECT device_id FROM endpoint_agent_devices WHERE asset_id = ? AND link_state = 'linked' AND device_id <> ? AND revoked_at IS NULL AND retired_at IS NULL", [$assetId, $deviceId]);
+            $owner = $this->sql->one("SELECT device_id FROM endpoint_agent_devices WHERE asset_id = ? AND link_state = 'linked' AND device_id <> ? AND device_id <> ? AND revoked_at IS NULL AND retired_at IS NULL", [$assetId, $deviceId, $retire === null ? 0 : (int) $retire['device_id']]);
             if ($owner !== null) {
                 return ['ok' => false, 'message' => 'That asset already belongs to device ' . (int) $owner['device_id'] . '. Retire that device first.'];
             }
@@ -593,10 +626,21 @@ final class EnrollmentService
         } else {
             return ['ok' => false, 'message' => 'Unknown action.'];
         }
-        $this->sql->transaction(function () use ($asset, $deviceId, $userId): void {
+        // ONE transaction: the retire of the replaced device (credential, queued jobs, the other pending reinstalls) and the link of this one succeed or fail together.
+        // The audit rows are written after the commit, so none can describe something that was rolled back.
+        $notes = $this->sql->transaction(function () use ($asset, $deviceId, $userId, $retire, $dev): array {
+            $notes = $retire === null ? [] : $this->retireReplacedDevice($retire, $dev, $userId);
             $this->sql->run("UPDATE endpoint_agent_devices SET asset_id = ?, link_state = 'linked', match_reason = ? WHERE device_id = ?", [$asset, 'approved_by_' . $userId, $deviceId]);
+            if ($retire !== null) {
+                $this->linker->drop((int) $retire['device_id']);
+            }
             $this->linker->ensure($deviceId, $asset);
+
+            return $notes;
         });
+        foreach ($notes as [$what, $text, $client, $assetRef]) {
+            $this->audit->record($what, $text, $client, $assetRef);
+        }
         $this->audit->record('Approved', "Device $deviceId linked to asset $asset by user $userId ($action)", (int) $dev['client_id'], $asset);
         $this->cache?->invalidate(RmmCache::GROUP_FLEET, true);
         if ($this->afterApprove !== null) {
@@ -608,5 +652,31 @@ final class EnrollmentService
         }
 
         return ['ok' => true, 'message' => 'Device linked to asset #' . $asset . '.'];
+    }
+
+    /**
+     * The database part of retiring the replaced device when its reinstall is approved. Runs inside the caller's transaction.
+     *
+     * @param array<string,mixed> $old the replaced (linked) device row
+     * @param array<string,mixed> $new the pending row being linked
+     * @return list<array{0:string,1:string,2:int,3:int}> audit rows to write once the transaction has committed
+     */
+    private function retireReplacedDevice(array $old, array $new, int $userId): array
+    {
+        $oldId = (int) $old['device_id'];
+        $now = $this->sql->utcNow();
+        $notes = [];
+        $this->sql->run("UPDATE endpoint_agent_devices SET retired_at = ?, revoked_at = COALESCE(revoked_at, ?), revoked_reason = ?, token_hash = '' WHERE device_id = ?",
+            [$now, $now, 'replaced by reinstalled device ' . (int) $new['device_id'], $oldId]);
+        $this->sql->run("UPDATE endpoint_agent_jobs SET state = 'cancelled', reason = 'device_retired', finished_at = ? WHERE device_id = ? AND state = 'queued'", [$now, $oldId]);
+        $notes[] = ['Device Retired', "Device $oldId retired by user $userId: replaced by reinstalled device {$new['device_id']}", (int) $old['client_id'], (int) $old['asset_id']];
+        foreach ($this->sql->all("SELECT device_id FROM endpoint_agent_devices WHERE link_state = 'pending_approval' AND match_reason = 'reinstall_identity' AND revoked_at IS NULL
+            AND device_id <> ? AND JSON_VALUE(match_candidates_json, '$[0].device_id') = ?", [(int) $new['device_id'], (string) $oldId]) as $other) {
+            $this->sql->run("UPDATE endpoint_agent_devices SET revoked_at = ?, revoked_reason = ?, link_state = 'rejected', token_hash = '' WHERE device_id = ?",
+                [$now, 'another reinstall of device ' . $oldId . ' was approved', (int) $other['device_id']]);
+            $notes[] = ['Rejected', 'Pending reinstall ' . (int) $other['device_id'] . " of device $oldId rejected: reinstall {$new['device_id']} was approved by user $userId", (int) $old['client_id'], (int) $old['asset_id']];
+        }
+
+        return $notes;
     }
 }

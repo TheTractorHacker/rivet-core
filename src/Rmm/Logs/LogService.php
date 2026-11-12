@@ -65,6 +65,10 @@ final class LogService
         if (!is_int($agentDropped) || $agentDropped < 0 || $agentDropped > 1000000000) {
             throw new ApiError(422, 'invalid', 'dropped must be a non-negative integer');
         }
+        if (($dev['link_state'] ?? 'linked') !== 'linked') {
+            // CORE-19: a device that is not linked (pending approval) is not yet trusted to fill the shared log store or feed the log rules.
+            return ['ok' => true, 'accepted' => 0, 'dropped' => count($events), 'duplicates' => 0];
+        }
         $deviceId = (int) $dev['device_id'];
         $limits = $this->remote->limits();
         $now = $this->sql->time();

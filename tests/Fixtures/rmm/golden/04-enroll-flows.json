@@ -393,7 +393,7 @@
         },
         {
             "id": "reinstall-new-install-id-new-guid-same-serial",
-            "note": "Windows reinstall: new MachineGuid, same BIOS serial",
+            "note": "Windows reinstall: new MachineGuid, same BIOS serial. CORE-17 (rc.62): matched by identity only, so the LINKED device dev2 keeps its credential and the newcomer enrols as a separate pending device (bound as dev2r; dev2 and its token stay the device of the later scenarios)",
             "request": {
                 "method": "POST",
                 "path": "/api/v1/agent_enroll",
@@ -436,12 +436,12 @@
                     "x-powered-by: PHP/<VERSION>"
                 ],
                 "body": {
-                    "device_id": "<DEVICE:dev2>",
+                    "device_id": "<DEVICE:dev2r>",
                     "device_token": "<TOKEN#5>",
                     "check_in_interval_s": 300,
                     "server_time": "<TS>",
-                    "status": "linked",
-                    "matched_asset_id": "<ASSET:linkable>",
+                    "status": "pending_approval",
+                    "matched_asset_id": null,
                     "signing_public_key": "iMb1UVs5sfHsmc8uRi4z7vPgUMwAmKcMd2dCQj8E5BE=",
                     "signing_key_id": "b2569fb66d0a09e4",
                     "config": {
@@ -1168,6 +1168,21 @@
                             "retired": false
                         },
                         {
+                            "device_id": "<DEVICE:dev2r>",
+                            "hostname": "GOLD-7A01",
+                            "asset_id": null,
+                            "client_id": 1,
+                            "link_state": "pending_approval",
+                            "status": "never",
+                            "last_checkin_at": null,
+                            "offline_since": null,
+                            "agent_version": "1.0.0",
+                            "ring": "stable",
+                            "os_version": "Windows 11 23H2",
+                            "revoked": false,
+                            "retired": false
+                        },
+                        {
                             "device_id": "<DEVICE:dev1>",
                             "hostname": "GOLD-C9E3",
                             "asset_id": null,
@@ -1228,7 +1243,7 @@
                             "retired": false
                         }
                     ],
-                    "total": 7
+                    "total": 8
                 }
             }
         },
@@ -1333,8 +1348,8 @@
                 },
                 {
                     "device_id": "<DEVICE:dev2>",
-                    "install_id": "00000000-0000-4000-8000-000000000012",
-                    "machine_guid": "ffffffffffff0001",
+                    "install_id": "00000000-0000-4000-8000-000000000002",
+                    "machine_guid": "a985e21143e883c4",
                     "hostname": "GOLD-7A01",
                     "os": "windows",
                     "os_version": "Windows 11 23H2",
@@ -1370,7 +1385,57 @@
                     "revoked_reason": null,
                     "retired_at": null,
                     "enrolled_via_token_id": "<TOKENROW#1>",
-                    "enroll_count": 3,
+                    "enroll_count": 2,
+                    "first_seen_at": "<DT>",
+                    "last_checkin_at": null,
+                    "last_collected_at": null,
+                    "last_inventory_at": null,
+                    "last_ip": "127.0.0.1",
+                    "last_seq": 0,
+                    "inventory_json": null,
+                    "last_metrics_json": null,
+                    "logged_in_user": null,
+                    "pending_reboot": null,
+                    "uptime_s": null,
+                    "update_state_json": null,
+                    "created_at": "<DT>"
+                },
+                {
+                    "device_id": "<DEVICE:dev2r>",
+                    "install_id": "00000000-0000-4000-8000-000000000012",
+                    "machine_guid": "ffffffffffff0001",
+                    "hostname": "GOLD-7A01",
+                    "os": "windows",
+                    "os_version": "Windows 11 23H2",
+                    "arch": "amd64",
+                    "serial": "GOLD-SER-LINK",
+                    "manufacturer": "Dell",
+                    "model": "Latitude 7440",
+                    "mac_addresses": "[\"aa:bb:cc:4e:00:01\"]",
+                    "agent_version": "1.0.0",
+                    "asset_id": null,
+                    "client_id": 1,
+                    "location_id": 0,
+                    "ring": "stable",
+                    "link_state": "pending_approval",
+                    "match_reason": "reinstall_identity",
+                    "match_candidates_json": [
+                        {
+                            "asset_id": "<ASSET:linkable>",
+                            "matched_by": [
+                                "reinstall"
+                            ],
+                            "device_id": "<DEVICE:dev2>"
+                        }
+                    ],
+                    "token_hash": "<TOKEN_HASH>",
+                    "token_issued_at": "<DT>",
+                    "token_expires_at": "<DT>",
+                    "revoked_at": null,
+                    "revoked_reason": null,
+                    "retired_at": null,
+                    "enrolled_via_token_id": "<TOKENROW#1>",
+                    "enroll_count": 1,
                     "first_seen_at": "<DT>",
                     "last_checkin_at": null,
                     "last_collected_at": null,
@@ -1798,7 +1863,7 @@
                 {
                     "reason": "enrolled",
                     "success": 1,
-                    "n": 7
+                    "n": 8
                 },
                 {
                     "reason": "forbidden",
@@ -1813,7 +1878,7 @@
                 {
                     "reason": "reinstalled",
                     "success": 1,
-                    "n": 2
+                    "n": 1
                 }
             ],
             "endpoint_agent_settings": {

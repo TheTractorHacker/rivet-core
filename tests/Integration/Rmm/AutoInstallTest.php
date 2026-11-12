@@ -527,7 +527,8 @@ final class AutoInstallTest extends DeployTestCase
         $this->assertSame(200, $this->auto($p, ['scope' => 'all'], $this->deployer)[0]);
         $this->assertSame(403, $this->param($p, 'org_key', 'abcdef', 'global', 0, $this->viewer));
         $this->assertSame(403, $this->param($p, 'org_key', 'abcdef', 'global', 0, $this->scoped));
-        $this->assertSame(200, $this->param($p, 'org_key', 'abcdef', 'global', 0, $this->tech));
+        $this->assertSame(403, $this->param($p, 'org_key', 'abcdef', 'global', 0, $this->tech), 'CORE-15: the package installs by itself now (policy: all), so a manage-only user cannot change what feeds its command');
+        $this->assertSame(200, $this->param($p, 'org_key', 'abcdef', 'global', 0, $this->deployer));
         $this->assertSame(200, $this->param($p, 'org_key', 'bclient', 'client', $this->h->clientB, $this->scoped), 'a restricted user may set the value for their own client');
         $this->assertSame(404, $this->param($p, 'org_key', 'aclient', 'client', $this->h->clientA, $this->scoped), 'and not for another');
         $this->assertSame(200, $this->api('GET', ['software_autoinstall'], $this->viewer)[0]);
@@ -706,6 +707,75 @@ final class AutoInstallTest extends DeployTestCase
         $this->assertSame(200, $this->auto((int) $r['package_id'], ['scope' => 'all'])[0]);
         $this->assertSame(200, $this->api('DELETE', ['software_packages', (string) $r['package_id']], $this->admin)[0]);
         $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_package_params') + (int) $this->h->one('SELECT COUNT(*) FROM rmm_package_auto'));
+    }
+
+    // ------------------------------------------------------------------ CORE-15: what an assigned package executes
+
+    /** Vendor parameters fill the install command of every install of the package: changing them is a deployment for a package that installs by itself. */
+    public function testVendorParametersOfAPackageThatInstallsByItselfNeedTheDeployAbility(): void
+    {
+        $p = $this->edr();
+        $this->assertSame(200, $this->param($p, 'org_key', 'Before1234', 'global', 0, $this->tech), 'nothing installs it yet: manage is enough');
+        $this->assertSame(200, $this->auto($p, ['scope' => 'all'])[0]);
+        $set = fn (object $by, string $scope = 'global', int $id = 0): int => $this->api('PUT', ['software_params', (string) $p], $by, ['name' => 'org_key', 'value' => 'Attacker99', 'scope' => $scope, 'scope_id' => $id])[0];
+        $clear = fn (object $by): int => $this->api('DELETE', ['software_params', (string) $p], $by, ['name' => 'org_key', 'scope' => 'global', 'scope_id' => 0])[0];
+        $this->assertSame(403, $set($this->tech));
+        $this->assertSame(403, $set($this->tech, 'client', $this->h->clientA));
+        $this->assertSame(403, $clear($this->tech));
+        $this->assertSame(200, $set($this->deployer), 'the deploy ability may');
+        $this->assertSame(200, $clear($this->deployer));
+        // an assignment (pinned or not) counts the same way
+        $q = $this->package('Assigned EDR');
+        $v = $this->exe($q);
+        $this->assertSame(200, $this->param($q, 'account_key', self::ACCT, 'global', 0, $this->tech));
+        $this->assertSame(201, $this->assign($q, 'global', 0, 'install', $v)[0]);
+        $this->assertSame(403, $this->param($q, 'account_key', 'Attacker99', 'global', 0, $this->tech));
+        // a two-person package that installs by itself cannot be re-parameterised by one person at all
+        $tp = $this->package('Careful EDR', true);
+        $this->exe($tp);
+        $this->assertSame(202, $this->assign($tp, 'client', $this->h->clientA)[0]);
+        $this->assertSame(409, $this->param($tp, 'account_key', 'Attacker99', 'global', 0, $this->deployer));
+    }
+
+    /** The starter-template route adds a version to an existing package: the same gate as DeployActions::addVersion. */
+    public function testAddingAVersionThroughATemplateIsGatedLikeAddingOne(): void
+    {
+        $p = $this->package('Tpl');
+        $this->exe($p);
+        $in = fn (string $v): array => ['package_id' => $p, 'version' => $v, 'url' => 'https://' . self::HOST . "/t/$v/setup.exe", 'sha256' => self::SHA, 'size_bytes' => 5000, 'detect_kind' => 'uninstall_name', 'detect_value' => 'Acme'];
+        $this->assertSame(201, $this->api('POST', ['software_templates', 'custom_exe'], $this->tech, $in('1.1'))[0], 'not followed yet');
+        $this->assertSame(201, $this->assign($p, 'global')[0]);
+        $this->assertSame(403, $this->api('POST', ['software_templates', 'custom_exe'], $this->tech, $in('99.0'))[0]);
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_package_versions WHERE package_id = $p AND version = '99.0'"));
+        $this->assertSame(201, $this->api('POST', ['software_templates', 'custom_exe'], $this->deployer, $in('2.0'))[0]);
+    }
+
+    /** An upload is a new file with its own id: it cannot replace the installer behind a version, and only a (gated) new version can point at it. */
+    public function testAnUploadCannotChangeTheInstallerBehindAnExistingVersion(): void
+    {
+        $exe = 'MZ' . random_bytes(5000);
+        $tmp = tempnam(sys_get_temp_dir(), 'ai_');
+        file_put_contents($tmp, $exe);
+        $a = $this->h->module->autoInstallActions();
+        $f1 = $a->uploadFile($this->admin, $tmp, 'setup.exe')->data;
+        $p = $this->package('Hosted live');
+        $body = static fn (string $v, int $file): array => ['version' => $v, 'os' => 'windows', 'fmt' => 'exe', 'hosted_file_id' => $file, 'silent_args' => '/S', 'detect_kind' => 'uninstall_name', 'detect_value' => 'Hosted'];
+        $v1 = (int) $this->api('POST', ['software_packages', (string) $p, 'versions'], $this->admin, $body('1.0', (int) $f1['file_id']))[1]['version_id'];
+        $this->assertSame(201, $this->assign($p, 'global')[0]);
+        $before = $this->h->rows("SELECT * FROM rmm_package_versions WHERE version_id = $v1");
+        $beforeFile = $this->h->rows("SELECT * FROM rmm_hosted_files WHERE file_id = {$f1['file_id']}");
+        // a manage-only user uploads the same name with different bytes
+        file_put_contents($tmp, 'MZ' . random_bytes(6000));
+        $r = $a->uploadFile($this->tech, $tmp, 'setup.exe');
+        @unlink($tmp);
+        $this->assertSame(201, $r->http, 'an upload alone is harmless');
+        $this->assertNotSame($f1['file_id'], $r->data['file_id']);
+        $this->assertSame($before, $this->h->rows("SELECT * FROM rmm_package_versions WHERE version_id = $v1"), 'the version still names the old file and hash');
+        $this->assertSame($beforeFile, $this->h->rows("SELECT * FROM rmm_hosted_files WHERE file_id = {$f1['file_id']}"), 'the old file row is untouched');
+        $this->assertSame($f1['sha256'], $this->h->module->deployService()->paramsFor($this->h->module->devices()->find($this->linked('HOSTED-1')[0]) ?? [], $this->h->module->packageCatalog()->version($v1) ?? [], 'install', 'run', 30, JobUuid::other())['params']['sha256'], 'the job pins the original hash');
+        // pointing a version at the new file is the gated step
+        $this->assertSame(403, $this->api('POST', ['software_packages', (string) $p, 'versions'], $this->tech, $body('2.0', (int) $r->data['file_id']))[0]);
+        $this->assertSame(409, $this->api('DELETE', ['software_files', (string) $f1['file_id']], $this->tech)[0], 'a file a version uses cannot be deleted');
     }
 
     // ------------------------------------------------------------------ migration

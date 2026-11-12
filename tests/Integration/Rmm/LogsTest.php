@@ -62,6 +62,19 @@ final class LogsTest extends RemoteTestCase
         return ['ts' => gmdate('Y-m-d\TH:i:s\Z', time() - $age), 'level' => $level, 'source' => $source, 'event_id' => $code, 'message' => $msg];
     }
 
+    /** CORE-19: a device that is not linked (pending approval) cannot fill the shared log store or feed the log rules. */
+    public function testAnUnlinkedDeviceIngestsNothing(): void
+    {
+        $this->enableLogs();
+        $this->h->q("UPDATE endpoint_agent_devices SET link_state = 'pending_approval' WHERE device_id = $this->dev");
+        [$c, $j] = $this->ship([self::ev(), self::ev('another')]);
+        $this->assertSame([200, 0, 2], [$c, $j['accepted'], $j['dropped']]);
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_log_events'));
+        $this->h->q("UPDATE endpoint_agent_devices SET link_state = 'linked' WHERE device_id = $this->dev");
+        [$c, $j] = $this->ship([self::ev()]);
+        $this->assertSame([200, 1], [$c, $j['accepted']], 'once linked it is stored as before');
+    }
+
     // ------------------------------------------------------------------ off by default, offered on request
 
     public function testOffByDefault(): void

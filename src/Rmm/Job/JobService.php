@@ -206,6 +206,9 @@ final class JobService
      */
     public function offer(array $dev): array
     {
+        if (($dev['link_state'] ?? 'linked') !== 'linked') {
+            return [];   // CORE-17: a device that is not linked (pending approval, rejected) is never handed work; queued jobs wait for the approval
+        }
         $cfg = $this->settings->get();
         $this->sweep((int) $dev['device_id']);
         [$sec] = $this->settings->signingKey();

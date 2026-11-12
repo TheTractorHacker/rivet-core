@@ -1115,7 +1115,8 @@
                 "fromProvider": "static fromProvider(RivetCore\\Compliance\\Profile\\RequirementsProviderInterface $source): RivetCore\\Compliance\\Profile\\RetentionFloors",
                 "fromStore": "static fromStore(RivetCore\\Compliance\\Profile\\FrameworkProfileStore $store): RivetCore\\Compliance\\Profile\\RetentionFloors",
                 "refresh": "refresh(): void",
-                "requiredBy": "requiredBy(): string"
+                "requiredBy": "requiredBy(): string",
+                "unavailable": "unavailable(): bool"
             }
         },
         "RivetCore\\Compliance\\ReportRenderer": {
@@ -4073,8 +4074,10 @@
                 "addHost": "addHost(mixed $host, mixed $note, int $userId): string",
                 "addVersion": "addVersion(int $packageId, array $in, int $userId): array",
                 "deletePackage": "deletePackage(int $packageId): ?string",
+                "followsNewest": "followsNewest(int $packageId): bool",
                 "hostNames": "hostNames(): array",
                 "hosts": "hosts(): array",
+                "installsByItself": "installsByItself(int $packageId): bool",
                 "package": "package(int $packageId): ?array",
                 "packages": "packages(): array",
                 "removeHost": "removeHost(mixed $host): bool",
@@ -4221,6 +4224,9 @@
         },
         "RivetCore\\Rmm\\Enrollment\\EnrollmentService": {
             "kind": "final class",
+            "constants": {
+                "REINSTALL_PENDING_MAX": 5
+            },
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Contracts\\RmmAssetsInterface $assets, RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy, RivetCore\\Rmm\\Link\\RmmLinker $linker, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, RivetCore\\Rmm\\Enrollment\\AttemptLog $attempts, bool $allowLinux = false, string $clientLabel = 'client', ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Support\\RmmCache $cache = NULL, ?RivetCore\\Rmm\\Capacity\\HerdControl $herd = NULL, ?RivetCore\\Rmm\\Store\\RmmDataStores $stores = NULL)",
                 "assetClientId": "assetClientId(int $assetId): ?int",
@@ -4232,6 +4238,16 @@
                 "resolvePending": "resolvePending(int $deviceId, string $action, ?int $assetId, int $userId): array",
                 "revokeToken": "revokeToken(int $tokenId, int $userId): bool",
                 "tokenManagedExternally": "tokenManagedExternally(int $tokenId): bool"
+            }
+        },
+        "RivetCore\\Rmm\\Enrollment\\PendingReinstalls": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
+                "claimedDevice": "static claimedDevice(array $dev): ?int",
+                "linkConsequence": "linkConsequence(array $new): ?string",
+                "of": "of(int $deviceId): array",
+                "replacedDeviceFor": "replacedDeviceFor(array $new, int $assetId): ?array"
             }
         },
         "RivetCore\\Rmm\\Fields\\CustomFieldService": {
@@ -5011,15 +5027,18 @@
             "constants": {
                 "BACKDATE_S": 120,
                 "HIDE_DEFAULT": 31,
-                "HIDE_MAX": 255
+                "HIDE_MAX": 255,
+                "MESH_ACCEPT_S": 3600
             },
             "methods": {
                 "accountName": "static accountName(string $template, int $userId, string $username): string",
+                "backdate": "static backdate(?int $ttlS): int",
                 "decode": "static decode(string $cookie, string $keyHex): ?array",
                 "encode": "static encode(array $payload, string $keyHex, ?string $iv = NULL): ?string",
                 "launchUrl": "static launchUrl(string $base, string $domain, string $cookie, string $nodeId, int $viewmode = 11, int $hide = 0): string",
-                "login": "static login(string $keyHex, string $domain, string $account, int $now, ?string $iv = NULL): ?string",
-                "newLoginKey": "static newLoginKey(): string"
+                "login": "static login(string $keyHex, string $domain, string $account, int $now, ?string $iv = NULL, ?int $ttlS = NULL): ?string",
+                "newLoginKey": "static newLoginKey(): string",
+                "usesDisplayName": "static usesDisplayName(string $template): bool"
             }
         },
         "RivetCore\\Rmm\\Mesh\\MeshNodeId": {
@@ -7180,6 +7199,7 @@
                 "onStateChange": "onStateChange(?Closure $listener): void",
                 "refresh": "refresh(): void",
                 "retentionFloors": "retentionFloors(): ?RivetCore\\Rmm\\Settings\\RetentionFloorsInterface",
+                "retentionFloorsUnavailable": "retentionFloorsUnavailable(): bool",
                 "serviceUrlOk": "static serviceUrlOk(string $url, bool $allowInsecureHttp): bool",
                 "set": "set(array $values): void",
                 "setRetentionFloors": "setRetentionFloors(?RivetCore\\Rmm\\Settings\\RetentionFloorsInterface $floors): void",
