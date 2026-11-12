@@ -30,6 +30,8 @@ final class DeviceTransferCompletenessTest extends RmmTestCase
         'endpoint_agent_change_state' => 'hot store, moved by ClientMoves',
         'rmm_pending_client_moves' => 'the retry queue of ClientMoves itself',
         'panel_ticket_owner' => 'a ticket record: the ticket stays with the client it was raised for',
+        'rmm_background_sessions' => 'Background Mode session history (an audit record): it keeps the client the session was launched for',
+        'rmm_background_tokens' => 'single-use check tokens of those sessions: they expire in 60 seconds and are pruned with the session',
     ];
 
     private int $dev = 0;
