@@ -43,6 +43,10 @@ final class RemoteProtocol
     public const FEATURE_REMOTE_TOOLS = 'remote_tools';
     public const FEATURE_FILE_TRANSFER = 'filetransfer';
     public const FEATURE_LOGS = 'logs';
+    /** Background Mode (the technician console): off by default, switching it on needs the risk acknowledgement. */
+    public const FEATURE_BACKGROUND_MODE = 'background_mode';
+    /** The optional Rivet Console desktop app (default off): when on, a launch also returns a `rivetconsole://` deep link; off is stock MeshCentral launch. Background Mode needs it on. */
+    public const FEATURE_REMOTE_CONSOLE = 'remote_console';
 
     // ---- service and process manager
     public const SERVICE_ACTIONS = ['start', 'stop', 'restart', 'enable', 'disable', 'manual'];

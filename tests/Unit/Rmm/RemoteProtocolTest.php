@@ -52,8 +52,8 @@ final class RemoteProtocolTest extends TestCase
             $this->assertContains($f, RmmSettings::FEATURES);
             $this->assertNotContains($f, RmmSettings::LEGACY_FEATURES, "$f is not part of the legacy defaults, so an upgrade changes nothing");
         }
-        $this->assertSame(['transfer_max_bytes', 'transfer_ttl_s', 'transfer_store_max_bytes', 'logs_retention_days', 'logs_device_max_rows', 'logs_fleet_max_rows', 'logs_rate_per_min', 'logs_interval_s'], array_keys(RemoteSettings::LIMITS));
-        $this->assertSame([52428800, 86400, 1073741824, 7, 20000, 2000000, 600, 60], array_map(static fn (array $l): int => $l[2], array_values(RemoteSettings::LIMITS)));
+        $this->assertSame(['transfer_max_bytes', 'transfer_ttl_s', 'transfer_store_max_bytes', 'logs_retention_days', 'logs_device_max_rows', 'logs_fleet_max_rows', 'logs_rate_per_min', 'logs_interval_s', 'background_session_retention_days'], array_keys(RemoteSettings::LIMITS));
+        $this->assertSame([52428800, 86400, 1073741824, 7, 20000, 2000000, 600, 60, 365], array_map(static fn (array $l): int => $l[2], array_values(RemoteSettings::LIMITS)));
         foreach (RemoteSettings::LIMITS as $k => [$min, $max, $def]) {
             $this->assertGreaterThanOrEqual($min, $def, $k);
             $this->assertLessThanOrEqual($max, $def, $k);

@@ -69,6 +69,13 @@ final class RmmAbility
     public const HYPERVISOR_VIEW = 'rmm.hypervisor.view';
     /** Ignore a VM (templates, dev guests) and set the hypervisor alert thresholds. Needs `rmm.hypervisor.view` too. The `hypervisor` switch itself needs `rmm.admin`. */
     public const HYPERVISOR_MANAGE = 'rmm.hypervisor.manage';
+    /**
+     * Open a Background Mode session (the technician console, no prompt for the end user where the policy allows it). A stronger grant than `rmm.remote.manage`: the session
+     * has a terminal and a file manager. Needs `rmm.remote.launch`, `rmm.remote.manage` and `rmm.device.view` too, the `background_mode` switch and a
+     * {@see \RivetCore\Rmm\Remote\BackgroundModePolicy} that allows the user for the device's client. Never map it to "any signed-in user". It does not switch the audit
+     * log off: every Background Mode decision is audited.
+     */
+    public const REMOTE_BACKGROUND = 'rmm.remote.background';
     /** Module settings, switches, signing key, MeshCentral settings. */
     public const ADMIN = 'rmm.admin';
 
@@ -76,7 +83,7 @@ final class RmmAbility
     public static function all(): array
     {
         return [self::DEVICE_VIEW, self::DEVICE_MANAGE, self::JOB_RUN_SAVED, self::JOB_REBOOT, self::JOB_RUN_SCRIPT, self::JOB_APPROVE, self::REMOTE_LAUNCH,
-            self::TOKEN_MANAGE, self::BINARY_PUBLISH, self::ALERT_MANAGE, self::REMOTE_MANAGE, self::PATCH_VIEW, self::PATCH_MANAGE, self::PATCH_INSTALL, self::SOFTWARE_VIEW, self::SOFTWARE_MANAGE, self::SOFTWARE_DEPLOY, self::CHANGE_VIEW, self::CHANGE_MANAGE, self::HYPERVISOR_VIEW, self::HYPERVISOR_MANAGE, self::ADMIN];
+            self::TOKEN_MANAGE, self::BINARY_PUBLISH, self::ALERT_MANAGE, self::REMOTE_MANAGE, self::PATCH_VIEW, self::PATCH_MANAGE, self::PATCH_INSTALL, self::SOFTWARE_VIEW, self::SOFTWARE_MANAGE, self::SOFTWARE_DEPLOY, self::CHANGE_VIEW, self::CHANGE_MANAGE, self::HYPERVISOR_VIEW, self::HYPERVISOR_MANAGE, self::ADMIN, self::REMOTE_BACKGROUND];
     }
 
     /** Abilities of the administration side: they do not need the technician's `device.view` grant. */
@@ -96,6 +103,7 @@ final class RmmAbility
             self::REMOTE_LAUNCH => 'Your role cannot open remote sessions.',
             self::ALERT_MANAGE => 'Your role cannot manage alerts and maintenance windows.',
             self::REMOTE_MANAGE => 'Your role cannot use the remote tools on devices.',
+            self::REMOTE_BACKGROUND => 'Your role cannot open Background Mode sessions.',
             self::PATCH_VIEW => 'Your role cannot view patch status.',
             self::PATCH_MANAGE => 'Your role cannot approve or manage patches.',
             self::PATCH_INSTALL => 'Your role cannot install patches on devices.',

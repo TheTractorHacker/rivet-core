@@ -36,6 +36,7 @@ Turn them on in the remote-tools settings (`GET/PUT endpoint_devices/remote/sett
 | `logs_device_max_rows` | 20,000 | 100 to 1,000,000 | per-device cap; up to 20 % above it is tolerated between passes, then entries are refused and counted; housekeeping trims the oldest |
 | `logs_fleet_max_rows` | 2,000,000 | 1,000 to 200,000,000 | the same for the whole fleet (10 % tolerance) |
 | `logs_rate_per_min` | 600 | 10 to 6000 | entries one device may add per minute; the agent applies the same budget and the server enforces it again |
+| `background_session_retention_days` | 365 | 30 to 3650 | ended Background Mode session rows older than this are deleted (never an active session, never the audit log) |
 | `logs_interval_s` | 60 | 30 to 3600 | how often an agent ships a batch (a batch is at most 200 entries and 256 KiB) |
 
 Load shedding: log ingest is the first thing given up. At shed level 1 and above the check-in stops offering `logs:collect` and `agent_logs` answers `503 unavailable` with a jittered `Retry-After`; agents keep their bookmark and carry on later. Job reports and file transfer are not shed. See [CAPACITY.md](CAPACITY.md).

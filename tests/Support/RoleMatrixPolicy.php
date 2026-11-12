@@ -15,18 +15,20 @@ use RivetCore\Rmm\Authz\RmmAbility;
  *   job.run_saved, job.reboot    module_rmm_scripts >= 2, not a module-only login
  *   job.run_script               module_rmm_scripts >= 3, not a module-only login
  *   remote.launch                module_rmm_remote_connect >= 1, not a module-only login
+ *   remote.manage                module_rmm_remote_connect >= 2, not a module-only login
+ *   remote.background            the explicit $background grant, not a module-only login (never implied by any level)
  *   admin-class abilities        role_is_admin
  *
  * Client scope is NOT in here (it is the tenancy's job), and an inactive account is denied everything. Unknown abilities are denied.
  */
 final class RoleMatrixPolicy implements AccessPolicyInterface
 {
-    /** @var array<int,array{rmm:int,scripts:int,remote:int,admin:bool,limited:bool,active:bool}> */
+    /** @var array<int,array{rmm:int,scripts:int,remote:int,admin:bool,limited:bool,active:bool,background:bool}> */
     private array $users = [];
 
-    public function addUser(int $id, int $rmm = 0, int $scripts = 0, int $remote = 0, bool $admin = false, bool $limited = false, bool $active = true): void
+    public function addUser(int $id, int $rmm = 0, int $scripts = 0, int $remote = 0, bool $admin = false, bool $limited = false, bool $active = true, bool $background = false): void
     {
-        $this->users[$id] = ['rmm' => $rmm, 'scripts' => $scripts, 'remote' => $remote, 'admin' => $admin, 'limited' => $limited, 'active' => $active];
+        $this->users[$id] = ['rmm' => $rmm, 'scripts' => $scripts, 'remote' => $remote, 'admin' => $admin, 'limited' => $limited, 'active' => $active, 'background' => $background];
     }
 
     public function deactivate(int $id): void
@@ -60,6 +62,8 @@ final class RoleMatrixPolicy implements AccessPolicyInterface
             RmmAbility::JOB_RUN_SAVED, RmmAbility::JOB_REBOOT => !$u['limited'] && $u['scripts'] >= 2,
             RmmAbility::JOB_RUN_SCRIPT => !$u['limited'] && $u['scripts'] >= 3,
             RmmAbility::REMOTE_LAUNCH => !$u['limited'] && $u['remote'] >= 1,
+            RmmAbility::REMOTE_MANAGE => !$u['limited'] && $u['remote'] >= 2,
+            RmmAbility::REMOTE_BACKGROUND => !$u['limited'] && $u['background'],
             default => false,
         };
     }

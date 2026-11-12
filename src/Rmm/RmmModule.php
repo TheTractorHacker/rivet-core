@@ -183,6 +183,9 @@ final class RmmModule
     private ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfterApproval = null;
     private ?InstallerService $installerService = null;
     private ?TechnicianActions $technician = null;
+    private ?\RivetCore\Rmm\Remote\BackgroundSessionService $backgroundSessions = null;
+    private ?\RivetCore\Rmm\Remote\DbBackgroundModeConfig $backgroundDbConfig = null;
+    private ?\RivetCore\Rmm\Remote\BackgroundSettingsService $backgroundSettingsService = null;
     private ?RmmAdmin $admin = null;
     private ?DeviceState $deviceState = null;
     private ?SoftwareService $software = null;
@@ -273,7 +276,7 @@ final class RmmModule
     private readonly RmmEventsInterface $events;
 
     /**
-     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,hosted_max_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>,retention_floors?:\RivetCore\Rmm\Settings\RetentionFloorsInterface,postgres?:PostgresConnectionInterface|PostgresConfig|\Closure():(PostgresConnectionInterface|PostgresConfig|null)|null} $options
+     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,hosted_max_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,background_groups?:\RivetCore\Rmm\Contracts\BackgroundGroupMembershipInterface,background_config?:\RivetCore\Rmm\Contracts\BackgroundModeConfigInterface,background_store?:\RivetCore\Rmm\Contracts\BackgroundSessionStoreInterface,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>,retention_floors?:\RivetCore\Rmm\Settings\RetentionFloorsInterface,postgres?:PostgresConnectionInterface|PostgresConfig|\Closure():(PostgresConnectionInterface|PostgresConfig|null)|null} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -959,7 +962,7 @@ final class RmmModule
             null, $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), null, $this->cache(), $this->externalSink(),
             $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules(), $this->hypervisorService(),
-            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores());
+            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores(), new \RivetCore\Rmm\Remote\BackgroundSessionRetention($this->sql()), $this->remoteSettings());
     }
 
     /**
@@ -1430,7 +1433,43 @@ final class RmmModule
     public function technician(): TechnicianActions
     {
         return $this->technician ??= new TechnicianActions($this->sql(), $this->devices(), $this->deviceService(), $this->enrollment(), $this->jobs(), $this->updates(),
-            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings());
+            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings(), $this->backgroundSessions());
+    }
+
+    /**
+     * Background Mode's policy settings: the Core tables (migration 0050) unless the edition passes its own `background_config` option. An edition passes
+     * `background_groups` to say who is in the named internal group; without it only site administrators pass Internal mode.
+     */
+    public function backgroundConfig(): \RivetCore\Rmm\Contracts\BackgroundModeConfigInterface
+    {
+        return $this->options['background_config'] ?? ($this->backgroundDbConfig ??= new \RivetCore\Rmm\Remote\DbBackgroundModeConfig($this->sql()));
+    }
+
+    /** Authorization, audit and the session-check tokens of Background Mode. The audit is the module's audit: there is no option to turn it off. */
+    public function backgroundSessions(): \RivetCore\Rmm\Remote\BackgroundSessionService
+    {
+        return $this->backgroundSessions ??= new \RivetCore\Rmm\Remote\BackgroundSessionService(
+            $this->authorizer(),
+            new \RivetCore\Rmm\Remote\BackgroundModePolicy($this->backgroundConfig(), $this->options['background_groups'] ?? new \RivetCore\Rmm\Remote\NoBackgroundGroups()),
+            $this->options['background_store'] ?? new \RivetCore\Rmm\Remote\DbBackgroundSessionStore($this->sql()),
+            $this->audit,
+            $this->bridge,
+            fn (string $feature): bool => $this->settings()->featureOn($feature),
+            $this->eventPublisher(),
+        );
+    }
+
+    /**
+     * Changing Background Mode's policy: administrator check, audit row with the old and the new value, fail closed, event. Uses Core's tables, so it is only available
+     * when the edition did not pass its own `background_config` (then it manages its own policy storage and its own audit).
+     */
+    public function backgroundSettings(): \RivetCore\Rmm\Remote\BackgroundSettingsService
+    {
+        if (isset($this->options['background_config'])) {
+            throw new \LogicException('The edition supplied its own background_config; it changes that policy itself.');
+        }
+
+        return $this->backgroundSettingsService ??= new \RivetCore\Rmm\Remote\BackgroundSettingsService($this->authorizer(), $this->backgroundDbConfig ??= new \RivetCore\Rmm\Remote\DbBackgroundModeConfig($this->sql()), $this->audit, $this->eventPublisher());
     }
 
     /** The validated administration operations (settings, MeshCentral, signing key, binaries, releases, installers). */

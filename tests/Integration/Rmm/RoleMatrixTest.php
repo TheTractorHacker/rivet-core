@@ -43,11 +43,14 @@ final class RoleMatrixTest extends RmmTestCase
         $p->addUser(14, 3, 3, 1, limited: true);        // module-only login
         $p->addUser(15, 0, 0, 0);                       // no RMM access at all
         $p->addUser(16, 3, 3, 1);                       // full tech restricted to client B
+        $p->addUser(17, 3, 3, 2, background: true);     // Background Mode grant (rmm.remote.background + remote.manage)
+        $p->addUser(18, 3, 3, 2);                       // remote.manage but no Background Mode grant
         $this->who = ['admin' => new RmmPrincipal(1, 'Admin'), 'tech' => new RmmPrincipal(10, 'Tech'), 'rebootonly' => new RmmPrincipal(11, 'RebootOnly'),
             'viewer' => new RmmPrincipal(12, 'Viewer'), 'remoteonly' => new RmmPrincipal(13, 'RemoteOnly'), 'moduleonly' => new RmmPrincipal(14, 'ModuleOnly'),
-            'normo' => new RmmPrincipal(15, 'NoRmm'), 'deptb' => new RmmPrincipal(16, 'DeptB')];
+            'normo' => new RmmPrincipal(15, 'NoRmm'), 'deptb' => new RmmPrincipal(16, 'DeptB'),
+            'bgtech' => new RmmPrincipal(17, 'BgTech'), 'nobg' => new RmmPrincipal(18, 'NoBg')];
 
-        return new RmmHarness(policy: $p);
+        return new RmmHarness(policy: $p, options: ['background_groups' => new \RivetCore\Tests\Support\StubBackgroundConfig('', '', [], ['Ops' => [17, 18]])]);
     }
 
     protected function setUp(): void
@@ -134,6 +137,29 @@ final class RoleMatrixTest extends RmmTestCase
         $this->assertSame($reboot, $c, "$who: reboot");
         [$c] = $this->api($who, 'POST', [(string) $this->D1, 'remote'], []);
         $this->assertSame($remote, $c, "$who: remote launch");
+    }
+
+    /** @return array<string,array{0:string,1:int}> user => status of a Background Mode launch (internal mode, group Ops holds 17 and 18, switch on) */
+    public static function backgroundMatrix(): array
+    {
+        return ['admin' => ['admin', 200], 'tech (remote.launch only)' => ['tech', 403], 'rebootonly' => ['rebootonly', 403], 'viewer' => ['viewer', 403],
+            'remoteonly' => ['remoteonly', 403], 'moduleonly' => ['moduleonly', 403], 'normo' => ['normo', 403], 'deptb (other client)' => ['deptb', 404],
+            'bgtech (ability, group member)' => ['bgtech', 200], 'nobg (remote.manage, group member, no ability)' => ['nobg', 403]];
+    }
+
+    /** The Background Mode column of the role matrix: the ability is separate from remote.launch and remote.manage, and never implied by them. */
+    #[DataProvider('backgroundMatrix')]
+    public function testBackgroundRoleMatrix(string $who, int $expect): void
+    {
+        $cfg = new \RivetCore\Rmm\Remote\DbBackgroundModeConfig($this->h->module->sql());
+        $this->assertTrue($cfg->setPolicyMode('internal', 1));
+        $this->assertTrue($cfg->setInternalGroup('Ops', 1));
+        $r = $this->h->module->remoteActions()->updateSettings($this->who['admin'], ['features' => ['remote_tools' => true, 'background_mode' => true, 'remote_console' => true], 'accept_background_risk' => true]);
+        $this->assertTrue($r->ok, $r->message);
+        [$c] = $this->api($who, 'POST', [(string) $this->D1, 'remote'], ['mode' => 'background', 'view' => 'console']);
+        $this->assertSame($expect, $c, "$who: background launch");
+        $rows = array_filter(array_column($this->h->audit->records(), 'action'), static fn (string $a): bool => str_starts_with($a, 'Background Session'));
+        $this->assertCount(1, $rows, "$who: exactly one Background Session audit row");
     }
 
     public function testDepartmentRestrictedUserSeesOnlyTheirClient(): void
