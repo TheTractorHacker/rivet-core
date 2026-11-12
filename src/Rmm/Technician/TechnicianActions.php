@@ -282,6 +282,25 @@ final class TechnicianActions
     }
 
     /**
+     * The Mesh mapping state of ONE device (the opt-in the device page uses; the default device detail does not carry it). A device outside the caller's clients is the
+     * same 404 as a missing one; `can_approve` is false without `rmm.device.manage` for its client.
+     */
+    public function meshMapping(RmmPrincipal $who, int $deviceId): ActionResult
+    {
+        [$dev, $err] = $this->deviceFor($who->userId, $deviceId);
+        if ($err !== null || $dev === null) {
+            return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
+        }
+        $m = $this->meshMapping?->forDevice($deviceId);
+        if ($m === null) {
+            return ActionResult::fail($this->meshMapping === null ? 409 : 404, $this->meshMapping === null ? 'not_configured' : 'not_found', $this->meshMapping === null ? 'The Mesh mapping view is not available.' : 'Device not found.');
+        }
+        $m['can_approve'] = $m['can_approve'] && $this->authz->allowed($who->userId, RmmAbility::DEVICE_MANAGE, (int) $dev['client_id']);
+
+        return ActionResult::ok('ok', 200, 'ok', $m);
+    }
+
+    /**
      * Bulk "approve and map": for each device id, map the node THE DEVICE ITSELF REPORTED (the one stored in its Mesh agent state, never a typed one) through the same
      * audited action as a single approval ({@see setMeshNode()}: `rmm.device.manage` for the device's client). Per device the result is `changed`, `skipped` (nothing
      * to approve: not waiting for approval, already mapped, a different node kept by hand) or `refused` (not found or not yours, not permitted, or a CONFLICT: a node

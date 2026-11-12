@@ -32,6 +32,7 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   POST   endpoint_devices/{id}/mesh/uninstall                        {confirm} (needed) -> 202 {job_id}; runs the Mesh agent's own uninstaller, never touches the RivetIT agent
  *   POST   endpoint_devices/mesh/install                               {target:{type,id}, force?, confirm} (needed) -> 201 {device_count, created, skipped_*}; capped by bulk_run_max
  * Mesh node mapping (1.0.0-rc.67):
+ *   GET    endpoint_devices/{id}/mesh/mapping                          the same state for one device (opt-in: the default device detail does NOT carry it); another client's device is a 404
  *   GET    endpoint_devices/mesh/mapping                               why each linked device is or is not mapped (state not_installed|installed_no_node_reported|reported_needs_approval|conflict|kept_manual|mapped, reason text, evidence); ?state=&client_id=&q=&limit=&offset=; the caller's clients only
  *   POST   endpoint_devices/mesh/approve                               {device_ids:[...]} (1 to 200) -> 200 {changed, skipped, refused, results[]}: maps the node each device REPORTED, per device `rmm.device.manage`, a conflict is never overridden
  *   GET    endpoint_devices/mesh/verify                                the verified-mapping settings (administrators)
@@ -270,6 +271,9 @@ final class RemoteApi
 
                 return self::notFound();
             case 'mesh':
+                if ($a === 'mapping' && $b === null) {
+                    return $m === 'GET' ? self::result($this->technician->meshMapping($who, $id)) : self::method();
+                }
                 if (($a !== 'install' && $a !== 'uninstall') || $b !== null) {
                     return self::notFound();
                 }

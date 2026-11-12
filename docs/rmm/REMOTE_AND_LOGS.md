@@ -256,7 +256,7 @@ A device that has the MeshCentral agent reports which node it is. That is only w
 | `kept_manual` | the device reported a different node than the one an administrator mapped by hand, which was kept |
 | `mapped` | a node is mapped (by hand, by an approval, or verified against MeshCentral: `mapped_source` says which) |
 
-Each item also carries `reported_node_id`, `mapped_node_id`, `can_approve`, and `verification` (the evidence of the last verified look, or null). It is additive in the device detail as `mesh_mapping`, and the fleet list is `GET endpoint_devices/mesh/mapping?state=&client_id=&q=&limit=&offset=` (`TechnicianActions::meshMappings()`): the caller's clients only, and another client's device is simply absent, exactly like a missing one. `counts` gives the number of devices per state for the filter chips.
+Each item also carries `reported_node_id`, `mapped_node_id`, `can_approve`, and `verification` (the evidence of the last verified look, or null). The default device detail is NOT changed (the golden transcripts are frozen); a device page asks for one device with `GET endpoint_devices/{id}/mesh/mapping` (`TechnicianActions::meshMapping()`), and the fleet list is `GET endpoint_devices/mesh/mapping?state=&client_id=&q=&limit=&offset=` (`TechnicianActions::meshMappings()`): the caller's clients only, and another client's device is simply absent, exactly like a missing one. `counts` gives the number of devices per state for the filter chips.
 
 ### Bulk "approve and map"
 

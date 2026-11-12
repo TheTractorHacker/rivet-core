@@ -109,8 +109,20 @@ final class MeshMappingTest extends RemoteTestCase
         foreach ([$none, $noNode, $needs, $holder, $rival, $manual] as $id) {
             $this->assertNotSame('', $m->forDevice($id)['reason']);
         }
-        $d = $this->h->module->readModel()->deviceView($needs, false);
-        $this->assertSame('reported_needs_approval', $d['mesh_mapping']['state']);
+        // one device is an opt-in route; the default detail is byte for byte what it was (the golden transcripts)
+        $this->assertArrayNotHasKey('mesh_mapping', $this->h->module->readModel()->deviceView($needs, false));
+        [$c, $j] = $this->h->tech('GET', [(string) $needs, 'mesh', 'mapping'], $this->h->principal(1));
+        $this->assertSame(200, $c);
+        $this->assertSame('reported_needs_approval', $j['state']);
+        $this->assertTrue($j['can_approve']);
+        [$c, $j] = $this->h->tech('GET', [(string) $needs, 'mesh', 'mapping'], $this->h->principal(10));
+        $this->assertSame(200, $c);
+        $this->assertFalse($j['can_approve'], 'no rmm.device.manage');
+        $this->h->tenancy->restrictUser(16, [$this->h->clientB]);
+        [$c] = $this->h->tech('GET', [(string) $needs, 'mesh', 'mapping'], $this->h->principal(16));
+        $this->assertSame(404, $c, 'another client answers like a missing device');
+        [$c2] = $this->h->tech('GET', ['99999', 'mesh', 'mapping'], $this->h->principal(16));
+        $this->assertSame(404, $c2);
     }
 
     public function testTheFleetListIsClientScopedAndAnotherClientsDeviceIsAbsent(): void
@@ -314,7 +326,8 @@ final class MeshMappingTest extends RemoteTestCase
         $this->assertStringNotContainsString($first['cookie'], json_encode($this->h->audit->records()));
         $this->assertStringNotContainsString($this->keyHex, json_encode($this->h->audit->records()));
         // the verified mapping shows in the detail
-        $this->assertSame('mapped', $this->h->module->readModel()->deviceView($dev, false)['mesh_mapping']['state']);
+        [, $j] = $this->h->tech('GET', [(string) $dev, 'mesh', 'mapping'], $this->h->principal(1));
+        $this->assertSame('mapped', $j['state']);
     }
 
     public function testNothingHappensWhileTheSettingIsOff(): void
