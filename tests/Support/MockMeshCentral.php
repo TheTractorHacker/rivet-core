@@ -7,6 +7,9 @@
  */
 $path = parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
 $mode = getenv('MOCK_MESH_MODE') ?: 'ok';
+if (($log = getenv('MOCK_MESH_LOG')) !== false && $log !== '') {
+    file_put_contents($log, (string) $path . "\n", FILE_APPEND | LOCK_EX);   // the tenant isolation matrix counts what reached Mesh
+}
 if ($path === '/health.ashx') {
     if ($mode === 'slow') {
         sleep(12);

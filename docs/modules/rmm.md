@@ -439,6 +439,199 @@ Device authentication, SYSTEM-level job execution and remote access make this a 
 
 What is **verified**: the golden transcripts of the original replay identically through `DeviceApi` and `TechnicianApi` (`php scripts/rmm-golden/replay-core.php replay`); the RivetIT role matrix (`RoleMatrixTest`), deployment (`DeployTest`), administration (`AdminTest`), read models (`ReadModelTest`) and technician actions (`TechnicianTest`) run against a scratch database. **Not verified**: a real MeshCentral server (only `tests/Support/MockMeshCentral.php`; the Phase 6 terminal and files views use MeshCentral's `viewmode` 12 and 13 from its URL scheme and have not been opened in a real MeshCentral), the Windows installer on a Windows host, the Windows code of the Phase 6 and 8 agent (cross-compiled and vetted only), the Linux agent on a physical host.
 
+## Client scoping matrix
+
+MeshCentral does not separate clients: one Mesh account reaches every device of the server, so Core's own client scoping is the barrier between one client's devices and a technician who works for another. `tests/Integration/Rmm/TenantIsolationMatrixTest.php` proves it for every public method of the action and service entry points that takes a device id or an id derived from a device (job, transfer, alert, approval, package assignment, schedule, policy assignment, token, rule, window, VM ...) and for every id-bearing REST route. The principal holds EVERY `rmm.*` ability and is restricted by the tenancy to client A. For client B's object, and for an id that does not exist, the method must answer the same refusal (403 or 404, the same status, code and text, so there is no existence oracle) and change nothing: no table of the module, no audit row, no event, no remote session, no request to the Mesh server, no file in the transfer folder. A positive control per method (a fresh object of client A, same principal) must succeed, so the test cannot pass vacuously. A "fleet-wide object" (script library, package catalog, tags, groups, patch policies and rings, custom field definitions, script policies, a schedule or window on every client) belongs to no client: a caller limited to some clients may not change it at all, and the control runs as the unrestricted administrator. A coverage guard walks the public methods of these classes by reflection and fails when one that takes an id-like parameter is neither in the matrix nor in the allow-list below (with its reason). When you add such a method or a REST route, add a row to the matrix and a line here.
+
+| Method | Ability | Client scope enforced | Where |
+|---|---|---|---|
+| `AlertingActions::acknowledge` | `rmm.alert.manage` | yes | manageable(): find(id, visibleClientIds()) -> 404, then alert.manage for the client |
+| `AlertingActions::clearParent` | `rmm.alert.manage` | yes | device(alert.manage): 404 |
+| `AlertingActions::createPolicy` | `rmm.admin` | yes | (all) scopeWriteRefusal(): a policy on every client (all, site, group, tag) needs a caller not limited to some clients (TEN-4); (scope) scopeWriteRefusal(): a client or device scope must be inside the caller's clients (404) (TEN-4) |
+| `AlertingActions::createWindow` | `rmm.alert.manage`, `rmm.admin` | yes | (client) windowScopeAllowed(): alert.manage for that client (incl. clientOk -> 403); (device) windowScopeAllowed(): the device must be inside the caller's clients (404); (all) windowScopeAllowed(): a window on every client (all, site, group, tag) needs a caller not limited to some clients (TEN-4) |
+| `AlertingActions::deletePolicy` | `rmm.admin` | yes | scopeVisible() on the policy's scope -> 404, then scopeWriteRefusal() |
+| `AlertingActions::deleteWindow` | `rmm.alert.manage` | yes | scopeVisible() (404) then windowScopeAllowed() |
+| `AlertingActions::deviceAlerting` | `rmm.device.view` | yes | device() |
+| `AlertingActions::deviceMaintenance` | `rmm.device.view` | yes | device(): DEVICE_VIEW for the client -> 404 |
+| `AlertingActions::getAlert` | `rmm.device.view` | yes | alerts->find($id, visibleClientIds()) -> 404 |
+| `AlertingActions::getParent` | `rmm.device.view` | yes | device(): 404 |
+| `AlertingActions::getPolicy` | `rmm.device.view` | yes | scopeVisible(): an escalation policy of a client outside the caller's clients is 404 |
+| `AlertingActions::getThresholds` | `rmm.device.view` | yes | device(): 404 |
+| `AlertingActions::getWindow` | `rmm.device.view` | yes | (client) scopeVisible(): a client scope outside the caller's clients is 404; (device) scopeVisible(): a device scope whose client is outside the caller's clients is 404 |
+| `AlertingActions::listAlerts` | `rmm.device.view` | yes | alerts->list() is bounded by visibleClientIds(): a filter on another client's device returns nothing |
+| `AlertingActions::resolve` | `rmm.alert.manage` | yes | manageable() |
+| `AlertingActions::setParent` | `rmm.alert.manage` | yes | (child) device(alert.manage): 404; (parent) the PARENT device is looked up with the same scope: 404 |
+| `AlertingActions::setThresholds` | `rmm.device.manage` | yes | device(device.manage): 404 |
+| `AlertingActions::updatePolicy` | `rmm.admin` | yes | scopeVisible() on the policy's scope -> 404, then scopeWriteRefusal() on the old scope; (rescope) the NEW scope is checked too: an own policy cannot be moved onto another client |
+| `AlertingActions::updateWindow` | `rmm.alert.manage` | yes | scopeVisible() (404) then windowScopeAllowed() for the old AND the new scope; (rescope) the NEW scope is checked too: an own window cannot be moved onto another client |
+| `AutoInstallActions::clearParam` | `rmm.software.manage` | yes | (client) a client parameter needs that client: clientOk -> 404 |
+| `AutoInstallActions::deleteFile` | `rmm.software.manage` | yes (fleet-wide object) | unrestricted(): hosted installers are shared by every client |
+| `AutoInstallActions::deviceApps` | `rmm.software.view` | yes | clientOk + DEVICE_VIEW + SOFTWARE_VIEW for the client -> 404 |
+| `AutoInstallActions::mayTick` | `rmm.software.deploy` | yes | SOFTWARE_DEPLOY(client) incl. clientOk |
+| `AutoInstallActions::selectable` | `rmm.software.view` | yes | clientOk -> 404 |
+| `AutoInstallActions::setAuto` | `rmm.software.deploy` | yes (fleet-wide object) | unrestricted(): a package that installs on new devices of every client |
+| `AutoInstallActions::setParam` | `rmm.software.manage` | yes | (client) a client parameter needs that client: clientOk -> 404 |
+| `ChangeActions::createRule` | `rmm.change.manage` | yes | client_id is checked with the grant for that client |
+| `ChangeActions::deleteRule` | `rmm.change.manage` | yes | the rule of another client is 404 |
+| `ChangeActions::deviceChanges` | `rmm.change.view` | yes | device(): clientOk + the grant for the client -> 404 |
+| `ChangeActions::deviceStatus` | `rmm.change.view` | yes | device() |
+| `ChangeActions::fleetChanges` | `rmm.change.view` | yes | (device) a device filter goes through device() (404); (client) a client filter outside the caller's clients is 404 |
+| `ChangeActions::getRule` | `rmm.change.view` | yes | the rule of another client is 404 |
+| `ChangeActions::timeline` | `rmm.change.view` | yes | device() |
+| `ChangeActions::updateRule` | `rmm.change.manage` | yes | the rule of another client is 404; (rescope) a NEW client_id is checked too |
+| `DeployActions::addHost` | `rmm.admin` | yes (fleet-wide object) | unrestricted() (a download host is allowed for every client) |
+| `DeployActions::addVersion` | `rmm.software.manage` | yes (fleet-wide object) | unrestricted() |
+| `DeployActions::assign` | `rmm.software.deploy` | yes | (device) a device scope must be a device inside the caller's clients (404); (client) a client scope must be a client inside the caller's clients (404) |
+| `DeployActions::decideApproval` | `rmm.software.deploy` | yes | every client of the frozen request must be inside the caller's scope BEFORE the decision closure runs |
+| `DeployActions::deletePackage` | `rmm.software.manage` | yes (fleet-wide object) | unrestricted() |
+| `DeployActions::detect` | `rmm.software.manage` | yes | deviceFor() before the queue |
+| `DeployActions::deviceHistory` | `rmm.software.view` | yes | deviceFor() |
+| `DeployActions::deviceStatus` | `rmm.software.view` | yes | deviceFor(): clientOk + DEVICE_VIEW + SOFTWARE_VIEW for the client -> 404 |
+| `DeployActions::removeHost` | `rmm.admin` | yes (fleet-wide object) | unrestricted() |
+| `DeployActions::report` | `rmm.software.view` | yes | a client filter outside the caller's clients is 404 |
+| `DeployActions::reportCsv` | `rmm.software.view` | yes | report() |
+| `DeployActions::retireVersion` | `rmm.software.manage` | yes (fleet-wide object) | unrestricted() |
+| `DeployActions::run` | `rmm.software.manage`, `rmm.software.deploy` | yes | (dry) deviceFor(); (install) deviceFor() |
+| `DeployActions::savePackage` | `rmm.software.manage` | yes (fleet-wide object) | unrestricted(): a catalog write needs a caller whose access is not limited to some clients |
+| `DeployActions::unassign` | `rmm.software.deploy` | yes | (device) assignmentVisible(): the device of the assignment must be inside the caller's clients; (client) assignmentVisible(): the client scope must be inside the caller's clients |
+| `FieldActions::change` | `rmm.admin` | yes (fleet-wide object) | a custom field definition is fleet-wide (no client owns it): a caller limited to some clients may not change it |
+| `FieldActions::delete` | `rmm.admin` | yes (fleet-wide object) | a custom field definition is fleet-wide |
+| `FieldActions::setValue` | `rmm.device.manage` | yes | (device) a device-scope value: the device must be inside the caller's clients (404); (client) a client-scope value: clientOk -> 404; (site) a site-scope value: the client the site belongs to must be inside the caller's clients |
+| `HypervisorActions::host` | `rmm.hypervisor.view` | yes | clientOk + the grant for the device's client -> 404 |
+| `HypervisorActions::hosts` | `rmm.hypervisor.view` | yes | a client filter outside the caller's clients is 404 |
+| `HypervisorActions::setHostIgnored` | `rmm.hypervisor.manage` | yes | clientOk + the grant for the device's client -> 404 |
+| `HypervisorActions::setVmIgnored` | `rmm.hypervisor.manage` | yes | reader->vm($id, visible clients) -> 404 |
+| `HypervisorActions::suggestAssets` | `rmm.hypervisor.view` | yes | reader->vm($id, visible clients) -> 404 |
+| `HypervisorActions::vm` | `rmm.hypervisor.view` | yes | reader->vm($id, visible clients) -> 404 |
+| `HypervisorActions::vms` | `rmm.hypervisor.view` | yes | a client filter outside the caller's clients is 404 |
+| `InventoryActions::addGroupDevices` | `rmm.device.manage` | yes | every device is checked with device(): one outside the scope refuses the whole call (404) |
+| `InventoryActions::deleteGroup` | `rmm.device.manage` | yes (fleet-wide object) | fleetWide() |
+| `InventoryActions::deleteTag` | `rmm.device.manage` | yes (fleet-wide object) | fleetWide() |
+| `InventoryActions::refreshSoftware` | `rmm.job.run_saved` | yes | device() -> 404 |
+| `InventoryActions::removeGroupDevice` | `rmm.device.manage` | yes | device() -> 404 |
+| `InventoryActions::setGroupTags` | `rmm.device.manage` | yes (fleet-wide object) | fleetWide() |
+| `InventoryActions::tagDevice` | `rmm.device.manage` | yes | device(): clientOk + DEVICE_VIEW(client) -> 404 |
+| `InventoryActions::untagDevice` | `rmm.device.manage` | yes | device() -> 404 |
+| `InventoryActions::updateGroup` | `rmm.device.manage` | yes (fleet-wide object) | fleetWide(): groups are shared by every client |
+| `InventoryActions::updateTag` | `rmm.device.manage` | yes (fleet-wide object) | fleetWide(): tags are shared by every client |
+| `LogActions::createRule` | `rmm.device.manage` | yes | manage(client): clientOk |
+| `LogActions::deleteRule` | `rmm.device.manage` | yes | visibleRule(): 404 |
+| `LogActions::deviceLogs` | `rmm.job.run_saved` | yes | device(): clientOk + the grant for the client -> 404 |
+| `LogActions::fleetLogs` | `rmm.job.run_saved` | yes | (device) a device filter goes through device() (404); (client) a client filter outside the caller's clients is 404 |
+| `LogActions::getRule` | `rmm.device.view` | yes | visibleRule(): 404 |
+| `LogActions::stats` | `rmm.job.run_saved` | yes | a device goes through device() (404) |
+| `LogActions::updateRule` | `rmm.device.manage` | yes | visibleRule(): a rule of another client is 404; (rescope) a NEW client_id is checked with manage() too |
+| `PatchActions::approve` | `rmm.patch.manage` | yes | (device) a named device goes through deviceFor() (404); (client) a client filter outside visibleClientIds() is 404 |
+| `PatchActions::assignPolicy` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
+| `PatchActions::compliance` | `rmm.patch.view` | yes | a client filter outside visibleClientIds() is 404 |
+| `PatchActions::decideApproval` | `rmm.patch.manage` | yes | every client of the frozen request must be inside the caller's scope BEFORE the decision closure runs |
+| `PatchActions::decline` | `rmm.patch.manage` | yes | (device) a named device goes through deviceFor() (404); (client) a client filter outside visibleClientIds() is 404 |
+| `PatchActions::deletePolicy` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
+| `PatchActions::deleteRing` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
+| `PatchActions::deleteRule` | `rmm.patch.manage` | yes | the rule's client is checked first: 404 |
+| `PatchActions::fleetUpdates` | `rmm.patch.view` | yes | a client filter outside visibleClientIds() is 404 |
+| `PatchActions::history` | `rmm.patch.view` | yes | deviceFor() |
+| `PatchActions::install` | `rmm.patch.manage`, `rmm.patch.install` | yes | (dry) deviceFor(); (install) deviceFor() |
+| `PatchActions::savePolicy` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate(): a patch policy is fleet-wide, needs a caller not limited to some clients |
+| `PatchActions::saveRing` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
+| `PatchActions::saveRule` | `rmm.patch.manage` | yes | (update) a rule of a client outside the caller's clients is 404 (the rule's client is read first); (create) a rule for another client or for every client is 403 |
+| `PatchActions::scan` | `rmm.patch.manage` | yes | deviceFor() before the queue |
+| `PatchActions::summary` | `rmm.patch.view` | yes | deviceFor(): clientOk + DEVICE_VIEW + PATCH_VIEW for the client -> 404 |
+| `PatchActions::unassignPolicy` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
+| `PatchActions::updates` | `rmm.patch.view` | yes | deviceFor() |
+| `PatchApprovalService::select` | `rmm.patch.view` | yes | the visible clients bound the SQL: nothing of another client is selected |
+| `PolicyActions::assign` | `rmm.admin` | yes | (client) an assignment to a client outside the caller's clients is refused; (device) an assignment to a device outside the caller's clients is refused; (global) a fleet-wide assignment (global scope) needs a caller not limited to some clients |
+| `PolicyActions::delete` | `rmm.admin` | yes (fleet-wide object) | a script policy is fleet-wide |
+| `PolicyActions::unassign` | `rmm.admin` | yes | (client) the assignment of another client is 404; (device) the assignment of a device of another client is 404 |
+| `PolicyActions::update` | `rmm.admin` | yes (fleet-wide object) | a script policy is fleet-wide: a caller limited to some clients may not change it |
+| `RemoteActions::controlService` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::createUpload` | `rmm.admin` | yes | gate() |
+| `RemoteActions::deleteTransfer` | `rmm.remote.manage` | yes | transferOf(); (cross) own device + the transfer of another client: not found |
+| `RemoteActions::downloadContent` | `rmm.remote.manage` | yes | transferOf(); (cross) own device + the transfer of another client: not found |
+| `RemoteActions::headerRemote` | `rmm.remote.launch` | yes | deviceFor() (404) |
+| `RemoteActions::installMeshAgent` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::installMeshAgentBulk` | `rmm.remote.manage` | yes | (device) TargetResolver counts only devices inside visibleClientIds(); (client) TargetResolver counts only devices inside visibleClientIds() |
+| `RemoteActions::jobResult` | `rmm.remote.manage` | yes | deviceFor(); the job is looked up by (job, device); (cross) own device + the job of another client: looked up by (job, device), not found |
+| `RemoteActions::killProcess` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::listProcesses` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::listServices` | `rmm.remote.manage` | yes | gate(): deviceFor() (404) before the ability, the feature and the queue |
+| `RemoteActions::listTransfers` | `rmm.remote.manage` | yes | deviceFor() (404) then remote.manage |
+| `RemoteActions::meshInfo` | `rmm.remote.launch` | yes | deviceFor() (404) before any node is revealed |
+| `RemoteActions::requestDownload` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::snapshot` | `rmm.remote.manage` | yes | deviceFor() (404) then remote.manage |
+| `RemoteActions::transfer` | `rmm.remote.manage` | yes | transferOf(): deviceFor() then the transfer by (transfer, device); (cross) own device + the transfer of another client: not found |
+| `RemoteActions::uninstallMeshAgent` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::uploadContent` | `rmm.admin` | yes | gate(); the transfer is looked up by (transfer, device); (cross) own device + the transfer of another client: looked up by (transfer, device), not found |
+| `RmmAdmin::clearUpdateFailures` | `rmm.binary.publish` | yes | a named device must be inside the caller's clients (404); (all) with no device the call reaches every client: needs a caller not limited to some clients |
+| `RmmAdmin::deploymentCommands` | `rmm.token.manage` | yes | deny(TOKEN_MANAGE, client) incl. clientOk -> 403, before any token is minted |
+| `RmmAdmin::downloadInstaller` | `rmm.token.manage` | yes | deny(TOKEN_MANAGE, client) incl. clientOk -> 403, before any token is minted |
+| `ScriptActions::approvalVisible` | `rmm.job.approve` | yes | approvalVisible(): target inside visibleClientIds() |
+| `ScriptActions::cancel` | `rmm.job.approve` | yes | the requester or an administrator withdraws a request; an administrator limited to some clients only a visible one |
+| `ScriptActions::decide` | `rmm.job.approve`, `rmm.software.deploy`, `rmm.patch.manage` | yes | the approval is visible only when its target lies inside the caller's clients (approvalVisible); approving also checks approverScope; (reject) rejecting needs the same visibility as approving; (software) delegates to DeployActions::decideApproval(): every client of the request; (patch) delegates to PatchActions::decideApproval(): every client of the request |
+| `ScriptActions::deleteSchedule` | `rmm.admin` | yes | a schedule of a client the caller cannot see is 404 |
+| `ScriptActions::resignScript` | `rmm.admin` | yes (fleet-wide object) | fleetWide() (re-signing rewrites the signature every client's devices verify) |
+| `ScriptActions::retireScript` | `rmm.job.run_script` | yes (fleet-wide object) | fleetWide() |
+| `ScriptActions::runOnDevice` | `rmm.job.run_saved` | yes | device view check (404) before the ability and the script |
+| `ScriptActions::runOnTarget` | `rmm.job.run_saved` | yes | (device) TargetResolver counts only devices inside visibleClientIds(): nothing to run on; (client) TargetResolver counts only devices inside visibleClientIds() |
+| `ScriptActions::saveSchedule` | `rmm.admin` | yes | an existing schedule of a client the caller cannot see is 404; a schedule is scoped by its target; (create) a new schedule may only target devices inside the caller's clients |
+| `ScriptActions::updateScript` | `rmm.job.run_script` | yes (fleet-wide object) | fleetWide(): a caller limited to some clients may not change library scripts (shared by every client) |
+| `TechnicianActions::allowReenroll` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::cancelJob` | `rmm.job.run_saved` | yes | deviceFor() (404), then the job is looked up by (job, device); (cross) own device + the job of another client: the job is looked up by (job, device), so it is not found |
+| `TechnicianActions::clearUpdateFailures` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::createToken` | `rmm.token.manage` | yes | authz->check(TOKEN_MANAGE, client) incl. clientOk -> 403 |
+| `TechnicianActions::launchRemote` | `rmm.remote.launch`, `rmm.remote.manage` | yes | deviceFor() before any Mesh call, session or token; (forced) deviceFor() (force only skips the offline check); (terminal) deviceFor() before the remote.manage and feature checks; (files) deviceFor() before the remote.manage and feature checks |
+| `TechnicianActions::resolvePending` | `rmm.device.manage` | yes | manage(); (link) manage(), then the asset's client must be one the caller manages (CORE-02) |
+| `TechnicianActions::retire` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::revoke` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::revokeToken` | `rmm.token.manage` | yes | the token's client is checked (clientOk + TOKEN_MANAGE) before it is revoked: missing and foreign both 404 |
+| `TechnicianActions::rotateCredential` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::setAutomationDisabled` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::setMeshNode` | `rmm.device.manage` | yes | manage(): deviceFor(administrative) -> 404 |
+| `TechnicianActions::setRing` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::submitJob` | `rmm.job.run_script`, `rmm.job.run_saved`, `rmm.job.reboot` | yes | deviceFor(): clientOk + DEVICE_VIEW(client) -> 404, then the ability for the client; (saved) deviceFor() as above (saved script path); (reboot) deviceFor() as above (reboot); (library) delegates to ScriptActions::runOnDevice() |
+| `TechnicianActions::transfer` | `rmm.device.manage` | yes | manage() on the device (404): a device of another client is never reached; (target) manage() on the device, then the TARGET client: clientOk + DEVICE_MANAGE(target) -> 403 |
+| `TechnicianActions::visibleDevice` | `rmm.device.view` | yes | visibleDevice(): authz->check(DEVICE_VIEW, client) incl. clientOk -> null |
+| `TransferService::find` | none | yes | keyed by (transfer, device): the transfer of another device is never returned for this one |
+| `DeployActions::package` | n/a | no (not client-scoped) | Reads one package of the catalog, which is shared by every client; the installer address is masked for a caller who is not fleet-wide. Writes are in the matrix. |
+| `AutoInstallActions::paramsOf` | n/a | no (not client-scoped) | Reads where the parameters of a catalog package are set (never a value); the client-scoped entries are filtered to the caller's clients. Writes are in the matrix. |
+| `PatchActions::getPolicy` | n/a | no (not client-scoped) | Reads one patch policy, a fleet-wide object: settings only. Its assignments are filtered to the caller's clients (testPolicyDetailsHideTheAssignmentsOfOtherClients); its writes are in the matrix. |
+| `RmmAdmin::msiTemplateAction` | n/a | no (not client-scoped) | Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
+| `RmmAdmin::binaryAction` | n/a | no (not client-scoped) | Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
+| `RmmAdmin::updateRelease` | n/a | no (not client-scoped) | Changes the rollout percentage of an agent release: fleet-wide, no client owns it; needs rmm.binary.publish. |
+| `TransferService::listFor` | n/a | no (not client-scoped) | Service layer, no principal: RemoteActions::listTransfers() resolves the device and the ability first (matrix row). |
+| `TransferService::receiveChunk` | n/a | no (not client-scoped) | Agent-facing: the device is authenticated by its own token and the transfer by a one-time token; find() is keyed by (transfer, device), see TransferService::find. |
+| `TransferService::serveChunk` | n/a | no (not client-scoped) | Agent-facing: the device is authenticated by its own token and the transfer by a one-time token; find() is keyed by (transfer, device), see TransferService::find. |
+| `TransferService::storeUploadContent` | n/a | no (not client-scoped) | Service layer: RemoteActions::uploadContent() resolves the device and the ability first (matrix row). |
+| `PatchApprovalService::saveRule` | n/a | no (not client-scoped) | Service layer: PatchActions::saveRule() applies the client scope first (matrix rows). |
+| `PatchApprovalService::deleteRule` | n/a | no (not client-scoped) | Service layer: PatchActions::deleteRule() applies the client scope first (matrix row). |
+| `PatchApprovalService::rule` | n/a | no (not client-scoped) | Service layer lookup; PatchActions::saveRule()/deleteRule() filter on the rule's client before it is used. |
+| `PatchApprovalService::applyApproved` | n/a | no (not client-scoped) | Applies a frozen approval request after PatchActions::decideApproval() checked the approver against every client of the request. |
+| `PatchApprovalService::approve` | n/a | no (not client-scoped) | Service layer: PatchActions::approve() selects only rows inside the caller's scope first (PatchApprovalService::select is in the matrix). |
+| `PatchApprovalService::decline` | n/a | no (not client-scoped) | Service layer: PatchActions::decline() selects only rows inside the caller's scope first. |
+| `PatchApprovalService::requestSecond` | n/a | no (not client-scoped) | Service layer: called with rows PatchActions::approve() already scoped. |
+| `PatchApprovalService::autoApprove` | n/a | no (not client-scoped) | Server-side rule engine (scheduler), no principal; it works device by device on the rules of the device's own client. |
+| `PatchInstallService::queue` | n/a | no (not client-scoped) | Service layer: PatchActions::install() resolves the device, the client scope and the ability first (matrix rows). |
+| `PatchInstallService::applyJob` | n/a | no (not client-scoped) | Agent-facing: applies the report of a job to the device that authenticated. |
+| `RemoteActions::installMeshAgentAfterApproval` | n/a | no (not client-scoped) | Server-side (MeshAfterApproval), no principal: the administrator's tick-box on the installer was the decision; it takes the device row of the device that was just approved. |
+
+REST routes (`{d}` is the device id, `{dq}` a device a request may queue on; the other `{...}` are the object of the same name: all go through the same checks; the matrix asserts unknown and another client's id answer identically at the HTTP layer):
+
+- `AlertingApi::device`: `GET {d}/alerts`, `GET {d}/alerting`, `GET {d}/maintenance`, `GET {d}/parent`, `PUT {dq}/parent (child)`, `PUT {dfresh}/parent (parent of another client)`, `DELETE {d}/parent`, `GET {d}/checks/cpu_tm/thresholds`, `PUT {d}/checks/cpu_tm/thresholds`
+- `AlertingApi::fleet`: `GET alerts/{alert}`, `POST alerts/{alert}/ack`, `POST alerts/{alert}/resolve`, `GET alerts?device_id={d} (filter)`, `GET maintenance/{win}`, `PATCH maintenance/{win}`, `DELETE maintenance/{win}`, `GET maintenance/{wind} (device-scope window)`, `GET escalation_policies/{esc}`, `PATCH escalation_policies/{esc}`, `DELETE escalation_policies/{esc}`
+- `AutoInstallApi::device`: `GET {d}/autoinstall`
+- `AutoInstallApi::fleet`: `GET software_autoinstall/selectable?client_id={client}`, `PUT software_autoinstall/{pkg} (fleet-wide)`, `PUT software_params/{pkgfix}`, `DELETE software_files/{fileid} (fleet-wide)`
+- `ChangeApi::device`: `GET {d}/changes`, `GET {d}/changes/timeline`, `GET {d}/changes/status`
+- `ChangeApi::fleet`: `GET changes?device_id={d}`, `GET changes?client_id={client}`, `GET changes/rules/{cr}`, `PATCH changes/rules/{cr}`, `DELETE changes/rules/{cr}`
+- `DeployApi::device`: `GET {d}/deployments`, `GET {d}/deployments/history`, `POST {d}/deployments/detect`, `POST {dq}/deployments/run`
+- `DeployApi::fleet`: `DELETE software_assignments/{ad} (device assignment)`, `DELETE software_assignments/{ac} (client assignment)`, `POST software_assignments (device scope)`, `POST software_assignments (client scope)`, `GET software_report?client_id={client}`, `PUT software_packages/{pkg} (fleet-wide)`, `DELETE software_packages/{pkg} (fleet-wide)`
+- `HypervisorApi::device`: `GET {d}/hypervisor`, `PUT {d}/hypervisor`
+- `HypervisorApi::fleet`: `GET hypervisor/vms/{vm}`, `PUT hypervisor/vms/{vm}`, `GET hypervisor/vms?client_id={client}`
+- `PatchApi::device`: `GET {d}/patches`, `GET {d}/patches/history`, `POST {dq}/patches/scan`, `POST {d}/patches/install`
+- `PatchApi::fleet`: `POST patches/approve`, `POST patches/decline`, `GET patches/compliance?client_id={client}`, `GET patches?client_id={client}`, `PUT patches/rules/{prule}`, `DELETE patches/rules/{prule}`, `PUT patch_policies/{ppolicy} (fleet-wide)`, `DELETE patch_policies/{ppolicy} (fleet-wide)`
+- `RemoteApi::device`: `GET {d}/services`, `POST {d}/services/query`, `POST {d}/services/Spooler/start`, `GET {d}/processes`, `POST {d}/processes/query`, `POST {d}/processes/4242/kill`, `GET {d}/remote/mesh`, `GET {d}/remote/jobs/{tooljob}`, `PUT {d}/remote/node`, `POST {dq}/mesh/install`, `POST {dq}/mesh/uninstall`, `GET {d}/files`, `POST {d}/files/download`, `POST {d}/files/upload`, `GET {d}/files/{tid}`, `DELETE {d}/files/{tid}`, `GET {d}/files/{tid}/content`, `GET {dA}/files/{tid}/content (own device, transfer of another client)`, `GET {d}/logs`, `GET {d}/logs/stats`
+- `RemoteApi::fleet`: `GET logs?device_id={d}`, `GET logs?client_id={client}`, `GET logs/rules/{lr}`, `PATCH logs/rules/{lr}`, `DELETE logs/rules/{lr}`, `POST logs/rules`, `POST mesh/install (device target)`
+- `TechnicianApi::handle`: `GET {d}`, `GET {d}/jobs`, `POST {d}/jobs`, `POST {d}/jobs/{job}/cancel`, `POST {d}/remote`, `POST {d}/remote (terminal)`, `GET {d}/live`, `GET {d}/network`, `GET {d}/policy`, `GET {d}/fields`, `PUT {d}/fields/{fieldid}`, `GET {d}/software`, `POST {d}/software/refresh`, `GET {d}/tags`, `POST {d}/tags`, `GET {d}/checks/cpu_tm/history`, `GET policies/{policy} (fleet-wide read)`, `PUT policies/{policy} (fleet-wide)`, `DELETE policies/{policy} (fleet-wide)`, `POST policies/{policyfix}/assignments (client scope)`, `DELETE policies/{policyfix}/assignments/{pac} (client assignment)`, `DELETE policies/{policyfix}/assignments/{pad} (device assignment)`, `GET scripts/{script} (fleet-wide read)`, `PUT scripts/{script} (fleet-wide)`, `DELETE scripts/{script} (fleet-wide)`, `GET scripts/{script}/runs (runs filtered to the caller's clients)`, `GET approvals/{appr}`, `POST approvals/{appr}/approve`, `POST approvals/{appr}/reject`, `POST approvals/{appr}/cancel`, `GET schedules/{sched}`, `PUT schedules/{sched}`, `DELETE schedules/{sched}`, `GET schedules/{sched}/history?device_id={d}`, `PUT fields/{fieldid}/values/{d}`, `POST runs (device target)`, `POST groups/{groupfix}/devices`, `DELETE groups/{groupfix}/devices/{dgrp}`
+
 ## Used by
 
 Not yet adopted: RivetIT adopts first (it already has the tables), then RivetMSP.

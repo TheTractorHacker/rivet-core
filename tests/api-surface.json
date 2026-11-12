@@ -5578,6 +5578,7 @@
                 "dropOrphanAssignments": "dropOrphanAssignments(): int",
                 "find": "find(int $policyId): ?array",
                 "layersFor": "layersFor(array $dev): array",
+                "scopeClientId": "scopeClientId(string $type, int $scopeId): ?int",
                 "settingsOf": "static settingsOf(string $bodyJson): array",
                 "unassign": "unassign(int $assignmentId): ?array",
                 "update": "update(int $policyId, array $in, int $userId): array",
@@ -6614,7 +6615,8 @@
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, ?RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy = NULL)",
                 "count": "count(string $type, int $id, ?array $visibleClientIds, array $platforms = []): int",
                 "devices": "devices(string $type, int $id, ?array $visibleClientIds, array $platforms, int $afterDeviceId, int $limit, ?array $extra = NULL): array",
-                "validate": "validate(mixed $in): array"
+                "validate": "validate(mixed $in): array",
+                "validateFor": "validateFor(mixed $in, ?array $visibleClientIds): array"
             }
         },
         "RivetCore\\Rmm\\Settings\\ChecksValidator": {
@@ -8209,6 +8211,7 @@
                 "runOnDevice": "runOnDevice(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
                 "runOnTarget": "runOnTarget(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
                 "saveSchedule": "saveSchedule(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, ?int $scheduleId, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
+                "scheduleVisible": "scheduleVisible(int $userId, array $schedule): bool",
                 "setDeployActions": "setDeployActions(?RivetCore\\Rmm\\Deploy\\DeployActions $deploy): void",
                 "setPatchActions": "setPatchActions(?RivetCore\\Rmm\\Patch\\PatchActions $patches): void",
                 "updateScript": "updateScript(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $scriptId, array $in): RivetCore\\Rmm\\Technician\\ActionResult"
