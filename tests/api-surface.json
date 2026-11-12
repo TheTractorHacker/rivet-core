@@ -4209,7 +4209,9 @@
                     "123456789",
                     "1234567890",
                     "default"
-                ]
+                ],
+                "MAX_MACS": 32,
+                "MAX_MACS_IN": 1024
             },
             "methods": {
                 "cleanHardware": "static cleanHardware(array $d): array",
