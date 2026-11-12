@@ -77,10 +77,23 @@ if ($want -notmatch '^[0-9a-fA-F]{64}$') { Fail 'Expected SHA-256 must be 64 hex
 # Token: parameter, file, or environment (the environment is preferred; it does not appear in process listings).
 if (-not $Token -and $TokenFile) { $Token = (Get-Content -LiteralPath $TokenFile -Raw).Trim() }
 if (-not $Token) { $Token = $env:RIVETIT_ENROLL_TOKEN }
-$existing = Test-Path -LiteralPath (Join-Path $env:ProgramData 'RivetIT\Agent\device.token')
+$existing = Test-Path -LiteralPath (Join-Path $env:ProgramData 'RivetIT\Agent\device.token') # only trusted below: the owner check further down refuses an Agent folder a user created
 if (-not $Token -and -not $existing) { Fail 'An enrollment token is required for a first install.' 2 }
 
 # --- private work dir (SYSTEM + Administrators only) ----------------------------
+# CORE-16: a standard user can create folders under ProgramData and owns them. If RivetIT, RivetIT\Setup or RivetIT\Agent already exist they must be
+# owned by SYSTEM, Administrators or TrustedInstaller; otherwise the downloaded executable (hashed, then run by path) and the agent's configuration
+# could be swapped by that user. The agent itself repeats this check for its state directory.
+foreach ($sub in @('RivetIT', 'RivetIT\Setup', 'RivetIT\Agent')) {
+  $d = Join-Path $env:ProgramData $sub
+  if (Test-Path -LiteralPath $d) {
+    $item = Get-Item -LiteralPath $d -Force
+    $ownerSid = (Get-Acl -LiteralPath $d).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or ($ownerSid -notin @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'))) {
+      Fail "$d already exists but is a link or is owned by $ownerSid (a standard user may have created it). Remove it from an elevated prompt (takeown /F `"$d`" /R /D Y; Remove-Item -Recurse -Force `"$d`") and run this script again." 5
+    }
+  }
+}
 $work = Join-Path $env:ProgramData ('RivetIT\Setup\' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 & icacls.exe $work /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null

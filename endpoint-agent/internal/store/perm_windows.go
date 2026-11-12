@@ -5,20 +5,86 @@ package store
 import (
 	"encoding/base64"
 	"errors"
-	"os"
+	"fmt"
+	"path/filepath"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"rivetit-agent/internal/winacl"
 )
 
 // Directory DACL: protected (no inherited ACEs), SYSTEM and Administrators
 // full control, nobody else. UNVERIFIED on real Windows (built, not run).
 const dirSDDL = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 
+// ownedDirSDDL is dirSDDL plus an explicit owner (Administrators): a directory created with it can never be owned by the creating standard user.
+const ownedDirSDDL = "O:BA" + dirSDDL
+
+// ensureDir returns a state directory that only SYSTEM and Administrators own and can write (CORE-16). A directory that already exists is not
+// trusted merely because it is there: a standard user may create folders under %ProgramData% and owns what it creates, so it could have pre-created
+// RivetIT\Agent and filled it with a config.json (mesh_agent_path, server_url, ca_file ...) before the agent was installed. Such a directory, a
+// reparse point, or one whose parent RivetIT directory is untrusted, is refused with an actionable error and nothing is read from it.
 func ensureDir(dir string) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir = filepath.Clean(dir)
+	chain := []string{dir}
+	if parent := filepath.Dir(dir); strings.EqualFold(filepath.Base(parent), "RivetIT") {
+		chain = []string{parent, dir} // the default layout %ProgramData%\RivetIT\Agent: both levels are the agent's
+	}
+	for _, d := range chain {
+		if err := ensureTrustedDir(d); err != nil {
+			return fmt.Errorf("refusing to use the agent state directory: %w. %s", err, winacl.RepairHint(chain[0]))
+		}
+	}
+	return nil
+}
+
+func ensureTrustedDir(dir string) error {
+	info, err := winacl.Inspect(dir, true)
+	if err != nil {
 		return err
 	}
+	if info.NotFound {
+		// Create it atomically with an explicit owner and DACL, so there is no window in which it is owned by someone else. The parent of
+		// the first level is %ProgramData% (or a directory chosen with --state-dir) and must exist.
+		if err := createSecureDir(dir); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+			return fmt.Errorf("create %s: %w", dir, err)
+		}
+		if info, err = winacl.Inspect(dir, true); err != nil {
+			return err
+		}
+	}
+	if err := winacl.Check(info); err != nil {
+		// A directory this very function created always passes; one that does not was created (or changed) by somebody else.
+		return err
+	}
+	return setDirDACL(dir)
+}
+
+func createSecureDir(dir string) error {
+	// Missing ancestors (a custom --state-dir several levels deep) are created the same way, outermost first.
+	if parent := filepath.Dir(dir); parent != dir {
+		if pi, err := winacl.Inspect(parent, true); err == nil && pi.NotFound {
+			if err := createSecureDir(parent); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+				return err
+			}
+		}
+	}
+	sd, err := windows.SecurityDescriptorFromString(ownedDirSDDL)
+	if err != nil {
+		return err
+	}
+	p, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return err
+	}
+	sa := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+	return windows.CreateDirectory(p, sa)
+}
+
+// setDirDACL re-applies the protected DACL of an already verified directory (idempotent; also repairs an agent-created directory from an older version).
+func setDirDACL(dir string) error {
 	sd, err := windows.SecurityDescriptorFromString(dirSDDL)
 	if err != nil {
 		return err
