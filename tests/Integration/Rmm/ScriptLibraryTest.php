@@ -122,6 +122,17 @@ final class ScriptLibraryTest extends AutomationTestCase
         $this->assertSame(403, $a->createScript($this->approver, ['name' => 'Y'] + $base)->http);
     }
 
+    /** CORE-24: a technician restricted to some clients cannot publish a library script that runs on every client's devices. */
+    public function testAClientRestrictedTechnicianCannotCreateALibraryScript(): void
+    {
+        $a = $this->h->module->scriptActions();
+        $in = ['name' => 'Clear spooler', 'language' => 'bash', 'body' => "echo hi\n", 'params' => [], 'requires_approval' => false];
+        $this->h->tenancy->restrictUser(10, [$this->h->clientB]);
+        $r = $a->createScript($this->tech, $in);
+        $this->assertSame([403, false], [$r->http, $r->ok], 'create is as fleet-wide as update and retire');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_scripts_v2 WHERE name = 'Clear spooler'"));
+    }
+
     public function testRetiredScriptsCannotRunOrBeScheduledAndCanBeRestored(): void
     {
         $s = $this->script();
