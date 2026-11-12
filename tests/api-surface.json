@@ -5293,7 +5293,9 @@
                     "reboot_policy": "never",
                     "reboot_confirm": false,
                     "max_minutes": 60,
-                    "two_person": false,
+                    "two_person": false
+                },
+                "WINDOWS_DEFAULTS": {
                     "windows_update_mode": "leave",
                     "windows_feature_target": "none",
                     "windows_quality_defer_days": 0
@@ -5365,6 +5367,11 @@
         "RivetCore\\Rmm\\Patch\\PatchProtocol": {
             "kind": "final class",
             "constants": {
+                "ALL_JOB_TYPES": [
+                    "patch_scan",
+                    "patch_install",
+                    "patch_configure"
+                ],
                 "APPROVAL_MODES": [
                     "manual",
                     "auto"
@@ -5422,8 +5429,7 @@
                 "JOB_SCAN": "patch_scan",
                 "JOB_TYPES": [
                     "patch_scan",
-                    "patch_install",
-                    "patch_configure"
+                    "patch_install"
                 ],
                 "KINDS": [
                     "critical",

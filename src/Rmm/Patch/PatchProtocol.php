@@ -18,7 +18,9 @@ final class PatchProtocol
     public const JOB_INSTALL = 'patch_install';
     /** Windows Update control (1.0.0-rc.65): sets or restores the Windows Update POLICY registry values the agent owns. Windows only, destructive (offered once). */
     public const JOB_CONFIGURE = 'patch_configure';
-    public const JOB_TYPES = [self::JOB_SCAN, self::JOB_INSTALL, self::JOB_CONFIGURE];
+    public const JOB_TYPES = [self::JOB_SCAN, self::JOB_INSTALL];
+    /** Every patch job type including Windows Update control ({@see JOB_TYPES} keeps its released value). */
+    public const ALL_JOB_TYPES = [self::JOB_SCAN, self::JOB_INSTALL, self::JOB_CONFIGURE];
     public const CAP_SCAN = 'patch:scan';
     public const CAP_INSTALL = 'patch:install';
     public const CAP_CONFIGURE = 'patch:configure';
@@ -115,7 +117,7 @@ final class PatchProtocol
 
     public static function isPatchJob(mixed $type): bool
     {
-        return is_string($type) && in_array($type, self::JOB_TYPES, true);
+        return is_string($type) && in_array($type, self::ALL_JOB_TYPES, true);
     }
 
     /** Whether `$id` is a valid update id for a device of that operating system. */

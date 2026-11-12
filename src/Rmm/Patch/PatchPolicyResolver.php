@@ -33,10 +33,10 @@ final class PatchPolicyResolver
         'reboot_confirm' => false,
         'max_minutes' => PatchProtocol::MAX_MINUTES_DEFAULT,
         'two_person' => false,
-        'windows_update_mode' => 'leave',
-        'windows_feature_target' => 'none',
-        'windows_quality_defer_days' => 0,
     ];
+
+    /** Defaults of the Windows Update control settings (kept apart so {@see DEFAULTS} keeps its released value). */
+    public const WINDOWS_DEFAULTS = ['windows_update_mode' => 'leave', 'windows_feature_target' => 'none', 'windows_quality_defer_days' => 0];
 
     /**
      * @param list<PolicyLayer> $layers
@@ -52,7 +52,7 @@ final class PatchPolicyResolver
     {
         $decisions = PolicyResolver::resolve($layers);
         $sources = [];
-        $v = self::DEFAULTS;
+        $v = self::DEFAULTS + self::WINDOWS_DEFAULTS;
         foreach (PatchPolicySettings::keys() as $key) {
             if (!isset($decisions[$key]) || $decisions[$key]['mode'] !== 'override') {
                 continue;   // absent, or a `disable` (which patch settings never use)
