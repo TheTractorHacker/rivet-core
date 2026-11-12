@@ -2916,6 +2916,36 @@ paths:
         '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {description: '`invalid` or `confirmation_required`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /endpoint_devices/{id}/patches/configure:
+    post:
+      tags: [Technician]
+      operationId: configureDeviceWindowsUpdate
+      summary: Bring a Windows device to the Windows Update state its patch policy asks for (Windows Update control, `patching` switch)
+      description: |
+        Nothing in the body reaches the device: the `patch_configure` job carries the DESIRED state taken from the device's effective patch policy (`windows_update_mode`, `windows_feature_target`,
+        `windows_quality_defer_days`). `mode` is `dry_run` unless the body says `apply`; a dry run needs `rmm.patch.manage` and only reports what the agent WOULD change. `apply` needs `rmm.patch.install`
+        and `confirm: true` and is still a dry run while the `patch_live_install` limit is 0. `200 skipped` is `already_queued`, `automation_disabled` (another RMM manages the device), `externally_managed`
+        (WSUS, a group policy or MDM owns the setting), `not_reported` (no scan reported the state yet) or `off`/`in_sync` (nothing to change). A device whose agent did not announce `patch:configure`
+        answers `409 unsupported`. Windows devices only. Not run on Windows yet: docs/rmm/WINDOWS_UPDATE_CONTROL_TEST.md.
+      security: [{userToken: []}]
+      parameters: [{$ref: '#/components/parameters/DeviceId'}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode: {type: string, enum: [dry_run, apply], default: dry_run}
+                confirm: {type: boolean}
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {type: object, properties: {job_id: {type: string}, mode: {type: string, enum: [dry_run, apply]}, changes: {type: array, items: {type: string}}}}}}}
+        '200': {description: 'Nothing to do: `skipped` says why', content: {application/json: {schema: {type: object}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFoundOrDisabled'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {description: '`invalid` or `confirmation_required`', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
   /endpoint_devices/patches:
     get:
       tags: [Technician]

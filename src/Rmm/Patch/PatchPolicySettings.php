@@ -22,18 +22,26 @@ namespace RivetCore\Rmm\Patch;
  *   reboot_confirm   true: someone with the reboot grant accepted that devices of this policy restart by themselves after patching
  *   max_minutes      longest an install may run, 1 to 240 (default 60)
  *   two_person       true: approving an update by hand needs a second person
+ *   windows_update_mode      leave (the default: Core never touches the Windows Update policy) | managed (Windows only NOTIFIES and never installs by itself; Core installs what is approved)
+ *   windows_feature_target   none (the default) | hold (keep the feature version a device runs when the setting reaches it) | a named version, e.g. 24H2, 25H2, 26H2 (see
+ *                            {@see PatchProtocol::FEATURE_VERSION_RE}); applies to Windows devices only
+ *   windows_quality_defer_days  0 (the default: no deferral policy) to 30: Windows Update offers quality updates only after that many days
+ *   These three act on Windows devices that announced `patch:configure`, stay in effect until they return to their defaults (then the agent restores exactly what it changed)
+ *   and may only be changed by someone holding the grant to install patches ({@see \RivetCore\Rmm\Authz\RmmAbility::PATCH_INSTALL}).
  *
  * @api
  */
 final class PatchPolicySettings
 {
     public const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    /** The settings only a holder of the install grant may change: they decide what Windows installs on a device. */
+    public const WINDOWS_KEYS = ['windows_update_mode', 'windows_feature_target', 'windows_quality_defer_days'];
     public const AUTO_KINDS = ['critical', 'security', 'important', 'optional', 'driver'];
 
     /** @return list<string> */
     public static function keys(): array
     {
-        $k = ['ring', 'approval_mode', 'install_enabled', 'window_mode', 'window_maintenance_id', 'window_days', 'window_start', 'window_minutes', 'window_tz', 'reboot_policy', 'reboot_confirm', 'max_minutes', 'two_person'];
+        $k = ['ring', 'approval_mode', 'install_enabled', 'window_mode', 'window_maintenance_id', 'window_days', 'window_start', 'window_minutes', 'window_tz', 'reboot_policy', 'reboot_confirm', 'max_minutes', 'two_person', 'windows_update_mode', 'windows_feature_target', 'windows_quality_defer_days'];
         foreach (self::AUTO_KINDS as $kind) {
             $k[] = 'auto_days_' . $kind;
         }
@@ -127,6 +135,13 @@ final class PatchPolicySettings
                 return is_string($v) && strlen($v) <= 64 && in_array($v, \DateTimeZone::listIdentifiers(), true) ? [$v, null] : [null, 'window_tz must be a time zone name such as Europe/Berlin or UTC.'];
             case 'reboot_policy':
                 return is_string($v) && in_array($v, PatchProtocol::REBOOT_POLICIES, true) ? [$v, null] : [null, 'reboot_policy must be never, if_required_defer or if_required_now.'];
+            case 'windows_update_mode':
+                return is_string($v) && in_array($v, PatchProtocol::WU_MODES, true) ? [$v, null] : [null, 'windows_update_mode must be leave or managed.'];
+            case 'windows_feature_target':
+                return is_string($v) && ($v === PatchProtocol::FEATURE_TARGET_NONE || $v === PatchProtocol::FEATURE_TARGET_HOLD || PatchProtocol::validFeatureVersion($v))
+                    ? [$v, null] : [null, 'windows_feature_target must be none, hold or a feature version such as 25H2 (two digits, then H1 or H2).'];
+            case 'windows_quality_defer_days':
+                return is_int($v) && $v >= 0 && $v <= PatchProtocol::DEFER_DAYS_MAX ? [$v, null] : [null, 'windows_quality_defer_days must be a whole number from 0 to ' . PatchProtocol::DEFER_DAYS_MAX . '.'];
             case 'max_minutes':
                 return is_int($v) && $v >= 1 && $v <= PatchProtocol::MAX_MINUTES_MAX ? [$v, null] : [null, 'max_minutes must be 1 to ' . PatchProtocol::MAX_MINUTES_MAX . '.'];
         }

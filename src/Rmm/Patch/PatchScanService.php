@@ -84,7 +84,7 @@ final class PatchScanService
     /**
      * Validate the JSON a `patch_scan` job returned.
      *
-     * @return array{ok:true,manager:string,scan_state:string,wu_state:string,reboot_pending:bool,last_install_at:?string,truncated:bool,scanned_at:string,updates:list<array<string,mixed>>,dropped:int}|array{ok:false,error:string}
+     * @return array{ok:true,manager:string,scan_state:string,wu_state:string,reboot_pending:bool,last_install_at:?string,truncated:bool,scanned_at:string,updates:list<array<string,mixed>>,dropped:int,windows_update:?array<string,mixed>}|array{ok:false,error:string}
      */
     public static function cleanReport(mixed $raw, string $os): array
     {
@@ -131,7 +131,7 @@ final class PatchScanService
         return ['ok' => true, 'manager' => $manager, 'scan_state' => in_array($state, ['ok', 'partial'], true) ? $state : 'partial',
             'wu_state' => is_string($wu) && in_array($wu, PatchProtocol::WU_STATES, true) ? $wu : 'n/a', 'reboot_pending' => ($raw['reboot_pending'] ?? false) === true,
             'last_install_at' => $last, 'truncated' => ($raw['truncated'] ?? false) === true || $dropped > 0, 'scanned_at' => $at ?? gmdate('Y-m-d H:i:s'),
-            'updates' => $out, 'dropped' => $dropped];
+            'updates' => $out, 'dropped' => $dropped, 'windows_update' => $os === 'windows' ? WindowsUpdatePlan::cleanState($raw['windows_update'] ?? null) : null];
     }
 
     /**
@@ -183,7 +183,7 @@ final class PatchScanService
      * Store a validated report as the device's current patch state.
      *
      * @param array<string,mixed> $dev
-     * @param array{ok:true,manager:string,scan_state:string,wu_state:string,reboot_pending:bool,last_install_at:?string,truncated:bool,scanned_at:string,updates:list<array<string,mixed>>,dropped:int} $r
+     * @param array{ok:true,manager:string,scan_state:string,wu_state:string,reboot_pending:bool,last_install_at:?string,truncated:bool,scanned_at:string,updates:list<array<string,mixed>>,dropped:int,windows_update?:?array<string,mixed>} $r
      * @return array{total:int,new:int,security:int,gone:int}
      */
     public function apply(array $dev, array $r, ?string $jobId): array
@@ -250,6 +250,9 @@ final class PatchScanService
             return true;
         });
         $c = $this->counts($deviceId);
+        if (is_array($r['windows_update'] ?? null)) {
+            $this->storeWindowsState($dev, $r['windows_update'], true);   // before the evaluation below, which reads it
+        }
         $this->events?->emit(RmmEvent::PATCH_SCAN_COMPLETED, $dev, ['manager' => $r['manager'], 'scan_state' => $r['scan_state'], 'total' => $c['total'], 'security' => $c['security'] + $c['critical'],
             'reboot_pending' => $r['reboot_pending'], 'new' => $new]);
         $this->approvals?->autoApprove($dev);
@@ -257,6 +260,22 @@ final class PatchScanService
         $this->sql->run('UPDATE rmm_patch_scans SET evaluated_at = ? WHERE device_id = ?', [$this->sql->utcNow(), $deviceId]);
 
         return ['total' => $c['total'], 'new' => $new, 'security' => $c['security'] + $c['critical'], 'gone' => $gone];
+    }
+
+    /**
+     * Keep the Windows Update policy state a device reported (a scan's `windows_update`, or the `after` of a configure result) in its one durable row of rmm_patch_jobs
+     * (type `wu_state`; `ids_json` is the state, `created_at` when it was reported, `applied_at` when the reconciler last looked: the 2000-01-01 sentinel of `$due` means
+     * "look now"). No migration: the ledger table already holds free-form per-device rows, and the pruning leaves this type alone.
+     *
+     * @param array<string,mixed> $dev
+     * @param array<string,mixed> $state see {@see WindowsUpdatePlan::cleanState()}
+     */
+    public function storeWindowsState(array $dev, array $state, bool $due): void
+    {
+        $now = $this->sql->utcNow();
+        $this->sql->run('INSERT INTO rmm_patch_jobs (job_id, device_id, client_id, type, mode, ids_json, reboot_policy, source, created_at, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE client_id = VALUES(client_id), ids_json = VALUES(ids_json), created_at = VALUES(created_at), applied_at = VALUES(applied_at)',
+            [PatchProtocol::wuStateRowId((int) $dev['device_id']), (int) $dev['device_id'], (int) $dev['client_id'], PatchProtocol::LEDGER_WU_STATE, '', (string) json_encode($state), 'never', 'agent', $now, $due ? '2000-01-01 00:00:00' : $now]);
     }
 
     /**
@@ -336,7 +355,7 @@ final class PatchScanService
      *
      * @return int jobs applied
      */
-    public function applyPending(int $limit, ?PatchInstallService $installs): int
+    public function applyPending(int $limit, ?PatchInstallService $installs, ?PatchConfigureService $configures = null): int
     {
         $rows = $this->sql->all("SELECT j.* FROM rmm_patch_jobs p JOIN endpoint_agent_jobs j ON j.job_id = p.job_id
             WHERE p.applied_at IS NULL AND j.state IN ('succeeded','failed','timed_out','cancelled','expired')
@@ -350,6 +369,8 @@ final class PatchScanService
             }
             if ($j['type'] === PatchProtocol::JOB_SCAN) {
                 $n += $this->applyJob($dev, $j) ? 1 : 0;
+            } elseif ($j['type'] === PatchProtocol::JOB_CONFIGURE) {
+                $n += $configures !== null && $configures->applyJob($dev, $j) ? 1 : 0;
             } elseif ($installs !== null) {
                 $n += $installs->applyJob($dev, $j) ? 1 : 0;
             }

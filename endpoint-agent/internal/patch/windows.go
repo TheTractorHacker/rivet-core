@@ -156,6 +156,7 @@ func (e Engine) normaliseScan(res jobs.ExecResult, p ScanParams, maxOut int) rem
 		out.ScannedAt = rfc3339(t)
 	}
 	out.LastInstallAt = normTime(in.LastInstallAt)
+	out.WindowsUpdate = e.windowsState()
 	seen := map[string]bool{}
 	for _, u := range in.Updates {
 		if !ValidWindowsID(u.ID) || seen[u.ID] {
@@ -165,6 +166,20 @@ func (e Engine) normaliseScan(res jobs.ExecResult, p ScanParams, maxOut int) rem
 		out.Updates = append(out.Updates, normUpdate(u))
 	}
 	return finishScan(out, p.MaxItems, maxOut)
+}
+
+// windowsState reads the Windows Update policy state for the scan report (nil when there is no registry to read: the field is then absent).
+func (e Engine) windowsState() *WUState {
+	r := e.reg()
+	if r == nil {
+		return nil
+	}
+	snap, err := Read(r)
+	if err != nil {
+		return nil
+	}
+	st := BuildState(snap)
+	return &st
 }
 
 func normTime(s *string) *string {
