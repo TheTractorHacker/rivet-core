@@ -108,14 +108,30 @@ final class MeshCookie
      * unusable or the account is empty.
      *
      * @param int $now unix seconds (the caller's clock)
+     * @param int|null $ttlS CORE-3/14: the configured token lifetime in seconds. MeshCentral accepts a token for {@see self::MESH_ACCEPT_S} after its
+     *                       "time", so the lifetime is shortened by back-dating "time" by (MESH_ACCEPT_S - ttl). Null (the default) or a ttl of
+     *                       MESH_ACCEPT_S - BACKDATE_S or more keeps the fixed 120 s back-date, that is the original ~58 minute window.
      */
-    public static function login(string $keyHex, string $domain, string $account, int $now, ?string $iv = null): ?string
+    public static function login(string $keyHex, string $domain, string $account, int $now, ?string $iv = null, ?int $ttlS = null): ?string
     {
         if ($account === '') {
             return null;
         }
 
-        return self::encode(['u' => 'user/' . $domain . '/' . $account, 'a' => RmmProtocol::MESH_COOKIE_ACCESS, 'time' => $now - self::BACKDATE_S], $keyHex, $iv);
+        return self::encode(['u' => 'user/' . $domain . '/' . $account, 'a' => RmmProtocol::MESH_COOKIE_ACCESS, 'time' => $now - self::backdate($ttlS)], $keyHex, $iv);
+    }
+
+    /** MeshCentral's default login-token acceptance window (minutes 60) in seconds. */
+    public const MESH_ACCEPT_S = 3600;
+
+    /** Seconds to back-date the cookie: at least BACKDATE_S (clock skew), at most the acceptance window less 60 s. */
+    public static function backdate(?int $ttlS): int
+    {
+        if ($ttlS === null) {
+            return self::BACKDATE_S;
+        }
+
+        return max(self::BACKDATE_S, min(self::MESH_ACCEPT_S - 60, self::MESH_ACCEPT_S - $ttlS));
     }
 
     /**

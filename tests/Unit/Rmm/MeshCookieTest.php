@@ -71,6 +71,18 @@ final class MeshCookieTest extends TestCase
         $this->assertNull(M::login('', 'd', 'a', 1));
     }
 
+    /** CORE-3 / CORE-14: the configured lifetime sets the back-date; the default stays the original 120 s. */
+    public function testTokenLifetimeSetsTheBackdate(): void
+    {
+        $this->assertSame(120, M::backdate(null));
+        $this->assertSame(120, M::backdate(3600));
+        $this->assertSame(120, M::backdate(3480));
+        $this->assertSame(3300, M::backdate(300));
+        $this->assertSame(3540, M::backdate(10), 'never beyond the acceptance window less a minute');
+        $this->assertSame(9880, (M::decode((string) M::login(self::KEY, 'd', 'a', 10000), self::KEY) ?? [])['time'], 'unchanged default');
+        $this->assertSame(10000 - 3300, (M::decode((string) M::login(self::KEY, 'd', 'a', 10000, null, 300), self::KEY) ?? [])['time']);
+    }
+
     public function testAccountName(): void
     {
         $this->assertSame('rivetit-support', M::accountName('rivetit-support', 5, 'bob'));

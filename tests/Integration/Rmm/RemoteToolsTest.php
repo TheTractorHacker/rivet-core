@@ -337,6 +337,29 @@ final class RemoteToolsTest extends RemoteTestCase
         }
     }
 
+    /** CORE-3 / CORE-14: mesh_token_ttl_s is honoured for the cookie lifetime; the stored default keeps the legacy window. */
+    public function testMeshTokenTtlSettingShortensTheCookieLifetime(): void
+    {
+        $mock = new \RivetCore\Tests\Support\MockMeshServer();
+        try {
+            $key = \RivetCore\Rmm\Mesh\MeshCookie::newLoginKey();
+            $this->assertSame(200, $this->api('PUT', [$this->d(), 'remote', 'node'], $this->admin, ['node_id' => 'node//' . str_repeat('A', 64)])[0]);
+            $age = function (int $ttl) use ($mock, $key): int {
+                $this->assertTrue($this->h->module->admin()->saveMesh($this->admin, ['mesh_enabled' => 1, 'mesh_url' => $mock->url(), 'mesh_login_key' => $key, 'mesh_account_template' => 'rit-{user_id}', 'mesh_token_ttl_s' => $ttl])->ok);
+                [$c, $j] = $this->api('POST', [$this->d(), 'remote'], $this->tech, ['force' => true]);
+                $this->assertSame(200, $c);
+                $login = \RivetCore\Rmm\Mesh\MeshCookie::decode(urldecode((string) preg_replace('/^.*[?&]login=([^&]*).*$/', '$1', $j['url'])), $key);
+
+                return time() - (int) $login['time'];
+            };
+            $this->assertEqualsWithDelta(120, $age(300), 5, 'the stored default keeps the original ~58 minute window');
+            $this->assertEqualsWithDelta(3000, $age(600), 5, 'a 10 minute lifetime: accepted for 600 s of the 3600 s window');
+            $this->assertEqualsWithDelta(120, $age(3600), 5);
+        } finally {
+            $mock->stop();
+        }
+    }
+
     public function testMeshTerminalAndFilesViews(): void
     {
         $mock = new \RivetCore\Tests\Support\MockMeshServer();

@@ -130,12 +130,25 @@ final class MeshService
         if ($keyHex === '' || $account === '') {
             return self::fail('not_configured', 'The MeshCentral login key or account is missing.');
         }
-        $cookie = MeshCookie::login($keyHex, $domain, $account, $this->sql->time());
+        $cookie = MeshCookie::login($keyHex, $domain, $account, $this->sql->time(), null, $this->tokenTtl($cfg));
         if ($cookie === null) {
             return self::fail('not_configured', 'The MeshCentral login key is not usable.');
         }
 
         return ['ok' => true, 'code' => 'ok', 'message' => 'Opening the remote session.', 'url' => MeshCookie::launchUrl($base, $domain, $cookie, $node, self::VIEWMODES[$view] ?? \RivetCore\Rmm\RmmProtocol::MESH_VIEWMODE, $this->viewSettings?->hideFor(isset(self::VIEWMODES[$view]) ? $view : 'desktop') ?? 0), 'session_id' => bin2hex(random_bytes(8))];
+    }
+
+    /**
+     * The token lifetime to honour (CORE-3). The stored default (RmmSettings::MESH_TOKEN_TTL_DEFAULT_S, also the column default of every
+     * existing install) keeps the legacy ~58 minute window so that upgrading changes nothing; any other value is honoured.
+     *
+     * @param array<string,mixed> $cfg
+     */
+    private function tokenTtl(array $cfg): ?int
+    {
+        $ttl = (int) ($cfg['mesh_token_ttl_s'] ?? 0);
+
+        return $ttl > 0 && $ttl !== \RivetCore\Rmm\Settings\RmmSettings::MESH_TOKEN_TTL_DEFAULT_S ? $ttl : null;
     }
 
     /**
