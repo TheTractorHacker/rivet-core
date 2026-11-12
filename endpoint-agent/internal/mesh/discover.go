@@ -108,18 +108,20 @@ func (p *Probe) candidateOK(path string) bool {
 }
 
 type discoveryMemo struct {
-	mu   sync.Mutex
-	at   time.Time
-	goos string
-	list []string
+	mu    sync.Mutex
+	at    time.Time
+	goos  string
+	exec  []string
+	claim []string
 }
 
 // realDiscovery caches the discovery of the real machine: the agent's check-in loop calls Found() often, and a registry or directory sweep must not run each time.
 var realDiscovery discoveryMemo
 
-func (p Probe) discovered() []string {
+// discovered returns the executables that MAY be run (after the trust check) and the paths that may only be READ for a claim; see sweep.
+func (p Probe) discovered() (execs, claims []string) {
 	if !p.discover {
-		return nil
+		return nil, nil
 	}
 	if !p.realFS {
 		return p.sweep()
@@ -127,29 +129,89 @@ func (p Probe) discovered() []string {
 	realDiscovery.mu.Lock()
 	defer realDiscovery.mu.Unlock()
 	if realDiscovery.goos == p.GOOS && !realDiscovery.at.IsZero() && time.Since(realDiscovery.at) < discoveryRefresh {
-		return realDiscovery.list
+		return realDiscovery.exec, realDiscovery.claim
 	}
-	realDiscovery.list = p.sweep()
+	realDiscovery.exec, realDiscovery.claim = p.sweep()
 	realDiscovery.at, realDiscovery.goos = time.Now(), p.GOOS
-	return realDiscovery.list
+	return realDiscovery.exec, realDiscovery.claim
 }
 
-// sweep lists the candidate executables the service manager and the usual directories point at, most specific first, without duplicates.
-func (p Probe) sweep() []string {
+// programFilesRoots are the only places a discovered executable may be run from on Windows (the same roots the trust check in trust_windows.go requires).
+func (p Probe) programFilesRoots() []string {
 	var out []string
+	for _, e := range []string{"ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"} {
+		if r := p.Env(e); r != "" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// underRoots reports whether path lies strictly below one of the roots (case-insensitive, either separator, no ".." component).
+func underRoots(path string, roots []string) bool {
+	n := strings.ToLower(strings.ReplaceAll(path, "/", `\`))
+	if strings.Contains(n, `\..\`) || strings.HasSuffix(n, `\..`) {
+		return false
+	}
+	for _, r := range roots {
+		rr := strings.TrimRight(strings.ToLower(strings.ReplaceAll(r, "/", `\`)), `\`)
+		if rr != "" && strings.HasPrefix(n, rr+`\`) {
+			return true
+		}
+	}
+	return false
+}
+
+// sweep lists what the service manager and the usual directories point at, in two separate lists.
+//
+//   - execs: executables that may be RUN (the existing probe runs the agent with -nodeid, as SYSTEM). On Windows only a path below the Program Files roots, which a
+//     standard user cannot write to; Found() still applies the full owner/DACL trust check to it (trust_windows.go, CORE-16) before anything is executed. On Linux
+//     the root-ownership check of trust_unix.go does the same job.
+//   - claims: paths in any other place (ProgramData, the drive root, a service whose ImagePath is outside Program Files). They are NEVER executed: only an `.msh`
+//     file next to them is read (Probe.ClaimNodeID), and what it says is an untrusted claim the server can at most turn into a needs_approval state.
+//
+// Admin-only sources (the service configuration, the uninstall entry) come first.
+func (p Probe) sweep() (execs, claims []string) {
 	seen := map[string]bool{}
-	add := func(c string) {
-		if len(out) < maxDiscovered && p.candidateOK(c) && !seen[strings.ToLower(c)] {
-			seen[strings.ToLower(c)] = true
-			out = append(out, c)
+	add := func(c string, mayRun bool) {
+		k := strings.ToLower(c)
+		if len(execs)+len(claims) >= maxDiscovered || !p.candidateOK(c) || seen[k] {
+			return
+		}
+		seen[k] = true
+		if mayRun && (p.GOOS != "windows" || underRoots(c, p.programFilesRoots())) {
+			execs = append(execs, c)
+		} else if p.GOOS == "windows" {
+			claims = append(claims, c)
 		}
 	}
 	if p.GOOS == "windows" {
 		p.sweepWindows(add)
 	} else {
-		p.sweepLinux(add)
+		p.sweepLinux(func(c string) { add(c, true) })
 	}
-	return out
+	return execs, claims
+}
+
+// ClaimNodeID reads the node id a Mesh agent's `.msh` carries from a place the agent must not run anything from (see sweep). It returns "" when there is none. The
+// result is a claim, not a proof: it is reported like any device claim and the server maps nothing from it without an approval.
+func (p Probe) ClaimNodeID() string {
+	p.defaults()
+	_, claims := p.discovered()
+	for _, c := range claims {
+		i := strings.LastIndexAny(c, `\/`)
+		if i < 0 {
+			continue
+		}
+		for _, name := range mshNames(c) {
+			if b, err := p.ReadFile(c[:i+1] + name); err == nil && len(b) < 64*1024 {
+				if m := ParseMSH(string(b)); m.NodeID != "" {
+					return m.NodeID
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func (p Probe) reg(args ...string) string {
@@ -162,7 +224,7 @@ func (p Probe) reg(args ...string) string {
 	return out
 }
 
-func (p Probe) sweepWindows(add func(string)) {
+func (p Probe) sweepWindows(add func(string, bool)) {
 	// 1. Services whose name contains "mesh" (a custom --meshServiceName included): their ImagePath is the executable, wherever it was put or whatever it was renamed to.
 	var names []string
 	for _, l := range strings.Split(p.reg("query", `HKLM\SYSTEM\CurrentControlSet\Services`, "/f", "mesh", "/k"), "\n") {
@@ -172,16 +234,16 @@ func (p Probe) sweepWindows(add func(string)) {
 	}
 	for _, n := range names {
 		v := ParseRegistryValues(p.reg("query", `HKLM\SYSTEM\CurrentControlSet\Services\`+n, "/v", "ImagePath"))
-		add(ParseImagePath(v["imagepath"]))
+		add(ParseImagePath(v["imagepath"]), true)
 	}
 	// 2. The uninstall entry, in the 64-bit and the 32-bit registry view.
 	for _, view := range []string{"/reg:64", "/reg:32"} {
 		v := ParseRegistryValues(p.reg("query", `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Mesh Agent`, view))
 		if d := strings.TrimSpace(v["installlocation"]); d != "" {
-			add(strings.TrimRight(d, `\/`) + `\MeshAgent.exe`)
+			add(strings.TrimRight(d, `\/`)+`\MeshAgent.exe`, true)
 		}
 		if i := strings.TrimSpace(strings.Trim(v["displayicon"], `"`)); strings.HasSuffix(strings.ToLower(i), ".exe") {
-			add(i)
+			add(i, true)
 		}
 	}
 	// 3. Directories named like a Mesh agent below the program folders, holding an executable named like one (a renamed MeshAgent.exe, a second install).
@@ -193,7 +255,8 @@ func (p Probe) sweepWindows(add func(string)) {
 		if e == "SystemDrive" {
 			root += `\`
 		}
-		p.scanMeshDirs(root, `\`, add)
+		// Program Files may hold something to run; ProgramData and the drive root are writable by standard users: read-only claims there.
+		p.scanMeshDirs(root, `\`, func(c string) { add(c, e != "ProgramData" && e != "SystemDrive") })
 	}
 }
 

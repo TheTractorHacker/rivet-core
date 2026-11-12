@@ -224,7 +224,8 @@ func (p Probe) Found() string {
 		}
 	}
 	// Not in a default place: a renamed or portable install is found through its service, its uninstall entry or its directory.
-	for _, c := range p.discovered() {
+	execs, _ := p.discovered()
+	for _, c := range execs {
 		if p.Exists(c) && (p.Trusted == nil || p.Trusted(c)) {
 			return c
 		}

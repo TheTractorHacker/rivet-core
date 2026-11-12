@@ -68,71 +68,159 @@ func (f *fakeWin) probe(goos string) Probe {
 
 const svcQuery = `reg.exe query HKLM\SYSTEM\CurrentControlSet\Services /f mesh /k`
 
-func TestDiscoverWindowsTable(t *testing.T) {
-	svc := func(name string) string {
-		return "\r\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\" + name + "\r\n\r\nEnd of search: 1 match(es) found.\r\n"
-	}
-	img := func(v string) string {
-		return "\r\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\x\r\n    ImagePath    REG_EXPAND_SZ    " + v + "\r\n"
-	}
+var pfEnv = map[string]string{"ProgramFiles": `C:\Program Files`, "ProgramW6432": `C:\Program Files`, "ProgramFiles(x86)": `C:\Program Files (x86)`, "ProgramData": `C:\ProgramData`, "SystemDrive": `C:`}
+
+func svcKey(name string) string {
+	return "\r\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\" + name + "\r\n\r\nEnd of search: 1 match(es) found.\r\n"
+}
+
+func imgVal(v string) string {
+	return "\r\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\x\r\n    ImagePath    REG_EXPAND_SZ    " + v + "\r\n"
+}
+
+// TestDiscoverWindowsDecisionTable is the security decision of the discovery (CORE-16 class): which discovered paths may be EXECUTED (below Program Files, and only
+// then after the trust check) and which are only READ for a claim.
+func TestDiscoverWindowsDecisionTable(t *testing.T) {
 	uninstall := `reg.exe query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Mesh Agent `
 	for _, c := range []struct {
-		name  string
-		f     fakeWin
-		want  string
-		wantN int
+		name      string
+		f         fakeWin
+		wantExec  []string
+		wantClaim []string
 	}{
-		{"renamed exe behind a custom service name",
+		{"service below Program Files with a custom name and a renamed exe is runnable",
 			fakeWin{reg: map[string]string{
-				svcQuery: svc("AcmeMeshHelper"),
-				`reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\AcmeMeshHelper /v ImagePath`: img(`"D:\Acme\helper.exe" --meshServiceName=AcmeMeshHelper`)},
-				files: map[string]bool{`D:\Acme\helper.exe`: true}}, `D:\Acme\helper.exe`, 1},
-		{"unquoted image path",
+				svcQuery: svcKey("AcmeMeshHelper"),
+				`reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\AcmeMeshHelper /v ImagePath`: imgVal(`"C:\Program Files\Acme\helper.exe" --meshServiceName=AcmeMeshHelper`)}},
+			[]string{`C:\Program Files\Acme\helper.exe`}, nil},
+		{"service ImagePath in a user-writable place is never run, only read",
 			fakeWin{reg: map[string]string{
-				svcQuery: svc("MeshAgent"),
-				`reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\MeshAgent /v ImagePath`: img(`C:\Apps\MA\MeshAgent.exe -svc`)},
-				files: map[string]bool{`C:\Apps\MA\MeshAgent.exe`: true}}, `C:\Apps\MA\MeshAgent.exe`, 1},
-		{"service points at a user profile: never followed",
+				svcQuery: svcKey("MeshAgent"),
+				`reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\MeshAgent /v ImagePath`: imgVal(`C:\Apps\MA\MeshAgent.exe -svc`)}},
+			nil, []string{`C:\Apps\MA\MeshAgent.exe`}},
+		{"a traversal out of Program Files is never run (here it also lands in a profile and is dropped)",
 			fakeWin{reg: map[string]string{
-				svcQuery: svc("MeshAgent"),
-				`reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\MeshAgent /v ImagePath`: img(`"C:\Users\bob\AppData\Roaming\MeshAgent.exe"`)},
-				files: map[string]bool{`C:\Users\bob\AppData\Roaming\MeshAgent.exe`: true}}, ``, 0},
-		{"service name without mesh in it is ignored",
+				svcQuery: svcKey("MeshAgent"),
+				`reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\MeshAgent /v ImagePath`: imgVal(`"C:\Program Files\..\Users\x\MeshAgent.exe"`)}},
+			nil, nil},
+		{"a path in a profile is dropped altogether",
 			fakeWin{reg: map[string]string{
-				svcQuery: svc("Spooler"),
-				`reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\Spooler /v ImagePath`: img(`"C:\Windows\spoolsv.exe"`)},
-				files: map[string]bool{`C:\Windows\spoolsv.exe`: true}}, ``, 0},
-		{"32-bit uninstall view",
+				svcQuery: svcKey("MeshAgent"),
+				`reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\MeshAgent /v ImagePath`: imgVal(`"C:\Users\bob\AppData\Roaming\MeshAgent.exe"`)}},
+			nil, nil},
+		{"a service without mesh in its name is ignored",
 			fakeWin{reg: map[string]string{
-				uninstall + `/reg:32`: "\r\n    InstallLocation    REG_SZ    C:\\Program Files (x86)\\Mesh Agent\r\n"},
-				files: map[string]bool{`C:\Program Files (x86)\Mesh Agent\MeshAgent.exe`: true}}, `C:\Program Files (x86)\Mesh Agent\MeshAgent.exe`, 1},
-		{"display icon of the 64-bit view",
-			fakeWin{reg: map[string]string{
-				uninstall + `/reg:64`: "\r\n    DisplayIcon    REG_SZ    \"D:\\Mesh\\MeshAgent.exe\"\r\n"},
-				files: map[string]bool{`D:\Mesh\MeshAgent.exe`: true}}, `D:\Mesh\MeshAgent.exe`, 1},
-		{"portable copy in a Mesh directory under ProgramData, renamed",
-			fakeWin{env: map[string]string{"ProgramData": `C:\ProgramData`},
-				dirs: map[string][]DirEntry{
-					`C:\ProgramData`:              {{Name: "Microsoft", Dir: true}, {Name: "MeshPortable", Dir: true}},
-					`C:\ProgramData\MeshPortable`: {{Name: "MeshAgent-old.exe"}, {Name: "MeshAgent.msh"}, {Name: "MeshAgent.db"}}},
-				files: map[string]bool{`C:\ProgramData\MeshPortable\MeshAgent-old.exe`: true}}, `C:\ProgramData\MeshPortable\MeshAgent-old.exe`, 1},
-		{"nothing installed", fakeWin{}, ``, 0},
+				svcQuery: svcKey("Spooler"),
+				`reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\Spooler /v ImagePath`: imgVal(`"C:\Program Files\x\spoolsv.exe"`)}},
+			nil, nil},
+		{"32-bit uninstall view below Program Files (x86) is runnable",
+			fakeWin{reg: map[string]string{uninstall + `/reg:32`: "\r\n    InstallLocation    REG_SZ    C:\\Program Files (x86)\\Mesh Agent\r\n"}},
+			[]string{`C:\Program Files (x86)\Mesh Agent\MeshAgent.exe`}, nil},
+		{"uninstall DisplayIcon on another drive is a claim only",
+			fakeWin{reg: map[string]string{uninstall + `/reg:64`: "\r\n    DisplayIcon    REG_SZ    \"D:\\Mesh\\MeshAgent.exe\"\r\n"}},
+			nil, []string{`D:\Mesh\MeshAgent.exe`}},
+		{"a renamed exe planted under ProgramData is a claim, never runnable",
+			fakeWin{dirs: map[string][]DirEntry{
+				`C:\ProgramData`:            {{Name: "Microsoft", Dir: true}, {Name: "Mesh Agent", Dir: true}},
+				`C:\ProgramData\Mesh Agent`: {{Name: "MeshAgent.exe"}, {Name: "MeshAgent.msh"}}}},
+			nil, []string{`C:\ProgramData\Mesh Agent\MeshAgent.exe`}},
+		{"the same under the drive root",
+			fakeWin{dirs: map[string][]DirEntry{`C:\`: {{Name: "MeshAgent", Dir: true}}, `C:\MeshAgent`: {{Name: "MeshAgent.exe"}}}},
+			nil, []string{`C:\MeshAgent\MeshAgent.exe`}},
+		{"a Mesh directory below Program Files is runnable",
+			fakeWin{dirs: map[string][]DirEntry{`C:\Program Files`: {{Name: "Mesh Agent", Dir: true}}, `C:\Program Files\Mesh Agent`: {{Name: "MeshAgent-old.exe"}, {Name: "MeshAgent.db"}}}},
+			[]string{`C:\Program Files\Mesh Agent\MeshAgent-old.exe`}, nil},
+		{"nothing installed", fakeWin{}, nil, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			c.f.env = pfEnv
 			p := c.f.probe("windows")
 			p.Timeout = 1e9
-			if got := p.Found(); got != c.want {
-				t.Fatalf("Found: got %q want %q (runs %v)", got, c.want, c.f.runs)
-			}
-			if got := len(p.sweep()); got != c.wantN && c.want != "" {
-				t.Fatalf("sweep found %d, want %d", got, c.wantN)
+			p.Env = func(k string) string { return pfEnv[k] }
+			execs, claims := p.sweep()
+			if strings.Join(execs, "|") != strings.Join(c.wantExec, "|") || strings.Join(claims, "|") != strings.Join(c.wantClaim, "|") {
+				t.Fatalf("execs %q claims %q, want %q %q", execs, claims, c.wantExec, c.wantClaim)
 			}
 		})
 	}
 }
 
+// TestFoundNeverRunsAnUntrustedOrOutsideCandidate: Found() returns a discovered executable only below Program Files AND when the trust check passes; a claim path is
+// never returned, so it can never reach the code that runs `-nodeid`.
+func TestFoundNeverRunsAnUntrustedOrOutsideCandidate(t *testing.T) {
+	pf := `C:\Program Files\Acme\helper.exe`
+	planted := `C:\ProgramData\Mesh Agent\MeshAgent.exe`
+	f := &fakeWin{env: pfEnv, files: map[string]bool{pf: true, planted: true},
+		reg: map[string]string{
+			svcQuery: svcKey("AcmeMesh"),
+			`reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\AcmeMesh /v ImagePath`: imgVal(`"` + pf + `"`)},
+		dirs: map[string][]DirEntry{`C:\ProgramData`: {{Name: "Mesh Agent", Dir: true}}, `C:\ProgramData\Mesh Agent`: {{Name: "MeshAgent.exe"}}}}
+	var trustedAsked []string
+	p := f.probe("windows")
+	p.Timeout = 1e9
+	p.Env = func(k string) string { return pfEnv[k] }
+	p.Trusted = func(s string) bool { trustedAsked = append(trustedAsked, s); return s == pf }
+	if got := p.Found(); got != pf {
+		t.Fatalf("trusted exe below Program Files: %q", got)
+	}
+	// the owner/DACL check refuses it (a standard user owns it): nothing is found, and the planted copy is not even offered to the check
+	p.Trusted = func(s string) bool { trustedAsked = append(trustedAsked, s); return false }
+	trustedAsked = nil
+	if got := p.Found(); got != "" {
+		t.Fatalf("untrusted exe must not be found: %q", got)
+	}
+	for _, a := range trustedAsked {
+		if a == planted {
+			t.Fatal("a path under ProgramData reached the trust check as if it could be run")
+		}
+	}
+}
+
+// TestClaimFromAnMSHInAUserWritableDirIsReadOnlyAndNeverRuns: only reg.exe (reading the registry) is ever started; the planted .msh yields a claim.
+func TestClaimFromAnMSHInAUserWritableDirIsReadOnlyAndNeverRuns(t *testing.T) {
+	planted := `C:\ProgramData\Mesh Agent\MeshAgent.exe`
+	msh := "NodeID=" + testNode + "\n"
+	f := &fakeWin{env: pfEnv, files: map[string]bool{planted: true},
+		dirs: map[string][]DirEntry{`C:\ProgramData`: {{Name: "Mesh Agent", Dir: true}}, `C:\ProgramData\Mesh Agent`: {{Name: "MeshAgent.exe"}, {Name: "MeshAgent.msh"}}}}
+	p := f.probe("windows")
+	p.Timeout = 1e9
+	p.Env = func(k string) string { return pfEnv[k] }
+	p.ReadFile = func(s string) ([]byte, error) {
+		if s == `C:\ProgramData\Mesh Agent\MeshAgent.msh` {
+			return []byte(msh), nil
+		}
+		return nil, os.ErrNotExist
+	}
+	ranOther := false
+	run := p.Run
+	p.Run = func(ctx context.Context, dir, path string, args []string) (int, string, error) {
+		if path != "reg.exe" {
+			ranOther = true
+		}
+		return run(ctx, dir, path, args)
+	}
+	if p.Found() != "" {
+		t.Fatal("the planted agent must not be found as runnable")
+	}
+	if id := p.ClaimNodeID(); id != testNode {
+		t.Fatalf("claim %q", id)
+	}
+	rep := (&Reporter{StateDir: t.TempDir(), Probe: p}).Current(context.Background())
+	if rep == nil || !rep.Installed || rep.NodeID != testNode {
+		t.Fatalf("report %+v", rep)
+	}
+	if ranOther {
+		t.Fatal("a program other than reg.exe was started")
+	}
+	// no .msh, no claim, no report
+	p.ReadFile = func(string) ([]byte, error) { return nil, os.ErrNotExist }
+	if p.ClaimNodeID() != "" {
+		t.Fatal("no .msh, no claim")
+	}
+}
+
 func TestDiscoverIsOffForExplicitPathsAndNeverRunsAnything(t *testing.T) {
-	f := &fakeWin{reg: map[string]string{svcQuery: "\r\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\MeshAgent\r\n"}}
+	f := &fakeWin{reg: map[string]string{svcQuery: svcKey("MeshAgent")}}
 	p := f.probe("windows")
 	p.discover = false
 	p.Paths = []string{`C:\nowhere\MeshAgent.exe`}
