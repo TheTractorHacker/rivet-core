@@ -2,6 +2,15 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.62 (security: pentest 2026-11-08 agent fixes)
+
+<!-- Go endpoint agent group (rivet-core security-pentest-agent branch). The PHP group of this heading is written separately: merge, do not interleave. -->
+
+- **Agent (Go) group.**
+  - **CORE-16 (High, Windows).** The agent no longer trusts a pre-existing `%ProgramData%\RivetIT\Agent`: owner (SYSTEM/Administrators/TrustedInstaller), DACL (no write for anyone else) and reparse-point state are verified before anything is read, missing directories are created atomically with an owner and a protected DACL, and a refusal is logged to stderr and the Application event log with a repair command. The Mesh executable (`mesh_agent_path` or the default) must lie below Program Files with trusted ownership at every level (`trustedExe` was `return true`); `install-windows.ps1` repeats the owner check. New `internal/winacl` with Linux-runnable table tests. **Operator action** for an existing install whose directory has the wrong owner or ACL: see `docs/rmm/AGENT_STATE_DIRECTORY.md`. Not executed on Windows.
+  - **CORE-21 (Medium, Linux).** `file_put` creates, `fchmod`s and commits its temp file relative to an `O_DIRECTORY|O_NOFOLLOW` directory descriptor (`openat` `O_EXCL|O_NOFOLLOW`, inode check, `linkat`/`renameat`), closing the symlink swap between checksum and commit. Windows file_put is unchanged (CORE-7). No wire change.
+  - **CORE-25 (Medium).** `endpoint-agent/go.mod` pins `go 1.27.4` (govulncheck on go1.27.1: 11 reachable stdlib vulnerabilities; on go1.27.4: none, linux and windows), `make` refuses an older Go, CI `check-latest`. **Operator action:** rebuild and republish the agent binaries; none were rebuilt here.
+
 ## 1.0.0-rc.59 (XSS-through-DOM hardening from CodeQL; dependency bumps; no migration)
 
 - **Fix.** `command_palette.js`: a result's URL is now resolved with `sameOrigin()` before it is used as a link target (`a.href`) and before Enter navigates, so a record or page URL can never carry a `javascript:`/`data:` scheme or another origin. Closes CodeQL `js/xss-through-dom` at the two `it.url` sinks.
