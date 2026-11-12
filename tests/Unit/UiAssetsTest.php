@@ -72,10 +72,10 @@ final class UiAssetsTest extends TestCase
 
     /**
      * Pinned hash of the shared design CSS with the muted-text exception reverted. It changed once on purpose after the split (commit f64d0a6,
-     * 'outline-primary buttons use one colour': the label follows the theme accent) and again for rc.50 / rc.51 (navigation links, breadcrumbs and section tabs never underlined, commits 4e47bde, 6f55276, 2be7750). Any further change to this file must update this value
+     * 'outline-primary buttons use one colour': the label follows the theme accent) and again for rc.50 / rc.51 (navigation links, breadcrumbs and section tabs never underlined, commits 4e47bde, 6f55276, 2be7750) and again for rc.60 (the app-wide no-underline-on-hover rule at the end of the file). Any further change to this file must update this value
      * and say why; promote edition changes with scripts/promote-ui-assets.php so the manifest is rebuilt in the same step.
      */
-    private const DESIGN_CSS_RIVETIT_SPLIT_SHA256 = '77d7affade1079eedff23a434a25a9d38beba76135a76af3f1f8dba16a1989a3';
+    private const DESIGN_CSS_RIVETIT_SPLIT_SHA256 = 'b1d64b3fa1565d20001e21085c8427f9b0e33e3cec3bca14d4ab2d82932c4701';
 
     /** SHA-256 of RivetIT 26.10.68's js/<file>; Core's copy must be byte identical (the wizard: after reversing its reviewed deviation). */
     private const RIVETIT_JS_SHA256 = [

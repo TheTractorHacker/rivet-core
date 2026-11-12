@@ -319,7 +319,7 @@
     color: var(--if-primary, var(--color-accent, #0d9488));
     text-decoration: none;
 }
-.app-header-search-seeall:hover { text-decoration: underline; }
+.app-header-search-seeall:hover { text-decoration: none; }
 
 /* =============================================================================
    SECONDARY-SIDEBAR BRAND AREA
@@ -397,7 +397,7 @@
     text-decoration: none;
     transition: color .15s ease-out, background-color .15s ease-out;
 }
-/* Tabler ships a bare `a:hover { text-decoration: underline }`. The base rule
+/* Tabler ships a bare `a:hover { text-decoration: none }`. The base rule
    above sets text-decoration:none but has no :hover variant, so these back links
    were underlined on hover - measured: 'none' at rest, 'underline' on hover.
    The hover affordance here is already the colour lift plus the background tint

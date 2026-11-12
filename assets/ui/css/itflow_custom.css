@@ -2399,8 +2399,11 @@ main, main :where(div, span, a, p, li, strong, small, h1, h2, h3, h4, h5, h6, td
 .filter-chip-x:hover, .filter-chip-x:focus-visible { opacity: 1; background: rgba(127, 127, 127, .25); }
 @media (min-width: 768px) { #assetMoreFilters.collapse:not(.show) { display: block !important; } }
 
-.table-sticky-head { max-height: calc(100vh - 16rem); min-height: 12rem; overflow: auto; }
-.table-sticky-head thead th, .table-sticky-head thead td { position: sticky; top: 0; z-index: 3; background: var(--tblr-bg-surface-secondary, #f6f8fb); box-shadow: inset 0 -1px 0 var(--tblr-border-color, #dde2e8); }
+.table-sticky-head { max-height: calc(100vh - 16rem); min-height: 12rem; overflow: auto; padding-top: 0; scroll-padding-top: 0; }
+/* Collapsed borders paint sticky header cells about a pixel below the scrollport edge, so scrolled rows showed through as a sliver above the header; separate borders keep the header flush. */
+.table-sticky-head > .table { border-collapse: separate; border-spacing: 0; }
+.table-sticky-head thead th, .table-sticky-head thead td { border-bottom-width: 0; position: sticky; top: 0; z-index: 3; background: var(--tblr-bg-surface-secondary, #f6f8fb); /* the second shadow extends the header's own fill upward so no row can show through a gap above it while the body scrolls */
+  box-shadow: inset 0 -1px 0 var(--tblr-border-color, #dde2e8), 0 -8px 0 0 var(--tblr-bg-surface-secondary, #f6f8fb); }
 .assets-table > :not(caption) > * > * { padding: .5rem .75rem; vertical-align: middle; }
 .assets-table .asset-inline-caret { opacity: 0; font-size: .65em; }
 .assets-table .asset-inline-trigger:hover .asset-inline-caret,

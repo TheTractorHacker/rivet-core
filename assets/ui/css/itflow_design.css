@@ -1113,3 +1113,11 @@ html.rvp-open { overflow: hidden; }
 @keyframes rvp-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rvp-pop { from { opacity: 0; transform: translateY(-8px) scale(.985); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .rvp-overlay, .rvp-box { animation: none; } }
+
+/* House rule: no link or control ever underlines on hover (Tabler's bare `a:hover { text-decoration: underline }` and the per-page
+   hover rules it inspired are all overridden here, last, so a new page cannot bring one back). Resting underlines for prose links
+   are a separate accessibility choice and are untouched. Focus keeps its outline. */
+a:hover, a:active, a:hover *, button:hover, [role="button"]:hover, [role="link"]:hover, .btn:hover, .nav-link:hover,
+.dropdown-item:hover, .list-group-item-action:hover, .page-link:hover, .badge:hover, label:hover {
+  text-decoration: none !important;
+}
