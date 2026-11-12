@@ -116,7 +116,7 @@ final class DeviceValidatorTest extends TestCase
             'version v' => [['agent_version' => 'v1.2.3'], 'agent_version'],
             'version type' => [['agent_version' => 123], 'agent_version'],
             'macs not list' => [['mac_addresses' => 'aa'], 'mac_addresses'],
-            'macs too many' => [['mac_addresses' => array_fill(0, 33, 'aa:bb:cc:00:00:01')], 'mac_addresses'],
+            'macs absurdly many' => [['mac_addresses' => array_fill(0, 1025, 'aa:bb:cc:00:00:01')], 'mac_addresses'],
         ];
     }
 
@@ -148,5 +148,21 @@ final class DeviceValidatorTest extends TestCase
             $macs[] = sprintf('aa:bb:cc:00:00:%02x', $i);
         }
         $this->assertCount(32, V::validateDevice($this->dev(['mac_addresses' => $macs]))['macs']);
+    }
+
+    /** A container host with hundreds of veth/bridge NICs enrols: at most 32 are kept and the hardware addresses come first. */
+    public function testAContainerHostWithManyNicsEnrolsAndKeepsHardwareAddressesFirst(): void
+    {
+        $in = [];
+        for ($i = 0; $i < 300; $i++) {
+            $in[] = sprintf('02:42:ac:11:%02x:%02x', intdiv($i, 256), $i % 256);   // locally administered (docker/veth)
+        }
+        $in[] = '00-1B-21-00-00-01';   // universally administered (hardware OUI), listed last
+        $in[] = 'a8:5e:45:00:00:02';
+        $macs = V::validateDevice($this->dev(['mac_addresses' => $in]))['macs'];
+        $this->assertCount(V::MAX_MACS, $macs);
+        $this->assertSame('00:1b:21:00:00:01', array_values($macs)[0]);
+        $this->assertContains('a8:5e:45:00:00:02', $macs);
+        $this->assertSame(count($macs), count(array_unique($macs)));
     }
 }
