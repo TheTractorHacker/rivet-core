@@ -78,6 +78,67 @@ final class AlertingActions
         return true;
     }
 
+    /**
+     * Where an administrator may put a window or an escalation policy: a client or a device inside his clients; any other scope (all, site, group, tag) reaches the
+     * devices of every client and is for a caller who sees every client (TEN-4). A client or device out of scope is the same 404 as one that does not exist.
+     */
+    private function scopeWriteRefusal(int $uid, string $type, int $id): ?ActionResult
+    {
+        if ($type === 'client') {
+            return $this->authz->clientOk($uid, $id) ? null : ActionResult::fail(404, 'not_found', 'Client not found.');
+        }
+        if ($type === 'device') {
+            $d = $this->devices->find($id);
+
+            return $d !== null && $this->authz->clientOk($uid, (int) $d['client_id']) ? null : ActionResult::fail(404, 'not_found', 'Device not found.');
+        }
+
+        return $this->authz->visibleClientIds($uid) === null ? null
+            : ActionResult::fail(403, 'forbidden', 'That scope reaches every client; ask an administrator whose access is not limited to some clients.');
+    }
+
+    /** TEN-12: a scope id is a whole number, or a string of digits only (never a float, a bool, an array, a padded or negative or absurdly large value). */
+    private static function strictId(mixed $v): ?int
+    {
+        if (is_string($v) && preg_match('/^[0-9]{1,9}$/D', $v) === 1) {
+            return (int) $v;
+        }
+
+        return is_int($v) && $v >= 0 && $v <= 2147483647 ? $v : null;
+    }
+
+    /**
+     * The scope of a window or an escalation policy, normalised ONCE: the type and id used for the authorization are the ones handed to the store (a rebuilt input
+     * carries the normalised integer, never the raw value). A present `scope_id` that is not a clean id is a 422; a client or device scope needs an id of at least 1.
+     *
+     * @param array<string,mixed> $in
+     * @return array{0:string,1:int,2:array<string,mixed>,3:?ActionResult} [type, id, input for the store, refusal]
+     */
+    private function scopeInput(array $in, string $defaultType, int $defaultId): array
+    {
+        $type = $defaultType;
+        if (array_key_exists('scope_type', $in)) {
+            if (!is_string($in['scope_type'])) {
+                return [$type, 0, $in, ActionResult::fail(422, 'invalid', 'scope_type must be text.')];
+            }
+            $type = $in['scope_type'];
+        }
+        $id = $type === 'all' ? 0 : $defaultId;
+        if (array_key_exists('scope_id', $in)) {
+            $n = self::strictId($in['scope_id']);
+            if ($n === null) {
+                return [$type, 0, $in, ActionResult::fail(422, 'invalid', 'scope_id must be a whole number.')];
+            }
+            $id = $type === 'all' ? 0 : $n;
+            $in['scope_id'] = $id;
+        }
+        if (in_array($type, ['client', 'device'], true) && $id < 1) {
+            return [$type, $id, $in, ActionResult::fail(422, 'invalid', 'scope_id must be the id of the ' . $type . '.')];
+        }
+
+        return [$type, $id, $in, null];
+    }
+
     // ------------------------------------------------------------------ alerts
 
     /**
@@ -231,7 +292,7 @@ final class AlertingActions
             return $why === null ? null : ActionResult::fail(403, 'forbidden', $why);
         }
 
-        return $this->role($who->userId, RmmAbility::ADMIN);
+        return $this->role($who->userId, RmmAbility::ADMIN) ?? $this->scopeWriteRefusal($who->userId, $scope, $scopeId);
     }
 
     /** @param array<string,mixed> $in */
@@ -240,10 +301,9 @@ final class AlertingActions
         if (($e = $this->view($who->userId)) !== null) {
             return $e;
         }
-        $scope = is_string($in['scope_type'] ?? null) ? $in['scope_type'] : 'all';
-        $scopeId = is_int($in['scope_id'] ?? null) ? $in['scope_id'] : 0;
-        if (($e = $this->windowScopeAllowed($who, $scope, $scopeId)) !== null) {
-            return $e;
+        [$scope, $scopeId, $in, $bad] = $this->scopeInput($in, 'all', 0);
+        if ($bad !== null || ($e = $this->windowScopeAllowed($who, $scope, $scopeId)) !== null) {
+            return $bad ?? $e;
         }
         try {
             $w = $this->maintenance->create($in, $who->userId);
@@ -268,8 +328,10 @@ final class AlertingActions
         if (($e = $this->windowScopeAllowed($who, $cur['scope_type'], $cur['scope_id'])) !== null) {
             return $e;
         }
-        $scope = is_string($in['scope_type'] ?? null) ? $in['scope_type'] : $cur['scope_type'];
-        $scopeId = is_int($in['scope_id'] ?? null) ? $in['scope_id'] : ($scope === 'all' ? 0 : $cur['scope_id']);
+        [$scope, $scopeId, $in, $bad] = $this->scopeInput($in, $cur['scope_type'], $cur['scope_id']);
+        if ($bad !== null) {
+            return $bad;
+        }
         if (($scope !== $cur['scope_type'] || $scopeId !== $cur['scope_id']) && ($e = $this->windowScopeAllowed($who, $scope, $scopeId)) !== null) {
             return $e;
         }
@@ -385,6 +447,10 @@ final class AlertingActions
         if (($e = $this->role($who->userId, RmmAbility::ADMIN)) !== null) {
             return $e;
         }
+        [$scope, $scopeId, $in, $bad] = $this->scopeInput($in, 'all', 0);
+        if ($bad !== null || ($e = $this->scopeWriteRefusal($who->userId, $scope, $scopeId)) !== null) {
+            return $bad ?? $e;
+        }
         try {
             $p = $this->escalation->createPolicy($in, $who->userId);
         } catch (\InvalidArgumentException $ex) {
@@ -404,6 +470,16 @@ final class AlertingActions
         $cur = $this->escalation->findPolicy($policyId);
         if ($cur === null || !$this->scopeVisible($who->userId, $cur['scope_type'], $cur['scope_id'])) {
             return ActionResult::fail(404, 'not_found', 'Policy not found.');
+        }
+        if (($e = $this->scopeWriteRefusal($who->userId, $cur['scope_type'], $cur['scope_id'])) !== null) {
+            return $e;
+        }
+        [$newScope, $newId, $in, $bad] = $this->scopeInput($in, $cur['scope_type'], $cur['scope_id']);
+        if ($bad !== null) {
+            return $bad;
+        }
+        if (($newScope !== $cur['scope_type'] || $newId !== $cur['scope_id']) && ($e = $this->scopeWriteRefusal($who->userId, $newScope, $newId)) !== null) {
+            return $e;
         }
         try {
             $p = $this->escalation->updatePolicy($policyId, $in);
@@ -426,6 +502,9 @@ final class AlertingActions
         $cur = $this->escalation->findPolicy($policyId);
         if ($cur === null || !$this->scopeVisible($who->userId, $cur['scope_type'], $cur['scope_id'])) {
             return ActionResult::fail(404, 'not_found', 'Policy not found.');
+        }
+        if (($e = $this->scopeWriteRefusal($who->userId, $cur['scope_type'], $cur['scope_id'])) !== null) {
+            return $e;
         }
         if (!$this->escalation->deletePolicy($policyId)) {
             return ActionResult::fail(404, 'not_found', 'Policy not found.');

@@ -540,7 +540,8 @@ final class TechnicianApi
             $svc = $read->scheduleService();
             if (!isset($seg[1])) {
                 if ($method === 'GET') {
-                    return self::json(200, ['data' => $svc->all()]);
+                    // TEN-2: a caller limited to some clients sees the schedules that run on their own clients and devices, not the others'.
+                    return self::json(200, ['data' => array_values(array_filter($svc->all(), fn (array $s): bool => $this->scheduleSeen($uid, $s)))]);
                 }
                 if ($method === 'POST' && $this->scripts !== null) {
                     [$in, $bad] = $this->jsonBody($req);
@@ -557,7 +558,7 @@ final class TechnicianApi
                 if ($method === 'GET') {
                     $s = $svc->get($rid);
 
-                    return $s === null ? self::json(404, ['error' => 'Schedule not found.', 'code' => 'not_found']) : self::json(200, ['schedule' => $s, 'runs' => $svc->runs($rid, 20)]);
+                    return $s === null || !$this->scheduleSeen($uid, $s) ? self::json(404, ['error' => 'Schedule not found.', 'code' => 'not_found']) : self::json(200, ['schedule' => $s, 'runs' => $svc->runs($rid, 20)]);
                 }
                 if ($put && $this->scripts !== null) {
                     [$in, $bad] = $this->jsonBody($req);
@@ -571,7 +572,8 @@ final class TechnicianApi
                 return $noMethod;
             }
             if ($sub === 'history' && $method === 'GET' && $sub2 === null) {
-                if ($svc->get($rid) === null) {
+                $cur = $svc->get($rid);
+                if ($cur === null || !$this->scheduleSeen($uid, $cur)) {
                     return self::json(404, ['error' => 'Schedule not found.', 'code' => 'not_found']);
                 }
                 $visible = $this->authz->visibleClientIds($uid);
@@ -657,6 +659,12 @@ final class TechnicianApi
     private function approvalSeen(int $uid, array $approval): bool
     {
         return $this->scripts !== null ? $this->scripts->approvalVisible($uid, $approval) : $this->authz->visibleClientIds($uid) === null;
+    }
+
+    /** @param array<string,mixed> $schedule */
+    private function scheduleSeen(int $uid, array $schedule): bool
+    {
+        return $this->scripts !== null ? $this->scripts->scheduleVisible($uid, $schedule) : $this->authz->visibleClientIds($uid) === null;
     }
 
     /** A saved schedule: 201/200 with the schedule, or 202 when it waits for an approval. */

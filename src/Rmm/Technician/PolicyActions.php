@@ -36,10 +36,36 @@ final class PolicyActions
         return $why === null ? null : ActionResult::fail(403, 'forbidden', $why);
     }
 
+    /** TEN-3: a policy is one object for every client (what its devices are told, and script checks run code): changing it is not for a caller limited to some clients. */
+    private function fleetWide(RmmPrincipal $who): ?ActionResult
+    {
+        return $this->authz->visibleClientIds($who->userId) === null ? null
+            : ActionResult::fail(403, 'forbidden', 'Policies apply to every client; ask an administrator whose access is not limited to some clients.');
+    }
+
+    /**
+     * Where a caller may assign a policy: a client or device inside his clients (a client or device out of scope is the same 404 as one that does not exist); the other
+     * scopes (global, site, group, tag) reach every client.
+     */
+    private function scopeRefusal(RmmPrincipal $who, string $type, int $id): ?ActionResult
+    {
+        $visible = $this->authz->visibleClientIds($who->userId);
+        if ($visible === null) {
+            return null;
+        }
+        if ($type === 'client' || $type === 'device') {
+            $client = $this->store->scopeClientId($type, $id);
+
+            return $client !== null && in_array($client, $visible, true) ? null : ActionResult::fail(404, 'not_found', $type === 'client' ? 'Client not found.' : 'Device not found.');
+        }
+
+        return $this->fleetWide($who);
+    }
+
     /** @param array<string,mixed> $in {name, description?, settings} */
     public function create(RmmPrincipal $who, array $in): ActionResult
     {
-        if (($e = $this->admin($who)) !== null) {
+        if (($e = $this->admin($who) ?? $this->fleetWide($who)) !== null) {
             return $e;
         }
         try {
@@ -55,7 +81,7 @@ final class PolicyActions
     /** @param array<string,mixed> $in any of name, description, settings, enabled */
     public function update(RmmPrincipal $who, int $policyId, array $in): ActionResult
     {
-        if (($e = $this->admin($who)) !== null) {
+        if (($e = $this->admin($who) ?? $this->fleetWide($who)) !== null) {
             return $e;
         }
         $before = $this->store->find($policyId);
@@ -75,7 +101,7 @@ final class PolicyActions
 
     public function delete(RmmPrincipal $who, int $policyId): ActionResult
     {
-        if (($e = $this->admin($who)) !== null) {
+        if (($e = $this->admin($who) ?? $this->fleetWide($who)) !== null) {
             return $e;
         }
         $p = $this->store->find($policyId);
@@ -97,6 +123,11 @@ final class PolicyActions
         if ($p === null) {
             return ActionResult::fail(404, 'not_found', 'Policy not found.');
         }
+        $type = is_string($in['scope_type'] ?? null) ? $in['scope_type'] : '';
+        $sid = is_int($in['scope_id'] ?? null) ? $in['scope_id'] : (is_string($in['scope_id'] ?? null) && ctype_digit($in['scope_id']) ? (int) $in['scope_id'] : 0);
+        if ($type !== '' && ($e = $this->scopeRefusal($who, $type, $sid)) !== null) {
+            return $e;
+        }
         try {
             $a = $this->store->assign($policyId, $in, $who->userId);
         } catch (\InvalidArgumentException $ex) {
@@ -113,6 +144,10 @@ final class PolicyActions
     {
         if (($e = $this->admin($who)) !== null) {
             return $e;
+        }
+        $cur = $this->store->assignment($assignmentId);
+        if ($cur === null || $this->scopeRefusal($who, (string) $cur['scope_type'], (int) $cur['scope_id']) !== null) {
+            return ActionResult::fail(404, 'not_found', 'Assignment not found.');   // out of scope looks exactly like missing
         }
         $a = $this->store->unassign($assignmentId);
         if ($a === null) {

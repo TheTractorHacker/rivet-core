@@ -424,6 +424,17 @@ final class RmmAdmin
         if ($os !== null && AgentOs::normalize($os) === null) {
             return ActionResult::fail(422, 'invalid', 'The platform must be windows or linux.');
         }
+        // TEN-5: a caller limited to some clients clears the update state of a device of his own, never of another client's device or of every device.
+        $visible = $this->authz->visibleClientIds($by->userId);
+        if ($visible !== null) {
+            if ($deviceId === null) {
+                return ActionResult::fail(403, 'forbidden', 'Clearing every device reaches every client; ask an administrator whose access is not limited to some clients.');
+            }
+            $dev = $this->devices->find($deviceId);
+            if ($dev === null || !in_array((int) $dev['client_id'], $visible, true)) {
+                return ActionResult::fail(404, 'not_found', 'Device not found.');
+            }
+        }
         $n = $this->updates->clearUpdateFailures($deviceId, $version, $os === null ? null : AgentOs::normalize($os));
         $this->audit->record('Agent Update Failures Cleared', "{$by->userName} cleared update failures (device " . ($deviceId ?? 'all') . ', version ' . ($version ?? 'all') . ", $n changed)", 0, 0);
 

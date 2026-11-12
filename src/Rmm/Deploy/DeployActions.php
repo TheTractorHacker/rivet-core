@@ -629,9 +629,13 @@ final class DeployActions
         $approvalId = (int) $approval['approval_id'];
         $clients = $this->approvals->clientsOf($request);
         foreach ($clients ?: [0] as $c) {
+            // TEN-8: a request that reaches a client outside the caller's scope (or names none) is the same 404 as an unknown approval; only then the ability.
+            if (!$this->authz->clientOk($who->userId, $c) || ($c === 0 && $this->authz->visibleClientIds($who->userId) !== null)) {
+                return ActionResult::fail(404, 'not_found', 'Approval not found.');
+            }
             $denied = $this->authz->check($who->userId, RmmAbility::SOFTWARE_DEPLOY, $c);
-            if ($denied !== null || ($c > 0 && !$this->authz->clientOk($who->userId, $c)) || ($c === 0 && $this->authz->visibleClientIds($who->userId) !== null)) {
-                return ActionResult::fail($denied !== null ? 403 : 404, $denied !== null ? 'forbidden' : 'not_found', $denied ?? 'Approval not found.');
+            if ($denied !== null) {
+                return ActionResult::fail(403, 'forbidden', $denied);
             }
         }
         /** @var array{ok:bool,code?:string,error?:string} $d */

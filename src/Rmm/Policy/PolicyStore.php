@@ -236,6 +236,24 @@ final class PolicyStore
         return $n;
     }
 
+    /**
+     * The client a policy assignment scope belongs to: the client itself, or the client of a device; null for a scope that spans clients (global, site, group, tag),
+     * for a device that does not exist, and for any other value.
+     */
+    public function scopeClientId(string $type, int $scopeId): ?int
+    {
+        if ($type === 'client') {
+            return $scopeId;
+        }
+        if ($type === 'device') {
+            $d = $this->sql->one('SELECT client_id FROM endpoint_agent_devices WHERE device_id = ?', [$scopeId]);
+
+            return $d === null ? null : (int) $d['client_id'];
+        }
+
+        return null;
+    }
+
     private function checkScope(string $type, int $scopeId): void
     {
         $ok = match ($type) {
