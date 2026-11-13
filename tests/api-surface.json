@@ -2207,6 +2207,263 @@
                 "status": "status(): array"
             }
         },
+        "RivetCore\\Monitoring\\Inbound\\EngineConfig": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(int $minConsecutiveDown = 1, int $minDownSeconds = 0, int $noteIntervalSeconds = 1800, int $maxOpensPerHour = 6, ?RivetCore\\Monitoring\\Inbound\\MonitorTarget $defaultTarget = NULL, string $priority = 'High', string $category = '', string $sourceLabel = 'Uptime Kuma')"
+            },
+            "properties": {
+                "category": "readonly string",
+                "defaultTarget": "readonly ?RivetCore\\Monitoring\\Inbound\\MonitorTarget",
+                "maxOpensPerHour": "readonly int",
+                "minConsecutiveDown": "readonly int",
+                "minDownSeconds": "readonly int",
+                "noteIntervalSeconds": "readonly int",
+                "priority": "readonly string",
+                "sourceLabel": "readonly string"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\EngineOutcome": {
+            "kind": "final class",
+            "constants": {
+                "CLOSED_BY_HUMAN": "closed_by_human",
+                "DUPLICATE": "duplicate",
+                "FLAP_SUPPRESSED": "flap_suppressed",
+                "IGNORED_MAINTENANCE": "ignored_maintenance",
+                "IGNORED_PENDING": "ignored_pending",
+                "NOTED": "noted",
+                "OPENED": "opened",
+                "RESOLVED": "resolved",
+                "STALE": "stale",
+                "TEST": "test",
+                "UNCHANGED": "unchanged",
+                "WAITING": "waiting"
+            },
+            "methods": {
+                "__construct": "__construct(string $action, ?int $ticketId = NULL)"
+            },
+            "properties": {
+                "action": "readonly string",
+                "ticketId": "readonly ?int"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\InboundAuthenticator": {
+            "kind": "final class",
+            "constants": {
+                "HEADER": "X-Webhook-Secret",
+                "MIN_SECRET_LENGTH": 16
+            },
+            "methods": {
+                "__construct": "__construct(array $secrets)",
+                "authenticate": "authenticate(array $headers): bool",
+                "isConfigured": "isConfigured(): bool"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\InboundEvent": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(string $source, bool $isTest, ?RivetCore\\Monitoring\\Inbound\\MonitorStatus $status, string $monitorKey, string $monitorName, ?int $time, string $message = '', string $url = '', string $hostname = '', string $type = '', array $tags = [])"
+            },
+            "properties": {
+                "hostname": "readonly string",
+                "isTest": "readonly bool",
+                "message": "readonly string",
+                "monitorKey": "readonly string",
+                "monitorName": "readonly string",
+                "source": "readonly string",
+                "status": "readonly ?RivetCore\\Monitoring\\Inbound\\MonitorStatus",
+                "tags": "readonly array",
+                "time": "readonly ?int",
+                "type": "readonly string",
+                "url": "readonly string"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\InboundHandler": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Monitoring\\Inbound\\InboundAuthenticator $auth, RivetCore\\Monitoring\\Inbound\\PayloadParserInterface $parser, RivetCore\\Monitoring\\Inbound\\IncidentEngine $engine, ?RivetCore\\Monitoring\\Inbound\\RateLimiterInterface $limiter = NULL, ?Psr\\Log\\LoggerInterface $logger = NULL, int $maxBody = 65536)",
+                "handle": "handle(array $headers, string $rawBody, string $remoteIp): RivetCore\\Monitoring\\Inbound\\InboundResult"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\InboundResult": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(int $status, array $body, array $headers = [])",
+                "json": "json(): string"
+            },
+            "properties": {
+                "body": "readonly array",
+                "headers": "readonly array",
+                "status": "readonly int"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\Incident": {
+            "kind": "final class",
+            "constants": {
+                "HEALTHY": "healthy",
+                "OPEN": "open",
+                "PENDING": "pending"
+            },
+            "methods": {
+                "__construct": "__construct(string $source, string $monitorKey, string $state = 'healthy', ?int $ticketId = NULL, ?int $lastTicketId = NULL, int $consecutiveDown = 0, ?int $downSince = NULL, ?int $lastEventAt = NULL, ?int $lastStatus = NULL, ?int $lastNoteAt = NULL, array $opens = [], ?int $clientId = NULL, ?int $assetId = NULL, string $monitorName = '')",
+                "fromArray": "static fromArray(array $a): RivetCore\\Monitoring\\Inbound\\Incident",
+                "toArray": "toArray(): array"
+            },
+            "properties": {
+                "assetId": "?int",
+                "clientId": "?int",
+                "consecutiveDown": "int",
+                "downSince": "?int",
+                "lastEventAt": "?int",
+                "lastNoteAt": "?int",
+                "lastStatus": "?int",
+                "lastTicketId": "?int",
+                "monitorKey": "readonly string",
+                "monitorName": "string",
+                "opens": "array",
+                "source": "readonly string",
+                "state": "string",
+                "ticketId": "?int"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\IncidentEngine": {
+            "kind": "final class",
+            "constants": {
+                "FLAP_WINDOW_S": 3600
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Monitoring\\Inbound\\IncidentStoreInterface $store, RivetCore\\Monitoring\\Inbound\\TicketGatewayInterface $gateway, RivetCore\\Monitoring\\Inbound\\MonitorClientMapInterface $map, RivetCore\\Monitoring\\Inbound\\EngineConfig $config = RivetCore\\Monitoring\\Inbound\\EngineConfig, ?Closure $clock = NULL)",
+                "process": "process(RivetCore\\Monitoring\\Inbound\\InboundEvent $event): RivetCore\\Monitoring\\Inbound\\EngineOutcome"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\IncidentStoreInterface": {
+            "kind": "interface",
+            "methods": {
+                "get": "get(string $source, string $monitorKey): ?RivetCore\\Monitoring\\Inbound\\Incident",
+                "locked": "locked(string $source, string $monitorKey, Closure $fn): mixed",
+                "put": "put(RivetCore\\Monitoring\\Inbound\\Incident $incident): void"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\MonitorClientMapInterface": {
+            "kind": "interface",
+            "methods": {
+                "resolve": "resolve(RivetCore\\Monitoring\\Inbound\\InboundEvent $event): ?RivetCore\\Monitoring\\Inbound\\MonitorTarget"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\MonitorStatus": {
+            "kind": "enum",
+            "implements": [
+                "BackedEnum",
+                "UnitEnum"
+            ],
+            "constants": {
+                "Down": "RivetCore\\Monitoring\\Inbound\\MonitorStatus:0",
+                "Maintenance": "RivetCore\\Monitoring\\Inbound\\MonitorStatus:3",
+                "Pending": "RivetCore\\Monitoring\\Inbound\\MonitorStatus:2",
+                "Up": "RivetCore\\Monitoring\\Inbound\\MonitorStatus:1"
+            },
+            "methods": {
+                "cases": "static cases(): array",
+                "from": "static from(string|int $value): static",
+                "tryFrom": "static tryFrom(string|int $value): ?static"
+            },
+            "properties": {
+                "name": "readonly string",
+                "value": "readonly int"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\MonitorTarget": {
+            "kind": "final class",
+            "methods": {
+                "client": "static client(int $clientId, ?int $assetId = NULL): RivetCore\\Monitoring\\Inbound\\MonitorTarget",
+                "isUnassigned": "isUnassigned(): bool",
+                "unassigned": "static unassigned(): RivetCore\\Monitoring\\Inbound\\MonitorTarget"
+            },
+            "properties": {
+                "assetId": "readonly ?int",
+                "clientId": "readonly ?int"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\PayloadParserInterface": {
+            "kind": "interface",
+            "methods": {
+                "parse": "parse(string $rawBody): RivetCore\\Monitoring\\Inbound\\InboundEvent|RivetCore\\Monitoring\\Inbound\\PayloadRejection",
+                "source": "source(): string"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\PayloadRejection": {
+            "kind": "final class",
+            "constants": {
+                "BAD_FIELD": "bad_field",
+                "BAD_STATUS": "bad_status",
+                "BAD_TIME": "bad_time",
+                "INVALID_JSON": "invalid_json",
+                "NOT_AN_OBJECT": "not_an_object",
+                "NO_MONITOR": "no_monitor",
+                "TOO_LARGE": "too_large"
+            },
+            "methods": {
+                "__construct": "__construct(string $code, string $message)",
+                "httpStatus": "httpStatus(): int"
+            },
+            "properties": {
+                "code": "readonly string",
+                "message": "readonly string"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\RateLimiterInterface": {
+            "kind": "interface",
+            "methods": {
+                "allow": "allow(string $key): bool"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\TicketGatewayInterface": {
+            "kind": "interface",
+            "methods": {
+                "addNote": "addNote(int $ticketId, string $note): void",
+                "isStillOpen": "isStillOpen(int $ticketId): bool",
+                "openTicket": "openTicket(RivetCore\\Monitoring\\Inbound\\TicketRequest $request): int",
+                "resolveTicket": "resolveTicket(int $ticketId, string $note): void"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\TicketRequest": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Monitoring\\Inbound\\MonitorTarget $target, string $subject, string $body, string $priority, string $category, string $sourceLabel, string $incidentKey)"
+            },
+            "properties": {
+                "body": "readonly string",
+                "category": "readonly string",
+                "incidentKey": "readonly string",
+                "priority": "readonly string",
+                "sourceLabel": "readonly string",
+                "subject": "readonly string",
+                "target": "readonly RivetCore\\Monitoring\\Inbound\\MonitorTarget"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\UptimeKumaPayload": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Monitoring\\Inbound\\PayloadParserInterface"
+            ],
+            "constants": {
+                "MAX_BODY": 65536,
+                "MAX_DEPTH": 6,
+                "MAX_HOSTNAME": 255,
+                "MAX_MESSAGE": 1000,
+                "MAX_NAME": 200,
+                "MAX_TAGS": 20,
+                "MAX_TAG_PART": 100,
+                "MAX_TYPE": 32,
+                "MAX_URL": 500,
+                "SOURCE": "uptime-kuma"
+            },
+            "methods": {
+                "clean": "static clean(string $s, int $max): string",
+                "parse": "parse(string $rawBody): RivetCore\\Monitoring\\Inbound\\InboundEvent|RivetCore\\Monitoring\\Inbound\\PayloadRejection",
+                "source": "source(): string"
+            }
+        },
         "RivetCore\\Panel\\Contracts\\PanelTicketGatewayInterface": {
             "kind": "interface",
             "methods": {
@@ -8655,6 +8912,23 @@
                 "save": "save(RivetCore\\Crypto\\RewrapState $state): void"
             }
         },
+        "RivetCore\\Testing\\IncidentStoreConformanceTestCase": {
+            "kind": "abstract class",
+            "extends": "PHPUnit\\Framework\\TestCase",
+            "implements": [
+                "Countable",
+                "PHPUnit\\Framework\\Reorderable",
+                "PHPUnit\\Framework\\SelfDescribing",
+                "PHPUnit\\Framework\\Test"
+            ],
+            "methods": {
+                "testKeysDoNotCollide": "testKeysDoNotCollide(): void",
+                "testLockedReturnsValueAndReleasesOnException": "testLockedReturnsValueAndReleasesOnException(): void",
+                "testPutReplacesAndStoreHandsOutCopies": "testPutReplacesAndStoreHandsOutCopies(): void",
+                "testRoundTripKeepsEveryField": "testRoundTripKeepsEveryField(): void",
+                "testUnknownKeyIsNull": "testUnknownKeyIsNull(): void"
+            }
+        },
         "RivetCore\\Testing\\PackageSourcePolicyConformanceTestCase": {
             "kind": "abstract class",
             "extends": "PHPUnit\\Framework\\TestCase",
@@ -9024,6 +9298,24 @@
                 "testStoredValueDoesNotDependOnTheDefaultPassedIn": "testStoredValueDoesNotDependOnTheDefaultPassedIn(): void",
                 "testStoredValuesAreReturnedEvenWhenFalsy": "testStoredValuesAreReturnedEvenWhenFalsy(): void",
                 "testUnknownKeyReturnsTheDefaultUnchanged": "testUnknownKeyReturnsTheDefaultUnchanged(mixed $default): void"
+            }
+        },
+        "RivetCore\\Testing\\TicketGatewayConformanceTestCase": {
+            "kind": "abstract class",
+            "extends": "PHPUnit\\Framework\\TestCase",
+            "implements": [
+                "Countable",
+                "PHPUnit\\Framework\\Reorderable",
+                "PHPUnit\\Framework\\SelfDescribing",
+                "PHPUnit\\Framework\\Test"
+            ],
+            "methods": {
+                "testATicketAPersonClosedIsNeverReopened": "testATicketAPersonClosedIsNeverReopened(): void",
+                "testHostileTextIsStoredWithoutBreakingAnything": "testHostileTextIsStoredWithoutBreakingAnything(): void",
+                "testNoteKeepsItOpenAndResolveClosesIt": "testNoteKeepsItOpenAndResolveClosesIt(): void",
+                "testOpenTicketIsOpenUnderTheRequestedClientAndNeverMerges": "testOpenTicketIsOpenUnderTheRequestedClientAndNeverMerges(): void",
+                "testUnassignedIsNotAnyCustomer": "testUnassignedIsNotAnyCustomer(): void",
+                "testUnknownTicketIsNotOpenAndNothingThrows": "testUnknownTicketIsNotOpenAndNothingThrows(): void"
             }
         },
         "RivetCore\\Testing\\TicketProblemLinkConformanceTestCase": {
@@ -9531,6 +9823,8 @@
         "RivetCore\\Rmm\\Support\\MetricMath",
         "RivetCore\\Rmm\\Support\\TrackedDatabase",
         "RivetCore\\Support\\SecretString",
+        "RivetCore\\Testing\\InMemoryIncidentStore",
+        "RivetCore\\Testing\\InMemoryMonitorClientMap",
         "RivetCore\\Testing\\InMemoryPanelTicketGateway",
         "RivetCore\\Testing\\InMemoryRmmAssets",
         "RivetCore\\Testing\\InMemoryRmmAudit",
@@ -9541,6 +9835,7 @@
         "RivetCore\\Testing\\InMemoryRmmModuleState",
         "RivetCore\\Testing\\InMemoryRmmTenancy",
         "RivetCore\\Testing\\InMemorySecretBox",
+        "RivetCore\\Testing\\InMemoryTicketGateway",
         "RivetCore\\Testing\\UntypedValues",
         "RivetCore\\Webhooks\\Migration\\Migration0005WebhookDeliveries",
         "RivetCore\\Workflow\\Migration\\Migration0007WorkflowTables"
