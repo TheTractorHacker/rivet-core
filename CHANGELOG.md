@@ -2,6 +2,16 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.67 (inbound monitoring webhooks: Uptime Kuma; no migration)
+
+Additive only: no existing signature, constant or table changed. Core ships the shared logic; each edition adds the public endpoint, settings page, incident table and ticket adapter (`docs/design/edition-prompts-inbound-monitoring.md`).
+
+- **New: `RivetCore\Monitoring\Inbound`** (`@api`). `UptimeKumaPayload` (strict parser of the default Uptime Kuma webhook JSON: 64 KB cap, field length caps, control and bidi characters stripped, null heartbeat = test notification, typed `PayloadRejection` instead of exceptions), `PayloadParserInterface` (for further monitors), `InboundEvent`, `MonitorStatus`.
+- **New: `IncidentEngine`** with `EngineConfig` and `EngineOutcome`: one incident per source + monitor; DOWN opens a ticket (after N DOWNs or a minimum duration, default 1 / off), repeat DOWNs add at most one note per interval (30 min), UP adds a recovery note with the outage duration and resolves; PENDING and MAINTENANCE are ignored; a ticket a person resolved is never reopened; duplicate and out-of-order deliveries are no-ops; a flap guard (6 opens per monitor per hour) turns extra opens into notes. Unmapped monitors go to the default client or "unassigned", never guessed.
+- **New contracts** the edition implements: `TicketGatewayInterface`, `IncidentStoreInterface` (with `Incident`), `MonitorClientMapInterface` (with `MonitorTarget`, `TicketRequest`), `RateLimiterInterface`. Reference implementations `InMemoryTicketGateway`, `InMemoryIncidentStore`, `InMemoryMonitorClientMap` and conformance cases `TicketGatewayConformanceTestCase`, `IncidentStoreConformanceTestCase` in `RivetCore\Testing`.
+- **New: `InboundAuthenticator` and `InboundHandler::handle(array $headers, string $rawBody, string $remoteIp): InboundResult`.** Shared secret from `X-Webhook-Secret` or `Authorization: Bearer`, compared with `hash_equals` over SHA-256 digests; fails closed (no, empty or under-16-character secret rejects everything); several secrets at once for rotation; rate-limit hook; responses carry fixed tokens and a ticket id only; the raw body is never logged.
+- Docs: `docs/modules/inbound-monitoring.md` (Uptime Kuma setup), `docs/design/edition-prompts-inbound-monitoring.md`. Regenerated `docs/api-surface.md`, `tests/api-surface.json`, `docs/PUBLIC-API.md`.
+
 ## 1.0.0-rc.60 (device move completeness; installer: managed by another RMM; no link underline on hover; unused Ceph is not an error; migration 0049)
 
 - **Fix: a device transfer left client-keyed rows behind.** `DeviceService::transfer()` (and `TechnicianActions::transfer()`) now also moves `rmm_alert_meta` (open rows only), `rmm_deploy_state`, `rmm_device_apps`, `rmm_package_installs`, `rmm_package_jobs`, `rmm_package_history`, `rmm_patch_available`, `rmm_patch_jobs`, `rmm_patch_history`, `rmm_patch_scans` and `endpoint_agent_transfers`, in the same transaction. Resolved alerts and audit rows keep their client; the credential, `install_id` and the agent link are untouched, so the machine keeps checking in. A move to the client the device is already in is a no-op (`true`, no audit row); a retired device can be moved. Signatures unchanged. A test fails when a new table with `device_id` and `client_id` appears that the transfer does not know about.
