@@ -122,12 +122,4 @@ final class ConsoleLinkTest extends TestCase
         [, $err] = RmmSettings::validateFeatures(['remote_consoles' => true]);
         $this->assertNotSame('', (string) $err);
     }
-
-    public function testTheConsoleSwitchAndBackgroundModeAreIndependentKeys(): void
-    {
-        [$json] = RmmSettings::validateFeatures(['remote_console' => true]);
-        $this->assertStringNotContainsString('background_mode', (string) $json, 'turning the console on does not enable Background Mode');
-        [$json] = RmmSettings::validateFeatures(['background_mode' => true, 'remote_console' => false]);
-        $this->assertSame(['background_mode' => true, 'remote_console' => false], json_decode((string) $json, true), 'and turning it off does not touch Background Mode');
-    }
 }

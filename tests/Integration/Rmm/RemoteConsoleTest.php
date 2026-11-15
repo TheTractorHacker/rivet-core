@@ -26,7 +26,7 @@ final class RemoteConsoleTest extends RmmTestCase
     {
         $p = new RoleMatrixPolicy();
         $p->addUser(1, 3, 3, 1, admin: true);
-        $p->addUser(18, 3, 3, 2);   // technician with remote.launch and remote.manage, no Background grant
+        $p->addUser(18, 3, 3, 2);   // technician with remote.launch and remote.manage, no admin grant
 
         return new RmmHarness(policy: $p);
     }
@@ -76,7 +76,7 @@ final class RemoteConsoleTest extends RmmTestCase
     {
         $t = $this->h->module->technician();
         $plain = $t->launchRemote($this->tech, $this->dev);
-        $asked = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true, 'terminal-ps');
+        $asked = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true, 'terminal-ps');
         foreach ([$plain, $asked] as $r) {
             $this->assertTrue($r->ok, $r->message);
             $this->assertSame(['url', 'session_id'], array_keys($r->data), 'no console key at all');
@@ -102,7 +102,7 @@ final class RemoteConsoleTest extends RmmTestCase
     public function testOnReturnsACredentialFreeDeepLinkAndTheStockUrlAsFallback(): void
     {
         $this->console(true);
-        $r = $this->h->module->technician()->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true);
+        $r = $this->h->module->technician()->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true);
         $this->assertTrue($r->ok, $r->message);
         $c = $r->data['console'];
         $this->assertSame('desktop', $c['kind']);
@@ -121,32 +121,18 @@ final class RemoteConsoleTest extends RmmTestCase
     {
         $this->console(true);
         $t = $this->h->module->technician();
-        $r = $t->launchRemote($this->tech, $this->dev, false, null, null, 'terminal', 'standard', true, 'terminal-ps');
+        $r = $t->launchRemote($this->tech, $this->dev, false, null, null, 'terminal', true, 'terminal-ps');
         $this->assertSame('terminal-ps', $r->data['console']['kind']);
-        $this->assertSame('files', $t->launchRemote($this->tech, $this->dev, false, null, null, 'files', 'standard', true)->data['console']['kind']);
-        $bad = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true, 'terminal-ps');
+        $this->assertSame('files', $t->launchRemote($this->tech, $this->dev, false, null, null, 'files', true)->data['console']['kind']);
+        $bad = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true, 'terminal-ps');
         $this->assertSame([false, 422], [$bad->ok, $bad->http]);
-        $this->assertSame(422, $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true, 'vnc')->http);
+        $this->assertSame(422, $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true, 'vnc')->http);
     }
 
     public function testTheConsoleNeverBypassesTheAbilityChecks(): void
     {
         $this->console(true);
         $viewer = new RmmPrincipal(15, 'Nobody');
-        $this->assertSame(403, $this->h->module->technician()->launchRemote($viewer, $this->dev, false, null, null, 'desktop', 'standard', true)->http);
-    }
-
-    public function testTheConsoleSwitchNeverTurnsBackgroundOnAndBackgroundIsDeniedWhileItIsOff(): void
-    {
-        $ra = $this->h->module->remoteActions();
-        $this->console(true);
-        $this->assertFalse($this->h->module->settings()->featureOn('background_mode'));
-        $this->assertTrue($ra->updateSettings($this->admin, ['features' => ['background_mode' => true], 'accept_background_risk' => true])->ok);
-        $this->console(false);
-        $this->assertTrue($this->h->module->settings()->featureOn('background_mode'), 'turning the console off leaves the Background switch alone');
-        $r = $this->h->module->technician()->launchRemote($this->admin, $this->dev, false, null, null, 'console', 'background');
-        $this->assertSame([403, 'feature_disabled'], [$r->http, $r->code]);
-        $rows = array_column($this->h->audit->records(), 'action');
-        $this->assertSame(['Background Session Denied'], array_values(array_filter($rows, static fn (string $a): bool => str_starts_with($a, 'Background Session'))));
+        $this->assertSame(403, $this->h->module->technician()->launchRemote($viewer, $this->dev, false, null, null, 'desktop', true)->http);
     }
 }

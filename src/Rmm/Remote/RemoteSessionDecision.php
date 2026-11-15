@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace RivetCore\Rmm\Remote;
 
 /**
- * The answer of {@see BackgroundModePolicy}: allowed or not, a stable reason code, text that is safe to show the caller, and what the person at the device is
- * owed (`none`, `notify`, or `approve`, which Core cannot grant by itself, so an `approve` client is a refusal until an approval flow exists).
+ * The answer of {@see RemoteSessionPolicy}: allowed or not, a stable reason code, text that is safe to show the caller, and what the person at the device is owed
+ * (`none`, `notify`, or `approve`, which Core cannot grant by itself, so an `approve` client is a refusal until an approval flow exists).
  *
  * @api
  */
-final class BackgroundDecision
+final class RemoteSessionDecision
 {
     public const NOTICE_NONE = 'none';
     public const NOTICE_NOTIFY = 'notify';
