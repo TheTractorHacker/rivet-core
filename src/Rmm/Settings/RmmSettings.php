@@ -308,26 +308,39 @@ final class RmmSettings
         $this->stateListener = $listener;
     }
 
+    /**
+     * The settings row in one query. CORE-DS-16/26/39: the switches of the deep-scan fixes live in a table of their own (migration 0053), joined here so a read costs no more than
+     * before; an install without that table (or without its row) simply has them off.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function read(): ?array
+    {
+        try {
+            $row = $this->sql->one('SELECT s.*, h.mesh_token_ttl_exact, h.signed_config, h.release_rollover_json FROM endpoint_agent_settings s LEFT JOIN rmm_hardening_settings h ON h.id = s.id WHERE s.id = 1');
+        } catch (\Throwable) {
+            $row = $this->sql->one('SELECT * FROM endpoint_agent_settings WHERE id = 1');
+        }
+        if ($row === null) {
+            return null;
+        }
+        $row['mesh_token_ttl_exact'] = (int) ($row['mesh_token_ttl_exact'] ?? 0);
+        $row['signed_config'] = (int) ($row['signed_config'] ?? 0);
+        $row['release_rollover_json'] ??= null;
+
+        return $row;
+    }
+
     /** @return array<string,mixed> the settings row */
     public function get(bool $fresh = false): array
     {
         if ($this->cache === null || $fresh) {
-            $row = $this->sql->one('SELECT * FROM endpoint_agent_settings WHERE id = 1');
+            $row = $this->read();
             if ($row === null) {
                 $this->sql->run('INSERT IGNORE INTO endpoint_agent_settings (id) VALUES (1)');
-                $row = $this->sql->one('SELECT * FROM endpoint_agent_settings WHERE id = 1') ?? [];
+                $row = $this->read() ?? [];
             }
-            // CORE-DS-16/26/39: the switches of the deep-scan fixes live in a table of their own (migration 0053); an install without it simply has them off
-            $extra = ['mesh_token_ttl_exact' => 0, 'signed_config' => 0, 'release_rollover_json' => null];
-            try {
-                $e = $this->sql->one('SELECT mesh_token_ttl_exact, signed_config, release_rollover_json FROM rmm_hardening_settings WHERE id = 1');
-                if ($e !== null) {
-                    $extra = $e;
-                }
-            } catch (\Throwable) {
-                // table not there yet
-            }
-            $this->cache = $row + $extra;
+            $this->cache = $row;
         }
 
         return $this->cache;
