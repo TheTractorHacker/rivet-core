@@ -947,6 +947,18 @@ final class AlertingTest extends RmmTestCase
         $this->assertStringNotContainsString('PL-A', json_encode($j));
     }
 
+    /** CORE-DS-63: transferring a device to another client ends the parent links that would now cross clients. */
+    public function testATransferEndsParentLinksThatWouldCrossClients(): void
+    {
+        $this->linked('TL-A');
+        $child = $this->dev;
+        [$parent] = $this->enrollDevice('TL-P');
+        $this->assertSame(200, $this->h->tech('PUT', [(string) $child, 'parent'], $this->pt(), ['parent_device_id' => $parent])[0]);
+        $this->assertTrue($this->h->module->deviceService()->transfer($parent, $this->h->clientB, 0, 1));
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_device_parents'));
+        $this->assertNull($this->h->tech('GET', [(string) $child, 'parent'], $this->pt())[1]['parent']);
+    }
+
     public function testARestrictedPrincipalCannotSeeOrChangeAnotherClientsRecords(): void
     {
         $this->linked('RS-A');

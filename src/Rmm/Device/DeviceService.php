@@ -203,6 +203,9 @@ final class DeviceService
             self::moveRows($sql, "UPDATE `$table` SET client_id = ? WHERE device_id = ?", [$clientId, $deviceId]);
         }
         self::moveRows($sql, 'UPDATE rmm_alert_meta SET client_id = ? WHERE device_id = ? AND resolved_at IS NULL', [$clientId, $deviceId]);
+        // CORE-DS-63: a device and its parent must belong to the same client, so a link whose other end is now in another client ends here (it would show ids and host names across clients)
+        self::moveRows($sql, 'DELETE p FROM rmm_device_parents p JOIN endpoint_agent_devices o ON ((p.device_id = ? AND o.device_id = p.parent_device_id) OR (p.parent_device_id = ? AND o.device_id = p.device_id))
+            WHERE o.client_id <> ?', [$deviceId, $deviceId, $clientId]);
     }
 
     /**

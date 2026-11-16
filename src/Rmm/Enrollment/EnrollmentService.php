@@ -618,8 +618,11 @@ final class EnrollmentService
             $asset = $assetId;
             if ($row['client_id'] !== (int) $dev['client_id']) {
                 // An explicit administrator choice may cross clients; the device follows the asset's client.
-                $this->sql->transaction(function () use ($row, $deviceId): void {
-                    $this->sql->run('UPDATE endpoint_agent_devices SET client_id = ? WHERE device_id = ?', [$row['client_id'], $deviceId]);
+                // CR21: the site belongs to a client: keep it only when it is a site of the new client, else none (as DeviceService::transfer() sets both together)
+                $loc = (int) ($dev['location_id'] ?? 0);
+                $loc = $loc > 0 && $this->tenancy->locationInClient($loc, (int) $row['client_id']) ? $loc : 0;
+                $this->sql->transaction(function () use ($row, $deviceId, $loc): void {
+                    $this->sql->run('UPDATE endpoint_agent_devices SET client_id = ?, location_id = ? WHERE device_id = ?', [$row['client_id'], $loc, $deviceId]);
                     \RivetCore\Rmm\Device\DeviceService::moveCarriedRows($this->sql, $deviceId, (int) $row['client_id']);   // CORE-DS-68: the rows that carry the client follow, as in a transfer
                 });
                 if ($this->stores !== null) {
