@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -473,5 +474,42 @@ func TestComparePrereleasePrecedence(t *testing.T) {
 		if err != nil || got != c.want {
 			t.Errorf("%s vs %s: got %d (%v), want %d", c.a, c.b, got, err, c.want)
 		}
+	}
+}
+
+// CORE-DS-15: shutdown, timeouts, 429/5xx and a slow selftest are temporary; a bad signature, a checksum mismatch or a downgrade are not.
+func TestTransientClassification(t *testing.T) {
+	e := newEnv(t)
+	m := e.mgr("1.0.0")
+	e.status = 503
+	_, err := e.apply(m, e.manifest("1.1.0"))
+	if err == nil || !Transient(err) {
+		t.Fatalf("503 download: %v transient=%v", err, err != nil && Transient(err))
+	}
+	e.status = 429
+	if _, err = e.apply(e.mgr("1.0.0"), e.manifest("1.1.0")); err == nil || !Transient(err) {
+		t.Fatalf("429: %v", err)
+	}
+	e.status = 404
+	if _, err = e.apply(e.mgr("1.0.0"), e.manifest("1.1.0")); err == nil || Transient(err) {
+		t.Fatalf("404 is not temporary: %v", err)
+	}
+	e.status = 200
+	for _, err := range []error{context.Canceled, context.DeadlineExceeded, fmt.Errorf("wrapped: %w", context.Canceled), ErrSelfTestTimeout} {
+		if !Transient(err) {
+			t.Errorf("%v should be transient", err)
+		}
+	}
+	for _, err := range []error{ErrDowngrade, ErrIncompatible, errors.New("sha256 mismatch"), errors.New("update signature invalid")} {
+		if Transient(err) {
+			t.Errorf("%v should be permanent", err)
+		}
+	}
+	// bad checksum is permanent
+	man := e.manifest("1.1.0")
+	man.SHA256 = strings.Repeat("0", 64)
+	man.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(e.priv, []byte(man.SHA256)))
+	if _, err := e.apply(e.mgr("1.0.0"), man); err == nil || Transient(err) {
+		t.Fatalf("sha mismatch: %v", err)
 	}
 }

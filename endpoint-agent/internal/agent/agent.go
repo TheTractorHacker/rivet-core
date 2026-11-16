@@ -104,6 +104,7 @@ type Agent struct {
 	logs         *logs.Manager       // RMM Phase 8 log collection; idle until a check-in offers logs:collect
 	hv           *hypervisor.Manager // Proxmox / Hyper-V visibility; idle until a check-in offers "hypervisor" with a signed configuration
 	chg          *change.Manager     // change monitoring; idle until a check-in offers change:monitor with a signed configuration
+	updRetryAt   time.Time           // earliest next self-update attempt after a temporary failure
 	skew         time.Duration       // the correction being applied (zero while the PC clock is close enough)
 	clkOff       time.Duration       // estimate of server time minus the PC clock
 	clkHave      bool
@@ -1074,6 +1075,9 @@ func (a *Agent) configureChange(resp *api.CheckinResponse) {
 	_ = a.chg.Configure(resp.Config.Change)
 }
 
+// updateRetryPause is how long a temporary self-update failure waits before the same version is tried again.
+const updateRetryPause = 10 * time.Minute
+
 // checkinBodyMax is the largest check-in body the agent builds: the request cap minus a margin for the retry-time clock correction fields.
 const checkinBodyMax = api.MaxRequestBytes - 32<<10
 
@@ -1120,6 +1124,9 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 	if f := st.UpdateFailure; f != nil && f.Version == man.Version {
 		return // do not retry a version that already failed
 	}
+	if a.o.Now().Before(a.updRetryAt) {
+		return
+	}
 	pub, err := base64.StdEncoding.DecodeString(st.SigningPublicKey)
 	if err != nil {
 		return
@@ -1129,6 +1136,12 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 	a.mu.Unlock()
 	hosts := append([]string{c.Host()}, cfg.UpdateHosts...)
 	restart, err := a.upd.Apply(ctx, *man, ed25519.PublicKey(pub), c.HTTPClient(), c.Host(), a.token(), hosts)
+	if err != nil && update.Transient(err) {
+		// shutdown, timeout, network, 429/5xx, slow selftest: keep the version eligible and try again after a pause (CORE-DS-15)
+		a.log.Warn("update attempt failed (temporary); will try again", "version", man.Version, "err", err)
+		a.updRetryAt = a.o.Now().Add(updateRetryPause)
+		return
+	}
 	if err != nil {
 		a.log.Error("update failed", "version", man.Version, "err", err)
 		_ = a.o.Store.Update(func(s *store.State) error {

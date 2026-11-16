@@ -1,6 +1,7 @@
 package update
 
 import (
+	"net"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -35,6 +36,32 @@ var (
 	ErrDowngrade    = errors.New("downgrade refused")
 	ErrIncompatible = errors.New("running version is older than the update's min_version; intermediate update required")
 )
+
+// ErrSelfTestTimeout: the staged binary did not answer `selftest` in time.
+var ErrSelfTestTimeout = errors.New("staged binary selftest timed out")
+
+// HTTPStatusError is a download answered with a non-200 status.
+type HTTPStatusError struct{ Status int }
+
+func (e *HTTPStatusError) Error() string { return fmt.Sprintf("download: HTTP %d", e.Status) }
+
+// Transient reports whether an Apply error is temporary (shutdown, timeout, network, HTTP 408/429/5xx, slow selftest), so the same version should be
+// offered again later. A bad signature, a checksum mismatch, a downgrade or an incompatible version are permanent for that version (CORE-DS-15).
+func Transient(err error) bool {
+	var hs *HTTPStatusError
+	var ne net.Error
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrSelfTestTimeout):
+		return true
+	case errors.As(err, &hs):
+		return hs.Status == 408 || hs.Status == 429 || hs.Status >= 500
+	case errors.As(err, &ne):
+		return true
+	}
+	return false
+}
 
 // Validate performs every check that needs no download: sane fields, https
 // and an allowed host, no downgrade, min_version compatibility, and the
@@ -113,7 +140,7 @@ func Download(ctx context.Context, hc *http.Client, m api.UpdateManifest, dest, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("download: HTTP %d", resp.StatusCode)
+		return &HTTPStatusError{Status: resp.StatusCode}
 	}
 	if resp.ContentLength > MaxBinaryBytes {
 		return errors.New("download exceeds size cap")
@@ -193,6 +220,9 @@ func VerifyBinary(path string) error {
 // SelfTest runs `<binary> selftest` and requires it to report want.
 func SelfTest(ctx context.Context, path, want string) error {
 	r := jobs.RunBounded(ctx, jobs.ExecSpec{Name: path, Args: []string{"selftest"}, Timeout: 20 * time.Second, MaxOutput: 1024})
+	if r.TimedOut || r.Cancelled {
+		return ErrSelfTestTimeout // a slow disk or an antivirus scan of the new exe, not a bad binary (CORE-DS-15)
+	}
 	if !r.HaveExit || r.ExitCode != 0 {
 		return fmt.Errorf("staged binary selftest failed (exit=%d start=%v)", r.ExitCode, r.StartErr)
 	}
