@@ -49,7 +49,9 @@ var (
 	// ErrInvalid wraps every structural or semantic failure of a stamped file.
 	ErrInvalid = errors.New("embedded configuration is invalid")
 	// ErrExpired: a well-formed payload whose expires_at has passed.
-	ErrExpired = errors.New("embedded configuration has expired; download a new installer")
+	// ErrUnsigned: this agent was built with a trust anchor and the stamped configuration is not signed by it (CORE-DS-20).
+	ErrUnsigned = errors.New("installer configuration is not signed by this server's key; download a new installer from your RivetIT server")
+	ErrExpired  = errors.New("embedded configuration has expired; download a new installer")
 )
 
 // Payload is the decoded embedded configuration.
@@ -66,6 +68,9 @@ type Payload struct {
 	// must NEVER make an otherwise valid installer unreadable, so a malformed value
 	// is judged later by internal/mesh (which records the problem and carries on).
 	// An older agent that does not know them ignores them (see vectors_test.go).
+	// Signature is the optional (CORE-DS-20) detached Ed25519 signature, base64, over "rivetit-installer-payload-v1\n" + the canonical JSON of the
+	// payload without this member, by the instance signing key. An agent with a build-time trust anchor (EmbeddedTrustKeys) requires it.
+	Signature        string          `json:"signature,omitempty"`
 	InstallMeshAgent json.RawMessage `json:"install_mesh_agent,omitempty"`
 	Mesh             json.RawMessage `json:"mesh,omitempty"`
 	created          time.Time
@@ -159,6 +164,9 @@ func Extract(rd io.ReaderAt, size int64) (payload []byte, exeLen int64, err erro
 func Parse(rd io.ReaderAt, size int64, now time.Time) (*Payload, error) {
 	buf, _, err := Extract(rd, size)
 	if err != nil {
+		return nil, err
+	}
+	if err := verifyTrailer(buf); err != nil {
 		return nil, err
 	}
 	return decode(buf, now)

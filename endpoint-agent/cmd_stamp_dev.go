@@ -6,6 +6,8 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -31,6 +33,7 @@ func cmdStamp(args []string) int {
 	meshURL := fs.String("mesh-url", "", "ask the installer to also install the MeshCentral agent from this https URL (needs --mesh-group)")
 	meshGroup := fs.String("mesh-group", "", "MeshCentral device group id (the meshid of the download address, or hex)")
 	meshPin := fs.String("mesh-pin", "", "SHA-384/256 hex pin of the Mesh server certificate (empty = system roots)")
+	signSeed := fs.String("sign-seed", "", "base64 32-byte Ed25519 seed: sign the payload (CORE-DS-20) for an agent built with embed.EmbeddedTrustKeys")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -87,6 +90,17 @@ func cmdStamp(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "stamp: payload rejected:", err)
 		return 2
+	}
+	if *signSeed != "" {
+		seed, err := base64.StdEncoding.DecodeString(*signSeed)
+		if err != nil || len(seed) != ed25519.SeedSize {
+			fmt.Fprintln(os.Stderr, "stamp: --sign-seed must be a base64 32-byte seed")
+			return 2
+		}
+		if pl, err = embed.SignPayload(pl, ed25519.NewKeyFromSeed(seed)); err != nil {
+			fmt.Fprintln(os.Stderr, "stamp: cannot sign:", err)
+			return 2
+		}
 	}
 	tmp := *out + ".tmp"
 	if err := os.WriteFile(tmp, embed.Build(exe, pl), 0o755); err != nil {

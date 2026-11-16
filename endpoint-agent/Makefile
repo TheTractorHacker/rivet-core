@@ -7,7 +7,9 @@ VERSION   ?= 0.0.0-dev.$(shell git rev-parse --short HEAD 2>/dev/null || echo un
 COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 # RELEASE_KEYS: comma separated base64 ed25519 release PUBLIC keys compiled in as the update trust anchor (CORE-DS-26); empty = enforcement off.
 RELEASE_KEYS ?=
-LDFLAGS   := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X rivetit-agent/internal/update.EmbeddedReleaseKeys=$(RELEASE_KEYS)
+# TRUST_KEYS: the instance signing public key(s) that stamp installers for this build (CORE-DS-20); empty = trailer protected by its SHA-256 only.
+TRUST_KEYS ?=
+LDFLAGS   := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X rivetit-agent/internal/update.EmbeddedReleaseKeys=$(RELEASE_KEYS) -X rivetit-agent/internal/embed.EmbeddedTrustKeys=$(TRUST_KEYS)
 BUILDFLAGS:= -trimpath -buildvcs=false
 DIST      := dist
 export CGO_ENABLED := 0
