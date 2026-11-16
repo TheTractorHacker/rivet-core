@@ -91,9 +91,11 @@ Every successful answer and every error includes `"server_time"` (RFC 3339 UTC).
  "server_time": "2026-10-23T17:57:22Z"}
 ```
 
-`contact` is `null` for a client-level device. Enrolling again with the same `install_id` and a new token keeps `device_id` and rotates the credential (the old one stops
+`contact` is `null` for a client-level device. Enrolling again with the same `install_id`, a new token and `device.previous_token` (the credential the install holds now; CORE-DS-61) keeps `device_id` and rotates the credential (the old one stops
 working at once). Failures: 401 `invalid_token` / `revoked` / `expired` (token), 403 `forbidden` (token used up; device revoked or retired until an administrator allows
 re-enrollment), 403 `contact_invalid` (the contact the token was issued for is gone; the token is not consumed), 409 `conflict`, 422 `invalid`, 429 `rate_limited`.
+
+The install id is not a secret, so it is not proof: an enrollment for an existing install id WITHOUT a valid `device.previous_token` creates a new device (new `device_id`, new credential, its own tickets) and leaves the existing device untouched. A panel app that lost its credential therefore starts over as a new device.
 
 ### GET /panel_me
 

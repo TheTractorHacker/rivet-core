@@ -180,11 +180,11 @@ final class PanelEnrollmentTest extends PanelTestCase
         $this->assertSame(0, (int) $this->p->rmm->one('SELECT use_count FROM endpoint_agent_enrollment_tokens'));
     }
 
-    public function testReEnrollmentRotatesTheCredentialAndKeepsTheDevice(): void
+    public function testReEnrollmentWithTheCurrentCredentialRotatesItAndKeepsTheDevice(): void
     {
         $install = RmmHarness::uuid();
         [, , $a] = $this->p->enroll($this->p->mint()['token'], ['install_id' => $install]);
-        [$c, , $b] = $this->p->enroll($this->p->mint()['token'], ['install_id' => strtoupper($install)]);
+        [$c, , $b] = $this->p->enroll($this->p->mint()['token'], ['install_id' => strtoupper($install), 'previous_token' => $a['device_token']]);
         $this->assertSame(201, $c);
         $this->assertSame($a['device_id'], $b['device_id']);
         $this->assertNotSame($a['device_token'], $b['device_token']);
@@ -192,6 +192,32 @@ final class PanelEnrollmentTest extends PanelTestCase
         $this->assertSame(200, $this->p->call('GET', 'panel_me', null, $b['device_token'])[0]);
         $this->assertSame(1, (int) $this->p->rmm->one('SELECT COUNT(*) FROM endpoint_agent_devices'));
         $this->assertSame(2, (int) $this->p->rmm->one('SELECT enroll_count FROM endpoint_agent_devices'));
+    }
+
+    /** CORE-DS-61 (CORE-32): the install id is not a credential; without the current one an enrollment is a NEW device and the existing one keeps working. */
+    public function testReEnrollmentWithoutTheCurrentCredentialMakesANewDeviceAndLeavesTheOldOneAlone(): void
+    {
+        $install = RmmHarness::uuid();
+        [, , $victim] = $this->p->enroll($this->p->mint()['token'], ['install_id' => $install]);
+        foreach ([[], ['previous_token' => 'rvpd_' . str_repeat('0', 64)], ['previous_token' => 'not a token']] as $proof) {
+            [$c, , $b] = $this->p->enroll($this->p->mint()['token'], ['install_id' => $install] + $proof);
+            $this->assertSame(201, $c);
+            $this->assertNotSame($victim['device_id'], $b['device_id'], json_encode($proof));
+            $this->assertSame(200, $this->p->call('GET', 'panel_me', null, $victim['device_token'])[0], 'the holder of the install id is not logged out');
+            $this->assertSame(200, $this->p->call('GET', 'panel_me', null, $b['device_token'])[0]);
+        }
+        $this->assertSame(4, (int) $this->p->rmm->one('SELECT COUNT(*) FROM endpoint_agent_devices'));
+        $this->assertSame(1, (int) $this->p->rmm->one("SELECT enroll_count FROM endpoint_agent_devices WHERE device_id = {$victim['device_id']}"));
+        // the holder of the credential may hand the PC to another contact (same device row), a stranger with only the install id may not
+        $c1 = $this->p->gateway->addClientContact($this->p->clientA, 'One');
+        $c2 = $this->p->gateway->addClientContact($this->p->clientA, 'Two');
+        $own = RmmHarness::uuid();
+        [, , $o] = $this->p->enroll($this->p->mint($this->p->clientA, $c1)['token'], ['install_id' => $own]);
+        [, , $stranger] = $this->p->enroll($this->p->mint($this->p->clientA, $c2)['token'], ['install_id' => $own]);
+        $this->assertNotSame($o['device_id'], $stranger['device_id']);
+        $this->assertSame($c1, (int) $this->p->rmm->one("SELECT contact_id FROM endpoint_agent_devices WHERE device_id = {$o['device_id']}"), 'not re-bound');
+        [, , $handed] = $this->p->enroll($this->p->mint($this->p->clientA, $c2)['token'], ['install_id' => $own, 'previous_token' => $o['device_token']]);
+        $this->assertSame($o['device_id'], $handed['device_id']);
     }
 
     public function testARevokedDeviceCannotReEnrollUntilAnAdministratorAllowsIt(): void

@@ -260,10 +260,10 @@ final class PanelEnrollment
             }
             // CORE-DS-61 (CORE-32): an install id is not a credential (it is a UUID on the machine, readable in logs and deployment output), so knowing it is not enough to take over
             // the device behind it with another token of the same client: that rewrote its credential and handed its tickets and chat to the new holder. Re-keying the existing
-            // device needs the credential it holds now (`device.previous_token`), and never moves it from one contact to another. Without that proof the enrollment is a NEW
+            // device needs the credential it holds now (`device.previous_token`; the PC that is handed to another person keeps its device row, and ticket ownership still follows the
+            // (device, contact) pair). Without that proof the enrollment is a NEW
             // device (its own device id and credential); the old one, and what it owns, is untouched and its holder keeps working.
-            $proved = is_string($d['previous_token'] ?? null) && hash_equals((string) $dev['token_hash'], hash('sha256', (string) $d['previous_token']))
-                && !($dev['contact_id'] !== null && $contactId !== null && (int) $dev['contact_id'] !== $contactId);
+            $proved = is_string($d['previous_token'] ?? null) && hash_equals((string) $dev['token_hash'], hash('sha256', (string) $d['previous_token']));
             if ($proved) {
                 $this->sql->run('UPDATE endpoint_agent_devices SET hostname = ?, os = ?, os_version = ?, agent_version = ?, token_hash = ?, token_issued_at = ?, token_expires_at = ?,
                     enroll_count = enroll_count + 1, enrolled_via_token_id = ?, last_ip = ?, contact_id = ? WHERE device_id = ? AND kind = ?',
