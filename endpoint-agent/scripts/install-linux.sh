@@ -101,6 +101,14 @@ DEST_STATE="${STATE_DIR:-/var/lib/rivetit-agent}"
 DEST_INSTALL="${INSTALL_DIR:-/opt/rivetit-agent}"
 COMMON=(--state-dir "$DEST_STATE" --install-dir "$DEST_INSTALL")
 
+# Stamped mode (--fetch-installer, or neither --server nor --token-file) is decided here, BEFORE any network access: `setup` has no pin option and the
+# stamp carries none, so --pin-spki would silently not apply, and the fetch below would already send the enrollment token over an unpinned connection
+# (CORE-DS-28, review CR10).
+if [ "$UNINSTALL" != 1 ] && { [ "$FETCH" = 1 ] || { [ -z "$SERVER" ] && [ -z "$TOKEN_FILE" ]; }; }; then
+  [ -z "$PIN" ] || die "--pin-spki cannot be applied to a stamped installer (setup takes its server and CA from the stamp); use the plain install with --server and --token-file, or drop --pin-spki" 64
+  if [ -n "$CA" ] && [ "$FETCH" != 1 ]; then die "--ca is only used to download a stamped installer (--fetch-installer); with a stamped installer the CA comes from the stamp" 64; fi
+fi
+
 if [ "$UNINSTALL" = 1 ]; then
   BIN="$DEST_INSTALL/rivetit-agent"
   [ -x "$BIN" ] || BIN="$(command -v rivetit-agent || true)"
