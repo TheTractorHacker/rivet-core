@@ -108,14 +108,55 @@ func commitFile(tmp, dest string, overwrite bool) error {
 	return os.Rename(tmp, dest)
 }
 
-// putTemp on Windows is still path based (CORE-7 tracks the handle-based rename there).
+// putTemp on Windows: the destination directory is PINNED for the whole transfer (CORE-DS-13). It is opened once, by handle, with
+// FILE_FLAG_OPEN_REPARSE_POINT (a link is not followed) and WITHOUT FILE_SHARE_DELETE, and the handle stays open until the put is committed or
+// discarded. NTFS refuses to rename or replace a directory (or any ancestor of it) that has an open handle without delete sharing, so after the
+// check below nobody can swap the directory, or a parent of it, for a junction while the temp file is created, written and moved. The handle's
+// final path must equal the path the policy approved. The temp file and the final rename are still addressed by path, but only inside that
+// pinned directory. Not done (remaining part of CORE-7): creating the temp file with an explicit SYSTEM/Administrators-only security descriptor and
+// renaming through the open handle; the temp file still inherits the folder's ACL. UNVERIFIED on a real Windows machine, see
+// docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md.
 type putTemp struct {
 	File *os.File
 	path string
 	dir  string
+	pin  windows.Handle
+}
+
+// pinDirectory opens dir as described above and checks it against the approved path.
+func pinDirectory(dir string) (windows.Handle, error) {
+	p, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
+	}
+	h, err := windows.CreateFile(p, windows.FILE_LIST_DIRECTORY|windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
+	}
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
+		windows.CloseHandle(h)
+		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
+	}
+	fp, err := finalPathOf(h)
+	if err != nil {
+		windows.CloseHandle(h)
+		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
+	}
+	if err := checkPinnedDir(info.FileAttributes, fp, dir); err != nil {
+		windows.CloseHandle(h)
+		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
+	}
+	return h, nil
 }
 
 func beginPut(dir, name string) (*putTemp, error) {
+	pin, err := pinDirectory(dir)
+	if err != nil {
+		return nil, err
+	}
 	path := filepath.Join(dir, name)
 	open := func() (*os.File, error) { return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) }
 	f, err := open()
@@ -127,9 +168,10 @@ func beginPut(dir, name string) (*putTemp, error) {
 		}
 	}
 	if err != nil {
+		windows.CloseHandle(pin)
 		return nil, err
 	}
-	return &putTemp{File: f, path: path, dir: dir}, nil
+	return &putTemp{File: f, path: path, dir: dir, pin: pin}, nil
 }
 
 func (t *putTemp) Commit(dest string, _ os.FileMode, _, overwrite bool) error {
@@ -139,5 +181,12 @@ func (t *putTemp) Commit(dest string, _ os.FileMode, _, overwrite bool) error {
 	return commitFile(t.path, filepath.Join(t.dir, dest), overwrite)
 }
 
-func (t *putTemp) Discard() { t.File.Close(); os.Remove(t.path) }
-func (t *putTemp) Close()   { t.File.Close() }
+func (t *putTemp) release() {
+	if t.pin != 0 {
+		windows.CloseHandle(t.pin)
+		t.pin = 0
+	}
+}
+
+func (t *putTemp) Discard() { t.File.Close(); os.Remove(t.path); t.release() }
+func (t *putTemp) Close()   { t.File.Close(); t.release() }

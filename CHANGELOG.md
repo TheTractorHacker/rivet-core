@@ -2,6 +2,14 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.72 (endpoint agent: deep-scan fixes B, Windows Mediums CORE-DS-5/12/13; no migration)
+
+Provisional number (follows rc.71, stacked on it). Go endpoint agent only; no PHP, no protocol change. **All three are written without a Windows machine and are UNVERIFIED on Windows** (cross-compiled and vetted; the platform-independent logic is unit-tested on Linux): docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md.
+
+- **CORE-DS-5: Windows patch_install.** `install.ps1` prints `ok:false` whenever any update failed or needed a EULA, next to the full results array; `normaliseInstall` treated that as a script failure and reported a bare `scan_failed`. Only a document without `results` is a script failure now; the per-update results and `reboot_required` are kept, and the verdict is computed from them. The `win_install_*` fixtures now match what the real script prints.
+- **CORE-DS-12: script job parameters.** On Windows the parameter object (sealed secrets included) was base64 inside the `-EncodedCommand` text. It now travels only in the environment (`RIVETIT_JOB_PARAMS`, as on Linux) and the prelude reads it with `ConvertFrom-Json $env:RIVETIT_JOB_PARAMS`; no value appears in the command line or the script text. Over about 30000 characters the job is refused.
+- **CORE-DS-13: Windows file_put.** The destination directory is pinned for the whole transfer: opened by handle without following reparse points and without delete sharing, its final path compared with the policy-approved one (`checkPinnedDir`, tested on Linux). NTFS then refuses to rename or replace that directory or an ancestor while the put runs. Remaining (CORE-7 byte-swap variant): the temp file still inherits the folder ACL and the final rename is by path.
+
 ## 1.0.0-rc.71 (endpoint agent: deep-scan fixes A, CORE-DS-2/3/4/6/8/11/17/24; no migration)
 
 Provisional number (follows rc.70). Go endpoint agent only; no PHP, no protocol change (the golden transcripts are untouched). Windows-only parts are listed in docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md as UNVERIFIED.
