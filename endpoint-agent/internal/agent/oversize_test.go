@@ -131,16 +131,39 @@ func TestTransientUpdateBackoffAndGiveUp(t *testing.T) {
 		t.Fatalf("backoff %v %v %v %v", updateBackoff(1), updateBackoff(2), updateBackoff(4), updateBackoff(50))
 	}
 	netErr := errors.New("connection reset")
+	r := newRig(t)
 	for n := 1; n < 100; n++ {
-		if selfTestGivesUp(netErr, n) || selfTestGivesUp(io.ErrUnexpectedEOF, n) {
+		if _, giveUp := r.a.noteUpdateFailure("1.2.0", netErr); giveUp {
 			t.Fatalf("a network error was given up after %d attempts", n)
 		}
+		if _, giveUp := r.a.noteUpdateFailure("1.2.0", io.ErrUnexpectedEOF); giveUp {
+			t.Fatalf("an unexpected EOF was given up after %d attempts", n)
+		}
 	}
-	if selfTestGivesUp(update.ErrSelfTestTimeout, updateTransientLimit-1) || !selfTestGivesUp(update.ErrSelfTestTimeout, updateTransientLimit) {
-		t.Fatal("selftest give-up limit")
+	// review R3-5: 99 network errors plus selftest timeouts: only the selftest timeouts count towards giving up
+	for i := 1; i < updateTransientLimit; i++ {
+		if _, giveUp := r.a.noteUpdateFailure("1.2.0", update.ErrSelfTestTimeout); giveUp {
+			t.Fatalf("gave up after %d selftest timeouts", i)
+		}
 	}
+	if _, giveUp := r.a.noteUpdateFailure("1.2.0", update.ErrSelfTestTimeout); !giveUp {
+		t.Fatal("never gives up on a selftest that keeps timing out")
+	}
+	if _, giveUp := r.a.noteUpdateFailure("1.3.0", update.ErrSelfTestTimeout); giveUp {
+		t.Fatal("the count leaked to another version")
+	}
+}
+
+// review R3-4: the retry pause belongs to ONE version; a newly published version is not delayed by it.
+func TestUpdateRetryPauseIsPerVersion(t *testing.T) {
 	r := newRig(t)
-	if r.a.transientUpdateCount("1") != 1 || r.a.transientUpdateCount("1") != 2 || r.a.transientUpdateCount("2") != 1 {
-		t.Fatal("counter is per version")
+	back, _ := r.a.noteUpdateFailure("1.2.0", errors.New("503"))
+	r.a.updRetryAt = map[string]time.Time{"1.2.0": r.a.o.Now().Add(back)}
+	now := r.a.o.Now()
+	if !now.Before(r.a.updRetryAt["1.2.0"]) {
+		t.Fatal("1.2.0 should be paused")
+	}
+	if now.Before(r.a.updRetryAt["1.2.1"]) {
+		t.Fatal("1.2.1 must not inherit the pause of 1.2.0")
 	}
 }

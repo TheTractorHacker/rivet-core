@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,34 +131,104 @@ func TestPendingEnrollTokenIsNotSentToANewServer(t *testing.T) {
 	}
 }
 
-// CORE-DS-48 (review CRR-5): the installer path is re-verified against the pinned file before it is parsed and before AND after it is copied; a
-// failure stops the install.
-func TestSetupVerifiesThePinnedInstallerBeforeUsingThePath(t *testing.T) {
+// CORE-DS-48 (review CRR-5): payload and exe come from the PINNED HANDLE. The file at the path is swapped for a different, attacker-stamped installer
+// after the pin; setup must still enrol with the pinned file's server and install the pinned file's exe bytes, never re-reading the path.
+func TestSetupReadsAndCopiesFromThePinnedHandle(t *testing.T) {
 	srv := newEnrollSrv(t)
+	evil := newEnrollSrv(t)
 	e := newEnv(t)
 	e.stampWith(srv, nil)
-	calls := 0
+	good, err := os.ReadFile(e.exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.stampWith(evil, nil) // the path now holds the attacker's installer
 	ops := e.ops()
 	ops.pinFile = func(string) (func(), error) { return func() {}, nil }
-	ops.verifyPinned = func(string) error { calls++; return nil }
+	ops.openPinned = func(p string) (io.ReaderAt, int64, bool) {
+		if p != e.exe {
+			return nil, 0, false
+		}
+		return bytes.NewReader(good), int64(len(good)), true
+	}
 	args := []string{"--silent", "--no-service", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
 	if code := runSetup(args, ops, time.Now); code != 0 {
 		t.Fatal(code)
 	}
-	if calls < 3 {
-		t.Fatalf("verifyPinned ran %d times, want before parse + before copy + after copy", calls)
+	if srv.enrolls.Load() != 1 || evil.enrolls.Load() != 0 {
+		t.Fatalf("enrolled with the wrong server: pinned=%d swapped=%d", srv.enrolls.Load(), evil.enrolls.Load())
 	}
-	e2 := newEnv(t)
-	e2.stampWith(srv, nil)
-	ops2 := e2.ops()
-	ops2.pinFile = func(string) (func(), error) { return func() {}, nil }
-	ops2.verifyPinned = func(string) error { return errors.New("file identity changed") }
-	args2 := []string{"--silent", "--no-service", "--state-dir", e2.state, "--install-dir", filepath.Join(e2.state, "bin")}
-	if code := runSetup(args2, ops2, time.Now); code != exitInstallFail {
-		t.Fatalf("exit %d for a swapped installer", code)
+	if got, _ := os.ReadFile(e.installed()); !bytes.Equal(got, fakeExeBytes) {
+		t.Fatal("the installed binary is not the pinned file's exe")
 	}
-	if _, err := os.Stat(e2.installed()); err == nil {
-		t.Fatal("a swapped installer was installed")
+}
+
+// R3-1: the install COMMAND pins its own exe too (it used to fail on Windows because only setup pinned).
+func TestInstallCommandPinsItsOwnExecutable(t *testing.T) {
+	var pinned []string
+	released := 0
+	ops := sysOps{pinFile: func(p string) (func(), error) { pinned = append(pinned, p); return func() { released++ }, nil }}
+	rel, err := pinInstaller(ops, "/x/rivetit-agent")
+	if err != nil || len(pinned) != 1 || pinned[0] != "/x/rivetit-agent" {
+		t.Fatalf("%v %v", err, pinned)
+	}
+	rel()
+	if released != 1 {
+		t.Fatal("not released")
+	}
+	if rel, err := pinInstaller(sysOps{}, "/x"); err != nil || rel == nil {
+		t.Fatal("no pinFile must be a no-op")
+	}
+	ops.pinFile = func(string) (func(), error) { return nil, errors.New("sharing violation") }
+	if _, err := pinInstaller(ops, "/x"); err == nil {
+		t.Fatal("a pin failure must be reported before anything is enrolled")
+	}
+}
+
+// CORE-DS-48 (review CRR-5): where pinning is wired, a missing pinned handle FAILS CLOSED: no fall back to the path, nothing enrolled, no service
+// stopped, nothing installed.
+func TestMissingPinnedHandleFailsClosed(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	ops := e.ops()
+	ops.pinFile = func(string) (func(), error) { return func() {}, nil }
+	ops.openPinned = func(string) (io.ReaderAt, int64, bool) { return nil, 0, false } // pinning is active but this path was never pinned
+	args := []string{"--silent", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
+	if code := runSetup(args, ops, time.Now); code != exitInstallFail {
+		t.Fatalf("setup exit %d, want %d", code, exitInstallFail)
+	}
+	if srv.enrolls.Load() != 0 {
+		t.Fatal("the token was used")
+	}
+	for _, c := range e.calls {
+		if c == "stop" || strings.HasPrefix(c, "install:") {
+			t.Fatalf("a service action ran: %v", e.calls)
+		}
+	}
+	if _, err := os.Stat(e.installed()); err == nil {
+		t.Fatal("a binary was installed")
+	}
+	// performInstall (the install command path) refuses too, before touching the state directory or the token
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	res := performInstall(installParams{flags: enrollFlags{server: srv.URL, token: setupToken}, stateDir: e.state, installDir: filepath.Join(e.state, "bin2"), self: e.exe}, ops, log)
+	if res.Kind != instFail || srv.enrolls.Load() != 0 {
+		t.Fatalf("performInstall: %+v enrolls=%d", res, srv.enrolls.Load())
+	}
+}
+
+// Without pinning (Linux: openPinned nil) nothing changes: the path is read as before.
+func TestNoPinningWiredKeepsReadingThePath(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	ops := e.ops() // pinFile and openPinned are nil
+	args := []string{"--silent", "--no-service", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
+	if code := runSetup(args, ops, time.Now); code != 0 {
+		t.Fatal(code)
+	}
+	if srv.enrolls.Load() != 1 {
+		t.Fatal("not enrolled")
 	}
 }
 

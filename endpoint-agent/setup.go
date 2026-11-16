@@ -216,14 +216,6 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 	if o.payloadFrom != "" {
 		src = o.payloadFrom
 	}
-	if ops.verifyPinned != nil { // the path must still lead to the pinned file before it is parsed (review CRR-5)
-		for _, f := range []string{src} {
-			if err := ops.verifyPinned(f); err != nil {
-				say("The installer file changed after it was locked: "+err.Error(), true)
-				return exitInstallFail
-			}
-		}
-	}
 	var pl *embed.Payload
 	refresh := false // an MSI upgrade without a usable payload: keep the enrollment, only re-register the service
 	var embedErr error
@@ -239,7 +231,11 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 			return exitBadConfig
 		}
 	} else {
-		pl, err = embed.Read(src, now())
+		pl, err = readStamped(ops, src, now())
+		if errors.Is(err, errNotPinned) {
+			say(err.Error(), true)
+			return exitInstallFail
+		}
 		if err != nil {
 			if o.fromMSI && (errors.Is(err, embed.ErrNotStamped) || errors.Is(err, embed.ErrExpired)) {
 				refresh, embedErr = true, err // decided after the elevation check, when the state directory can be read
@@ -395,3 +391,18 @@ func setupOutcome(r installResult, logPath string) (code int, msg string, isErr 
 	}
 	return exitInstallFail, "RivetIT Agent could not be installed: " + r.Msg + tail, true
 }
+
+// readStamped reads the payload of src. Where pinning is wired src MUST have been pinned and is read from that handle only; a missing handle is an
+// error, never a silent fall back to opening the path (a re-pointed junction would swap the file). Without pinning (Linux) it reads the path.
+func readStamped(ops sysOps, src string, now time.Time) (*embed.Payload, error) {
+	if ops.openPinned == nil {
+		return embed.Read(src, now)
+	}
+	rd, size, ok := ops.openPinned(src)
+	if !ok {
+		return nil, errNotPinned
+	}
+	return embed.Parse(rd, size, now)
+}
+
+var errNotPinned = errors.New("the installer file is not locked against changes (installer not pinned)")
