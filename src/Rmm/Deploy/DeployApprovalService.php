@@ -83,6 +83,9 @@ final class DeployApprovalService
             } elseif ($this->argsChanged($request, $dev, $v, (string) $action)) {
                 // CORE-DS-64: a vendor parameter that feeds the install command was changed after the run was asked for; what the second person approved is gone.
                 $out['reason'] = 'parameters_changed';
+                // CR15: an app AUTOMATION planned for this device waits in 'approval'; nobody can decide this request again, so put it back in the queue and a fresh request (with the new digest) is made
+                $this->sql->run("UPDATE rmm_device_apps SET status = 'queued', reason = ?, updated_at = ? WHERE device_id = ? AND package_id = ? AND status = 'approval'",
+                    ['the install arguments changed after approval was asked for: asking again', $this->sql->utcNow(), (int) $dev['device_id'], (int) $v['package_id']]);
             } else {
                 $mins = is_int($request['max_minutes'] ?? null) ? $request['max_minutes'] : DeployProtocol::MAX_MINUTES_DEFAULT;
                 $r = $this->service->queueInstall($dev, $v, $action, 'run', ['source' => 'manual', 'user_id' => (int) $approval['requested_by'], 'max_minutes' => $mins]);
