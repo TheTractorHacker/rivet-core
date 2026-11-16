@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -28,20 +27,17 @@ const ownedDirSDDL = "O:BA" + dirSDDL
 // RivetIT\Agent and filled it with a config.json (mesh_agent_path, server_url, ca_file ...) before the agent was installed. Such a directory, a
 // reparse point, or one whose parent RivetIT directory is untrusted, is refused with an actionable error and nothing is read from it.
 func ensureDir(dir string) error {
-	dir = filepath.Clean(dir)
-	chain := []string{dir}
-	if parent := filepath.Dir(dir); strings.EqualFold(filepath.Base(parent), "RivetIT") {
-		chain = []string{parent, dir} // the default layout %ProgramData%\RivetIT\Agent: both levels are the agent's
-	}
-	for _, d := range chain {
-		if err := ensureTrustedDir(d); err != nil {
-			return fmt.Errorf("refusing to use the agent state directory: %w. %s", err, winacl.RepairHint(chain[0]))
+	chain := stateChain(dir)
+	for _, l := range chain {
+		if err := ensureTrustedDir(l.Dir, l.CheckAll); err != nil {
+			return fmt.Errorf("refusing to use the agent state directory: %w. %s", err, winacl.RepairHint(chain[0].Dir))
 		}
 	}
 	return nil
 }
 
-func ensureTrustedDir(dir string) error {
+// checkAll: vet every entry inside dir as well (see stateChain).
+func ensureTrustedDir(dir string, checkAll bool) error {
 	info, err := winacl.Inspect(dir, true)
 	if err != nil {
 		return err
@@ -75,12 +71,15 @@ func ensureTrustedDir(dir string) error {
 			return fmt.Errorf("permissions of %s are still not safe after tightening: %w", dir, err)
 		}
 	}
-	entries, err := treeInfos(dir)
-	if err != nil {
-		return err
-	}
-	if err := winacl.CheckTree(entries); err != nil {
-		return err
+	var entries []winacl.Info
+	if checkAll {
+		var err error
+		if entries, err = treeInfos(dir); err != nil {
+			return err
+		}
+		if err := winacl.CheckTree(entries); err != nil {
+			return err
+		}
 	}
 	if verdict == winacl.Repairable && OnRepair != nil {
 		OnRepair(fmt.Sprintf("repaired the permissions of %s in place (%v); owner is SYSTEM/Administrators and all %d entries inside are owned by SYSTEM/Administrators", dir, why, len(entries)))
@@ -196,4 +195,14 @@ func unprotect(scheme, s string) ([]byte, error) {
 	res := make([]byte, out.Size)
 	copy(res, unsafe.Slice(out.Data, out.Size))
 	return res, nil
+}
+
+// EnsureProtectedDir creates (atomically, owned by Administrators, protected DACL: SYSTEM and Administrators only) or verifies and tightens a program
+// directory such as a custom --install-dir. A pre-existing directory owned by a standard user, or a reparse point, is refused (CORE-DS-47). Unlike the
+// state directory its contents are not vetted: the installer replaces the binaries in it anyway.
+func EnsureProtectedDir(dir string) error {
+	if err := ensureTrustedDir(filepath.Clean(dir), false); err != nil {
+		return fmt.Errorf("refusing to use the install directory: %w. %s", err, winacl.RepairHint(dir))
+	}
+	return nil
 }
