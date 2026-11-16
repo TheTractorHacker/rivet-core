@@ -113,6 +113,10 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 			}
 			deferred = o.Kind
 		}
+	case tok == "" && switchesServer:
+		// no token to enroll with: keeping the old credential next to the new server_url would send it to that host (review CR8)
+		prevSnap.restore(st)
+		return installResult{Kind: instNoToken, Msg: "a new enrollment token is required to move this device to another server; the device keeps its previous server configuration"}
 	case existing == "":
 		return installResult{Kind: instNoToken, Msg: "an enrollment token is required for a first install"}
 	}

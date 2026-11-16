@@ -157,11 +157,6 @@ func (v *Verifier) Verify(j api.Job) error {
 	if j.IssuedAt.OK && j.IssuedAt.T.After(now.Add(futureSkew)) {
 		return fmt.Errorf("%w: issued_at in the future", ErrInvalidJob)
 	}
-	// A job must name this device (CORE-DS-76): the server always signs device_id, so an unbound job, or an agent that does not know its own id, is
-	// not something to run.
-	if j.DeviceID == "" || dev == "" || string(j.DeviceID) != dev {
-		return ErrWrongDevice
-	}
 	switch j.Type {
 	case TypePowerShell, TypeShell, TypePython:
 		if j.Script == "" || len(j.Script) > MaxScriptBytes {
@@ -178,6 +173,11 @@ func (v *Verifier) Verify(j api.Job) error {
 	}
 	if len(j.Params) > MaxParamsBytes {
 		return fmt.Errorf("%w: params too large", ErrInvalidJob)
+	}
+	// Last, so that every other policy check has run on a vector or job first (review CR11). A job must name this device (CORE-DS-76): the server always signs device_id, so an unbound job, or an agent that does not know its own id, is
+	// not something to run.
+	if j.DeviceID == "" || dev == "" || string(j.DeviceID) != dev {
+		return ErrWrongDevice
 	}
 	return nil
 }

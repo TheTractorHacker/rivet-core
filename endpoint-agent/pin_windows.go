@@ -3,35 +3,40 @@
 package main
 
 import (
-	"errors"
-	"path/filepath"
-	"strings"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
 // pinFileWindows opens path read-only with FILE_SHARE_READ only. While the handle is open nobody can write to, truncate, rename or delete the file, so
 // a standard user who owns the launch folder cannot swap the installer between the moment it is parsed and the moment its bytes are copied into the
-// program directory (CORE-DS-48). The handle's final path must equal the path asked for (no link or junction in between). UNVERIFIED on Windows.
+// program directory (CORE-DS-48). The handle is checked for being a link itself (name-surrogate tag); no path strings are compared, so UNC, mapped-drive and short-name paths work (review CR3). UNVERIFIED on Windows.
 func pinFileWindows(path string) (func(), error) {
 	p, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, err
 	}
-	h, err := windows.CreateFile(p, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	// FILE_FLAG_OPEN_REPARSE_POINT: if the launch path is itself a link, the handle is the link and is refused below; otherwise it is the file.
+	h, err := windows.CreateFile(p, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING,
+		windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]uint16, 1024)
-	n, err := windows.GetFinalPathNameByHandle(h, &buf[0], uint32(len(buf)), 0)
-	if err != nil || int(n) > len(buf) {
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
 		windows.CloseHandle(h)
-		return nil, errors.New("cannot determine the final path of the installer")
+		return nil, err
 	}
-	final := strings.TrimPrefix(windows.UTF16ToString(buf[:n]), `\\?\`)
-	if !strings.EqualFold(filepath.Clean(final), filepath.Clean(path)) {
+	var ti struct{ FileAttributes, ReparseTag uint32 }
+	tag := uint32(0)
+	if info.FileAttributes&attrReparsePointFile != 0 {
+		if windows.GetFileInformationByHandleEx(h, windows.FileAttributeTagInfo, (*byte)(unsafe.Pointer(&ti)), uint32(unsafe.Sizeof(ti))) == nil {
+			tag = ti.ReparseTag
+		}
+	}
+	if err := checkPinnedFile(info.FileAttributes, tag); err != nil {
 		windows.CloseHandle(h)
-		return nil, errors.New("the installer path is a link or changed: " + final)
+		return nil, err
 	}
 	return func() { windows.CloseHandle(h) }, nil
 }

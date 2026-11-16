@@ -105,6 +105,7 @@ type Agent struct {
 	logs         *logs.Manager       // RMM Phase 8 log collection; idle until a check-in offers logs:collect
 	hv           *hypervisor.Manager // Proxmox / Hyper-V visibility; idle until a check-in offers "hypervisor" with a signed configuration
 	chg          *change.Manager     // change monitoring; idle until a check-in offers change:monitor with a signed configuration
+	updTransient map[string]int      // temporary self-update failures per version
 	updRetryAt   time.Time           // earliest next self-update attempt after a temporary failure
 	skew         time.Duration       // the correction being applied (zero while the PC clock is close enough)
 	clkOff       time.Duration       // estimate of server time minus the PC clock
@@ -1091,6 +1092,19 @@ func (a *Agent) configureChange(resp *api.CheckinResponse) {
 	_ = a.chg.Configure(resp.Config.Change)
 }
 
+// updateTransientLimit is how many temporary failures one version may have before it is recorded as failed (a build whose selftest always times
+// out must not be downloaded every ten minutes for ever; review CR9).
+const updateTransientLimit = 6
+
+// transientUpdateExhausted counts one more temporary failure of version and reports whether the limit is now reached.
+func (a *Agent) transientUpdateExhausted(version string) bool {
+	if a.updTransient == nil {
+		a.updTransient = map[string]int{}
+	}
+	a.updTransient[version]++
+	return a.updTransient[version] >= updateTransientLimit
+}
+
 // updateRetryPause is how long a temporary self-update failure waits before the same version is tried again.
 const updateRetryPause = 10 * time.Minute
 
@@ -1158,7 +1172,7 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 	a.mu.Unlock()
 	hosts := append([]string{c.Host()}, cfg.UpdateHosts...)
 	restart, err := a.upd.Apply(ctx, *man, ed25519.PublicKey(pub), c.HTTPClient(), c.Host(), a.token(), hosts)
-	if err != nil && update.Transient(err) {
+	if err != nil && update.Transient(err) && !a.transientUpdateExhausted(man.Version) {
 		// shutdown, timeout, network, 429/5xx, slow selftest: keep the version eligible and try again after a pause (CORE-DS-15)
 		a.log.Warn("update attempt failed (temporary); will try again", "version", man.Version, "err", err)
 		a.updRetryAt = a.o.Now().Add(updateRetryPause)

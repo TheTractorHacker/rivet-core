@@ -171,7 +171,7 @@ func New(o Options) (*Client, error) {
 func PinVerifier(want []byte, serverHost string) func(tls.ConnectionState) error {
 	return func(cs tls.ConnectionState) error {
 		// ServerName is empty when the host is an IP literal (no SNI): then the pin is enforced, the safe side.
-		if cs.ServerName != "" && !strings.EqualFold(cs.ServerName, serverHost) {
+		if cs.ServerName != "" && otherHost(cs.ServerName, serverHost) {
 			return nil
 		}
 		if len(cs.PeerCertificates) == 0 {
@@ -183,6 +183,19 @@ func PinVerifier(want []byte, serverHost string) func(tls.ConnectionState) error
 		}
 		return nil
 	}
+}
+
+// otherHost reports whether the TLS server name certainly belongs to a different host than the configured one. The stack reports the SNI form (lower
+// case, no trailing dot, punycode), the configuration may say anything, so the comparison only skips the pin for two plain ASCII names that differ after
+// that normalisation; a configured host that is not plain ASCII (IDN) cannot be compared and keeps the pin on (fail closed, review CR7).
+func otherHost(serverName, serverHost string) bool {
+	norm := func(h string) string { return strings.ToLower(strings.TrimRight(h, ".")) }
+	for _, r := range serverHost {
+		if r > 0x7e {
+			return false
+		}
+	}
+	return norm(serverName) != norm(serverHost)
 }
 
 // HTTPClient exposes the underlying client (the updater reuses its TLS config).

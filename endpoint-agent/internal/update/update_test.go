@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -511,5 +512,21 @@ func TestTransientClassification(t *testing.T) {
 	man.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(e.priv, []byte(man.SHA256)))
 	if _, err := e.apply(e.mgr("1.0.0"), man); err == nil || Transient(err) {
 		t.Fatalf("sha mismatch: %v", err)
+	}
+}
+
+// CORE-DS-15 (review CR9): a connection dropped mid-download is temporary.
+func TestTruncatedDownloadIsTransient(t *testing.T) {
+	if !Transient(io.ErrUnexpectedEOF) || !Transient(fmt.Errorf("copy: %w", io.ErrUnexpectedEOF)) {
+		t.Fatal("unexpected EOF is not transient")
+	}
+	e := newEnv(t)
+	e.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100000")
+		w.Write([]byte("short"))
+	})
+	_, err := e.apply(e.mgr("1.0.0"), e.manifest("1.1.0"))
+	if err == nil || !Transient(err) {
+		t.Fatalf("truncated body: %v (transient=%v)", err, err != nil && Transient(err))
 	}
 }

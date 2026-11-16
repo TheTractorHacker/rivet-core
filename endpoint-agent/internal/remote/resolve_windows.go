@@ -9,8 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"rivetit-agent/internal/winacl"
 )
 
 // hostResolve returns the fully resolved form of an EXISTING path: symbolic links AND junctions (mount points) followed, the true case and long names.
@@ -66,6 +69,15 @@ func stripDevicePrefix(s string) string {
 	return s
 }
 
+// reparseTagOf is the reparse tag of an open handle (0 when there is none or it cannot be read).
+func reparseTagOf(h windows.Handle) uint32 {
+	var ti struct{ FileAttributes, ReparseTag uint32 }
+	if err := windows.GetFileInformationByHandleEx(h, windows.FileAttributeTagInfo, (*byte)(unsafe.Pointer(&ti)), uint32(unsafe.Sizeof(ti))); err != nil {
+		return 0
+	}
+	return ti.ReparseTag
+}
+
 // openNoFollow opens read-only. A final element that is a reparse point (symbolic link, junction, ...) is refused, and the handle's own final
 // path must equal the path the policy resolved, so a link swapped in after the check (or in a parent folder) cannot redirect the read.
 func openNoFollow(path string) (*os.File, error) {
@@ -83,8 +95,8 @@ func openNoFollow(path string) (*os.File, error) {
 		windows.CloseHandle(h)
 		return nil, &fs.PathError{Op: "open", Path: path, Err: err}
 	}
-	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-		windows.CloseHandle(h)
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && winacl.IsNameSurrogate(reparseTagOf(h)) {
+		windows.CloseHandle(h) // a symlink or junction; a Cloud Files placeholder is an ordinary file for this purpose (review CR2)
 		return nil, &fs.PathError{Op: "open", Path: path, Err: errors.New("path is a link")}
 	}
 	if fp, err := finalPathOf(h); err != nil || !strings.EqualFold(filepath.Clean(fp), filepath.Clean(path)) {
@@ -145,7 +157,7 @@ func pinDirectory(dir string) (windows.Handle, error) {
 		windows.CloseHandle(h)
 		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
 	}
-	if err := checkPinnedDir(info.FileAttributes, fp, dir); err != nil {
+	if err := checkPinnedDir(info.FileAttributes, reparseTagOf(h), fp, dir); err != nil {
 		windows.CloseHandle(h)
 		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
 	}
