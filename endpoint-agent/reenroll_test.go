@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"rivetit-agent/internal/store"
 )
@@ -54,5 +56,30 @@ func TestFirstInstallKeepsItsConfigWhenEnrollmentRejected(t *testing.T) {
 	e.setup()
 	if got := serverURLOf(t, e.state); got != srv.URL {
 		t.Fatalf("first install lost its configuration: %q", got)
+	}
+}
+
+// CORE-DS-48: setup pins the installer file (and refuses to continue when it cannot) before it parses it.
+func TestSetupPinsTheInstallerForTheWholeRun(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	var pinned []string
+	released := 0
+	ops := e.ops()
+	ops.pinFile = func(p string) (func(), error) {
+		pinned = append(pinned, p)
+		return func() { released++ }, nil
+	}
+	args := []string{"--silent", "--no-service", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
+	if code := runSetup(args, ops, time.Now); code != 0 {
+		t.Fatal(code)
+	}
+	if len(pinned) != 1 || pinned[0] != e.exe || released != 1 {
+		t.Fatalf("pinned %v released %d", pinned, released)
+	}
+	ops.pinFile = func(string) (func(), error) { return nil, errors.New("sharing violation") }
+	if code := runSetup(args, ops, time.Now); code != exitInstallFail {
+		t.Fatalf("exit %d when the installer cannot be pinned", code)
 	}
 }

@@ -26,6 +26,9 @@ type sysOps struct {
 	registerARP  func(installDir, exe string) error
 	removeARP    func() error
 	message      func(title, text string, isError bool)
+	// pinFile keeps a file open without write or delete sharing until the returned release func is called (nil = nothing to do). Windows only: the
+	// installer re-reads its own exe and payload by path after a long enrollment, and the launch folder belongs to a standard user (CORE-DS-48).
+	pinFile func(path string) (release func(), err error)
 	// meshInstall downloads and runs the optional MeshCentral agent installer (nil = the real one; tests inject a fake).
 	meshInstall func(ctx context.Context, s *mesh.Spec, o mesh.InstallOptions) mesh.Result
 }

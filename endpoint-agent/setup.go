@@ -194,6 +194,22 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 		say("Cannot locate the installer: "+err.Error(), true)
 		return exitInstallFail
 	}
+	// Hold the installer (and the MSI payload source) open without write/delete sharing for the whole run, so the bytes that are parsed now are the
+	// bytes that are copied into the program directory later (CORE-DS-48).
+	if ops.pinFile != nil {
+		pins := []string{self}
+		if o.payloadFrom != "" && o.payloadFrom != self {
+			pins = append(pins, o.payloadFrom)
+		}
+		for _, f := range pins {
+			release, err := ops.pinFile(f)
+			if err != nil {
+				say("Cannot lock the installer file against changes: "+err.Error(), true)
+				return exitInstallFail
+			}
+			defer release()
+		}
+	}
 	// Where the configuration comes from: the payload appended to this program (the exe installer), to the .msi named by --payload-from (the MSI
 	// package), or the MSI's public properties. Validate before any elevation prompt: a bad installer should fail early.
 	src := self
