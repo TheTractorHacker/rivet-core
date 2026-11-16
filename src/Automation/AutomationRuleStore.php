@@ -210,14 +210,22 @@ final class AutomationRuleStore
         $cfgJson = json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         if ($id === null) {
+            // R3-6: a webhook rule whose secret is sealed after the insert (the id is part of the sealed name) is inserted DISABLED and enabled only once the secret is sealed, so the
+            // evaluator can never see it enabled with an empty secret; when sealing fails nothing is left behind.
             $newId = (int) $this->database->execute(
                 'INSERT INTO automation_rules (name, trigger_event, condition_json, action_type, action_config_json, is_enabled) VALUES (?, ?, ?, ?, ?, ?)',
-                [$name, $triggerEvent, $json, $actionType, $cfgJson, $enabled ? 1 : 0]
+                [$name, $triggerEvent, $json, $actionType, $cfgJson, $sealFor === null && $enabled ? 1 : 0]
             )->insertId;
             if ($sealFor !== null) {
-                // CRR-21: the id exists now, so the secret is sealed under this rule's own name
-                $cfg['secret_enc'] = $this->vault->encrypt(self::secretContext($newId), $sealFor);
-                $this->database->execute('UPDATE automation_rules SET action_config_json = ? WHERE rule_id = ?', [json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $newId]);
+                try {
+                    // CRR-21: the id exists now, so the secret is sealed under this rule's own name
+                    $cfg['secret_enc'] = $this->vault->encrypt(self::secretContext($newId), $sealFor);
+                    $this->database->execute('UPDATE automation_rules SET action_config_json = ?, is_enabled = ? WHERE rule_id = ?', [json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $enabled ? 1 : 0, $newId]);
+                } catch (\Throwable $e) {
+                    $this->database->execute('DELETE FROM automation_rules WHERE rule_id = ?', [$newId]);
+
+                    throw $e;
+                }
             }
 
             return $newId;
