@@ -36,6 +36,12 @@ func cmdInstall(args []string) int {
 		return 1
 	}
 	ops, log := realOps(), consoleLog(*level)
+	release, perr := pinInstaller(ops, self)
+	if perr != nil {
+		fmt.Fprintln(os.Stderr, "error: cannot lock the installer file against changes:", perr)
+		return 1
+	}
+	defer release()
 	res := performInstall(installParams{flags: f, stateDir: *dir, installDir: *installDir, self: self, version: version}, ops, log)
 	switch res.Kind {
 	case instNoToken:

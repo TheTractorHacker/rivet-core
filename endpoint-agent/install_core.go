@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -29,9 +30,10 @@ type sysOps struct {
 	// pinFile keeps a file open without write or delete sharing until the returned release func is called (nil = nothing to do). Windows only: the
 	// installer re-reads its own exe and payload by path after a long enrollment, and the launch folder belongs to a standard user (CORE-DS-48).
 	pinFile func(path string) (release func(), err error)
-	// verifyPinned reports an error unless path still leads to the very file pinFile pinned (volume serial + file index): a junction in a parent folder
-	// that was re-pointed after the pin is caught (CORE-DS-48, review CRR-5). nil = nothing to do.
-	verifyPinned func(path string) error
+	// openPinned returns the open, pinned handle of a file pinFile locked (nil, 0, false when path was not pinned). Parsing the payload and copying the
+	// exe are done FROM that handle, never by re-opening the path, so a junction in a parent folder that is re-pointed after the pin cannot swap the
+	// bytes (CORE-DS-48, review CRR-5). nil = nothing is pinned (every other OS).
+	openPinned func(path string) (rd io.ReaderAt, size int64, ok bool)
 	// meshInstall downloads and runs the optional MeshCentral agent installer (nil = the real one; tests inject a fake).
 	meshInstall func(ctx context.Context, s *mesh.Spec, o mesh.InstallOptions) mesh.Result
 }
@@ -147,12 +149,12 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 				return installResult{Kind: instFail, Msg: "stopping existing service: " + err.Error()}
 			}
 		}
-		if err := installBinary(p.self, dst, func() error {
-			if ops.verifyPinned == nil {
-				return nil
-			}
-			return ops.verifyPinned(p.self)
-		}); err != nil {
+		var rd io.ReaderAt
+		var size int64
+		if ops.openPinned != nil {
+			rd, size, _ = ops.openPinned(p.self)
+		}
+		if err := installBinary(p.self, dst, rd, size); err != nil {
 			return installResult{Kind: instFail, Msg: "installing binary: " + err.Error(), Dst: dst}
 		}
 		log.Info("binary installed (embedded configuration stripped)", "path", dst)
@@ -209,24 +211,28 @@ func stamped(path string) bool {
 	return err != nil || n != fi.Size()
 }
 
+// pinInstaller locks self against changes for the `install` command, as setup does for its installer, so the later read and copy come from one
+// handle (R3-1: the install command used to fail on Windows because only setup pinned). No-op where pinFile is nil.
+func pinInstaller(ops sysOps, self string) (release func(), err error) {
+	if ops.pinFile == nil {
+		return func() {}, nil
+	}
+	return ops.pinFile(self)
+}
+
 // installBinary writes the unstamped bytes of src next to dst and swaps them
 // in, keeping the previous binary as dst.old (a running service exe cannot be
 // overwritten, but it can be renamed).
-func installBinary(src, dst string, verify func() error) error {
+func installBinary(src, dst string, rd io.ReaderAt, size int64) error {
 	tmp := dst + ".tmp"
-	if verify != nil {
-		if err := verify(); err != nil {
-			return err
-		}
+	var err error
+	if rd != nil { // the pinned handle: the bytes that were parsed are the bytes that are copied
+		_, err = embed.WriteUnstampedFrom(rd, size, tmp)
+	} else {
+		_, err = embed.WriteUnstamped(src, tmp)
 	}
-	if _, err := embed.WriteUnstamped(src, tmp); err != nil {
+	if err != nil {
 		return err
-	}
-	if verify != nil { // the file that was read is the pinned one: checked again after the copy, before it is swapped in
-		if err := verify(); err != nil {
-			os.Remove(tmp)
-			return err
-		}
 	}
 	_ = os.Remove(dst + ".old")
 	if _, err := os.Stat(dst); err == nil {
