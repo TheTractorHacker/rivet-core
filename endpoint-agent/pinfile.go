@@ -17,3 +17,9 @@ func checkPinnedFile(attrs, reparseTag uint32) error {
 	}
 	return nil
 }
+
+// fileID is a file's identity: volume serial number and 64-bit file index.
+type fileID struct{ Volume, Index uint64 }
+
+// sameFile reports whether two identities are the same file; an all-zero identity (could not be read) never matches.
+func sameFile(a, b fileID) bool { return a == b && (a.Volume != 0 || a.Index != 0) }

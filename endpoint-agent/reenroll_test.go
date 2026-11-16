@@ -124,3 +124,34 @@ func TestPendingEnrollTokenIsNotSentToANewServer(t *testing.T) {
 		t.Fatalf("server_url is %s", got)
 	}
 }
+
+// CORE-DS-48 (review CRR-5): the installer path is re-verified against the pinned file before it is parsed and before AND after it is copied; a
+// failure stops the install.
+func TestSetupVerifiesThePinnedInstallerBeforeUsingThePath(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	calls := 0
+	ops := e.ops()
+	ops.pinFile = func(string) (func(), error) { return func() {}, nil }
+	ops.verifyPinned = func(string) error { calls++; return nil }
+	args := []string{"--silent", "--no-service", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
+	if code := runSetup(args, ops, time.Now); code != 0 {
+		t.Fatal(code)
+	}
+	if calls < 3 {
+		t.Fatalf("verifyPinned ran %d times, want before parse + before copy + after copy", calls)
+	}
+	e2 := newEnv(t)
+	e2.stampWith(srv, nil)
+	ops2 := e2.ops()
+	ops2.pinFile = func(string) (func(), error) { return func() {}, nil }
+	ops2.verifyPinned = func(string) error { return errors.New("file identity changed") }
+	args2 := []string{"--silent", "--no-service", "--state-dir", e2.state, "--install-dir", filepath.Join(e2.state, "bin")}
+	if code := runSetup(args2, ops2, time.Now); code != exitInstallFail {
+		t.Fatalf("exit %d for a swapped installer", code)
+	}
+	if _, err := os.Stat(e2.installed()); err == nil {
+		t.Fatal("a swapped installer was installed")
+	}
+}

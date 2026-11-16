@@ -216,6 +216,14 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 	if o.payloadFrom != "" {
 		src = o.payloadFrom
 	}
+	if ops.verifyPinned != nil { // the path must still lead to the pinned file before it is parsed (review CRR-5)
+		for _, f := range []string{src} {
+			if err := ops.verifyPinned(f); err != nil {
+				say("The installer file changed after it was locked: "+err.Error(), true)
+				return exitInstallFail
+			}
+		}
+	}
 	var pl *embed.Payload
 	refresh := false // an MSI upgrade without a usable payload: keep the enrollment, only re-register the service
 	var embedErr error

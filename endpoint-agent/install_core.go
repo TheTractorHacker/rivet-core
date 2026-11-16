@@ -29,6 +29,9 @@ type sysOps struct {
 	// pinFile keeps a file open without write or delete sharing until the returned release func is called (nil = nothing to do). Windows only: the
 	// installer re-reads its own exe and payload by path after a long enrollment, and the launch folder belongs to a standard user (CORE-DS-48).
 	pinFile func(path string) (release func(), err error)
+	// verifyPinned reports an error unless path still leads to the very file pinFile pinned (volume serial + file index): a junction in a parent folder
+	// that was re-pointed after the pin is caught (CORE-DS-48, review CRR-5). nil = nothing to do.
+	verifyPinned func(path string) error
 	// meshInstall downloads and runs the optional MeshCentral agent installer (nil = the real one; tests inject a fake).
 	meshInstall func(ctx context.Context, s *mesh.Spec, o mesh.InstallOptions) mesh.Result
 }
@@ -144,7 +147,12 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 				return installResult{Kind: instFail, Msg: "stopping existing service: " + err.Error()}
 			}
 		}
-		if err := installBinary(p.self, dst); err != nil {
+		if err := installBinary(p.self, dst, func() error {
+			if ops.verifyPinned == nil {
+				return nil
+			}
+			return ops.verifyPinned(p.self)
+		}); err != nil {
 			return installResult{Kind: instFail, Msg: "installing binary: " + err.Error(), Dst: dst}
 		}
 		log.Info("binary installed (embedded configuration stripped)", "path", dst)
@@ -204,10 +212,21 @@ func stamped(path string) bool {
 // installBinary writes the unstamped bytes of src next to dst and swaps them
 // in, keeping the previous binary as dst.old (a running service exe cannot be
 // overwritten, but it can be renamed).
-func installBinary(src, dst string) error {
+func installBinary(src, dst string, verify func() error) error {
 	tmp := dst + ".tmp"
+	if verify != nil {
+		if err := verify(); err != nil {
+			return err
+		}
+	}
 	if _, err := embed.WriteUnstamped(src, tmp); err != nil {
 		return err
+	}
+	if verify != nil { // the file that was read is the pinned one: checked again after the copy, before it is swapped in
+		if err := verify(); err != nil {
+			os.Remove(tmp)
+			return err
+		}
 	}
 	_ = os.Remove(dst + ".old")
 	if _, err := os.Stat(dst); err == nil {
