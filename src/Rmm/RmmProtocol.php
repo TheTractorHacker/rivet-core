@@ -109,6 +109,10 @@ final class RmmProtocol
     public const MESH_VIEWMODE = 11;
     /** Capability an agent announces when it can read and report the local MeshCentral node id (optional Mesh agent, 1.0.0-rc.12). */
     public const CAP_MESH_NODEID = 'mesh:nodeid';
+    /** CORE-DS-26: an agent that announces it reads `update.manifest_signature` (a domain-separated signature over the whole manifest) is offered it. */
+    public const CAP_UPDATE_SIGNED = 'update:signed';
+    /** The domain line of the signed update manifest. */
+    public const UPDATE_MANIFEST_DOMAIN = 'rivetit-update-manifest-v1';
     /** The check-in member that carries the Mesh agent state: {installed, version?, node_id?, error?}. Additive; absent from older agents. */
     public const CHECKIN_MESH_AGENT = 'mesh_agent';
     /** The installer-payload members of the optional Mesh agent install. Additive; absent when the install was not asked for. */

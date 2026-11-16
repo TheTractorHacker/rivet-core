@@ -52,6 +52,25 @@ final class UpdatesTest extends RmmTestCase
         $this->assertFalse(Signer::verifyManifest(strtoupper($u['sha256']), $u['signature'], $this->pub));
     }
 
+    /** CORE-DS-26 (server side): an agent that announces `update:signed` also gets the platform and a signature over the whole manifest; every other agent gets exactly what it got before. */
+    public function testTheWholeManifestIsSignedForAnAgentThatAsksForIt(): void
+    {
+        $b = $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
+        [, , $plain] = $this->h->checkin($this->T, ['capabilities' => ['check:disk']]);
+        $this->assertSame(['version', 'url', 'sha256', 'signature', 'min_version'], array_keys($plain['update']), 'unchanged for an agent that did not ask');
+        [, , $r] = $this->h->checkin($this->T, ['capabilities' => ['check:disk', 'update:signed']]);
+        $u = $r['update'];
+        $this->assertSame(['version', 'url', 'sha256', 'signature', 'min_version', 'os', 'arch', 'manifest_signature'], array_keys($u));
+        $m = ['version' => $u['version'], 'os' => $u['os'], 'arch' => $u['arch'], 'sha256' => $u['sha256'], 'min_version' => $u['min_version']];
+        $this->assertSame(['windows', 'amd64'], [$u['os'], $u['arch']]);
+        $this->assertTrue(Signer::verify(Signer::updateManifestMessage($m), $u['manifest_signature'], $this->pub));
+        foreach (['version' => '9.9.9', 'os' => 'linux', 'arch' => 'arm64', 'min_version' => '1.0.0'] as $k => $v) {
+            $this->assertFalse(Signer::verify(Signer::updateManifestMessage([$k => $v] + $m), $u['manifest_signature'], $this->pub), "the $k is bound by the signature");
+        }
+        $this->assertFalse(Signer::verify($u['sha256'], $u['manifest_signature'], $this->pub), 'it is not the bare-hash signature');
+        $this->assertSame($b['sha256'], $u['sha256']);
+    }
+
     public function testRingsRolloutMinVersionAndArchitecture(): void
     {
         $this->h->publishBinary('2.0.0', 'amd64', 8192, false, 'pilot');

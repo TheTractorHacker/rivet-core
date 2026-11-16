@@ -70,9 +70,10 @@ final class UpdateService
 
     /**
      * @param array<string,mixed> $dev
+     * @param bool $signedManifest add `os`, `arch` and `manifest_signature` (CORE-DS-26): only for an agent that announced `update:signed`
      * @return array<string,mixed>|null
      */
-    public function manifestFor(array $dev): ?array
+    public function manifestFor(array $dev, bool $signedManifest = false): ?array
     {
         $best = $this->offeredRelease($dev);
         if ($best === null) {
@@ -90,7 +91,16 @@ final class UpdateService
         }
         [$sec] = $this->settings->signingKey();
 
-        return ['version' => $best['version'], 'url' => $url, 'sha256' => $best['sha256'], 'signature' => Signer::signManifest((string) $best['sha256'], $sec), 'min_version' => $best['min_version']];
+        $m = ['version' => $best['version'], 'url' => $url, 'sha256' => $best['sha256'], 'signature' => Signer::signManifest((string) $best['sha256'], $sec), 'min_version' => $best['min_version']];
+        if ($signedManifest) {
+            // CORE-DS-26, additive and only for an agent that announced `update:signed`: the platform it is for and a signature over the whole manifest
+            $os = AgentOs::ofRow($best);
+            $m['os'] = $os;
+            $m['arch'] = (string) $best['arch'];
+            $m['manifest_signature'] = Signer::sign(Signer::updateManifestMessage(['version' => (string) $best['version'], 'os' => $os, 'arch' => (string) $best['arch'], 'sha256' => (string) $best['sha256'], 'min_version' => (string) $best['min_version']]), $sec);
+        }
+
+        return $m;
     }
 
     /**
