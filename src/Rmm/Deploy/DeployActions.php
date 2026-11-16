@@ -244,6 +244,9 @@ final class DeployActions
             return $e;
         }
         $pkg = $this->catalog->package($packageId);
+        if ($pkg !== null && $pkg['two_person'] && $this->catalog->heldByTicksOnly($packageId, true)) {
+            return ActionResult::fail(409, 'conflict', 'This package needs a second person and is ticked on an installer that can still enrol devices (or planned for a device that has not finished). There is no assignment to pin: revoke those installers, or wait for the planned installs to finish, before adding, restoring or retiring a version.');
+        }
         if ($pkg !== null && $pkg['two_person']) {
             return ActionResult::fail(409, 'conflict', 'This package has an assignment or auto-install policy that follows its newest version and needs a second person. Pin the assignment to a version (a new assignment goes through approval) before adding or restoring a version.');
         }

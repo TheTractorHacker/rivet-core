@@ -90,4 +90,32 @@ final class UrlPolicyHostSpellingTest extends TestCase
         $this->assertNotNull($policy->vet('http://lan.test/'), 'the rest of the listed range still works');
         $this->assertNotNull($policy->vet('http://ula.test/'));
     }
+
+    /** CORE-DS-73: after a request the address curl really connected to must be one that was vetted. */
+    public function testTheAddressOfTheConnectionIsComparedWithTheVettedOnes(): void
+    {
+        $t = ['host' => 'hooks.example.test', 'port' => 443, 'ips' => ['93.184.216.34', '2606:2800:220:1:248:1893:25c8:1946']];
+        $this->assertTrue(UrlPolicy::connectedToVetted('93.184.216.34', $t));
+        $this->assertTrue(UrlPolicy::connectedToVetted('2606:2800:0220:0001:0248:1893:25c8:1946', $t), 'any spelling of a vetted IPv6 address');
+        $this->assertFalse(UrlPolicy::connectedToVetted('127.0.0.1', $t));
+        $this->assertFalse(UrlPolicy::connectedToVetted('', $t));
+        $this->assertFalse(UrlPolicy::connectedToVetted(false, $t));
+        $this->assertFalse(UrlPolicy::connectedToVetted('not an ip', $t));
+        // with a real connection: curl reports the address it used
+        $srv = proc_open([PHP_BINARY, '-S', '127.0.0.1:34891', '-t', sys_get_temp_dir()], [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
+        $this->assertIsResource($srv);
+        try {
+            for ($i = 0; $i < 50 && @fsockopen('127.0.0.1', 34891) === false; $i++) {
+                usleep(100000);
+            }
+            $ch = curl_init('http://127.0.0.1:34891/');
+            curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 5]);
+            curl_exec($ch);
+            $ip = curl_getinfo($ch, CURLINFO_PRIMARY_IP);
+            $this->assertTrue(UrlPolicy::connectedToVetted($ip, ['host' => '127.0.0.1', 'port' => 34891, 'ips' => ['127.0.0.1']]));
+            $this->assertFalse(UrlPolicy::connectedToVetted($ip, ['host' => 'x.example.test', 'port' => 34891, 'ips' => ['93.184.216.34']]), 'a pin that curl did not honour is caught');
+        } finally {
+            proc_terminate($srv);
+        }
+    }
 }

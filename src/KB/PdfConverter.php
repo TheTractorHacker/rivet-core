@@ -344,7 +344,23 @@ final class PdfConverter
         );
 
         if ($r['overflow']) {
-            throw new PdfConversionException('That PDF produced too much output (it draws images far more often than a normal document does) and was stopped.');
+            // CR16: a document that draws many small images (toolbar icons, headers and footers) used to import its text and the first 100 images. Degrade the same way: clear what
+            // was written and convert again WITHOUT images (-i), so only the text is imported and the author is told.
+            foreach (scandir($dir) ?: [] as $e) {
+                if ($e !== '.' && $e !== '..' && $e !== 'in.pdf') {
+                    @unlink($dir . '/' . $e);
+                }
+            }
+            $r = $this->exec(
+                [self::BIN_PDFTOHTML, '-xml', '-i', '-enc', 'UTF-8', '-q', '-l', (string) $pages, 'in.pdf', 'out.xml'],
+                $dir,
+                self::TIMEOUT_HTML_MS,
+                true
+            );
+            if ($r['overflow']) {
+                throw new PdfConversionException('That PDF produced too much output and was stopped.');
+            }
+            $this->warn('The images of this PDF were not imported: it draws images far more often than a normal document does.');
         }
         if ($r['timedout']) {
             throw new PdfConversionException('That PDF took too long to convert and was stopped.');

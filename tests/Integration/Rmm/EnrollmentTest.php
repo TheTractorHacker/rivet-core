@@ -395,6 +395,23 @@ final class EnrollmentTest extends RmmTestCase
         $this->assertSame($b, (int) $this->h->one("SELECT client_id FROM rmm_alert_meta WHERE device_id=$id"));
     }
 
+    /** CR21 / CORE-DS-63: the site of the old client does not follow a device into another client, and a parent link that now crosses clients ends. */
+    public function testApprovalAcrossClientsDropsTheOldSiteAndCrossClientParentLinks(): void
+    {
+        $tok = $this->h->token(null, 24, 50);
+        $aB = $this->h->asset(['name' => 'B asset 3', 'serial' => 'SER-B3', 'client_id' => $this->h->clientB]);
+        $locA = $this->h->tenancy->addLocation($this->h->clientA);
+        [, , $j] = $this->h->enroll($tok, $this->h::device(['serial' => 'SER-B3']));
+        $id = (int) $j['device_id'];
+        $this->h->q("UPDATE endpoint_agent_devices SET location_id = $locA WHERE device_id = $id");
+        [, , $k] = $this->h->enroll($this->h->token(null, 24, 50), $this->h::device(['serial' => 'SER-A-PARENT']));
+        $peer = (int) $k['device_id'];
+        $this->h->q("INSERT INTO rmm_device_parents (device_id, parent_device_id, created_by, created_at) VALUES ($id, $peer, 1, UTC_TIMESTAMP())");
+        $this->assertTrue($this->h->module->enrollment()->resolvePending($id, 'link', $aB, 1)['ok']);
+        $this->assertSame(0, (int) $this->h->one("SELECT location_id FROM endpoint_agent_devices WHERE device_id=$id"), 'client A site A1 does not stay on a client B device');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_device_parents WHERE device_id=$id OR parent_device_id=$id"));
+    }
+
     public function testAnArchivedAssetSendsAReEnrollingDeviceBackToApproval(): void
     {
         $tok = $this->h->token(null, 24, 50);

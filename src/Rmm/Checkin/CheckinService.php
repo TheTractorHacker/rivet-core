@@ -21,6 +21,7 @@ use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\Policy\EffectivePolicy;
+use RivetCore\Rmm\Crypto\Signer;
 use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Remote\RemoteSettings;
 use RivetCore\Rmm\RmmEvent;
@@ -191,9 +192,12 @@ final class CheckinService
             'next_check_in_s' => $interval,
             'jobs_pending' => $features['jobs'] ? $this->jobs->pendingCount((int) $dev['device_id']) : 0,
             'config' => $policy === null
-                ? ['checks' => $this->settings->signedChecks($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null, RmmChecks::deviceOs($dev)), 'collect_interval_s' => (int) $cfg['collect_interval_s']]
-                : ['checks' => $this->settings->signCheckList($policy['checks'], $this->capsOf($dev, $announce['caps']) ?? [], RmmChecks::deviceOs($dev)), 'collect_interval_s' => $policy['collect_interval_s']],
+                ? ['checks' => $this->settings->signedChecks($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null, RmmChecks::deviceOs($dev), (int) $dev['device_id']), 'collect_interval_s' => (int) $cfg['collect_interval_s']]
+                : ['checks' => $this->settings->signCheckList($policy['checks'], $this->capsOf($dev, $announce['caps']) ?? [], RmmChecks::deviceOs($dev), (int) $dev['device_id']), 'collect_interval_s' => $policy['collect_interval_s']],
         ];
+        if ($this->settings->signedConfig()) {
+            $out['config']['signed_config'] = 1;   // CORE-DS-16: from now on the agent refuses an unsigned check or an unsigned log configuration
+        }
         $this->reconcileDelivered($dev, $out['config']['checks'], $policy === null ? ($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null) : ($this->capsOf($dev, $announce['caps']) ?? []));
         if ($knowsPolicies) {
             // Additive, offered only to an agent that announced `policies`: every other response is byte-identical to before.
@@ -201,6 +205,9 @@ final class CheckinService
         }
         if ($features['updates']) {
             $out['update'] = $this->updates->manifestFor($policy !== null && $policy['ring'] !== null ? ['ring' => $policy['ring']] + $dev : $dev);
+            if (($rollover = $this->updates->releaseRollover()) !== null) {
+                $out['release_rollover'] = $rollover;   // CORE-DS-26: relayed while any agent may need it; the server cannot create one
+            }
         }
         $out['server_time'] = $this->sql->isoNow();
         $out['signing_key_id'] = $this->settings->get()['signing_key_id'];
@@ -216,8 +223,14 @@ final class CheckinService
         if ($features['logs'] && $this->remote !== null && (int) ($cfg['shed_level'] ?? 0) === 0 && in_array(RemoteProtocol::CAP_LOGS, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
             $logConfig = $this->remote->agentLogConfig((string) ($dev['os'] ?? 'windows'), $this->capsOf($dev, $announce['caps']));
             if ($logConfig !== null) {
-                $offered[] = RemoteProtocol::CAP_LOGS;
-                $out['config']['logs'] = $logConfig;
+                try {
+                    [$sec] = $this->settings->signingKey();
+                    $logConfig['signature'] = Signer::sign(Signer::logsConfigMessage($logConfig), $sec);   // CORE-DS-16: which logs are shipped is not an unsigned setting
+                    $offered[] = RemoteProtocol::CAP_LOGS;
+                    $out['config']['logs'] = $logConfig;
+                } catch (\Throwable) {
+                    // no usable signing key: an unsigned log configuration is never offered
+                }
             }
         }
         // Change monitoring, additive: only an agent that announced `change:monitor`, while the `change_monitor` sub-switch is on, below load shedding level 2 and with at

@@ -32,12 +32,24 @@ final class McpDiagnostics
         $options = ['timeout' => 5, 'allow_redirects' => false, 'http_errors' => false, 'headers' => ['Accept' => 'application/json']];
         if ($this->policy !== null) {
             // CORE-DS-73: the issuer is typed by an administrator and the jwks_uri comes from the identity provider; neither may point at an internal service. https only, no proxy from the environment.
-            if ($this->policy->vet($url, false) === null) {
+            $target = $this->policy->vet($url, false);
+            if ($target === null) {
                 throw new \RuntimeException('that address is not allowed (it must be a public https address)');
             }
             $options['proxy'] = '';
+            // CR20: connect to the addresses that were vetted (the host is not resolved a second time), and check where the connection really went
+            $vettedIp = null;
+            if (filter_var($target['host'], FILTER_VALIDATE_IP) === false && $target['ips'] !== []) {
+                $options['curl'] = [CURLOPT_RESOLVE => [$target['host'] . ':' . $target['port'] . ':' . implode(',', $target['ips'])]];
+            }
+            $options['on_stats'] = static function (\GuzzleHttp\TransferStats $st) use (&$vettedIp): void {
+                $vettedIp = $st->getHandlerStats()['primary_ip'] ?? null;
+            };
         }
         $res = $this->http->request('GET', $url, $options);
+        if ($this->policy !== null && isset($vettedIp) && !\RivetCore\Webhooks\UrlPolicy::connectedToVetted($vettedIp, $target)) {
+            throw new \RuntimeException('the connection went to an address that was not vetted');
+        }
         if ($res->getStatusCode() !== 200) throw new \RuntimeException('HTTP ' . $res->getStatusCode());
         $data = json_decode((string) $res->getBody(), true);
         if (!is_array($data)) throw new \RuntimeException('not JSON');

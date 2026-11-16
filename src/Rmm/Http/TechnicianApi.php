@@ -265,7 +265,12 @@ final class TechnicianApi
             return $routed;
         }
         if ($what === 'policy' && $job === null && $method === 'GET' && $this->read->automation() !== null) {
-            return self::json(200, $this->read->automation()->effectivePolicy($dev));
+            $eff = $this->read->automation()->effectivePolicy($dev);
+            if (!$this->mayReadScripts($who->userId)) {
+                $eff['checks'] = \RivetCore\Rmm\Policy\PolicyStore::withoutScriptBodies($eff['checks']);   // CR17 (CORE-DS-37): the merged checks of the device carry the script text too
+            }
+
+            return self::json(200, $eff);
         }
         if ($what === 'fields' && $this->read->automation() !== null) {
             if ($job === null && $method === 'GET') {
@@ -375,6 +380,7 @@ final class TechnicianApi
                     $d['assignments'] = $this->visibleAssignments($uid, $d['assignments']);
                     if (!$this->mayReadScripts($uid)) {
                         $d['policy'] = \RivetCore\Rmm\Policy\PolicyStore::withoutScriptBodies($d['policy']);   // CORE-DS-37
+                        $d['assignments'] = \RivetCore\Rmm\Policy\PolicyStore::withoutScriptBodies($d['assignments']);   // CR18: an assignment's overrides can carry a script check too
                     }
 
                     return $d['policy'] === null ? self::json(404, ['error' => 'Policy not found.', 'code' => 'not_found']) : self::json(200, $d);

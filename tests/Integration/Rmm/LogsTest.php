@@ -97,7 +97,12 @@ final class LogsTest extends RemoteTestCase
         $r = $this->announce($this->devToken, self::allCaps());
         $this->assertSame(['logs:collect'], $r['features']);
         $cfg = $r['config']['logs'];
-        $this->assertSame(['version', 'interval_s', 'batch_max', 'max_message_bytes', 'rate_per_min', 'sources'], array_keys($cfg));
+        $this->assertSame(['version', 'interval_s', 'batch_max', 'max_message_bytes', 'rate_per_min', 'sources', 'signature'], array_keys($cfg), 'CORE-DS-16: the only protocol-visible delta is the signature member');
+        [, $pub] = $this->h->module->settings()->signingKey();
+        $this->assertTrue(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::logsConfigMessage($cfg), $cfg['signature'], $pub), 'verifies against the key the agent pinned');
+        $tampered = $cfg;
+        $tampered['sources'][0]['contains'] = ['x'];
+        $this->assertFalse(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::logsConfigMessage($tampered), $cfg['signature'], $pub));
         $this->assertSame([60, 200, 1024, 600], [$cfg['interval_s'], $cfg['batch_max'], $cfg['max_message_bytes'], $cfg['rate_per_min']]);
         $this->assertSame([['kind' => 'eventlog', 'channel' => 'System', 'levels' => ['critical', 'error', 'warning'], 'event_ids' => [7036], 'contains' => []]], $cfg['sources']);
         $this->assertSame($cfg['version'], $this->announce($this->devToken, self::allCaps())['config']['logs']['version'], 'the version only changes when the configuration does');
@@ -395,6 +400,27 @@ final class LogsTest extends RemoteTestCase
         $this->assertSame(201, $c, json_encode($j));
 
         return $j;
+    }
+
+    /** CORE-DS-38: the cap is per scope (a client, or all clients), so filling one client's room does not take anybody else's. */
+    public function testTheRuleCapIsPerClientNotPerInstallation(): void
+    {
+        $this->enableLogs();
+        $svc = $this->h->module->logRules();
+        $a = $this->h->clientA;
+        for ($i = 0; $i < \RivetCore\Rmm\Logs\LogRuleService::MAX_RULES; $i++) {
+            [$id, $err] = $svc->create(['name' => "A$i", 'min_level' => 'error', 'contains' => "x$i", 'severity' => 'warn', 'client_id' => $a], 1);
+            $this->assertNotNull($id, json_encode($err));
+        }
+        [$id, $err] = $svc->create(['name' => 'one too many', 'min_level' => 'error', 'contains' => 'y', 'severity' => 'warn', 'client_id' => $a], 1);
+        $this->assertNull($id);
+        $this->assertSame(['At most 50 log rules for one client.'], $err);
+        [$id] = $svc->create(['name' => 'B rule', 'min_level' => 'error', 'contains' => 'y', 'severity' => 'warn', 'client_id' => $this->h->clientB], 1);
+        $this->assertNotNull($id, 'another client still has room');
+        [$id] = $svc->create(['name' => 'All rule', 'min_level' => 'error', 'contains' => 'y', 'severity' => 'warn', 'client_id' => 0], 1);
+        $this->assertNotNull($id, 'and so does the all-clients scope');
+        // moving a rule into the full client is refused too
+        $this->assertSame(['At most 50 log rules for one client.'], $svc->update((int) $id, ['client_id' => $a]));
     }
 
     public function testRuleManagementAndItsRules(): void

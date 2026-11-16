@@ -129,6 +129,31 @@ final class UrlPolicy
         return NetworkList::contains($this->allowedNetworks, $ip);
     }
 
+    /**
+     * CORE-DS-73: after a request, did curl really connect to one of the addresses that were vetted? The pin (CURLOPT_RESOLVE) is only a request; a spelling that curl normalises
+     * itself, or a proxy, would ignore it. `CURLINFO_PRIMARY_IP` says where the connection went: anything else means the response must be discarded.
+     *
+     * @param mixed $primaryIp the value of curl_getinfo($ch, CURLINFO_PRIMARY_IP)
+     * @param array{host:string,port:int,ips:list<string>} $target the vetted target
+     */
+    public static function connectedToVetted(mixed $primaryIp, array $target): bool
+    {
+        if (!is_string($primaryIp) || $primaryIp === '') {
+            return false;
+        }
+        $got = @inet_pton(trim($primaryIp, '[]'));
+        if ($got === false) {
+            return false;
+        }
+        foreach ($target['ips'] as $ip) {
+            if (@inet_pton($ip) === $got) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function isSafe(string $url, bool $allowHttp = true): bool
     {
         return $this->vet($url, $allowHttp) !== null;

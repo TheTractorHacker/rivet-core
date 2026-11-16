@@ -59,6 +59,25 @@ final class InstallerStamp
         return $json;
     }
 
+    /**
+     * CORE-DS-20: add the instance signature to a payload (member `signature`, inside the JSON): Ed25519 over {@see \RivetCore\Rmm\Crypto\Signer::installerPayloadMessage()}. Agents
+     * built with the instance public key as their trust anchor refuse a trailer without it; every other agent ignores the member.
+     *
+     * @throws \LengthException when the signed payload exceeds MAX_PAYLOAD
+     */
+    public static function sign(string $payloadJson, string $secretKeyB64): string
+    {
+        $p = json_decode($payloadJson, true, 512, JSON_THROW_ON_ERROR);
+        unset($p['signature']);
+        $p['signature'] = \RivetCore\Rmm\Crypto\Signer::sign(\RivetCore\Rmm\Crypto\Signer::installerPayloadMessage($p), $secretKeyB64);
+        $json = json_encode($p, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        if (strlen($json) > self::MAX_PAYLOAD) {
+            throw new \LengthException('installer payload is larger than ' . self::MAX_PAYLOAD . ' bytes');
+        }
+
+        return $json;
+    }
+
     /** The 52-byte footer for a payload. @throws \LengthException when the payload is empty or over MAX_PAYLOAD */
     public static function footer(string $payload): string
     {

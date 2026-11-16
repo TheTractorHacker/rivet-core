@@ -153,7 +153,7 @@ final class RmmAdmin
      * `mesh_install_args`, `mesh_hide`, `mesh_hide_tools` (see {@see MeshAgentSettings}); they are validated first and nothing is written when any of them is invalid. `mesh_probe_pin`
      * (true) reads the server's certificate and returns a proposed pin in `pin_probe` WITHOUT saving it.
      *
-     * @param array<string,mixed> $in mesh_enabled, mesh_url, mesh_domain, mesh_account_template, mesh_policy, mesh_token_ttl_s, mesh_login_key, and the install settings above
+     * @param array<string,mixed> $in mesh_enabled, mesh_url, mesh_domain, mesh_account_template, mesh_policy, mesh_token_ttl_s, mesh_token_ttl_exact (optional, CORE-DS-39), mesh_login_key, and the install settings above
      * @return ActionResult data: `probe` (null when MeshCentral answered, otherwise the error text) when $test is set and a URL is saved
      */
     public function saveMesh(RmmPrincipal $by, array $in, bool $test = false): ActionResult
@@ -184,6 +184,9 @@ final class RmmAdmin
             'mesh_policy' => in_array($policy, ['unattended', 'attended', 'both'], true) ? $policy : 'unattended',
             'mesh_token_ttl_s' => is_numeric($ttl) ? max(RmmSettings::MESH_TOKEN_TTL_MIN_S, min(RmmSettings::MESH_TOKEN_TTL_MAX_S, (int) $ttl)) : RmmSettings::MESH_TOKEN_TTL_DEFAULT_S,
         ];
+        if (array_key_exists('mesh_token_ttl_exact', $in)) {
+            $vals['mesh_token_ttl_exact'] = !empty($in['mesh_token_ttl_exact']) ? 1 : 0;   // CORE-DS-39 (opt-in): honour the lifetime exactly, a 300 s one included
+        }
         $key = trim(is_scalar($in['mesh_login_key'] ?? null) ? (string) $in['mesh_login_key'] : '');
         if ($key !== '') {
             if (preg_match('/^[0-9a-fA-F]{64,}$/', $key) !== 1) {
@@ -274,7 +277,7 @@ final class RmmAdmin
      *
      * `$opts['os']` is `windows` (default; a PE executable) or `linux` (an ELF executable); the file must match it (1.0.0-rc.30).
      *
-     * @param array{activate?:bool,release_ring?:?string,rollout_pct?:int,notes?:string,os?:string} $opts
+     * @param array{activate?:bool,release_ring?:?string,rollout_pct?:int,notes?:string,os?:string,release_signature?:string} $opts `release_signature`: the offline release signature (CORE-DS-26)
      * @return ActionResult data: `binary` row on success
      */
     public function uploadBinary(RmmPrincipal $by, string $tmpPath, string $version, string $arch, array $opts = []): ActionResult
@@ -293,6 +296,9 @@ final class RmmAdmin
             return ActionResult::fail(422, 'invalid', (string) ($res['error'] ?? 'The binary could not be published.'));
         }
         $b = $res['binary'];
+        if (is_string($opts['release_signature'] ?? null) && $opts['release_signature'] !== '' && ($why = $this->updates->setReleaseSignature((int) $b['binary_id'], $opts['release_signature'])) !== null) {
+            return ActionResult::fail(422, 'invalid', "The binary was stored, but its release signature was not: $why");   // CORE-DS-26
+        }
         $this->audit->record('Binary Uploaded', "{$by->userName} uploaded agent binary {$b['version']} ({$b['arch']}, " . AgentOs::ofRow($b) . ", sha256 {$b['sha256']}, {$b['size_bytes']} bytes)"
             . ((int) $b['is_current'] === 1 ? ' and made it current' : '') . ($opts['release_ring'] !== null ? " and offered it to the {$opts['release_ring']} ring" : ''), 0, 0);
 
@@ -359,6 +365,38 @@ final class RmmAdmin
         $this->audit->record('MSI Template Changed', "{$by->userName} ran '$action' on MSI template #$templateId ({$t['version']} {$t['arch']})", 0, 0);
 
         return ActionResult::ok($msg);
+    }
+
+    /**
+     * CORE-DS-26: attach the offline release signature to a stored binary (when it was uploaded without one).
+     */
+    public function setReleaseSignature(RmmPrincipal $by, int $binaryId, string $signatureB64): ActionResult
+    {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+            return $d;
+        }
+        if (($why = $this->updates->setReleaseSignature($binaryId, $signatureB64)) !== null) {
+            return ActionResult::fail(422, 'invalid', $why);
+        }
+        $this->audit->record('Release Signature Stored', "{$by->userName} stored the release signature of binary #$binaryId", 0, 0);
+
+        return ActionResult::ok('Stored.');
+    }
+
+    /**
+     * CORE-DS-26: store (or clear, with an empty string) the signed release-key rollover message relayed to agents.
+     */
+    public function setReleaseRollover(RmmPrincipal $by, string $json): ActionResult
+    {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+            return $d;
+        }
+        if (($why = $this->updates->setReleaseRollover($json)) !== null) {
+            return ActionResult::fail(422, 'invalid', $why);
+        }
+        $this->audit->record('Release Rollover Stored', "{$by->userName} " . ($json === '' ? 'cleared' : 'stored') . ' the release key rollover message', 0, 0);
+
+        return ActionResult::ok('Saved.');
     }
 
     /**

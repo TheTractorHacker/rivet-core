@@ -328,6 +328,21 @@ final class PoliciesTest extends AutomationTestCase
         $this->assertSame(200, $this->h->tech('GET', ['policies', $id, 'versions'], $this->viewer)[0], 'the version list without bodies stays open');
     }
 
+    /** CR17 / CR18 (CORE-DS-37): the per-device effective policy and an assignment's overrides carry script text too. */
+    public function testScriptTextIsAlsoHiddenOnTheDevicePolicyRouteAndInAssignmentOverrides(): void
+    {
+        $p = $this->policy('Over', ['interval.collect_s' => 50]);
+        $a = $this->h->module->policyStore()->assign((int) $p['policy_id'], ['scope_type' => 'device', 'scope_id' => $this->d1, 'overrides' => ['check.over' => ['type' => 'script', 'params' => ['script' => 'Write-Output OVR-SECRET-9'], 'interval_s' => 600]]], 1);
+        $this->assertNotEmpty($a);
+        foreach ([[(string) $this->d1, 'policy'], ['policies', (string) $p['policy_id']]] as $seg) {
+            $this->assertStringContainsString('OVR-SECRET-9', json_encode($this->h->tech('GET', $seg, $this->tech)[1]), 'run_saved sees it: ' . implode('/', $seg));
+            [$c, $j] = $this->h->tech('GET', $seg, $this->viewer);
+            $this->assertSame(200, $c);
+            $this->assertStringNotContainsString('OVR-SECRET-9', json_encode($j), implode('/', $seg));
+            $this->assertStringContainsString('script_hidden', json_encode($j));
+        }
+    }
+
     public function testTheTechnicianApiRoutes(): void
     {
         [$c, $j] = $this->h->tech('POST', ['policies'], $this->admin, ['name' => 'Api', 'settings' => ['interval.collect_s' => 70]]);

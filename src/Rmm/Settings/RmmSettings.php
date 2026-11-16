@@ -46,6 +46,9 @@ final class RmmSettings
     /** Writable columns added in 1.0.0-rc.41 (kept apart so that {@see WRITABLE_ADDED} keeps its value). @internal */
     public const WRITABLE_ADDED_RC41 = ['data_store_phase'];
 
+    /** Writable columns added by the deep-scan fixes (migration 0053). @internal */
+    public const WRITABLE_ADDED_DS = ['mesh_token_ttl_exact', 'signed_config', 'release_rollover_json'];
+
     /**
      * Server-side bounds for the intervals agents are told to use (design 13.3). The two floors are a DELIBERATE change from RivetIT's
      * original save handler (check-in 30 to 3600, collect 10 to 3600): they are capacity controls, because the check-in rate and the
@@ -368,7 +371,7 @@ final class RmmSettings
     /** @return list<string> every column {@see set()} may write */
     public static function writableColumns(): array
     {
-        return [...self::WRITABLE, ...self::WRITABLE_ADDED, ...self::WRITABLE_ADDED_RC41];
+        return [...self::WRITABLE, ...self::WRITABLE_ADDED, ...self::WRITABLE_ADDED_RC41, ...self::WRITABLE_ADDED_DS];
     }
 
     /**
@@ -833,9 +836,18 @@ final class RmmSettings
      * @param list<string>|null $caps
      * @return list<array<string,mixed>>
      */
-    public function signedChecks(?array $caps = null, ?string $os = null): array
+    /**
+     * CORE-DS-16: is the signed-configuration contract on (`endpoint_agent_settings.signed_config`, migration 0054)? Then responses announce `config.signed_config: 1` and signed
+     * checks carry the device they are for. Off (the default, and when the column does not exist yet) the wire is exactly what it was.
+     */
+    public function signedConfig(): bool
     {
-        return $this->signCheckList($this->checks(), $caps, $os);
+        return (int) ($this->get()['signed_config'] ?? 0) === 1;
+    }
+
+    public function signedChecks(?array $caps = null, ?string $os = null, ?int $deviceId = null): array
+    {
+        return $this->signCheckList($this->checks(), $caps, $os, $deviceId);
     }
 
     /**
@@ -845,8 +857,9 @@ final class RmmSettings
      * @param list<string>|null $caps
      * @return list<array<string,mixed>>
      */
-    public function signCheckList(array $checks, ?array $caps = null, ?string $os = null): array
+    public function signCheckList(array $checks, ?array $caps = null, ?string $os = null, ?int $deviceId = null): array
     {
+        $bind = $deviceId !== null && $this->signedConfig();
         [$sec] = $this->signingKey();
         $out = [];
         foreach ($checks as $c) {
@@ -868,6 +881,9 @@ final class RmmSettings
             $target = RmmChecks::osOf($c);
             if ($target !== null) {
                 $item['os'] = $target;
+            }
+            if ($bind) {
+                $item['device_id'] = $deviceId;   // CORE-DS-16: a signed check cannot be replayed on another device
             }
             $item['signature'] = Signer::sign(Signer::checkMessage($item), $sec);
             $out[] = $item;

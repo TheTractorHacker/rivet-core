@@ -90,7 +90,96 @@ final class UpdateService
         }
         [$sec] = $this->settings->signingKey();
 
-        return ['version' => $best['version'], 'url' => $url, 'sha256' => $best['sha256'], 'signature' => Signer::signManifest((string) $best['sha256'], $sec), 'min_version' => $best['min_version']];
+        $m = ['version' => $best['version'], 'url' => $url, 'sha256' => $best['sha256'], 'signature' => Signer::signManifest((string) $best['sha256'], $sec), 'min_version' => $best['min_version']];
+        // CORE-DS-26: the offline release signature stored with the package this release serves, with the platform it is for. Never invented: a release without one is offered exactly
+        // as before (an agent that has a trusted release key will then refuse it, which is the point).
+        if (($sig = $this->releaseSignature($best)) !== null) {
+            $m['os'] = $sig['os'];
+            $m['arch'] = $sig['arch'];
+            $m['release_signature'] = $sig['release_signature'];
+        }
+
+        return $m;
+    }
+
+    /**
+     * CORE-DS-26: the stored release signature of the package a release row serves (hosted releases only: the signature belongs to a binary).
+     *
+     * @param array<string,mixed> $release a release row
+     * @return array{os:string,arch:string,release_signature:string}|null
+     */
+    public function releaseSignature(array $release): ?array
+    {
+        if (($release['binary_id'] ?? null) === null) {
+            return null;
+        }
+        try {
+            $r = $this->sql->one('SELECT os, arch, release_signature FROM rmm_agent_release_sigs WHERE binary_id = ?', [(int) $release['binary_id']]);
+        } catch (\Throwable) {
+            return null;   // migration 0054 not applied yet
+        }
+
+        return $r === null ? null : ['os' => (string) $r['os'], 'arch' => (string) $r['arch'], 'release_signature' => (string) $r['release_signature']];
+    }
+
+    /**
+     * Store the offline release signature of a stored binary (the release owner signs {@see Signer::updateManifestMessage()} with a key the server never holds). Only the format is
+     * checked here (64 raw bytes, standard base64); the agent verifies it against the release keys compiled into it.
+     *
+     * @return string|null why not, or null when stored
+     */
+    public function setReleaseSignature(int $binaryId, string $signatureB64): ?string
+    {
+        $raw = base64_decode($signatureB64, true);
+        if ($raw === false || strlen($raw) !== 64 || base64_encode($raw) !== $signatureB64) {
+            return 'The release signature must be the standard base64 of a 64-byte Ed25519 signature.';
+        }
+        $b = $this->sql->one('SELECT binary_id, arch, os FROM endpoint_agent_binaries WHERE binary_id = ?', [$binaryId]);
+        if ($b === null) {
+            return 'That binary does not exist.';
+        }
+        $this->sql->run('INSERT INTO rmm_agent_release_sigs (binary_id, os, arch, release_signature, created_at) VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE os = VALUES(os), arch = VALUES(arch), release_signature = VALUES(release_signature)', [$binaryId, AgentOs::ofRow($b), (string) $b['arch'], $signatureB64, $this->sql->utcNow()]);
+
+        return null;
+    }
+
+    /**
+     * The signed release-key rollover message to relay in the check-in response (top-level `release_rollover`), or null. The server cannot create one: it only stores what the
+     * release owner signed.
+     *
+     * @return array{kind:string,new_key:string,seq:int,signature:string}|null
+     */
+    public function releaseRollover(): ?array
+    {
+        $j = $this->settings->get()['release_rollover_json'] ?? null;
+        $m = is_string($j) && $j !== '' ? json_decode($j, true) : null;
+
+        return is_array($m) && ($m['kind'] ?? '') === 'release_key_rollover' && is_string($m['new_key'] ?? null) && is_int($m['seq'] ?? null) && is_string($m['signature'] ?? null)
+            ? ['kind' => 'release_key_rollover', 'new_key' => $m['new_key'], 'seq' => $m['seq'], 'signature' => $m['signature']] : null;
+    }
+
+    /**
+     * Store (or clear, with '') the signed release-key rollover message.
+     *
+     * @return string|null why not, or null when stored
+     */
+    public function setReleaseRollover(string $json): ?string
+    {
+        if ($json === '') {
+            $this->settings->set(['release_rollover_json' => null]);
+
+            return null;
+        }
+        $m = json_decode($json, true);
+        $key = is_array($m) && is_string($m['new_key'] ?? null) ? base64_decode($m['new_key'], true) : false;
+        $sig = is_array($m) && is_string($m['signature'] ?? null) ? base64_decode($m['signature'], true) : false;
+        if (!is_array($m) || ($m['kind'] ?? '') !== 'release_key_rollover' || !is_int($m['seq'] ?? null) || $m['seq'] < 1 || $key === false || strlen($key) !== 32 || $sig === false || strlen($sig) !== 64) {
+            return 'A rollover message is {"kind":"release_key_rollover","new_key":<base64 of 32 bytes>,"seq":<positive integer>,"signature":<base64 of 64 bytes>}.';
+        }
+        $this->settings->set(['release_rollover_json' => (string) json_encode(['kind' => 'release_key_rollover', 'new_key' => $m['new_key'], 'seq' => $m['seq'], 'signature' => $m['signature']], JSON_UNESCAPED_SLASHES)]);
+
+        return null;
     }
 
     /**

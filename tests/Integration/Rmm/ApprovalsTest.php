@@ -306,6 +306,28 @@ final class ApprovalsTest extends AutomationTestCase
         $this->assertCount(2, $this->h->rows('SELECT * FROM endpoint_agent_jobs'));
     }
 
+    /** CR19 (CORE-DS-44): the same NUMBER of devices is not the same devices: swapping a member of the target after the request is refused. */
+    public function testSwappingAMemberOfTheTargetKeepsTheCountButIsStillRefused(): void
+    {
+        $s = $this->script(['name' => 'Swap']);
+        $tag = $this->tagDevice($this->a[0], 'swap');
+        $r = $this->actions()->runOnTarget($this->tech, ['library_script_id' => $s['script_id'], 'target' => ['type' => 'tag', 'id' => $tag]]);
+        $this->assertSame(202, $r->http, $r->message);
+        $id = (int) $r->data['approval_id'];
+        $this->h->q("DELETE FROM rmm_device_tags WHERE tag_id = $tag AND device_id = {$this->a[0]}");
+        $this->tagDevice($this->a[1], 'swap');
+        $d = $this->actions()->decide($this->approver, $id, true);
+        $this->assertSame([false, 409], [$d->ok, $d->http], $d->message);
+        $this->assertStringContainsString('was not among those the approver saw', $d->message);
+        $this->assertSame([], $this->jobs($this->a[1]));
+        // the unchanged target is approved as before
+        $this->tagDevice($this->a[0], 'swap');
+        $this->h->q("DELETE FROM rmm_device_tags WHERE tag_id = $tag AND device_id = {$this->a[1]}");
+        $r2 = $this->actions()->runOnTarget($this->tech, ['library_script_id' => $s['script_id'], 'target' => ['type' => 'tag', 'id' => $tag]]);
+        $this->assertTrue($this->actions()->decide($this->approver, (int) $r2->data['approval_id'], true)->ok);
+        $this->assertCount(1, $this->h->rows('SELECT * FROM endpoint_agent_jobs'));
+    }
+
     public function testSecretParametersInAnApprovedRunMustBePlaceholders(): void
     {
         $s = $this->script(['name' => 'Tok', 'params' => [['name' => 'token', 'type' => 'secret']]]);

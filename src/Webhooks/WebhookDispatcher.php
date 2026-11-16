@@ -393,6 +393,9 @@ class WebhookDispatcher
 
             return ['status' => null, 'body' => null, 'error' => $error];
         }
+        if ($target !== null && !UrlPolicy::connectedToVetted(curl_getinfo($ch, CURLINFO_PRIMARY_IP), $target)) {
+            return ['status' => null, 'body' => null, 'error' => 'the connection went to an address that was not vetted; the response was discarded'];   // CORE-DS-73
+        }
         $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
         return ['status' => $status, 'body' => $captured, 'error' => null];
