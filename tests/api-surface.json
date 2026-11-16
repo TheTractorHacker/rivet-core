@@ -7061,6 +7061,27 @@
         "RivetCore\\Rmm\\Settings\\ChecksValidator": {
             "kind": "final class",
             "constants": {
+                "LEGACY_PARAMS": {
+                    "service": [
+                        "name",
+                        "expected",
+                        "startup",
+                        "missing"
+                    ],
+                    "disk": [
+                        "mount",
+                        "warn_free_pct",
+                        "fail_free_pct",
+                        "warn_free_gb",
+                        "fail_free_gb"
+                    ],
+                    "pending_reboot": [],
+                    "script": [
+                        "script",
+                        "timeout_s",
+                        "max_output_bytes"
+                    ]
+                },
                 "MAX_CHECKS": 50,
                 "MAX_INTERVAL_S": 86400,
                 "MAX_SCRIPT_BYTES": 8192,
@@ -10160,6 +10181,7 @@
             "completed_at": "datetime null",
             "created_at": "datetime not null",
             "error": "text null",
+            "heartbeat_at": "datetime null",
             "integration_id": "int(11) null",
             "job_id": "int(11) not null",
             "job_type": "varchar(100) not null",

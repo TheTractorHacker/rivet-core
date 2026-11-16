@@ -83,4 +83,22 @@ final class ChecksValidatorTest extends TestCase
         $this->assertNotNull($out);
         $this->assertSame([[], null], C::validate('[]'));
     }
+
+    /** CORE-DS-17: legacy check params are rebuilt from the keys the agent reads; a case variant or an unknown key does not travel to the device. */
+    public function testLegacyParamsAreRebuiltFromAnAllowList(): void
+    {
+        $json = json_encode([
+            ['key' => 's1', 'type' => 'script', 'interval_s' => 60, 'params' => ['script' => 'exit 0', 'Script' => 'rm -rf /', 'SCRIPT' => 'x', 'timeout_s' => 10, 'extra' => 1, 'flap' => ['window' => 10]]],
+            ['key' => 'd1', 'type' => 'disk', 'interval_s' => 60, 'params' => ['mount' => 'C:', 'Mount' => 'D:', 'warn_free_pct' => 20, 'nope' => true]],
+            ['key' => 'v1', 'type' => 'service', 'interval_s' => 60, 'params' => ['name' => 'sshd', 'Name' => 'evil', 'expected' => 'running']],
+            ['key' => 'p1', 'type' => 'pending_reboot', 'interval_s' => 60, 'params' => ['anything' => 'x']],
+        ]);
+        [$out, $err] = C::validate((string) $json);
+        $this->assertNull($err);
+        $this->assertSame(['script', 'timeout_s', 'flap'], array_keys($out[0]['params']));
+        $this->assertSame('exit 0', $out[0]['params']['script']);
+        $this->assertSame(['mount' => 'C:', 'warn_free_pct' => 20], $out[1]['params']);
+        $this->assertSame(['name' => 'sshd', 'expected' => 'running'], $out[2]['params']);
+        $this->assertSame([], $out[3]['params']);
+    }
 }

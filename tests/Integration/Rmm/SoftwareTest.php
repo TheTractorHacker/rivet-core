@@ -300,11 +300,21 @@ final class SoftwareTest extends RmmTestCase
         $this->linked();
         $this->assertSame(200, $this->send(self::full([['dpkg', 'base', '1.0']]))[0]);
         $dev = $this->dev;
-        $this->h->q("INSERT INTO rmm_software_history (device_id, software_key, name, source, change_type, old_version, new_version, publisher, occurred_at)
-            SELECT $dev, CONCAT('k', seq), 'x', 'dpkg', 'installed', NULL, '1', '', UTC_TIMESTAMP() FROM seq_1_to_20000");
-        $this->h->q("INSERT INTO rmm_device_software (device_id, software_key, name, source, version, publisher, installed_on, first_seen_at, last_seen_at)
-            SELECT $dev, CONCAT('r', seq), CONCAT('old', seq), 'dpkg', '1', '', NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP() FROM seq_1_to_19990");
-        $this->h->q("UPDATE rmm_device_software SET removed_at = UTC_TIMESTAMP() WHERE device_id = $dev AND software_key LIKE 'r%'");
+        // plain multi-row inserts: no sequence engine or recursive CTE, so this runs on MariaDB and MySQL alike
+        for ($from = 1; $from <= 20000; $from += 1000) {
+            $h = [];
+            $r = [];
+            for ($k = $from; $k < $from + 1000 && $k <= 20000; $k++) {
+                $h[] = "($dev, 'k$k', 'x', 'dpkg', 'installed', NULL, '1', '', UTC_TIMESTAMP())";
+                if ($k <= 19990) {
+                    $r[] = "($dev, 'r$k', 'old$k', 'dpkg', '1', '', NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())";
+                }
+            }
+            $this->h->q('INSERT INTO rmm_software_history (device_id, software_key, name, source, change_type, old_version, new_version, publisher, occurred_at) VALUES ' . implode(',', $h));
+            if ($r !== []) {
+                $this->h->q('INSERT INTO rmm_device_software (device_id, software_key, name, source, version, publisher, installed_on, first_seen_at, last_seen_at, removed_at) VALUES ' . implode(',', $r));
+            }
+        }
         $list = [['dpkg', 'base', '1.0']];
         for ($i = 0; $i < 100; $i++) {
             $list[] = ['dpkg', "new$i", '1'];

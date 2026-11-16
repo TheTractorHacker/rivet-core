@@ -19,6 +19,13 @@ use RivetCore\Rmm\RmmProtocol;
 final class ChecksValidator
 {
     /** Every check type: the four original ones, then the Phase 3 types of {@see CheckCatalog}. */
+    /** CORE-DS-17: the params each legacy check type has (what the agent decodes); anything else is dropped when a definition is saved. */
+    public const LEGACY_PARAMS = [
+        'service' => ['name', 'expected', 'startup', 'missing'],
+        'disk' => ['mount', 'warn_free_pct', 'fail_free_pct', 'warn_free_gb', 'fail_free_gb'],
+        'pending_reboot' => [],
+        'script' => ['script', 'timeout_s', 'max_output_bytes'],
+    ];
     public const TYPES = ['service', 'disk', 'pending_reboot', 'script', 'cpu', 'memory', 'process', 'port', 'ping', 'http', 'cert', 'ntp', 'smart', 'av', 'systemd_failed', 'inodes'];
     public const MAX_CHECKS = 50;
     public const MIN_INTERVAL_S = 30;
@@ -77,7 +84,8 @@ final class ChecksValidator
                 }
                 $params = $clean;
             } else {
-                // The alert behaviour fields are checked on every type; the legacy types' own params never were.
+                // CORE-DS-17: a legacy check's params are rebuilt from the keys the agent reads (and the alert behaviour field `flap`), spelled exactly so. The agent decodes JSON keys
+                // without regard to case and runs the last match, so a stored `Script` next to `script` (or any key nobody asked for) must not travel to the device.
                 if (array_key_exists('thresholds', $params)) {
                     return [null, 'Check ' . $key . ': ' . $type . ' checks do not report a value, so they cannot have thresholds.'];
                 }
@@ -88,6 +96,7 @@ final class ChecksValidator
                     }
                     $params['flap'] = $flap;
                 }
+                $params = array_intersect_key($params, array_flip([...self::LEGACY_PARAMS[$type], 'flap']));
             }
             [$os, $osErr] = RmmChecks::normalizeOs($c['os'] ?? null);
             if ($osErr !== null) {

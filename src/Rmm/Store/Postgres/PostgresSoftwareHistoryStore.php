@@ -27,6 +27,9 @@ final class PostgresSoftwareHistoryStore implements SoftwareHistoryStore
             return;
         }
         $this->db->transaction(function () use ($deviceId, $changes, $atUtc): void {
+            // CORE-DS-43: a device's history is bounded; what does not fit is dropped
+            $have = (int) $this->db->value('SELECT COUNT(*) FROM rmm_software_history WHERE device_id = ?', [$deviceId]);
+            $changes = array_slice($changes, 0, max(0, \RivetCore\Rmm\Software\SoftwareService::MAX_HISTORY_PER_DEVICE - $have));
             foreach (array_chunk($changes, self::CHUNK) as $chunk) {
                 $params = [];
                 foreach ($chunk as $c) {
