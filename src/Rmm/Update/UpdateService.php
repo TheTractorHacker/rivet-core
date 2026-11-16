@@ -164,11 +164,35 @@ final class UpdateService
      */
     public function releaseRollover(): ?array
     {
+        $chain = $this->releaseRollovers();
+
+        return $chain === [] ? null : $chain[array_key_last($chain)];
+    }
+
+    /**
+     * R3-2: the chain of rollover messages the release owner published, oldest first (at most the last 16, in the order of `seq`). An agent that missed an earlier rollover cannot apply
+     * the newest one alone (it must be exactly the next sequence), so the check-in carries the whole chain as `release_rollovers` next to `release_rollover`; the agent applies the
+     * ones above its own sequence, each signed by a key it trusts at that point. Stored as given; the server cannot create one. A single message stored by the first version is a chain of one.
+     *
+     * @return list<array{kind:string,new_key:string,revoke:list<string>,seq:int,signature:string}>
+     */
+    public function releaseRollovers(): array
+    {
         $j = $this->settings->get()['release_rollover_json'] ?? null;
         $m = is_string($j) && $j !== '' ? json_decode($j, true) : null;
+        if (!is_array($m)) {
+            return [];
+        }
+        $list = array_is_list($m) ? $m : [$m];
+        $out = [];
+        foreach ($list as $one) {
+            if (is_array($one) && ($one['kind'] ?? '') === 'release_key_rollover' && is_string($one['new_key'] ?? null) && is_int($one['seq'] ?? null) && is_string($one['signature'] ?? null)) {
+                $out[$one['seq']] = ['kind' => 'release_key_rollover', 'new_key' => $one['new_key'], 'revoke' => self::cleanRevoke($one['revoke'] ?? []) ?? [], 'seq' => $one['seq'], 'signature' => $one['signature']];
+            }
+        }
+        ksort($out);
 
-        return is_array($m) && ($m['kind'] ?? '') === 'release_key_rollover' && is_string($m['new_key'] ?? null) && is_int($m['seq'] ?? null) && is_string($m['signature'] ?? null)
-            ? ['kind' => 'release_key_rollover', 'new_key' => $m['new_key'], 'revoke' => self::cleanRevoke($m['revoke'] ?? []) ?? [], 'seq' => $m['seq'], 'signature' => $m['signature']] : null;
+        return array_values($out);
     }
 
     /**
@@ -192,7 +216,7 @@ final class UpdateService
     }
 
     /**
-     * Store (or clear, with '') the signed release-key rollover message.
+     * Add a signed release-key rollover message to the chain, or clear the whole chain with ''.
      *
      * @return string|null why not, or null when stored
      */
@@ -206,7 +230,8 @@ final class UpdateService
         $m = json_decode($json, true);
         $key = is_array($m) && is_string($m['new_key'] ?? null) ? base64_decode($m['new_key'], true) : false;
         $sig = is_array($m) && is_string($m['signature'] ?? null) ? base64_decode($m['signature'], true) : false;
-        if (!is_array($m) || ($m['kind'] ?? '') !== 'release_key_rollover' || !is_int($m['seq'] ?? null) || $m['seq'] < 1 || $key === false || strlen($key) !== 32 || $sig === false || strlen($sig) !== 64) {
+        // the keys are compared by value by the agent, so they must be the canonical base64 of their bytes (R3: decode, encode, compare)
+        if (!is_array($m) || ($m['kind'] ?? '') !== 'release_key_rollover' || !is_int($m['seq'] ?? null) || $m['seq'] < 1 || $key === false || strlen($key) !== 32 || base64_encode($key) !== $m['new_key'] || $sig === false || strlen($sig) !== 64 || base64_encode($sig) !== $m['signature']) {
             return 'A rollover message is {"kind":"release_key_rollover","new_key":<base64 of 32 bytes>,"revoke":[<base64 of 32 bytes>, ...],"seq":<positive integer>,"signature":<base64 of 64 bytes>}.';
         }
         $revoke = self::cleanRevoke($m['revoke'] ?? []);
@@ -216,7 +241,14 @@ final class UpdateService
         if (in_array($m['new_key'], $revoke, true)) {
             return 'revoke is a list of up to 16 base64 public keys of 32 bytes each (an empty list when nothing is revoked), and cannot name new_key.';
         }
-        $this->settings->set(['release_rollover_json' => (string) json_encode(['kind' => 'release_key_rollover', 'new_key' => $m['new_key'], 'revoke' => $revoke, 'seq' => $m['seq'], 'signature' => $m['signature']], JSON_UNESCAPED_SLASHES)]);
+        // the message joins the chain (a message with the same seq replaces the earlier one); the last 16 are kept
+        $bySeq = [];
+        foreach ($this->releaseRollovers() as $one) {
+            $bySeq[$one['seq']] = $one;
+        }
+        $bySeq[$m['seq']] = ['kind' => 'release_key_rollover', 'new_key' => $m['new_key'], 'revoke' => $revoke, 'seq' => $m['seq'], 'signature' => $m['signature']];
+        ksort($bySeq);
+        $this->settings->set(['release_rollover_json' => (string) json_encode(array_slice(array_values($bySeq), -16), JSON_UNESCAPED_SLASHES)]);
 
         return null;
     }

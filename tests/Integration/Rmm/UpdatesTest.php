@@ -109,12 +109,14 @@ final class UpdatesTest extends RmmTestCase
         $manyKeys = array_map(static fn (int $i): string => base64_encode(random_bytes(32)), range(1, 17));
         foreach (['not json', '{}', json_encode([...$m, 'seq' => 0]), json_encode([...$m, 'new_key' => base64_encode('x')]), json_encode([...$m, 'kind' => 'other']),
             json_encode([...$m, 'revoke' => 'abc']), json_encode([...$m, 'revoke' => ['not base64!']]), json_encode([...$m, 'revoke' => [base64_encode('short')]]), json_encode([...$m, 'revoke' => $manyKeys]),
-            json_encode([...$m, 'revoke' => [$m['new_key']]]), json_encode([...$m, 'revoke' => ['a' => $old]])] as $bad) {
+            json_encode([...$m, 'revoke' => [$m['new_key']]]), json_encode([...$m, 'revoke' => ['a' => $old]]),
+            json_encode([...$m, 'revoke' => [' ' . $old]]), json_encode([...$m, 'revoke' => [$old . "\n"]]), json_encode([...$m, 'new_key' => ' ' . $m['new_key']]), json_encode([...$m, 'new_key' => rtrim($m['new_key'], '=') . 'B='])] as $bad) {
             $this->assertFalse($admin->setReleaseRollover($this->h->principal(), (string) $bad)->ok, (string) $bad);
         }
         $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m))->ok);
         [, , $r] = $this->h->checkin($this->T);
         $this->assertSame($m, $r['release_rollover'], 'the revoke list is relayed as the release owner signed it');
+        $this->assertSame([$m], $r['release_rollovers'], 'and the chain (here of one) next to it');
         // a message without revoke (the first form of the contract) is relayed with revoke: [], which is what the agent signs over
         $legacy = $m;
         unset($legacy['revoke']);
@@ -122,6 +124,44 @@ final class UpdatesTest extends RmmTestCase
         $this->assertSame([], $this->h->checkin($this->T)[2]['release_rollover']['revoke']);
         $this->assertTrue($admin->setReleaseRollover($this->h->principal(), '')->ok);
         $this->assertArrayNotHasKey('release_rollover', $this->h->checkin($this->T)[2]);
+    }
+
+    /** R3-2: the rollover CHAIN is stored, relayed next to the newest message (oldest first, last 16), and an agent that missed one can catch up from it. */
+    public function testTheRolloverChainIsStoredAndRelayedForAnAgentThatMissedOne(): void
+    {
+        $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
+        $admin = $this->h->module->admin();
+        $msg = static fn (int $seq): array => ['kind' => 'release_key_rollover', 'new_key' => base64_encode(random_bytes(32)), 'revoke' => [], 'seq' => $seq, 'signature' => base64_encode(random_bytes(64))];
+        $this->assertArrayNotHasKey('release_rollovers', $this->h->checkin($this->T)[2], 'nothing published: nothing relayed');
+        $m = [];
+        foreach ([2, 1, 3] as $seq) {   // published out of order
+            $m[$seq] = $msg($seq);
+            $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m[$seq]))->ok);
+        }
+        [, , $r] = $this->h->checkin($this->T);
+        $this->assertSame([$m[1], $m[2], $m[3]], $r['release_rollovers'], 'the whole chain, in the order of seq');
+        $this->assertSame($m[3], $r['release_rollover'], 'the newest on its own');
+        // the same seq published again replaces the earlier message, it does not stack
+        $m[2] = $msg(2);
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m[2]))->ok);
+        $this->assertSame([$m[1], $m[2], $m[3]], $this->h->checkin($this->T)[2]['release_rollovers']);
+        // only the last 16 are kept
+        for ($seq = 4; $seq <= 20; ++$seq) {
+            $m[$seq] = $msg($seq);
+            $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m[$seq]))->ok);
+        }
+        $chain = $this->h->checkin($this->T)[2]['release_rollovers'];
+        $this->assertCount(16, $chain);
+        $this->assertSame([5, 20], [$chain[0]['seq'], $chain[15]['seq']]);
+        $this->assertSame(20, $this->h->checkin($this->T)[2]['release_rollover']['seq']);
+        // clearing removes the whole chain
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), '')->ok);
+        $out = $this->h->checkin($this->T)[2];
+        $this->assertArrayNotHasKey('release_rollover', $out);
+        $this->assertArrayNotHasKey('release_rollovers', $out);
+        // a message stored by the first version (one object, not a list) is a chain of one
+        $this->h->module->settings()->set(['release_rollover_json' => (string) json_encode($m[7])]);
+        $this->assertSame([$m[7]], $this->h->checkin($this->T)[2]['release_rollovers']);
     }
 
     public function testRingsRolloutMinVersionAndArchitecture(): void
