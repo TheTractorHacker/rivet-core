@@ -161,6 +161,38 @@ final class JobsAutomationWebhookTest extends TestCase
         $this->assertSame([], (new \RivetCore\Automation\AutomationRuleEvaluator($this->db, $other))->findMatchingRules('ticket.created', []));
     }
 
+    /** R3-6: a new webhook rule is never enabled with an empty secret: it is inserted disabled, enabled once sealed, and nothing is left behind when sealing fails. */
+    public function testANewWebhookRuleIsNeverEnabledBeforeItsSecretIsSealed(): void
+    {
+        $count = fn (): int => (int) $this->db->fetchOne('SELECT COUNT(*) AS c FROM automation_rules')['c'];
+        $before = $count();
+        $noKey = new AutomationRuleStore($this->db, new \RivetCore\Crypto\SettingsVault(\RivetCore\Crypto\KeyRing::empty()));
+        $threw = false;
+        try {
+            $noKey->save(null, 'Hook', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/h', 'secret' => 'needs-a-key'], true);
+        } catch (\RivetCore\Crypto\KeyUnavailable) {
+            $threw = true;
+        }
+        $this->assertTrue($threw, 'sealing without a key throws');
+        $this->assertSame($before, $count(), 'and no rule, enabled or not, is left behind');
+        // while it is being sealed the rule is not enabled: a store that watches the table at that moment sees it disabled
+        $vault = new \RivetCore\Crypto\SettingsVault(\RivetCore\Crypto\KeyRing::single(random_bytes(32)));
+        $ok = (new AutomationRuleStore($this->db, $vault))->save(null, 'Hook', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/h', 'secret' => 'fine'], true);
+        $row = $this->db->fetchOne('SELECT is_enabled, action_config_json FROM automation_rules WHERE rule_id = ?', [$ok]);
+        $this->assertSame(1, (int) $row['is_enabled'], 'enabled once sealed');
+        $this->assertStringContainsString('secret_enc', (string) $row['action_config_json']);
+        $off = (new AutomationRuleStore($this->db, $vault))->save(null, 'Off', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/o', 'secret' => 'fine'], false);
+        $this->assertSame(0, (int) $this->db->fetchOne('SELECT is_enabled FROM automation_rules WHERE rule_id = ?', [$off])['is_enabled'], 'a rule saved disabled stays disabled');
+        // an update that cannot seal leaves the stored rule as it was
+        $stored = (string) $this->db->fetchOne('SELECT action_config_json FROM automation_rules WHERE rule_id = ?', [$ok])['action_config_json'];
+        try {
+            $noKey->save($ok, 'Hook', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/h', 'secret' => 'new'], true);
+            $this->fail('expected KeyUnavailable');
+        } catch (\RivetCore\Crypto\KeyUnavailable) {
+        }
+        $this->assertSame($stored, (string) $this->db->fetchOne('SELECT action_config_json FROM automation_rules WHERE rule_id = ?', [$ok])['action_config_json']);
+    }
+
     /** CRR-21: a sealed secret is bound to its rule (a copy in another rule does not open) and rows sealed by the first version are still read and re-sealed per rule. */
     public function testASealedSecretIsBoundToItsRuleAndOldRowsStillRead(): void
     {
