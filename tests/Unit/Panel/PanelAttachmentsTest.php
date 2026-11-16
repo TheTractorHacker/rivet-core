@@ -154,6 +154,9 @@ final class PanelAttachmentsTest extends TestCase
             'single quoted value before the handler (CRR-17)' => ['a.txt', 'text/plain', "<x title='>' onfocus=alert(1)>"],
             'dot in the tag name (CRR-17)' => ['a.txt', 'text/plain', '<x.y onclick=alert(1)>'],
             'colon and digit in the tag name (CRR-17)' => ['a.txt', 'text/plain', '<svg:a1 onload=alert(1)>'],
+            'less-than then a digit inside the tag (R5-1)' => ['a.txt', 'text/plain', '<x <1 onclick=1>'],
+            'less-than inside an attribute name (R5-1)' => ['a.txt', 'text/plain', '<x a<1 onclick=1>'],
+            'less-than glued to the tag name (R5-1)' => ['a.txt', 'text/plain', '<x<y onclick=1>'],
             'quote in the tag name (CRR-17)' => ['a.txt', 'text/plain', '<x"y onclick=alert(1)>'],
             'apostrophe in the tag name (CRR-17)' => ['a.txt', 'text/plain', "<x'y onclick=alert(1)>"],
             'equals sign in the tag name (CRR-17)' => ['a.txt', 'text/plain', '<x=y onclick=alert(1)>'],
@@ -186,6 +189,51 @@ final class PanelAttachmentsTest extends TestCase
     public function testRefuses(string $name, string $type, string $bytes): void
     {
         $this->rejected([self::att($name, $type, $bytes)]);
+    }
+
+    /**
+     * R5-1: the scan for active attributes is linear in the size of the file. Adversarial files of the largest default size (5 MiB) in several shapes are decided (accepted or
+     * refused) in well under a second; the quadratic version took a minute for a tenth of that.
+     *
+     * @return array<string,array{string}>
+     */
+    public static function adversarial(): array
+    {
+        $size = 5 * 1024 * 1024 - 64;
+        $fill = static fn (string $unit): string => substr(str_repeat($unit, intdiv($size, strlen($unit)) + 1), 0, $size);
+
+        return [
+            'repeated unterminated tags' => [$fill('<x a=b')],
+            'repeated unterminated tags with a space' => [$fill('<x a=b ')],
+            'candidate attribute names, no handler value' => [$fill('<x data-src b ')],
+            'candidate names with quoted values' => [$fill('<x srcset="a" b=c ')],
+            'handler-like names that are not attributes' => [$fill('<x a=b onx')],
+            'quote led' => [$fill('<x "a=b ')],
+            'less-than inside the tag' => [$fill('<x <1 ')],
+            'unterminated quotes' => [$fill('<x a="')],
+            'unterminated single quotes' => [$fill("<x a='")],
+            'closed quotes without a handler' => [$fill('<x a="b" ')],
+            'tag names without white space' => [$fill('<x')],
+            'less-than runs' => [$fill('<')],
+            'less-than and spaces' => [$fill('<   ')],
+            'equals signs' => [$fill('<x =')],
+            'slashes' => [$fill('<x /')],
+            'long attribute name' => ['<x ' . str_repeat('a', $size - 10) . '=1>'],
+            'a handler at the very end' => [$fill('<x a=b ') . '<x onclick=1>'],
+        ];
+    }
+
+    #[DataProvider('adversarial')]
+    public function testTheActiveMarkupScanIsLinear(string $bytes): void
+    {
+        $t = hrtime(true);
+        try {
+            PanelAttachments::validate([self::att('big.txt', 'text/plain', $bytes)], new PanelLimits());
+        } catch (ApiError) {
+            // refused is fine: what matters is that the answer comes quickly
+        }
+        $ms = (hrtime(true) - $t) / 1e6;
+        $this->assertLessThan(1000, $ms, 'took ' . round($ms) . ' ms for ' . strlen($bytes) . ' bytes');
     }
 
     public function testShapeErrors(): void

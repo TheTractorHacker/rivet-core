@@ -170,35 +170,57 @@ final class PanelAttachments
     }
 
     /**
-     * CRR-17: does any start tag carry an event handler, `href`, `src`, `srcdoc`, `style`, `action` or `formaction`? The attributes are read the way an HTML tokenizer reads them (a
-     * loop, not one regular expression: a long tag must neither exhaust the regex engine nor hide a handler): names end at white space, `/`, `=` or `>`; a value after `=` is quoted
-     * only when it starts with a quote (otherwise it ends at white space or `>`, a quote inside it is an ordinary character); a tag ends at `>` or at the next `<`.
+     * CRR-17 / R5-1: does any start tag carry an event handler, `href`, `src`, `srcdoc`, `style`, `action` or `formaction`? The attributes are read the way an HTML tokenizer reads them
+     * (one pass with a single cursor, so the time is linear in the size of the file: nothing is scanned twice, which an adversarial file of a million `<x a=b` cannot change):
+     * a tag name runs to white space, `/` or `>`; a tag name that ends at `>` (or the end) has no attributes and the cursor moves past it; attribute names end at white space, `/`,
+     * `=` or `>` (a `<`, a quote or anything else inside a name is an ordinary character); a value after `=` is quoted only when it starts with a quote, otherwise it ends at white
+     * space or `>`; a tag ends at `>`. A step budget bounds the work as a second line: when it runs out the file is refused.
      */
     private static function hasActiveAttribute(string $b): bool
     {
-        $n = strlen($b);
-        if (preg_match_all('/<\s*[A-Za-z][^\s\/>]*(?=[\s\/])/', $b, $starts, PREG_OFFSET_CAPTURE) === false) {
-            return true;   // the engine gave up: fail closed
+        // no attribute name that matters occurs anywhere: nothing to look for (one pass of the regex engine, which keeps ordinary files and most adversarial ones out of the tokenizer)
+        if (preg_match('/(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)\s*=/i', $b) === 0) {
+            return false;
         }
-        foreach ($starts[0] as [$tag, $at]) {
-            $i = $at + strlen($tag);
+        $n = strlen($b);
+        $budget = 2 * $n + 64;
+        $i = 0;
+        while (($i = strpos($b, '<', $i)) !== false) {
+            if (--$budget < 0) {
+                return true;
+            }
+            $j = $i + 1 + strspn($b, " \t\r\n\f", $i + 1);
+            if ($j >= $n || !ctype_alpha($b[$j])) {
+                $i = $i + 1;
+                continue;
+            }
+            $j += strcspn($b, " \t\r\n\f/>", $j);   // the tag name
+            if ($j >= $n || $b[$j] === '>') {
+                $i = $j;   // no attributes; a `<` inside the name belongs to the name
+                continue;
+            }
+            $i = $j;
             while ($i < $n) {
+                if (--$budget < 0) {
+                    return true;
+                }
                 $i += strspn($b, " \t\r\n\f/", $i);
-                if ($i >= $n || $b[$i] === '>' || $b[$i] === '<') {
+                if ($i >= $n || $b[$i] === '>') {
                     break;
                 }
-                $len = strcspn($b, " \t\r\n\f/=><", $i);
+                $len = strcspn($b, " \t\r\n\f/=>", $i);
                 if ($len === 0) {
-                    ++$i;   // a stray `=` where a name should start: it is part of the next name in a tokenizer; moving on is enough
+                    ++$i;   // a `=` where a name should start
                     continue;
                 }
-                $name = substr($b, $i, $len);
+                $name = substr($b, $i, min($len, 64));   // an attribute name longer than 64 bytes is none of the names that matter; only its tail is looked at
+                $name = $len > 64 ? substr($b, $i + $len - 64, 64) : $name;
                 $i += $len;
                 $i += strspn($b, " \t\r\n\f", $i);
                 if ($i >= $n || $b[$i] !== '=') {
                     continue;
                 }
-                if (preg_match('/(?:^|[^A-Za-z0-9_])(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)$/i', $name) === 1) {
+                if (preg_match('/(?:^|[^A-Za-z0-9_])(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)$/iD', $name) === 1) {
                     return true;
                 }
                 ++$i;
@@ -206,13 +228,14 @@ final class PanelAttachments
                 if ($i < $n && ($b[$i] === '"' || $b[$i] === "'")) {
                     $close = strpos($b, $b[$i], $i + 1);
                     if ($close === false) {
-                        break;   // the value runs to the end of the file: nothing after it is a tag
+                        return false;   // the value runs to the end of the file: nothing after it is a tag
                     }
                     $i = $close + 1;
                 } else {
                     $i += strcspn($b, " \t\r\n\f>", $i);
                 }
             }
+            // the tag ended at `>` (or the file did); the scan for the next `<` goes on from here
         }
 
         return false;
