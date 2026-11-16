@@ -149,6 +149,25 @@ final class RmmAuthorizer
     }
 
     /**
+     * CORE-DS-62: does the location belong to a client the user may see? True for a user with no restriction; a location of no client (or one that does not exist) is not visible
+     * to a restricted user.
+     */
+    public function locationOk(int $userId, int $locationId): bool
+    {
+        $visible = $this->visibleClientIds($userId);
+        if ($visible === null) {
+            return true;
+        }
+        foreach ($visible as $clientId) {
+            if ($this->tenancy->locationInClient($locationId, $clientId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Client ids a list may show, or null for "all".
      *
      * @return list<int>|null

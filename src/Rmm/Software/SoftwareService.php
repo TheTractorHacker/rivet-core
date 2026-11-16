@@ -31,6 +31,9 @@ final class SoftwareService
     public const SOURCES = ['registry', 'registry32', 'appx', 'dpkg', 'rpm', 'snap', 'flatpak'];
     /** Events published for one report; the change log keeps every change. */
     public const EVENT_CAP = 25;
+    /** CORE-DS-43: rows one device may hold in the current list (removed ones included) and in the change history; reports past it are trimmed, never refused. */
+    public const MAX_ROWS_PER_DEVICE = 20000;
+    public const MAX_HISTORY_PER_DEVICE = 20000;
     private const CHUNK = 250;
 
     private readonly SoftwareHistoryStore $history;
@@ -133,9 +136,13 @@ final class SoftwareService
                 $history = [];
                 $events = [];
                 $incoming = [];
+                $room = max(0, self::MAX_ROWS_PER_DEVICE - count($rows));
                 foreach ($report['items'] as $i) {
                     $incoming[$i['key']] = true;
                     $cur = $rows[$i['key']] ?? null;
+                    if ($cur === null && $room-- <= 0) {
+                        continue;   // CORE-DS-43: one device does not get unlimited rows
+                    }
                     if ($cur === null || $cur['removed_at'] !== null) {
                         $upsert[] = $i;
                         $out['installed']++;
@@ -193,6 +200,9 @@ final class SoftwareService
                     $events[] = [RmmEvent::SOFTWARE_REMOVED, $item];
                 }
                 if (!$baseline) {
+                    // CORE-DS-43: the change history of one device is bounded too (the oldest age out by retention as before)
+                    $historyRoom = max(0, self::MAX_HISTORY_PER_DEVICE - $this->history->forDevice($deviceId, null, 1, 0)['total']);
+                    $history = array_slice($history, 0, $historyRoom);
                     $this->history->append($deviceId, array_map(static fn (array $h): array => ['key' => $h[0]['key'], 'name' => $h[0]['name'], 'source' => $h[0]['source'], 'publisher' => $h[0]['publisher'],
                         'type' => $h[1], 'old' => $h[2], 'new' => $h[3]], $history), $now);
                     foreach (array_slice($events, 0, self::EVENT_CAP) as [$event, $i]) {

@@ -213,4 +213,26 @@ final class UpdatesTest extends RmmTestCase
         [$c] = $this->h->call('GET', 'agent_update', null, $this->T, ['arch' => 'amd64', 'version' => '1.1.0']);
         $this->assertSame(404, $c);
     }
+
+    /** CORE-DS-72: a stored agent binary that was hashed and found intact is not hashed again by the same worker until its stat fingerprint changes. */
+    public function testAnIntactBinaryIsHashedOnceAndATamperedOneIsStillRefused(): void
+    {
+        $b = $this->h->publishBinary('1.2.0', 'amd64', 8192, true);
+        $row = $this->h->rows("SELECT * FROM endpoint_agent_binaries WHERE binary_id = {$b['binary_id']}")[0];
+        $u = $this->h->module->updates();
+        sleep(2);   // stat times have whole seconds: a younger file is not remembered
+        $prop = new \ReflectionProperty(\RivetCore\Rmm\Update\UpdateService::class, 'verified');
+        $prop->setValue(null, []);
+        [$f, $e] = $u->openBinary($row);
+        $this->assertNotNull($f, (string) $e);
+        $this->assertCount(1, $prop->getValue(), 'remembered after the first verification');
+        [$f] = $u->openBinary($row);
+        $this->assertNotNull($f);
+        // same size, different bytes: the fingerprint changes, the file is hashed again and refused
+        clearstatcache();
+        file_put_contents($b['path'], str_repeat('X', $b['size']));
+        [$f, $e] = $u->openBinary($row);
+        $this->assertNull($f);
+        $this->assertStringContainsString('integrity', (string) $e);
+    }
 }

@@ -454,6 +454,9 @@ final class TransferService
                 $expired += $this->sql->run("UPDATE endpoint_agent_transfers SET state = 'expired', updated_at = ? WHERE transfer_id = ?", [$this->sql->utcNow(), $t['transfer_id']]);
             }
         }
+        // CORE-DS-71: end the ledger rows of downloads whose job ended without data (the partial bytes go with the expiry as before)
+        $this->sql->run("UPDATE endpoint_agent_transfers t JOIN endpoint_agent_jobs j ON j.job_id = t.job_id SET t.state = 'failed', t.updated_at = ?
+            WHERE t.direction = 'download' AND t.state IN ('queued','receiving') AND j.state IN ('failed','timed_out','cancelled','expired')", [$this->sql->utcNow()]);
         $pruned = $this->sql->run("DELETE FROM endpoint_agent_transfers WHERE state IN ('expired','deleted','failed','complete') AND expires_at < ? LIMIT " . max(1, $batch), [$this->sql->utcAt(-max(1, $retentionDays) * 86400)]);
 
         return ['expired' => $expired, 'pruned' => $pruned];
@@ -465,8 +468,11 @@ final class TransferService
      */
     private function storeFull(array $limits, int $incoming): ?array
     {
-        $held = (int) $this->sql->val("SELECT COALESCE(SUM(GREATEST(size_bytes, received_bytes, max_bytes * (direction = 'download' AND state IN ('queued','receiving')))), 0) FROM endpoint_agent_transfers
-            WHERE state NOT IN ('expired','deleted','failed') AND expires_at > ?", [$this->sql->utcNow()]);
+        // CORE-DS-71: a download whose job ended without data (failed, timed out, cancelled, expired) reserves nothing; its row used to stay 'queued' for the whole ttl
+        $held = (int) $this->sql->val("SELECT COALESCE(SUM(GREATEST(t.size_bytes, t.received_bytes, t.max_bytes * (t.direction = 'download' AND t.state IN ('queued','receiving')
+                AND (j.state IS NULL OR j.state NOT IN ('failed','timed_out','cancelled','expired'))))), 0)
+            FROM endpoint_agent_transfers t LEFT JOIN endpoint_agent_jobs j ON j.job_id = t.job_id
+            WHERE t.state NOT IN ('expired','deleted','failed') AND t.expires_at > ?", [$this->sql->utcNow()]);
         if ($held + $incoming > $limits['transfer_store_max_bytes']) {
             return self::fail(507, 'too_large', 'The transfer storage on this server is full. Delete finished transfers or wait for them to expire.');
         }

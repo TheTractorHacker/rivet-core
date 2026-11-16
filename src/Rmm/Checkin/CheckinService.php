@@ -507,7 +507,7 @@ final class CheckinService
         }
         $cpu = is_array($inv['cpu'] ?? null) ? $inv['cpu'] : [];
         $clean = [
-            'hostname' => $txt($inv['hostname'] ?? null, 200),
+            'hostname' => DeviceValidator::cleanHostname($inv['hostname'] ?? null, 200),   // IT-DS-19/42: no markup in a name a device chooses
             'os' => $txt($inv['os'] ?? null, 50),
             'os_version' => $txt($inv['os_version'] ?? null, 200),
             'manufacturer' => $txt($inv['manufacturer'] ?? null, 200),

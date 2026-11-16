@@ -237,7 +237,8 @@ final class HostedFiles
             }
         }
 
-        return new RmmFileBody($path, (int) $f['size_bytes'], null, (string) $f['sha256']);
+        // CORE-DS-36: no hash for the emitter to repeat: the file was verified above (or its fingerprint is the verified one), and the agent checks the pinned hash itself.
+        return new RmmFileBody($path, (int) $f['size_bytes']);
     }
 
     private static function ageSeconds(string $path): int

@@ -303,6 +303,31 @@ final class PoliciesTest extends AutomationTestCase
         $this->assertNotEmpty(array_filter($this->h->audit->records(), static fn (array $x): bool => str_contains((string) ($x['action'] ?? ''), 'Policy Assigned')));
     }
 
+    /** CORE-DS-37: policy bodies carry script check text; a reader without rmm.job.run_saved does not get it. */
+    public function testPolicyScriptTextIsNotShownToAReaderWhoMayNotRunSavedScripts(): void
+    {
+        $p = $this->policy('Cert', ['check.cert' => ['type' => 'script', 'params' => ['script' => 'Write-Output SECRET-HOST-7'], 'interval_s' => 600], 'interval.collect_s' => 50]);
+        $id = (string) $p['policy_id'];
+        $this->h->module->policyStore()->update((int) $p['policy_id'], ['settings' => ['check.cert' => ['type' => 'script', 'params' => ['script' => 'Write-Output SECRET-HOST-8'], 'interval_s' => 600]]], 1);
+        foreach ([['policies'], ['policies', $id]] as $seg) {
+            [$c, $j] = $this->h->tech('GET', $seg, $this->tech);
+            $this->assertSame(200, $c);
+            $this->assertStringContainsString('SECRET-HOST', json_encode($j), 'a holder of run_saved sees it: ' . implode('/', $seg));
+        }
+        [$c, $j] = $this->h->tech('GET', ['policies', $id, 'versions'], $this->tech, null, ['body' => '1']);
+        $this->assertSame(200, $c);
+        $this->assertStringContainsString('SECRET-HOST-7', json_encode($j));
+        foreach ([['policies'], ['policies', $id]] as $seg) {
+            [$c, $j] = $this->h->tech('GET', $seg, $this->viewer);
+            $this->assertSame(200, $c);
+            $this->assertStringNotContainsString('SECRET-HOST', json_encode($j), implode('/', $seg));
+            $this->assertStringContainsString('script_hidden', json_encode($j));
+            $this->assertStringContainsString('"interval_s":600', json_encode($j), 'the rest of the check is still shown');
+        }
+        $this->assertSame(403, $this->h->tech('GET', ['policies', $id, 'versions'], $this->viewer, null, ['body' => '1'])[0]);
+        $this->assertSame(200, $this->h->tech('GET', ['policies', $id, 'versions'], $this->viewer)[0], 'the version list without bodies stays open');
+    }
+
     public function testTheTechnicianApiRoutes(): void
     {
         [$c, $j] = $this->h->tech('POST', ['policies'], $this->admin, ['name' => 'Api', 'settings' => ['interval.collect_s' => 70]]);

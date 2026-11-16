@@ -2113,7 +2113,7 @@
         "RivetCore\\Mcp\\McpDiagnostics": {
             "kind": "final class",
             "methods": {
-                "__construct": "__construct(RivetCore\\Mcp\\AgentDirectoryInterface $agents, GuzzleHttp\\ClientInterface $http, string $envVarName = 'MCP_ENABLED', string $appName = 'this app')",
+                "__construct": "__construct(RivetCore\\Mcp\\AgentDirectoryInterface $agents, GuzzleHttp\\ClientInterface $http, string $envVarName = 'MCP_ENABLED', string $appName = 'this app', ?RivetCore\\Webhooks\\UrlPolicy $policy = NULL)",
                 "run": "run(array $cfg, string $baseHost): array"
             }
         },
@@ -3074,6 +3074,7 @@
                 "clientOk": "clientOk(int $userId, int $clientId): bool",
                 "denial": "denial(string $ability): string",
                 "forget": "forget(?int $userId = NULL): void",
+                "locationOk": "locationOk(int $userId, int $locationId): bool",
                 "moduleEnabled": "moduleEnabled(): bool",
                 "noClientAccess": "noClientAccess(): string",
                 "visibleClientIds": "visibleClientIds(int $userId): ?array"
@@ -4164,6 +4165,7 @@
                 "allowReenroll": "allowReenroll(int $deviceId, int $userId): bool",
                 "approve": "approve(int $deviceId, int $assetId, int $userId): array",
                 "approveWithNewAsset": "approveWithNewAsset(int $deviceId, int $userId): array",
+                "moveCarriedRows": "static moveCarriedRows(RivetCore\\Rmm\\Support\\Sql $sql, int $deviceId, int $clientId): void",
                 "reject": "reject(int $deviceId, int $userId): array",
                 "retire": "retire(int $deviceId, int $userId): bool",
                 "revoke": "revoke(int $deviceId, string $reason, int $userId): bool",
@@ -4228,6 +4230,7 @@
             },
             "methods": {
                 "cleanHardware": "static cleanHardware(array $d): array",
+                "cleanHostname": "static cleanHostname(mixed $v, int $max = 200): ?string",
                 "cleanSerial": "static cleanSerial(?string $s): ?string",
                 "cleanText": "static cleanText(mixed $v, int $max): ?string",
                 "normalizeMac": "static normalizeMac(string $mac): ?string",
@@ -5791,7 +5794,8 @@
                 "settingsOf": "static settingsOf(string $bodyJson): array",
                 "unassign": "unassign(int $assignmentId): ?array",
                 "update": "update(int $policyId, array $in, int $userId): array",
-                "versions": "versions(int $policyId, bool $withBody = false): array"
+                "versions": "versions(int $policyId, bool $withBody = false): array",
+                "withoutScriptBodies": "static withoutScriptBodies(mixed $data): mixed"
             }
         },
         "RivetCore\\Rmm\\Policy\\StarterPack\\PolicyPack": {
@@ -6896,9 +6900,10 @@
                 "RESUME_AFTER_S": 120
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Approvals\\ApprovalService $approvals, RivetCore\\Rmm\\Scripts\\ScriptService $scripts, RivetCore\\Rmm\\Scripts\\BulkRunner $bulk, ?RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Approvals\\ApprovalService $approvals, RivetCore\\Rmm\\Scripts\\ScriptService $scripts, RivetCore\\Rmm\\Scripts\\BulkRunner $bulk, ?RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, ?RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz = NULL, ?RivetCore\\Rmm\\Scripts\\TargetResolver $targets = NULL)",
                 "execute": "execute(array $approval, array $request, array $loaded, ?Closure $allowed = NULL): array",
-                "resume": "resume(): int"
+                "resume": "resume(): int",
+                "targetChanged": "targetChanged(array $request, int $requesterId, array $loaded): ?string"
             }
         },
         "RivetCore\\Rmm\\Scripts\\BulkRunner": {
@@ -7644,8 +7649,10 @@
             "kind": "final class",
             "constants": {
                 "EVENT_CAP": 25,
+                "MAX_HISTORY_PER_DEVICE": 20000,
                 "MAX_ITEMS": 5000,
                 "MAX_REMOVED": 5000,
+                "MAX_ROWS_PER_DEVICE": 20000,
                 "SOURCES": [
                     "registry",
                     "registry32",

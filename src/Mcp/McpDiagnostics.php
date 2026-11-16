@@ -12,11 +12,13 @@ use GuzzleHttp\ClientInterface;
  * through an injected Guzzle client so the checks can be tested without a real identity provider.
  *
  * @api
+ *
+ * Pass a {@see \RivetCore\Webhooks\UrlPolicy} (the same one the webhook sender uses) to have the issuer and the signing-key address checked before they are fetched.
  */
 final class McpDiagnostics
 {
     /** @param string $envVarName shown to the admin when the kill switch is set, e.g. MYAPP_MCP_ENABLED */
-    public function __construct(private AgentDirectoryInterface $agents, private ClientInterface $http, private string $envVarName = 'MCP_ENABLED', private string $appName = 'this app') {}
+    public function __construct(private AgentDirectoryInterface $agents, private ClientInterface $http, private string $envVarName = 'MCP_ENABLED', private string $appName = 'this app', private ?\RivetCore\Webhooks\UrlPolicy $policy = null) {}
 
     /** @return array{status:string,label:string,detail:string} */
     private static function check(string $status, string $label, string $detail): array
@@ -27,7 +29,15 @@ final class McpDiagnostics
     /** @return array<string,mixed> */
     private function getJson(string $url): array
     {
-        $res = $this->http->request('GET', $url, ['timeout' => 5, 'allow_redirects' => false, 'http_errors' => false, 'headers' => ['Accept' => 'application/json']]);
+        $options = ['timeout' => 5, 'allow_redirects' => false, 'http_errors' => false, 'headers' => ['Accept' => 'application/json']];
+        if ($this->policy !== null) {
+            // CORE-DS-73: the issuer is typed by an administrator and the jwks_uri comes from the identity provider; neither may point at an internal service. https only, no proxy from the environment.
+            if ($this->policy->vet($url, false) === null) {
+                throw new \RuntimeException('that address is not allowed (it must be a public https address)');
+            }
+            $options['proxy'] = '';
+        }
+        $res = $this->http->request('GET', $url, $options);
         if ($res->getStatusCode() !== 200) throw new \RuntimeException('HTTP ' . $res->getStatusCode());
         $data = json_decode((string) $res->getBody(), true);
         if (!is_array($data)) throw new \RuntimeException('not JSON');

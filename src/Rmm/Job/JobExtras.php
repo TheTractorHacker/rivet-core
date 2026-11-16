@@ -130,7 +130,12 @@ final class JobExtras
         if (!self::hasSecrets($job)) {
             return $output;
         }
-        foreach ($this->secrets((string) $job['job_id']) ?? [] as $value) {
+        $secrets = $this->secrets((string) $job['job_id']);
+        if ($secrets === null) {
+            // CORE-DS-69 (CORE-28): the sealed values are gone (housekeeping wiped them, or they cannot be read), so nothing can be redacted: a late result must not be stored as it is
+            return '[output withheld: this job had secret parameters that are no longer available to redact it]';
+        }
+        foreach ($secrets as $value) {
             if (strlen($value) >= 4) {
                 // also as JSON text escapes it (a device's JSON report writes "/" as "\/"), so a value with a slash does not slip through
                 $json = substr((string) json_encode($value), 1, -1);

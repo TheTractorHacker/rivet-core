@@ -120,7 +120,7 @@ final class ChangeRuleService
      * The recommended rules: one per preset that suggests one (any change to the startup entries and the Defender exclusions, an added local administrator, any change to sshd,
      * sudo and the account files). Created once each (matched by preset), never duplicated, never touching a rule an administrator already edited.
      *
-     * @return array{created:list<int>,existing:int}
+     * @return array{created:list<int>,existing:int,errors:list<string>} `errors` (CORE-DS-38): why a rule was not created (the fleet-wide cap), instead of saying nothing
      */
     public function installRecommended(int $userId, int $clientId = 0): array
     {
@@ -129,19 +129,22 @@ final class ChangeRuleService
             $have[(string) $r['recommended']] = true;
         }
         $created = [];
+        $errors = [];
         foreach (ChangePresets::catalog() as $id => $p) {
             if ($p['rule'] === null || isset($have[$id])) {
                 continue;
             }
             $added = $p['rule'] === 'added';
-            [$rid] = $this->create(['name' => 'Change: ' . $p['title'] . ($added ? ' (member added)' : ''), 'client_id' => $clientId, 'watch' => $id, 'change' => $added ? 'added' : 'any',
+            [$rid, $why] = $this->create(['name' => 'Change: ' . $p['title'] . ($added ? ' (member added)' : ''), 'client_id' => $clientId, 'watch' => $id, 'change' => $added ? 'added' : 'any',
                 'severity' => $added || $id === 'win.defender' ? 'fail' : 'warn'], $userId, $id);
             if ($rid !== null) {
                 $created[] = $rid;
+            } else {
+                $errors = array_values(array_unique([...$errors, ...$why]));
             }
         }
 
-        return ['created' => $created, 'existing' => count($have)];
+        return ['created' => $created, 'existing' => count($have), 'errors' => $errors];
     }
 
     /**

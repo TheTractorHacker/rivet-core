@@ -392,9 +392,10 @@ final class UpdateService
         if (!is_file($path) || (int) filesize($path) !== (int) $row['size_bytes']) {
             return [null, 'The stored agent binary is missing or damaged.'];
         }
-        if (!hash_equals((string) $row['sha256'], (string) hash_file('sha256', $path))) {
+        if (!$this->verifiedBefore($path, (string) $row['sha256']) && !hash_equals((string) $row['sha256'], (string) hash_file('sha256', $path))) {
             return [null, 'The stored agent binary failed its integrity check.'];
         }
+        $this->rememberVerified($path, (string) $row['sha256']);
         if (!is_readable($path)) {
             return [null, 'The stored agent binary could not be read.'];
         }
@@ -409,5 +410,36 @@ final class UpdateService
         }
 
         return [new RmmFileBody($path, (int) $row['size_bytes'], $trailer === '' ? null : $trailer), null];
+    }
+
+    /** @var array<string,string> path => "sha256|stat fingerprint" of a file that was hashed and found intact, in this worker (CORE-DS-72) */
+    private static array $verified = [];
+
+    /** CORE-DS-72: the stat fingerprint (inode, size, mtime, ctime) of a file that was hashed and found intact; any change to the file changes it. */
+    private static function fingerprint(string $path): string
+    {
+        $st = @stat($path);
+
+        return $st === false ? '' : implode(':', [$st['ino'], $st['size'], $st['mtime'], $st['ctime']]);
+    }
+
+    private function verifiedBefore(string $path, string $sha256): bool
+    {
+        $fp = self::fingerprint($path);
+
+        return $fp !== '' && (self::$verified[$path] ?? null) === $sha256 . '|' . $fp;
+    }
+
+    private function rememberVerified(string $path, string $sha256): void
+    {
+        $st = @stat($path);
+        // only a file at least two seconds old is remembered: stat times have a one second resolution, so a change in the same second as the check could keep the fingerprint
+        if ($st === false || time() - max((int) $st['mtime'], (int) $st['ctime']) < 2) {
+            return;
+        }
+        if (count(self::$verified) > 64) {
+            self::$verified = [];
+        }
+        self::$verified[$path] = $sha256 . '|' . self::fingerprint($path);
     }
 }

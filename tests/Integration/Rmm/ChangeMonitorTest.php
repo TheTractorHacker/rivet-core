@@ -563,6 +563,23 @@ final class ChangeMonitorTest extends RemoteTestCase
         return $j;
     }
 
+    /** CORE-DS-38: the recommended rules say why they were not created when the fleet-wide cap stops them. */
+    public function testRecommendedRulesReportTheCapInsteadOfSilentlyStopping(): void
+    {
+        $this->enable();
+        $rules = $this->h->module->changeRules();
+        for ($i = 0; $i < \RivetCore\Rmm\Change\ChangeRuleService::MAX_RULES - 2; $i++) {
+            $this->rule(['name' => "Filler $i"]);
+        }
+        [$c, $j] = $this->api('POST', ['changes', 'rules', 'recommended'], $this->admin, ['client_id' => 0]);
+        $this->assertSame(201, $c, json_encode($j));
+        $this->assertCount(2, $j['created']);
+        $this->assertSame(['At most 50 change rules.'], $j['errors']);
+        [$c, $j] = $this->api('POST', ['changes', 'rules', 'recommended'], $this->admin, ['client_id' => $this->h->clientA]);
+        $this->assertSame(409, $c, json_encode($j));
+        $this->assertNotNull($rules);
+    }
+
     public function testRuleManagementAndItsScope(): void
     {
         $this->enable();

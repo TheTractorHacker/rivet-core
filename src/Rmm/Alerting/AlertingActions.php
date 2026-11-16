@@ -61,7 +61,7 @@ final class AlertingActions
 
     /**
      * May this caller know that a record scoped to ($type, $id) exists? A client or device scope outside the caller's clients (or a device that
-     * is gone) is invisible: the answer is the same 404 as for a record that does not exist. Other scopes span clients and are visible to
+     * is gone) is invisible: the answer is the same 404 as for a record that does not exist. A site is one location of one client (CORE-DS-62); the other scopes span clients and are visible to
      * everyone who may view devices.
      */
     private function scopeVisible(int $uid, string $type, int $id): bool
@@ -73,6 +73,9 @@ final class AlertingActions
             $d = $this->devices->find($id);
 
             return $d !== null && $this->authz->clientOk($uid, (int) $d['client_id']);
+        }
+        if ($type === 'site') {
+            return $this->authz->locationOk($uid, $id);   // CORE-DS-62: a site is one location of one client
         }
 
         return true;
@@ -412,7 +415,7 @@ final class AlertingActions
         }
 
         return ActionResult::ok('', 200, 'ok', ['alerting_enabled' => $on, 'maintenance' => $windows, 'muted' => $state['mute'], 'suppressed' => $state['suppress'],
-            'parent' => $this->dependencies->parentOf($deviceId), 'down_ancestor' => $down, 'checks' => $checks]);
+            'parent' => $this->visibleParent($who->userId, $this->dependencies->parentOf($deviceId)), 'down_ancestor' => $this->visibleAncestor($who->userId, $down), 'checks' => $checks]);
     }
 
     // ------------------------------------------------------------------ escalation policies and settings
@@ -558,6 +561,40 @@ final class AlertingActions
         return [$dev, null];
     }
 
+    /** CORE-DS-63: may this caller know the device exists (a link can outlive a transfer to another client)? */
+    private function deviceVisible(int $uid, int $deviceId): bool
+    {
+        $d = $this->devices->find($deviceId);
+
+        return $d !== null && $this->authz->clientOk($uid, (int) $d['client_id']);
+    }
+
+    /**
+     * @param array<string,mixed>|null $p {@see DependencyService::parentOf()}
+     * @return array<string,mixed>|null the same, or without the parent's id and name when the caller may not see that device
+     */
+    private function visibleParent(int $uid, ?array $p): ?array
+    {
+        if ($p === null || $this->deviceVisible($uid, (int) $p['parent_device_id'])) {
+            return $p;
+        }
+
+        return ['device_id' => $p['device_id'], 'parent_device_id' => 0, 'parent_hostname' => '', 'hidden' => true];
+    }
+
+    /**
+     * @param array{device_id:int,hostname:string}|null $a
+     * @return array<string,mixed>|null
+     */
+    private function visibleAncestor(int $uid, ?array $a): ?array
+    {
+        if ($a === null || $this->deviceVisible($uid, $a['device_id'])) {
+            return $a;
+        }
+
+        return ['device_id' => 0, 'hostname' => '', 'hidden' => true];
+    }
+
     public function getParent(RmmPrincipal $who, int $deviceId): ActionResult
     {
         [$dev, $err] = $this->device($who->userId, $deviceId, null);
@@ -565,7 +602,10 @@ final class AlertingActions
             return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
         }
 
-        return ActionResult::ok('', 200, 'ok', ['parent' => $this->dependencies->parentOf($deviceId), 'children' => $this->dependencies->childrenOf($deviceId)]);
+        $children = $this->dependencies->childrenOf($deviceId);
+        $seen = array_values(array_filter($children, fn (array $c): bool => $this->deviceVisible($who->userId, (int) $c['device_id'])));
+
+        return ActionResult::ok('', 200, 'ok', ['parent' => $this->visibleParent($who->userId, $this->dependencies->parentOf($deviceId)), 'children' => $seen] + (count($seen) < count($children) ? ['hidden_children' => count($children) - count($seen)] : []));
     }
 
     public function setParent(RmmPrincipal $who, int $deviceId, int $parentId): ActionResult

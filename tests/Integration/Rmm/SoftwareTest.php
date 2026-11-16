@@ -293,4 +293,24 @@ final class SoftwareTest extends RmmTestCase
         $this->assertSame(['z@9'], $this->current());
         $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_device_software WHERE device_id = $first"));
     }
+
+    /** CORE-DS-43: a device's software rows and change history are bounded; a full report past the budget is trimmed, not refused. */
+    public function testSoftwareRowsAndHistoryOfOneDeviceAreBounded(): void
+    {
+        $this->linked();
+        $this->assertSame(200, $this->send(self::full([['dpkg', 'base', '1.0']]))[0]);
+        $dev = $this->dev;
+        $this->h->q("INSERT INTO rmm_software_history (device_id, software_key, name, source, change_type, old_version, new_version, publisher, occurred_at)
+            SELECT $dev, CONCAT('k', seq), 'x', 'dpkg', 'installed', NULL, '1', '', UTC_TIMESTAMP() FROM seq_1_to_20000");
+        $this->h->q("INSERT INTO rmm_device_software (device_id, software_key, name, source, version, publisher, installed_on, first_seen_at, last_seen_at)
+            SELECT $dev, CONCAT('r', seq), CONCAT('old', seq), 'dpkg', '1', '', NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP() FROM seq_1_to_19990");
+        $this->h->q("UPDATE rmm_device_software SET removed_at = UTC_TIMESTAMP() WHERE device_id = $dev AND software_key LIKE 'r%'");
+        $list = [['dpkg', 'base', '1.0']];
+        for ($i = 0; $i < 100; $i++) {
+            $list[] = ['dpkg', "new$i", '1'];
+        }
+        $this->assertSame(200, $this->send(self::full($list))[0]);
+        $this->assertLessThanOrEqual(20000, (int) $this->h->one("SELECT COUNT(*) FROM rmm_device_software WHERE device_id = $dev"));
+        $this->assertLessThanOrEqual(20000, (int) $this->h->one("SELECT COUNT(*) FROM rmm_software_history WHERE device_id = $dev"), 'no history row past the budget');
+    }
 }

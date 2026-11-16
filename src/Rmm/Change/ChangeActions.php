@@ -307,8 +307,11 @@ final class ChangeActions
         }
         $r = $this->rules->installRecommended($who->userId, $client);
         $this->audit->record('Change Rules Recommended', "{$who->userName} installed " . count($r['created']) . ' recommended change rules', $client, 0);
+        if ($r['errors'] !== [] && $r['created'] === []) {
+            return ActionResult::fail(409, 'conflict', 'No rule was created: ' . implode(' ', $r['errors']) . ' Delete rules that are no longer needed first.');
+        }
 
-        return ActionResult::ok(count($r['created']) . ' rules created.', 201, 'created', $r + ['data' => $this->rules->all($this->authz->visibleClientIds($who->userId))]);
+        return ActionResult::ok(count($r['created']) . ' rules created.' . ($r['errors'] !== [] ? ' Some were not created: ' . implode(' ', $r['errors']) : ''), 201, 'created', $r + ['data' => $this->rules->all($this->authz->visibleClientIds($who->userId))]);
     }
 
     /** @return array<string,mixed>|null */

@@ -285,7 +285,7 @@ final class ScriptActions
         }
         $script = $loaded['script'];
         $req = ['type' => 'run', 'script_id' => (int) $script['script_id'], 'script_version' => (int) $loaded['version']['version'], 'body_sha256' => (string) $loaded['version']['body_sha256'],
-            'params' => $params === [] ? new \stdClass() : $params, 'timeout_s' => $timeout, 'target' => $target, 'confirmed' => (int) $script['destructive'] === 1];
+            'params' => $params === [] ? new \stdClass() : $params, 'timeout_s' => $timeout, 'target' => $target, 'confirmed' => (int) $script['destructive'] === 1, 'device_count' => $count];
         $summary = "Run \"{$script['name']}\" v{$loaded['version']['version']} on " . ($target['type'] === 'all' ? 'all devices' : "{$target['type']} {$target['id']}") . " ($count device" . ($count === 1 ? '' : 's') . ')';
         $a = $this->approvals->request('run', $req, $summary, $count, (int) $script['script_id'], (int) $loaded['version']['version'], $who->userId);
         $this->audit->record('Approval Requested', "{$who->userName} requested approval #{$a['approval_id']}: $summary (script sha256 " . substr((string) $loaded['version']['body_sha256'], 0, 16) . ')', $client, $asset);
@@ -362,6 +362,9 @@ final class ScriptActions
                 $denied = $this->approverScope($who->userId, $target, $loaded);
                 if ($denied !== null) {
                     return $denied;
+                }
+                if (($why = $this->executor->targetChanged($req, (int) $a['requested_by'], $loaded)) !== null) {
+                    return ActionResult::fail(409, 'conflict', $why);   // CORE-DS-44
                 }
             } else {
                 $sched = $this->schedules->get((int) ($req['schedule_id'] ?? 0));

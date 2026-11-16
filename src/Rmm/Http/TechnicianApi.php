@@ -309,6 +309,12 @@ final class TechnicianApi
         return self::notFound();
     }
 
+    /** CORE-DS-37: script text is shown to whoever may run saved scripts, as on the scripts routes. */
+    private function mayReadScripts(int $uid): bool
+    {
+        return $this->authz->allowed($uid, RmmAbility::JOB_RUN_SAVED, 0);
+    }
+
     /** @param list<string> $seg */
     private function automationRoute(RmmRequest $req, RmmPrincipal $who, string $method, array $seg): RmmResponse
     {
@@ -350,7 +356,7 @@ final class TechnicianApi
             $store = $read->policyStore();
             if (!isset($seg[1])) {
                 if ($method === 'GET') {
-                    return self::json(200, ['data' => $store->all()]);
+                    return self::json(200, ['data' => $this->mayReadScripts($uid) ? $store->all() : \RivetCore\Rmm\Policy\PolicyStore::withoutScriptBodies($store->all())]);   // CORE-DS-37
                 }
                 if ($method === 'POST' && $this->policies !== null) {
                     [$in, $bad] = $this->jsonBody($req);
@@ -367,6 +373,9 @@ final class TechnicianApi
                 if ($method === 'GET') {
                     $d = $read->policyDetail($rid);
                     $d['assignments'] = $this->visibleAssignments($uid, $d['assignments']);
+                    if (!$this->mayReadScripts($uid)) {
+                        $d['policy'] = \RivetCore\Rmm\Policy\PolicyStore::withoutScriptBodies($d['policy']);   // CORE-DS-37
+                    }
 
                     return $d['policy'] === null ? self::json(404, ['error' => 'Policy not found.', 'code' => 'not_found']) : self::json(200, $d);
                 }
@@ -382,7 +391,12 @@ final class TechnicianApi
                 return $noMethod;
             }
             if ($sub === 'versions' && $method === 'GET' && $sub2 === null) {
-                return self::json(200, ['data' => $store->versions($rid, ($req->query['body'] ?? '') === '1')]);
+                $withBody = ($req->query['body'] ?? '') === '1';
+                if ($withBody && !$this->mayReadScripts($uid)) {
+                    return self::json(403, ['error' => 'Reading the bodies of earlier policy versions needs the grant to run saved scripts.', 'code' => 'forbidden']);   // CORE-DS-37
+                }
+
+                return self::json(200, ['data' => $store->versions($rid, $withBody)]);
             }
             if ($sub === 'assignments' && $this->policies !== null) {
                 if ($sub2 === null && $method === 'POST') {

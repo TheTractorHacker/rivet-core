@@ -206,6 +206,25 @@ final class McpTest extends TestCase
         return $o + ['killed' => false, 'module_on' => true, 'enabled' => false, 'issuer' => 'https://idp.example/realm', 'audience' => 'aud', 'configured' => true];
     }
 
+    /** CORE-DS-73: with a UrlPolicy the issuer and the provider's jwks_uri are not fetched when they point inside. */
+    public function testDiagnosticsRefuseAnInternalIssuerOrSigningKeyAddressWhenGivenAPolicy(): void
+    {
+        $fetched = [];
+        $http = new Client(['handler' => HandlerStack::create(new MockHandler([new Response(200, [], json_encode(['issuer' => 'https://idp.example/realm', 'jwks_uri' => 'https://10.0.0.5/jwks']) ?: '')]))]);
+        $policy = new \RivetCore\Webhooks\UrlPolicy(false, static function (string $h) use (&$fetched): array {
+            $fetched[] = $h;
+            return $h === 'idp.example' ? ['93.184.216.34'] : ['10.0.0.5'];
+        });
+        $d = new McpDiagnostics($this->directory(1), $http, 'X_MCP_ENABLED', 'RivetX', $policy);
+        $out = $d->run($this->cfg(), 'rivet.example');
+        $byLabel = array_column($out, null, 'label');
+        $this->assertSame('ok', $byLabel['Identity provider reachable']['status']);
+        $this->assertSame('fail', $byLabel['Signing keys']['status']);
+        $this->assertStringContainsString('not allowed', $byLabel['Signing keys']['detail']);
+        $d2 = new McpDiagnostics($this->directory(1), $http, 'X_MCP_ENABLED', 'RivetX', new \RivetCore\Webhooks\UrlPolicy(false, static fn (string $h): array => ['169.254.169.254']));
+        $this->assertSame('fail', array_column($d2->run($this->cfg(), 'rivet.example'), null, 'label')['Identity provider reachable']['status']);
+    }
+
     public function testDiagnosticsHealthyProvider(): void
     {
         $json = ['Content-Type' => 'application/json'];

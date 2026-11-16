@@ -178,10 +178,7 @@ final class DeviceService
         }
         $this->sql->transaction(function () use ($deviceId, $clientId, $locationId, $dev): void {
             $this->sql->run('UPDATE endpoint_agent_devices SET client_id = ?, location_id = ? WHERE device_id = ?', [$clientId, $locationId, $deviceId]);
-            foreach (self::CLIENT_CARRYING_TABLES as $table) {
-                $this->moveRows("UPDATE `$table` SET client_id = ? WHERE device_id = ?", [$clientId, $deviceId]);
-            }
-            $this->moveRows('UPDATE rmm_alert_meta SET client_id = ? WHERE device_id = ? AND resolved_at IS NULL', [$clientId, $deviceId]);
+            self::moveCarriedRows($this->sql, $deviceId, $clientId);
             if (!empty($dev['asset_id'])) {
                 $this->assets->moveToClient((int) $dev['asset_id'], $clientId, $locationId);
                 $this->bridge->reassignAlerts($this->settings->integrationId(), (int) $dev['asset_id'], $clientId);
@@ -197,14 +194,26 @@ final class DeviceService
     }
 
     /**
+     * CORE-DS-68 (CORE-23): every table that carries the client of a device (jobs, transfers, deploy, patch rows) and the open alert rows follow the device to $clientId. Shared by
+     * {@see transfer()} and the cross-client link of a pending device, so one list says what moves.
+     */
+    public static function moveCarriedRows(Sql $sql, int $deviceId, int $clientId): void
+    {
+        foreach (self::CLIENT_CARRYING_TABLES as $table) {
+            self::moveRows($sql, "UPDATE `$table` SET client_id = ? WHERE device_id = ?", [$clientId, $deviceId]);
+        }
+        self::moveRows($sql, 'UPDATE rmm_alert_meta SET client_id = ? WHERE device_id = ? AND resolved_at IS NULL', [$clientId, $deviceId]);
+    }
+
+    /**
      * One move statement; a table that does not exist on this install (module migration not applied) has nothing to move.
      *
      * @param list<int|string> $params
      */
-    private function moveRows(string $sql, array $params): void
+    private static function moveRows(Sql $sql, string $query, array $params): void
     {
         try {
-            $this->sql->run($sql, $params);
+            $sql->run($query, $params);
         } catch (\Throwable $e) {
             if ($e->getCode() !== 1146 && !str_contains($e->getMessage(), "doesn't exist")) {
                 throw $e;

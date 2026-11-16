@@ -482,4 +482,23 @@ final class PatchTest extends PatchTestCase
         $this->assertSame(200, $put($this->tech, $rid, ['reboot_policy' => 'never', 'reboot_confirm' => true])[0]);
         $this->assertSame(403, $put($this->tech, $rid, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true])[0], 'it becomes if_required_now again: needs the reboot grant though reboot_confirm is already on');
     }
+
+    /** CORE-DS-40: one device's idea of an update's title and kind must not become the fleet view; the majority wins and a disagreement is flagged. */
+    public function testTheFleetViewShowsWhatMostDevicesReportAndFlagsADisagreement(): void
+    {
+        $devs = [$this->linked('P1'), $this->linked('P2'), $this->linked('P3')];
+        foreach ($devs as $n => [$d, $t]) {
+            $update = $n < 2 ? ['security', 'Real: 2026-11 Security Update'] : ['driver', '!Contoso Bluetooth driver (safe to decline)'];
+            $this->scanWith($d, $t, self::winScan([self::WIN_KB => $update]));
+        }
+        [$c, $j] = $this->api('GET', ['patches'], $this->admin);
+        $this->assertSame(200, $c, json_encode($j));
+        $items = $j['items'];
+        $this->assertCount(1, $items);
+        $this->assertSame([3, 'security', 'Real: 2026-11 Security Update', true], [$items[0]['devices'], $items[0]['kind'], $items[0]['title'], $items[0]['reports_disagree']]);
+        // agreeing devices: no flag
+        $this->scanWith($devs[2][0], $devs[2][1], self::winScan([self::WIN_KB => ['security', 'Real: 2026-11 Security Update']]));
+        $items = $this->api('GET', ['patches'], $this->admin)[1]['items'];
+        $this->assertFalse($items[0]['reports_disagree']);
+    }
 }
