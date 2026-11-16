@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"rivetit-agent/internal/jobs"
+	"rivetit-agent/internal/mesh"
 )
 
 // MeshCentral node ids are url-safe-ish base64 text (e.g. 64 chars from
@@ -38,12 +39,17 @@ func (c *Collector) MeshNodeID(ctx context.Context) string {
 	}
 	exe := ""
 	for _, n := range []string{"MeshAgent.exe", "meshagent.exe", "meshagent"} {
-		if fi, err := os.Stat(filepath.Join(dir, n)); err == nil && !fi.IsDir() {
+		if fi, err := os.Lstat(filepath.Join(dir, n)); err == nil && !fi.IsDir() {
 			exe = filepath.Join(dir, n)
 			break
 		}
 	}
 	if exe == "" {
+		return ""
+	}
+	// The same trust decision as every other run of the Mesh agent (CORE-16 on Windows, F10 on Linux): this process is SYSTEM/root, so a binary
+	// that a standard user could have written or swapped is never executed (CORE-DS-19).
+	if !mesh.TrustedExecutable(exe) {
 		return ""
 	}
 	res := jobs.RunBounded(ctx, jobs.ExecSpec{Name: exe, Args: []string{"-nodeid"}, Timeout: 10 * time.Second, MaxOutput: 512})

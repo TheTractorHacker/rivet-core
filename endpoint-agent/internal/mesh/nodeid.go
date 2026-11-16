@@ -134,6 +134,10 @@ type Probe struct {
 // trustCheck is the default Probe.Trusted. A variable only so that this package's tests, which put fake agents in a temporary directory, can relax it.
 var trustCheck = trustedExe
 
+// TrustedExecutable applies the same refusal as Probe.Found (owner, ACL/permissions, links, location) to one path. The inventory collector uses it so it
+// never runs a Mesh binary that this package would refuse (CORE-DS-19).
+func TrustedExecutable(path string) bool { return trustCheck(path) }
+
 // ValidExtraPath reports whether a configured path may be tried as a Mesh agent executable.
 func ValidExtraPath(p string) bool {
 	return p != "" && filepath.IsAbs(p) && strings.Contains(strings.ToLower(filepath.Base(p)), "meshagent")
