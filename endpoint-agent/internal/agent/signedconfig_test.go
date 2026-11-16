@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -51,7 +53,7 @@ func TestAcceptLogsConfig(t *testing.T) {
 		{"signed by another key", wrongKey, false, false},
 	}
 	for _, c := range cases {
-		if _, err := acceptLogsConfig(c.raw, c.required, v.VerifyDomain, "7", 0); (err == nil) != c.ok {
+		if _, err := acceptLogsConfig(c.raw, c.required, false, v.VerifyDomain, "7", 0); (err == nil) != c.ok {
 			t.Errorf("%s: %v", c.name, err)
 		}
 	}
@@ -126,23 +128,91 @@ func TestDisableUpdateSwitch(t *testing.T) {
 	}
 }
 
-// CORE-DS-16 (review CRR-2): a signed config.logs is bound to its device and cannot be rolled back.
-func TestAcceptLogsConfigDeviceAndSequence(t *testing.T) {
+// CORE-DS-16 (review CRR-2): once binding is required (signed_config >= 2 or the local switch) a signed config.logs MUST carry a string device_id equal to
+// this device and a seq that does not go back.
+func TestAcceptLogsConfigBinding(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	v := &jobs.Verifier{PublicKey: pub}
-	cfg := func(dev any, seq int) json.RawMessage {
-		return signedLogs(t, priv, map[string]any{"version": "v1", "sources": []any{}, "device_id": dev, "seq": seq})
+	mk := func(extra map[string]any) json.RawMessage {
+		m := map[string]any{"version": "v1", "sources": []any{}}
+		for k, x := range extra {
+			m[k] = x
+		}
+		return signedLogs(t, priv, m)
 	}
-	if seq, err := acceptLogsConfig(cfg(7, 5), true, v.VerifyDomain, "7", 3); err != nil || seq != 5 {
-		t.Fatalf("own device, newer seq: %d %v", seq, err)
+	cases := []struct {
+		name  string
+		raw   json.RawMessage
+		bound bool
+		ok    bool
+	}{
+		{"bound, newer seq", mk(map[string]any{"device_id": "7", "seq": 5}), true, true},
+		{"same seq again (the current config)", mk(map[string]any{"device_id": "7", "seq": 3}), true, true},
+		{"missing device_id", mk(map[string]any{"seq": 5}), true, false},
+		{"null device_id", mk(map[string]any{"device_id": nil, "seq": 5}), true, false},
+		{"wrong device_id", mk(map[string]any{"device_id": "8", "seq": 5}), true, false},
+		{"integer device_id", mk(map[string]any{"device_id": 7, "seq": 5}), true, false},
+		{"empty device_id", mk(map[string]any{"device_id": "", "seq": 5}), true, false},
+		{"missing seq", mk(map[string]any{"device_id": "7"}), true, false},
+		{"replayed (lower) seq", mk(map[string]any{"device_id": "7", "seq": 2}), true, false},
+		{"string seq", mk(map[string]any{"device_id": "7", "seq": "5"}), true, false},
+		// below signed_config 2 the members are optional, but checked strictly when present
+		{"older server, members absent", mk(nil), false, true},
+		{"older server, wrong device_id", mk(map[string]any{"device_id": "8", "seq": 5}), false, false},
+		{"older server, non-string device_id", mk(map[string]any{"device_id": 7}), false, false},
+		{"older server, replayed seq", mk(map[string]any{"device_id": "7", "seq": 1}), false, false},
 	}
-	if _, err := acceptLogsConfig(cfg(8, 5), true, v.VerifyDomain, "7", 3); err == nil {
-		t.Error("device A's signed logs config was accepted on device B")
+	for _, c := range cases {
+		if _, err := acceptLogsConfig(c.raw, true, c.bound, v.VerifyDomain, "7", 3); (err == nil) != c.ok {
+			t.Errorf("%s: err=%v, want ok=%v", c.name, err, c.ok)
+		}
 	}
-	if _, err := acceptLogsConfig(cfg(7, 2), true, v.VerifyDomain, "7", 3); err == nil {
-		t.Error("a rolled-back logs config (seq 2 after 3) was accepted")
+	if seq, err := acceptLogsConfig(mk(map[string]any{"device_id": "7", "seq": 9}), true, true, v.VerifyDomain, "7", 3); err != nil || seq != 9 {
+		t.Fatalf("seq to remember: %d %v", seq, err)
 	}
-	if seq, err := acceptLogsConfig(cfg(7, 3), true, v.VerifyDomain, "7", 3); err != nil || seq != 3 {
-		t.Errorf("the same seq again must be fine: %d %v", seq, err)
+	// an unsigned block is refused once binding is required, even if signed_config 1 was never announced
+	unsigned, _ := json.Marshal(map[string]any{"version": "v1", "sources": []any{}})
+	if _, err := acceptLogsConfig(unsigned, false, true, v.VerifyDomain, "7", 3); err == nil {
+		t.Error("an unsigned config was accepted while binding is required")
+	}
+}
+
+// bindingRequired follows the announced version: 1 does not require it, 2 does, and an unreadable state fails closed.
+func TestBindingRequiredFollowsTheAnnouncedVersion(t *testing.T) {
+	r := newRig(t)
+	if r.a.bindingRequired() {
+		t.Fatal("required on a server that announced nothing")
+	}
+	r.a.noteSignedConfig(&api.CheckinResponse{Config: &api.ServerConfig{SignedConfig: 1}})
+	if r.a.bindingRequired() {
+		t.Fatal("signed_config 1 must not require the binding")
+	}
+	r.a.noteSignedConfig(&api.CheckinResponse{Config: &api.ServerConfig{SignedConfig: 2}})
+	if !r.a.bindingRequired() {
+		t.Fatal("signed_config 2 must require the binding")
+	}
+}
+
+// CORE-DS-16 (review CRR-3): an unreadable state.json must not switch the signing requirement off.
+func TestSigningRequiredFailsClosedWhenStateIsUnreadable(t *testing.T) {
+	r := newRig(t)
+	if r.a.signingRequired() {
+		t.Fatal("required on a fresh install of an old server")
+	}
+	if err := os.WriteFile(filepath.Join(r.st.Dir, "state.json"), []byte("{corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !r.a.signingRequired() {
+		t.Fatal("an unreadable state made the agent accept unsigned configuration")
+	}
+}
+
+// ... and the highest announced version is remembered in memory as well.
+func TestSigningRequiredIsRememberedInMemory(t *testing.T) {
+	r := newRig(t)
+	r.a.noteSignedConfig(&api.CheckinResponse{Config: &api.ServerConfig{SignedConfig: 1}})
+	os.WriteFile(filepath.Join(r.st.Dir, "state.json"), []byte(`{"signed_config_v":0}`), 0o600)
+	if !r.a.signingRequired() {
+		t.Fatal("the announced version was forgotten")
 	}
 }

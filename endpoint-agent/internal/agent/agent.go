@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"rivetit-agent/internal/api"
@@ -105,6 +106,7 @@ type Agent struct {
 	logs         *logs.Manager       // RMM Phase 8 log collection; idle until a check-in offers logs:collect
 	hv           *hypervisor.Manager // Proxmox / Hyper-V visibility; idle until a check-in offers "hypervisor" with a signed configuration
 	chg          *change.Manager     // change monitoring; idle until a check-in offers change:monitor with a signed configuration
+	signedSeen   atomic.Int32        // highest signed_config version announced since start
 	updTransient map[string]int      // temporary self-update failures per version
 	updRetryAt   time.Time           // earliest next self-update attempt after a temporary failure
 	skew         time.Duration       // the correction being applied (zero while the PC clock is close enough)
@@ -1078,7 +1080,7 @@ func (a *Agent) configureLogs(resp *api.CheckinResponse) {
 	vf := &jobs.Verifier{PublicKey: a.verifier.Key()}
 	a.mu.Unlock()
 	st, _ := a.o.Store.LoadState()
-	seq, err := acceptLogsConfig(resp.Config.Logs, a.signingRequired(), vf.VerifyDomain, a.verifier.Device(), st.LogsConfigSeq)
+	seq, err := acceptLogsConfig(resp.Config.Logs, a.signingRequired(), a.bindingRequired(), vf.VerifyDomain, a.verifier.Device(), st.LogsConfigSeq)
 	if err != nil {
 		a.log.Error("log collection configuration refused", "err", err)
 		a.logs.Configure(nil)
@@ -1108,18 +1110,21 @@ func checkBoundToDevice(raw []byte, deviceID string) error {
 const LogsConfigSignDomain = "rivetit-logs-config-v1"
 
 // acceptLogsConfig decides whether config.logs may be used. A signature, when present, must verify (domain-separated, over the canonical object).
-// Inside the signed object an optional device_id must name this device and an optional seq must not go below lastSeq (replay across devices and
-// roll-back to an older, wider configuration; review CRR-2). It returns the sequence to remember. An unsigned block is accepted only from a server that
-// has not announced signed_config and while the local configuration does not demand signatures.
-func acceptLogsConfig(raw json.RawMessage, required bool, verify func(domain string, raw []byte, sig string) error, deviceID string, lastSeq int) (int, error) {
+//
+// Binding (review CRR-2): the signed object carries device_id (a JSON STRING equal to this device) and seq (an integer). Once the server has announced
+// signed_config >= 2, or require_signed_config is set (bindingRequired), BOTH are mandatory: a missing, null, non-string, empty or foreign device_id and
+// a missing or lower seq are refused, so a config signed for another device or an older, wider one cannot be replayed. The same seq again is the
+// current configuration (the server sends it at every check-in) and is accepted. Below that version (older servers) the members are optional, but
+// when present they are checked strictly. It returns the sequence to remember. An unsigned block is accepted only while signing is not required.
+func acceptLogsConfig(raw json.RawMessage, required, bindingRequired bool, verify func(domain string, raw []byte, sig string) error, deviceID string, lastSeq int) (int, error) {
 	var w struct {
 		Signature string          `json:"signature"`
 		DeviceID  json.RawMessage `json:"device_id"`
-		Seq       *int            `json:"seq"`
+		Seq       json.RawMessage `json:"seq"`
 	}
 	_ = json.Unmarshal(raw, &w)
 	if w.Signature == "" {
-		if required {
+		if required || bindingRequired {
 			return lastSeq, errors.New("unsigned log configuration while signed configuration is required")
 		}
 		return lastSeq, nil
@@ -1127,16 +1132,44 @@ func acceptLogsConfig(raw json.RawMessage, required bool, verify func(domain str
 	if err := verify(LogsConfigSignDomain, raw, w.Signature); err != nil {
 		return lastSeq, err
 	}
-	if len(w.DeviceID) > 0 && string(w.DeviceID) != "null" && strings.Trim(string(w.DeviceID), `"`) != deviceID {
-		return lastSeq, errors.New("log configuration is signed for a different device")
+	if len(w.DeviceID) > 0 && string(w.DeviceID) != "null" {
+		var id string
+		if err := json.Unmarshal(w.DeviceID, &id); err != nil || id == "" {
+			return lastSeq, errors.New("log configuration has a malformed device_id")
+		}
+		if id != deviceID {
+			return lastSeq, errors.New("log configuration is signed for a different device")
+		}
+	} else if bindingRequired {
+		return lastSeq, errors.New("log configuration is not bound to a device")
 	}
-	if w.Seq != nil {
-		if *w.Seq < lastSeq {
+	seq := lastSeq
+	if len(w.Seq) > 0 && string(w.Seq) != "null" {
+		var n int
+		if err := json.Unmarshal(w.Seq, &n); err != nil || n < 0 {
+			return lastSeq, errors.New("log configuration has a malformed seq")
+		}
+		if n < lastSeq {
 			return lastSeq, errors.New("log configuration is older than one already accepted")
 		}
-		return *w.Seq, nil
+		seq = n
+	} else if bindingRequired {
+		return lastSeq, errors.New("log configuration has no sequence number")
 	}
-	return lastSeq, nil
+	return seq, nil
+}
+
+// bindingRequired is true once the server announced signed_config >= 2 (config.logs carries device_id and seq) or the local switch is set; the
+// announced version is remembered in memory and fails closed on an unreadable state, like signingRequired.
+func (a *Agent) bindingRequired() bool {
+	a.mu.Lock()
+	local := a.cfg.RequireSignedConfig
+	a.mu.Unlock()
+	if local || a.signedSeen.Load() >= 2 {
+		return true
+	}
+	st, err := a.o.Store.LoadState()
+	return err != nil || st.SignedConfigV >= 2
 }
 
 // releaseKeys is the trusted release public key set: the build-time embedded keys plus those learned through rollover messages, minus every key a
@@ -1200,7 +1233,13 @@ func (a *Agent) signingRequired() bool {
 	if local {
 		return true
 	}
-	st, _ := a.o.Store.LoadState()
+	if a.signedSeen.Load() >= 1 {
+		return true // remembered in memory once a server announced it: a later state.json problem cannot unset it
+	}
+	st, err := a.o.Store.LoadState()
+	if err != nil {
+		return true // unreadable state: fail closed (review CRR-3)
+	}
 	return st.SignedConfigV >= 1
 }
 
@@ -1208,6 +1247,9 @@ func (a *Agent) signingRequired() bool {
 func (a *Agent) noteSignedConfig(resp *api.CheckinResponse) {
 	if resp.Config == nil || resp.Config.SignedConfig <= 0 {
 		return
+	}
+	if v := int32(resp.Config.SignedConfig); v > a.signedSeen.Load() {
+		a.signedSeen.Store(v)
 	}
 	_ = a.o.Store.Update(func(s *store.State) error {
 		if resp.Config.SignedConfig > s.SignedConfigV {
