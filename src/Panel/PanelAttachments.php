@@ -180,7 +180,7 @@ final class PanelAttachments
         // (`<x onerror=...>`). The real control stays what it was: the file is served as an attachment with nosniff.
         if (preg_match('/<[!?]/', $b) === 1
             || preg_match('/<\/?\s*(?:script|img|image|body|svg|iframe|frame|frameset|a|form|style|meta|base|link|object|embed|applet|html|head|title|input|button|select|textarea|details|summary|video|audio|source|track|math|marquee|template|noscript|canvas|portal|xml|xsl\w*)(?=[\s\/>])/i', $b) === 1
-            || preg_match('/<\s*[A-Za-z][\w:-]*(?:\s+[^<>]*?)?\s(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)\s*=/i', $b) === 1) {
+            || preg_match('/<\s*[A-Za-z][\w:-]*[\s\/][^<>]*?\b(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)\s*=/i', $b) === 1) {
             return false;
         }
         // a spreadsheet opens the file as a formula when the first character says so (tab and CR are control characters, but the check above lets a tab and a CR through)
