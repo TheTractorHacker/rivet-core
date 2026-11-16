@@ -102,13 +102,14 @@ type Agent struct {
 	verifier     *jobs.Verifier
 	upd          *update.Manager
 	meshRep      *mesh.Reporter
-	logs         *logs.Manager       // RMM Phase 8 log collection; idle until a check-in offers logs:collect
-	hv           *hypervisor.Manager // Proxmox / Hyper-V visibility; idle until a check-in offers "hypervisor" with a signed configuration
-	chg          *change.Manager     // change monitoring; idle until a check-in offers change:monitor with a signed configuration
-	updTransient map[string]int      // temporary self-update failures per version
-	updRetryAt   time.Time           // earliest next self-update attempt after a temporary failure
-	skew         time.Duration       // the correction being applied (zero while the PC clock is close enough)
-	clkOff       time.Duration       // estimate of server time minus the PC clock
+	logs         *logs.Manager        // RMM Phase 8 log collection; idle until a check-in offers logs:collect
+	hv           *hypervisor.Manager  // Proxmox / Hyper-V visibility; idle until a check-in offers "hypervisor" with a signed configuration
+	chg          *change.Manager      // change monitoring; idle until a check-in offers change:monitor with a signed configuration
+	updTransient map[string]int       // temporary self-update failures per version (drives the back-off)
+	updSelfTest  map[string]int       // selftest timeouts per version (the only failures that can make a version permanent)
+	updRetryAt   map[string]time.Time // earliest next self-update attempt per version after a temporary failure (review R3-4)
+	skew         time.Duration        // the correction being applied (zero while the PC clock is close enough)
+	clkOff       time.Duration        // estimate of server time minus the PC clock
 	clkHave      bool
 	clkWarned    time.Time // last time the clock warning was logged (once per hour)
 	timeRetrySeq uint64    // the seq a time refusal was already retried for
@@ -1096,13 +1097,19 @@ func (a *Agent) configureChange(resp *api.CheckinResponse) {
 // out must not be downloaded every ten minutes for ever; review CR9).
 const updateTransientLimit = 6
 
-// transientUpdateCount counts one more temporary failure of version and returns how many there have been.
-func (a *Agent) transientUpdateCount(version string) int {
+// noteUpdateFailure records one temporary failure of version. It returns the back-off before that version is tried again and whether the version is to
+// be given up: only repeated SELFTEST TIMEOUTS count for that, counted on their own, so a few network errors plus one slow selftest never add up to a
+// permanent failure (review R3-5).
+func (a *Agent) noteUpdateFailure(version string, err error) (backoff time.Duration, giveUp bool) {
 	if a.updTransient == nil {
-		a.updTransient = map[string]int{}
+		a.updTransient, a.updSelfTest = map[string]int{}, map[string]int{}
 	}
 	a.updTransient[version]++
-	return a.updTransient[version]
+	if errors.Is(err, update.ErrSelfTestTimeout) {
+		a.updSelfTest[version]++
+		giveUp = a.updSelfTest[version] >= updateTransientLimit
+	}
+	return updateBackoff(a.updTransient[version]), giveUp
 }
 
 // updateBackoff is the pause before the same version is tried again after the n-th temporary failure: 10 minutes, doubling, at most 24 hours. A
@@ -1114,12 +1121,6 @@ func updateBackoff(n int) time.Duration {
 		d *= 2
 	}
 	return min(d, 24*time.Hour)
-}
-
-// selfTestGivesUp is true when a staged binary has repeatedly timed out its selftest (a build that is itself broken): only then is the version recorded
-// as failed.
-func selfTestGivesUp(err error, n int) bool {
-	return errors.Is(err, update.ErrSelfTestTimeout) && n >= updateTransientLimit
 }
 
 // updateRetryPause is how long a temporary self-update failure waits before the same version is tried again.
@@ -1171,7 +1172,7 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 	if f := st.UpdateFailure; f != nil && f.Version == man.Version {
 		return // do not retry a version that already failed
 	}
-	if a.o.Now().Before(a.updRetryAt) {
+	if a.o.Now().Before(a.updRetryAt[man.Version]) { // per version: a long back-off of 1.2.0 must not delay a newly published 1.2.1
 		return
 	}
 	// The restart that follows kills a running job's process (a package manager or installer mid-transaction): wait for an idle executor. The server
@@ -1189,10 +1190,18 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 	a.mu.Unlock()
 	hosts := append([]string{c.Host()}, cfg.UpdateHosts...)
 	restart, err := a.upd.Apply(ctx, *man, ed25519.PublicKey(pub), c.HTTPClient(), c.Host(), a.token(), hosts)
-	if err != nil && update.Transient(err) && !selfTestGivesUp(err, a.transientUpdateCount(man.Version)) {
+	var backoff time.Duration
+	var giveUp bool
+	if err != nil && update.Transient(err) {
+		backoff, giveUp = a.noteUpdateFailure(man.Version, err)
+	}
+	if err != nil && update.Transient(err) && !giveUp {
 		// shutdown, timeout, network, 429/5xx, slow selftest: keep the version eligible and try again after a pause (CORE-DS-15)
 		a.log.Warn("update attempt failed (temporary); will try again", "version", man.Version, "err", err)
-		a.updRetryAt = a.o.Now().Add(updateBackoff(a.updTransient[man.Version]))
+		if a.updRetryAt == nil {
+			a.updRetryAt = map[string]time.Time{}
+		}
+		a.updRetryAt[man.Version] = a.o.Now().Add(backoff)
 		return
 	}
 	if err != nil {
@@ -1205,6 +1214,8 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 		return
 	}
 	delete(a.updTransient, man.Version)
+	delete(a.updSelfTest, man.Version)
+	delete(a.updRetryAt, man.Version)
 	if restart {
 		a.log.Info("update staged and activated; restarting", "version", man.Version)
 		a.mu.Lock()
