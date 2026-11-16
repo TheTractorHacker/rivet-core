@@ -164,24 +164,30 @@ final class PanelAttachments
             'webp' => strlen($b) >= 12 && str_starts_with($b, 'RIFF') && substr($b, 8, 4) === 'WEBP',
             'pdf' => str_starts_with($b, '%PDF-'),
             'text' => self::plainText($b),
-            'csv' => self::plainText($b) && self::csvOk($b),
+            'csv' => self::plainText($b, true) && self::csvOk($b),
             default => false,
         };
     }
 
-    private static function plainText(string $b): bool
+    private static function plainText(string $b, bool $csv = false): bool
     {
         if (!mb_check_encoding($b, 'UTF-8') || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $b) === 1) {
             return false;   // binary, NUL, or terminal escape sequences
         }
         // markup anywhere in the file (it used to be the first 8 KiB only)
-        // CORE-DS-32: any tag (an opening or closing tag, a comment, a declaration, a processing instruction), not a list of names: an event handler needs only <img onerror=...>
-        if (preg_match('/<\s*[A-Za-z!?\/]/', $b) === 1) {
+        // CORE-DS-32 / CR6: markup that is ACTIVE as HTML, not every `<letter`: a declaration or processing instruction (`<!`, `<?`), an opening or closing tag of an element that can run
+        // or load something (a list, because a log full of <DIR>, <init>, <module> or "Name <a@b>" is ordinary text), or any tag with an event handler or a URL/style attribute
+        // (`<x onerror=...>`). The real control stays what it was: the file is served as an attachment with nosniff.
+        if (preg_match('/<[!?]/', $b) === 1
+            || preg_match('/<\/?\s*(?:script|img|image|body|svg|iframe|frame|frameset|a|form|style|meta|base|link|object|embed|applet|html|head|title|input|button|select|textarea|details|summary|video|audio|source|track|math|marquee|template|noscript|canvas|portal|xml|xsl\w*)(?=[\s\/>])/i', $b) === 1
+            || preg_match('/<\s*[A-Za-z][\w:-]*(?:\s+[^<>]*?)?\s(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)\s*=/i', $b) === 1) {
             return false;
         }
         // a spreadsheet opens the file as a formula when the first character says so (tab and CR are control characters, but the check above lets a tab and a CR through)
         $first = str_starts_with($b, "\xEF\xBB\xBF") ? substr($b, 3) : $b;
-        $first = preg_replace('/^[ ]*"?[ ]*/', '', $first) ?? $first;   // CORE-DS-33: a quoted first cell ("=1+1") is the same formula to a spreadsheet
+        if ($csv) {
+            $first = preg_replace('/^[ ]*"?[ ]*/', '', $first) ?? $first;   // CORE-DS-33 (csv only, CR6): a quoted first cell ("=1+1") is the same formula to a spreadsheet
+        }
         $start = substr($first, 0, 1);
         if ($start !== '' && strpbrk($start, "=+-@\t\r") !== false) {
             return false;
