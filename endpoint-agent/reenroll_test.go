@@ -100,3 +100,27 @@ func TestMovingToAnotherServerWithoutATokenIsRefused(t *testing.T) {
 		t.Fatalf("server_url is %s, want the old %s", got, srvA.URL)
 	}
 }
+
+// CORE-DS-14 (review CRR-6): a PENDING one-shot enrollment token (offline install) counts as a credential too: moving to another server without a new
+// token must not leave the old token next to the new server_url.
+func TestPendingEnrollTokenIsNotSentToANewServer(t *testing.T) {
+	e := newEnv(t)
+	st, err := store.Open(e.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveConfig(store.Config{ServerURL: "https://old-server.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveEnrollToken(setupToken); err != nil {
+		t.Fatal(err)
+	}
+	srvB := newEnrollSrv(t)
+	e.stampWith(srvB, nil)
+	if code := e.setup("--from-msi", "--server", "https://new-server.example"); code == 0 {
+		t.Fatal("setup moved a device holding a pending enrollment token to another server without a token")
+	}
+	if got := serverURLOf(t, e.state); got != "https://old-server.example" {
+		t.Fatalf("server_url is %s", got)
+	}
+}
