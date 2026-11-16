@@ -125,6 +125,19 @@ final class CheckOsTargetingTest extends RmmTestCase
         $this->assertTrue(\RivetCore\Rmm\Checks\RmmChecks::isServerKey('Log.Rule_1'));
     }
 
+    /** CORE-DS-8 (evaluator half): a row stored as 'disk.c' is the same check as 'DISK.C' (the column is case-insensitive), so its episode and counters carry on. */
+    public function testTheEvaluatorKeysItsRowMapWithoutRegardToCase(): void
+    {
+        $this->devices();
+        $this->h->module->settings()->set(['failure_debounce' => 1]);
+        $this->h->q("INSERT INTO endpoint_agent_checks (device_id, check_key, status, detail, consecutive_failures, consecutive_ok, episode, last_reported_at, last_changed_at) VALUES ({$this->win}, 'disk.c', 'fail', 'low', 4, 0, 3, NOW(), NOW())");
+        $this->h->checkin($this->winT, ['checks' => [['key' => 'DISK.C', 'status' => 'fail', 'detail' => 'low', 'at' => $this->h::ts()]]]);
+        $row = $this->h->rows("SELECT consecutive_failures, episode FROM endpoint_agent_checks WHERE device_id={$this->win} AND check_key='disk.c'");
+        $this->assertCount(1, $row);
+        $this->assertSame(5, (int) $row[0]['consecutive_failures'], 'continued, not restarted from a blank row');
+        $this->assertGreaterThanOrEqual(3, (int) $row[0]['episode'], 'the episode count is not reset to a blank row (which would give 1)');
+    }
+
     public function testStaleRowsAndTheirAlertsAreCleanedOnceTheCheckNoLongerApplies(): void
     {
         $this->devices();
