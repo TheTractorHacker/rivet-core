@@ -66,7 +66,7 @@ func TestCertCheckRefusesAFifo(t *testing.T) {
 // CORE-DS-3 (review CR1): procfs/sysfs/devtmpfs entries (/proc/kmsg is a "regular" file that blocks in the netpoller and consumes kernel log records)
 // are refused by the cert check, by path and by file system.
 func TestCertPathsRefuseProcfsSysfsAndDev(t *testing.T) {
-	for _, p := range []string{"/proc/kmsg", "/proc/self/status", "/sys/kernel/notes", "/dev/kmsg", "/dev/zero", "/proc", "//proc/kmsg"} {
+	for _, p := range []string{"/proc/kmsg", "/proc/self/status", "/sys/kernel/notes", "/dev/kmsg", "/dev/zero", "/proc", "//proc/kmsg", "/./proc/kmsg", "/etc/../proc/kmsg", "/proc/./self/status", "/sys/./kernel/notes", "/dev/./kmsg", "/tmp/../dev/zero"} {
 		if safeCertPath(p) {
 			t.Errorf("%s accepted by safeCertPath", p)
 		}
