@@ -402,6 +402,27 @@ final class LogsTest extends RemoteTestCase
         return $j;
     }
 
+    /** CORE-DS-38: the cap is per scope (a client, or all clients), so filling one client's room does not take anybody else's. */
+    public function testTheRuleCapIsPerClientNotPerInstallation(): void
+    {
+        $this->enableLogs();
+        $svc = $this->h->module->logRules();
+        $a = $this->h->clientA;
+        for ($i = 0; $i < \RivetCore\Rmm\Logs\LogRuleService::MAX_RULES; $i++) {
+            [$id, $err] = $svc->create(['name' => "A$i", 'min_level' => 'error', 'contains' => "x$i", 'severity' => 'warn', 'client_id' => $a], 1);
+            $this->assertNotNull($id, json_encode($err));
+        }
+        [$id, $err] = $svc->create(['name' => 'one too many', 'min_level' => 'error', 'contains' => 'y', 'severity' => 'warn', 'client_id' => $a], 1);
+        $this->assertNull($id);
+        $this->assertSame(['At most 50 log rules for one client.'], $err);
+        [$id] = $svc->create(['name' => 'B rule', 'min_level' => 'error', 'contains' => 'y', 'severity' => 'warn', 'client_id' => $this->h->clientB], 1);
+        $this->assertNotNull($id, 'another client still has room');
+        [$id] = $svc->create(['name' => 'All rule', 'min_level' => 'error', 'contains' => 'y', 'severity' => 'warn', 'client_id' => 0], 1);
+        $this->assertNotNull($id, 'and so does the all-clients scope');
+        // moving a rule into the full client is refused too
+        $this->assertSame(['At most 50 log rules for one client.'], $svc->update((int) $id, ['client_id' => $a]));
+    }
+
     public function testRuleManagementAndItsRules(): void
     {
         $this->enableLogs();
