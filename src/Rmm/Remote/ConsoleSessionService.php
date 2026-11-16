@@ -11,14 +11,14 @@ use RivetCore\Rmm\Authz\RmmPrincipal;
  * passed (ability, switches, policy, device scope) and the stock Mesh launch succeeded, and only while the `remote_console` switch is on: a denied launch mints nothing.
  *
  * The code (32 random bytes, base64url) is returned once, inside the deep link; the database keeps its SHA-256 only, with the technician, the device, the node, the kind
- * (`desktop`, `terminal`, `terminal-ps` or `files`), the mode (always `standard`: Background and chat are never issued), the launch's session id, a salted hash of the
+ * (`desktop`, `terminal`, `terminal-ps` or `files`), the mode (always `standard`: nothing else is issued), the launch's session id, a salted hash of the
  * technician's address and a 60 second expiry.
  *
  * @api
  */
 final class ConsoleSessionService
 {
-    public function __construct(private readonly ConsoleStore $store, private readonly ConsoleSettings $settings, private readonly ?\RivetCore\Rmm\Contracts\BackgroundModeConfigInterface $policy = null)
+    public function __construct(private readonly ConsoleStore $store, private readonly ConsoleSettings $settings, private readonly ?RemoteSessionPolicy $policy = null)
     {
     }
 
@@ -26,16 +26,12 @@ final class ConsoleSessionService
     public const APPROVAL_MESSAGE = 'This client requires approval before a remote session can start.';
 
     /**
-     * True when Background Mode's policy mode is `per_client` and the client's policy is `approve`: Core cannot arrange the approval, so a console launch is refused (a lookup that
-     * fails does not refuse here; the redeem re-checks and denies on failure).
+     * True when the client's remote session policy is `approve`: Core cannot arrange the approval, so a console launch is refused (a lookup that fails does not refuse here;
+     * the redeem re-checks and denies on failure).
      */
     public function approvalRequired(int $clientId): bool
     {
-        try {
-            return $this->policy !== null && $this->policy->policyMode() === BackgroundModePolicy::MODE_PER_CLIENT && $this->policy->clientPolicy($clientId) === BackgroundModePolicy::CLIENT_APPROVE;
-        } catch (\Throwable) {
-            return false;
-        }
+        return $this->policy !== null && $this->policy->decide($clientId)->code === 'approval_required';
     }
 
     /** The configured origin, or null when `console_public_url` is not set. */

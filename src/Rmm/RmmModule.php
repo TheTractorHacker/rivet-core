@@ -183,9 +183,8 @@ final class RmmModule
     private ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfterApproval = null;
     private ?InstallerService $installerService = null;
     private ?TechnicianActions $technician = null;
-    private ?\RivetCore\Rmm\Remote\BackgroundSessionService $backgroundSessions = null;
-    private ?\RivetCore\Rmm\Remote\DbBackgroundModeConfig $backgroundDbConfig = null;
-    private ?\RivetCore\Rmm\Remote\BackgroundSettingsService $backgroundSettingsService = null;
+    private ?\RivetCore\Rmm\Remote\DbRemoteSessionPolicyStore $remotePolicyDbStore = null;
+    private ?\RivetCore\Rmm\Remote\RemoteSessionPolicySettingsService $remotePolicySettingsService = null;
     private ?\RivetCore\Rmm\Remote\ConsoleSettings $consoleSettings = null;
     private ?\RivetCore\Rmm\Remote\ConsoleStore $consoleStore = null;
     private ?\RivetCore\Rmm\Remote\ConsoleSessionService $consoleSessions = null;
@@ -279,7 +278,7 @@ final class RmmModule
     private readonly RmmEventsInterface $events;
 
     /**
-     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,hosted_max_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,background_groups?:\RivetCore\Rmm\Contracts\BackgroundGroupMembershipInterface,background_config?:\RivetCore\Rmm\Contracts\BackgroundModeConfigInterface,background_store?:\RivetCore\Rmm\Contracts\BackgroundSessionStoreInterface,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>,retention_floors?:\RivetCore\Rmm\Settings\RetentionFloorsInterface,postgres?:PostgresConnectionInterface|PostgresConfig|\Closure():(PostgresConnectionInterface|PostgresConfig|null)|null} $options
+     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,hosted_max_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,remote_session_policy?:\RivetCore\Rmm\Contracts\RemoteSessionPolicyStoreInterface,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>,retention_floors?:\RivetCore\Rmm\Settings\RetentionFloorsInterface,postgres?:PostgresConnectionInterface|PostgresConfig|\Closure():(PostgresConnectionInterface|PostgresConfig|null)|null} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -965,7 +964,7 @@ final class RmmModule
             null, $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), null, $this->cache(), $this->externalSink(),
             $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules(), $this->hypervisorService(),
-            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores(), new \RivetCore\Rmm\Remote\BackgroundSessionRetention($this->sql()), $this->remoteSettings(), new \RivetCore\Rmm\Remote\ConsoleRetention($this->sql()));
+            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores(), $this->remoteSettings(), new \RivetCore\Rmm\Remote\ConsoleRetention($this->sql()));
     }
 
     /**
@@ -1436,16 +1435,19 @@ final class RmmModule
     public function technician(): TechnicianActions
     {
         return $this->technician ??= new TechnicianActions($this->sql(), $this->devices(), $this->deviceService(), $this->enrollment(), $this->jobs(), $this->updates(),
-            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings(), $this->backgroundSessions(), $this->consoleSessions());
+            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings(), $this->consoleSessions());
     }
 
-    /**
-     * Background Mode's policy settings: the Core tables (migration 0050) unless the edition passes its own `background_config` option. An edition passes
-     * `background_groups` to say who is in the named internal group; without it only site administrators pass Internal mode.
-     */
-    public function backgroundConfig(): \RivetCore\Rmm\Contracts\BackgroundModeConfigInterface
+    /** The per-client remote-session policy store: the Core table (migration 0050) unless the edition passes its own `remote_session_policy` option. */
+    public function remoteSessionPolicyStore(): \RivetCore\Rmm\Contracts\RemoteSessionPolicyStoreInterface
     {
-        return $this->options['background_config'] ?? ($this->backgroundDbConfig ??= new \RivetCore\Rmm\Remote\DbBackgroundModeConfig($this->sql()));
+        return $this->options['remote_session_policy'] ?? ($this->remotePolicyDbStore ??= new \RivetCore\Rmm\Remote\DbRemoteSessionPolicyStore($this->sql()));
+    }
+
+    /** What the person at a client's devices is owed (`allow`, `notify`, `approve`), see {@see \RivetCore\Rmm\Remote\RemoteSessionPolicy}. */
+    public function remoteSessionPolicy(): \RivetCore\Rmm\Remote\RemoteSessionPolicy
+    {
+        return new \RivetCore\Rmm\Remote\RemoteSessionPolicy($this->remoteSessionPolicyStore());
     }
 
     /** The Rivet Console settings (migration 0051): public URL, minimum version, file-path logging, cookie `once` claim. Changed through {@see remoteActions()}. */
@@ -1463,7 +1465,7 @@ final class RmmModule
     /** Mints the single-use redeem code of a Rivet Console launch (used by {@see technician()}). */
     public function consoleSessions(): \RivetCore\Rmm\Remote\ConsoleSessionService
     {
-        return $this->consoleSessions ??= new \RivetCore\Rmm\Remote\ConsoleSessionService($this->consoleStore(), $this->consoleSettings(), $this->backgroundConfig());
+        return $this->consoleSessions ??= new \RivetCore\Rmm\Remote\ConsoleSessionService($this->consoleStore(), $this->consoleSettings(), $this->remoteSessionPolicy());
     }
 
     /**
@@ -1475,37 +1477,23 @@ final class RmmModule
     public function consoleApi(\Closure $rateLimit, ?bool $allowInsecureHttp = null): \RivetCore\Rmm\Http\ConsoleApi
     {
         return new \RivetCore\Rmm\Http\ConsoleApi(
-            new \RivetCore\Rmm\Remote\ConsoleRedeemService($this->consoleStore(), $this->consoleSettings(), $this->authorizer(), $this->settings(), $this->devices(), $this->mesh(), $this->backgroundConfig(), $this->audit, $rateLimit, $this->eventPublisher()),
+            new \RivetCore\Rmm\Remote\ConsoleRedeemService($this->consoleStore(), $this->consoleSettings(), $this->authorizer(), $this->settings(), $this->devices(), $this->mesh(), $this->remoteSessionPolicy(), $this->audit, $rateLimit, $this->eventPublisher()),
             new \RivetCore\Rmm\Remote\ConsoleEventsService($this->consoleStore(), $this->consoleSettings(), $this->audit, $rateLimit, $this->eventPublisher()),
             $allowInsecureHttp ?? ($this->options['allow_insecure_http'] ?? false),
         );
     }
 
-    /** Authorization, audit and the session-check tokens of Background Mode. The audit is the module's audit: there is no option to turn it off. */
-    public function backgroundSessions(): \RivetCore\Rmm\Remote\BackgroundSessionService
-    {
-        return $this->backgroundSessions ??= new \RivetCore\Rmm\Remote\BackgroundSessionService(
-            $this->authorizer(),
-            new \RivetCore\Rmm\Remote\BackgroundModePolicy($this->backgroundConfig(), $this->options['background_groups'] ?? new \RivetCore\Rmm\Remote\NoBackgroundGroups()),
-            $this->options['background_store'] ?? new \RivetCore\Rmm\Remote\DbBackgroundSessionStore($this->sql()),
-            $this->audit,
-            $this->bridge,
-            fn (string $feature): bool => $this->settings()->featureOn($feature),
-            $this->eventPublisher(),
-        );
-    }
-
     /**
-     * Changing Background Mode's policy: administrator check, audit row with the old and the new value, fail closed, event. Uses Core's tables, so it is only available
-     * when the edition did not pass its own `background_config` (then it manages its own policy storage and its own audit).
+     * Changing a client's remote-session policy: administrator check, audit row with the old and the new value, fail closed. Uses Core's table, so it is only available
+     * when the edition did not pass its own `remote_session_policy` (then it manages its own policy storage and its own audit).
      */
-    public function backgroundSettings(): \RivetCore\Rmm\Remote\BackgroundSettingsService
+    public function remoteSessionPolicySettings(): \RivetCore\Rmm\Remote\RemoteSessionPolicySettingsService
     {
-        if (isset($this->options['background_config'])) {
-            throw new \LogicException('The edition supplied its own background_config; it changes that policy itself.');
+        if (isset($this->options['remote_session_policy'])) {
+            throw new \LogicException('The edition supplied its own remote_session_policy; it changes that policy itself.');
         }
 
-        return $this->backgroundSettingsService ??= new \RivetCore\Rmm\Remote\BackgroundSettingsService($this->authorizer(), $this->backgroundDbConfig ??= new \RivetCore\Rmm\Remote\DbBackgroundModeConfig($this->sql()), $this->audit, $this->eventPublisher());
+        return $this->remotePolicySettingsService ??= new \RivetCore\Rmm\Remote\RemoteSessionPolicySettingsService($this->authorizer(), $this->remotePolicyDbStore ??= new \RivetCore\Rmm\Remote\DbRemoteSessionPolicyStore($this->sql()), $this->audit);
     }
 
     /** The validated administration operations (settings, MeshCentral, signing key, binaries, releases, installers). */

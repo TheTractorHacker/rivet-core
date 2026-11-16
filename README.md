@@ -13,7 +13,7 @@ Modules: Audit, Redis and health, Cron, Jobs, Webhooks, Automation, ITSM, Workfl
 
 ## Authorization to manage machines
 
-Using the remote-management features (remote console, Background Mode, the endpoint agent) on a computer requires authorization from the owner of that computer, for example a service agreement with the client or your own organisation's written policy. This software does not replace that authorization, and its settings and audit log do not create it. Third-party components, including MeshCentral (Apache-2.0), are listed in [NOTICE](NOTICE).
+Using the remote-management features (remote console, the endpoint agent) on a computer requires authorization from the owner of that computer, for example a service agreement with the client or your own organisation's written policy. This software does not replace that authorization, and its settings and audit log do not create it. Third-party components, including MeshCentral (Apache-2.0), are listed in [NOTICE](NOTICE).
 
 ## Documentation
 

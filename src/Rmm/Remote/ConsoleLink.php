@@ -18,7 +18,7 @@ final class ConsoleLink
 {
     public const SCHEME = 'rivetconsole';
     public const VERSION = 1;
-    /** desktop, a command-line terminal, a PowerShell terminal and the file manager. Background and chat are never issued. */
+    /** desktop, a command-line terminal, a PowerShell terminal and the file manager. Chat is never issued. */
     public const KINDS = ['desktop', 'terminal', 'terminal-ps', 'files'];
     /** `node/<domain>/<id>`: an empty domain is `node//<id>`. */
     public const NODE_RE = '/^node\/([A-Za-z0-9_-]{0,32})\/[A-Za-z0-9@$_-]{20,100}$/D';

@@ -104,7 +104,7 @@ abstract class ConsoleTestCase extends RmmTestCase
      */
     protected function launch(RmmPrincipal $who, int $device, string $view = 'desktop', ?string $kind = null, ?string $ip = '198.51.100.7'): array
     {
-        $r = $this->h->module->technician()->launchRemote($who, $device, false, $ip, 'UA', $view, 'standard', true, $kind);
+        $r = $this->h->module->technician()->launchRemote($who, $device, false, $ip, 'UA', $view, true, $kind);
         $this->assertTrue($r->ok, $r->message);
         parse_str((string) parse_url($r->data['console']['url'], PHP_URL_QUERY), $q);
 

@@ -112,11 +112,11 @@ final class ConsoleSettingsAndRetentionTest extends ConsoleTestCase
     public function testChangingTheUrlTakesEffectOnTheNextLaunchAndUnsettingItRefusesLaunches(): void
     {
         $this->assertTrue($this->ra()->updateSettings($this->admin, ['console_public_url' => 'https://other.example.org'])->ok);
-        $r = $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true);
+        $r = $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', true);
         $this->assertStringStartsWith('rivetconsole://connect?v=1&origin=https%3A%2F%2Fother.example.org&code=', $r->data['console']['url']);
         $this->assertTrue($this->ra()->updateSettings($this->admin, ['console_public_url' => ''])->ok);
-        $this->assertSame(409, $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true)->http);
-        $this->assertSame(409, $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true)->http);
+        $this->assertSame(409, $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', true)->http);
+        $this->assertSame(409, $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', true)->http);
     }
 
     public function testTheOriginInTheLinkIsNeverTheRequestHost(): void

@@ -6,7 +6,6 @@ namespace RivetCore\Rmm\Remote;
 
 use RivetCore\Rmm\Authz\RmmAbility;
 use RivetCore\Rmm\Authz\RmmAuthorizer;
-use RivetCore\Rmm\Contracts\BackgroundModeConfigInterface;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Device\DeviceRepository;
 use RivetCore\Rmm\Mesh\MeshService;
@@ -29,9 +28,8 @@ use RivetCore\Rmm\Support\RmmEventPublisher;
  *
  * THE GATE at redeem time (the whole existing launch gate, re-run): the `remote_console` switch; `rmm.device.view`, `rmm.remote.launch` (and `rmm.remote.manage` plus the
  * `remote_tools` switch for a terminal or the files) for the device's CURRENT client, which includes the module switch, the user being active and the client being inside
- * their scope; the device still existing, not retired or revoked, and still mapped to the node the code names; then the client's policy when Background Mode's policy mode is
- * `per_client`: `approve` refuses (403), `notify` is passed on as the `notice`. Whether the device is online is checked at launch only.
- * Background Mode's own switch and ability do not apply: a console session is a standard session and Background is never issued.
+ * their scope; the device still existing, not retired or revoked, and still mapped to the node the code names; then the client's remote session policy ({@see RemoteSessionPolicy}): `approve` refuses (403), `notify` is passed on as the `notice`. Whether the device is online is checked at launch only.
+ * A console session is a standard session: nothing else is issued (no chat, no unattended mode).
  *
  * SECRETS. The code, its hash, the cookie and the report token never reach a log, an audit row, an event payload or an exception message. The cookie is minted here, returned
  * once and not stored; the report token is stored only as its SHA-256.
@@ -58,7 +56,7 @@ final class ConsoleRedeemService
         private readonly RmmSettings $rmmSettings,
         private readonly DeviceRepository $devices,
         private readonly MeshService $mesh,
-        private readonly BackgroundModeConfigInterface $policy,
+        private readonly RemoteSessionPolicy $policy,
         private readonly RmmAuditInterface $audit,
         private readonly \Closure $rateLimit,
         private readonly ?RmmEventPublisher $events = null,
@@ -130,7 +128,7 @@ final class ConsoleRedeemService
             'notice' => $this->notice($clientId),
             'expires_in' => self::EXPIRES_IN_S,
             'report' => ['url' => $report . '/api/v1/endpoint_console/events', 'token' => $token, 'paths' => $this->settings->get()['log_file_paths']],
-            'bg_authorization' => null,
+            'bg_authorization' => null,   // frozen wire name of contract v1.2: reserved, always null
         ]];
     }
 
@@ -143,7 +141,7 @@ final class ConsoleRedeemService
     {
         try {
             if ($row['mode'] !== 'standard' || !ConsoleLink::validKind($row['kind'])) {
-                return 'forbidden';   // Background and chat are never issued, whatever a row says
+                return 'forbidden';   // only standard sessions are issued, whatever a row says
             }
             if (!$this->rmmSettings->featureOn(RemoteProtocol::FEATURE_REMOTE_CONSOLE)) {
                 return 'forbidden';
@@ -168,8 +166,9 @@ final class ConsoleRedeemService
             if (ConsoleSessionService::consoleNode((string) $this->mesh->nodeFor($row['device_id']), $this->mesh->domain()) !== $row['node_id']) {
                 return 'forbidden';   // the device was re-mapped, or the Mesh domain changed, since the launch
             }
-            if ($this->policy->policyMode() === BackgroundModePolicy::MODE_PER_CLIENT && $this->policy->clientPolicy($client) === BackgroundModePolicy::CLIENT_APPROVE) {
-                return 'approval_required';
+            $decision = $this->policy->decide($client);
+            if (!$decision->allowed) {
+                return $decision->code === 'approval_required' ? 'approval_required' : 'forbidden';   // an unreadable or invalid policy denies
             }
         } catch (\Throwable) {
             return 'forbidden';   // a lookup that fails denies
@@ -181,11 +180,9 @@ final class ConsoleRedeemService
     /** `notify` when the client's policy says the person at the device must be told (a banner for the technician), else null. */
     private function notice(int $clientId): ?string
     {
-        try {
-            return $this->policy->policyMode() === BackgroundModePolicy::MODE_PER_CLIENT && $this->policy->clientPolicy($clientId) === BackgroundModePolicy::CLIENT_NOTIFY ? 'notify' : null;
-        } catch (\Throwable) {
-            return null;
-        }
+        $d = $this->policy->decide($clientId);
+
+        return $d->allowed && $d->notice === RemoteSessionDecision::NOTICE_NOTIFY ? 'notify' : null;
     }
 
     /** @return array{http:int,body:array<string,mixed>,headers:array<string,string>} */

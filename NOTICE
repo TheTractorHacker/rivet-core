@@ -4,7 +4,7 @@ Licensed under the GNU General Public License, version 3 only (GPL-3.0-only); se
 THIRD-PARTY SOFTWARE
 
 MeshCentral
-  Used, not bundled: RivetCore's remote tools (technician console launch, Background Mode, the
+  Used, not bundled: RivetCore's remote tools (technician console launch, the
   optional Mesh agent install) talk to a MeshCentral server that the operator runs, and the Mesh
   agent installer is downloaded from that operator's own server. No MeshCentral source or binary
   is part of this repository (the files under endpoint-agent/internal/mesh/testdata are small

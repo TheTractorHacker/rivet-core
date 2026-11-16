@@ -8,7 +8,7 @@ use RivetCore\Rmm\Authz\RmmPrincipal;
 use RivetCore\Rmm\Mesh\MeshCookie;
 use RivetCore\Rmm\Remote\ConsoleLink;
 use RivetCore\Rmm\Remote\ConsoleRedeemService;
-use RivetCore\Rmm\Remote\DbBackgroundModeConfig;
+use RivetCore\Rmm\Remote\DbRemoteSessionPolicyStore;
 use RivetCore\Rmm\RmmEvent;
 use RivetCore\Tests\Support\ConsoleTestCase;
 
@@ -103,15 +103,14 @@ final class ConsoleRedeemTest extends ConsoleTestCase
 
     public function testNotifyPolicyGivesTheNoticeAndNoneGivesNull(): void
     {
-        $cfg = $this->h->module->backgroundConfig();
-        $this->assertTrue($cfg->setPolicyMode('per_client', 1));
+        $cfg = new DbRemoteSessionPolicyStore($this->h->module->sql());
         $this->assertNull($this->session()['notice'], 'no stored policy: no notice, and the session is not refused');
         $this->assertTrue($cfg->setClientPolicy($this->h->clientA, 'allow', 1));
         $this->assertNull($this->session()['notice']);
         $this->assertTrue($cfg->setClientPolicy($this->h->clientA, 'notify', 1));
         $this->assertSame('notify', $this->session()['notice']);
-        $this->assertTrue($cfg->setPolicyMode('internal', 1));
-        $this->assertNull($this->session()['notice'], 'the per-client notice applies in per_client mode only');
+        $this->assertTrue($cfg->setClientPolicy($this->h->clientA, null, 1));
+        $this->assertNull($this->session()['notice'], 'a removed policy is no notice');
     }
 
     // ------------------------------------------------------------------ single use and the identical 400
@@ -189,10 +188,9 @@ final class ConsoleRedeemTest extends ConsoleTestCase
 
     public function testApprovalRequiredRefusesTheLaunchAndMintsNothing(): void
     {
-        $cfg = $this->h->module->backgroundConfig();
-        $this->assertTrue($cfg->setPolicyMode('per_client', 1));
+        $cfg = new DbRemoteSessionPolicyStore($this->h->module->sql());
         $this->assertTrue($cfg->setClientPolicy($this->h->clientA, 'approve', 1));
-        $r = $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true);
+        $r = $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', true);
         $this->assertSame([false, 403, 'approval_required', 'This client requires approval before a remote session can start.'], [$r->ok, $r->http, $r->code, $r->message]);
         $this->assertSame(0, (int) $this->h->module->sql()->val('SELECT COUNT(*) FROM rmm_console_codes'));
         $this->assertSame([], $this->sessionRowsOf());
@@ -203,15 +201,15 @@ final class ConsoleRedeemTest extends ConsoleTestCase
         $this->assertSame([403, 'approval_required'], [$c, $j['code']]);
         // the stock launch (no console flag) and another client are unaffected
         $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devA)->ok);
-        $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devB, false, null, null, 'desktop', 'standard', true)->ok);
+        $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devB, false, null, null, 'desktop', true)->ok);
         // switch off: the console flag is ignored, the stock launch works
         $this->assertTrue($this->h->module->remoteActions()->updateSettings($this->admin, ['features' => ['remote_console' => false]])->ok);
-        $off = $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true);
+        $off = $this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', true);
         $this->assertSame([true, ['url', 'session_id']], [$off->ok, array_keys($off->data)]);
-        // internal mode: the client policy is not consulted
+        // removing the policy lifts the refusal
+        $this->assertTrue($cfg->setClientPolicy($this->h->clientA, null, 1));
         $this->assertTrue($this->h->module->remoteActions()->updateSettings($this->admin, ['features' => ['remote_console' => true]])->ok);
-        $this->assertTrue($cfg->setPolicyMode('internal', 1));
-        $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true)->ok);
+        $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', true)->ok);
     }
 
     /** @return list<array<string,mixed>> */
@@ -224,19 +222,18 @@ final class ConsoleRedeemTest extends ConsoleTestCase
     {
         $strict = new \RivetCore\Rmm\RmmModule($this->h->db, $this->h->clock, $this->h->tenancy, $this->h->assets, $this->h->bridge, $this->h->box, $this->h->audit, $this->h->metrics, new \RivetCore\Testing\InMemoryRmmModuleState(true), [], null, $this->policy);
         $this->assertStringStartsWith('http://', (string) $strict->settings()->get()['mesh_url']);
-        $r = $strict->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true);
+        $r = $strict->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', true);
         $this->assertSame([false, 409, 'not_configured'], [$r->ok, $r->http, $r->code]);
         $this->assertStringContainsString('https', $r->message);
         $this->assertSame(0, (int) $this->h->module->sql()->val('SELECT COUNT(*) FROM rmm_console_codes'));
         $this->assertCount(1, $this->auditOf('Remote Failed'));
-        $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true)->ok, 'with allow_insecure_http (the test harness) it is allowed');
+        $this->assertTrue($this->h->module->technician()->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', true)->ok, 'with allow_insecure_http (the test harness) it is allowed');
     }
 
     public function testApprovalRequiredAtRedeemIsReturnedOnlyForAValidCodeMintedBeforeThePolicyFlipped(): void
     {
         [$code] = $this->launch($this->tech, $this->devA);
-        $cfg = $this->h->module->backgroundConfig();
-        $this->assertTrue($cfg->setPolicyMode('per_client', 1));
+        $cfg = new DbRemoteSessionPolicyStore($this->h->module->sql());
         $this->assertTrue($cfg->setClientPolicy($this->h->clientA, 'approve', 1));
         $r = $this->redeemCode($code);
         $this->assertSame(403, $r->status);
@@ -388,7 +385,7 @@ final class ConsoleRedeemTest extends ConsoleTestCase
 
     public function testALauncherOnlyTechnicianCannotRedeemATerminalCode(): void
     {
-        $r = $this->h->module->technician()->launchRemote($this->launcher, $this->devA, false, null, null, 'terminal', 'standard', true);
+        $r = $this->h->module->technician()->launchRemote($this->launcher, $this->devA, false, null, null, 'terminal', true);
         $this->assertSame(403, $r->http, 'launch refuses it: terminal needs remote.manage');
         $this->assertSame(0, (int) $this->h->module->sql()->val('SELECT COUNT(*) FROM rmm_console_codes'));
         $this->assertSame(200, $this->redeemCode($this->launch($this->launcher, $this->devA)[0])->status, 'desktop is fine with remote.launch');
@@ -401,7 +398,7 @@ final class ConsoleRedeemTest extends ConsoleTestCase
         $this->assertSame(['terminal', 'node//' . str_repeat('B', 24) . $this->devA, 'rv-18'], [$b['kind'], $b['node'], $b['technician']['username']], 'only what Core stored is returned, never what the caller claims');
     }
 
-    public function testBackgroundIsNeverIssuedAndABackgroundRowIsRefusedAtRedeem(): void
+    public function testOnlyStandardSessionsAreIssuedAndAnyOtherRowIsRefusedAtRedeem(): void
     {
         $b = $this->session();
         $this->assertNull($b['bg_authorization']);
@@ -449,16 +446,16 @@ final class ConsoleRedeemTest extends ConsoleTestCase
         $this->h->tenancy->restrictUser(18, [$this->h->clientA]);
         $this->h->module->authorizer()->forget();
         $t = $this->h->module->technician();
-        $r = $t->launchRemote($this->tech, $this->devB, false, null, null, 'desktop', 'standard', true);
+        $r = $t->launchRemote($this->tech, $this->devB, false, null, null, 'desktop', true);
         $this->assertSame([false, 404], [$r->ok, $r->http], 'the same 404 as a missing device');
-        $missing = $t->launchRemote($this->tech, 999999, false, null, null, 'desktop', 'standard', true);
+        $missing = $t->launchRemote($this->tech, 999999, false, null, null, 'desktop', true);
         $this->assertSame([$missing->http, $missing->code, $missing->message], [$r->http, $r->code, $r->message], 'no existence oracle');
         foreach (['terminal', 'files'] as $view) {
-            $this->assertSame(404, $t->launchRemote($this->tech, $this->devB, false, null, null, $view, 'standard', true)->http);
+            $this->assertSame(404, $t->launchRemote($this->tech, $this->devB, false, null, null, $view, true)->http);
         }
         $this->assertSame(0, (int) $this->h->module->sql()->val('SELECT COUNT(*) FROM rmm_console_codes'));
         $this->assertSame([404], array_unique([$this->h->tech('POST', [(string) $this->devB, 'remote'], $this->tech, ['console' => true])[0]]));
-        $this->assertTrue($t->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', 'standard', true)->ok, 'client A still works');
+        $this->assertTrue($t->launchRemote($this->tech, $this->devA, false, null, null, 'desktop', true)->ok, 'client A still works');
     }
 
     public function testACodeMintedBeforeAScopeChangeDoesNotSurviveIt(): void

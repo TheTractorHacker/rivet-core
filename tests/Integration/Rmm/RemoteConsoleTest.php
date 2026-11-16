@@ -26,7 +26,7 @@ final class RemoteConsoleTest extends RmmTestCase
     {
         $p = new RoleMatrixPolicy();
         $p->addUser(1, 3, 3, 1, admin: true);
-        $p->addUser(18, 3, 3, 2);   // technician with remote.launch and remote.manage, no Background grant
+        $p->addUser(18, 3, 3, 2);   // technician with remote.launch and remote.manage, no admin grant
 
         return new RmmHarness(policy: $p);
     }
@@ -93,7 +93,7 @@ final class RemoteConsoleTest extends RmmTestCase
     {
         $t = $this->h->module->technician();
         $plain = $t->launchRemote($this->tech, $this->dev);
-        $asked = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true, 'terminal-ps');
+        $asked = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true, 'terminal-ps');
         foreach ([$plain, $asked] as $r) {
             $this->assertTrue($r->ok, $r->message);
             $this->assertSame(['url', 'session_id'], array_keys($r->data), 'no console key at all');
@@ -119,14 +119,14 @@ final class RemoteConsoleTest extends RmmTestCase
     public function testOffNothingIsMintedAndNoCodeTableRowExists(): void
     {
         $t = $this->h->module->technician();
-        $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true);
+        $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true);
         $this->assertSame([], $this->codeRows());
     }
 
     public function testOnReturnsTheV1DeepLinkWithACodeAndTheStockUrlAsFallback(): void
     {
         $this->console(true);
-        $r = $this->h->module->technician()->launchRemote($this->tech, $this->dev, false, '203.0.113.9', null, 'desktop', 'standard', true);
+        $r = $this->h->module->technician()->launchRemote($this->tech, $this->dev, false, '203.0.113.9', null, 'desktop', true);
         $this->assertTrue($r->ok, $r->message);
         $this->assertSame(['url', 'session_id', 'console'], array_keys($r->data));
         $c = $r->data['console'];
@@ -156,8 +156,8 @@ final class RemoteConsoleTest extends RmmTestCase
     {
         $this->console(true);
         $t = $this->h->module->technician();
-        $a = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true)->data['console']['url'];
-        $b = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true)->data['console']['url'];
+        $a = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true)->data['console']['url'];
+        $b = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true)->data['console']['url'];
         $this->assertNotSame($this->codeOf($a), $this->codeOf($b));
         $this->assertCount(2, $this->codeRows());
     }
@@ -165,7 +165,7 @@ final class RemoteConsoleTest extends RmmTestCase
     public function testWithoutAPublicUrlTheLaunchIsRefusedAuditedAndMintsNothing(): void
     {
         $this->console(true, false);
-        $r = $this->h->module->technician()->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true);
+        $r = $this->h->module->technician()->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true);
         $this->assertSame([false, 409, 'not_configured'], [$r->ok, $r->http, $r->code]);
         $this->assertSame([], $this->codeRows());
         $this->assertSame([], $this->sessionRows(), 'no Mesh session was opened');
@@ -181,9 +181,9 @@ final class RemoteConsoleTest extends RmmTestCase
     {
         $this->console(true);
         $nobody = new RmmPrincipal(15, 'Nobody');
-        $this->assertSame(403, $this->h->module->technician()->launchRemote($nobody, $this->dev, false, null, null, 'desktop', 'standard', true)->http);
+        $this->assertSame(403, $this->h->module->technician()->launchRemote($nobody, $this->dev, false, null, null, 'desktop', true)->http);
         $viewerLevel = new RmmPrincipal(12, 'Viewer');
-        $this->assertFalse($this->h->module->technician()->launchRemote($viewerLevel, $this->dev, false, null, null, 'desktop', 'standard', true)->ok);
+        $this->assertFalse($this->h->module->technician()->launchRemote($viewerLevel, $this->dev, false, null, null, 'desktop', true)->ok);
         $this->assertSame([], $this->codeRows());
     }
 
@@ -191,7 +191,7 @@ final class RemoteConsoleTest extends RmmTestCase
     {
         $this->console(true);
         $this->assertTrue($this->h->module->devices()->setMeshNode($this->dev, '', 1));
-        $r = $this->h->module->technician()->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true);
+        $r = $this->h->module->technician()->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true);
         $this->assertFalse($r->ok);
         $this->assertSame([], $this->codeRows());
     }
@@ -201,34 +201,33 @@ final class RemoteConsoleTest extends RmmTestCase
         $this->console(true);
         $t = $this->h->module->technician();
         $kinds = [];
-        $r = $t->launchRemote($this->tech, $this->dev, false, null, null, 'terminal', 'standard', true, 'terminal-ps');
+        $r = $t->launchRemote($this->tech, $this->dev, false, null, null, 'terminal', true, 'terminal-ps');
         $this->assertTrue($r->ok, $r->message);
         $kinds[] = 'terminal-ps';
-        $this->assertTrue($t->launchRemote($this->tech, $this->dev, false, null, null, 'files', 'standard', true)->ok);
+        $this->assertTrue($t->launchRemote($this->tech, $this->dev, false, null, null, 'files', true)->ok);
         $kinds[] = 'files';
-        $this->assertTrue($t->launchRemote($this->tech, $this->dev, false, null, null, 'terminal', 'standard', true)->ok);
+        $this->assertTrue($t->launchRemote($this->tech, $this->dev, false, null, null, 'terminal', true)->ok);
         $kinds[] = 'terminal';
         $got = array_column($this->codeRows(), 'kind');
         sort($got);
         sort($kinds);
         $this->assertSame($kinds, $got);
         $before = count($this->codeRows());
-        $bad = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true, 'terminal-ps');
+        $bad = $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true, 'terminal-ps');
         $this->assertSame([false, 422], [$bad->ok, $bad->http]);
-        $this->assertSame(422, $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true, 'vnc')->http);
-        $this->assertSame(422, $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', 'standard', true, 'background')->http);
+        $this->assertSame(422, $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true, 'vnc')->http);
+        $this->assertSame(422, $t->launchRemote($this->tech, $this->dev, false, null, null, 'desktop', true, 'background')->http);
         $this->assertSame($before, count($this->codeRows()));
     }
 
-    public function testBackgroundAndChatKindsAreNeverIssued(): void
+    public function testChatAndUnknownViewsAreNeverIssued(): void
     {
         $this->console(true);
         $t = $this->h->module->technician();
         foreach (['background', 'chat', 'console'] as $view) {
-            $r = $t->launchRemote($this->admin, $this->dev, false, null, null, $view, 'standard', true);
+            $r = $t->launchRemote($this->admin, $this->dev, false, null, null, $view, true);
             $this->assertFalse($r->ok, $view);
         }
-        $this->assertFalse($t->launchRemote($this->admin, $this->dev, false, null, null, 'console', 'background', true)->ok, 'a Background launch (switch off) is denied');
         $this->assertSame([], $this->codeRows());
         $this->assertSame([], array_values(array_filter(array_column($this->codeRows(), 'mode'), static fn ($m) => $m !== 'standard')));
     }
@@ -237,7 +236,7 @@ final class RemoteConsoleTest extends RmmTestCase
     {
         // an install that never touched the console: same keys, same audit text, no row anywhere
         $t = $this->h->module->technician();
-        $r = $t->launchRemote($this->tech, $this->dev, false, '203.0.113.9', 'UA', 'desktop', 'standard', true, 'terminal-ps');
+        $r = $t->launchRemote($this->tech, $this->dev, false, '203.0.113.9', 'UA', 'desktop', true, 'terminal-ps');
         $this->assertSame(['url', 'session_id'], array_keys($r->data));
         $this->assertSame([], $this->codeRows());
         $all = $this->h->audit->records();
@@ -250,20 +249,6 @@ final class RemoteConsoleTest extends RmmTestCase
     {
         $this->console(true);
         $viewer = new RmmPrincipal(15, 'Nobody');
-        $this->assertSame(403, $this->h->module->technician()->launchRemote($viewer, $this->dev, false, null, null, 'desktop', 'standard', true)->http);
-    }
-
-    public function testTheConsoleSwitchNeverTurnsBackgroundOnAndBackgroundIsDeniedWhileItIsOff(): void
-    {
-        $ra = $this->h->module->remoteActions();
-        $this->console(true);
-        $this->assertFalse($this->h->module->settings()->featureOn('background_mode'));
-        $this->assertTrue($ra->updateSettings($this->admin, ['features' => ['background_mode' => true], 'accept_background_risk' => true])->ok);
-        $this->console(false);
-        $this->assertTrue($this->h->module->settings()->featureOn('background_mode'), 'turning the console off leaves the Background switch alone');
-        $r = $this->h->module->technician()->launchRemote($this->admin, $this->dev, false, null, null, 'console', 'background');
-        $this->assertSame([403, 'feature_disabled'], [$r->http, $r->code]);
-        $rows = array_column($this->h->audit->records(), 'action');
-        $this->assertSame(['Background Session Denied'], array_values(array_filter($rows, static fn (string $a): bool => str_starts_with($a, 'Background Session'))));
+        $this->assertSame(403, $this->h->module->technician()->launchRemote($viewer, $this->dev, false, null, null, 'desktop', true)->http);
     }
 }

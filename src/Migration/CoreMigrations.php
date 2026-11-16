@@ -49,7 +49,7 @@ use RivetCore\Rmm\Migration\Migration0042RmmDataStore;
 use RivetCore\Rmm\Migration\Migration0043RmmStoreDenormalisation;
 use RivetCore\Rmm\Migration\Migration0044RmmStoreSwitch;
 use RivetCore\Rmm\Migration\Migration0049InstallerManagedExternally;
-use RivetCore\Rmm\Migration\Migration0050BackgroundMode;
+use RivetCore\Rmm\Migration\Migration0050ClientRemotePolicy;
 use RivetCore\Rmm\Migration\Migration0051ConsoleSessions;
 use RivetCore\Reporting\Migration\Migration0047ReportingViews;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
@@ -113,7 +113,7 @@ final class CoreMigrations
             new Migration0047ReportingViews(),
             new Migration0048AuditHashChain(),
             new Migration0049InstallerManagedExternally(),
-            new Migration0050BackgroundMode(),
+            new Migration0050ClientRemotePolicy(),
             new Migration0051ConsoleSessions(),
         ];
     }

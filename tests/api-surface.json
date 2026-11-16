@@ -3046,7 +3046,6 @@
                 "PATCH_INSTALL": "rmm.patch.install",
                 "PATCH_MANAGE": "rmm.patch.manage",
                 "PATCH_VIEW": "rmm.patch.view",
-                "REMOTE_BACKGROUND": "rmm.remote.background",
                 "REMOTE_LAUNCH": "rmm.remote.launch",
                 "REMOTE_MANAGE": "rmm.remote.manage",
                 "SOFTWARE_DEPLOY": "rmm.software.deploy",
@@ -3635,31 +3634,6 @@
                 "osOf": "static osOf(array $check): ?string"
             }
         },
-        "RivetCore\\Rmm\\Contracts\\BackgroundGroupMembershipInterface": {
-            "kind": "interface",
-            "methods": {
-                "isMember": "isMember(int $userId, string $group): bool"
-            }
-        },
-        "RivetCore\\Rmm\\Contracts\\BackgroundModeConfigInterface": {
-            "kind": "interface",
-            "methods": {
-                "clientPolicy": "clientPolicy(int $clientId): ?string",
-                "internalGroup": "internalGroup(): string",
-                "policyMode": "policyMode(): string"
-            }
-        },
-        "RivetCore\\Rmm\\Contracts\\BackgroundSessionStoreInterface": {
-            "kind": "interface",
-            "methods": {
-                "consumeToken": "consumeToken(string $tokenHash): bool",
-                "endSession": "endSession(string $sessionId, string $reason): bool",
-                "findSession": "findSession(string $sessionId): ?array",
-                "issueToken": "issueToken(string $tokenHash, string $sessionId, int $userId, int $deviceId, int $clientId, int $ttlSeconds): void",
-                "peekToken": "peekToken(string $tokenHash): ?array",
-                "startSession": "startSession(string $sessionId, int $deviceId, int $clientId, int $assetId, int $userId, string $userName, string $policy, string $notice): void"
-            }
-        },
         "RivetCore\\Rmm\\Contracts\\ChangeWatchPolicyInterface": {
             "kind": "interface",
             "methods": {
@@ -3679,6 +3653,12 @@
             "kind": "interface",
             "methods": {
                 "allows": "allows(string $url, int $clientId): bool"
+            }
+        },
+        "RivetCore\\Rmm\\Contracts\\RemoteSessionPolicyStoreInterface": {
+            "kind": "interface",
+            "methods": {
+                "clientPolicy": "clientPolicy(int $clientId): ?string"
             }
         },
         "RivetCore\\Rmm\\Contracts\\RmmAssetNamesInterface": {
@@ -4947,7 +4927,7 @@
                 "PRUNE_RUN_CAP": 200000
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Job\\JobService $jobs, ?Closure $pause = NULL, ?RivetCore\\Rmm\\Capacity\\LoadShedder $shedder = NULL, ?RivetCore\\Rmm\\Capacity\\IngestQueue $ingest = NULL, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Device\\DeviceState $deviceState = NULL, ?RivetCore\\Rmm\\Support\\DatabaseMetricSink $metricSink = NULL, ?RivetCore\\Rmm\\Scripts\\ScheduleRunner $schedules = NULL, ?RivetCore\\Rmm\\Approvals\\ApprovalService $approvals = NULL, ?RivetCore\\Rmm\\Scripts\\ApprovedRunExecutor $approvedRuns = NULL, ?RivetCore\\Rmm\\Job\\JobExtras $extras = NULL, ?RivetCore\\Rmm\\Policy\\PolicyStore $policies = NULL, ?RivetCore\\Rmm\\Alerting\\AlertingHousekeeping $alerting = NULL, ?RivetCore\\Rmm\\Storage\\StorageMaintenance $storage = NULL, ?RivetCore\\Rmm\\Support\\RmmCache $cache = NULL, ?RivetCore\\Rmm\\Metrics\\ExternalMetricSink $external = NULL, ?RivetCore\\Rmm\\Logs\\LogService $logs = NULL, ?RivetCore\\Rmm\\Logs\\LogRuleService $logRules = NULL, ?RivetCore\\Rmm\\Remote\\TransferService $transfers = NULL, ?RivetCore\\Rmm\\Patch\\PatchScheduler $patches = NULL, ?RivetCore\\Rmm\\Deploy\\DeployScheduler $deploy = NULL, ?RivetCore\\Rmm\\Change\\ChangeService $changes = NULL, ?RivetCore\\Rmm\\Change\\ChangeRuleService $changeRules = NULL, ?RivetCore\\Rmm\\Hypervisor\\HypervisorService $hypervisor = NULL, ?RivetCore\\Rmm\\Store\\CheckHistoryStore $checkHistory = NULL, ?RivetCore\\Rmm\\Store\\SoftwareHistoryStore $softwareHistory = NULL, ?RivetCore\\Rmm\\Store\\MetricStore $metricStore = NULL, ?RivetCore\\Rmm\\Store\\StoreMaintenance $storeMaintenance = NULL, ?RivetCore\\Rmm\\Store\\RmmDataStores $stores = NULL, ?RivetCore\\Rmm\\Remote\\BackgroundSessionRetention $backgroundSessions = NULL, ?RivetCore\\Rmm\\Remote\\RemoteSettings $remoteSettings = NULL, ?RivetCore\\Rmm\\Remote\\ConsoleRetention $console = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Job\\JobService $jobs, ?Closure $pause = NULL, ?RivetCore\\Rmm\\Capacity\\LoadShedder $shedder = NULL, ?RivetCore\\Rmm\\Capacity\\IngestQueue $ingest = NULL, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Device\\DeviceState $deviceState = NULL, ?RivetCore\\Rmm\\Support\\DatabaseMetricSink $metricSink = NULL, ?RivetCore\\Rmm\\Scripts\\ScheduleRunner $schedules = NULL, ?RivetCore\\Rmm\\Approvals\\ApprovalService $approvals = NULL, ?RivetCore\\Rmm\\Scripts\\ApprovedRunExecutor $approvedRuns = NULL, ?RivetCore\\Rmm\\Job\\JobExtras $extras = NULL, ?RivetCore\\Rmm\\Policy\\PolicyStore $policies = NULL, ?RivetCore\\Rmm\\Alerting\\AlertingHousekeeping $alerting = NULL, ?RivetCore\\Rmm\\Storage\\StorageMaintenance $storage = NULL, ?RivetCore\\Rmm\\Support\\RmmCache $cache = NULL, ?RivetCore\\Rmm\\Metrics\\ExternalMetricSink $external = NULL, ?RivetCore\\Rmm\\Logs\\LogService $logs = NULL, ?RivetCore\\Rmm\\Logs\\LogRuleService $logRules = NULL, ?RivetCore\\Rmm\\Remote\\TransferService $transfers = NULL, ?RivetCore\\Rmm\\Patch\\PatchScheduler $patches = NULL, ?RivetCore\\Rmm\\Deploy\\DeployScheduler $deploy = NULL, ?RivetCore\\Rmm\\Change\\ChangeService $changes = NULL, ?RivetCore\\Rmm\\Change\\ChangeRuleService $changeRules = NULL, ?RivetCore\\Rmm\\Hypervisor\\HypervisorService $hypervisor = NULL, ?RivetCore\\Rmm\\Store\\CheckHistoryStore $checkHistory = NULL, ?RivetCore\\Rmm\\Store\\SoftwareHistoryStore $softwareHistory = NULL, ?RivetCore\\Rmm\\Store\\MetricStore $metricStore = NULL, ?RivetCore\\Rmm\\Store\\StoreMaintenance $storeMaintenance = NULL, ?RivetCore\\Rmm\\Store\\RmmDataStores $stores = NULL, ?RivetCore\\Rmm\\Remote\\RemoteSettings $remoteSettings = NULL, ?RivetCore\\Rmm\\Remote\\ConsoleRetention $console = NULL)",
                 "run": "run(): array"
             }
         },
@@ -5827,87 +5807,6 @@
                 "uploadLimit": "uploadLimit(): int"
             }
         },
-        "RivetCore\\Rmm\\Remote\\BackgroundDecision": {
-            "kind": "final class",
-            "constants": {
-                "NOTICE_APPROVE": "approve",
-                "NOTICE_NONE": "none",
-                "NOTICE_NOTIFY": "notify"
-            },
-            "methods": {
-                "allow": "static allow(string $code, string $notice = 'none'): RivetCore\\Rmm\\Remote\\BackgroundDecision",
-                "deny": "static deny(string $code, string $message, string $notice = 'none'): RivetCore\\Rmm\\Remote\\BackgroundDecision"
-            },
-            "properties": {
-                "allowed": "readonly bool",
-                "code": "readonly string",
-                "message": "readonly string",
-                "notice": "readonly string"
-            }
-        },
-        "RivetCore\\Rmm\\Remote\\BackgroundModePolicy": {
-            "kind": "final class",
-            "constants": {
-                "CLIENT_ALLOW": "allow",
-                "CLIENT_APPROVE": "approve",
-                "CLIENT_NOTIFY": "notify",
-                "CLIENT_POLICIES": [
-                    "allow",
-                    "notify",
-                    "approve"
-                ],
-                "MODES": [
-                    "internal",
-                    "per_client"
-                ],
-                "MODE_INTERNAL": "internal",
-                "MODE_PER_CLIENT": "per_client"
-            },
-            "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Contracts\\BackgroundModeConfigInterface $config, RivetCore\\Rmm\\Contracts\\BackgroundGroupMembershipInterface $groups)",
-                "decide": "decide(int $userId, int $clientId, bool $isSiteAdmin): RivetCore\\Rmm\\Remote\\BackgroundDecision"
-            }
-        },
-        "RivetCore\\Rmm\\Remote\\BackgroundSessionRetention": {
-            "kind": "final class",
-            "constants": {
-                "BATCH": 1000,
-                "RUN_CAP": 20000
-            },
-            "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
-                "prune": "prune(int $retentionDays): array"
-            }
-        },
-        "RivetCore\\Rmm\\Remote\\BackgroundSessionService": {
-            "kind": "final class",
-            "constants": {
-                "END_REASONS": [
-                    "user_closed",
-                    "timeout",
-                    "revoked",
-                    "error",
-                    "plugin"
-                ],
-                "TOKEN_TTL_S": 60
-            },
-            "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Remote\\BackgroundModePolicy $policy, RivetCore\\Rmm\\Contracts\\BackgroundSessionStoreInterface $store, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, Closure $featureOn, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL)",
-                "check": "check(RivetCore\\Rmm\\Authz\\RmmPrincipal $caller, string $token): RivetCore\\Rmm\\Technician\\ActionResult",
-                "end": "end(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, string $sessionId, string $reason = 'user_closed'): RivetCore\\Rmm\\Technician\\ActionResult",
-                "gate": "gate(int $userId, int $clientId): array",
-                "launch": "launch(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $dev, Closure $meshLaunch, ?string $ip = NULL, ?string $userAgent = NULL): RivetCore\\Rmm\\Technician\\ActionResult"
-            }
-        },
-        "RivetCore\\Rmm\\Remote\\BackgroundSettingsService": {
-            "kind": "final class",
-            "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Remote\\DbBackgroundModeConfig $config, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL)",
-                "setClientPolicy": "setClientPolicy(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $clientId, ?string $policy): RivetCore\\Rmm\\Technician\\ActionResult",
-                "setInternalGroup": "setInternalGroup(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, string $group): RivetCore\\Rmm\\Technician\\ActionResult",
-                "setPolicyMode": "setPolicyMode(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, string $mode): RivetCore\\Rmm\\Technician\\ActionResult"
-            }
-        },
         "RivetCore\\Rmm\\Remote\\ConsoleEventsService": {
             "kind": "final class",
             "constants": {
@@ -5978,7 +5877,7 @@
                 "WINDOW_S": 60
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Remote\\ConsoleStore $store, RivetCore\\Rmm\\Remote\\ConsoleSettings $settings, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Settings\\RmmSettings $rmmSettings, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Mesh\\MeshService $mesh, RivetCore\\Rmm\\Contracts\\BackgroundModeConfigInterface $policy, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, Closure $rateLimit, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Remote\\ConsoleStore $store, RivetCore\\Rmm\\Remote\\ConsoleSettings $settings, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Settings\\RmmSettings $rmmSettings, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Mesh\\MeshService $mesh, RivetCore\\Rmm\\Remote\\RemoteSessionPolicy $policy, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, Closure $rateLimit, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL)",
                 "redeem": "redeem(string $code, ?array $client, string $ip): array"
             }
         },
@@ -6000,7 +5899,7 @@
                 "APPROVAL_MESSAGE": "This client requires approval before a remote session can start."
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Remote\\ConsoleStore $store, RivetCore\\Rmm\\Remote\\ConsoleSettings $settings, ?RivetCore\\Rmm\\Contracts\\BackgroundModeConfigInterface $policy = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Remote\\ConsoleStore $store, RivetCore\\Rmm\\Remote\\ConsoleSettings $settings, ?RivetCore\\Rmm\\Remote\\RemoteSessionPolicy $policy = NULL)",
                 "approvalRequired": "approvalRequired(int $clientId): bool",
                 "consoleNode": "static consoleNode(string $storedNode, string $meshDomain): ?string",
                 "issue": "issue(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $dev, string $kind, string $storedNode, string $meshDomain, string $sessionId, string $fallbackUrl, ?string $ip): ?array",
@@ -6056,37 +5955,15 @@
                 "name": "static name(string $name): string"
             }
         },
-        "RivetCore\\Rmm\\Remote\\DbBackgroundModeConfig": {
+        "RivetCore\\Rmm\\Remote\\DbRemoteSessionPolicyStore": {
             "kind": "final class",
             "implements": [
-                "RivetCore\\Rmm\\Contracts\\BackgroundModeConfigInterface"
+                "RivetCore\\Rmm\\Contracts\\RemoteSessionPolicyStoreInterface"
             ],
-            "constants": {
-                "GROUP_PATTERN": "/^[\\p{L}\\p{N} ._-]{1,100}$/u"
-            },
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
                 "clientPolicy": "clientPolicy(int $clientId): ?string",
-                "internalGroup": "internalGroup(): string",
-                "policyMode": "policyMode(): string",
-                "setClientPolicy": "setClientPolicy(int $clientId, ?string $policy, int $userId): bool",
-                "setInternalGroup": "setInternalGroup(string $group, int $userId): bool",
-                "setPolicyMode": "setPolicyMode(string $mode, int $userId): bool"
-            }
-        },
-        "RivetCore\\Rmm\\Remote\\DbBackgroundSessionStore": {
-            "kind": "final class",
-            "implements": [
-                "RivetCore\\Rmm\\Contracts\\BackgroundSessionStoreInterface"
-            ],
-            "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
-                "consumeToken": "consumeToken(string $tokenHash): bool",
-                "endSession": "endSession(string $sessionId, string $reason): bool",
-                "findSession": "findSession(string $sessionId): ?array",
-                "issueToken": "issueToken(string $tokenHash, string $sessionId, int $userId, int $deviceId, int $clientId, int $ttlSeconds): void",
-                "peekToken": "peekToken(string $tokenHash): ?array",
-                "startSession": "startSession(string $sessionId, int $deviceId, int $clientId, int $assetId, int $userId, string $userName, string $policy, string $notice): void"
+                "setClientPolicy": "setClientPolicy(int $clientId, ?string $policy, int $userId): bool"
             }
         },
         "RivetCore\\Rmm\\Remote\\JobRefused": {
@@ -6101,15 +5978,6 @@
             },
             "properties": {
                 "reason": "readonly string"
-            }
-        },
-        "RivetCore\\Rmm\\Remote\\NoBackgroundGroups": {
-            "kind": "final class",
-            "implements": [
-                "RivetCore\\Rmm\\Contracts\\BackgroundGroupMembershipInterface"
-            ],
-            "methods": {
-                "isMember": "isMember(int $userId, string $group): bool"
             }
         },
         "RivetCore\\Rmm\\Remote\\PathPolicy": {
@@ -6196,7 +6064,6 @@
                     "too_large",
                     "conflict"
                 ],
-                "FEATURE_BACKGROUND_MODE": "background_mode",
                 "FEATURE_FILE_TRANSFER": "filetransfer",
                 "FEATURE_LOGS": "logs",
                 "FEATURE_REMOTE_CONSOLE": "remote_console",
@@ -6285,10 +6152,51 @@
                 "serviceName": "static serviceName(mixed $v, string $os): ?string"
             }
         },
+        "RivetCore\\Rmm\\Remote\\RemoteSessionDecision": {
+            "kind": "final class",
+            "constants": {
+                "NOTICE_APPROVE": "approve",
+                "NOTICE_NONE": "none",
+                "NOTICE_NOTIFY": "notify"
+            },
+            "methods": {
+                "allow": "static allow(string $code, string $notice = 'none'): RivetCore\\Rmm\\Remote\\RemoteSessionDecision",
+                "deny": "static deny(string $code, string $message, string $notice = 'none'): RivetCore\\Rmm\\Remote\\RemoteSessionDecision"
+            },
+            "properties": {
+                "allowed": "readonly bool",
+                "code": "readonly string",
+                "message": "readonly string",
+                "notice": "readonly string"
+            }
+        },
+        "RivetCore\\Rmm\\Remote\\RemoteSessionPolicy": {
+            "kind": "final class",
+            "constants": {
+                "CLIENT_ALLOW": "allow",
+                "CLIENT_APPROVE": "approve",
+                "CLIENT_NOTIFY": "notify",
+                "CLIENT_POLICIES": [
+                    "allow",
+                    "notify",
+                    "approve"
+                ]
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Contracts\\RemoteSessionPolicyStoreInterface $store)",
+                "decide": "decide(int $clientId): RivetCore\\Rmm\\Remote\\RemoteSessionDecision"
+            }
+        },
+        "RivetCore\\Rmm\\Remote\\RemoteSessionPolicySettingsService": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Remote\\DbRemoteSessionPolicyStore $store, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit)",
+                "setClientPolicy": "setClientPolicy(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $clientId, ?string $policy): RivetCore\\Rmm\\Technician\\ActionResult"
+            }
+        },
         "RivetCore\\Rmm\\Remote\\RemoteSettings": {
             "kind": "final class",
             "constants": {
-                "BACKGROUND_MODE_RISK": "Background Mode lets technicians open a remote console (desktop, terminal and files) on a managed device where the policy allows it without asking the person at the device first. It is for IT staff supporting their own organisation, or for clients that agreed to it in their contract. Use it only where the people at those devices have been told it exists. Every session is written to the audit log with the technician's name, in every mode, and that cannot be switched off, but the console can read and change anything the device's account can. Give the Background Mode ability to as few people as you can and turn this on only if your security and privacy policy permits it.",
                 "FILE_TRANSFER_RISK": "File transfer lets technicians copy files off managed devices and lets administrators put files onto them. Anything inside an allowed folder can leave the device, including documents that hold customer or personal data, and a file sent to a device can be a program that runs later. Password databases, private keys, system credential stores and the agent's own files are never transferable, and every transfer is written to the audit log, but a copied file cannot be un-copied. Allow only the folders you need, keep the size limit low, and turn this on only if your security policy permits it.",
                 "LIMITS": {
                     "transfer_max_bytes": [
@@ -6330,11 +6238,6 @@
                         30,
                         3600,
                         60
-                    ],
-                    "background_session_retention_days": [
-                        30,
-                        3650,
-                        365
                     ],
                     "console_session_retention_days": [
                         30,
@@ -6388,12 +6291,6 @@
                 "ALERT_RESOLVED": "rmm.alert.resolved",
                 "APPROVAL_DECIDED": "rmm.approval.decided",
                 "APPROVAL_REQUESTED": "rmm.approval.requested",
-                "BACKGROUND_POLICY_CHANGED": "rmm.background.policy_changed",
-                "BACKGROUND_SESSION_DENIED": "rmm.background.session_denied",
-                "BACKGROUND_SESSION_ENDED": "rmm.background.session_ended",
-                "BACKGROUND_SESSION_FAILED": "rmm.background.session_failed",
-                "BACKGROUND_SESSION_STARTED": "rmm.background.session_started",
-                "BACKGROUND_SESSION_VERIFIED": "rmm.background.session_verified",
                 "CHANGE_DETECTED": "rmm.change.detected",
                 "CHANGE_RULE_MATCHED": "rmm.change.rule_matched",
                 "CHECK_FAILED": "rmm.check.failed",
@@ -6455,9 +6352,6 @@
                 "autoInstallActions": "autoInstallActions(): RivetCore\\Rmm\\AutoInstall\\AutoInstallActions",
                 "autoInstallApi": "autoInstallApi(): RivetCore\\Rmm\\Http\\AutoInstallApi",
                 "automationReader": "automationReader(): RivetCore\\Rmm\\Read\\AutomationReader",
-                "backgroundConfig": "backgroundConfig(): RivetCore\\Rmm\\Contracts\\BackgroundModeConfigInterface",
-                "backgroundSessions": "backgroundSessions(): RivetCore\\Rmm\\Remote\\BackgroundSessionService",
-                "backgroundSettings": "backgroundSettings(): RivetCore\\Rmm\\Remote\\BackgroundSettingsService",
                 "binaryStore": "binaryStore(): RivetCore\\Rmm\\Binaries\\BinaryStore",
                 "bulkRunner": "bulkRunner(): RivetCore\\Rmm\\Scripts\\BulkRunner",
                 "cache": "cache(): RivetCore\\Rmm\\Support\\RmmCache",
@@ -6548,6 +6442,9 @@
                 "registerHandlers": "registerHandlers(RivetCore\\Jobs\\JobWorker $worker): void",
                 "remoteActions": "remoteActions(): RivetCore\\Rmm\\Remote\\RemoteActions",
                 "remoteApi": "remoteApi(): RivetCore\\Rmm\\Http\\RemoteApi",
+                "remoteSessionPolicy": "remoteSessionPolicy(): RivetCore\\Rmm\\Remote\\RemoteSessionPolicy",
+                "remoteSessionPolicySettings": "remoteSessionPolicySettings(): RivetCore\\Rmm\\Remote\\RemoteSessionPolicySettingsService",
+                "remoteSessionPolicyStore": "remoteSessionPolicyStore(): RivetCore\\Rmm\\Contracts\\RemoteSessionPolicyStoreInterface",
                 "remoteSettings": "remoteSettings(): RivetCore\\Rmm\\Remote\\RemoteSettings",
                 "scheduleRunner": "scheduleRunner(): RivetCore\\Rmm\\Scripts\\ScheduleRunner",
                 "schedules": "schedules(): RivetCore\\Rmm\\Scripts\\ScheduleService",
@@ -7085,7 +6982,6 @@
                     "alerting",
                     "remote_tools",
                     "filetransfer",
-                    "background_mode",
                     "remote_console"
                 ],
                 "INGEST_MODES": [
@@ -8572,15 +8468,12 @@
         "RivetCore\\Rmm\\Technician\\TechnicianActions": {
             "kind": "final class",
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Device\\DeviceService $deviceService, RivetCore\\Rmm\\Enrollment\\EnrollmentService $enrollment, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Update\\UpdateService $updates, RivetCore\\Rmm\\Mesh\\MeshService $mesh, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, string $clientLabel = 'client', ?RivetCore\\Rmm\\Technician\\ScriptActions $library = NULL, ?RivetCore\\Rmm\\Settings\\RmmSettings $settings = NULL, ?RivetCore\\Rmm\\Remote\\BackgroundSessionService $background = NULL, ?RivetCore\\Rmm\\Remote\\ConsoleSessionService $consoleSessions = NULL)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Device\\DeviceRepository $devices, RivetCore\\Rmm\\Device\\DeviceService $deviceService, RivetCore\\Rmm\\Enrollment\\EnrollmentService $enrollment, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Update\\UpdateService $updates, RivetCore\\Rmm\\Mesh\\MeshService $mesh, RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Contracts\\RmmBridgeInterface $bridge, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, string $clientLabel = 'client', ?RivetCore\\Rmm\\Technician\\ScriptActions $library = NULL, ?RivetCore\\Rmm\\Settings\\RmmSettings $settings = NULL, ?RivetCore\\Rmm\\Remote\\ConsoleSessionService $consoleSessions = NULL)",
                 "allowReenroll": "allowReenroll(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
-                "auditRefusedBackgroundLaunch": "auditRefusedBackgroundLaunch(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, ?string $ip, ?string $userAgent, int $http): void",
                 "cancelJob": "cancelJob(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $jobId): RivetCore\\Rmm\\Technician\\ActionResult",
-                "checkBackgroundSession": "checkBackgroundSession(RivetCore\\Rmm\\Authz\\RmmPrincipal $caller, string $token): RivetCore\\Rmm\\Technician\\ActionResult",
                 "clearUpdateFailures": "clearUpdateFailures(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "createToken": "createToken(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, bool $managedExternally = false): RivetCore\\Rmm\\Technician\\ActionResult",
-                "endBackgroundSession": "endBackgroundSession(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, string $sessionId, string $reason = 'user_closed'): RivetCore\\Rmm\\Technician\\ActionResult",
-                "launchRemote": "launchRemote(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = NULL, ?string $userAgent = NULL, string $view = 'desktop', string $mode = 'standard', bool $console = false, ?string $consoleKind = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
+                "launchRemote": "launchRemote(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = NULL, ?string $userAgent = NULL, string $view = 'desktop', bool $console = false, ?string $consoleKind = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
                 "resolvePending": "resolvePending(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $action, ?int $assetId = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
                 "retire": "retire(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "revoke": "revoke(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $reason = ''): RivetCore\\Rmm\\Technician\\ActionResult",
@@ -9772,7 +9665,6 @@
         "RivetCore\\Retention\\Migration\\Migration0013RetentionIndexes",
         "RivetCore\\Rmm\\Migration\\AlertingSchema",
         "RivetCore\\Rmm\\Migration\\AutoInstallSchema",
-        "RivetCore\\Rmm\\Migration\\BackgroundSchema",
         "RivetCore\\Rmm\\Migration\\BudgetSchema",
         "RivetCore\\Rmm\\Migration\\ChangeSchema",
         "RivetCore\\Rmm\\Migration\\ConsoleSchema",
@@ -9810,10 +9702,11 @@
         "RivetCore\\Rmm\\Migration\\Migration0043RmmStoreDenormalisation",
         "RivetCore\\Rmm\\Migration\\Migration0044RmmStoreSwitch",
         "RivetCore\\Rmm\\Migration\\Migration0049InstallerManagedExternally",
-        "RivetCore\\Rmm\\Migration\\Migration0050BackgroundMode",
+        "RivetCore\\Rmm\\Migration\\Migration0050ClientRemotePolicy",
         "RivetCore\\Rmm\\Migration\\Migration0051ConsoleSessions",
         "RivetCore\\Rmm\\Migration\\MsiTemplateSchema",
         "RivetCore\\Rmm\\Migration\\PatchSchema",
+        "RivetCore\\Rmm\\Migration\\RemotePolicySchema",
         "RivetCore\\Rmm\\Migration\\RemoteSchema",
         "RivetCore\\Rmm\\Migration\\RmmSchema",
         "RivetCore\\Rmm\\Migration\\ScaleSchema",
@@ -9947,7 +9840,7 @@
         "0047_reporting_views",
         "0048_audit_hash_chain",
         "0049_rmm_installer_managed_externally",
-        "0050_rmm_background_mode",
+        "0050_rmm_client_remote_policy",
         "0051_rmm_console_sessions"
     ],
     "tables": {
@@ -10208,12 +10101,6 @@
             "rmm.alert.resolved",
             "rmm.approval.decided",
             "rmm.approval.requested",
-            "rmm.background.policy_changed",
-            "rmm.background.session_denied",
-            "rmm.background.session_ended",
-            "rmm.background.session_failed",
-            "rmm.background.session_started",
-            "rmm.background.session_verified",
             "rmm.change.detected",
             "rmm.change.rule_matched",
             "rmm.check.failed",
