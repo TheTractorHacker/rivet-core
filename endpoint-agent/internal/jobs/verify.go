@@ -157,7 +157,9 @@ func (v *Verifier) Verify(j api.Job) error {
 	if j.IssuedAt.OK && j.IssuedAt.T.After(now.Add(futureSkew)) {
 		return fmt.Errorf("%w: issued_at in the future", ErrInvalidJob)
 	}
-	if j.DeviceID != "" && dev != "" && string(j.DeviceID) != dev {
+	// A job must name this device (CORE-DS-76): the server always signs device_id, so an unbound job, or an agent that does not know its own id, is
+	// not something to run.
+	if j.DeviceID == "" || dev == "" || string(j.DeviceID) != dev {
 		return ErrWrongDevice
 	}
 	switch j.Type {

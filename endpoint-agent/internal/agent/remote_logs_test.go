@@ -144,7 +144,7 @@ func TestRemoteToolJobsRunThroughTheWholeAgent(t *testing.T) {
 	r.enroll()
 	now := time.Now().UTC()
 	job := func(id, typ string, params map[string]any) json.RawMessage {
-		return r.s.signJob(map[string]any{"job_id": id, "attempt": 1, "type": typ, "script": "", "params": params, "timeout_s": 30, "max_output_bytes": 65536,
+		return r.s.signJob(map[string]any{"job_id": id, "device_id": 7, "attempt": 1, "type": typ, "script": "", "params": params, "timeout_s": 30, "max_output_bytes": 65536,
 			"issued_at": now.Format(time.RFC3339), "expires_at": now.Add(time.Hour).Format(time.RFC3339)})
 	}
 	dir, _ := filepath.EvalSymlinks(t.TempDir())

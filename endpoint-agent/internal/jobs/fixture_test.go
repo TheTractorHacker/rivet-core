@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -82,7 +83,8 @@ func TestServerSigningVectors(t *testing.T) {
 			t.Errorf("%s: %v", j.Name, err)
 			continue
 		}
-		if err := ver.Verify(list[0]); err != nil {
+		// The shared vectors carry no device_id (they are signature vectors); since CORE-DS-76 an unbound job is refused, as the very last policy step.
+		if err := ver.Verify(list[0]); err != nil && !errors.Is(err, ErrWrongDevice) {
 			t.Errorf("%s: full verification failed: %v", j.Name, err)
 		}
 		// a one-character tamper must fail

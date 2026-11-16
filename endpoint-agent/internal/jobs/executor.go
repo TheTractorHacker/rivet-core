@@ -209,6 +209,9 @@ func (e *Executor) process(j api.Job) {
 	}
 	started := e.now()
 	rec := Record{JobID: j.JobID, Attempt: j.Attempt, Type: j.Type, State: StateRunning, StartedAt: ts(started)}
+	if j.ExpiresAt.OK {
+		rec.ExpiresAt = j.ExpiresAt.T.UTC().Format(time.RFC3339)
+	}
 	// Durable BEFORE launch: a crash after this point can only lead to
 	// "failed/agent_restarted", never to a second execution.
 	if err := e.Store.Put(rec); err != nil {
