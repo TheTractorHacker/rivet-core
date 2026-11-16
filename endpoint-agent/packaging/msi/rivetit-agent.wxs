@@ -22,6 +22,8 @@
     <Property Id="MsiHiddenProperties" Value="ENROLL_TOKEN"/>
     <Property Id="ARPCOMMENTS" Value="RivetIT endpoint agent"/>
     <Property Id="ARPNOMODIFY" Value="1"/>
+    <!-- No Repair button and no repair for a standard user through ARP: see RivetStopServiceInstall below (CORE-DS-57). -->
+    <Property Id="ARPNOREPAIR" Value="1"/>
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="$(var.ProgramFilesDir)" Name="PFiles">
@@ -44,6 +46,8 @@
     <CustomAction Id="RivetStopServiceInstall" Property="RIVET_NET_EXE" ExeCommand="stop RivetITAgent" Execute="deferred" Impersonate="no" Return="ignore"/>
     <CustomAction Id="RivetStopServiceRemove" Property="RIVET_NET_EXE" ExeCommand="stop RivetITAgent" Execute="deferred" Impersonate="no" Return="ignore"/>
 
+    <!-- RivetSetupProps carries the enrollment token in its target. wixl 0.103 ignores HideTarget, so build.sh sets the msidbCustomActionTypeHideTarget bit (0x2000) on this action afterwards
+         (CORE-DS-56); prefer ENROLL_TOKEN_FILE where possible. -->
     <!-- Register and start the service. Stamped: the payload is appended to this .msi. Properties: no payload, SERVER (and a token) given on the command line. -->
     <CustomAction Id="RivetSetupStamped" FileKey="AgentExeFile" ExeCommand="setup --silent --from-msi --payload-from &quot;[OriginalDatabase]&quot;" Execute="deferred" Impersonate="no" Return="check"/>
     <CustomAction Id="RivetSetupProps" FileKey="AgentExeFile" ExeCommand="setup --silent --from-msi --server &quot;[SERVER]&quot; --token &quot;[ENROLL_TOKEN]&quot; --token-file &quot;[ENROLL_TOKEN_FILE]&quot; --ca-file &quot;[CA_PEM_FILE]&quot;" Execute="deferred" Impersonate="no" Return="check"/>
@@ -54,7 +58,8 @@
 
     <InstallExecuteSequence>
       <Custom Action="RivetSetNetExe" Sequence="1450"/>
-      <Custom Action="RivetStopServiceInstall" Sequence="3900">NOT REMOVE</Custom>
+      <!-- Never in a plain repair or reinstall (msiexec /fm by a standard user would run this deferred SYSTEM action and nothing restarts the service): only for a first install and an upgrade (CORE-DS-57). -->
+      <Custom Action="RivetStopServiceInstall" Sequence="3900">NOT REMOVE AND (NOT Installed OR UPGRADINGPRODUCTCODE)</Custom>
       <Custom Action="RivetStopServiceRemove" Sequence="3200">REMOVE</Custom>
       <Custom Action="RivetSetupStamped" Sequence="4100">NOT Installed AND NOT REMOVE AND NOT SERVER</Custom>
       <Custom Action="RivetSetupProps" Sequence="4110">NOT Installed AND NOT REMOVE AND SERVER</Custom>

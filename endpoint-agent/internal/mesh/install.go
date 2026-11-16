@@ -312,10 +312,23 @@ func (t *tailBuf) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// withoutRivetitEnv drops every RIVETIT_* variable (the enrollment token, state directory overrides, ...) from an environment.
+func withoutRivetitEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if len(kv) >= 8 && strings.EqualFold(kv[:8], "RIVETIT_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
 // RunProgram is the real RunFunc: it runs path with args in dir and returns the exit code and the tail of the output.
 func RunProgram(ctx context.Context, dir, path string, args []string) (int, string, error) {
 	c := exec.CommandContext(ctx, path, args...)
 	c.Dir = dir
+	c.Env = withoutRivetitEnv(os.Environ()) // CORE-DS-56: never hand the enrollment token (RIVETIT_ENROLL_TOKEN) to a third-party installer
 	var out tailBuf
 	c.Stdout, c.Stderr = &out, &out
 	c.WaitDelay = 2 * time.Second // a grandchild holding the pipes open must not hold us past the timeout

@@ -79,7 +79,7 @@ check() {
     case "$target" in *"$3"*) ;; *) die "custom action $1 target '$target' lacks '$3'" ;; esac
   }
   want_ca RivetSetupStamped 3090 'setup --silent --from-msi --payload-from "[OriginalDatabase]"'
-  want_ca RivetSetupProps 3090 'setup --silent --from-msi --server "[SERVER]" --token "[ENROLL_TOKEN]"'
+  want_ca RivetSetupProps 11282 'setup --silent --from-msi --server "[SERVER]" --token "[ENROLL_TOKEN]"'
   want_ca RivetUninstall 3090 'uninstall --from-msi'
   want_ca RivetUninstallMesh 3090 'uninstall --from-msi --remove-meshagent'
   want_ca RivetStopServiceInstall 3122 'stop RivetITAgent'
@@ -140,6 +140,9 @@ build() {
     if printf '%s' "$out_w" | grep -q -i -E 'critical|warning|error'; then echo "$out_w" >&2; die "wixl reported problems (an unsupported attribute?)"; fi
     # The Package Id is ignored by wixl 0.103 (it makes a random revision number): set the summary information, with the derived package code, afterwards.
     faketime -f "$FAKETIME" msibuild built.msi -s 'RivetIT endpoint agent' 'RivetIT' 'x64;1033' "{${pk^^}}" >/dev/null
+    # wixl ignores HideTarget: set msidbCustomActionTypeHideTarget (0x2000 = 8192) on the action whose target holds the enrollment token (3090 + 8192 = 11282), so
+    # it is not written to the verbose log or shown in the process command line recorded by Windows Installer (CORE-DS-56).
+    faketime -f "$FAKETIME" msibuild built.msi -q "UPDATE \`CustomAction\` SET \`Type\`=11282 WHERE \`Action\`='RivetSetupProps'" >/dev/null
   )
   mkdir -p "$(dirname "$out")"
   cp "$work/built.msi" "$out"
