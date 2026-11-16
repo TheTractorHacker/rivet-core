@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"rivetit-agent/internal/api"
 	"rivetit-agent/internal/store"
 )
 
@@ -353,5 +355,34 @@ func TestMeshNodeIDOverrideAndFile(t *testing.T) {
 		if got := c.MeshNodeID(context.Background()); got != v {
 			t.Fatalf("hex form %q: got %q", v, got)
 		}
+	}
+}
+
+func TestCapMACsKeepsRealNICsAndCapsAtServerLimit(t *testing.T) {
+	var nets []api.NetInfo
+	for i := 0; i < 100; i++ {
+		nets = append(nets, api.NetInfo{Name: fmt.Sprintf("veth%03d", i), MAC: fmt.Sprintf("02:42:ac:11:00:%02x", i)})
+	}
+	nets = append(nets, api.NetInfo{Name: "eth0", MAC: "aa:bb:cc:dd:ee:01"}, api.NetInfo{Name: "eth1", MAC: "aa:bb:cc:dd:ee:02"},
+		api.NetInfo{Name: "lo", MAC: "00:00:00:00:00:00"}, api.NetInfo{Name: "eth0-dup", MAC: "aa:bb:cc:dd:ee:01"})
+	got := capMACs(nets)
+	if len(got) != maxEnrollMACs {
+		t.Fatalf("want %d MACs, got %d", maxEnrollMACs, len(got))
+	}
+	have := map[string]bool{}
+	for _, m := range got {
+		if have[m] {
+			t.Fatalf("duplicate %s", m)
+		}
+		have[m] = true
+	}
+	if !have["aa:bb:cc:dd:ee:01"] || !have["aa:bb:cc:dd:ee:02"] {
+		t.Fatalf("real NIC MACs must survive the cap: %v", got)
+	}
+	if have["00:00:00:00:00:00"] {
+		t.Fatal("zero MAC must be skipped")
+	}
+	if n := capMACs(nil); n == nil || len(n) != 0 {
+		t.Fatal("no NICs must give an empty, non-nil list")
 	}
 }

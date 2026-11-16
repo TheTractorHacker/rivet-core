@@ -197,7 +197,8 @@ final class DeviceApi
             $this->deviceRateLimit($deviceId, 'jobs', ...RmmProtocol::RATE_JOBS);
             $method = strtoupper($req->method);
             if ($method === 'GET') {
-                $wait = max(0, min(RmmProtocol::JOBS_WAIT_MAX_S, (int) ($req->query['wait'] ?? 0)));
+                // CORE-19: long-polling holds an FPM worker; only a linked device may do it (the agent never asks for it)
+                $wait = ($dev['link_state'] ?? 'linked') === 'linked' ? max(0, min(RmmProtocol::JOBS_WAIT_MAX_S, (int) ($req->query['wait'] ?? 0))) : 0;
                 $deadline = ($this->now)() + $wait;
                 do {
                     $jobs = $this->jobs->offer($dev);

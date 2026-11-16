@@ -384,6 +384,7 @@ func ParseMode(s string) (os.FileMode, bool) {
 func TempName(id string) string { return ".rivetit-xfer-" + id + ".tmp" }
 
 var errExists = errors.New("exists")
+var errChmod = errors.New("chmod failed")
 
 // Put is file_put: download a server file into a temp file next to the
 // destination, verify size and checksum, then rename it into place.
@@ -429,16 +430,17 @@ func (f Files) Put(ctx context.Context, raw json.RawMessage, _ int) Result {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return xferFailure(p.TransferID, "dest_stat_failed")
 	}
-	tmpPath := filepath.Join(dir, TempName(p.TransferID))
-	tmp, err := createTemp(tmpPath)
+	// CORE-21: the temp file is created, chmodded and committed relative to a directory handle (see files_unix.go), never by path.
+	tmp, err := beginPut(dir, TempName(p.TransferID))
 	if err != nil {
 		return xferFailure(p.TransferID, "temp_failed")
 	}
 	committed := false
 	defer func() {
-		tmp.Close()
 		if !committed {
-			os.Remove(tmpPath)
+			tmp.Discard()
+		} else {
+			tmp.Close()
 		}
 	}()
 	h := sha256.New()
@@ -484,7 +486,7 @@ func (f Files) Put(ctx context.Context, raw json.RawMessage, _ int) Result {
 		if int64(len(body)) > length {
 			return xferFailure(p.TransferID, "size_mismatch")
 		}
-		if _, err := tmp.Write(body); err != nil {
+		if _, err := tmp.File.Write(body); err != nil {
 			return xferFailure(p.TransferID, "write_failed")
 		}
 		h.Write(body)
@@ -497,38 +499,18 @@ func (f Files) Put(ctx context.Context, raw json.RawMessage, _ int) Result {
 	if got != wantSum {
 		return xferFailure(p.TransferID, "checksum_mismatch")
 	}
-	if err := tmp.Sync(); err != nil {
+	if err := tmp.File.Sync(); err != nil {
 		return xferFailure(p.TransferID, "write_failed")
 	}
-	if err := tmp.Close(); err != nil {
-		return xferFailure(p.TransferID, "write_failed")
-	}
-	if f.goos() != "windows" {
-		if err := os.Chmod(tmpPath, mode); err != nil {
-			return xferFailure(p.TransferID, "chmod_failed")
-		}
-	}
-	if err := commitFile(tmpPath, dest, p.Overwrite); err != nil {
-		if errors.Is(err, errExists) {
+	if err := tmp.Commit(filepath.Base(dest), mode, f.goos() != "windows", p.Overwrite); err != nil {
+		switch {
+		case errors.Is(err, errExists):
 			return xferFailure(p.TransferID, "exists")
+		case errors.Is(err, errChmod):
+			return xferFailure(p.TransferID, "chmod_failed")
 		}
 		return xferFailure(p.TransferID, "commit_failed")
 	}
 	committed = true
 	return Result{OK: true, Output: marshal(filePutOut{V: 1, TransferID: p.TransferID, Path: dest, Bytes: size, SHA256: got})}
-}
-
-// createTemp creates the transfer temp file O_CREATE|O_EXCL, mode 0600. A stale
-// file of a crashed earlier run of the same transfer is removed first.
-func createTemp(path string) (*os.File, error) {
-	open := func() (*os.File, error) { return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) }
-	f, err := open()
-	if errors.Is(err, fs.ErrExist) {
-		if li, lerr := os.Lstat(path); lerr == nil && (li.Mode().IsRegular() || li.Mode()&fs.ModeSymlink != 0) {
-			if os.Remove(path) == nil {
-				return open()
-			}
-		}
-	}
-	return f, err
 }

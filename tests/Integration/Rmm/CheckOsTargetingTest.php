@@ -88,6 +88,22 @@ final class CheckOsTargetingTest extends RmmTestCase
         return (string) $this->h->module->settings()->signingKey()[1];
     }
 
+    /** CORE-18: the key families the server owns (log.rule_*, change.rule_*, patch.*, hv.*) cannot be reported, let alone resolved, by a device. */
+    public function testADeviceCannotReportTheServersOwnCheckKeys(): void
+    {
+        $this->devices();
+        $this->h->module->settings()->set(['failure_debounce' => 1]);
+        $this->h->q("INSERT INTO endpoint_agent_checks (device_id, check_key, status, detail, consecutive_failures, consecutive_ok, episode, last_reported_at, last_changed_at) VALUES ({$this->win}, 'log.rule_7', 'fail', 'failed logons', 5, 0, 1, NOW(), NOW())");
+        $this->h->checkin($this->winT, ['checks' => [
+            ['key' => 'log.rule_7', 'status' => 'ok', 'detail' => 'all quiet', 'at' => $this->h::ts()],
+            ['key' => 'change.rule_3', 'status' => 'ok', 'at' => $this->h::ts()],
+            ['key' => 'patch.compliance', 'status' => 'ok', 'at' => $this->h::ts()],
+            ['key' => 'hv.vm_1', 'status' => 'fail', 'at' => $this->h::ts()],
+        ]]);
+        $this->assertSame(['fail', 5, 0], [$this->h->one("SELECT status FROM endpoint_agent_checks WHERE device_id={$this->win} AND check_key='log.rule_7'"), (int) $this->h->one("SELECT consecutive_failures FROM endpoint_agent_checks WHERE device_id={$this->win} AND check_key='log.rule_7'"), (int) $this->h->one("SELECT consecutive_ok FROM endpoint_agent_checks WHERE device_id={$this->win} AND check_key='log.rule_7'")], 'the server-owned row is untouched');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_checks WHERE device_id={$this->win} AND check_key IN ('change.rule_3','patch.compliance','hv.vm_1')"));
+    }
+
     public function testStaleRowsAndTheirAlertsAreCleanedOnceTheCheckNoLongerApplies(): void
     {
         $this->devices();

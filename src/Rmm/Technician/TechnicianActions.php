@@ -255,9 +255,9 @@ final class TechnicianActions
             if ($action === 'link' && $assetId !== null && $assetId > 0) {
                 // Linking moves the device to the asset's client: the caller must be allowed to manage devices there too (CORE-02).
                 $assetClient = $this->enrollment->assetClientId($assetId);
-                if ($assetClient !== null && $assetClient !== (int) $dev['client_id']
-                    && ($this->authz->check($who->userId, RmmAbility::DEVICE_MANAGE, $assetClient, false) !== null || !$this->authz->clientOk($who->userId, $assetClient))) {
-                    return ActionResult::fail(404, 'not_found', 'That asset does not exist or is archived.');
+                if ($assetClient === null || ($assetClient !== (int) $dev['client_id']
+                    && ($this->authz->check($who->userId, RmmAbility::DEVICE_MANAGE, $assetClient, false) !== null || !$this->authz->clientOk($who->userId, $assetClient)))) {
+                    return ActionResult::fail(404, 'not_found', 'That asset does not exist or is archived.');   // TEN-10: out of scope and missing answer alike
                 }
             }
             $r = $this->enrollment->resolvePending($deviceId, $action, $assetId, $who->userId);
