@@ -154,6 +154,17 @@ final class PanelAttachmentsTest extends TestCase
             'single quoted value before the handler (CRR-17)' => ['a.txt', 'text/plain', "<x title='>' onfocus=alert(1)>"],
             'dot in the tag name (CRR-17)' => ['a.txt', 'text/plain', '<x.y onclick=alert(1)>'],
             'colon and digit in the tag name (CRR-17)' => ['a.txt', 'text/plain', '<svg:a1 onload=alert(1)>'],
+            'rawtext element hides a handler: xmp (R6-1)' => ['a.txt', 'text/plain', '<xmp><x title="</xmp><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: xmp single quote (R6-1)' => ['a.txt', 'text/plain', "<xmp><x title='</xmp><y onclick=alert(1)>'>"],
+            'rawtext element hides a handler: noembed (R6-1)' => ['a.txt', 'text/plain', '<noembed><x title="</noembed><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: noframes (R6-1)' => ['a.txt', 'text/plain', "<noframes><x title='</noframes><y onclick=alert(1)>'>"],
+            'rawtext element hides a handler: plaintext (R6-1)' => ['a.txt', 'text/plain', '<plaintext><x title="<y onclick=alert(1)>">'],
+            'rawtext element hides a handler: iframe (R6-1)' => ['a.txt', 'text/plain', '<iframe><x title="</iframe><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: noscript (R6-1)' => ['a.txt', 'text/plain', "<noscript><x title='</noscript><y onclick=alert(1)>'>"],
+            'rawtext element hides a handler: textarea (R6-1)' => ['a.txt', 'text/plain', '<textarea><x title="</textarea><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: title (R6-1)' => ['a.txt', 'text/plain', '<title><x a="</title><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: style (R6-1)' => ['a.txt', 'text/plain', '<style><x a="</style><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: script (R6-1)' => ['a.txt', 'text/plain', '<script><x a="</script><y onclick=alert(1)>">'],
             'tag start inside a quoted value (R5-1 review)' => ['a.txt', 'text/plain', '<x title="<b onclick=1>'],
             'tag inside a closed quoted value (R5-1 review)' => ['a.txt', 'text/plain', '<x b="1<img onerror=x>">'],
             'tag inside a single quoted value (R5-1 review)' => ['a.txt', 'text/plain', "<x b='1<svg onload=x>'>"],
@@ -199,48 +210,70 @@ final class PanelAttachmentsTest extends TestCase
     }
 
     /**
-     * R5-1: the scan for active attributes is linear in the size of the file. Adversarial files of the largest default size (5 MiB) in several shapes are decided (accepted or
-     * refused) in well under a second; the quadratic version took a minute for a tenth of that.
+     * R5-1 / R6-2: the scan for active attributes is linear in the size of the file and bounded by a step budget. Adversarial files of the largest default size (5 MiB) in several shapes
+     * are decided in well under a second, and the verdict of each is asserted. Every input starts with a `href=` that is not in a tag, so the prefilter lets it through and the
+     * tokenizer really runs (a file without any candidate attribute name never reaches it).
      *
-     * @return array<string,array{string}>
+     * @return array<string,array{string,bool}> bytes, whether the file is refused
      */
     public static function adversarial(): array
     {
         $size = 5 * 1024 * 1024 - 64;
-        $fill = static fn (string $unit): string => substr(str_repeat($unit, intdiv($size, strlen($unit)) + 1), 0, $size);
+        $fill = static fn (string $unit): string => "href=1\n" . substr(str_repeat($unit, intdiv($size, strlen($unit)) + 1), 0, $size);
 
         return [
-            'repeated unterminated tags' => [$fill('<x a=b')],
-            'repeated unterminated tags with a space' => [$fill('<x a=b ')],
-            'candidate attribute names, no handler value' => [$fill('<x data-src b ')],
-            'candidate names with quoted values' => [$fill('<x srcset="a" b=c ')],
-            'handler-like names that are not attributes' => [$fill('<x a=b onx')],
-            'quote led' => [$fill('<x "a=b ')],
-            'less-than inside the tag' => [$fill('<x <1 ')],
-            'unterminated quotes' => [$fill('<x a="')],
-            'unterminated single quotes' => [$fill("<x a='")],
-            'closed quotes without a handler' => [$fill('<x a="b" ')],
-            'tag names without white space' => [$fill('<x')],
-            'less-than runs' => [$fill('<')],
-            'less-than and spaces' => [$fill('<   ')],
-            'equals signs' => [$fill('<x =')],
-            'slashes' => [$fill('<x /')],
-            'long attribute name' => ['<x ' . str_repeat('a', $size - 10) . '=1>'],
-            'a handler at the very end' => [$fill('<x a=b ') . '<x onclick=1>'],
+            // more markup than the budget allows: refused
+            'repeated unterminated tags' => [$fill('<x a=b'), true],
+            'repeated unterminated tags with a space' => [$fill('<x a=b '), true],
+            'candidate attribute names, no handler value' => [$fill('<x data-src b '), true],
+            'candidate names with quoted values' => [$fill('<x srcset="a" b=c '), true],
+            'handler-like names that are not attributes' => [$fill('<x a=b onx'), true],
+            'quote led' => [$fill('<x "a=b '), true],
+            'less-than inside the tag' => [$fill('<x <1 '), true],
+            'closed quotes without a handler' => [$fill('<x a="b" '), true],
+            'equals signs' => [$fill('<x ='), true],
+            'slashes' => [$fill('<x /'), true],
+            'a handler at the very end' => [$fill('<x a=b ') . '<x onclick=1>', true],
+            // refused because a quote is never closed
+            'unterminated quotes' => [$fill('<x a="'), true],
+            'unterminated single quotes' => [$fill("<x a='"), true],
+            // little markup: decided on what it says (accepted)
+            'tag names without white space' => [$fill('<x'), false],
+            'less-than runs' => [$fill('<'), false],
+            'less-than and spaces' => [$fill('<   '), false],
+            'long attribute name' => ["href=1\n<x " . str_repeat('a', $size - 10) . '=1>', false],
         ];
     }
 
     #[DataProvider('adversarial')]
-    public function testTheActiveMarkupScanIsLinear(string $bytes): void
+    public function testTheActiveMarkupScanIsLinearAndDecidesEachShape(string $bytes, bool $refused): void
     {
+        $scan = new \ReflectionMethod(PanelAttachments::class, 'hasActiveAttribute');
         $t = hrtime(true);
+        $verdict = $scan->invoke(null, $bytes);
+        $ms = (hrtime(true) - $t) / 1e6;
+        $this->assertSame($refused, $verdict, 'the tokenizer verdict');
+        $this->assertLessThan(1000, $ms, 'took ' . round($ms) . ' ms for ' . strlen($bytes) . ' bytes');
+        // and through the whole validation: the same verdict, in the same time
+        $t = hrtime(true);
+        $threw = false;
         try {
             PanelAttachments::validate([self::att('big.txt', 'text/plain', $bytes)], new PanelLimits());
         } catch (ApiError) {
-            // refused is fine: what matters is that the answer comes quickly
+            $threw = true;
         }
-        $ms = (hrtime(true) - $t) / 1e6;
-        $this->assertLessThan(1000, $ms, 'took ' . round($ms) . ' ms for ' . strlen($bytes) . ' bytes');
+        $this->assertSame($refused, $threw, 'validate() agrees');
+        $this->assertLessThan(1500, (hrtime(true) - $t) / 1e6);
+    }
+
+    /** R6-2: running out of the step budget refuses the file (it cannot happen by accident at the real budget; a small one is injected to reach the branch). */
+    public function testRunningOutOfTheStepBudgetRefusesTheFile(): void
+    {
+        $scan = new \ReflectionMethod(PanelAttachments::class, 'hasActiveAttribute');
+        $text = "href=1\n" . str_repeat('<x b=c ', 50);
+        $this->assertFalse($scan->invoke(null, $text), 'at the real budget: fifty harmless tags are fine');
+        $this->assertTrue($scan->invoke(null, $text, 5), 'with a budget of five steps the scan gives up and refuses');
+        $this->assertFalse($scan->invoke(null, "href=1\n<x b=c>", 5), 'a budget that is enough does not');
     }
 
     public function testShapeErrors(): void

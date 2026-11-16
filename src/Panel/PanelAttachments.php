@@ -177,24 +177,23 @@ final class PanelAttachments
      * the scan), otherwise it ends at white space or `>`; a tag ends at `>`. A `<` followed by white space and then a letter counts as a tag start (a browser reads `< x` as text; refusing it is the
      * safe direction). A step budget bounds the work as a second line: when it runs out the file is refused.
      */
-    private static function hasActiveAttribute(string $b): bool
+    private static function hasActiveAttribute(string $b, ?int $budget = null): bool
     {
         // no attribute name that matters occurs anywhere: nothing to look for (one pass of the regex engine, which keeps ordinary files and most adversarial ones out of the tokenizer)
         if (preg_match('/(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)\s*=/i', $b) === 0) {
             return false;
         }
         $n = strlen($b);
-        $budget = 2 * $n + 64;
+        // The budget counts tag starts and attributes: 100 000 plus one step per 16 bytes. A text file that holds more markup than that is not a log or a note and is refused. (A parameter
+        // only so a test can reach the branch that runs out of it.)
+        $budget ??= 100000 + intdiv($n, 16);
         $i = 0;
-        while (($i = strpos($b, '<', $i)) !== false) {
+        // the next tag start is found by the regex engine (a run of `<` or of white space is skipped natively, not one PHP step at a time)
+        while (preg_match('/<\s*[A-Za-z]/', $b, $m, PREG_OFFSET_CAPTURE, $i) === 1) {
             if (--$budget < 0) {
                 return true;
             }
-            $j = $i + 1 + strspn($b, " \t\r\n\f", $i + 1);
-            if ($j >= $n || !ctype_alpha($b[$j])) {
-                $i = $i + 1;
-                continue;
-            }
+            $j = $m[0][1] + strlen($m[0][0]) - 1;   // the first letter of the tag name
             $j += strcspn($b, " \t\r\n\f/>", $j);   // the tag name
             if ($j >= $n || $b[$j] === '>') {
                 $i = $j;   // no attributes; a `<` inside the name belongs to the name
@@ -258,7 +257,7 @@ final class PanelAttachments
         // CRR-17: the tag name is anything up to a space, `/` or `>` (`<x.y onclick=...>`, `<x"y onclick=...>`: a quote or `=` in a name is an ordinary character), the attributes are read the way an HTML tokenizer reads them (a quote is special only right after `=`;
         // anywhere else it is an ordinary character: `<x data=it's onclick=...>`, `<x a"b onclick=...>`), and a regex that errors (a backtracking limit) counts as a match: fail closed.
         if (preg_match('/<[!?]/', $b) !== 0
-            || preg_match('/<\/?\s*(?:script|img|image|body|svg|iframe|frame|frameset|a|form|style|meta|base|link|object|embed|applet|html|head|title|input|button|select|textarea|details|summary|video|audio|source|track|math|marquee|template|noscript|canvas|portal|xml|xsl\w*)(?=[\s\/>])/i', $b) !== 0
+            || preg_match('/<\/?\s*(?:script|img|image|body|svg|iframe|frame|frameset|a|form|style|meta|base|link|object|embed|applet|html|head|title|input|button|select|textarea|details|summary|video|audio|source|track|math|marquee|template|noscript|canvas|portal|xml|xsl\w*|xmp|noembed|noframes|plaintext|listing)(?=[\s\/>])/i', $b) !== 0
             || self::hasActiveAttribute($b)) {
             return false;
         }
