@@ -214,7 +214,7 @@ final class AutomationRuleStore
                 'INSERT INTO automation_rules (name, trigger_event, condition_json, action_type, action_config_json, is_enabled) VALUES (?, ?, ?, ?, ?, ?)',
                 [$name, $triggerEvent, $json, $actionType, $cfgJson, $enabled ? 1 : 0]
             )->insertId;
-            if ($sealFor !== null && $this->vault !== null) {
+            if ($sealFor !== null) {
                 // CRR-21: the id exists now, so the secret is sealed under this rule's own name
                 $cfg['secret_enc'] = $this->vault->encrypt(self::secretContext($newId), $sealFor);
                 $this->database->execute('UPDATE automation_rules SET action_config_json = ? WHERE rule_id = ?', [json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $newId]);
