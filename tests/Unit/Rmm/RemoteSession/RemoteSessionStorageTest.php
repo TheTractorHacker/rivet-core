@@ -79,7 +79,7 @@ final class RemoteSessionStorageTest extends TestCase
     public function testTheMigrationIsRegisteredInOrderWithAUniqueIdAndSkipsTheMissing0045(): void
     {
         $ids = array_map(static fn ($m): string => $m->id(), CoreMigrations::all());
-        $this->assertSame(['0050_rmm_client_remote_policy', '0051_rmm_console_sessions', '0052_rmm_mesh_verify'], array_slice($ids, -3), 'update this when a later migration is added');
+        $this->assertSame(['0052_rmm_mesh_verify', '0053_rmm_mesh_token_exact', '0054_rmm_signed_contracts'], array_slice($ids, -3), 'update this when a later migration is added');
         $this->assertSame($ids, array_values(array_unique($ids)));
         $nums = array_map(static fn (string $id): int => (int) substr($id, 0, 4), $ids);
         $sorted = $nums;

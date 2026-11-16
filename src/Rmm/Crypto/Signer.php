@@ -172,11 +172,14 @@ final class Signer
      *
      * @param array{version:string,os:string,arch:string,sha256:string,min_version:string} $m
      */
+    /** The domain line of the update manifest the release owner signs offline (CORE-DS-26). */
+    public const UPDATE_MANIFEST_DOMAIN = 'rivetit-update-manifest-v1';
+
     public static function updateManifestMessage(array $m): string
     {
         $o = ['kind' => 'agent_update', 'version' => (string) $m['version'], 'os' => (string) $m['os'], 'arch' => (string) $m['arch'], 'sha256' => strtolower((string) $m['sha256']), 'min_version' => (string) $m['min_version']];
 
-        return \RivetCore\Rmm\RmmProtocol::UPDATE_MANIFEST_DOMAIN . "\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($o), false)));
+        return self::UPDATE_MANIFEST_DOMAIN . "\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($o), false)));
     }
 
     /**
