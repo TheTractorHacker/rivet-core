@@ -544,6 +544,18 @@ final class PatchActions
         if (is_array($in['settings'] ?? null) && ($e = $this->approvalSettingsGate($who, $policyId, $in['settings'])) !== null) {
             return $e;
         }
+        if ($policyId !== null && array_key_exists('enabled', $in) && ($stored = $this->policies->find($policyId)) !== null) {
+            $values = $this->policies->values($policyId);
+            if (!empty($in['enabled']) && !$stored['enabled']) {
+                // CR13: switching a staged policy on is when its settings start to act: the same grants as assigning it (checked against what it will carry after this save)
+                $after = is_array($in['settings'] ?? null) ? $in['settings'] : $values;
+                if (($e = $this->approvalSettingsGate($who, null, $after)) !== null) {
+                    return $e;
+                }
+            } elseif (empty($in['enabled']) && $stored['enabled'] && ($e = $this->protectiveGate($who, $values, 'switch off')) !== null) {
+                return $e;   // CR5: a disabled policy no longer applies its second-person rule
+            }
+        }
         $confirmedBy = null;
         $wantsConfirm = is_array($in['settings'] ?? null) && !empty($in['settings']['reboot_confirm']);
         if ($wantsConfirm) {
@@ -571,6 +583,9 @@ final class PatchActions
         if (($e = $this->writeGate($who)) !== null) {
             return $e;
         }
+        if (($e = $this->protectiveGate($who, $this->policies->values($policyId), 'delete')) !== null) {
+            return $e;   // CR5
+        }
         $p = $this->policies->find($policyId);
         if ($p === null || !$this->policies->delete($policyId)) {
             return ActionResult::fail(404, 'not_found', 'Policy not found.');
@@ -590,7 +605,7 @@ final class PatchActions
         }
         // CORE-DS-10: assigning is what makes the settings of a policy act on devices, so it needs the grants the settings themselves need.
         $values = $this->policies->values($policyId);
-        if (($e = $this->approvalSettingsGate($who, null, array_intersect_key($values, array_flip(['install_enabled', 'approval_mode', 'reboot_policy']) + array_flip(array_map(static fn (string $k): string => 'auto_days_' . $k, PatchPolicySettings::AUTO_KINDS))))) !== null) {
+        if (($e = $this->approvalSettingsGate($who, null, array_intersect_key($values, array_flip(['install_enabled', 'approval_mode', 'reboot_policy', 'two_person']) + array_flip(array_map(static fn (string $k): string => 'auto_days_' . $k, PatchPolicySettings::AUTO_KINDS))))) !== null) {
             return $e;
         }
         try {
@@ -607,6 +622,9 @@ final class PatchActions
     {
         if (($e = $this->writeGate($who)) !== null) {
             return $e;
+        }
+        if (($e = $this->protectiveGate($who, $this->policies->values($policyId), 'unassign')) !== null) {
+            return $e;   // CR5
         }
         $a = $this->policies->unassign($policyId, $assignmentId);
         if ($a === null) {
@@ -747,7 +765,8 @@ final class PatchActions
         if (($settings['install_enabled'] ?? null) === true && ($cur['install_enabled'] ?? null) !== true) {
             $need[RmmAbility::PATCH_INSTALL] = 'Turning on unattended installs needs the grant to install patches. ';
         }
-        if (($cur['two_person'] ?? null) === true && ($settings['two_person'] ?? null) !== true) {
+        if ((($cur['two_person'] ?? null) === true && ($settings['two_person'] ?? null) !== true) || (($settings['two_person'] ?? null) === false && ($cur['two_person'] ?? null) !== false)) {
+            // CR5: an explicit `false` is how a more specific policy overrides a two_person: true from a less specific one, so writing it is lowering the rule too
             $need[RmmAbility::JOB_APPROVE] = 'Switching off the second-person rule needs the grant to approve jobs. ';
         }
         if (($settings['approval_mode'] ?? null) === 'auto' && ($cur['approval_mode'] ?? null) !== 'auto') {
@@ -770,6 +789,26 @@ final class PatchActions
 
                 return ActionResult::fail(403, 'forbidden', $text . $why);
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * CR5: removing, unassigning or disabling a policy that carries the second-person rule takes the rule away from the devices it reached, so it needs the same grant as switching it off.
+     *
+     * @param array<string,mixed> $values the policy's stored settings
+     */
+    private function protectiveGate(RmmPrincipal $who, array $values, string $verb): ?ActionResult
+    {
+        if (($values['two_person'] ?? null) !== true) {
+            return null;
+        }
+        $why = $this->authz->check($who->userId, RmmAbility::JOB_APPROVE, 0);
+        if ($why !== null) {
+            $this->audit->record('Patch Denied', "User {$who->userId} denied trying to $verb a patch policy that carries the second-person rule: $why", 0, 0);
+
+            return ActionResult::fail(403, 'forbidden', "To $verb a policy that requires a second person needs the grant to approve jobs. " . $why);
         }
 
         return null;
