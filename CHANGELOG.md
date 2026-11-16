@@ -2,6 +2,27 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.73 (endpoint agent: deep-scan fixes C, Lows; no migration)
+
+Provisional number (follows rc.72, stacked). Go endpoint agent and `install-linux.sh` only; no PHP, no protocol change. Windows-affecting items are in docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md as UNVERIFIED.
+
+- **CORE-DS-14** a failed or rejected re-enrollment to a different server restores the old `config.json` and CA file (the old credential is never sent to the new host).
+- **CORE-DS-15** shutdown, timeouts, network errors, 408/429/5xx and a slow selftest no longer mark an update version as failed; it is retried after a 10 minute pause.
+- **CORE-DS-16 (part)** `verify_tls:false` on an http check is honoured only from a signed check definition. Requiring signatures for every check type and for `config.logs` is DEFERRED (needs the server to sign them all).
+- **CORE-DS-19** the inventory's `MeshAgent -nodeid` run goes through the Mesh trust checks (`mesh.TrustedExecutable`).
+- **CORE-DS-21** hypervisor collection resumes after a configuration change or switch-off during a run.
+- **CORE-DS-22** output capping repairs only a rune split at the cut instead of discarding everything after the first invalid byte.
+- **CORE-DS-23** job reports are shortened until they JSON-encode under the request cap; an unsendable report is acknowledged locally instead of retried for ever.
+- **CORE-DS-25** `file_put` hands the delivered file to the replaced file's owner (else the directory's).
+- **CORE-DS-27** SemVer 2.0 pre-release precedence (`rc.10` is above `rc.9`).
+- **CORE-DS-28** `install-linux.sh` refuses `--pin-spki` (and a useless `--ca`) in stamped-installer mode instead of dropping them.
+- **CORE-DS-49** a self-update is applied only when no job is running.
+- **CORE-DS-50, CORE-DS-51** the SPKI pin is enforced only for the server host; hosted software downloads use the API client's TLS trust (`ca_file`, pin for the server host).
+- **CORE-DS-52** the job `Verifier` key and device id are read and written under one lock.
+- **CORE-DS-53, CORE-DS-54** `proc_kill` refuses `svchost.exe`; the agent's own service refuses every action except start/enable (so `manual` too); `manual` refused on the protected system services.
+- **CORE-DS-76** a signed job must name this device; dedupe records live until the job's `expires_at`.
+- **CORE-DS-77** the agent's transfer deny list now covers `.jks`, `/etc/ssl/private`, `/var/lib/rivetit` and `ssh_host_*` everywhere (parity with the server's PathPolicy).
+
 ## 1.0.0-rc.72 (endpoint agent: deep-scan fixes B, Windows Mediums CORE-DS-5/12/13; no migration)
 
 Provisional number (follows rc.71, stacked on it). Go endpoint agent only; no PHP, no protocol change. **All three are written without a Windows machine and are UNVERIFIED on Windows** (cross-compiled and vetted; the platform-independent logic is unit-tested on Linux): docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md.

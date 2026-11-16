@@ -41,5 +41,14 @@ check test "$(leftovers)" = 0
 good="$(sha256sum "$root/true-elf" | cut -d' ' -f1)"
 STUB_ELF="$root/true-elf" run --fetch-installer --installer-sha256 "$good" --server https://rmm.example.test --token-file "$root/token" >/dev/null 2>&1 || { echo "FAIL: correct digest refused" >&2; fail=1; }
 check test "$(leftovers)" = 0
+# 4. CORE-DS-28: --pin-spki cannot be applied to a stamped installer (setup has no pin option), so it is refused (64) instead of silently dropped
+rc=0; STUB_ELF="$root/true-elf" run --fetch-installer --pin-spki "$(printf 'b%.0s' {1..64})" --server https://rmm.example.test --token-file "$root/token" >"$root/err4" 2>&1 || rc=$?
+check test "$rc" = 64
+check grep -q "pin-spki" "$root/err4"
+check test "$(leftovers)" = 0
+# --ca only helps the download of a stamped installer; with an installer that is already local it would be dropped, so that is refused too
+rc=0; STUB_ELF="$root/true-elf" run --binary "$root/true-elf" --ca "$root/token" >"$root/err5" 2>&1 || rc=$?
+check test "$rc" = 64
+check grep -q -- "--ca" "$root/err5"
 [ "$fail" = 0 ] && echo "install-linux.sh: all checks passed"
 exit "$fail"

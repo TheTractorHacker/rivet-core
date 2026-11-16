@@ -186,6 +186,9 @@ if [ "$FETCH" = 1 ] || { [ -z "$SERVER" ] && [ -z "$TOKEN_FILE" ]; }; then
   STAMPED_MODE=1
 fi
 if [ "$STAMPED_MODE" = 1 ]; then
+  # `setup` has no pin option and the stamp carries no pin, so a pin given here would silently not apply: refuse instead (CORE-DS-28)
+  [ -z "$PIN" ] || die "--pin-spki cannot be applied to a stamped installer (setup takes its server and CA from the stamp); use the plain install with --server and --token-file, or drop --pin-spki" 64
+  if [ -n "$CA" ] && [ "$FETCH" != 1 ]; then die "--ca is only used to download a stamped installer (--fetch-installer); with a stamped installer the CA comes from the stamp" 64; fi
   args=(setup --silent "${COMMON[@]}"); [ "$NO_SERVICE" = 1 ] && args+=(--no-service); [ "$NO_MESH" = 1 ] && args+=(--no-mesh-agent)
   run_and_clean "$BINARY" "${args[@]}"
 fi
