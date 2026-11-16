@@ -202,3 +202,7 @@ func RepairHint(dir string) string {
 		`If you have verified the contents yourself and only want to keep them, take ownership instead: `+
 		`takeown /F "%[1]s" /R /D Y; icacls "%[1]s" /setowner "*S-1-5-18" /T /C; icacls "%[1]s" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /C`, dir)
 }
+
+// IsNameSurrogate reports whether a reparse tag redirects path resolution to another name (IO_REPARSE_TAG_SYMLINK, IO_REPARSE_TAG_MOUNT_POINT and other
+// tags with the name-surrogate bit 0x20000000). Other tags (Cloud Files / OneDrive placeholders, dedup, WOF, ...) leave the name as it is and are not links.
+func IsNameSurrogate(tag uint32) bool { return tag&0x20000000 != 0 }
