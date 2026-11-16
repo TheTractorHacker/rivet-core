@@ -1,6 +1,9 @@
 package strictjson
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 type sample struct {
 	Script   string `json:"script"`
@@ -30,6 +33,26 @@ func TestCaseVariantOfKnownFieldRefused(t *testing.T) {
 		if err := Unmarshal([]byte(in), &s); err == nil {
 			t.Errorf("%s accepted: %+v", in, s)
 		}
+	}
+}
+
+func TestUnicodeFoldVariantsRefused(t *testing.T) {
+	var kv struct {
+		Key string `json:"key"`
+		Mss string `json:"ssid"`
+	}
+	for _, in := range []string{"{\"\u212Aey\":\"x\"}", "{\"\u017F\u017Fid\":\"x\"}", "{\"s\u017Fid\":\"x\"}"} {
+		if err := Unmarshal([]byte(in), &kv); err == nil {
+			t.Errorf("%s accepted: %+v", in, kv)
+		}
+	}
+	// control: confirm encoding/json itself binds the Kelvin spelling, so the gate is needed
+	var raw struct {
+		Key string `json:"key"`
+	}
+	_ = json.Unmarshal([]byte("{\"\u212Aey\":\"x\"}"), &raw)
+	if raw.Key != "x" {
+		t.Log("encoding/json no longer folds Kelvin; gate is belt and braces")
 	}
 }
 

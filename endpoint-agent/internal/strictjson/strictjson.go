@@ -42,8 +42,12 @@ func Unmarshal(data []byte, v any) error {
 			return fmt.Errorf("duplicate member %q", k)
 		}
 		seen[k] = true
-		if exact, known := names[strings.ToLower(k)]; known && exact != k {
-			return fmt.Errorf("member %q is not spelled %q", k, exact)
+		// strings.EqualFold applies Unicode simple folding (U+212A Kelvin sign folds to k, U+017F long s to s), which is the rule encoding/json
+		// binds members to fields with; strings.ToLower would miss those.
+		for _, exact := range names {
+			if k != exact && strings.EqualFold(k, exact) {
+				return fmt.Errorf("member %q is not spelled %q", k, exact)
+			}
 		}
 		var skip json.RawMessage
 		if err := dec.Decode(&skip); err != nil {
@@ -59,10 +63,10 @@ func Unmarshal(data []byte, v any) error {
 	return json.Unmarshal(data, v)
 }
 
-// fieldNames maps the lower-cased member name of every decodable top-level
-// field of the struct t points to onto its exact spelling.
-func fieldNames(t reflect.Type) map[string]string {
-	out := map[string]string{}
+// fieldNames lists the exact member name of every decodable top-level field of
+// the struct t points to.
+func fieldNames(t reflect.Type) []string {
+	var out []string
 	for t != nil && t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -82,7 +86,7 @@ func fieldNames(t reflect.Type) map[string]string {
 		if name == "" {
 			name = f.Name
 		}
-		out[strings.ToLower(name)] = name
+		out = append(out, name)
 	}
 	return out
 }
