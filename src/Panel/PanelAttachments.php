@@ -169,6 +169,55 @@ final class PanelAttachments
         };
     }
 
+    /**
+     * CRR-17: does any start tag carry an event handler, `href`, `src`, `srcdoc`, `style`, `action` or `formaction`? The attributes are read the way an HTML tokenizer reads them (a
+     * loop, not one regular expression: a long tag must neither exhaust the regex engine nor hide a handler): names end at white space, `/`, `=` or `>`; a value after `=` is quoted
+     * only when it starts with a quote (otherwise it ends at white space or `>`, a quote inside it is an ordinary character); a tag ends at `>` or at the next `<`.
+     */
+    private static function hasActiveAttribute(string $b): bool
+    {
+        $n = strlen($b);
+        if (preg_match_all('/<\s*[A-Za-z][^\s\/>]*(?=[\s\/])/', $b, $starts, PREG_OFFSET_CAPTURE) === false) {
+            return true;   // the engine gave up: fail closed
+        }
+        foreach ($starts[0] as [$tag, $at]) {
+            $i = $at + strlen($tag);
+            while ($i < $n) {
+                $i += strspn($b, " \t\r\n\f/", $i);
+                if ($i >= $n || $b[$i] === '>' || $b[$i] === '<') {
+                    break;
+                }
+                $len = strcspn($b, " \t\r\n\f/=><", $i);
+                if ($len === 0) {
+                    ++$i;   // a stray `=` where a name should start: it is part of the next name in a tokenizer; moving on is enough
+                    continue;
+                }
+                $name = substr($b, $i, $len);
+                $i += $len;
+                $i += strspn($b, " \t\r\n\f", $i);
+                if ($i >= $n || $b[$i] !== '=') {
+                    continue;
+                }
+                if (preg_match('/(?:^|[^A-Za-z0-9_])(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)$/i', $name) === 1) {
+                    return true;
+                }
+                ++$i;
+                $i += strspn($b, " \t\r\n\f", $i);
+                if ($i < $n && ($b[$i] === '"' || $b[$i] === "'")) {
+                    $close = strpos($b, $b[$i], $i + 1);
+                    if ($close === false) {
+                        break;   // the value runs to the end of the file: nothing after it is a tag
+                    }
+                    $i = $close + 1;
+                } else {
+                    $i += strcspn($b, " \t\r\n\f>", $i);
+                }
+            }
+        }
+
+        return false;
+    }
+
     private static function plainText(string $b, bool $csv = false): bool
     {
         if (!mb_check_encoding($b, 'UTF-8') || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $b) === 1) {
@@ -178,11 +227,11 @@ final class PanelAttachments
         // CORE-DS-32 / CR6: markup that is ACTIVE as HTML, not every `<letter`: a declaration or processing instruction (`<!`, `<?`), an opening or closing tag of an element that can run
         // or load something (a list, because a log full of <DIR>, <init>, <module> or "Name <a@b>" is ordinary text), or any tag with an event handler or a URL/style attribute
         // (`<x onerror=...>`). The real control stays what it was: the file is served as an attachment with nosniff.
-        // CRR-17: the tag name is anything up to a space, `/`, `>`, a quote or `=` (`<x.y onclick=...>` is an element), the attribute scan steps over quoted values (a `>` or `<` inside one does not
-        // end the tag), and a regex that errors (a backtracking limit) counts as a match: fail closed.
+        // CRR-17: the tag name is anything up to a space, `/` or `>` (`<x.y onclick=...>`, `<x"y onclick=...>`: a quote or `=` in a name is an ordinary character), the attributes are read the way an HTML tokenizer reads them (a quote is special only right after `=`;
+        // anywhere else it is an ordinary character: `<x data=it's onclick=...>`, `<x a"b onclick=...>`), and a regex that errors (a backtracking limit) counts as a match: fail closed.
         if (preg_match('/<[!?]/', $b) !== 0
             || preg_match('/<\/?\s*(?:script|img|image|body|svg|iframe|frame|frameset|a|form|style|meta|base|link|object|embed|applet|html|head|title|input|button|select|textarea|details|summary|video|audio|source|track|math|marquee|template|noscript|canvas|portal|xml|xsl\w*)(?=[\s\/>])/i', $b) !== 0
-            || preg_match('/<\s*[A-Za-z][^\s\/>"\'<=]*[\s\/](?:"[^"]*"|\'[^\']*\'|[^<>"\'])*?\b(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)\s*=/i', $b) !== 0) {
+            || self::hasActiveAttribute($b)) {
             return false;
         }
         // a spreadsheet opens the file as a formula when the first character says so (tab and CR are control characters, but the check above lets a tab and a CR through)
