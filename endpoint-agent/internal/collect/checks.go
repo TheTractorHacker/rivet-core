@@ -301,7 +301,18 @@ func (r *CheckRunner) Run(ctx context.Context, specs []store.CheckSpec, now time
 		if !due || ctx.Err() != nil {
 			continue
 		}
-		out := r.C.RunCheck(ctx, s)
+		// CORE-DS-3: the loop must never wait on one check forever (a read that blocks in the kernel ignores the context). The check runs under the hard
+		// per-key limit; a hung one is abandoned and the same key then fails fast until it returns.
+		lim := r.C.CheckHardLimit
+		if lim <= 0 {
+			lim = 150 * time.Second
+		}
+		out, err := call(r.C, ctx, "check:"+s.Key, lim, func(cctx context.Context) (api.CheckResult, error) {
+			return r.C.RunCheck(cctx, s), nil
+		})
+		if err != nil {
+			out = res(s.Key, Unknown, "check did not finish: "+err.Error())
+		}
 		r.mu.Lock()
 		r.last[s.Key], r.at[s.Key] = out, now
 		r.mu.Unlock()

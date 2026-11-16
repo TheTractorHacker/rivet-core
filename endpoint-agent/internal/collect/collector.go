@@ -24,7 +24,9 @@ type Collector struct {
 	P       Platform
 	Cfg     func() store.Config
 	Timeout time.Duration // hard per-call timeout (default 15s)
-	Now     func() time.Time
+	// CheckHardLimit abandons one check that has run this long (default 150s, above the longest check timeout); see CheckRunner.Run.
+	CheckHardLimit time.Duration
+	Now            func() time.Time
 
 	mu      sync.Mutex
 	cpuPrev *cpuSample
