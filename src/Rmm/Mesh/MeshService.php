@@ -196,6 +196,10 @@ final class MeshService
     {
         $ttl = (int) ($cfg['mesh_token_ttl_s'] ?? 0);
 
+        if ($ttl > 0 && (int) ($cfg['mesh_token_ttl_exact'] ?? 0) === 1) {
+            return $ttl;   // CORE-DS-39: the administrator asked for exactly this lifetime, 300 s included
+        }
+
         return $ttl > 0 && $ttl !== \RivetCore\Rmm\Settings\RmmSettings::MESH_TOKEN_TTL_DEFAULT_S ? $ttl : null;
     }
 

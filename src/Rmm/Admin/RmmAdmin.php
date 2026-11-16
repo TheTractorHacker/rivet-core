@@ -153,7 +153,7 @@ final class RmmAdmin
      * `mesh_install_args`, `mesh_hide`, `mesh_hide_tools` (see {@see MeshAgentSettings}); they are validated first and nothing is written when any of them is invalid. `mesh_probe_pin`
      * (true) reads the server's certificate and returns a proposed pin in `pin_probe` WITHOUT saving it.
      *
-     * @param array<string,mixed> $in mesh_enabled, mesh_url, mesh_domain, mesh_account_template, mesh_policy, mesh_token_ttl_s, mesh_login_key, and the install settings above
+     * @param array<string,mixed> $in mesh_enabled, mesh_url, mesh_domain, mesh_account_template, mesh_policy, mesh_token_ttl_s, mesh_token_ttl_exact (optional, CORE-DS-39), mesh_login_key, and the install settings above
      * @return ActionResult data: `probe` (null when MeshCentral answered, otherwise the error text) when $test is set and a URL is saved
      */
     public function saveMesh(RmmPrincipal $by, array $in, bool $test = false): ActionResult
@@ -184,6 +184,9 @@ final class RmmAdmin
             'mesh_policy' => in_array($policy, ['unattended', 'attended', 'both'], true) ? $policy : 'unattended',
             'mesh_token_ttl_s' => is_numeric($ttl) ? max(RmmSettings::MESH_TOKEN_TTL_MIN_S, min(RmmSettings::MESH_TOKEN_TTL_MAX_S, (int) $ttl)) : RmmSettings::MESH_TOKEN_TTL_DEFAULT_S,
         ];
+        if (array_key_exists('mesh_token_ttl_exact', $in)) {
+            $vals['mesh_token_ttl_exact'] = !empty($in['mesh_token_ttl_exact']) ? 1 : 0;   // CORE-DS-39 (opt-in): honour the lifetime exactly, a 300 s one included
+        }
         $key = trim(is_scalar($in['mesh_login_key'] ?? null) ? (string) $in['mesh_login_key'] : '');
         if ($key !== '') {
             if (preg_match('/^[0-9a-fA-F]{64,}$/', $key) !== 1) {

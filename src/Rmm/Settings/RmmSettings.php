@@ -46,6 +46,9 @@ final class RmmSettings
     /** Writable columns added in 1.0.0-rc.41 (kept apart so that {@see WRITABLE_ADDED} keeps its value). @internal */
     public const WRITABLE_ADDED_RC41 = ['data_store_phase'];
 
+    /** Writable columns added by the deep-scan fixes (migration 0053). @internal */
+    public const WRITABLE_ADDED_DS = ['mesh_token_ttl_exact'];
+
     /**
      * Server-side bounds for the intervals agents are told to use (design 13.3). The two floors are a DELIBERATE change from RivetIT's
      * original save handler (check-in 30 to 3600, collect 10 to 3600): they are capacity controls, because the check-in rate and the
@@ -368,7 +371,7 @@ final class RmmSettings
     /** @return list<string> every column {@see set()} may write */
     public static function writableColumns(): array
     {
-        return [...self::WRITABLE, ...self::WRITABLE_ADDED, ...self::WRITABLE_ADDED_RC41];
+        return [...self::WRITABLE, ...self::WRITABLE_ADDED, ...self::WRITABLE_ADDED_RC41, ...self::WRITABLE_ADDED_DS];
     }
 
     /**
