@@ -600,6 +600,7 @@ MeshCentral does not separate clients: one Mesh account reaches every device of 
 | `TechnicianActions::approveMeshNodes` | n/a | no (not client-scoped) | Bulk approve-and-map: every id goes through setMeshNode(), whose deviceFor() hides a device of another client; an id outside the caller's clients is reported per device as refused, never acted on. |
 | `PatchActions::getPolicy` | n/a | no (not client-scoped) | Reads one patch policy, a fleet-wide object: settings only. Its assignments are filtered to the caller's clients (testPolicyDetailsHideTheAssignmentsOfOtherClients); its writes are in the matrix. |
 | `RmmAdmin::msiTemplateAction` | n/a | no (not client-scoped) | Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
+| `RmmAdmin::setReleaseSignature` | n/a | no (not client-scoped) | Stores the offline release signature of a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish (CORE-DS-26). |
 | `RmmAdmin::binaryAction` | n/a | no (not client-scoped) | Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
 | `RmmAdmin::updateRelease` | n/a | no (not client-scoped) | Changes the rollout percentage of an agent release: fleet-wide, no client owns it; needs rmm.binary.publish. |
 | `TransferService::listFor` | n/a | no (not client-scoped) | Service layer, no principal: RemoteActions::listTransfers() resolves the device and the ability first (matrix row). |

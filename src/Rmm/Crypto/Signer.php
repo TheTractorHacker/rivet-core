@@ -179,7 +179,7 @@ final class Signer
     {
         $o = ['kind' => 'agent_update', 'version' => (string) $m['version'], 'os' => (string) $m['os'], 'arch' => (string) $m['arch'], 'sha256' => strtolower((string) $m['sha256']), 'min_version' => (string) $m['min_version']];
 
-        return \RivetCore\Rmm\RmmProtocol::UPDATE_MANIFEST_DOMAIN . "\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($o), false)));
+        return self::UPDATE_MANIFEST_DOMAIN . "\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($o), false)));
     }
 
     /**
