@@ -32,8 +32,13 @@ final class FieldActions
     private function admin(RmmPrincipal $who): ?ActionResult
     {
         $why = $this->authz->check($who->userId, RmmAbility::ADMIN, 0);
+        if ($why !== null) {
+            return ActionResult::fail(403, 'forbidden', $why);
+        }
 
-        return $why === null ? null : ActionResult::fail(403, 'forbidden', $why);
+        // TEN-6: a definition applies to the devices, sites and clients of every client (and carries their values with it): not for a caller limited to some clients.
+        return $this->authz->visibleClientIds($who->userId) === null ? null
+            : ActionResult::fail(403, 'forbidden', 'Custom field definitions are shared by every client; ask an administrator whose access is not limited to some clients.');
     }
 
     /** @param array<string,mixed> $in see {@see CustomFieldService::define()} */
@@ -106,6 +111,9 @@ final class FieldActions
             $asset = (int) ($dev['asset_id'] ?? 0);
         } elseif ($f['scope'] === 'site') {
             $client = $clientId;
+            if ($client > 0 && !$this->authz->clientOk($who->userId, $client)) {
+                return ActionResult::fail(404, 'not_found', 'Client not found.');   // TEN-6: before the site is looked at: what a site belongs to is not for a caller outside the client
+            }
             if ($client <= 0 || ($this->tenancy !== null && !$this->tenancy->locationInClient($scopeId, $client))) {
                 return ActionResult::fail(422, 'invalid', 'Give the client the site belongs to (client_id), and a site of that client.');
             }

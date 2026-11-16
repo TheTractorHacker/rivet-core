@@ -626,7 +626,7 @@ final class RemoteActions
         if ($this->targets === null) {
             return ActionResult::fail(409, 'not_configured', 'Bulk installs are not available.');
         }
-        [$target, $terr] = $this->targets->validate($in['target'] ?? null);
+        [$target, $terr] = $this->targets->validateFor($in['target'] ?? null, $this->authz->visibleClientIds($who->userId));   // TEN-9: as in ScriptActions::runOnTarget()
         if ($target === null) {
             return ActionResult::fail(422, 'invalid', $terr ?? 'Invalid target.');
         }

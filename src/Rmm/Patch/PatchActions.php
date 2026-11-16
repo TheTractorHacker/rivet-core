@@ -358,9 +358,13 @@ final class PatchActions
         $approvalId = (int) $approval['approval_id'];
         $clients = $this->approvals->clientsOf($request);
         foreach ($clients ?: [0] as $c) {
+            // TEN-8: a request that reaches a client outside the caller's scope (or names none) is the same 404 as an unknown approval; only then the ability.
+            if (!$this->authz->clientOk($who->userId, $c) || ($c === 0 && $this->authz->visibleClientIds($who->userId) !== null)) {
+                return ActionResult::fail(404, 'not_found', 'Approval not found.');
+            }
             $denied = $this->authz->check($who->userId, RmmAbility::PATCH_MANAGE, $c);
-            if ($denied !== null || !$this->authz->clientOk($who->userId, $c)) {
-                return ActionResult::fail($denied !== null ? 403 : 404, $denied !== null ? 'forbidden' : 'not_found', $denied ?? 'Approval not found.');
+            if ($denied !== null) {
+                return ActionResult::fail(403, 'forbidden', $denied);
             }
         }
         /** @var array{ok:bool,code?:string,error?:string} $d */
@@ -422,13 +426,36 @@ final class PatchActions
         }
         $rules = array_values(array_filter($this->approvals->rules(), static fn (array $r): bool => $visible === null || in_array($r['client_id'], $visible, true)));
         $policies = $this->policies->all();
-        $assign = $this->policies->assignments();
+        $assign = $this->visibleAssignments($this->policies->assignments(), $visible);
         foreach ($policies as &$p) {
             $p['assignments'] = array_values(array_filter($assign, static fn (array $a): bool => $a['policy_id'] === $p['policy_id']));
         }
         unset($p);
 
         return ActionResult::ok('ok', 200, 'ok', ['policies' => $policies, 'rings' => $this->policies->rings(), 'rules' => $rules, 'settings' => PatchPolicySettings::keys()]);
+    }
+
+    /**
+     * The assignments a caller limited to some clients may know about (TEN-11): a client or device scope only when it lies inside his clients; the scopes that name
+     * no device (everyone, a site, a group, a tag) stay visible.
+     *
+     * @param list<array<string,mixed>> $rows
+     * @param list<int>|null $visible
+     * @return list<array<string,mixed>>
+     */
+    private function visibleAssignments(array $rows, ?array $visible): array
+    {
+        if ($visible === null) {
+            return $rows;
+        }
+
+        return array_values(array_filter($rows, function (array $a) use ($visible): bool {
+            return match ((string) $a['scope_type']) {
+                'client' => in_array((int) $a['scope_id'], $visible, true),
+                'device' => ($d = $this->devices->find((int) $a['scope_id'])) !== null && in_array((int) $d['client_id'], $visible, true),
+                default => true,
+            };
+        }));
     }
 
     public function getPolicy(RmmPrincipal $who, int $policyId): ActionResult
@@ -441,7 +468,7 @@ final class PatchActions
         if ($p === null) {
             return ActionResult::fail(404, 'not_found', 'Policy not found.');
         }
-        $p['assignments'] = $this->policies->assignments($policyId);
+        $p['assignments'] = $this->visibleAssignments($this->policies->assignments($policyId), $this->authz->visibleClientIds($who->userId));
 
         return ActionResult::ok('ok', 200, 'ok', ['policy' => $p]);
     }
