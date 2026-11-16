@@ -125,14 +125,15 @@ func commitFile(tmp, dest string, overwrite bool) error {
 // discarded. NTFS refuses to rename or replace a directory (or any ancestor of it) that has an open handle without delete sharing, so after the
 // check below nobody can swap the directory, or a parent of it, for a junction while the temp file is created, written and moved. The handle's
 // final path must equal the path the policy approved. The temp file and the final rename are still addressed by path, but only inside that
-// pinned directory. Not done (remaining part of CORE-7): creating the temp file with an explicit SYSTEM/Administrators-only security descriptor and
-// renaming through the open handle; the temp file still inherits the folder's ACL. UNVERIFIED on a real Windows machine, see
+// pinned directory. The temp file is created with an explicit SYSTEM/Administrators-only DACL and no sharing, and is renamed onto the
+// destination through its own handle (FileRenameInfo), so the written and hashed file is the delivered file. UNVERIFIED on a real Windows machine, see
 // docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md.
 type putTemp struct {
 	File *os.File
 	path string
 	dir  string
 	pin  windows.Handle
+	h    windows.Handle // the temp file's own handle (same as File, kept for the rename)
 }
 
 // pinDirectory opens dir as described above and checks it against the approved path.
@@ -164,33 +165,74 @@ func pinDirectory(dir string) (windows.Handle, error) {
 	return h, nil
 }
 
+// tempSDDL is the DACL of the temp file: SYSTEM and Administrators only (protected), so a standard user who owns the destination folder cannot open
+// or swap the bytes between the hash and the rename (the CORE-7 byte-swap variant, CORE-DS-13).
+const tempSDDL = "D:P(A;;FA;;;SY)(A;;FA;;;BA)"
+
 func beginPut(dir, name string) (*putTemp, error) {
 	pin, err := pinDirectory(dir)
 	if err != nil {
 		return nil, err
 	}
 	path := filepath.Join(dir, name)
-	open := func() (*os.File, error) { return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) }
-	f, err := open()
-	if errors.Is(err, fs.ErrExist) {
+	open := func() (windows.Handle, error) {
+		sd, err := windows.SecurityDescriptorFromString(tempSDDL)
+		if err != nil {
+			return 0, err
+		}
+		sa := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+		p, err := windows.UTF16PtrFromString(path)
+		if err != nil {
+			return 0, err
+		}
+		// share mode 0: nobody else can open the temp file while it is written, hashed and renamed; DELETE lets us rename it by this very handle,
+		// WRITE_DAC lets us hand the final file the folder's inherited permissions afterwards.
+		return windows.CreateFile(p, windows.GENERIC_WRITE|windows.DELETE|windows.WRITE_DAC|windows.READ_CONTROL, 0, sa, windows.CREATE_NEW,
+			windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	}
+	h, err := open()
+	if errors.Is(err, windows.ERROR_FILE_EXISTS) || errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		if li, lerr := os.Lstat(path); lerr == nil && (li.Mode().IsRegular() || li.Mode()&fs.ModeSymlink != 0) {
 			if os.Remove(path) == nil {
-				f, err = open()
+				h, err = open()
 			}
 		}
 	}
 	if err != nil {
 		windows.CloseHandle(pin)
-		return nil, err
+		return nil, &fs.PathError{Op: "open", Path: path, Err: err}
 	}
-	return &putTemp{File: f, path: path, dir: dir, pin: pin}, nil
+	return &putTemp{File: os.NewFile(uintptr(h), path), path: path, dir: dir, pin: pin, h: h}, nil
 }
 
+// Commit renames the open temp file onto dest THROUGH ITS HANDLE (FileRenameInfo), so the very file that was written and hashed becomes the
+// destination; no path of the temp file is resolved again. Without overwrite an existing destination makes the rename fail (no clobber). The final
+// file then gets the folder's inherited permissions (the temp file had SYSTEM/Administrators only).
 func (t *putTemp) Commit(dest string, _ os.FileMode, _, overwrite bool) error {
-	if err := t.File.Close(); err != nil {
+	target := filepath.Join(t.dir, dest)
+	if li, err := os.Lstat(target); err == nil {
+		if !overwrite {
+			return errExists
+		}
+		if !li.Mode().IsRegular() {
+			return errors.New("destination is not a regular file")
+		}
+	}
+	if err := t.File.Sync(); err != nil {
 		return err
 	}
-	return commitFile(t.path, filepath.Join(t.dir, dest), overwrite)
+	buf := renameInfoBuffer(target, overwrite, int(unsafe.Sizeof(uintptr(0))))
+	if err := windows.SetFileInformationByHandle(t.h, windows.FileRenameInfo, &buf[0], uint32(len(buf))); err != nil {
+		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) || errors.Is(err, windows.ERROR_FILE_EXISTS) {
+			return errExists
+		}
+		return err
+	}
+	// inherit the folder's permissions: an empty DACL, unprotected, makes Windows apply the parent's inheritable ACEs
+	if acl, err := windows.ACLFromEntries(nil, nil); err == nil {
+		_ = windows.SetSecurityInfo(t.h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.UNPROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
+	}
+	return t.File.Close()
 }
 
 func (t *putTemp) release() {

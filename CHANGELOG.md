@@ -2,6 +2,15 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.75 (endpoint agent: deep-scan fixes E, signing and the CORE-7 remainder; no migration)
+
+Provisional number (follows rc.74, stacked). Agent side only; the server counterparts are specified in docs/design/ (SIGNED_CONFIG_CONTRACT.md, SIGNED_UPDATE_MANIFEST.md, SIGNED_INSTALLER_TRAILER.md) and are PHP hand-offs. Every new enforcement is off until its trust anchor or flag is present, so existing builds and servers keep working.
+
+- **CORE-DS-13 (finish)** Windows `file_put`: the temp file has a SYSTEM/Administrators-only DACL and no sharing, and is renamed onto the destination through its own handle; the final file gets the folder's inherited permissions. UNVERIFIED on Windows.
+- **CORE-DS-16** unsigned checks of any type and unsigned `config.logs` are refused once the server announces `config.signed_config >= 1` (sticky) or `require_signed_config` is set; `config.logs` signature domain `rivetit-logs-config-v1`; optional `device_id` binding of signed checks.
+- **CORE-DS-20** installer payload signature (member `signature`, domain `rivetit-installer-payload-v1`) enforced when the build has a trust anchor (`TRUST_KEYS`); additive for existing installers.
+- **CORE-DS-26** update manifest release signature over `{kind, version, os, arch, sha256, min_version}` by an offline release key (`RELEASE_KEYS` trust anchor), signed key rollover, local `disable_update`.
+
 ## 1.0.0-rc.74 (endpoint agent: deep-scan fixes D, Windows Lows; no migration)
 
 Provisional number (follows rc.73, stacked). Windows installer, MSI and Windows-only agent code for CORE-DS-18/47/48/55/56/57/74. **UNVERIFIED on Windows** (no Windows machine; cross-compiled and vetted, the MSI built in the pinned wixl image and table-checked, the Linux-testable parts unit-tested): docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md.
