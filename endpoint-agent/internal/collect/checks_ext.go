@@ -586,6 +586,10 @@ func (c *Collector) checkHTTP(ctx context.Context, key string, raw json.RawMessa
 		p.TimeoutMS = 10000
 	}
 	if p.VerifyTLS != nil {
+		if !*p.VerifyTLS && !checkIsSigned(ctx) {
+			// switching TLS verification off is only honoured from a check definition whose signature verified (CORE-DS-16)
+			return res(key, Unknown, "verify_tls:false needs a signed check definition")
+		}
 		verify = *p.VerifyTLS
 	}
 	if p.FollowRedirec != nil {

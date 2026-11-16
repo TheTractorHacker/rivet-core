@@ -51,3 +51,18 @@ func TestRunnerNeverReportsServerOwnedKeys(t *testing.T) {
 		t.Fatalf("got %+v", out)
 	}
 }
+
+// CORE-DS-16: the TLS opt-out is a SIGNED check parameter (as the code comment always said); an unsigned http check cannot switch verification off.
+func TestHTTPCheckVerifyTLSFalseNeedsASignature(t *testing.T) {
+	c := newCol(newFake())
+	c.VerifyCheck = func(store.CheckSpec) error { return nil }
+	params := json.RawMessage(`{"url":"https://127.0.0.1:1/","verify_tls":false,"timeout_ms":500}`)
+	r := c.RunCheck(context.Background(), store.CheckSpec{Key: "k", Type: "http", Params: params})
+	if r.Status != Unknown || !strings.Contains(r.Detail, "signed") {
+		t.Fatalf("unsigned verify_tls:false was honoured: %+v", r)
+	}
+	r = c.RunCheck(context.Background(), store.CheckSpec{Key: "k", Type: "http", Params: params, Signature: "sig", Raw: json.RawMessage(`{}`)})
+	if strings.Contains(r.Detail, "signed") {
+		t.Fatalf("a signed check was refused for lack of a signature: %+v", r)
+	}
+}

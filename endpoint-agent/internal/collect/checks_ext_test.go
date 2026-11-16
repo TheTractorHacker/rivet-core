@@ -42,6 +42,12 @@ func xspec(typ, params string) store.CheckSpec {
 	return store.CheckSpec{Key: "k", Type: typ, Params: json.RawMessage(params)}
 }
 
+func xspecSigned(typ, params string) store.CheckSpec {
+	sp := xspec(typ, params)
+	sp.Signature, sp.Raw = "sig", json.RawMessage(`{}`)
+	return sp
+}
+
 func assertRes(t *testing.T, r api.CheckResult, status string, value *float64, detailHas string) {
 	t.Helper()
 	if r.Status != status {
@@ -509,27 +515,28 @@ func tlsServer(t *testing.T, notAfter time.Time) *httptest.Server {
 
 func TestHTTPCertificateExpiry(t *testing.T) {
 	c := newCol(newFake())
+	c.VerifyCheck = func(store.CheckSpec) error { return nil } // verify_tls:false is only honoured on a signed definition (CORE-DS-16)
 	c.Timeout = 5 * time.Second
 	soon := tlsServer(t, time.Now().Add(10*24*time.Hour+time.Hour))
 	defer soon.Close()
-	r := c.RunCheck(context.Background(), xspec("http", `{"url":"`+soon.URL+`/","verify_tls":false}`))
+	r := c.RunCheck(context.Background(), xspecSigned("http", `{"url":"`+soon.URL+`/","verify_tls":false}`))
 	if r.Status != Warn || !strings.Contains(r.Detail, "certificate expires in 10 days") {
 		t.Fatalf("default warn at 14 days: %+v", r)
 	}
-	r = c.RunCheck(context.Background(), xspec("http", `{"url":"`+soon.URL+`/","verify_tls":false,"cert_warn_days":5,"cert_fail_days":2}`))
+	r = c.RunCheck(context.Background(), xspecSigned("http", `{"url":"`+soon.URL+`/","verify_tls":false,"cert_warn_days":5,"cert_fail_days":2}`))
 	if r.Status != OK {
 		t.Fatalf("%+v", r)
 	}
-	r = c.RunCheck(context.Background(), xspec("http", `{"url":"`+soon.URL+`/","verify_tls":false,"cert_warn_days":30,"cert_fail_days":12}`))
+	r = c.RunCheck(context.Background(), xspecSigned("http", `{"url":"`+soon.URL+`/","verify_tls":false,"cert_warn_days":30,"cert_fail_days":12}`))
 	if r.Status != Fail {
 		t.Fatalf("%+v", r)
 	}
-	r = c.RunCheck(context.Background(), xspec("http", `{"url":"`+soon.URL+`/","verify_tls":false,"cert_warn_days":0,"cert_fail_days":0}`))
+	r = c.RunCheck(context.Background(), xspecSigned("http", `{"url":"`+soon.URL+`/","verify_tls":false,"cert_warn_days":0,"cert_fail_days":0}`))
 	if r.Status != OK {
 		t.Fatalf("expiry checks switched off: %+v", r)
 	}
 	// verification is on by default: a self-signed certificate is refused, with no URL in the detail
-	r = c.RunCheck(context.Background(), xspec("http", `{"url":"`+soon.URL+`/x?secret=1"}`))
+	r = c.RunCheck(context.Background(), xspecSigned("http", `{"url":"`+soon.URL+`/x?secret=1"}`))
 	if r.Status != Fail || strings.Contains(r.Detail, "secret") {
 		t.Fatalf("%+v", r)
 	}
