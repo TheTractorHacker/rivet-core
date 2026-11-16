@@ -120,4 +120,64 @@ final class PdfConverterTest extends ConverterTestCase
         PdfConverter::convert($this->tmp('ok.pdf', $this->pdf('cleanup check')));
         $this->assertSame([], array_values(array_diff(glob(sys_get_temp_dir() . '/itflow-pdf-*') ?: [], $before)));
     }
+
+    /** A one-page PDF with a short text line and one JPEG (noise, so it does not compress) that the page content draws $draws times. */
+    private function imageHeavyPdf(int $draws, int $side = 500): string
+    {
+        if (!function_exists('imagejpeg')) {
+            $this->markTestSkipped('GD is needed to build the test image');
+        }
+        $im = imagecreatetruecolor($side, $side);
+        for ($i = 0; $i < $side * 40; $i++) {
+            imagesetpixel($im, random_int(0, $side - 1), random_int(0, $side - 1), random_int(0, 0xFFFFFF));
+        }
+        ob_start();
+        imagejpeg($im, null, 95);
+        $jpeg = (string) ob_get_clean();
+        $stream = "BT /F1 12 Tf 72 700 Td (Some text so the no-text gate passes) Tj ET\n" . str_repeat("q 100 0 0 100 50 50 cm /Im0 Do Q\n", $draws);
+        $objs = [
+            1 => '<< /Type /Catalog /Pages 2 0 R >>',
+            2 => '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            3 => '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> /XObject << /Im0 6 0 R >> >> >>',
+            4 => '<< /Length ' . strlen($stream) . " >>\nstream\n$stream\nendstream",
+            5 => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+            6 => "<< /Type /XObject /Subtype /Image /Width $side /Height $side /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " . strlen($jpeg) . " >>\nstream\n$jpeg\nendstream",
+        ];
+        $out = "%PDF-1.4\n";
+        $offsets = [];
+        foreach ($objs as $n => $body) {
+            $offsets[$n] = strlen($out);
+            $out .= "$n 0 obj\n$body\nendobj\n";
+        }
+        $xref = strlen($out);
+        $out .= "xref\n0 " . (count($objs) + 1) . "\n0000000000 65535 f \n";
+        foreach ($offsets as $o) {
+            $out .= sprintf("%010d 00000 n \n", $o);
+        }
+
+        return $out . "trailer\n<< /Size " . (count($objs) + 1) . " /Root 1 0 R >>\nstartxref\n$xref\n%%EOF\n";
+    }
+
+    /** CORE-DS-7: pdftohtml writes one image file per DRAW; a PDF that draws one image thousands of times must be stopped, and what it wrote removed. */
+    public function testAnImageDrawnManyTimesIsStoppedBeforeItFillsTheTempDirectory(): void
+    {
+        $before = glob(sys_get_temp_dir() . '/itflow-pdf-*') ?: [];
+        $pdf = $this->tmp('amp.pdf', $this->imageHeavyPdf(1500));
+        $this->assertLessThan(2000000, filesize($pdf), 'the upload is small');
+        $t = microtime(true);
+        try {
+            PdfConverter::convert($pdf);
+            $this->fail('a PDF that writes gigabytes of images was accepted');
+        } catch (PdfConversionException $e) {
+            $this->assertStringContainsString('too much', $e->getMessage());
+        }
+        $this->assertLessThan(30, microtime(true) - $t);
+        $this->assertSame([], array_values(array_diff(glob(sys_get_temp_dir() . '/itflow-pdf-*') ?: [], $before)), 'the scratch directory is gone');
+    }
+
+    public function testAnOrdinaryPdfWithOneImageStillConverts(): void
+    {
+        $r = PdfConverter::convert($this->tmp('one.pdf', $this->imageHeavyPdf(1)));
+        $this->assertStringContainsString('Some text', $r['text']);
+    }
 }

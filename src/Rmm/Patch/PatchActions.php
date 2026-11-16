@@ -541,6 +541,9 @@ final class PatchActions
         if (is_array($in['settings'] ?? null) && ($e = $this->windowsSettingsGate($who, $policyId, $in['settings'])) !== null) {
             return $e;
         }
+        if (is_array($in['settings'] ?? null) && ($e = $this->approvalSettingsGate($who, $policyId, $in['settings'])) !== null) {
+            return $e;
+        }
         $confirmedBy = null;
         $wantsConfirm = is_array($in['settings'] ?? null) && !empty($in['settings']['reboot_confirm']);
         if ($wantsConfirm) {
@@ -583,6 +586,11 @@ final class PatchActions
     public function assignPolicy(RmmPrincipal $who, int $policyId, array $in): ActionResult
     {
         if (($e = $this->writeGate($who)) !== null) {
+            return $e;
+        }
+        // CORE-DS-10: assigning is what makes the settings of a policy act on devices, so it needs the grants the settings themselves need.
+        $values = $this->policies->values($policyId);
+        if (($e = $this->approvalSettingsGate($who, null, array_intersect_key($values, array_flip(['install_enabled', 'approval_mode', 'reboot_policy']) + array_flip(array_map(static fn (string $k): string => 'auto_days_' . $k, PatchPolicySettings::AUTO_KINDS))))) !== null) {
             return $e;
         }
         try {
@@ -715,6 +723,52 @@ final class PatchActions
                 if ($why !== null) {
                     return ActionResult::fail(403, 'forbidden', 'Changing how Windows Update is controlled needs the grant to install patches. ' . $why);
                 }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * CORE-DS-10 (CORE-10): a patch policy decides, for every device it reaches, whether approved updates install by themselves, whether a second person
+     * must approve by hand, whether updates are approved automatically and whether the device restarts. Raising what happens without a person, or lowering
+     * the second-person control, needs the grant that governs that act on top of the policy write gate:
+     *  - install_enabled turned on (or set on a new policy): rmm.patch.install
+     *  - two_person turned off or removed on a policy that had it, approval_mode auto, an auto_days_* newly set or lowered: rmm.job.approve
+     *  - reboot_policy if_required_now newly set: rmm.job.reboot (whatever reboot_confirm already says)
+     * The `settings` object replaces all of them, so a key left out counts as removed. A request that changes none of these needs nothing extra.
+     *
+     * @param array<array-key,mixed> $settings
+     */
+    private function approvalSettingsGate(RmmPrincipal $who, ?int $policyId, array $settings): ?ActionResult
+    {
+        $cur = $policyId === null ? [] : $this->policies->values($policyId);
+        $need = [];
+        if (($settings['install_enabled'] ?? null) === true && ($cur['install_enabled'] ?? null) !== true) {
+            $need[RmmAbility::PATCH_INSTALL] = 'Turning on unattended installs needs the grant to install patches. ';
+        }
+        if (($cur['two_person'] ?? null) === true && ($settings['two_person'] ?? null) !== true) {
+            $need[RmmAbility::JOB_APPROVE] = 'Switching off the second-person rule needs the grant to approve jobs. ';
+        }
+        if (($settings['approval_mode'] ?? null) === 'auto' && ($cur['approval_mode'] ?? null) !== 'auto') {
+            $need[RmmAbility::JOB_APPROVE] = 'Approving updates automatically needs the grant to approve jobs. ';
+        }
+        foreach (PatchPolicySettings::AUTO_KINDS as $kind) {
+            $new = $settings['auto_days_' . $kind] ?? null;
+            $old = $cur['auto_days_' . $kind] ?? null;
+            if (is_int($new) && (!is_int($old) || $new < $old)) {
+                $need[RmmAbility::JOB_APPROVE] = 'Approving updates automatically needs the grant to approve jobs. ';
+            }
+        }
+        if (($settings['reboot_policy'] ?? null) === 'if_required_now' && ($cur['reboot_policy'] ?? null) !== 'if_required_now') {
+            $need[RmmAbility::JOB_REBOOT] = 'Letting a policy restart devices by itself needs the grant to restart devices. ';
+        }
+        foreach ($need as $ability => $text) {
+            $why = $this->authz->check($who->userId, $ability, 0);
+            if ($why !== null) {
+                $this->audit->record('Patch Denied', "User {$who->userId} denied changing the approval or install settings of a patch policy: $why", 0, 0);
+
+                return ActionResult::fail(403, 'forbidden', $text . $why);
             }
         }
 

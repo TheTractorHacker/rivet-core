@@ -445,4 +445,41 @@ final class PatchTest extends PatchTestCase
         $this->assertContains(RmmEvent::PATCH_SCAN_COMPLETED, RmmEvent::all());
         $this->assertContains(RmmEvent::PATCH_INSTALL_FAILED, RmmEvent::all());
     }
+
+    /** CORE-DS-10: the policy write gate alone (patch.manage) may not turn on unattended installs, auto-approval or the reboot, or switch off the second-person rule. */
+    public function testPatchPolicyApprovalAndInstallSettingsNeedTheirOwnGrants(): void
+    {
+        $put = fn (object $by, ?int $pid, array $settings): array => $pid === null
+            ? $this->api('POST', ['patch_policies'], $by, ['name' => 'p' . random_int(1, 1000000000), 'settings' => $settings])
+            : $this->api('PUT', ['patch_policies', (string) $pid], $by, ['name' => (string) $this->h->one("SELECT name FROM rmm_patch_policies WHERE policy_id = $pid"), 'settings' => $settings]);
+        // tech (patch.manage only)
+        $this->assertSame(403, $put($this->tech, null, ['install_enabled' => true])[0], 'unattended installs need patch.install');
+        $this->assertSame(403, $put($this->tech, null, ['approval_mode' => 'auto', 'auto_days_security' => 0])[0], 'auto-approval needs job.approve');
+        $this->assertSame(403, $put($this->tech, null, ['auto_days_security' => 3])[0]);
+        $this->assertSame(403, $put($this->tech, null, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true])[0]);
+        $this->assertSame(201, $put($this->tech, null, ['install_enabled' => false, 'window_mode' => 'none', 'max_minutes' => 30])[0], 'every other setting stays open to the manager');
+        // second (patch.manage + job.approve) may not install; installer (patch.install + reboot) may not approve
+        $this->assertSame(403, $put($this->second, null, ['install_enabled' => true])[0]);
+        $this->assertSame(201, $put($this->second, null, ['two_person' => true, 'approval_mode' => 'auto', 'auto_days_optional' => 7])[0]);
+        [$c, $j] = $put($this->installer, null, ['install_enabled' => true, 'two_person' => true]);
+        $this->assertSame(201, $c, json_encode($j));
+        $pid = (int) $j['policy']['policy_id'];
+        $this->assertSame(403, $put($this->installer, null, ['approval_mode' => 'auto'])[0]);
+        // lowering the second-person rule, by setting it false or by leaving it out, needs job.approve; keeping it does not
+        $this->assertSame(403, $put($this->tech, $pid, ['install_enabled' => true, 'two_person' => false])[0]);
+        $this->assertSame(403, $put($this->installer, $pid, ['install_enabled' => true])[0], 'a key left out is removed');
+        $this->assertSame(200, $put($this->installer, $pid, ['install_enabled' => true, 'two_person' => true, 'max_minutes' => 90])[0]);
+        $this->assertSame(200, $put($this->second, $pid, ['install_enabled' => true, 'two_person' => false])[0], 'job.approve may lower it (install_enabled is unchanged)');
+        // assigning a policy that installs by itself needs patch.install
+        $this->assertSame(403, $this->api('POST', ['patch_policies', (string) $pid, 'assignments'], $this->second, ['scope_type' => 'global', 'scope_id' => 0])[0]);
+        $this->assertSame(200, $this->api('POST', ['patch_policies', (string) $pid, 'assignments'], $this->installer, ['scope_type' => 'global', 'scope_id' => 0])[0]);
+        // reboot_policy if_required_now is re-checked even when reboot_confirm is already stored
+        [$c, $j] = $put($this->installer, null, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true]);
+        $this->assertSame(201, $c, json_encode($j));
+        $rid = (int) $j['policy']['policy_id'];
+        [$c, $j] = $put($this->tech, $rid, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true, 'max_minutes' => 20]);
+        $this->assertSame(200, $c, 'unchanged is not a change: ' . json_encode($j));
+        $this->assertSame(200, $put($this->tech, $rid, ['reboot_policy' => 'never', 'reboot_confirm' => true])[0]);
+        $this->assertSame(403, $put($this->tech, $rid, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true])[0], 'it becomes if_required_now again: needs the reboot grant though reboot_confirm is already on');
+    }
 }

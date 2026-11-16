@@ -251,6 +251,22 @@ final class DeployActions
         return null;
     }
 
+    /**
+     * CORE-DS-66: is this version the one a follow-newest install of its package resolves to for its OS (and package manager), i.e. the highest version id that is not retired?
+     *
+     * @param array<string,mixed> $version a catalog version row
+     */
+    private function isNewestLive(array $version): bool
+    {
+        foreach ($this->catalog->versions((int) $version['package_id']) as $v) {   // newest first
+            if (!$v['retired'] && $v['os'] === $version['os'] && ($v['os'] !== 'linux' || $v['fmt'] === $version['fmt'])) {
+                return $v['version_id'] === $version['version_id'];
+            }
+        }
+
+        return false;
+    }
+
     public function retireVersion(RmmPrincipal $who, int $versionId, bool $retired): ActionResult
     {
         if (($e = $this->fleetRole($who, RmmAbility::SOFTWARE_MANAGE) ?? $this->unrestricted($who) ?? $this->featureOff()) !== null) {
@@ -262,6 +278,9 @@ final class DeployActions
         }
         if (!$retired && ($e = $this->liveVersionGate($who, (int) $existing['package_id'])) !== null) {
             return $e;   // restoring a retired version makes it the newest again, exactly like adding one
+        }
+        if ($retired && !$existing['retired'] && $this->isNewestLive($existing) && ($e = $this->liveVersionGate($who, (int) $existing['package_id'])) !== null) {
+            return $e;   // CORE-DS-66: retiring the newest version moves everything that follows the newest back to the one below it
         }
         if (!$this->catalog->retireVersion($versionId, $retired)) {
             return ActionResult::fail(404, 'not_found', 'Version not found.');

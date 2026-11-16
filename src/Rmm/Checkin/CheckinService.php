@@ -786,13 +786,13 @@ final class CheckinService
                 }
                 continue;
             }
-            if (isset($seen[$key])) {
-                continue;   // one result per check per check-in
+            if (isset($seen[strtolower($key)])) {
+                continue;   // one result per check per check-in (CORE-DS-8: endpoint_agent_checks is case-insensitive, so 'Disk.C' and 'disk.c' are one check)
             }
             if (RmmChecks::isServerKey($key)) {
                 continue;   // CORE-18: log.rule_*, change.rule_*, patch.* and hv.* are written by the server only; an agent report under them is dropped, never stored or evaluated
             }
-            $seen[$key] = 1;
+            $seen[strtolower($key)] = 1;
             /** @var array<string,mixed> $c */
             $detail = DeviceValidator::cleanText($c['detail'] ?? '', 500) ?? '';
             $row = ['key' => $key, 'status' => $status, 'detail' => $detail, 'at' => $this->sql->utcNow()];

@@ -39,8 +39,12 @@ final class DeployApprovalService
         $pkg = $this->catalog->package((int) $v['package_id']);
         $summary = ucfirst($action) . ' ' . mb_substr((string) ($pkg['name'] ?? '?'), 0, 80) . ' ' . $v['version'] . ' on ' . mb_substr((string) ($dev['hostname'] ?? 'a device'), 0, 80);
 
-        return $this->approvals->request(self::KIND, ['type' => 'software', 'op' => 'run', 'device_id' => (int) $dev['device_id'], 'version_id' => (int) $v['version_id'], 'action' => $action, 'max_minutes' => $maxMinutes],
-            $summary, 1, null, null, $userId);
+        $frozen = ['type' => 'software', 'op' => 'run', 'device_id' => (int) $dev['device_id'], 'version_id' => (int) $v['version_id'], 'action' => $action, 'max_minutes' => $maxMinutes];
+        if ($action === 'install' && ($digest = $this->service->argsDigest($dev, $v)) !== '') {
+            $frozen['args_sha256'] = $digest;   // CORE-DS-64: the vendor-parameter values are part of what the second person approves, though they are never shown
+        }
+
+        return $this->approvals->request(self::KIND, $frozen, $summary, 1, null, null, $userId);
     }
 
     /**
@@ -76,6 +80,9 @@ final class DeployApprovalService
                 $this->sql->run("UPDATE rmm_device_apps SET status = 'queued', reason = ?, updated_at = ? WHERE device_id = ? AND package_id = ? AND status = 'approval'",
                     ['paused: automation is switched off for this device', $this->sql->utcNow(), (int) $dev['device_id'], (int) $v['package_id']]);
                 $out['reason'] = 'automation_disabled';
+            } elseif (is_string($request['args_sha256'] ?? null) && !hash_equals($request['args_sha256'], $this->service->argsDigest($dev, $v))) {
+                // CORE-DS-64: a vendor parameter that feeds the install command was changed after the run was asked for; what the second person approved is gone.
+                $out['reason'] = 'parameters_changed';
             } else {
                 $mins = is_int($request['max_minutes'] ?? null) ? $request['max_minutes'] : DeployProtocol::MAX_MINUTES_DEFAULT;
                 $r = $this->service->queueInstall($dev, $v, $action, 'run', ['source' => 'manual', 'user_id' => (int) $approval['requested_by'], 'max_minutes' => $mins]);

@@ -104,6 +104,27 @@ final class CheckOsTargetingTest extends RmmTestCase
         $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_checks WHERE device_id={$this->win} AND check_key IN ('change.rule_3','patch.compliance','hv.vm_1')"));
     }
 
+    /** CORE-DS-8: the primary key is case-insensitive, so an upper-case spelling of a server-owned key must be dropped like the lower-case one. */
+    public function testADeviceCannotReportAnUpperCaseSpellingOfTheServersOwnCheckKeys(): void
+    {
+        $this->devices();
+        $this->h->module->settings()->set(['failure_debounce' => 1]);
+        $this->h->q("INSERT INTO endpoint_agent_checks (device_id, check_key, status, detail, consecutive_failures, consecutive_ok, episode, last_reported_at, last_changed_at) VALUES ({$this->win}, 'log.rule_7', 'fail', 'failed logons', 5, 0, 1, NOW(), NOW())");
+        $this->h->checkin($this->winT, ['checks' => [
+            ['key' => 'LOG.RULE_7', 'status' => 'ok', 'at' => $this->h::ts()],
+            ['key' => 'Change.Rule_3', 'status' => 'ok', 'at' => $this->h::ts()],
+            ['key' => 'PATCH.compliance', 'status' => 'ok', 'at' => $this->h::ts()],
+            ['key' => 'HV.vm_1', 'status' => 'fail', 'at' => $this->h::ts()],
+            ['key' => 'Disk.C', 'status' => 'ok', 'at' => $this->h::ts()],
+            ['key' => 'disk.c', 'status' => 'fail', 'at' => $this->h::ts()],
+        ]]);
+        $row = $this->h->rows("SELECT status, consecutive_failures, episode FROM endpoint_agent_checks WHERE device_id={$this->win} AND check_key='log.rule_7'")[0];
+        $this->assertSame(['fail', 5, 1], [$row['status'], (int) $row['consecutive_failures'], (int) $row['episode']], 'the server-owned row is untouched');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_checks WHERE device_id={$this->win} AND check_key IN ('change.rule_3','patch.compliance','hv.vm_1')"));
+        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_checks WHERE device_id={$this->win} AND check_key = 'disk.c'"), 'one result per check, whatever the spelling');
+        $this->assertTrue(\RivetCore\Rmm\Checks\RmmChecks::isServerKey('Log.Rule_1'));
+    }
+
     public function testStaleRowsAndTheirAlertsAreCleanedOnceTheCheckNoLongerApplies(): void
     {
         $this->devices();

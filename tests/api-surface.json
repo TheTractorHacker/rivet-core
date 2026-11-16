@@ -4037,6 +4037,7 @@
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Deploy\\PackageCatalog $catalog, RivetCore\\Rmm\\Deploy\\DeployExpectations $expectations, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Deploy\\PackageParams $params = NULL, ?RivetCore\\Rmm\\Deploy\\HostedFiles $hosted = NULL, ?RivetCore\\Rmm\\Store\\DeploymentHistoryStore $history = NULL)",
                 "applyJob": "applyJob(array $dev, array $job): bool",
                 "applyPending": "applyPending(int $limit): int",
+                "argsDigest": "argsDigest(array $dev, array $v): string",
                 "cleanDetectResult": "static cleanDetectResult(string $output): ?array",
                 "cleanInstallResult": "static cleanInstallResult(string $output): ?array",
                 "onInstallApplied": "onInstallApplied(Closure $f): void",
