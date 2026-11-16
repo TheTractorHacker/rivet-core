@@ -226,3 +226,15 @@ func TestProcListFitsTheCap(t *testing.T) {
 		}
 	}
 }
+
+// CORE-DS-53: svchost.exe hosts the services svc_control refuses to touch, so proc_kill refuses it too.
+func TestSvchostIsNeverKilled(t *testing.T) {
+	for _, n := range []string{"svchost.exe", "SvcHost.EXE"} {
+		if !ProtectedProcess("windows", n) {
+			t.Errorf("%s is not protected", n)
+		}
+	}
+	if ProtectedProcess("windows", "notepad.exe") {
+		t.Error("notepad.exe must stay killable")
+	}
+}
