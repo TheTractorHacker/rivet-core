@@ -3787,6 +3787,9 @@
         },
         "RivetCore\\Rmm\\Crypto\\Signer": {
             "kind": "final class",
+            "constants": {
+                "UPDATE_MANIFEST_DOMAIN": "rivetit-update-manifest-v1"
+            },
             "methods": {
                 "changeConfigMessage": "static changeConfigMessage(array $config): string",
                 "checkMessage": "static checkMessage(array $check): string",
@@ -6856,8 +6859,7 @@
                     "pilot",
                     "stable"
                 ],
-                "SIGNING_KEY_ID_LENGTH": 16,
-                "UPDATE_MANIFEST_DOMAIN": "rivetit-update-manifest-v1"
+                "SIGNING_KEY_ID_LENGTH": 16
             },
             "methods": {
                 "matches": "static matches(string $pattern, string $value): bool"
