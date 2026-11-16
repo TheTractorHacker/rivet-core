@@ -19,6 +19,11 @@ final class DeviceValidator
     /** Serial numbers firmware vendors ship as placeholders; a match on one of these is never an identity. */
     public const JUNK_SERIALS = RmmProtocol::JUNK_SERIALS;
 
+    /** Most MAC addresses kept for one device. */
+    public const MAX_MACS = 32;
+    /** Most entries an enrollment request may list before it is refused as malformed (container hosts have hundreds). */
+    public const MAX_MACS_IN = 1024;
+
     /** Lower-case colon form of a MAC, or null for anything else including the null MAC. */
     public static function normalizeMac(string $mac): ?string
     {
@@ -117,16 +122,25 @@ final class DeviceValidator
             throw $bad('agent_version');
         }
         $macsIn = $d['mac_addresses'] ?? [];
-        if (!is_array($macsIn) || count($macsIn) > 32) {
+        if (!is_array($macsIn) || count($macsIn) > self::MAX_MACS_IN) {
             throw $bad('mac_addresses');
         }
-        $macs = [];
+        // A container host (Docker, Kubernetes, libvirt) has hundreds of veth/bridge interfaces; an agent that sends them all must still enrol. Keep at most
+        // MAX_MACS unique addresses, hardware ones (universally administered: bit 0x02 of the first octet clear) before locally administered virtual ones.
+        $real = [];
+        $virtual = [];
         foreach ($macsIn as $m) {
             $n = is_string($m) ? self::normalizeMac($m) : null;
-            if ($n !== null) {
-                $macs[$n] = $n;
+            if ($n === null) {
+                continue;
+            }
+            if ((hexdec(substr($n, 0, 2)) & 0x02) === 0) {
+                $real[$n] = $n;
+            } else {
+                $virtual[$n] = $n;
             }
         }
+        $macs = array_slice(array_merge($real, $virtual), 0, self::MAX_MACS, true);
 
         return [
             'install_id' => strtolower($install),
