@@ -147,6 +147,11 @@ func New(o Options) (*Agent, error) {
 		return nil, err
 	}
 	a := &Agent{o: o, log: o.Log, cfg: cfg, meshRep: o.Mesh}
+	if o.Log != nil {
+		mesh.OnUntrusted = func(path, reason string) {
+			o.Log.Error("refusing to run the Mesh agent executable (mesh_agent_path or the default location): it is not in a trusted location or not owned and protected by SYSTEM/Administrators; Mesh features are disabled until that is fixed", "path", path, "reason", reason)
+		}
+	}
 	if st0, err := o.Store.LoadState(); err == nil {
 		a.loadClock(st0)
 	}
@@ -558,6 +563,9 @@ func Capabilities() []string {
 	if jobs.SupportsType(jobs.TypePatchScan) {
 		out = append(out, patch.CapScan, patch.CapInstall) // RMM Phase 4: scan for and install updates (never reboots)
 	}
+	if jobs.SupportsType(jobs.TypePatchConfigure) {
+		out = append(out, patch.CapConfigure) // Windows Update control: sets/restores only the policy values it owns, reports externally_managed instead of fighting a GPO/WSUS/MDM
+	}
 	if jobs.SupportsType(jobs.TypeSoftwareDetect) {
 		out = append(out, deploy.CapDetect, deploy.CapInstall) // RMM Phase 5: detect and install software (never reboots)
 	}
@@ -590,7 +598,7 @@ func (a *Agent) capabilities() []string {
 		switch {
 		case cfg.DisableRemote && (c == api.CapMeshNodeID || c == remote.CapServices || c == remote.CapProcesses || c == remote.CapFiles || (strings.HasPrefix(c, "job:") && jobs.IsRemoteType(strings.TrimPrefix(c, "job:")))):
 			continue
-		case cfg.DisablePatching && (c == patch.CapScan || c == patch.CapInstall || (strings.HasPrefix(c, "job:") && jobs.IsPatchType(strings.TrimPrefix(c, "job:")))):
+		case cfg.DisablePatching && (c == patch.CapScan || c == patch.CapInstall || c == patch.CapConfigure || (strings.HasPrefix(c, "job:") && jobs.IsPatchType(strings.TrimPrefix(c, "job:")))):
 			continue
 		case cfg.DisableSoftware && (c == deploy.CapDetect || c == deploy.CapInstall || (strings.HasPrefix(c, "job:") && jobs.IsSoftwareType(strings.TrimPrefix(c, "job:")))):
 			continue

@@ -30,6 +30,19 @@ final class TargetResolver
      */
     public function validate(mixed $in): array
     {
+        return $this->validateFor($in, null);
+    }
+
+    /**
+     * {@see validate()} for a caller limited to some clients (TEN-9): a device or a client outside `$visibleClientIds` "does not exist", the same answer as an id that
+     * does not exist, so the answer tells nothing about other clients. `null` = every client.
+     *
+     * @param mixed $in {type, id?}
+     * @param list<int>|null $visibleClientIds
+     * @return array{0:?array{type:string,id:int},1:?string} [target, error]
+     */
+    public function validateFor(mixed $in, ?array $visibleClientIds): array
+    {
         if (!is_array($in)) {
             return [null, 'A target is {"type": ..., "id": ...}.'];
         }
@@ -46,11 +59,12 @@ final class TargetResolver
             return [null, "target.id is required for a $type target."];
         }
         $exists = match ($type) {
-            'device' => $this->sql->one('SELECT device_id FROM endpoint_agent_devices WHERE device_id = ?', [$id]) !== null,
+            'device' => ($dev = $this->sql->one('SELECT client_id FROM endpoint_agent_devices WHERE device_id = ?', [$id])) !== null
+                && ($visibleClientIds === null || in_array((int) $dev['client_id'], $visibleClientIds, true)),
             'tag' => $this->sql->one('SELECT tag_id FROM rmm_tags WHERE tag_id = ?', [$id]) !== null,
             'group' => $this->sql->one('SELECT group_id FROM rmm_groups WHERE group_id = ?', [$id]) !== null,
             'policy' => $this->sql->one('SELECT policy_id FROM rmm_policies WHERE policy_id = ?', [$id]) !== null,
-            'client' => $this->tenancy === null || $this->tenancy->clientName($id) !== null,
+            'client' => ($this->tenancy === null || $this->tenancy->clientName($id) !== null) && ($visibleClientIds === null || in_array($id, $visibleClientIds, true)),
             default => true,
         };
 

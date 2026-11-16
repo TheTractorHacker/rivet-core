@@ -122,16 +122,33 @@ final class MeshService
         }
         $keyHex = $this->box->decrypt((string) $cfg['mesh_login_key_enc']);
         $domain = (string) $cfg['mesh_domain'];
+        if (MeshCookie::usesDisplayName((string) $cfg['mesh_account_template'])) {
+            // CORE-13: the display name is user-editable, so it must not pick the Mesh account. Fail closed until an administrator changes the template.
+            return self::fail('not_configured', 'The MeshCentral account name uses {username}, which is no longer allowed (a technician could rename themselves into another Mesh account). An administrator must change it to use {user_id} in the RMM MeshCentral settings.');
+        }
         $account = MeshCookie::accountName((string) $cfg['mesh_account_template'], $userId, $username);
         if ($keyHex === '' || $account === '') {
             return self::fail('not_configured', 'The MeshCentral login key or account is missing.');
         }
-        $cookie = MeshCookie::login($keyHex, $domain, $account, $this->sql->time());
+        $cookie = MeshCookie::login($keyHex, $domain, $account, $this->sql->time(), null, $this->tokenTtl($cfg));
         if ($cookie === null) {
             return self::fail('not_configured', 'The MeshCentral login key is not usable.');
         }
 
         return ['ok' => true, 'code' => 'ok', 'message' => 'Opening the remote session.', 'url' => MeshCookie::launchUrl($base, $domain, $cookie, $node, self::VIEWMODES[$view] ?? \RivetCore\Rmm\RmmProtocol::MESH_VIEWMODE, $this->viewSettings?->hideFor(isset(self::VIEWMODES[$view]) ? $view : 'desktop') ?? 0), 'session_id' => bin2hex(random_bytes(8))];
+    }
+
+    /**
+     * The token lifetime to honour (CORE-3). The stored default (RmmSettings::MESH_TOKEN_TTL_DEFAULT_S, also the column default of every
+     * existing install) keeps the legacy ~58 minute window so that upgrading changes nothing; any other value is honoured.
+     *
+     * @param array<string,mixed> $cfg
+     */
+    private function tokenTtl(array $cfg): ?int
+    {
+        $ttl = (int) ($cfg['mesh_token_ttl_s'] ?? 0);
+
+        return $ttl > 0 && $ttl !== \RivetCore\Rmm\Settings\RmmSettings::MESH_TOKEN_TTL_DEFAULT_S ? $ttl : null;
     }
 
     /**

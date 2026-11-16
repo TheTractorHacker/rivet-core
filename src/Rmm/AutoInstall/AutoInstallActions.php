@@ -65,6 +65,30 @@ final class AutoInstallActions
         return $this->authz->visibleClientIds($who->userId) === null ? null : ActionResult::fail(403, 'forbidden', 'This applies to every client; ask an administrator whose access is not limited to some clients.');
     }
 
+    /**
+     * CORE-15: what an install of an assigned or auto-installed package executes as SYSTEM is the newest version (installer, hash, silent arguments) with the
+     * vendor parameters filled in. Changing either for a package that installs by itself is a deployment, so it needs rmm.software.deploy (at the client of a
+     * client-scoped parameter, else fleet-wide), and a two_person package may not be changed this way at all.
+     *
+     * @param bool $versionAdded true for a new version (what the newest-version follow picks up); false for a vendor parameter (feeds every install)
+     */
+    private function liveGate(RmmPrincipal $who, int $packageId, bool $versionAdded, int $clientId = 0): ?ActionResult
+    {
+        $live = $versionAdded ? $this->catalog->followsNewest($packageId) : $this->catalog->installsByItself($packageId);
+        if (!$live) {
+            return null;
+        }
+        if (($e = $this->role($who, RmmAbility::SOFTWARE_DEPLOY, $clientId)) !== null) {
+            return $e;
+        }
+        $pkg = $this->catalog->package($packageId);
+        if ($pkg !== null && $pkg['two_person']) {
+            return ActionResult::fail(409, 'conflict', 'This package installs by itself and needs a second person. Remove or pin its assignments (a new assignment goes through approval) before changing its ' . ($versionAdded ? 'versions' : 'vendor parameters') . '.');
+        }
+
+        return null;
+    }
+
     private function featureOff(): ?ActionResult
     {
         return $this->settings->featureOn(DeployProtocol::FEATURE) ? null : ActionResult::fail(409, 'feature_disabled', 'Software deployment is switched off. An administrator can turn it on in the RMM settings.');
@@ -216,6 +240,9 @@ final class AutoInstallActions
                 if (!is_int($pid) || $this->catalog->package($pid) === null) {
                     throw new \InvalidArgumentException('package_id must name an existing package.');
                 }
+                if (($gate = $this->liveGate($who, $pid, true)) !== null) {
+                    return $gate;   // the same rule as DeployActions::addVersion
+                }
             }
             // Check the version first so a refusal leaves no half-made package behind.
             $created = false;
@@ -303,6 +330,10 @@ final class AutoInstallActions
             return ActionResult::fail(404, 'not_found', 'Package not found.');
         }
 
+        if (($e = $this->liveGate($who, $packageId, false, $scope === 'client' ? $scopeId : 0)) !== null) {
+            return $e;
+        }
+
         return $this->guard(function () use ($who, $packageId, $in, $set, $scope, $scopeId, $pkg): ActionResult {
             $name = $in['name'] ?? null;
             if ($set) {
@@ -338,7 +369,14 @@ final class AutoInstallActions
         return $this->role($who, RmmAbility::SOFTWARE_MANAGE) ?? $this->unrestricted($who) ?? $this->featureOff();
     }
 
-    /** Store an uploaded installer (the edition passes the temporary file of its upload handler). */
+    /**
+     * Store an uploaded installer (the edition passes the temporary file of its upload handler).
+     *
+     * CORE-15: this cannot change what an existing or assigned package runs, so rmm.software.manage is enough. Every upload is a NEW row with its own file id and
+     * storage name ({@see HostedFiles::store()}), a version pins the file's sha256 and size when it is created, the file is re-hashed before it is served
+     * ({@see HostedFiles::open()}) and the job carries the hash for the agent to check, and a file a version uses cannot be deleted. The only way for a new file
+     * to reach a device is a new version, which has the gate above.
+     */
     public function uploadFile(RmmPrincipal $who, string $tmpPath, string $originalName): ActionResult
     {
         if (($e = $this->uploadGate($who)) !== null) {

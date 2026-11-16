@@ -75,6 +75,16 @@ final class ChangeMonitorTest extends RemoteTestCase
         return [$r->status, $r->body === null ? null : json_decode($r->body, true), $r];
     }
 
+    /** CORE-19: only a linked device may fill the shared change store. */
+    public function testAnUnlinkedDeviceIngestsNothing(): void
+    {
+        $this->h->q("UPDATE endpoint_agent_devices SET link_state = 'pending_approval' WHERE device_id = $this->dev");
+        $this->enable();
+        [$c, $j] = $this->ship([self::ch(), self::ch(['item' => 'Other'])]);
+        $this->assertSame([200, 0, 2], [$c, $j['accepted'], $j['dropped']]);
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_change_records'));
+    }
+
     // ------------------------------------------------------------------ off by default, offered signed, on request
 
     public function testOffByDefault(): void

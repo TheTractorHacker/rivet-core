@@ -25,7 +25,7 @@ agent  --patch_scan-->  rmm_patch_scans + rmm_patch_available   (what is missing
 * **Update id.** Windows: the Windows Update id (a GUID, lower case). Linux: the package name (`openssl`, `libc6:amd64`, `kernel-core.x86_64`). Both have a strict syntax checked by the server and again by the agent ([section 6](#6-safety-defaults)).
 * **Kind** (worst first): `critical`, `security`, `important`, `optional`, `driver`, `other`. **Severity** is the vendor's (`critical`, `important`, `moderate`, `low`, `unspecified`).
 * **Status of one update on one device:** `available` (found, nobody decided), `approved`, `declined`, `installed`, `failed`.
-* **Job types:** `patch_scan` (read only) and `patch_install`, each needing the capability the agent announced (`patch:scan`, `patch:install`). An agent from before Phase 4 announces neither, is never offered either job, and the golden replay of older agents is byte-identical.
+* **Job types:** `patch_scan` (read only), `patch_install` and, for Windows Update control ([section 12](#12-windows-update-control-manage-windows-update-hold-the-feature-version)), `patch_configure`, each needing the capability the agent announced (`patch:scan`, `patch:install`, `patch:configure`). An agent from before Phase 4 announces neither, is never offered either job, and the golden replay of older agents is byte-identical.
 
 ## 2. Tables (migration `0028_rmm_patching`, additive, idempotent)
 
@@ -110,7 +110,7 @@ Events (through `RmmEventsInterface`): `rmm.patch.scan_completed`, `rmm.patch.ap
 |---|---|
 | `rmm.patch.view` | read patch state, history, compliance, policies, rings, rules (also needs `rmm.device.view`) |
 | `rmm.patch.manage` | scan, approve, decline, dry-run, rules, rings, patch policies (rings and policies also need a scope that sees every client) |
-| `rmm.patch.install` | a real installation |
+| `rmm.patch.install` | a real installation, a real `patch_configure` (Windows Update control), and changing the Windows Update settings of a patch policy |
 
 Routes: see [openapi-device.yaml](openapi-device.yaml). Editions map the abilities in their role matrix (suggested: `view` like `device.view`, `manage` like `job.run_saved`, `install` like `job.reboot` or stronger).
 
@@ -126,7 +126,7 @@ Limits (`limits_json`, all validated): `patch_scan_interval_s` 86400 (3600 to 60
 * WSUS and Configuration Manager integration: the scan asks the Windows Update Agent, which follows the machine's own update source (a WSUS-managed machine sees what its WSUS approves); this module does not talk to WSUS, does not approve there and does not report to it.
 * Rollback: no uninstall of an update from this module (a Windows KB can be removed with a `powershell` job; apt and dnf downgrades are not offered). `rmm_patch_history.action` has room for `uninstall`, nothing writes it.
 * A driver update policy beyond kind `driver`, never approved automatically unless `auto_days_driver` is set.
-* Feature updates of Windows (a new Windows version) are not special-cased: they appear as `optional` / `feature` and are not installed unless approved by name.
+* Feature updates of Windows (a new Windows version) are not special-cased by the scan: they appear as `optional` / `feature` and are not installed unless approved by name. What stops Windows moving to a new version by itself is [section 12](#12-windows-update-control-manage-windows-update-hold-the-feature-version).
 * macOS: Phase 7.
 * Progress while an install runs (the job protocol reports only `running` and the final result).
 * Windows installs longer than the job timeout (an hour by default): `max_minutes` is cut to fit; the rest follows in a next job.
@@ -157,3 +157,76 @@ Run on 2026-10-16. The test host has no network; the Ubuntu archive is removed f
 7. **The scheduler**: a housekeeping pass queues the scan by itself; an approval rule approves the new security update (a declined update stays declined); with a policy that allows installing, the pass queues a **dry run only**; after the `patch_live_install` limit is set to 1 the next pass queues the real install, which runs on the device (dummy 1.5, nothing else upgraded, still no restart); the fleet compliance page then reads the device as compliant.
 
 Not covered by the proof: dnf, yum and zypper hosts, a Windows machine, two-person approval over HTTP (it is covered by `PatchTest`), the restart job itself (`if_required_now`; covered by `PatchTest` against the server only, the existing `reboot` job is Phase 0 code).
+
+## 12. Windows Update control: manage Windows Update, hold the feature version
+
+Issue [#126](https://github.com/TheTractorHacker/rivet-core/issues/126). A managed PC moved itself to a new Windows version and broke software. This section lets a patch policy (a) stop Windows installing updates by itself while Core installs the approved ones through its own scheduler, and (b) pin the Windows feature version.
+
+> **NOT RUN ON WINDOWS.** The agent code is compiled for Windows and `go vet` clean (`GOOS=windows`), and its decision logic is unit tested on Linux against a fake registry, but **no registry value described here has ever been written on a real Windows machine**. Do not assign these settings fleet-wide before [WINDOWS_UPDATE_CONTROL_TEST.md](WINDOWS_UPDATE_CONTROL_TEST.md) has been run on a Windows 10 and a Windows 11 machine and its results written down.
+
+### The three policy settings (`rmm_patch_policies.settings_json`, no migration)
+
+| Key | Values | Default | Effect |
+|---|---|---|---|
+| `windows_update_mode` | `leave` \| `managed` | `leave` | `managed`: Windows only **notifies** that updates exist and never downloads or installs by itself. Core installs approved updates through the Windows Update Agent API like any `patch_install`. |
+| `windows_feature_target` | `none` \| `hold` \| a version such as `24H2`, `25H2`, `26H2` | `none` | A version: the device is held at it (it is offered that version and nothing newer). `hold`: pin to the feature version the device runs when the job runs; it is then kept (a hold never moves by itself). |
+| `windows_quality_defer_days` | 0 to 30 | `0` | Windows offers quality updates only that many days after release (`0` = no deferral policy written). |
+
+A version must match `^[0-9]{2}H[12]$` exactly (`22H2` ... `26H2`, `26H1`); anything else, including `25h2`, `25H2 `, `latest`, is refused when the policy is saved and again by the agent. Settings resolve like every other patch setting (global < client < site < group < tag < device, `enforce` wins). **All three at their defaults means Core touches nothing**: every install behaves exactly as before. The mode governs the update behaviour only; the target and the deferral work with or without `managed` (holding the version while quality updates still install by themselves is a legitimate setup).
+
+**Who may change them.** Saving a policy is `rmm.patch.manage` on an unrestricted scope as before. Setting, changing or removing any of the three Windows keys additionally needs `rmm.patch.install` (they decide what Windows installs on every device the policy reaches); without it the save is refused with 403 and an audit row `Patch Denied`. A policy that turns managed mode on is therefore a patch-install-level action. `two_person` is the existing approval rule for updates by hand and is not changed: it is not applied to policy edits (policies are not approvals today).
+
+### What the agent writes (and what it never touches)
+
+Registry, `HKLM`, 64 bit view. Core owns exactly these seven values and nothing else (the list is the allow-list in `endpoint-agent/internal/patch/wupolicy.go` and `WindowsUpdatePlan::KEYS`; a test pins its size):
+
+| Wire name | Registry value | Written when | Value | Confidence |
+|---|---|---|---|---|
+| `no_auto_update` | `...\Policies\Microsoft\Windows\WindowsUpdate\AU\NoAutoUpdate` (DWORD) | managed | `0` | high that the name and meaning are Microsoft's (GPO "Configure Automatic Updates", Policy CSP `Update/AllowAutoUpdate`) |
+| `au_options` | `...\WindowsUpdate\AU\AUOptions` (DWORD) | managed | `2` = "Notify for download and notify for install" | high for the name and the value `2`; **medium** that on current Windows 10/11 the setting behaves exactly like that (the Settings page text and whether Defender definitions still arrive on their own are to be confirmed by the test plan) |
+| `target_release_version` | `...\WindowsUpdate\TargetReleaseVersion` (DWORD) | a version or hold | `1` | high (GPO "Select the target Feature Update version", Policy CSP `Update/TargetReleaseVersion`) |
+| `target_release_version_info` | `...\WindowsUpdate\TargetReleaseVersionInfo` (REG_SZ) | a version or hold | e.g. `25H2` | high |
+| `product_version` | `...\WindowsUpdate\ProductVersion` (REG_SZ) | a version or hold | `Windows 11` for build 22000 and later, else `Windows 10` | high that the value is read by Windows 10 2004+ and 11; medium that `Windows 11` is the exact spelling every build expects (it is Microsoft's documented example) |
+| `defer_quality_updates` | `...\WindowsUpdate\DeferQualityUpdates` (DWORD) | defer days above 0 | `1` | high (GPO "Select when Quality Updates are received") |
+| `defer_quality_days` | `...\WindowsUpdate\DeferQualityUpdatesPeriodInDays` (DWORD) | defer days above 0 | `1`..`30` | high |
+
+**Deliberately left out.** `DisableOSUpgrade`: it is the old Windows 7/8.1-to-10 upgrade switch and I am not confident it has any effect on a feature update of Windows 10/11, so it is not written. `NoAutoRebootWithLoggedOnUsers` and the scheduled-install values: not needed for "notify only". `DeferFeatureUpdates*` and the pause values: the target version is the supported way to stop a feature update. No write goes to the policy key of anything else.
+
+### Who owns the setting: `externally_managed`
+
+Before any write the agent reads the whole state. It reports `externally_managed` and **changes nothing** (not even in `apply` mode) when:
+
+* **`wsus`**: `AU\UseWUServer` = 1, or a non-empty `WUServer` / `WUStatusServer`.
+* **`gpo`**: the two policy keys (`...\WindowsUpdate` and `...\WindowsUpdate\AU`) hold **any value Core did not write**, including one of its own seven names holding a value Core never wrote. Core writes only into an empty policy area.
+* **`mdm`**: `HKLM\SOFTWARE\Microsoft\PolicyManager\current\device\Update` carries a `*_ProviderSet` = 1 or a `*_WinningProvider` value (Intune or another MDM set Update policy). **Confidence low to medium**: this is how the Policy CSP records a provider; it was not seen on a real enrolled machine.
+* **`changed_since`**: a value Core wrote is no longer what Core wrote (somebody, typically a refreshing group policy, took it over). Core stops writing; a restore request still gives back the values that are unchanged.
+
+The server shows the reason (`external`: `wsus`, `gpo`, `mdm`, `changed_since`) on the device and never queues a job for such a device; it re-reads the state with every scan and queues again only after the state changed.
+
+### The marker, restore, before and after
+
+Every value Core writes is recorded in `HKLM\SOFTWARE\RivetIT\WindowsUpdateControl` (value `State`, JSON): the value written, the value that was there before (always "nothing" today, because Core only writes where nothing exists), the pinned version and whether it came from `hold`. The marker is written **before** the values (a crash leaves a record, never an orphan), is read through a strict validator (a tampered marker can never name a value outside the allow-list, change a type or carry odd text) and is rewritten only when it changes. Returning all three settings to their defaults makes the next job a **restore**: each recorded value that still equals what Core wrote is put back (deleted when there was nothing before); a value somebody else changed since is left alone and forgotten; the marker is removed. Empty policy keys are left in place. A write that fails rolls back what that job did and the job fails (`registry_error`). The result always carries `before`, `after` and the list of `changes` (`key`, `from`, `to`), and `outcome`: `unchanged`, `changed`, `restored`, `would_change`, `would_restore` (dry run), `externally_managed`, `cannot_hold` (`hold` on a build that reports no named version such as 2004 and older, a Windows Server, or an unreadable build; nothing is written).
+
+`hold` is idempotent: once held it keeps the pinned version even when the device later runs something newer (that is a breach and raises the alert below); a named version re-pins to the version you name; changing from a named version to `hold` re-pins to the version the device runs now.
+
+### How the server decides (reconciler)
+
+* Each Windows scan from an agent that has the feature carries a `windows_update` object (`feature_version`, `build`, `product`, `external`, `policy`, `core`). It is validated like the rest of the report (unknown keys dropped, types fixed) and kept in **one durable row per device in `rmm_patch_jobs`** (`type` `wu_state`: `ids_json` = the state, `created_at` = when it was reported; no migration; the pruning of the ledger skips it). `rmm_patch_jobs.type` is `varchar(14)` and `patch_configure` has 15 characters, so the ledger rows of the job use the short name `configure`; the wire job type, the capability and the audit text keep the long names.
+* `PatchScheduler` hands devices that reported a state to `PatchConfigureService::reconcileDue()` (a device is looked at about every 10 minutes at most). It queues `patch_configure` only when **all** hold: Windows; linked, online, not revoked or retired; announced `patch:configure` (an older agent never does and is never offered the job); **not** `device_automation_disabled` (managed by another RMM); the effective policy asks for something (or the device still carries values Core wrote earlier and the policy now asks nothing: restore); the reported state differs from what the policy asks; nothing external owns the setting; no `patch_configure` waiting on the device; the same request was not just answered `externally_managed`, `cannot_hold` or failed (a day). A device with no report yet is waited for.
+* **Dry run first.** Until the `patch_live_install` limit is 1 the job is a dry run (`mode` `dry_run`: the agent reads and reports what it WOULD change; at most one per device and day). With live installs on it is `apply`, capped like installs: `patch_max_installs` for the fleet and `patch_max_installs_per_client`, counting configure jobs that are queued or running.
+* The job is **destructive**: offered at most once and never re-sent when the acknowledgement is lost; a late result is still applied. One at a time per device. Parameters are the desired state from the policy, validated by a strict allow-list (`PatchJobTypes::configure`); nothing a person types is a path, a value name or a version that was not validated.
+* **Audit.** Queuing (`Patch Configure Queued` / `Dry Run Queued`, with device, job, patch policy id, desired state and what is due, by the user or "The scheduler"), every result (`Patch Configure Applied`, `Dry Run`, `Skipped`, `Failed`, with before/after changes and the owner when external), a manual request (`Patch Configure Requested`) and a refused policy change (`Patch Denied`).
+* **Manual.** `POST endpoint_devices/{id}/patches/configure` (`{mode?: dry_run|apply, confirm?}`): a dry run is `rmm.patch.manage`; `apply` is `rmm.patch.install` plus `confirm`; both go through the same client scoping as every route (a device of another client is the same 404). It uses the policy's desired state, never typed values.
+* After a real change the server asks for a scan to prove it.
+
+### Reporting and the alert
+
+`GET endpoint_devices/{id}/patches` gains (additive) `summary.windows_update` (`status`, `capable`, `reported_at`, `feature_version`, `build`, `product`, `target_version`, `newer_than_target`, `external`, `policy`, `core_keys`, `pending_changes`, `last_configure`) and `summary.policy.windows`. `status`: `off`, `in_sync`, `pending`, `restore_pending`, `externally_managed`, `not_reported`, `unsupported_agent`, `automation_disabled`; `null` for a device that is not Windows. The alert engine gets the check **`patch.feature_version`**: `fail` while a Windows device runs a feature version **newer** than its target (a named version, or what Core pinned for `hold`), `ok` otherwise, and it recovers when the policy stops holding. A device with no target gets no such check.
+
+### Agent
+
+New job type `patch_configure`, capability `patch:configure` (and `job:patch_configure`), Windows only, withdrawn by `disable_patching` together with the other patch capabilities. The agent code is native registry access (no PowerShell, no script, no string built from server input). Parameters: `mode`, `update_mode`, `feature_target`, `defer_days`; an unknown key refuses the whole job.
+
+### Limits
+
+Windows Server cannot hold a feature version (`cannot_hold`; `managed` mode alone works). The new Windows version names (`26H2`) are just strings: Core does not know whether Microsoft ships them. Defender definition updates and Store or Office updates are expected to be unaffected by notify-only mode, **not verified**. Core does not touch the Settings-app "pause updates" values.

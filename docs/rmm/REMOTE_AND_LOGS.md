@@ -113,6 +113,22 @@ Before rc.18 a hex id was sent to MeshCentral as it was, which MeshCentral does 
 
 **How to test on a real MeshCentral (UNVERIFIED so far: only a mock server and MeshCentral's source were used).** Sign in to RivetIT, open a mapped online device, click Remote. Expected: a new tab opens at once, ends at the URL above, shows the Desktop view with no MeshCentral masthead, top bar, footer, tab titles or device list, with a Connect button (click it). Then set the hide value to 0 and repeat: the full MeshCentral appears (the old behaviour). If your MeshCentral version differs in what a bit hides, change the number in the setting; nothing else depends on it.
 
+## MeshCentral does not separate clients by itself (security: CORE-14)
+
+Core decides who may press Remote on which device (`rmm.remote.launch` for the device's client), then mints a MeshCentral login token for ONE Mesh account. From that point MeshCentral, not Core, decides what the session can reach, and it scopes only by that Mesh account's rights. Core installs every device into the single Mesh group set in the Mesh agent install settings (`mesh_group_id`). So:
+
+* A technician restricted to client A who launches Remote on one of A's devices gets a MeshCentral session for the Mesh account. If that account can see devices of client B (it can, whenever B's devices are in a group the account has rights to, including the single shared group), the technician can edit the URL (`gotonode`, `viewmode`, drop `&hide=`) and open B's desktop, terminal and files. This also bypasses `rmm.remote.manage` and the `remote_tools` switch, because those are enforced by Core only.
+* With the default template (`rivetit-support`, no placeholder) every technician is the same Mesh user. With `{user_id}` each technician is a distinct Mesh user, which gives MeshCentral an audit trail and lets you grant rights per technician, but does not by itself separate clients.
+
+Core cannot enforce client separation inside MeshCentral. The recommended setup for a multi-tenant installation (RivetMSP, or any RivetIT install with technicians restricted to some clients):
+
+1. One MeshCentral **device group per client**, and give each Mesh account rights only on the groups of the clients that technician may reach. Keep the single shared group only if every technician may reach every client.
+2. Use the `{user_id}` account template (for example `rivetit-{user_id}`) and create the matching Mesh accounts. Never share one Mesh account between technicians with different client scope.
+3. Install each device into its client's group (set `mesh_group_id` per rollout, or move the node in MeshCentral), and map nodes on the device page as usual.
+4. Treat `{username}` as unsupported: it was removed because the display name is user-editable (CORE-13).
+
+Token lifetime: `mesh_token_ttl_s` (60 to 3600 s) is honoured since 1.0.0-rc.62 for the login cookie. MeshCentral accepts a token for 60 minutes after its `time` field, so Core back-dates `time` by `3600 - ttl` seconds (never less than the 120 s clock-skew allowance). The stored default of 300 keeps the original ~58 minute window, so an install that never touched the field behaves as before; any other value, for example 600, limits the token to that lifetime. The login token is only needed at the click; MeshCentral keeps its own session afterwards.
+
 ## Install the MeshCentral agent with the RivetIT agent
 
 Status: 1.0.0-rc.12, migration `0023_rmm_mesh_agent`; the group id in MeshCentral's own URL form and the pasted-address field came in 1.0.0-rc.15 (migration `0024_rmm_mesh_group_url`). **Optional and off by default.** Wire contract: [PROTOCOL.md](PROTOCOL.md) 3.2.5 and 6.
