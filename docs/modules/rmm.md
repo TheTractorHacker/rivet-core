@@ -320,7 +320,7 @@ Built after v1.0.0-rc.10 (migration `0022_rmm_remote_and_logs`, five new tables,
 | Retention | `Housekeeping::run()` prunes by age, then trims devices above their cap, then the fleet above its cap, in transactions of 2000 rows that also lower the counters (keys `pruned_logs_retention`, `pruned_logs_device_cap`, `pruned_logs_fleet_cap`, `transfers_expired`, `transfers_pruned`, `log_rule_alerts_recovered`) | `Logs\LogService::prune()`, `Remote\TransferService::prune()` | |
 | Search | newest first; device, client, time range (a fleet search spans at most 7 days, a device search 90), severity or worse, source, event id, text (substring, wildcards escaped); client scoped | `Logs\LogService::search()`, `RmmReadModel::logSearch()` | |
 | Log rules | `Logs\LogRuleService` (CRUD, evaluation per accepted batch, `sweep()` from housekeeping); a match reports `log.rule_<id>` through `CheckEvaluator::apply()`; never a regular expression | `Logs\LogRuleService`, `LogActions` | `endpoint_agent_log_rules` |
-| Events | `rmm.file.transferred`, `rmm.log.rule_matched` (and the existing `rmm.job.*`, `rmm.check.*`, `rmm.alert.*`) | `RmmEvent`, `Webhooks\EventCatalog` | |
+| Events | `rmm.file.transferred`, `rmm.log.rule_matched`, (and the existing `rmm.job.*`, `rmm.check.*`, `rmm.alert.*`) | `RmmEvent`, `Webhooks\EventCatalog` | |
 
 **Read model additions** (`RmmReadModel`, no authorization inside, the caller has authorized the device): `remoteSnapshot($deviceId, 'services'|'processes')`, `fileTransfers($deviceId)`, `logSearch($filters, $visibleClientIds, $limit, $offset)`, `logStats($deviceId)`. `jobs()` and `deviceView()` no longer carry the output of a remote-tool job (it is read through the remote endpoints, which need `rmm.remote.manage`); `job()` asks for `rmm.remote.manage` on those types.
 
@@ -531,6 +531,7 @@ MeshCentral does not separate clients: one Mesh account reaches every device of 
 | `PatchActions::deleteRule` | `rmm.patch.manage` | yes | the rule's client is checked first: 404 |
 | `PatchActions::fleetUpdates` | `rmm.patch.view` | yes | a client filter outside visibleClientIds() is 404 |
 | `PatchActions::history` | `rmm.patch.view` | yes | deviceFor() |
+| `PatchActions::configure` | `rmm.patch.manage` | no | deviceFor() |
 | `PatchActions::install` | `rmm.patch.manage`, `rmm.patch.install` | yes | (dry) deviceFor(); (install) deviceFor() |
 | `PatchActions::savePolicy` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate(): a patch policy is fleet-wide, needs a caller not limited to some clients |
 | `PatchActions::saveRing` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
@@ -579,6 +580,7 @@ MeshCentral does not separate clients: one Mesh account reaches every device of 
 | `TechnicianActions::cancelJob` | `rmm.job.run_saved` | yes | deviceFor() (404), then the job is looked up by (job, device); (cross) own device + the job of another client: the job is looked up by (job, device), so it is not found |
 | `TechnicianActions::clearUpdateFailures` | `rmm.device.manage` | yes | manage() |
 | `TechnicianActions::createToken` | `rmm.token.manage` | yes | authz->check(TOKEN_MANAGE, client) incl. clientOk -> 403 |
+| `TechnicianActions::meshMapping` | `rmm.device.view` | no | deviceFor(): a device of another client is the same 404 as a missing one |
 | `TechnicianActions::launchRemote` | `rmm.remote.launch`, `rmm.remote.manage` | yes | deviceFor() before any Mesh call, session or token; (forced) deviceFor() (force only skips the offline check); (terminal) deviceFor() before the remote.manage and feature checks; (files) deviceFor() before the remote.manage and feature checks |
 | `TechnicianActions::resolvePending` | `rmm.device.manage` | yes | manage(); (link) manage(), then the asset's client must be one the caller manages (CORE-02) |
 | `TechnicianActions::retire` | `rmm.device.manage` | yes | manage() |
@@ -595,6 +597,7 @@ MeshCentral does not separate clients: one Mesh account reaches every device of 
 | `TransferService::find` | none | yes | keyed by (transfer, device): the transfer of another device is never returned for this one |
 | `DeployActions::package` | n/a | no (not client-scoped) | Reads one package of the catalog, which is shared by every client; the installer address is masked for a caller who is not fleet-wide. Writes are in the matrix. |
 | `AutoInstallActions::paramsOf` | n/a | no (not client-scoped) | Reads where the parameters of a catalog package are set (never a value); the client-scoped entries are filtered to the caller's clients. Writes are in the matrix. |
+| `TechnicianActions::approveMeshNodes` | n/a | no (not client-scoped) | Bulk approve-and-map: every id goes through setMeshNode(), whose deviceFor() hides a device of another client; an id outside the caller's clients is reported per device as refused, never acted on. |
 | `PatchActions::getPolicy` | n/a | no (not client-scoped) | Reads one patch policy, a fleet-wide object: settings only. Its assignments are filtered to the caller's clients (testPolicyDetailsHideTheAssignmentsOfOtherClients); its writes are in the matrix. |
 | `RmmAdmin::msiTemplateAction` | n/a | no (not client-scoped) | Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
 | `RmmAdmin::binaryAction` | n/a | no (not client-scoped) | Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
@@ -710,3 +713,34 @@ Edition steps: add the check box to the installer and token dialogs, add the bul
 - A move to the client the device already belongs to returns `true` and writes nothing, not even an audit row. A retired or revoked device can be moved (its history and asset follow); it stays retired or revoked. `false` only for an unknown device or client.
 - A table with `device_id` and `client_id` added later must be added to `DeviceService::CLIENT_CARRYING_TABLES`; `DeviceTransferCompletenessTest::testEveryClientCarryingTableIsHandled()` fails until it is decided.
 - An edition's own bulk asset transfer must call `TechnicianActions::transfer()` for an asset that has an endpoint device, otherwise the agent state is orphaned in the old client.
+
+## Remote session policy (1.0.0-rc.68, migration 0050)
+
+What the person at a client's devices is owed when a technician opens a remote session on one of them: RivetMSP's per-client policy. **Policy only**: Core decides and records; it runs nothing on a device, does not hide any session from the person at the device (Mesh's own session indicators are not touched) and never replaces the ability checks (`rmm.remote.launch`, `rmm.remote.manage`) or the switches. The Rivet Console (below) is what shows the notice. (An earlier draft also had a "Background Mode" with its own ability, switch, sessions and events; it was dropped before release and does not exist.)
+
+- **Policy** (`Remote\RemoteSessionPolicy::decide($clientId)`, edition-neutral, reads `Contracts\RemoteSessionPolicyStoreInterface`; answer `Remote\RemoteSessionDecision`): `allow` (nothing extra), `notify` (allowed, `notice = notify`: the console shows a banner to the technician; it does not notify the person at the device) or `approve` (refused, code `approval_required`, until an approval flow exists). **No stored policy and client 0 mean no extra requirement**, exactly as before the policy existed; an unknown or empty stored value and any lookup that throws DENY.
+- **Storage.** `DbRemoteSessionPolicyStore` over `rmm_client_remote_policy` (migration `0050_rmm_client_remote_policy`, additive and idempotent; `0045` is absent from the list on purpose, it was reserved for the reporting views that shipped as `0047`). The edition's `rmm_remote_sessions` is not altered (ADR-002). An edition with its own policy storage passes `remote_session_policy` (a `RemoteSessionPolicyStoreInterface`) to `RmmModule` and then changes and audits that policy itself.
+- **Changing the policy (audited).** `RmmModule::remoteSessionPolicySettings()` (`Remote\RemoteSessionPolicySettingsService::setClientPolicy($who, $clientId, 'allow'|'notify'|'approve'|null)`): needs `rmm.admin` (the same ability as the remote-tools settings), writes one `Remote Session Policy Changed` row (who, client, old and new value) BEFORE it changes anything and changes nothing if that write fails (the exception propagates); a refused caller gets 403 and a `Remote Session Policy Denied` row, an invalid value 422. `DbRemoteSessionPolicyStore::setClientPolicy()` does not check or audit and is internal to Core. There is no setting that switches the audit off.
+- **Where it is used.** The policy is read when a Rivet Console session is issued (see the Console redeem section once that release is in). RivetIT has no per-client policy and does not need the table.
+- **Tests.** `tests/Unit/Rmm/RemoteSession/*` (no database) and `tests/Integration/Rmm/RemoteSessionPolicyTest.php` (scratch database).
+
+
+## Optional Rivet Console (desktop app): the `remote_console` switch (1.0.0-rc.69)
+
+The Rivet Console is an installed desktop application a technician can use instead of a MeshCentral browser tab. It is **optional**: the switch is off by default and, while it is off, `launchRemote()` and `POST endpoint_devices/{id}/remote` behave exactly as before (a stock MeshCentral login-token URL that opens in a browser tab; the result is `url` and `session_id`, nothing more). Nothing is removed when it is on: the stock URL is still returned as the fallback.
+
+- **Switch.** Sub-switch `remote_console` in `RmmSettings::FEATURES` (`RemoteProtocol::FEATURE_REMOTE_CONSOLE`), stored in `features_json` like `remote_tools`; a NULL `features_json` never turns it on. Set through `RemoteActions::updateSettings()` (`features: {remote_console: true|false}`, administrators only, audited as `Remote Settings Changed`; read back in `settings()` under `features.remote_console`). Unlike `filetransfer` it has **no risk acknowledgement**: it grants nothing (the same abilities, device scope and `remote_tools` rules apply, and the deep link carries no credential).
+- **Launch.** `launchRemote($who, $deviceId, $force, $ip, $ua, $view, console: true, consoleKind: null)` (REST body `{"console": true, "console_kind": "terminal-ps", "view": "desktop|terminal|files"}`). The flag is ignored while the switch is off. With the switch on, every existing check still runs first (`rmm.remote.launch`, `rmm.remote.manage` and `remote_tools` for terminal and files, device scope, the offline rule, the audit rows) and the result gains a `console` object:
+
+  ```json
+  {"url": "https://mesh.example/?login=...&gotonode=...&viewmode=11", "session_id": "...",
+   "console": {"kind": "desktop", "url": "rivetconsole://connect?kind=desktop&node=node%2F%2F...", "fallback_url": "https://mesh.example/?login=..."}}
+  ```
+
+  `console.url` is the deep link `rivetconsole://connect?kind=<desktop|terminal|terminal-ps|files>&node=<mesh node id>` (the node id percent-encoded; a URL parser decodes it). `kind` defaults from `view` (`desktop`, `terminal`, `files`); `terminal-ps` (a PowerShell terminal) is only accepted with `view = terminal`, anything else is a 422. The link **carries no credential, token or password**: the console uses its own signed-in session and the server enforces rights on every tunnel (`Remote\ConsoleLink`). The kind is checked against the allow-list and the node id against `^node//[A-Za-z0-9@$_-]{20,100}$`; a device whose node id does not match gets `console: null` and only the stock URL. `console.fallback_url` is the stock MeshCentral URL (same value as the top-level `url`, which holds a short-lived login token, so treat it as before: never log it). The audit row of a console launch ends with `(Rivet Console link, <kind>)`; with the switch off the row text is unchanged.
+- **What the editions must render** (the UI lives in RivetIT and RivetMSP, not in Core):
+  1. On the remote-tools settings page, a toggle labelled **`Use Rivet Console (desktop app)`** bound to `features.remote_console` (save with `updateSettings`, administrators only; no confirmation dialog is required).
+  2. Helper text under it: that the console is optional, that it needs the Rivet Console app installed on the technician's PC, and that **stock MeshCentral launch remains available** (a link to the browser session stays on the page, and turning the toggle off restores today's behaviour for everyone).
+  3. On the device page, when `features.remote_console` is on, send `console: true` with the launch. The deep link is returned in **`data.console.url`** (REST `console.url`); open it with `window.location = console.url` (or a hidden link click) rather than `window.open`. Offer **`data.console.fallback_url`** as "Open in browser instead" for a PC without the app. When `console` is absent or null, open `url` in a tab as before.
+- **Tests.** `tests/Unit/Rmm/ConsoleLinkTest.php` (link shape, no credentials, kind and node validation, switch default and validation), and `tests/Integration/Rmm/RemoteConsoleTest.php` (stock output unchanged with the switch off; descriptor with it on; scratch database and MockMeshServer, not run where this was built).
+

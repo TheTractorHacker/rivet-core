@@ -76,6 +76,18 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Adopting the per-client remote session policy and the optional Rivet Console (1.0.0-rc.68 and rc.69; migration 0050; optional, off by default)
+
+Nothing is required: with the switch off (the default) and no stored policy every existing call behaves as before. A signature change the API checker reports as BREAKING by its text comparison, and why it does not break a correct caller (it only appends optional trailing parameters to a `final` class, so no positional call changes and nothing can override it):
+
+| Signature | Change | Intentional | Edition action |
+|---|---|---|---|
+| `Technician\TechnicianActions::launchRemote()` | trailing optional `$console = false`, `$consoleKind = null` | yes: the console deep link | none: positional calls are unchanged; the defaults give the stock launch |
+
+1. **Migration.** `CoreMigrations::all()` gains `0050_rmm_client_remote_policy` (one new table, `CREATE TABLE IF NOT EXISTS`, nothing altered). It is numbered 0050 and registered after `0049_rmm_installer_managed_externally`; the migration is additive and idempotent, and it never ran in a released version, so no installation has applied it under another id. RivetMSP mirrors it in `db.sql` and its updater with its own numbering; RivetIT has no per-client policy screen and may skip the table (`RemoteSessionPolicy` treats a missing store row as no policy).
+2. **Policy changes** go through `RmmModule::remoteSessionPolicySettings()` (`Remote\RemoteSessionPolicySettingsService`: `rmm.admin` required, audited with old and new value, fails closed if the audit write fails). The raw setter on `DbRemoteSessionPolicyStore` is for Core only; calling it from edition code skips the check and the audit. An edition with its own storage passes it as the `remote_session_policy` module option and audits its own changes.
+3. **`approve` is a refusal for now** and `notify` is a banner for the technician only; never describe either as asking or telling the end user.
+
 ## Pentest 2026-11-08 fixes (1.0.0-rc.62; no migration; read before updating)
 
 **Operator step you must not miss (CORE-13): Mesh launches stop until the account template uses `{user_id}` and matching Mesh accounts exist.** After this update, if the stored template contains `{username}`, every Remote launch (web, REST and the technician actions) fails with `not_configured` until an administrator fixes it. Check the current template before you update: in the RMM settings, MeshCentral section, field "account name", or with `SELECT mesh_account_template FROM endpoint_agent_settings WHERE id = 1;` (the default `rivetit-support` has no placeholder and is not affected, but shares one Mesh account between all technicians, see docs/rmm/REMOTE_AND_LOGS.md). If it contains `{username}`, change it to use `{user_id}` (for example `rivetit-{user_id}`), then create a Mesh account named for each technician's id (`rivetit-<id>`) with rights on the right device groups. `{user_id}` is the only placeholder Core substitutes; any other word in braces is literal text.

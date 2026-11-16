@@ -59,6 +59,7 @@ final class TenantIsolationMatrixTest extends TestCase
         'DeployActions::package' => 'Reads one package of the catalog, which is shared by every client; the installer address is masked for a caller who is not fleet-wide. Writes are in the matrix.',
         'AutoInstallActions::paramsOf' => 'Reads where the parameters of a catalog package are set (never a value); the client-scoped entries are filtered to the caller\'s clients. Writes are in the matrix.',
         'PatchActions::getPolicy' => 'Reads one patch policy, a fleet-wide object: settings only. Its assignments are filtered to the caller\'s clients (testPolicyDetailsHideTheAssignmentsOfOtherClients); its writes are in the matrix.',
+        'TechnicianActions::approveMeshNodes' => 'Bulk approve-and-map: every id goes through setMeshNode(), whose deviceFor() hides a device of another client; an id outside the caller\'s clients is reported per device as refused (HTTP 200 with a per-device result), never acted on.',
         // ---- RmmAdmin: fleet-wide agent releases and installer templates, gated by an administrative ability (no client or device is named)
         'RmmAdmin::msiTemplateAction' => 'Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish.',
         'RmmAdmin::binaryAction' => 'Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish.',
@@ -89,7 +90,7 @@ final class TenantIsolationMatrixTest extends TestCase
         'history', 'scan', 'approve', 'decline', 'reject', 'cancel', 'ack', 'kill', 'thresholds', 'alerting', 'policies', 'rules', 'rings', 'hypervisor', 'checks', 'tags', 'software',
         'assignments', 'resolve', 'remote', 'mesh', 'changes', 'fields', 'patches', 'deployments', 'autoinstall', 'approvals', 'schedules', 'scripts', 'logs', 'files', 'processes', 'services',
         'software_files', 'software_params', 'software_templates', 'software_autoinstall', 'software_assignments', 'software_packages', 'patch_policies', 'escalation_policies', 'maintenance',
-        'alerts', 'vms', 'parent',
+        'alerts', 'vms', 'parent', 'verify',
     ];
 
     private static ?E $env = null;
@@ -202,6 +203,8 @@ final class TenantIsolationMatrixTest extends TestCase
         return [
             $mk('visibleDevice', [$V], 'visibleDevice(): authz->check(DEVICE_VIEW, client) incl. clientOk -> null', false,
                 fn (E $e, string $t, RmmPrincipal $p) => fn () => self::found(self::ta($e)->visibleDevice($p->userId, $e->dev($t)))),
+            $mk('meshMapping', [$V], 'deviceFor(): a device of another client is the same 404 as a missing one', false,
+                fn (E $e, string $t, RmmPrincipal $p) => fn () => self::ta($e)->meshMapping($p, $e->dev($t))),
             $mk('submitJob', [A::JOB_RUN_SCRIPT], 'deviceFor(): clientOk + DEVICE_VIEW(client) -> 404, then the ability for the client', true,
                 fn (E $e, string $t, RmmPrincipal $p) => fn () => self::ta($e)->submitJob($p, $e->dev($t), ['type' => 'powershell', 'script' => 'Get-Date'])),
             $mk('submitJob#saved', [A::JOB_RUN_SAVED], 'deviceFor() as above (saved script path)', true,
@@ -628,6 +631,7 @@ final class TenantIsolationMatrixTest extends TestCase
 
                     return fn () => $pa($e)->scan($p, $d);
                 }),
+            $mk('configure', [A::PATCH_MANAGE], 'deviceFor()', false, fn (E $e, string $t, RmmPrincipal $p) => fn () => $pa($e)->configure($p, $e->dev($t), ['mode' => 'dry_run']), ['control' => [409]]),
             $mk('install#dry', [A::PATCH_MANAGE], 'deviceFor()', false, fn (E $e, string $t, RmmPrincipal $p) => fn () => $pa($e)->install($p, $e->dev($t), ['mode' => 'dry_run'])),
             $mk('install#install', [A::PATCH_INSTALL], 'deviceFor()', false, fn (E $e, string $t, RmmPrincipal $p) => fn () => $pa($e)->install($p, $e->dev($t), ['mode' => 'install', 'confirm' => true])),
             $mk('approve#device', [A::PATCH_MANAGE], 'a named device goes through deviceFor() (404)', true,
@@ -1183,6 +1187,7 @@ final class TenantIsolationMatrixTest extends TestCase
             ['RemoteApi', 'POST', '{d}/processes/query', [], [A::REMOTE_MANAGE]],
             ['RemoteApi', 'POST', '{d}/processes/4242/kill', ['name' => 'notepad.exe', 'confirm' => true], [A::REMOTE_MANAGE]],
             ['RemoteApi', 'GET', '{d}/remote/mesh', null, [A::REMOTE_LAUNCH]],
+            ['RemoteApi', 'GET', '{d}/mesh/mapping', null, [A::DEVICE_VIEW]],
             ['RemoteApi', 'GET', '{d}/remote/jobs/{tooljob}', null, [A::REMOTE_MANAGE]],
             ['RemoteApi', 'PUT', '{d}/remote/node', ['node_id' => 'node//' . str_repeat('C', 24) . '7'], [A::DEVICE_MANAGE]],
             ['RemoteApi', 'POST', '{dq}/mesh/install', ['force' => true], [A::REMOTE_MANAGE], null, '', ['mesh' => 'https']],
@@ -1206,6 +1211,7 @@ final class TenantIsolationMatrixTest extends TestCase
             ['PatchApi', 'GET', '{d}/patches', null, [A::PATCH_VIEW]],
                         ['PatchApi', 'GET', '{d}/patches/history', null, [A::PATCH_VIEW]],
             ['PatchApi', 'POST', '{dq}/patches/scan', null, [A::PATCH_MANAGE]],
+            ['PatchApi', 'POST', '{d}/patches/configure', ['mode' => 'dry_run'], [A::PATCH_MANAGE], [200, 202, 409], '', ['w' => false]],
             ['PatchApi', 'POST', '{d}/patches/install', ['mode' => 'dry_run'], [A::PATCH_MANAGE], [200, 202], '', ['w' => false]],
             ['PatchApi', 'POST', 'patches/approve', ['update_ids' => [E::WIN_UPDATE], 'device_id' => '{dn}'], [A::PATCH_MANAGE], [200, 202], '', ['reset' => true]],
             ['PatchApi', 'POST', 'patches/decline', ['update_ids' => [E::WIN_UPDATE], 'device_id' => '{dn}'], [A::PATCH_MANAGE], null, '', ['reset' => true]],

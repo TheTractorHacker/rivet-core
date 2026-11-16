@@ -187,6 +187,8 @@ final class RmmModule
     private ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfterApproval = null;
     private ?InstallerService $installerService = null;
     private ?TechnicianActions $technician = null;
+    private ?\RivetCore\Rmm\Remote\DbRemoteSessionPolicyStore $remotePolicyDbStore = null;
+    private ?\RivetCore\Rmm\Remote\RemoteSessionPolicySettingsService $remotePolicySettingsService = null;
     private ?RmmAdmin $admin = null;
     private ?DeviceState $deviceState = null;
     private ?SoftwareService $software = null;
@@ -278,7 +280,7 @@ final class RmmModule
     private readonly RmmEventsInterface $events;
 
     /**
-     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,hosted_max_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>,retention_floors?:\RivetCore\Rmm\Settings\RetentionFloorsInterface,postgres?:PostgresConnectionInterface|PostgresConfig|\Closure():(PostgresConnectionInterface|PostgresConfig|null)|null} $options
+     * @param array{binary_dir?:?string,transfer_dir?:?string,allow_insecure_http?:bool,allow_linux?:bool,host_fallback?:?string,integration_name?:string,installer_prefix?:string,max_upload_bytes?:?int,hosted_max_bytes?:?int,client_label?:string,denial_reasons?:array<string,string>,remote_session_policy?:\RivetCore\Rmm\Contracts\RemoteSessionPolicyStoreInterface,escalation?:RmmEscalationInterface,threshold_resolver?:ThresholdResolverInterface,cache?:\Psr\SimpleCache\CacheInterface,redis?:\RivetCore\Redis\RedisClientProviderInterface,metric_reader?:RmmMetricReaderInterface,starter_packs?:list<string>,retention_floors?:\RivetCore\Rmm\Settings\RetentionFloorsInterface,postgres?:PostgresConnectionInterface|PostgresConfig|\Closure():(PostgresConnectionInterface|PostgresConfig|null)|null} $options
      */
     public function __construct(
         private readonly DatabaseInterface $database,
@@ -1462,6 +1464,31 @@ final class RmmModule
     {
         return $this->technician ??= new TechnicianActions($this->sql(), $this->devices(), $this->deviceService(), $this->enrollment(), $this->jobs(), $this->updates(),
             $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings(), $this->meshMapping(), $this->meshAgents());
+    }
+
+    /** The per-client remote-session policy store: the Core table (migration 0050) unless the edition passes its own `remote_session_policy` option. */
+    public function remoteSessionPolicyStore(): \RivetCore\Rmm\Contracts\RemoteSessionPolicyStoreInterface
+    {
+        return $this->options['remote_session_policy'] ?? ($this->remotePolicyDbStore ??= new \RivetCore\Rmm\Remote\DbRemoteSessionPolicyStore($this->sql()));
+    }
+
+    /** What the person at a client's devices is owed (`allow`, `notify`, `approve`), see {@see \RivetCore\Rmm\Remote\RemoteSessionPolicy}. */
+    public function remoteSessionPolicy(): \RivetCore\Rmm\Remote\RemoteSessionPolicy
+    {
+        return new \RivetCore\Rmm\Remote\RemoteSessionPolicy($this->remoteSessionPolicyStore());
+    }
+
+    /**
+     * Changing a client's remote-session policy: administrator check, audit row with the old and the new value, fail closed. Uses Core's table, so it is only available
+     * when the edition did not pass its own `remote_session_policy` (then it manages its own policy storage and its own audit).
+     */
+    public function remoteSessionPolicySettings(): \RivetCore\Rmm\Remote\RemoteSessionPolicySettingsService
+    {
+        if (isset($this->options['remote_session_policy'])) {
+            throw new \LogicException('The edition supplied its own remote_session_policy; it changes that policy itself.');
+        }
+
+        return $this->remotePolicySettingsService ??= new \RivetCore\Rmm\Remote\RemoteSessionPolicySettingsService($this->authorizer(), $this->remotePolicyDbStore ??= new \RivetCore\Rmm\Remote\DbRemoteSessionPolicyStore($this->sql()), $this->audit);
     }
 
     /** The validated administration operations (settings, MeshCentral, signing key, binaries, releases, installers). */

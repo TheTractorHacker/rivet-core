@@ -26,6 +26,7 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   POST endpoint_devices/{id}/jobs            {type: powershell|reboot|collect, script|script_id, params, timeout_s, destructive, confirm}
  *   POST endpoint_devices/{id}/jobs/{job}/cancel
  *   POST endpoint_devices/{id}/remote          {force?} -> {url, session_id}
+ *   POST endpoint_devices/{id}/remote          {console: true, console_kind?, view?, force?} -> {url, session_id, console: {kind, url, fallback_url}} (only with the remote_console switch on; otherwise the plain result)
  *
  * Phase 1 additions (all additive; the routes above are unchanged, and the list also accepts the filters tag, group, software and
  * location_id):
@@ -233,7 +234,14 @@ final class TechnicianApi
             if (!is_string($view)) {
                 return self::json(422, ['error' => 'The view must be desktop, terminal or files.', 'code' => 'invalid']);
             }
-            $r = $this->actions->launchRemote($who, $id, !empty($in['force']), $req->clientIp, $req->userAgent, $view);
+            $consoleKind = $in['console_kind'] ?? null;
+            if ($consoleKind !== null && !is_string($consoleKind)) {
+                return self::json(422, ['error' => 'The console kind must be desktop, terminal, terminal-ps or files.', 'code' => 'invalid']);
+            }
+            $r = $this->actions->launchRemote($who, $id, !empty($in['force']), $req->clientIp, $req->userAgent, $view, ($in['console'] ?? false) === true, $consoleKind);
+            if ($r->ok && array_key_exists('console', $r->data)) {
+                return self::json(200, ['url' => $r->data['url'] ?? null, 'session_id' => $r->data['session_id'] ?? null, 'console' => $r->data['console']]);
+            }
 
             return $r->ok ? self::json(200, ['url' => $r->data['url'] ?? null, 'session_id' => $r->data['session_id'] ?? null]) : self::failure($r);
         }

@@ -3656,6 +3656,12 @@
                 "allows": "allows(string $url, int $clientId): bool"
             }
         },
+        "RivetCore\\Rmm\\Contracts\\RemoteSessionPolicyStoreInterface": {
+            "kind": "interface",
+            "methods": {
+                "clientPolicy": "clientPolicy(int $clientId): ?string"
+            }
+        },
         "RivetCore\\Rmm\\Contracts\\RmmAssetNamesInterface": {
             "kind": "interface",
             "methods": {
@@ -5969,6 +5975,37 @@
                 "uploadLimit": "uploadLimit(): int"
             }
         },
+        "RivetCore\\Rmm\\Remote\\ConsoleLink": {
+            "kind": "final class",
+            "constants": {
+                "KINDS": [
+                    "desktop",
+                    "terminal",
+                    "terminal-ps",
+                    "files"
+                ],
+                "NODE_RE": "/^node\\/\\/[A-Za-z0-9@$_-]{20,100}$/D",
+                "SCHEME": "rivetconsole"
+            },
+            "methods": {
+                "build": "static build(string $kind, string $nodeId): ?string",
+                "descriptor": "static descriptor(string $kind, ?string $nodeId, string $fallbackUrl): ?array",
+                "kindFor": "static kindFor(string $view, ?string $requested = NULL): ?string",
+                "validKind": "static validKind(string $kind): bool",
+                "validNode": "static validNode(string $node): bool"
+            }
+        },
+        "RivetCore\\Rmm\\Remote\\DbRemoteSessionPolicyStore": {
+            "kind": "final class",
+            "implements": [
+                "RivetCore\\Rmm\\Contracts\\RemoteSessionPolicyStoreInterface"
+            ],
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
+                "clientPolicy": "clientPolicy(int $clientId): ?string",
+                "setClientPolicy": "setClientPolicy(int $clientId, ?string $policy, int $userId): bool"
+            }
+        },
         "RivetCore\\Rmm\\Remote\\JobRefused": {
             "kind": "final class",
             "extends": "RuntimeException",
@@ -6072,6 +6109,7 @@
                 ],
                 "FEATURE_FILE_TRANSFER": "filetransfer",
                 "FEATURE_LOGS": "logs",
+                "FEATURE_REMOTE_CONSOLE": "remote_console",
                 "FEATURE_REMOTE_TOOLS": "remote_tools",
                 "JOB_FILE_GET": "file_get",
                 "JOB_FILE_PUT": "file_put",
@@ -6155,6 +6193,48 @@
                 "pid": "static pid(mixed $v): ?int",
                 "processName": "static processName(mixed $v): ?string",
                 "serviceName": "static serviceName(mixed $v, string $os): ?string"
+            }
+        },
+        "RivetCore\\Rmm\\Remote\\RemoteSessionDecision": {
+            "kind": "final class",
+            "constants": {
+                "NOTICE_APPROVE": "approve",
+                "NOTICE_NONE": "none",
+                "NOTICE_NOTIFY": "notify"
+            },
+            "methods": {
+                "allow": "static allow(string $code, string $notice = 'none'): RivetCore\\Rmm\\Remote\\RemoteSessionDecision",
+                "deny": "static deny(string $code, string $message, string $notice = 'none'): RivetCore\\Rmm\\Remote\\RemoteSessionDecision"
+            },
+            "properties": {
+                "allowed": "readonly bool",
+                "code": "readonly string",
+                "message": "readonly string",
+                "notice": "readonly string"
+            }
+        },
+        "RivetCore\\Rmm\\Remote\\RemoteSessionPolicy": {
+            "kind": "final class",
+            "constants": {
+                "CLIENT_ALLOW": "allow",
+                "CLIENT_APPROVE": "approve",
+                "CLIENT_NOTIFY": "notify",
+                "CLIENT_POLICIES": [
+                    "allow",
+                    "notify",
+                    "approve"
+                ]
+            },
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Contracts\\RemoteSessionPolicyStoreInterface $store)",
+                "decide": "decide(int $clientId): RivetCore\\Rmm\\Remote\\RemoteSessionDecision"
+            }
+        },
+        "RivetCore\\Rmm\\Remote\\RemoteSessionPolicySettingsService": {
+            "kind": "final class",
+            "methods": {
+                "__construct": "__construct(RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz, RivetCore\\Rmm\\Remote\\DbRemoteSessionPolicyStore $store, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit)",
+                "setClientPolicy": "setClientPolicy(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $clientId, ?string $policy): RivetCore\\Rmm\\Technician\\ActionResult"
             }
         },
         "RivetCore\\Rmm\\Remote\\RemoteSettings": {
@@ -6396,6 +6476,9 @@
                 "registerHandlers": "registerHandlers(RivetCore\\Jobs\\JobWorker $worker): void",
                 "remoteActions": "remoteActions(): RivetCore\\Rmm\\Remote\\RemoteActions",
                 "remoteApi": "remoteApi(): RivetCore\\Rmm\\Http\\RemoteApi",
+                "remoteSessionPolicy": "remoteSessionPolicy(): RivetCore\\Rmm\\Remote\\RemoteSessionPolicy",
+                "remoteSessionPolicySettings": "remoteSessionPolicySettings(): RivetCore\\Rmm\\Remote\\RemoteSessionPolicySettingsService",
+                "remoteSessionPolicyStore": "remoteSessionPolicyStore(): RivetCore\\Rmm\\Contracts\\RemoteSessionPolicyStoreInterface",
                 "remoteSettings": "remoteSettings(): RivetCore\\Rmm\\Remote\\RemoteSettings",
                 "scheduleRunner": "scheduleRunner(): RivetCore\\Rmm\\Scripts\\ScheduleRunner",
                 "schedules": "schedules(): RivetCore\\Rmm\\Scripts\\ScheduleService",
@@ -6933,7 +7016,8 @@
                     "reports",
                     "alerting",
                     "remote_tools",
-                    "filetransfer"
+                    "filetransfer",
+                    "remote_console"
                 ],
                 "INGEST_MODES": [
                     "sync",
@@ -8430,7 +8514,7 @@
                 "cancelJob": "cancelJob(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $jobId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "clearUpdateFailures": "clearUpdateFailures(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "createToken": "createToken(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $clientId, int $locationId, string $ring, int $ttlHours, int $maxUses, string $label, bool $managedExternally = false): RivetCore\\Rmm\\Technician\\ActionResult",
-                "launchRemote": "launchRemote(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = NULL, ?string $userAgent = NULL, string $view = 'desktop'): RivetCore\\Rmm\\Technician\\ActionResult",
+                "launchRemote": "launchRemote(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = NULL, ?string $userAgent = NULL, string $view = 'desktop', bool $console = false, ?string $consoleKind = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
                 "meshMapping": "meshMapping(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId): RivetCore\\Rmm\\Technician\\ActionResult",
                 "meshMappings": "meshMappings(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, array $filters = [], int $limit = 100, int $offset = 0): RivetCore\\Rmm\\Technician\\ActionResult",
                 "resolvePending": "resolvePending(RivetCore\\Rmm\\Authz\\RmmPrincipal $who, int $deviceId, string $action, ?int $assetId = NULL): RivetCore\\Rmm\\Technician\\ActionResult",
@@ -9660,9 +9744,11 @@
         "RivetCore\\Rmm\\Migration\\Migration0043RmmStoreDenormalisation",
         "RivetCore\\Rmm\\Migration\\Migration0044RmmStoreSwitch",
         "RivetCore\\Rmm\\Migration\\Migration0049InstallerManagedExternally",
+        "RivetCore\\Rmm\\Migration\\Migration0050ClientRemotePolicy",
         "RivetCore\\Rmm\\Migration\\Migration0052MeshVerify",
         "RivetCore\\Rmm\\Migration\\MsiTemplateSchema",
         "RivetCore\\Rmm\\Migration\\PatchSchema",
+        "RivetCore\\Rmm\\Migration\\RemotePolicySchema",
         "RivetCore\\Rmm\\Migration\\RemoteSchema",
         "RivetCore\\Rmm\\Migration\\RmmSchema",
         "RivetCore\\Rmm\\Migration\\ScaleSchema",
@@ -9796,6 +9882,7 @@
         "0047_reporting_views",
         "0048_audit_hash_chain",
         "0049_rmm_installer_managed_externally",
+        "0050_rmm_client_remote_policy",
         "0052_rmm_mesh_verify"
     ],
     "tables": {

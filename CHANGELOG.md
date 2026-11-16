@@ -2,6 +2,27 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.69 (optional Rivet Console: `remote_console` switch; no migration)
+
+Makes the desktop Rivet Console **optional** through an administrator switch. Details: docs/modules/rmm.md, "Optional Rivet Console".
+
+- **Switch.** Sub-switch `remote_console` (`RemoteProtocol::FEATURE_REMOTE_CONSOLE`, in `RmmSettings::FEATURES`, **default off**, no migration: it lives in `features_json`), set through `RemoteActions::updateSettings()` and returned by `settings()`. No risk acknowledgement (it grants nothing).
+- **Off = unchanged.** `launchRemote()` and `POST endpoint_devices/{id}/remote` return exactly what they did before (stock MeshCentral login-token URL, `url` + `session_id`), and the audit text is unchanged; the new `console` request flag is ignored.
+- **On.** With `console: true` the result also carries `console` = `{kind, url, fallback_url}`: `url` is the credential-free deep link `rivetconsole://connect?kind=<desktop|terminal|terminal-ps|files>&node=<node id>` (`Remote\ConsoleLink`: kind allow-list, node pattern `^node//[A-Za-z0-9@$_-]{20,100}$`), `fallback_url` the stock URL. Same abilities, scope and audit as before.
+- **API surface.** Additive: `ConsoleLink`, `RemoteProtocol::FEATURE_REMOTE_CONSOLE`, `RmmSettings::FEATURES` gained `remote_console`, `TechnicianActions::launchRemote()` two trailing optional parameters (`$console`, `$consoleKind`). Snapshot and docs/api-surface.md regenerated.
+- **Tests.** `ConsoleLinkTest` and three gate tests (unit, no database); `RemoteConsoleTest` (integration, written but not run: no MySQL where this was built).
+
+## 1.0.0-rc.68 (per-client remote session policy; migration 0050)
+
+The per-client remote-session policy of RivetMSP: what the person at a client's devices is owed when a technician opens a remote session (`allow`, `notify`, `approve`). **Off in effect by default:** a client with no stored policy has no extra requirement, so every existing call behaves as before. An earlier draft of this release carried a larger "Background Mode" (its own switch, ability, sessions, check tokens, events and retention); that was dropped before any release and none of it ships. Details: docs/modules/rmm.md, "Remote session policy".
+
+- **Migration `0050_rmm_client_remote_policy`** (additive, idempotent, `Migration0050ClientRemotePolicy`): one table, `rmm_client_remote_policy` (`client_id`, `policy`, `updated_by`, `updated_at`). History check: `0045` was never in this repository's history; `docs/design/compliance-frameworks.md` and the rc.43 changelog show it was reserved for the reporting views, which shipped as `0047`, so the gap is expected and 0049 follows 0048.
+- **`Remote\RemoteSessionPolicy`** (`decide($clientId)` returns a `RemoteSessionDecision`): `allow`, `notify` (allowed, the person at the device is owed a notice that the Rivet Console shows to the technician; `notice = notify`) or `approve` (refused with code `approval_required` until an approval flow exists). No stored policy or client 0 is "no extra requirement"; an unknown stored value and any lookup that throws DENY. Contract `Contracts\RemoteSessionPolicyStoreInterface`, database store `DbRemoteSessionPolicyStore`; an edition may pass its own as the `remote_session_policy` module option.
+- **Audited changes.** `RmmModule::remoteSessionPolicySettings()` (`Remote\RemoteSessionPolicySettingsService::setClientPolicy()`): requires `rmm.admin`, writes `Remote Session Policy Changed` (who, client, old and new value) BEFORE it changes anything and changes nothing if that write fails; a refusal writes `Remote Session Policy Denied`. The raw setter on `DbRemoteSessionPolicyStore` is internal to Core.
+- **API surface.** Additive: new classes and interfaces only, plus the rc.69 trailing optional parameters of `TechnicianActions::launchRemote()`. Snapshot and docs/api-surface.md regenerated.
+- **Tests.** `RemoteSessionPolicyTest` (unit matrix, no database; integration against the scratch database: audited admin-only changes, fail-closed audit, stored table read back), `RemoteSessionStorageTest` (switch, migration shape, SQL), `RmmHarness` and `MigrationAndAuditTest` list the new migration and table. `RoleMatrixPolicy` models `rmm.remote.manage` (`remote >= 2`).
+- **Licence and notices.** New `NOTICE` (third-party components: MeshCentral, Apache-2.0, is used but not bundled) and a README note that use needs the authorization of each machine's owner.
+- **Not in this change.** The approval flow (an `approve` client is refused), edition mapping and admin UI, redeem and events (next).
 ## 1.0.0-rc.67 (Mesh node mapping: reasons, bulk approve, verified auto-map; no migration)
 
 **Correction to the heading, which was provisional: this change carries ONE small additive migration, `0052_rmm_mesh_verify` (see below). Numbers 0050 and 0051 are claimed by other open changes: if one of them merges first, renumber nothing here, just keep the order 0049, 0050, 0051, 0052.**
