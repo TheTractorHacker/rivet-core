@@ -173,8 +173,9 @@ final class PanelAttachments
      * CRR-17 / R5-1: does any start tag carry an event handler, `href`, `src`, `srcdoc`, `style`, `action` or `formaction`? The attributes are read the way an HTML tokenizer reads them
      * (one pass with a single cursor, so the time is linear in the size of the file: nothing is scanned twice, which an adversarial file of a million `<x a=b` cannot change):
      * a tag name runs to white space, `/` or `>`; a tag name that ends at `>` (or the end) has no attributes and the cursor moves past it; attribute names end at white space, `/`,
-     * `=` or `>` (a `<`, a quote or anything else inside a name is an ordinary character); a value after `=` is quoted only when it starts with a quote, otherwise it ends at white
-     * space or `>`; a tag ends at `>`. A step budget bounds the work as a second line: when it runs out the file is refused.
+     * `=` or `>` (a `<`, a quote or anything else inside a name is an ordinary character); a value after `=` is quoted only when it starts with a quote (an unterminated quote, or a tag start inside the quoted value, refuses the file: nothing hides a tag from
+     * the scan), otherwise it ends at white space or `>`; a tag ends at `>`. A `<` followed by white space and then a letter counts as a tag start (a browser reads `< x` as text; refusing it is the
+     * safe direction). A step budget bounds the work as a second line: when it runs out the file is refused.
      */
     private static function hasActiveAttribute(string $b): bool
     {
@@ -228,7 +229,11 @@ final class PanelAttachments
                 if ($i < $n && ($b[$i] === '"' || $b[$i] === "'")) {
                     $close = strpos($b, $b[$i], $i + 1);
                     if ($close === false) {
-                        return false;   // the value runs to the end of the file: nothing after it is a tag
+                        return true;   // the quote is never closed: what follows may be a tag or a handler to a parser that began somewhere else; refuse
+                    }
+                    // fail closed: a tag start inside the skipped value would never be looked at (a parser that began its quote in another context reads it as a tag)
+                    if (preg_match('/<\s*[A-Za-z]/', substr($b, $i + 1, $close - $i - 1)) === 1) {
+                        return true;
                     }
                     $i = $close + 1;
                 } else {

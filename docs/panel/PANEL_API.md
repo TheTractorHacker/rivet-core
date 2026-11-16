@@ -188,7 +188,7 @@ A rejected attachment answers 422 `attachment_rejected` (or 413 `too_large`) and
 Core never writes or serves a file; the gateway stores the bytes. Core checks the type but cannot look inside a PNG, GIF or PDF for active content (`GIF89a<script>`, a PDF with
 `/OpenAction /JavaScript` pass the magic-byte check). So the gateway must (1) store the bytes **outside the web root**, under a name it generates, (2) serve them only to an
 authorized staff user, as a **download**: `Content-Disposition: attachment`, `Content-Type` from its own table (never from the upload), `X-Content-Type-Options: nosniff`, and
-ideally from a cookie-less origin, never inline from the application origin, and (3) remember that a CSV opened in a spreadsheet is the remaining risk Core reduces but cannot remove.
+ideally from a cookie-less origin, never inline from the application origin, and with `Content-Security-Policy: sandbox` (so a file that is opened anyway runs in no origin and without scripts), and (3) remember that a CSV opened in a spreadsheet is the remaining risk Core reduces but cannot remove. The text scan in Core (`PanelAttachments`) is a second line, not the control: it refuses text that could be active markup (a tag with an event handler or a URL or style attribute, also when a quoted value hides another tag or a quote is never closed), but only these three response headers make a stored text file harmless. An edition must verify them on every serve path (download, preview, thumbnail, e-mail attachment).
 
 ## Text handling
 
