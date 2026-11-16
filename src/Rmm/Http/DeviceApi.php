@@ -371,12 +371,19 @@ final class DeviceApi
             if ($bin === null) {
                 throw new ApiError(404, 'not_found', 'Not found.');
             }
+            // CORE-DS-72: a real agent downloads a release once (a few retries at most): ten an hour per device, release and architecture is generous and ends a loop
+            if (!($this->rateLimit)("agent_updl:$deviceId:$version:$arch", 10, 3600)) {
+                throw new ApiError(429, 'rate_limited', 'Too many requests.', ['Retry-After' => '3600']);
+            }
             // Defense in depth: the first bytes of the stored file must be this device's executable format, or nothing is streamed.
             [$file, $error] = $this->updates->openBinary($bin, '', $os);
             if ($file === null) {
                 throw new ApiError(503, 'unavailable', (string) $error);
             }
-            $this->audit->record('Agent Update Downloaded', "Device $deviceId downloaded hosted agent $version ($arch" . ($os === AgentOs::WINDOWS ? '' : ", $os") . ')', (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+            // CORE-DS-72: one audit row per device and release an hour, not one per request
+            if (($this->rateLimit)("agent_updaudit:$deviceId:$version:$arch", 1, 3600)) {
+                $this->audit->record('Agent Update Downloaded', "Device $deviceId downloaded hosted agent $version ($arch" . ($os === AgentOs::WINDOWS ? '' : ", $os") . ')', (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+            }
 
             return FileDownload::response($file, RmmProtocol::DOWNLOAD_NAME_PREFIX . $arch . ($os === AgentOs::WINDOWS ? '.exe' : ''));
         });

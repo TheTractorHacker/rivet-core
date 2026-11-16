@@ -182,6 +182,21 @@ final class UpdatesTest extends RmmTestCase
         $this->assertContains('Agent Update Downloaded', array_column($this->h->audit->records(), 'action'));
     }
 
+    /** CORE-DS-72: one audit row per device and release an hour and a download budget per device and release (a pending device still updates: that is by design). */
+    public function testRepeatedDownloadsAreAuditedOnceAndBudgeted(): void
+    {
+        $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
+        $q = ['arch' => 'amd64', 'version' => '1.1.0'];
+        for ($i = 1; $i <= 10; $i++) {
+            $this->assertSame(200, $this->h->call('GET', 'agent_update', null, $this->T, $q)[0], "download $i");
+        }
+        $this->assertCount(1, array_filter($this->h->audit->records(), static fn (array $r): bool => $r['action'] === 'Agent Update Downloaded'), 'ten downloads, one audit row');
+        [$c, $hd, $r] = $this->h->call('GET', 'agent_update', null, $this->T, $q);
+        $this->assertSame([429, 'rate_limited'], [$c, $r['code'] ?? null]);
+        // a device that is still pending approval keeps getting updates (the agent must be able to fix itself before anyone approves it): the budget above is what limits it
+        $this->assertSame('pending_approval', $this->h->one('SELECT link_state FROM endpoint_agent_devices LIMIT 1'));
+    }
+
     public function testADamagedOrSwappedStoredFileIsNeverServed(): void
     {
         $b = $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
