@@ -215,6 +215,9 @@ final class DeployActions
         if ($this->catalog->package($packageId) === null) {
             return ActionResult::fail(404, 'not_found', 'Package not found.');
         }
+        if (($e = $this->liveVersionGate($who, $packageId)) !== null) {
+            return $e;
+        }
 
         return $this->guard(function () use ($who, $packageId, $in): ActionResult {
             $v = $this->catalog->addVersion($packageId, $in, $who->userId);
@@ -225,10 +228,40 @@ final class DeployActions
         });
     }
 
+    /**
+     * CORE-15: an assignment without a pinned version (and an auto-install policy) installs the NEWEST non-retired version
+     * ({@see DeployExpectations::versionFor()}), so adding or restoring a version of such a package silently changes what an approved
+     * assignment installs, as SYSTEM, on every device in scope. That is a deployment, not a catalog edit: it needs the same ability as
+     * creating an assignment (rmm.software.deploy), and a two-person package may not be changed this way at all (pin its assignments to a
+     * version, or switch the package off, then add the version).
+     */
+    private function liveVersionGate(RmmPrincipal $who, int $packageId): ?ActionResult
+    {
+        if (!$this->catalog->followsNewest($packageId)) {
+            return null;
+        }
+        if (($e = $this->fleetRole($who, RmmAbility::SOFTWARE_DEPLOY)) !== null) {
+            return $e;
+        }
+        $pkg = $this->catalog->package($packageId);
+        if ($pkg !== null && $pkg['two_person']) {
+            return ActionResult::fail(409, 'conflict', 'This package has an assignment or auto-install policy that follows its newest version and needs a second person. Pin the assignment to a version (a new assignment goes through approval) before adding or restoring a version.');
+        }
+
+        return null;
+    }
+
     public function retireVersion(RmmPrincipal $who, int $versionId, bool $retired): ActionResult
     {
         if (($e = $this->fleetRole($who, RmmAbility::SOFTWARE_MANAGE) ?? $this->unrestricted($who) ?? $this->featureOff()) !== null) {
             return $e;
+        }
+        $existing = $this->catalog->version($versionId);
+        if ($existing === null) {
+            return ActionResult::fail(404, 'not_found', 'Version not found.');
+        }
+        if (!$retired && ($e = $this->liveVersionGate($who, (int) $existing['package_id'])) !== null) {
+            return $e;   // restoring a retired version makes it the newest again, exactly like adding one
         }
         if (!$this->catalog->retireVersion($versionId, $retired)) {
             return ActionResult::fail(404, 'not_found', 'Version not found.');

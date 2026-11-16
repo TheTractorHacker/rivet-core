@@ -677,7 +677,7 @@ content-type: application/json
 
 ```http
 POST /api/v1/agent_checkin
-authorization: Bearer <TOKEN#5>
+authorization: Bearer <TOKEN#3>
 content-type: application/json
 
 {
@@ -804,7 +804,7 @@ content-type: application/json
 
 ```http
 GET /api/v1/agent_jobs
-authorization: Bearer <TOKEN#5>
+authorization: Bearer <TOKEN#3>
 
 HTTP 200
 cache-control: no-store
@@ -836,7 +836,7 @@ content-type: application/json
 
 ```http
 POST /api/v1/agent_jobs
-authorization: Bearer <TOKEN#5>
+authorization: Bearer <TOKEN#3>
 content-type: application/json
 
 {
@@ -859,7 +859,7 @@ content-type: application/json
 
 ```http
 POST /api/v1/agent_jobs
-authorization: Bearer <TOKEN#5>
+authorization: Bearer <TOKEN#3>
 content-type: application/json
 
 {
@@ -885,7 +885,7 @@ content-type: application/json
 
 ```http
 GET /api/v1/agent_update?arch=amd64&version=1.1.0
-authorization: Bearer <TOKEN#5>
+authorization: Bearer <TOKEN#3>
 
 HTTP 200
 cache-control: no-store

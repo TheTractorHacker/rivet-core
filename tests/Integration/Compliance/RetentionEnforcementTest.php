@@ -224,6 +224,40 @@ final class RetentionEnforcementTest extends RmmTestCase
         }
     }
 
+    /** CORE-39: the log line keeps the database error code, and an unreadable profile makes housekeeping skip its prunes (fail closed for deletion only). */
+    public function testUnreadableFloorsLogTheErrorCodeAndHoldThePrune(): void
+    {
+        $logFile = sys_get_temp_dir() . '/rc_floors_' . bin2hex(random_bytes(4)) . '.log';
+        $log = (string) ini_get('error_log');
+        ini_set('error_log', $logFile);
+        try {
+            $f = RetentionFloors::fromLoader(static function (): array {
+                throw new \mysqli_sql_exception('gone', 2006);
+            }, static fn (): string => 'x');
+            self::assertTrue($f->unavailable());
+            self::assertStringContainsString('code 2006', (string) file_get_contents($logFile), 'the errno survives into the log');
+            $f->refresh();
+            self::assertSame(0, $f->floorDays('rmm_logs'));
+            $good = RetentionFloors::fromLoader(static fn (): array => [], static fn (): string => 'x');
+            self::assertFalse($good->unavailable(), 'a readable profile with no floors is available');
+            $this->h->enable();
+            $dev = $this->enrolled();
+            $this->h->module->settings()->setRetentionFloors($f);
+            self::assertTrue($this->h->module->settings()->retentionFloorsUnavailable());
+            $young = gmdate('Y-m-d H:i:s', time() - 40 * 86400);   // past the default 7 days, so a prune would delete it
+            $this->h->q("INSERT INTO endpoint_agent_check_history (device_id, check_key, status, detail, reported_at) VALUES ($dev, 'disk', 'ok', 'young', '$young')");
+            $out = $this->h->module->housekeeping()->run();
+            self::assertSame(1, $out['retention_held'] ?? null);
+            self::assertSame(1, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_check_history'), 'nothing is pruned while the floors cannot be read');
+            $this->h->module->settings()->setRetentionFloors($good);
+            self::assertArrayNotHasKey('retention_held', $this->h->module->housekeeping()->run());
+            self::assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_check_history'), 'once the floors are readable the normal prune resumes');
+        } finally {
+            ini_set('error_log', $log);
+            @unlink($logFile);
+        }
+    }
+
     public function testEffectiveDaysAndTheMessageHelpers(): void
     {
         $this->select('rmm_logs', 30);
