@@ -81,6 +81,10 @@ switch ($cmd) {
         }
         $q('DELETE FROM endpoint_agent_settings');
         $q('INSERT INTO endpoint_agent_settings (id) VALUES (1)');
+        try {
+            $q('DELETE FROM rmm_hardening_settings');
+        } catch (\Throwable) {
+        }
         @unlink("$state/edition.ser");
         foreach (glob("$state/bin/*") ?: [] as $f) {
             @unlink($f);

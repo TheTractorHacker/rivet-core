@@ -317,7 +317,17 @@ final class RmmSettings
                 $this->sql->run('INSERT IGNORE INTO endpoint_agent_settings (id) VALUES (1)');
                 $row = $this->sql->one('SELECT * FROM endpoint_agent_settings WHERE id = 1') ?? [];
             }
-            $this->cache = $row;
+            // CORE-DS-16/26/39: the switches of the deep-scan fixes live in a table of their own (migration 0053); an install without it simply has them off
+            $extra = ['mesh_token_ttl_exact' => 0, 'signed_config' => 0, 'release_rollover_json' => null];
+            try {
+                $e = $this->sql->one('SELECT mesh_token_ttl_exact, signed_config, release_rollover_json FROM rmm_hardening_settings WHERE id = 1');
+                if ($e !== null) {
+                    $extra = $e;
+                }
+            } catch (\Throwable) {
+                // table not there yet
+            }
+            $this->cache = $row + $extra;
         }
 
         return $this->cache;
@@ -382,15 +392,27 @@ final class RmmSettings
     {
         $sets = [];
         $params = [];
+        $extraSets = [];
+        $extraParams = [];
         foreach ($values as $k => $v) {
             if (!in_array($k, self::writableColumns(), true)) {
                 throw new \InvalidArgumentException("unknown setting $k");
+            }
+            if (in_array($k, self::WRITABLE_ADDED_DS, true)) {
+                $extraSets[] = "`$k` = ?";
+                $extraParams[] = $v;
+
+                continue;
             }
             $sets[] = "`$k` = ?";
             $params[] = $v;
         }
         if ($sets !== []) {
             $this->sql->run('UPDATE endpoint_agent_settings SET ' . implode(', ', $sets) . ' WHERE id = 1', $params);
+        }
+        if ($extraSets !== []) {
+            $this->sql->run('INSERT IGNORE INTO rmm_hardening_settings (id) VALUES (1)');
+            $this->sql->run('UPDATE rmm_hardening_settings SET ' . implode(', ', $extraSets) . ' WHERE id = 1', $extraParams);
         }
         $this->cache = null;
         if ($this->stateListener !== null && array_intersect(array_keys($values), \RivetCore\Rmm\RmmState::MIRRORED_COLUMNS) !== []) {
@@ -825,7 +847,7 @@ final class RmmSettings
     }
 
     /**
-     * CORE-DS-16: is the signed-configuration contract on (`endpoint_agent_settings.signed_config`, migration 0054)? Then responses announce `config.signed_config: 1` and signed
+     * CORE-DS-16: is the signed-configuration contract on (`rmm_hardening_settings.signed_config`, migration 0053)? Then responses announce `config.signed_config: 1` and signed
      * checks carry the device they are for. Off (the default, and when the column does not exist yet) the wire is exactly what it was.
      */
     public function signedConfig(): bool
