@@ -2,6 +2,8 @@ package collect
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -284,6 +286,11 @@ func (r *CheckRunner) Run(ctx context.Context, specs []store.CheckSpec, now time
 		}
 	}
 	r.mu.Unlock()
+	budget := r.C.RunBudget
+	if budget <= 0 {
+		budget = 90 * time.Second
+	}
+	deadline := time.Now().Add(budget)
 	for _, s := range specs {
 		if s.Key == "" || IsServerOwnedKey(s.Key) {
 			continue
@@ -307,7 +314,16 @@ func (r *CheckRunner) Run(ctx context.Context, specs []store.CheckSpec, now time
 		if lim <= 0 {
 			lim = 150 * time.Second
 		}
-		out, err := call(r.C, ctx, "check:"+s.Key, lim, func(cctx context.Context) (api.CheckResult, error) {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break // budget spent: the rest is still due and runs on the next pass
+		}
+		if lim > remaining {
+			lim = remaining
+		}
+		// the hung-key guard is per key AND parameters: a corrected definition under the same key must run (review CR1)
+		hsum := sha256.Sum256(s.Params)
+		out, err := call(r.C, ctx, "check:"+s.Key+":"+hex.EncodeToString(hsum[:6]), lim, func(cctx context.Context) (api.CheckResult, error) {
 			return r.C.RunCheck(cctx, s), nil
 		})
 		if err != nil {
