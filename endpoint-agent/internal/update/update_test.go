@@ -450,3 +450,28 @@ func TestEarlyFailureRollbackIsANoOpOutsideProbation(t *testing.T) {
 		t.Fatal("binary changed")
 	}
 }
+
+// CORE-DS-27: SemVer 2.0 pre-release precedence (numeric identifiers compare as numbers; numeric < alphanumeric; fewer fields < more).
+func TestComparePrereleasePrecedence(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+	}{
+		{"1.0.0-rc.9", "1.0.0-rc.10", -1},
+		{"1.0.0-rc.10", "1.0.0-rc.9", 1},
+		{"1.0.0-rc.10", "1.0.0-rc.10", 0},
+		{"1.0.0-alpha", "1.0.0-alpha.1", -1},
+		{"1.0.0-alpha.1", "1.0.0-alpha.beta", -1},
+		{"1.0.0-alpha.beta", "1.0.0-beta", -1},
+		{"1.0.0-beta.2", "1.0.0-beta.11", -1},
+		{"1.0.0-beta.11", "1.0.0-rc.1", -1},
+		{"1.0.0-rc.1", "1.0.0", -1},
+		{"1.0.0-1", "1.0.0-a", -1},
+	}
+	for _, c := range cases {
+		got, err := CompareVersions(c.a, c.b)
+		if err != nil || got != c.want {
+			t.Errorf("%s vs %s: got %d (%v), want %d", c.a, c.b, got, err, c.want)
+		}
+	}
+}
