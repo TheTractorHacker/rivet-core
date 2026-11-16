@@ -87,6 +87,9 @@ type ServerConfig struct {
 	// the same reason, and because its signature covers the exact object: the
 	// agent verifies it before it reads a single registry value or file.
 	Change json.RawMessage `json:"change,omitempty"`
+	// SignedConfig is the version of the signing contract the server follows: >= 1 means every check definition and config.logs is signed, so the agent
+	// refuses unsigned ones from then on (CORE-DS-16). Absent (an older server) = tolerate unsigned non-script checks and unsigned logs.
+	SignedConfig int `json:"signed_config,omitempty"`
 	// Hypervisor is the signed hypervisor-collection configuration (kept raw like Change).
 	Hypervisor json.RawMessage `json:"hypervisor,omitempty"`
 }

@@ -170,8 +170,12 @@ func New(o Options) (*Agent, error) {
 		a.mu.Lock()
 		v := &jobs.Verifier{PublicKey: a.verifier.Key()}
 		a.mu.Unlock()
-		return v.VerifyObject(c.Raw, c.Signature)
+		if err := v.VerifyObject(c.Raw, c.Signature); err != nil {
+			return err
+		}
+		return checkBoundToDevice(c.Raw, a.verifier.Device())
 	}
+	a.col.RequireSigned = a.signingRequired
 	a.runner = collect.NewCheckRunner(a.col)
 	a.ring = buffer.Open(o.Store.BufferPath(), cfg.BufferMaxSamples, cfg.BufferMaxBytes)
 	a.verifier = &jobs.Verifier{Now: a.now}
@@ -1023,6 +1027,7 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 		a.hv.Ack()
 	}
 	a.sw.resync = hasFeature(resp.Features, featureSoftware) && hasFeature(resp.Resync, resyncSoftware)
+	a.noteSignedConfig(resp)
 	a.configureLogs(resp)
 	a.configureChange(resp)
 	a.configureHypervisor(resp)
@@ -1068,7 +1073,74 @@ func (a *Agent) configureLogs(resp *api.CheckinResponse) {
 		a.logs.Configure(nil)
 		return
 	}
+	a.mu.Lock()
+	vf := &jobs.Verifier{PublicKey: a.verifier.Key()}
+	a.mu.Unlock()
+	if err := acceptLogsConfig(resp.Config.Logs, a.signingRequired(), vf.VerifyDomain); err != nil {
+		a.log.Error("log collection configuration refused", "err", err)
+		a.logs.Configure(nil)
+		return
+	}
 	a.logs.Configure(logs.Normalize(api.ParseLogsConfig(resp.Config.Logs)))
+}
+
+// checkBoundToDevice refuses a signed check definition that names another device. A definition without device_id (every server so far) passes.
+func checkBoundToDevice(raw []byte, deviceID string) error {
+	var w struct {
+		DeviceID json.RawMessage `json:"device_id"`
+	}
+	if json.Unmarshal(raw, &w) != nil || len(w.DeviceID) == 0 || string(w.DeviceID) == "null" {
+		return nil
+	}
+	if strings.Trim(string(w.DeviceID), `"`) != deviceID {
+		return errors.New("check definition is signed for a different device")
+	}
+	return nil
+}
+
+// LogsConfigSignDomain is the first line of the signed message of config.logs (domain separation from jobs, checks and the other configurations).
+const LogsConfigSignDomain = "rivetit-logs-config-v1"
+
+// acceptLogsConfig decides whether config.logs may be used. A signature, when present, must verify (domain-separated, over the canonical object); an
+// unsigned block is accepted only from a server that has not announced signed_config and while the local configuration does not demand signatures.
+func acceptLogsConfig(raw json.RawMessage, required bool, verify func(domain string, raw []byte, sig string) error) error {
+	var w struct {
+		Signature string `json:"signature"`
+	}
+	_ = json.Unmarshal(raw, &w)
+	if w.Signature == "" {
+		if required {
+			return errors.New("unsigned log configuration while signed configuration is required")
+		}
+		return nil
+	}
+	return verify(LogsConfigSignDomain, raw, w.Signature)
+}
+
+// signingRequired reports whether unsigned check definitions and log configurations are refused: the local switch, or a server that announced
+// signed_config >= 1 at any time.
+func (a *Agent) signingRequired() bool {
+	a.mu.Lock()
+	local := a.cfg.RequireSignedConfig
+	a.mu.Unlock()
+	if local {
+		return true
+	}
+	st, _ := a.o.Store.LoadState()
+	return st.SignedConfigV >= 1
+}
+
+// noteSignedConfig remembers the highest signing contract version the server announced.
+func (a *Agent) noteSignedConfig(resp *api.CheckinResponse) {
+	if resp.Config == nil || resp.Config.SignedConfig <= 0 {
+		return
+	}
+	_ = a.o.Store.Update(func(s *store.State) error {
+		if resp.Config.SignedConfig > s.SignedConfigV {
+			s.SignedConfigV = resp.Config.SignedConfig
+		}
+		return nil
+	})
 }
 
 // configureChange applies the change-monitoring config of a check-in response.

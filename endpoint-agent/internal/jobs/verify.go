@@ -53,6 +53,9 @@ func (v *Verifier) SetDevice(id string) { v.mu.Lock(); v.DeviceID = id; v.mu.Unl
 // Key is the pinned signing key.
 func (v *Verifier) Key() ed25519.PublicKey { v.mu.RLock(); defer v.mu.RUnlock(); return v.PublicKey }
 
+// Device is the device id jobs and checks must be bound to.
+func (v *Verifier) Device() string { v.mu.RLock(); defer v.mu.RUnlock(); return v.DeviceID }
+
 func (v *Verifier) snapshot() (ed25519.PublicKey, string) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()

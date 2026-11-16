@@ -42,6 +42,9 @@ type Config struct {
 	// SoftwareStoreApps adds the Microsoft Store (appx) packages to the Windows
 	// software inventory. Off by default; ignored on Linux.
 	SoftwareStoreApps bool `json:"software_store_apps,omitempty"`
+	// RequireSignedConfig refuses every unsigned check definition and unsigned config.logs even from a server that does not announce signed_config
+	// (a local administrator's decision; CORE-DS-16).
+	RequireSignedConfig bool `json:"require_signed_config,omitempty"`
 }
 
 // Defaults applied on load.
@@ -117,6 +120,9 @@ type State struct {
 	// ServerFeatures is the "features" list of the LAST successful check-in
 	// response (absence = none), kept across restarts.
 	ServerFeatures []string `json:"server_features,omitempty"`
+	// SignedConfigV is the highest signing contract version a server has announced (config.signed_config). It only ever rises: a later response
+	// without it cannot switch the requirement off (a downgrade). CORE-DS-16.
+	SignedConfigV int `json:"signed_config_v,omitempty"`
 	// Software snapshot bookkeeping: the hash of the list the server acknowledged
 	// (the list itself is software.json), when the last full report was acked and
 	// when the last software report of any kind was sent.

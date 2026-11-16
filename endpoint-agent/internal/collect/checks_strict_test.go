@@ -66,3 +66,23 @@ func TestHTTPCheckVerifyTLSFalseNeedsASignature(t *testing.T) {
 		t.Fatalf("a signed check was refused for lack of a signature: %+v", r)
 	}
 }
+
+// CORE-DS-16: once the server says it signs every check (or the local config demands it) an unsigned check of ANY type is refused.
+func TestUnsignedChecksRefusedWhenSigningIsRequired(t *testing.T) {
+	c := newCol(newFake())
+	c.VerifyCheck = func(store.CheckSpec) error { return nil }
+	required := false
+	c.RequireSigned = func() bool { return required }
+	unsigned := store.CheckSpec{Key: "k", Type: "pending_reboot"}
+	if r := c.RunCheck(context.Background(), unsigned); r.Status == Unknown {
+		t.Fatalf("an older server's unsigned check was refused: %+v", r)
+	}
+	required = true
+	if r := c.RunCheck(context.Background(), unsigned); r.Status != Unknown || !strings.Contains(r.Detail, "unsigned") {
+		t.Fatalf("unsigned check ran although signing is required: %+v", r)
+	}
+	signed := store.CheckSpec{Key: "k", Type: "pending_reboot", Signature: "sig", Raw: json.RawMessage(`{}`)}
+	if r := c.RunCheck(context.Background(), signed); r.Status == Unknown {
+		t.Fatalf("a signed check was refused: %+v", r)
+	}
+}

@@ -78,6 +78,9 @@ func checkIsSigned(ctx context.Context) bool { v, _ := ctx.Value(signedCheckKey{
 // RunCheck evaluates one check. Any collector error yields `unknown`.
 func (c *Collector) RunCheck(ctx context.Context, spec store.CheckSpec) api.CheckResult {
 	key := spec.Key
+	if spec.Signature == "" && c.RequireSigned != nil && c.RequireSigned() {
+		return res(key, Unknown, "unsigned check refused: this server signs every check definition")
+	}
 	if spec.Signature != "" || spec.Type == "script" {
 		// Scripts execute code, so they must be signed by the instance key.
 		// Other types are verified only when a signature is present.
