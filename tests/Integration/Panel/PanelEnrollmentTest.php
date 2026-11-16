@@ -220,6 +220,29 @@ final class PanelEnrollmentTest extends PanelTestCase
         $this->assertSame($o['device_id'], $handed['device_id']);
     }
 
+    /** CRR-18: a device made on an install-id collision (it got a server-side install id) can still re-key with its own credential and its own install id. */
+    public function testADeviceMadeOnAnInstallIdCollisionCanStillReKeyWithItsOwnCredential(): void
+    {
+        $install = RmmHarness::uuid();
+        [, , $first] = $this->p->enroll($this->p->mint()['token'], ['install_id' => $install]);
+        [, , $second] = $this->p->enroll($this->p->mint()['token'], ['install_id' => $install]);   // the collision: a new device with an install id of the server's choosing
+        $this->assertNotSame($first['device_id'], $second['device_id']);
+        [$c, , $again] = $this->p->enroll($this->p->mint()['token'], ['install_id' => $install, 'previous_token' => $second['device_token']]);
+        $this->assertSame(201, $c);
+        $this->assertSame($second['device_id'], $again['device_id'], 'the second device keeps its row: its tickets and chat stay with it');
+        $this->assertNotSame($second['device_token'], $again['device_token']);
+        $this->assertSame(401, $this->p->call('GET', 'panel_me', null, $second['device_token'])[0]);
+        $this->assertSame(200, $this->p->call('GET', 'panel_me', null, $again['device_token'])[0]);
+        $this->assertSame(200, $this->p->call('GET', 'panel_me', null, $first['device_token'])[0], 'the first holder is untouched');
+        $this->assertSame(2, (int) $this->p->rmm->one('SELECT COUNT(*) FROM endpoint_agent_devices'));
+        // a credential of another client never opens a row of this one
+        $other = $this->p->mint($this->p->clientB)['token'] ?? null;
+        if ($other !== null) {
+            [, , $x] = $this->p->enroll($other, ['install_id' => RmmHarness::uuid(), 'previous_token' => $again['device_token']]);
+            $this->assertNotSame($again['device_id'], $x['device_id']);
+        }
+    }
+
     public function testARevokedDeviceCannotReEnrollUntilAnAdministratorAllowsIt(): void
     {
         $install = RmmHarness::uuid();

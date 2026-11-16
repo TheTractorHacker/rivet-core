@@ -249,6 +249,21 @@ final class PanelEnrollment
         $clientId = (int) $token['client_id'];
         $contactId = $token['contact_id'] !== null ? (int) $token['contact_id'] : null;
 
+        // CRR-18: the proof is looked up by the credential itself. A device created on an install-id collision carries a server-side install id its app never learns, so the app
+        // can only ever say "my install id" plus "my token"; the token finds the row, whatever install id the row holds.
+        $held = is_string($d['previous_token'] ?? null) && $d['previous_token'] !== ''
+            ? $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE token_hash = ? AND kind = ? AND client_id = ? FOR UPDATE', [hash('sha256', (string) $d['previous_token']), PanelProtocol::KIND, $clientId])
+            : null;
+        if ($held !== null) {
+            if ($held['revoked_at'] !== null || $held['retired_at'] !== null) {
+                throw new ApiError(403, 'forbidden', 'This device was ' . ($held['revoked_at'] !== null ? 'revoked' : 'retired') . '. An administrator must allow re-enrollment first.');
+            }
+            $this->sql->run('UPDATE endpoint_agent_devices SET hostname = ?, os = ?, os_version = ?, agent_version = ?, token_hash = ?, token_issued_at = ?, token_expires_at = ?,
+                enroll_count = enroll_count + 1, enrolled_via_token_id = ?, last_ip = ?, contact_id = ? WHERE device_id = ? AND kind = ?',
+                [$d['hostname'], $d['os'], $d['os_version'], $d['app_version'], $hash, $now, $expires, $token['token_id'], substr($ip, 0, 64), $contactId, $held['device_id'], PanelProtocol::KIND]);
+
+            return ['device_id' => (int) $held['device_id'], 'device_token' => $plain, 'event' => 're-enrolled'];
+        }
         $dev = $this->sql->one('SELECT * FROM endpoint_agent_devices WHERE install_id = ? FOR UPDATE', [$d['install_id']]);
         if ($dev !== null) {
             // An RMM agent's install id, or another client's panel, is never taken over by a panel enrollment.
