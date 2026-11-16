@@ -169,6 +169,10 @@ func readFileCapped(path string) ([]byte, error) {
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
 		return nil, errors.New("not a regular file")
 	}
+	// /proc/kmsg and friends report as regular files, are pollable (so O_NONBLOCK does not stop the read parking) and consume kernel data (CR1)
+	if onPseudoFS(f) {
+		return nil, errors.New("not a file on a data file system")
+	}
 	return io.ReadAll(io.LimitReader(f, 1<<20))
 }
 
@@ -737,6 +741,12 @@ func safeCertPath(p string) bool {
 	}
 	for _, r := range p {
 		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	// kernel pseudo file systems are never certificate stores (CORE-DS-3, review CR1)
+	for _, d := range []string{"/proc", "/sys", "/dev"} {
+		if p == d || strings.HasPrefix(p, d+"/") {
 			return false
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,5 +60,73 @@ func TestCertCheckRefusesAFifo(t *testing.T) {
 			f.Close()
 		}
 		t.Fatal("readFileCapped blocked on a FIFO")
+	}
+}
+
+// CORE-DS-3 (review CR1): procfs/sysfs/devtmpfs entries (/proc/kmsg is a "regular" file that blocks in the netpoller and consumes kernel log records)
+// are refused by the cert check, by path and by file system.
+func TestCertPathsRefuseProcfsSysfsAndDev(t *testing.T) {
+	for _, p := range []string{"/proc/kmsg", "/proc/self/status", "/sys/kernel/notes", "/dev/kmsg", "/dev/zero", "/proc", "//proc/kmsg"} {
+		if safeCertPath(p) {
+			t.Errorf("%s accepted by safeCertPath", p)
+		}
+	}
+	if !safeCertPath("/etc/ssl/certs/ca.pem") {
+		t.Error("an ordinary path was refused")
+	}
+}
+
+func TestReadFileCappedRefusesPseudoFilesystems(t *testing.T) {
+	if _, err := os.Stat("/proc/self/status"); err != nil {
+		t.Skip("no procfs")
+	}
+	if b, err := readFileCapped("/proc/self/status"); err == nil {
+		t.Fatalf("procfs file was read (%d bytes)", len(b))
+	}
+}
+
+// CORE-DS-3 (review CR1): the whole check pass has a total budget, so 50 hung checks cannot hold the first check-in for 50 x the per-check limit.
+func TestRunnerStopsStartingChecksWhenTheBudgetIsSpent(t *testing.T) {
+	c := newCol(newFake())
+	block := make(chan struct{})
+	defer close(block)
+	x := DefaultSys()
+	x.ReadFile = func(string) ([]byte, error) { <-block; return nil, nil }
+	c.X = x
+	c.CheckHardLimit = 10 * time.Second
+	c.RunBudget = 400 * time.Millisecond
+	r := NewCheckRunner(c)
+	var specs []store.CheckSpec
+	for i := 0; i < 20; i++ {
+		specs = append(specs, store.CheckSpec{Key: "hang" + string(rune('a'+i)), Type: "cert", Params: json.RawMessage(`{"paths":["/etc/hostname"]}`)})
+	}
+	start := time.Now()
+	r.Run(context.Background(), specs, time.Unix(1000, 0))
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("Run took %v with a 400ms budget and 20 hung checks", d)
+	}
+}
+
+// CORE-DS-3 (review CR1): fixing the parameters of a check that hung must not leave its key "still running" under the same key.
+func TestFixedParamsOfAHungCheckRunAgain(t *testing.T) {
+	c := newCol(newFake())
+	block := make(chan struct{})
+	defer close(block)
+	x := DefaultSys()
+	x.ReadFile = func(p string) ([]byte, error) {
+		if p == "/etc/hang" {
+			<-block
+		}
+		return nil, os.ErrNotExist
+	}
+	c.X = x
+	c.CheckHardLimit = 100 * time.Millisecond
+	r := NewCheckRunner(c)
+	bad := []store.CheckSpec{{Key: "k", Type: "cert", Params: json.RawMessage(`{"paths":["/etc/hang"]}`)}}
+	r.Run(context.Background(), bad, time.Unix(1000, 0))
+	good := []store.CheckSpec{{Key: "k", Type: "cert", Params: json.RawMessage(`{"paths":["/etc/fixed"]}`)}}
+	out := r.Run(context.Background(), good, time.Unix(5000, 0))
+	if len(out) != 1 || strings.Contains(out[0].Detail, "still running") || strings.Contains(out[0].Detail, "did not finish") {
+		t.Fatalf("the corrected check was not run: %+v", out)
 	}
 }
