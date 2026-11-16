@@ -13,6 +13,11 @@
     var RECENT_KEY = 'rivet.palette.recent.v1';
     // CORE-DS-46: earlier versions kept recents (record titles included) in localStorage for good: remove what is still there
     try { localStorage.removeItem(RECENT_KEY); } catch (e) { /* storage blocked */ }
+    // CR22: sessionStorage outlives a logout inside the same tab, so signing out clears the list
+    document.addEventListener('click', function (ev) {
+        var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+        if (a && /logout/i.test(a.getAttribute('href') || '')) { try { sessionStorage.removeItem(RECENT_KEY); } catch (e) { /* storage blocked */ } }
+    }, true);
     var MAX_RECENT = 6;
     var MAX_PAGES = 8;
     var overlay, box, input, list, hint;
@@ -116,7 +121,7 @@
     function remember(it) {
         try {
             // CORE-DS-46: only pages are kept. The title of a credential, ticket or contact must not outlive the session in a browser that the next user shares.
-            if (it.type !== 'page') { return; }
+            if (it.type !== 'page' || it.search) { return; }   // CR22: the typed query of "Search everything for ..." is not a page either
             var url = sameOrigin(it.url);
             if (!url) { return; }
             var r = getRecent().filter(function (x) { return x.url !== url; });
@@ -188,7 +193,7 @@
                 });
             }
             if (loading) { list.appendChild(el('div', 'rvp-tip', 'Searching records…')); }
-            row({ type: 'page', title: 'Search everything for “' + q + '”', sub: 'Full results page', icon: 'fa-search', url: '/agent/global_search.php?query=' + encodeURIComponent(q) }, '');
+            row({ type: 'page', search: true, title: 'Search everything for “' + q + '”', sub: 'Full results page', icon: 'fa-search', url: '/agent/global_search.php?query=' + encodeURIComponent(q) }, '');
             if (!pages.length && !loading && records && !Object.keys(records).length) { list.insertBefore(el('div', 'rvp-tip', 'Nothing matches yet.'), list.firstChild); }
         }
         setActive(0, true);

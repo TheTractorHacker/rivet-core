@@ -20,7 +20,9 @@ final class PaletteJsTest extends TestCase
         $this->assertSame(0, substr_count($js, 'localStorage.setItem'), 'nothing is written to the origin-wide store');
         $this->assertSame(0, substr_count($js, 'localStorage.getItem'));
         $this->assertStringContainsString("localStorage.removeItem(RECENT_KEY)", $js, 'what an earlier version left there is removed');
-        $this->assertStringContainsString("if (it.type !== 'page') { return; }", $js, 'record titles are not remembered');
+        $this->assertStringContainsString("if (it.type !== 'page' || it.search) { return; }", $js, 'record titles and typed queries are not remembered');
+        $this->assertStringContainsString("type: 'page', search: true, title: 'Search everything for", $js, 'CR22: the full-search row is marked');
+        $this->assertMatchesRegularExpression('/logout\\/i\\.test\\(a\\.getAttribute.*sessionStorage\\.removeItem\\(RECENT_KEY\\)/s', $js, 'signing out clears the list');
     }
 
     public function testASameOriginPathNeverStartsWithTwoSlashes(): void

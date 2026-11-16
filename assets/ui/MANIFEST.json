@@ -108,8 +108,8 @@
             "origin": "rivetit-verbatim"
         },
         "js/command_palette.js": {
-            "sha256": "a7e7edebd14f6783d4fa43dfa854e24d64fee1660908880adaac22c327f20b83",
-            "bytes": 16281,
+            "sha256": "456b828d4c6577fc34ef8910b487362d930a8df2e59411ab2bf150927f8b3fe2",
+            "bytes": 16790,
             "origin": "core"
         },
         "js/date_range_picker.js": {
