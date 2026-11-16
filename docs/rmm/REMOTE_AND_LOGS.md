@@ -113,6 +113,22 @@ Before rc.18 a hex id was sent to MeshCentral as it was, which MeshCentral does 
 
 **How to test on a real MeshCentral (UNVERIFIED so far: only a mock server and MeshCentral's source were used).** Sign in to RivetIT, open a mapped online device, click Remote. Expected: a new tab opens at once, ends at the URL above, shows the Desktop view with no MeshCentral masthead, top bar, footer, tab titles or device list, with a Connect button (click it). Then set the hide value to 0 and repeat: the full MeshCentral appears (the old behaviour). If your MeshCentral version differs in what a bit hides, change the number in the setting; nothing else depends on it.
 
+## MeshCentral does not separate clients by itself (security: CORE-14)
+
+Core decides who may press Remote on which device (`rmm.remote.launch` for the device's client), then mints a MeshCentral login token for ONE Mesh account. From that point MeshCentral, not Core, decides what the session can reach, and it scopes only by that Mesh account's rights. Core installs every device into the single Mesh group set in the Mesh agent install settings (`mesh_group_id`). So:
+
+* A technician restricted to client A who launches Remote on one of A's devices gets a MeshCentral session for the Mesh account. If that account can see devices of client B (it can, whenever B's devices are in a group the account has rights to, including the single shared group), the technician can edit the URL (`gotonode`, `viewmode`, drop `&hide=`) and open B's desktop, terminal and files. This also bypasses `rmm.remote.manage` and the `remote_tools` switch, because those are enforced by Core only.
+* With the default template (`rivetit-support`, no placeholder) every technician is the same Mesh user. With `{user_id}` each technician is a distinct Mesh user, which gives MeshCentral an audit trail and lets you grant rights per technician, but does not by itself separate clients.
+
+Core cannot enforce client separation inside MeshCentral. The recommended setup for a multi-tenant installation (RivetMSP, or any RivetIT install with technicians restricted to some clients):
+
+1. One MeshCentral **device group per client**, and give each Mesh account rights only on the groups of the clients that technician may reach. Keep the single shared group only if every technician may reach every client.
+2. Use the `{user_id}` account template (for example `rivetit-{user_id}`) and create the matching Mesh accounts. Never share one Mesh account between technicians with different client scope.
+3. Install each device into its client's group (set `mesh_group_id` per rollout, or move the node in MeshCentral), and map nodes on the device page as usual.
+4. Treat `{username}` as unsupported: it was removed because the display name is user-editable (CORE-13).
+
+Token lifetime: `mesh_token_ttl_s` (60 to 3600 s) is honoured since 1.0.0-rc.62 for the login cookie. MeshCentral accepts a token for 60 minutes after its `time` field, so Core back-dates `time` by `3600 - ttl` seconds (never less than the 120 s clock-skew allowance). The stored default of 300 keeps the original ~58 minute window, so an install that never touched the field behaves as before; any other value, for example 600, limits the token to that lifetime. The login token is only needed at the click; MeshCentral keeps its own session afterwards.
+
 ## Install the MeshCentral agent with the RivetIT agent
 
 Status: 1.0.0-rc.12, migration `0023_rmm_mesh_agent`; the group id in MeshCentral's own URL form and the pasted-address field came in 1.0.0-rc.15 (migration `0024_rmm_mesh_group_url`). **Optional and off by default.** Wire contract: [PROTOCOL.md](PROTOCOL.md) 3.2.5 and 6.
@@ -238,6 +254,50 @@ Messages (job result, check-in Mesh state, `install.log`, and the last line `ins
 Not tested against a real MeshCentral server: the flow and the checks are exercised against a mock server and a stub `meshagent` (`internal/mesh/install_linuxflow_test.go`, `e2e/linux_container_scenario.sh`). Whether `meshsettings` accepts the 64-character URL form of the group id (the script passes whatever it is given) is confirmed only by MeshCentral's script, not by a run.
 
 What was proven: the whole flow on Linux in a container against a mock Mesh server that serves a fake `meshagent` (download, pin, run, node id report, no-fail, uninstall behaviour); the pinning, size, redirect and error handling and the parsers with unit tests; the server rules with integration tests. See `endpoint-agent/e2e/run_linux_container_e2e.sh` and `endpoint-agent/internal/mesh`.
+
+## Mesh node mapping: why a device is not mapped, bulk approval, verified auto-map (1.0.0-rc.67)
+
+A device that has the MeshCentral agent reports which node it is. That is only what the device SAYS, so a report alone never creates a mapping: a new claim is `needs_approval` until an administrator maps it, or (opt-in, below) MeshCentral itself confirms it. MeshCentral does not separate clients: one server can hold every client's devices, so a wrong mapping would open another client's machine from this client's device page.
+
+### The reason a device is not mapped
+
+`RivetCore\Rmm\Mesh\MeshMapping` answers, for every linked device, exactly one of six states and a sentence a person can read:
+
+| state | meaning |
+|---|---|
+| `not_installed` | the device has not reported a MeshCentral agent and has no node mapped |
+| `installed_no_node_reported` | the agent is installed but the device has not said which node it is yet |
+| `reported_needs_approval` | the device reported a node nobody approved, so nothing was mapped ("This device reported a Mesh node that has not been approved yet, so nothing was mapped. Check this node in MeshCentral, then map it.") |
+| `conflict` | the reported node is held by, or also reported by, another device (named only when it is in the same client) |
+| `kept_manual` | the device reported a different node than the one an administrator mapped by hand, which was kept |
+| `mapped` | a node is mapped (by hand, by an approval, or verified against MeshCentral: `mapped_source` says which) |
+
+Each item also carries `reported_node_id`, `mapped_node_id`, `can_approve`, and `verification` (the evidence of the last verified look, or null). The default device detail is NOT changed (the golden transcripts are frozen); a device page asks for one device with `GET endpoint_devices/{id}/mesh/mapping` (`TechnicianActions::meshMapping()`), and the fleet list is `GET endpoint_devices/mesh/mapping?state=&client_id=&q=&limit=&offset=` (`TechnicianActions::meshMappings()`): the caller's clients only, and another client's device is simply absent, exactly like a missing one. `counts` gives the number of devices per state for the filter chips.
+
+### Bulk "approve and map"
+
+`POST endpoint_devices/mesh/approve {"device_ids":[...]}` (`TechnicianActions::approveMeshNodes()`), 1 to 200 ids per call. For each device it maps THE NODE THE DEVICE REPORTED (stored in its Mesh agent state; a typed node id is rejected) through the same audited action as the single approval (`setMeshNode`, ability `rmm.device.manage` for that device's client). The answer lists `changed`, `skipped` (not waiting for approval, already mapped, a different node kept by hand) and `refused` (not found or not yours, not permitted, or a conflict). A conflict is re-checked at approval time and is never overridden or moved. Audit rows: `Mesh Node Approved` (per device), `Mesh Node Approval Refused`, `Mesh Nodes Bulk Approved` (the call).
+
+### Verified auto-map (off by default)
+
+Settings (administrators only, audited): `GET`/`PUT endpoint_devices/mesh/verify` with `mesh_verify_nodes` (default false), `mesh_service_account` (a MeshCentral account name, letters, digits, dot, underscore, hyphen) and `mesh_group_map` (client id => the MeshCentral device group of that client). They live in `endpoint_agent_mesh_settings.verify_json` (**migration `0052_rmm_mesh_verify`**, two nullable text columns; without it the feature stays off and says so).
+
+When on, the housekeeping job (never a launch) makes ONE control connection per run (`MeshControlClient`: RFC 6455 over TLS to `/control.ashx?moreargs=1`, the same network policy and pinned addresses as the reachability probe, certificate verified, no redirects, 12 s overall deadline, 8 MiB per frame, 16 MiB per run, at most 20000 nodes), signs in with a login cookie minted for the service account from the stored login key (never put in the URL, never stored, never logged, fresh per connection), waits for `serverinfo` and for `userinfo` naming exactly that account, asks for `meshes` and `nodes`, and looks at at most 50 `reported_needs_approval` devices, none twice within 10 minutes. A device is mapped ONLY when all of these hold:
+
+1. the node it reported exists on the Mesh server;
+2. the node's name or host equals the device host name (case-insensitive) and exactly one node of that group does (a node whose `host` is an IP simply does not match by host);
+3. the node is in the Mesh group configured for the device's client (the group is the KEY of the `nodes` answer: a node carries no `meshid`; groups are matched by id, never by name, because names are not unique); a client without an entry is never mapped, and a group configured for two clients is refused;
+4. nobody else holds or claims the node (the same decision the check-in uses must still say `needs_approval`).
+
+Otherwise the device stays `reported_needs_approval` and the reason is stored as evidence (`verification.code`: `no_group_configured`, `group_shared`, `node_missing`, `wrong_group`, `hostname_differs`, `hostname_not_unique`, `claimed`) for the administrator. A server that is unreachable, answers wrongly, closes the connection (`noauth`), signs in another account or is silent for the deadline maps nothing (`Mesh Verification Failed`, audited once a day). A mapped node has `source` `verified` and the audit row `Mesh Node Verified And Mapped` carries the reason.
+
+What is verified: all of it against `tests/Support/MockMeshControl.php`, a fake control channel speaking the shapes MeshCentral 1.3.1 uses (as reported by the Console lane); the protocol facts come from a working client there. What was never run: any real MeshCentral from this code, a TLS control connection (the fake speaks plain TCP on loopback), a Mesh domain other than the default one, a server that pages `nodes` (`maxdeviceview`), and the housekeeping job against a production-sized fleet.
+
+### Detecting an already installed MeshAgent (agent side)
+
+The endpoint agent (`endpoint-agent/internal/mesh`) used to look only in the default install locations. It now also finds an agent through its Windows service (any service whose name contains "mesh": the registry `ImagePath`), the uninstall entry in the 64-bit and the 32-bit registry view, systemd units and SysV init scripts named like a Mesh agent (`ExecStart`), and Mesh-named directories under the program folders, `/usr/local` and `/opt` (renamed or portable copies); the node id is read from a `.msh` named after a renamed executable and from the `WOW6432Node` key in all three registry views. The wire shape is unchanged (the same `mesh_agent` member).
+
+**What may be run, and what is only read (security).** The agent runs the Mesh agent with `-nodeid` as SYSTEM, so discovery must never widen what it runs. On Windows a discovered executable is run only when it lies below the Program Files roots AND passes the owner/DACL trust check of CORE-16 (`trust_windows.go`, `winacl`, taken from PR #124); an `ImagePath` or uninstall entry pointing anywhere else, and everything found under `ProgramData` or the drive root (writable by standard users), is NEVER executed: only an `.msh` next to it is read, and what it says is an untrusted claim (reported as `mesh_agent.node_id`, which the server turns into at most `reported_needs_approval`, never a mapping). Admin-only sources (the service configuration, the uninstall entry) are consulted first. On Linux the root-ownership check of `trust_unix.go` still runs before anything is executed. Verified on fixtures only (table-driven tests of the decision on Linux, `GOOS=windows go vet`), never on a real Windows or Linux machine. **Depends on PR #124** (`winacl` and `trust_windows.go`): the files this change adds are byte-identical copies, so whichever merges second has no conflict.
 
 ## What is built, what is verified, what remains
 

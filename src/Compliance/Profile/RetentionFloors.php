@@ -11,8 +11,10 @@ use RivetCore\Rmm\Settings\RetentionFloorsInterface;
  * `retention_floors` option, or to {@see \RivetCore\Rmm\Settings\RmmSettings::setRetentionFloors()}. Read once per instance (build one per request), through
  * the single-query {@see FrameworkProfileStore::retentionFloors()}. Where an edition has a cache it can pass its own loader to {@see self::fromLoader()}.
  *
- * It never throws: if the profile tables cannot be read (migration 0046 not applied yet, database trouble) it logs once and answers "no floor", so a
- * code-before-migration deploy keeps working. The compliance checks read the profile directly and DO report such a failure.
+ * It never throws: if the profile tables cannot be read (migration 0046 not applied yet, database trouble) it logs once, WITH the error code, and answers
+ * "no floor", so a code-before-migration deploy keeps working. It remembers the failure ({@see self::unavailable()}) so that a deleting caller (the RMM
+ * housekeeping) can fail closed and skip the prune instead of pruning below a framework minimum it could not read (CORE-39). The compliance checks read
+ * the profile directly and DO report such a failure.
  *
  * @api
  */
@@ -21,6 +23,7 @@ final class RetentionFloors implements RetentionFloorsInterface
     /** @var array<string,int>|null */
     private ?array $floors = null;
     private ?string $label = null;
+    private bool $failed = false;
 
     /**
      * @param \Closure(): array<string,int> $loadFloors data class => minimum days
@@ -56,12 +59,25 @@ final class RetentionFloors implements RetentionFloorsInterface
             try {
                 $this->floors = ($this->loadFloors)();
             } catch (\Throwable $e) {
-                error_log('compliance retention floors unavailable (treated as none): ' . get_class($e));
+                // The code is the database errno (1146 table missing, 2006 gone away, ...): without it a transient failure cannot be told from a missing migration. It holds no secret.
+                error_log('compliance retention floors unavailable (treated as none): ' . get_class($e) . ' code ' . (string) $e->getCode());
                 $this->floors = [];
+                $this->failed = true;
             }
         }
 
         return $this->floors;
+    }
+
+    /**
+     * True when the floors could not be read (the last read failed, so "no floor" is a guess, not a fact). A caller that DELETES data must not treat that
+     * as "nothing is required" ({@see \RivetCore\Rmm\Settings\RmmSettings::retentionFloorsUnavailable()}). Reads the floors first when that has not happened yet.
+     */
+    public function unavailable(): bool
+    {
+        $this->all();
+
+        return $this->failed;
     }
 
     public function floorDays(string $dataClass): int
@@ -95,5 +111,6 @@ final class RetentionFloors implements RetentionFloorsInterface
     {
         $this->floors = null;
         $this->label = null;
+        $this->failed = false;
     }
 }

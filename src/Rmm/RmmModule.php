@@ -70,6 +70,7 @@ use RivetCore\Rmm\Read\AutomationReader;
 use RivetCore\Rmm\Patch\PatchActions;
 use RivetCore\Rmm\Patch\PatchApprovalService;
 use RivetCore\Rmm\Patch\PatchComplianceService;
+use RivetCore\Rmm\Patch\PatchConfigureService;
 use RivetCore\Rmm\Patch\PatchInstallService;
 use RivetCore\Rmm\Patch\PatchPolicyStore;
 use RivetCore\Rmm\Patch\PatchProtocol;
@@ -180,6 +181,9 @@ final class RmmModule
     private ?MeshService $mesh = null;
     private ?MeshAgentSettings $meshAgentSettings = null;
     private ?MeshAgentService $meshAgents = null;
+    private ?\RivetCore\Rmm\Mesh\MeshMapping $meshMapping = null;
+    private ?\RivetCore\Rmm\Mesh\MeshVerifySettings $meshVerifySettings = null;
+    private ?\RivetCore\Rmm\Mesh\MeshVerifyService $meshVerifyService = null;
     private ?\RivetCore\Rmm\Mesh\MeshAfterApproval $meshAfterApproval = null;
     private ?InstallerService $installerService = null;
     private ?TechnicianActions $technician = null;
@@ -234,6 +238,7 @@ final class RmmModule
     private ?PatchPolicyStore $patchPolicies = null;
     private ?PatchScanService $patchScans = null;
     private ?PatchInstallService $patchInstalls = null;
+    private ?PatchConfigureService $patchConfigure = null;
     private ?PatchApprovalService $patchApprovals = null;
     private ?PatchComplianceService $patchCompliance = null;
     private ?PatchReader $patchReader = null;
@@ -391,6 +396,8 @@ final class RmmModule
         }
         if ($type === PatchProtocol::JOB_SCAN) {
             $this->patchScans()->applyJob($dev, $row);
+        } elseif ($type === PatchProtocol::JOB_CONFIGURE) {
+            $this->patchConfigure()->applyJob($dev, $row);
         } else {
             $this->patchInstalls()->applyJob($dev, $row);
         }
@@ -416,6 +423,12 @@ final class RmmModule
         return $this->patchInstalls ??= new PatchInstallService($this->sql(), $this->settings(), $this->jobs(), $this->patchScans(), $this->patchPolicies(), $this->eventPublisher(), $this->patchCompliance(), $this->dataStores()->patchHistory());
     }
 
+    /** Windows Update control: the policy-driven `patch_configure` job, the reported state and the reconciler. */
+    public function patchConfigure(): PatchConfigureService
+    {
+        return $this->patchConfigure ??= new PatchConfigureService($this->sql(), $this->settings(), $this->jobs(), $this->patchScans(), $this->patchPolicies(), $this->devices(), $this->audit, $this->patchCompliance());
+    }
+
     /** Approve, decline, approval rules and automatic approval. */
     public function patchApprovals(): PatchApprovalService
     {
@@ -425,20 +438,20 @@ final class RmmModule
     /** The `patch.compliance` and `patch.install_failed` checks. */
     public function patchCompliance(): PatchComplianceService
     {
-        return $this->patchCompliance ??= new PatchComplianceService($this->sql(), $this->settings(), $this->checks());
+        return $this->patchCompliance ??= new PatchComplianceService($this->sql(), $this->settings(), $this->checks(), $this->patchPolicies());
     }
 
     /** Patch reads: one device, the fleet's compliance. */
     public function patchReader(): PatchReader
     {
-        return $this->patchReader ??= new PatchReader($this->sql(), $this->settings(), $this->patchPolicies(), $this->tenancy, $this->dataStores()->patchHistory());
+        return $this->patchReader ??= new PatchReader($this->sql(), $this->settings(), $this->patchPolicies(), $this->tenancy, $this->dataStores()->patchHistory(), $this->patchConfigure());
     }
 
     /** What technicians do with patching (shared by the REST API and the edition's pages). */
     public function patchActions(): PatchActions
     {
         if ($this->patchActions === null) {
-            $this->patchActions = new PatchActions($this->devices(), $this->authorizer(), $this->settings(), $this->patchScans(), $this->patchInstalls(), $this->patchApprovals(), $this->patchPolicies(), $this->patchReader(), $this->audit, $this->eventPublisher());
+            $this->patchActions = new PatchActions($this->devices(), $this->authorizer(), $this->settings(), $this->patchScans(), $this->patchInstalls(), $this->patchApprovals(), $this->patchPolicies(), $this->patchReader(), $this->audit, $this->eventPublisher(), $this->patchConfigure());
             $this->scriptActions()->setPatchActions($this->patchActions);
         }
 
@@ -679,7 +692,7 @@ final class RmmModule
     public function patchScheduler(): PatchScheduler
     {
         return $this->patchScheduler ??= new PatchScheduler($this->sql(), $this->settings(), $this->devices(), $this->patchScans(), $this->patchInstalls(), $this->patchApprovals(), $this->patchCompliance(), $this->patchPolicies(), $this->maintenance(),
-            $this->scheduleGate ?? new MaintenanceScheduleGate($this->maintenance(), $this->settings()), $this->dataStores()->patchHistory());
+            $this->scheduleGate ?? new MaintenanceScheduleGate($this->maintenance(), $this->settings()), $this->dataStores()->patchHistory(), $this->patchConfigure());
     }
 
     public function checks(): CheckEvaluator
@@ -727,7 +740,7 @@ final class RmmModule
     /** Service and process managers, file transfer, Mesh view information and the remote-tools settings (shared by the REST API and the edition's pages). */
     public function remoteActions(): RemoteActions
     {
-        return $this->remoteActions ??= new RemoteActions($this->sql(), $this->devices(), $this->authorizer(), $this->settings(), $this->jobs(), $this->transfers(), $this->remoteSettings(), $this->mesh(), $this->audit, $this->meshAgentSettings(), $this->meshAgents(), $this->targets());
+        return $this->remoteActions ??= new RemoteActions($this->sql(), $this->devices(), $this->authorizer(), $this->settings(), $this->jobs(), $this->transfers(), $this->remoteSettings(), $this->mesh(), $this->audit, $this->meshAgentSettings(), $this->meshAgents(), $this->targets(), $this->meshVerifySettings());
     }
 
     /** Reading collected logs and managing log rules. */
@@ -961,7 +974,7 @@ final class RmmModule
             null, $this->scheduleRunner(), $this->approvals(), $this->approvedRunExecutor(), $this->jobExtras(), $this->policyStore(),
             new AlertingHousekeeping($this->maintenance(), $this->escalation(), $this->alerts(), $this->storm(), $this->checkEval()), null, $this->cache(), $this->externalSink(),
             $this->logService(), $this->logRules(), $this->transfers(), $this->patchScheduler(), $this->deployScheduler(), $this->changeService(), $this->changeRules(), $this->hypervisorService(),
-            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores());
+            $this->dataStores()->checkHistory(), $this->dataStores()->softwareHistory(), $this->metricStore(), $this->dataStores()->maintenance(), $this->dataStores(), fn () => $this->meshVerifyService());
     }
 
     /**
@@ -1406,6 +1419,24 @@ final class RmmModule
     }
 
     /** The install settings of the optional MeshCentral agent (device group, certificate pin, overwrite switch, table corrections). */
+    public function meshMapping(): \RivetCore\Rmm\Mesh\MeshMapping
+    {
+        return $this->meshMapping ??= new \RivetCore\Rmm\Mesh\MeshMapping($this->sql());
+    }
+
+    public function meshVerifySettings(): \RivetCore\Rmm\Mesh\MeshVerifySettings
+    {
+        return $this->meshVerifySettings ??= new \RivetCore\Rmm\Mesh\MeshVerifySettings($this->sql());
+    }
+
+    /** The verified Mesh node mapping (off unless an administrator turned it on); the housekeeping job runs it. */
+    public function meshVerifyService(): \RivetCore\Rmm\Mesh\MeshVerifyService
+    {
+        $insecure = $this->options['allow_insecure_http'] ?? false;
+
+        return $this->meshVerifyService ??= new \RivetCore\Rmm\Mesh\MeshVerifyService($this->sql(), $this->settings(), $this->meshVerifySettings(), new \RivetCore\Rmm\Mesh\MeshControlClient($this->urlPolicy ?? new UrlPolicy(false), $insecure), $this->meshAgents(), $this->devices(), $this->audit, $this->box, $insecure);
+    }
+
     public function meshAgentSettings(): MeshAgentSettings
     {
         return $this->meshAgentSettings ??= new MeshAgentSettings($this->sql(), $this->settings());
@@ -1432,7 +1463,7 @@ final class RmmModule
     public function technician(): TechnicianActions
     {
         return $this->technician ??= new TechnicianActions($this->sql(), $this->devices(), $this->deviceService(), $this->enrollment(), $this->jobs(), $this->updates(),
-            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings());
+            $this->mesh(), $this->authorizer(), $this->bridge, $this->audit, $this->clientLabel(), $this->scriptActions(), $this->settings(), $this->meshMapping(), $this->meshAgents());
     }
 
     /** The per-client remote-session policy store: the Core table (migration 0050) unless the edition passes its own `remote_session_policy` option. */

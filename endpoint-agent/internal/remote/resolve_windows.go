@@ -107,3 +107,37 @@ func commitFile(tmp, dest string, overwrite bool) error {
 	}
 	return os.Rename(tmp, dest)
 }
+
+// putTemp on Windows is still path based (CORE-7 tracks the handle-based rename there).
+type putTemp struct {
+	File *os.File
+	path string
+	dir  string
+}
+
+func beginPut(dir, name string) (*putTemp, error) {
+	path := filepath.Join(dir, name)
+	open := func() (*os.File, error) { return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) }
+	f, err := open()
+	if errors.Is(err, fs.ErrExist) {
+		if li, lerr := os.Lstat(path); lerr == nil && (li.Mode().IsRegular() || li.Mode()&fs.ModeSymlink != 0) {
+			if os.Remove(path) == nil {
+				f, err = open()
+			}
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &putTemp{File: f, path: path, dir: dir}, nil
+}
+
+func (t *putTemp) Commit(dest string, _ os.FileMode, _, overwrite bool) error {
+	if err := t.File.Close(); err != nil {
+		return err
+	}
+	return commitFile(t.path, filepath.Join(t.dir, dest), overwrite)
+}
+
+func (t *putTemp) Discard() { t.File.Close(); os.Remove(t.path) }
+func (t *putTemp) Close()   { t.File.Close() }
