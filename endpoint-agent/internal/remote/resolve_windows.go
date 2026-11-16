@@ -72,10 +72,8 @@ func stripDevicePrefix(s string) string {
 // reparseTagOf is the reparse tag of an open handle (0 when there is none or it cannot be read).
 func reparseTagOf(h windows.Handle) uint32 {
 	var ti struct{ FileAttributes, ReparseTag uint32 }
-	if err := windows.GetFileInformationByHandleEx(h, windows.FileAttributeTagInfo, (*byte)(unsafe.Pointer(&ti)), uint32(unsafe.Sizeof(ti))); err != nil {
-		return 0
-	}
-	return ti.ReparseTag
+	err := windows.GetFileInformationByHandleEx(h, windows.FileAttributeTagInfo, (*byte)(unsafe.Pointer(&ti)), uint32(unsafe.Sizeof(ti)))
+	return tagOrSurrogate(ti.ReparseTag, err) // an unreadable tag counts as a link (review CRR-9)
 }
 
 // openNoFollow opens read-only. A final element that is a reparse point (symbolic link, junction, ...) is refused, and the handle's own final
@@ -98,6 +96,26 @@ func openNoFollow(path string) (*os.File, error) {
 	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && winacl.IsNameSurrogate(reparseTagOf(h)) {
 		windows.CloseHandle(h) // a symlink or junction; a Cloud Files placeholder is an ordinary file for this purpose (review CR2)
 		return nil, &fs.PathError{Op: "open", Path: path, Err: errors.New("path is a link")}
+	}
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		// A non-link reparse point (Cloud Files / OneDrive placeholder, dedup): a handle opened WITH FILE_FLAG_OPEN_REPARSE_POINT bypasses the filter's
+		// recall, so reopen normally and require it to be the very same file before reading (review CRR-9). UNVERIFIED on Windows.
+		h2, err := windows.CreateFile(p, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil,
+			windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+		if err != nil {
+			windows.CloseHandle(h)
+			return nil, &fs.PathError{Op: "open", Path: path, Err: err}
+		}
+		var info2 windows.ByHandleFileInformation
+		if err := windows.GetFileInformationByHandle(h2, &info2); err != nil ||
+			!sameFileIdentity(uint64(info.VolumeSerialNumber), uint64(info.FileIndexHigh)<<32|uint64(info.FileIndexLow),
+				uint64(info2.VolumeSerialNumber), uint64(info2.FileIndexHigh)<<32|uint64(info2.FileIndexLow)) {
+			windows.CloseHandle(h2)
+			windows.CloseHandle(h)
+			return nil, &fs.PathError{Op: "open", Path: path, Err: errors.New("path changed while it was opened")}
+		}
+		windows.CloseHandle(h)
+		h = h2
 	}
 	if fp, err := finalPathOf(h); err != nil || !strings.EqualFold(filepath.Clean(fp), filepath.Clean(path)) {
 		windows.CloseHandle(h)

@@ -1,6 +1,11 @@
 package remote
 
-import "testing"
+import (
+	"errors"
+	"testing"
+
+	"rivetit-agent/internal/winacl"
+)
 
 func TestCheckPinnedDir(t *testing.T) {
 	const (
@@ -20,12 +25,27 @@ func TestCheckPinnedDir(t *testing.T) {
 		{attrDirectory | attrReparsePoint, tagSymlink, `C:\Users\alice\drop`, `C:\Users\alice\drop`, false},
 		{attrDirectory | attrReparsePoint, tagMountPoint, `C:\Users\alice\drop`, `C:\Users\alice\drop`, false},
 		{attrDirectory | attrReparsePoint, tagCloud, `C:\Users\alice\OneDrive\Desktop`, `C:\Users\alice\OneDrive\Desktop`, true}, // review CR2
-		{attrDirectory, 0, `C:\Windows\System32`, `C:\Users\alice\drop`, false}, // junction followed: the final path is elsewhere
+		{attrDirectory, 0, `C:\Windows\System32`, `C:\Users\alice\drop`, false},                                                  // junction followed: the final path is elsewhere
 		{0, 0, `C:\Users\alice\drop`, `C:\Users\alice\drop`, false},
 	}
 	for i, c := range cases {
 		if err := checkPinnedDir(c.attrs, c.tag, c.final, c.approved); (err == nil) != c.ok {
 			t.Errorf("case %d: %v", i, err)
 		}
+	}
+}
+
+func TestUnreadableReparseTagFailsClosed(t *testing.T) {
+	if !winacl.IsNameSurrogate(tagOrSurrogate(0, errors.New("query failed"))) {
+		t.Fatal("a failed tag query was treated as no link")
+	}
+	if winacl.IsNameSurrogate(tagOrSurrogate(0x9000701A, nil)) {
+		t.Fatal("a Cloud Files tag was treated as a link")
+	}
+}
+
+func TestSameFileIdentity(t *testing.T) {
+	if !sameFileIdentity(1, 2, 1, 2) || sameFileIdentity(1, 2, 1, 3) || sameFileIdentity(1, 2, 2, 2) || sameFileIdentity(0, 0, 0, 0) {
+		t.Fatal("identity comparison")
 	}
 }
