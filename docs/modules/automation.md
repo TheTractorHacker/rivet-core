@@ -77,7 +77,7 @@ $store->save(null, 'Backup failed', 'backup.failed', ['severity' => 'critical'],
     ['subject' => 'Backup failed: {backup.name}', 'priority' => 'High'], true);
 
 $context = EventContext::flatten(['backup' => ['name' => 'nightly'], 'severity' => 'critical']);
-foreach ((new AutomationRuleEvaluator($db))->findMatchingRules('backup.failed', $context) as $rule) {
+foreach ((new AutomationRuleEvaluator($db, $vault ?? null))->findMatchingRules('backup.failed', $context) as $rule) {
     $result = (new AutomationExecutor())->execute($rule, $context, [
         'create_ticket' => fn (array $config, array $context, array $rule): string => 'queued "' . $config['subject'] . '"',
     ]);
@@ -104,7 +104,7 @@ whether rules run inline or as queued jobs (`automation.action` jobs with 3 atte
 - Placeholder interpolation skips routing fields; keep that list in mind when adding action types in an edition.
 - `send_webhook` configs are only checked for scheme and host. Handlers must vet the URL again at run time (resolve to
   a public address, or use `Webhooks\UrlPolicy`); both editions do so. Do not follow redirects.
-- `secret` is stored as given in `action_config_json`; store an encrypted value or accept that it is plaintext in the database.
+- `secret` is stored as given in `action_config_json` unless the store is given a `SettingsVault` (CORE-DS-58): then it is stored sealed as `secret_enc`, bound to the rule id (CRR-21; rows sealed by the first version are still read and re-sealed by `sealStoredSecrets()`), and ordinary reads (`find()`, `all()`) leave it out. The code that delivers the webhook must get the real secret: build the evaluator with the same vault (`new AutomationRuleEvaluator($db, $vault)`, CRR-16) and `findMatchingRules()` returns the rule with the unsealed secret in `action_config_json` (a rule whose secret cannot be opened is left out, never delivered unsigned), or ask the store with `find($id, true)`.
 - Write the "rule fired" record straight to the audit table without the after-log hook, otherwise a rule can trigger rules
   in a loop (RivetIT does this on purpose).
 - Event data in the context can come from outside users (ticket subjects); treat interpolated text as untrusted when rendered.
