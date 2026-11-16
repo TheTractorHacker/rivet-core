@@ -5,7 +5,9 @@ GO        ?= go
 # CI passes VERSION (tag agent-vX.Y.Z -> X.Y.Z, otherwise 0.0.0-dev.<sha>). Locally: make dist VERSION=0.1.0
 VERSION   ?= 0.0.0-dev.$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-LDFLAGS   := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
+# RELEASE_KEYS: comma separated base64 ed25519 release PUBLIC keys compiled in as the update trust anchor (CORE-DS-26); empty = enforcement off.
+RELEASE_KEYS ?=
+LDFLAGS   := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X rivetit-agent/internal/update.EmbeddedReleaseKeys=$(RELEASE_KEYS)
 BUILDFLAGS:= -trimpath -buildvcs=false
 DIST      := dist
 export CGO_ENABLED := 0

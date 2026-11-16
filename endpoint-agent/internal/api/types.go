@@ -289,6 +289,19 @@ type UpdateManifest struct {
 	SHA256     string `json:"sha256"`
 	Signature  string `json:"signature"`
 	MinVersion string `json:"min_version"`
+	// Additive (CORE-DS-26): the platform the package is for and a detached signature by the OFFLINE release key over the domain-separated
+	// manifest {kind, version, os, arch, sha256, min_version}. An agent that knows a release key requires them.
+	OS               string `json:"os,omitempty"`
+	Arch             string `json:"arch,omitempty"`
+	ReleaseSignature string `json:"release_signature,omitempty"`
+}
+
+// ReleaseRollover moves the agents' trust to a new release key: signed by a release key the agent already trusts (CORE-DS-26).
+type ReleaseRollover struct {
+	Kind      string `json:"kind"`
+	NewKey    string `json:"new_key"`
+	Seq       int    `json:"seq"`
+	Signature string `json:"signature"`
 }
 
 type CheckinResponse struct {
@@ -297,6 +310,8 @@ type CheckinResponse struct {
 	JobsPending   *int            `json:"jobs_pending"`
 	Config        *ServerConfig   `json:"config"`
 	Update        *UpdateManifest `json:"update"`
+	// ReleaseRollover is a signed release key rollover message (additive, CORE-DS-26); the agent applies it with or without an update offer.
+	ReleaseRollover *ReleaseRollover `json:"release_rollover,omitempty"`
 	ServerTime    ServerTime      `json:"server_time"`
 	SigningKeyID  string          `json:"signing_key_id"`
 	Status        string          `json:"status"`

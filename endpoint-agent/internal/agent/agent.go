@@ -229,7 +229,7 @@ func New(o Options) (*Agent, error) {
 	if o.Updater != nil {
 		a.upd = o.Updater
 	} else if o.Exe != "" {
-		a.upd = &update.Manager{Paths: update.PathsFor(o.Exe), Version: o.Version, StatePath: o.Store.UpdatePath(), Now: o.Now}
+		a.upd = &update.Manager{Paths: update.PathsFor(o.Exe), Version: o.Version, StatePath: o.Store.UpdatePath(), Now: o.Now, ReleaseKeys: a.releaseKeys}
 	}
 	return a, nil
 }
@@ -1028,6 +1028,7 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 	}
 	a.sw.resync = hasFeature(resp.Features, featureSoftware) && hasFeature(resp.Resync, resyncSoftware)
 	a.noteSignedConfig(resp)
+	a.applyRollover(resp.ReleaseRollover)
 	a.configureLogs(resp)
 	a.configureChange(resp)
 	a.configureHypervisor(resp)
@@ -1115,6 +1116,41 @@ func acceptLogsConfig(raw json.RawMessage, required bool, verify func(domain str
 		return nil
 	}
 	return verify(LogsConfigSignDomain, raw, w.Signature)
+}
+
+// releaseKeys is the trusted release public key set: the build-time embedded keys plus those learned through rollover messages.
+func (a *Agent) releaseKeys() []ed25519.PublicKey {
+	keys := update.ParseKeys(update.EmbeddedReleaseKeys)
+	if st, err := a.o.Store.LoadState(); err == nil {
+		keys = append(keys, update.ParseKeys(strings.Join(st.ReleaseKeys, ","))...)
+	}
+	return keys
+}
+
+// applyRollover applies a signed release key rollover message (ignored when it does not verify or is not newer than the one already applied).
+func (a *Agent) applyRollover(r *api.ReleaseRollover) {
+	if r == nil {
+		return
+	}
+	st, _ := a.o.Store.LoadState()
+	nk, err := update.VerifyRollover(a.releaseKeys(), st.ReleaseRolloverSeq, *r)
+	if err != nil {
+		a.log.Warn("release key rollover refused", "err", err)
+		return
+	}
+	_ = a.o.Store.Update(func(s *store.State) error {
+		s.ReleaseKeys = append(s.ReleaseKeys, base64.StdEncoding.EncodeToString(nk))
+		s.ReleaseRolloverSeq = r.Seq
+		return nil
+	})
+	a.log.Info("release signing key rolled over", "seq", r.Seq)
+}
+
+// updateDisabled is the local disable_update switch.
+func (a *Agent) updateDisabled() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg.DisableUpdate
 }
 
 // signingRequired reports whether unsigned check definitions and log configurations are refused: the local switch, or a server that announced
@@ -1220,7 +1256,7 @@ func (a *Agent) pollJobs(ctx context.Context) {
 }
 
 func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st store.State) {
-	if man == nil || a.upd == nil || a.upd.InProbation() {
+	if man == nil || a.upd == nil || a.upd.InProbation() || a.updateDisabled() {
 		return
 	}
 	if f := st.UpdateFailure; f != nil && f.Version == man.Version {

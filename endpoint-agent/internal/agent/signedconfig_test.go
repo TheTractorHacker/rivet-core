@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"rivetit-agent/internal/api"
 	"rivetit-agent/internal/jobs"
+	"rivetit-agent/internal/update"
 )
 
 func signedLogs(t *testing.T, priv ed25519.PrivateKey, body map[string]any) json.RawMessage {
@@ -68,5 +70,45 @@ func TestCheckDeviceBinding(t *testing.T) {
 	}
 	if err := checkBoundToDevice([]byte(`{"key":"k"}`), "7"); err != nil {
 		t.Fatalf("a check without a device binding (older server) must still verify: %v", err)
+	}
+}
+
+// CORE-DS-26: a signed rollover adds a release key to the agent's trusted set, persists, and cannot be replayed.
+func TestReleaseRolloverIsAppliedAndPersisted(t *testing.T) {
+	r := newRig(t)
+	oldPub, oldPriv, _ := ed25519.GenerateKey(rand.Reader)
+	newPub, _, _ := ed25519.GenerateKey(rand.Reader)
+	prev := update.EmbeddedReleaseKeys
+	update.EmbeddedReleaseKeys = base64.StdEncoding.EncodeToString(oldPub)
+	defer func() { update.EmbeddedReleaseKeys = prev }()
+	if n := len(r.a.releaseKeys()); n != 1 {
+		t.Fatalf("embedded keys: %d", n)
+	}
+	roll := &api.ReleaseRollover{Kind: update.RolloverKind, NewKey: base64.StdEncoding.EncodeToString(newPub), Seq: 1}
+	roll.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(oldPriv, update.RolloverMessage(*roll)))
+	r.a.applyRollover(roll)
+	keys := r.a.releaseKeys()
+	if len(keys) != 2 {
+		t.Fatalf("keys after rollover: %d", len(keys))
+	}
+	// after a restart on the same state dir the new key is still trusted
+	if n := len(r.newAgent().releaseKeys()); n != 2 {
+		t.Fatalf("keys after restart: %d", n)
+	}
+	r.a.applyRollover(roll) // replay: ignored
+	if n := len(r.a.releaseKeys()); n != 2 {
+		t.Fatalf("replay changed the key set: %d", n)
+	}
+}
+
+// CORE-DS-26: the local switch disable_update stops self-update completely.
+func TestDisableUpdateSwitch(t *testing.T) {
+	r := newRig(t)
+	cfg, _ := r.st.LoadConfig()
+	cfg.DisableUpdate = true
+	r.st.SaveConfig(cfg)
+	a := r.newAgent()
+	if !a.updateDisabled() {
+		t.Fatal("disable_update not honoured")
 	}
 }

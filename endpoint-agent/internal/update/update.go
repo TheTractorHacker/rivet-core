@@ -251,8 +251,11 @@ type Manager struct {
 	Now       func() time.Time
 	Probation time.Duration
 	// Injectable for tests; defaults are the real implementations.
-	VerifyFn   func(path string) error
-	SelfTestFn func(ctx context.Context, path, want string) error
+	// ReleaseKeys returns the trusted release public keys (nil or empty = none configured: the legacy instance-signature-only behaviour). With at
+	// least one key every update must carry a valid release signature (CORE-DS-26).
+	ReleaseKeys func() []ed25519.PublicKey
+	VerifyFn    func(path string) error
+	SelfTestFn  func(ctx context.Context, path, want string) error
 }
 
 func (m *Manager) now() time.Time {
@@ -292,6 +295,13 @@ func (m *Manager) Apply(ctx context.Context, man api.UpdateManifest, pub ed25519
 			return false, nil
 		}
 		return false, err
+	}
+	if m.ReleaseKeys != nil {
+		if keys := m.ReleaseKeys(); len(keys) > 0 {
+			if err := VerifyRelease(keys, man, runtime.GOOS, runtime.GOARCH); err != nil {
+				return false, err
+			}
+		}
 	}
 	if err := ensureParent(m.Paths.Staged); err != nil {
 		return false, err
