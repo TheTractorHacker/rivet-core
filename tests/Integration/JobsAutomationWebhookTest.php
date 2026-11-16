@@ -106,6 +106,38 @@ final class JobsAutomationWebhookTest extends TestCase
         self::assertSame('{ticket.id}', $out['user_id']);
     }
 
+    /** CORE-DS-58: with a vault the send_webhook secret is stored sealed, left out of ordinary reads, and a clear one from before is sealed. */
+    public function testTheWebhookSecretIsSealedAndRedactedWhenTheStoreHasAVault(): void
+    {
+        $vault = new \RivetCore\Crypto\SettingsVault(\RivetCore\Crypto\KeyRing::single(random_bytes(32)));
+        $legacy = new AutomationRuleStore($this->db);
+        $old = $legacy->save(null, 'Old', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/old', 'secret' => 'legacy-secret-123'], true);
+        $this->assertStringContainsString('legacy-secret-123', (string) $this->db->fetchOne('SELECT action_config_json FROM automation_rules WHERE rule_id = ?', [$old])['action_config_json'], 'before: in clear');
+        $s = new AutomationRuleStore($this->db, $vault);
+        $new = $s->save(null, 'New', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/new', 'secret' => 'fresh-secret-456'], true);
+        $raw = (string) $this->db->fetchOne('SELECT action_config_json FROM automation_rules WHERE rule_id = ?', [$new])['action_config_json'];
+        self::assertStringNotContainsString('fresh-secret-456', $raw);
+        self::assertStringContainsString('secret_enc', $raw);
+        // ordinary reads never carry it
+        foreach ([$s->find($new), ...array_filter($s->all(), static fn (array $r): bool => (int) $r['rule_id'] === $new)] as $row) {
+            $cfg = json_decode((string) $row['action_config_json'], true);
+            self::assertSame(['', true], [$cfg['secret'], $cfg['secret_set']]);
+            self::assertArrayNotHasKey('secret_enc', $cfg);
+            self::assertStringNotContainsString('fresh-secret-456', json_encode($row) ?: '');
+        }
+        // the code that signs the delivery asks for it
+        self::assertSame('fresh-secret-456', json_decode((string) $s->find($new, true)['action_config_json'], true)['secret']);
+        // reading the old row through the store seals it in place
+        $cfg = json_decode((string) $s->find($old)['action_config_json'], true);
+        self::assertTrue($cfg['secret_set']);
+        self::assertStringNotContainsString('legacy-secret-123', (string) $this->db->fetchOne('SELECT action_config_json FROM automation_rules WHERE rule_id = ?', [$old])['action_config_json']);
+        self::assertSame('legacy-secret-123', json_decode((string) $s->find($old, true)['action_config_json'], true)['secret']);
+        self::assertSame(0, $s->sealStoredSecrets(), 'and nothing is left to seal');
+        // an edit that does not re-enter the secret keeps it
+        $s->save($new, 'New renamed', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/new', 'secret' => '', 'keep_secret' => true], true);
+        self::assertSame('fresh-secret-456', json_decode((string) $s->find($new, true)['action_config_json'], true)['secret']);
+    }
+
     public function testStoreValidatesAndEvaluatorMatches(): void
     {
         $s = new AutomationRuleStore($this->db);
