@@ -27,6 +27,9 @@ signed by a key the agent currently trusts over `"rivetit-release-rollover-v1" +
 * `seq` must be EXACTLY the next one (highest applied + 1). A message with a huge `seq` is refused and cannot lock out later rollovers.
 * The new key is added; every key in `revoke` (embedded or learned) is removed from the trusted set and can no longer sign updates or rollovers. A message cannot revoke its own `new_key`; at most 16 entries.
 * State (`state.json`): `release_keys`, `release_revoked`, `release_rollover_seq`.
+* Every key (`new_key` and each `revoke` entry) must be its **canonical** base64 (exactly what `base64(32 raw bytes)` produces: no whitespace, no non-zero padding bits). Keys are compared by value, so a non-canonical spelling of `new_key` in `revoke` is refused as a self-revoke and an entry that could never match is refused as malformed.
+* Release verification stays ON once any release key has ever been configured (embedded, learned or revoked): an empty trusted set means "trust nothing", never "verification off". An unreadable `state.json` also trusts nothing.
+* **Catch-up (R3-2).** The check-in carries one `release_rollover`, which an agent that missed an earlier one cannot apply (it must be exactly the next sequence). Therefore the server should ALSO send `release_rollovers: [ ... ]`, the chain of every rollover message from the oldest sequence any live agent may still need (keep at most the last 16, in any order). The agent applies them sorted by `seq`, each one signed by a key it trusts at that point, and ignores the ones at or below its own sequence. Sending the chain in every check-in response is cheap (small, additive); until a rollover has ever been published the member is absent.
 To retire a leaked key K1: sign `{new_key: K2, revoke: [K1], seq: N+1}` with a still-trusted key (K1 itself if K1 is the only one: do this before the attacker does). The server stores and relays the message and cannot create one.
 
 ## Local switch

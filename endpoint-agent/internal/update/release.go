@@ -78,9 +78,20 @@ type RolloverResult struct {
 	Revoked []string // base64 public keys
 }
 
-// VerifyRollover checks a rollover message against the currently trusted keys and the sequence already applied. The sequence must be EXACTLY the next
-// one (haveSeq+1): a message signed with a huge sequence number can neither skip ahead nor lock out the legitimate later ones (review CRR-1). The new
-// key cannot be in its own revoke list.
+// canonicalKey decodes a base64 ed25519 public key and requires the string to be its canonical encoding (no whitespace, no non-zero padding bits:
+// base64.StdEncoding alone accepts such variants, which would compare unequal as strings and equal as keys; review CRR-1).
+func canonicalKey(s string) (ed25519.PublicKey, error) {
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil || len(b) != ed25519.PublicKeySize || base64.StdEncoding.EncodeToString(b) != s {
+		return nil, errors.New("not a canonical base64 ed25519 public key")
+	}
+	return ed25519.PublicKey(b), nil
+}
+
+// VerifyRollover checks a rollover message against the currently trusted keys and the sequence already applied, and returns the new public key and the
+// canonical revoked keys. The sequence must be EXACTLY the next one (haveSeq+1): a message signed with a huge sequence number can neither skip ahead nor
+// lock out the legitimate later ones (the server sends the whole chain in order, see the contract). Keys are compared by value, in canonical form: the
+// new key cannot be revoked by its own message, and every entry must be canonical so it can actually match.
 func VerifyRollover(trusted []ed25519.PublicKey, haveSeq int, r api.ReleaseRollover) (RolloverResult, error) {
 	var zero RolloverResult
 	if r.Kind != RolloverKind {
@@ -89,25 +100,28 @@ func VerifyRollover(trusted []ed25519.PublicKey, haveSeq int, r api.ReleaseRollo
 	if r.Seq != haveSeq+1 {
 		return zero, fmt.Errorf("rollover sequence %d is not the next one (%d)", r.Seq, haveSeq+1)
 	}
-	nk, err := base64.StdEncoding.DecodeString(strings.TrimSpace(r.NewKey))
-	if err != nil || len(nk) != ed25519.PublicKeySize {
-		return zero, errors.New("rollover key is not an ed25519 public key")
-	}
-	for _, rv := range r.Revoke {
-		if strings.TrimSpace(rv) == strings.TrimSpace(r.NewKey) {
-			return zero, errors.New("rollover revokes its own new key")
-		}
-		if b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rv)); err != nil || len(b) != ed25519.PublicKeySize {
-			return zero, errors.New("rollover revokes something that is not an ed25519 public key")
-		}
+	nk, err := canonicalKey(r.NewKey)
+	if err != nil {
+		return zero, errors.New("rollover key is not a canonical ed25519 public key")
 	}
 	if len(r.Revoke) > 16 {
 		return zero, errors.New("rollover revokes too many keys")
 	}
+	var revoked []string
+	for _, rv := range r.Revoke {
+		k, err := canonicalKey(rv)
+		if err != nil {
+			return zero, errors.New("rollover revokes something that is not a canonical ed25519 public key")
+		}
+		if k.Equal(nk) {
+			return zero, errors.New("rollover revokes its own new key")
+		}
+		revoked = append(revoked, rv)
+	}
 	if !verifyAny(trusted, RolloverMessage(r), r.Signature) {
 		return zero, errors.New("rollover signature invalid")
 	}
-	return RolloverResult{NewKey: ed25519.PublicKey(nk), Revoked: append([]string(nil), r.Revoke...)}, nil
+	return RolloverResult{NewKey: nk, Revoked: revoked}, nil
 }
 
 // ParseKeys decodes a comma separated list of base64 ed25519 public keys (the build-time embedded release keys). Invalid entries are skipped.

@@ -232,7 +232,7 @@ func New(o Options) (*Agent, error) {
 	if o.Updater != nil {
 		a.upd = o.Updater
 	} else if o.Exe != "" {
-		a.upd = &update.Manager{Paths: update.PathsFor(o.Exe), Version: o.Version, StatePath: o.Store.UpdatePath(), Now: o.Now, ReleaseKeys: a.releaseKeys}
+		a.upd = &update.Manager{Paths: update.PathsFor(o.Exe), Version: o.Version, StatePath: o.Store.UpdatePath(), Now: o.Now, ReleaseKeys: a.releaseKeys, ReleaseRequired: a.releaseRequired}
 	}
 	return a, nil
 }
@@ -453,11 +453,13 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 		st.Dormant, st.DormantReason, st.LastError = false, "", ""
 		st.EnrolledAt = a.o.Now().UTC()
 		st.ServerFeatures, st.SoftwareHash = nil, "" // unknown until the new server says so
+		st.LogsConfigSeq, st.SignedConfigV = 0, 0    // per-server signing memory: a new enrolment may be a different server (review R3-3)
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	a.signedSeen.Store(0)
 	a.observeResponse(resp.ServerTime, a.o.Now())
 	st, _ := a.o.Store.LoadState()
 	a.syncVerifier(st)
@@ -1031,7 +1033,7 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 	}
 	a.sw.resync = hasFeature(resp.Features, featureSoftware) && hasFeature(resp.Resync, resyncSoftware)
 	a.noteSignedConfig(resp)
-	a.applyRollover(resp.ReleaseRollover)
+	a.applyRollovers(resp)
 	a.configureLogs(resp)
 	a.configureChange(resp)
 	a.configureHypervisor(resp)
@@ -1174,16 +1176,16 @@ func (a *Agent) bindingRequired() bool {
 }
 
 // releaseKeys is the trusted release public key set: the build-time embedded keys plus those learned through rollover messages, minus every key a
-// signed rollover revoked.
+// signed rollover revoked. An unreadable state fails closed: nothing is trusted (the revoked filter cannot be applied).
 func (a *Agent) releaseKeys() []ed25519.PublicKey {
-	keys := update.ParseKeys(update.EmbeddedReleaseKeys)
-	var revoked map[string]bool
-	if st, err := a.o.Store.LoadState(); err == nil {
-		keys = append(keys, update.ParseKeys(strings.Join(st.ReleaseKeys, ","))...)
-		revoked = map[string]bool{}
-		for _, r := range st.ReleaseRevoked {
-			revoked[r] = true
-		}
+	st, err := a.o.Store.LoadState()
+	if err != nil {
+		return nil
+	}
+	keys := append(update.ParseKeys(update.EmbeddedReleaseKeys), update.ParseKeys(strings.Join(st.ReleaseKeys, ","))...)
+	revoked := map[string]bool{}
+	for _, r := range st.ReleaseRevoked {
+		revoked[r] = true
 	}
 	var out []ed25519.PublicKey
 	seen := map[string]bool{}
@@ -1195,6 +1197,33 @@ func (a *Agent) releaseKeys() []ed25519.PublicKey {
 		}
 	}
 	return out
+}
+
+// releaseRequired is true once release keys have ever been configured on this agent (embedded, or learned or revoked through a rollover), or the state
+// cannot be read: an empty trusted set then means "trust nothing", not "do not verify".
+func (a *Agent) releaseRequired() bool {
+	if len(update.ParseKeys(update.EmbeddedReleaseKeys)) > 0 {
+		return true
+	}
+	st, err := a.o.Store.LoadState()
+	return err != nil || len(st.ReleaseKeys) > 0 || len(st.ReleaseRevoked) > 0 || st.ReleaseRolloverSeq > 0
+}
+
+// applyRollovers applies the single message and the chain of a response, in sequence order (each must be the next one), so an agent that missed one
+// catches up in the same check-in.
+func (a *Agent) applyRollovers(resp *api.CheckinResponse) {
+	var all []api.ReleaseRollover
+	if resp.ReleaseRollover != nil {
+		all = append(all, *resp.ReleaseRollover)
+	}
+	all = append(all, resp.ReleaseRollovers...)
+	if len(all) > 32 {
+		all = all[:32]
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Seq < all[j].Seq })
+	for i := range all {
+		a.applyRollover(&all[i])
+	}
 }
 
 // applyRollover applies a signed release key rollover message (ignored when it does not verify or is not the next sequence number): it adds the new

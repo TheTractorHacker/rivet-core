@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"runtime"
+	"strings"
 	"testing"
 
 	"rivetit-agent/internal/api"
@@ -118,5 +119,50 @@ func TestApplyRequiresTheReleaseSignatureWhenKeysAreKnown(t *testing.T) {
 	man.ReleaseSignature = base64.StdEncoding.EncodeToString(ed25519.Sign(priv, ManifestMessage(man)))
 	if restart, err := e.apply(m, man); err != nil || !restart {
 		t.Fatalf("a correctly release-signed update was refused: %v", err)
+	}
+}
+
+// review CRR-1: keys are compared by value in canonical form. A non-canonical spelling of the new key (spare padding bits) or a revoke entry with
+// whitespace must not slip past the self-revoke guard or silently never match.
+func TestRolloverCanonicalKeyForms(t *testing.T) {
+	oldPub, oldPriv := relKey(t)
+	newPub, _ := relKey(t)
+	canon := base64.StdEncoding.EncodeToString(newPub)
+	// same 32 bytes, different last character (the low 2 bits before "=" are padding bits)
+	alt := canon[:42] + string("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[(strings.IndexByte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", canon[42])+1)%64]) + "="
+	if b, err := base64.StdEncoding.DecodeString(alt); err != nil || string(b) != string(newPub) {
+		t.Skip("could not construct a non-canonical spelling here")
+	}
+	sign := func(r api.ReleaseRollover) api.ReleaseRollover {
+		r.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(oldPriv, RolloverMessage(r)))
+		return r
+	}
+	// new key canonical, revoked entry is the NON-canonical spelling of the same key: must be refused (self revoke / not canonical)
+	self := sign(api.ReleaseRollover{Kind: RolloverKind, NewKey: canon, Revoke: []string{alt}, Seq: 1})
+	if _, err := VerifyRollover([]ed25519.PublicKey{oldPub}, 0, self); err == nil {
+		t.Error("a non-canonical spelling of the new key got past the self-revoke guard")
+	}
+	nonCanonNew := sign(api.ReleaseRollover{Kind: RolloverKind, NewKey: alt, Seq: 1})
+	if _, err := VerifyRollover([]ed25519.PublicKey{oldPub}, 0, nonCanonNew); err == nil {
+		t.Error("a non-canonical new key was accepted")
+	}
+	ws := sign(api.ReleaseRollover{Kind: RolloverKind, NewKey: canon, Revoke: []string{" " + base64.StdEncoding.EncodeToString(oldPub)}, Seq: 1})
+	if _, err := VerifyRollover([]ed25519.PublicKey{oldPub}, 0, ws); err == nil {
+		t.Error("a revoke entry with whitespace was accepted (it would never match)")
+	}
+}
+
+// review CRR-1: with release keys ever configured an EMPTY trusted set refuses updates instead of switching verification off.
+func TestEmptyKeySetDoesNotDisableReleaseVerification(t *testing.T) {
+	e := newEnv(t)
+	m := e.mgr("1.0.0")
+	m.ReleaseKeys = func() []ed25519.PublicKey { return nil }
+	m.ReleaseRequired = func() bool { return true }
+	if _, err := e.apply(m, e.manifest("1.1.0")); err == nil {
+		t.Fatal("an update was applied although release verification is required and no key is trusted")
+	}
+	m.ReleaseRequired = func() bool { return false }
+	if restart, err := e.apply(m, e.manifest("1.1.0")); err != nil || !restart {
+		t.Fatalf("an agent that never had release keys must keep the legacy behaviour: %v", err)
 	}
 }

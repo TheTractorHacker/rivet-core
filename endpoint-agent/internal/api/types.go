@@ -314,10 +314,13 @@ type CheckinResponse struct {
 	Update       *UpdateManifest `json:"update"`
 	// ReleaseRollover is a signed release key rollover message (additive, CORE-DS-26); the agent applies it with or without an update offer.
 	ReleaseRollover *ReleaseRollover `json:"release_rollover,omitempty"`
-	ServerTime      ServerTime       `json:"server_time"`
-	SigningKeyID    string           `json:"signing_key_id"`
-	Status          string           `json:"status"`
-	MatchedAssetI   *int64           `json:"matched_asset_id"` // optional extension
+	// ReleaseRollovers is the chain of rollover messages since the oldest sequence an agent may still need, in any order; the agent applies the ones above
+	// its own sequence one by one, in order, so an agent that missed one catches up (review R3-2).
+	ReleaseRollovers []ReleaseRollover `json:"release_rollovers,omitempty"`
+	ServerTime       ServerTime        `json:"server_time"`
+	SigningKeyID     string            `json:"signing_key_id"`
+	Status           string            `json:"status"`
+	MatchedAssetI    *int64            `json:"matched_asset_id"` // optional extension
 	// Features the server offers this device (e.g. "software_inventory"); Resync
 	// asks for a full re-send of a data set (e.g. "software"). Both optional.
 	Features []string `json:"features,omitempty"`

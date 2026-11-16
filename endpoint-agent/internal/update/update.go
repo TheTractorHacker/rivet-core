@@ -254,8 +254,11 @@ type Manager struct {
 	// ReleaseKeys returns the trusted release public keys (nil or empty = none configured: the legacy instance-signature-only behaviour). With at
 	// least one key every update must carry a valid release signature (CORE-DS-26).
 	ReleaseKeys func() []ed25519.PublicKey
-	VerifyFn    func(path string) error
-	SelfTestFn  func(ctx context.Context, path, want string) error
+	// ReleaseRequired reports whether release signatures must be verified even when ReleaseKeys is empty: once release keys have EVER been configured
+	// (embedded, rolled over or revoked) an empty set means "nothing is trusted", never "verification is off" (review CRR-1). nil = only ReleaseKeys decides.
+	ReleaseRequired func() bool
+	VerifyFn        func(path string) error
+	SelfTestFn      func(ctx context.Context, path, want string) error
 }
 
 func (m *Manager) now() time.Time {
@@ -297,7 +300,8 @@ func (m *Manager) Apply(ctx context.Context, man api.UpdateManifest, pub ed25519
 		return false, err
 	}
 	if m.ReleaseKeys != nil {
-		if keys := m.ReleaseKeys(); len(keys) > 0 {
+		keys := m.ReleaseKeys()
+		if len(keys) > 0 || (m.ReleaseRequired != nil && m.ReleaseRequired()) {
 			if err := VerifyRelease(keys, man, runtime.GOOS, runtime.GOARCH); err != nil {
 				return false, err
 			}

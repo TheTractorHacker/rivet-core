@@ -12,6 +12,7 @@ import (
 
 	"rivetit-agent/internal/api"
 	"rivetit-agent/internal/jobs"
+	"rivetit-agent/internal/store"
 	"rivetit-agent/internal/update"
 )
 
@@ -214,5 +215,61 @@ func TestSigningRequiredIsRememberedInMemory(t *testing.T) {
 	os.WriteFile(filepath.Join(r.st.Dir, "state.json"), []byte(`{"signed_config_v":0}`), 0o600)
 	if !r.a.signingRequired() {
 		t.Fatal("the announced version was forgotten")
+	}
+}
+
+// review R3-2: an agent that missed a rollover catches up from the chain in ONE response, in order.
+func TestRolloverChainCatchesUp(t *testing.T) {
+	r := newRig(t)
+	k1, p1, _ := ed25519.GenerateKey(rand.Reader)
+	k2, p2, _ := ed25519.GenerateKey(rand.Reader)
+	k3, _, _ := ed25519.GenerateKey(rand.Reader)
+	b64 := base64.StdEncoding.EncodeToString
+	prev := update.EmbeddedReleaseKeys
+	update.EmbeddedReleaseKeys = b64(k1)
+	defer func() { update.EmbeddedReleaseKeys = prev }()
+	mk := func(priv ed25519.PrivateKey, nk ed25519.PublicKey, revoke []string, seq int) api.ReleaseRollover {
+		x := api.ReleaseRollover{Kind: update.RolloverKind, NewKey: b64(nk), Revoke: revoke, Seq: seq}
+		x.Signature = b64(ed25519.Sign(priv, update.RolloverMessage(x)))
+		return x
+	}
+	// seq 1 (k1 adds k2) is MISSING from the single message; the chain carries 2 then 1, out of order
+	chain := []api.ReleaseRollover{mk(p2, k3, []string{b64(k1)}, 2), mk(p1, k2, nil, 1)}
+	r.a.applyRollovers(&api.CheckinResponse{ReleaseRollovers: chain})
+	keys := r.a.releaseKeys()
+	if len(keys) != 2 || keys[0].Equal(k1) || keys[1].Equal(k1) {
+		t.Fatalf("after the chain %d keys, k1 still trusted", len(keys))
+	}
+}
+
+// review CRR-1: an unreadable state trusts nothing and still requires verification; a revoked-everything state never means "verification off".
+func TestReleaseStateErrorFailsClosed(t *testing.T) {
+	r := newRig(t)
+	prev := update.EmbeddedReleaseKeys
+	k, _, _ := ed25519.GenerateKey(rand.Reader)
+	update.EmbeddedReleaseKeys = base64.StdEncoding.EncodeToString(k)
+	defer func() { update.EmbeddedReleaseKeys = prev }()
+	if len(r.a.releaseKeys()) != 1 || !r.a.releaseRequired() {
+		t.Fatal("embedded key not trusted / not required")
+	}
+	os.WriteFile(filepath.Join(r.st.Dir, "state.json"), []byte("{corrupt"), 0o600)
+	if len(r.a.releaseKeys()) != 0 {
+		t.Fatal("an unreadable state still trusted keys (revoked filter dropped)")
+	}
+	if !r.a.releaseRequired() {
+		t.Fatal("an unreadable state switched verification off")
+	}
+}
+
+// review R3-3: the per-server signing memory (logs sequence, announced signed_config version) is reset when the device enrols, so a move to another
+// server does not inherit the old server's high-water marks.
+func TestEnrolResetsPerServerSigningState(t *testing.T) {
+	r := newRig(t)
+	_ = r.st.Update(func(s *store.State) error { s.LogsConfigSeq, s.SignedConfigV = 99, 2; return nil })
+	r.a.signedSeen.Store(2)
+	r.enroll()
+	st, _ := r.st.LoadState()
+	if st.LogsConfigSeq != 0 || st.SignedConfigV != 0 || r.a.signedSeen.Load() != 0 {
+		t.Fatalf("not reset: logs_seq=%d signed_v=%d seen=%d", st.LogsConfigSeq, st.SignedConfigV, r.a.signedSeen.Load())
 	}
 }
