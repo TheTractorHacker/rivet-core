@@ -472,7 +472,8 @@ final class PatchTest extends PatchTestCase
         $this->assertSame(200, $put($this->second, $pid, ['install_enabled' => true, 'two_person' => false])[0], 'job.approve may lower it (install_enabled is unchanged)');
         // assigning a policy that installs by itself needs patch.install
         $this->assertSame(403, $this->api('POST', ['patch_policies', (string) $pid, 'assignments'], $this->second, ['scope_type' => 'global', 'scope_id' => 0])[0]);
-        $this->assertSame(200, $this->api('POST', ['patch_policies', (string) $pid, 'assignments'], $this->installer, ['scope_type' => 'global', 'scope_id' => 0])[0]);
+        $this->assertSame(403, $this->api('POST', ['patch_policies', (string) $pid, 'assignments'], $this->installer, ['scope_type' => 'global', 'scope_id' => 0])[0], 'CR5: it carries an explicit two_person false, which needs job.approve as well');
+        $this->assertSame(200, $this->api('POST', ['patch_policies', (string) $pid, 'assignments'], $this->admin, ['scope_type' => 'global', 'scope_id' => 0])[0]);
         // reboot_policy if_required_now is re-checked even when reboot_confirm is already stored
         [$c, $j] = $put($this->installer, null, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true]);
         $this->assertSame(201, $c, json_encode($j));
@@ -481,5 +482,36 @@ final class PatchTest extends PatchTestCase
         $this->assertSame(200, $c, 'unchanged is not a change: ' . json_encode($j));
         $this->assertSame(200, $put($this->tech, $rid, ['reboot_policy' => 'never', 'reboot_confirm' => true])[0]);
         $this->assertSame(403, $put($this->tech, $rid, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true])[0], 'it becomes if_required_now again: needs the reboot grant though reboot_confirm is already on');
+    }
+
+    /** CR5 / CR13 (CORE-DS-10): the second-person rule cannot be taken away, and a staged policy cannot be switched on, with patch.manage alone. */
+    public function testThePatchSecondPersonRuleAndStagedPoliciesNeedTheirGrantsToChange(): void
+    {
+        $call = fn (string $m, array $seg, object $by, ?array $body = null): array => $this->api($m, $seg, $by, $body);
+        // lowering through an override policy
+        $this->assertSame(403, $call('POST', ['patch_policies'], $this->tech, ['name' => 'override', 'settings' => ['two_person' => false]])[0], 'an explicit false overrides a true somewhere else');
+        [$c, $j] = $call('POST', ['patch_policies'], $this->second, ['name' => 'G', 'settings' => ['two_person' => true]]);
+        $this->assertSame(201, $c, json_encode($j));
+        $g = (int) $j['policy']['policy_id'];
+        [$c, $j] = $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->second, ['scope_type' => 'global', 'scope_id' => 0]);
+        $this->assertSame(200, $c, json_encode($j));
+        $aid = (int) $j['assignment']['assignment_id'];
+        // taking it away: unassign, disable, delete
+        $this->assertSame(403, $call('DELETE', ['patch_policies', (string) $g, 'assignments', (string) $aid], $this->tech)[0]);
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $g], $this->tech, ['name' => 'G', 'enabled' => false])[0]);
+        $this->assertSame(403, $call('DELETE', ['patch_policies', (string) $g], $this->tech)[0]);
+        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_assignments WHERE policy_id = $g"));
+        $this->assertSame(200, $call('PUT', ['patch_policies', (string) $g], $this->second, ['name' => 'G', 'enabled' => false])[0], 'job.approve may');
+        $this->assertSame(200, $call('PUT', ['patch_policies', (string) $g], $this->second, ['name' => 'G', 'enabled' => true])[0]);
+        // CR13: a policy staged disabled with unattended installs cannot be switched on by patch.manage alone
+        [$c, $j] = $call('POST', ['patch_policies'], $this->admin, ['name' => 'Staged', 'enabled' => false, 'settings' => ['install_enabled' => true, 'approval_mode' => 'auto', 'auto_days_security' => 0]]);
+        $this->assertSame(201, $c, json_encode($j));
+        $staged = (int) $j['policy']['policy_id'];
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $staged], $this->tech, ['name' => 'Staged', 'enabled' => true])[0]);
+        $this->assertSame(0, (int) $this->h->one("SELECT enabled FROM rmm_patch_policies WHERE policy_id = $staged"));
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $staged], $this->installer, ['name' => 'Staged', 'enabled' => true])[0], 'install alone is not enough: it also turns on auto-approval');
+        $this->assertSame(200, $call('PUT', ['patch_policies', (string) $staged], $this->admin, ['name' => 'Staged', 'enabled' => true])[0]);
+        // taking the rule away by deleting needs the grant, and the grant holder can
+        $this->assertSame(200, $call('DELETE', ['patch_policies', (string) $g], $this->second)[0]);
     }
 }
