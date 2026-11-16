@@ -52,23 +52,43 @@ final class UpdatesTest extends RmmTestCase
         $this->assertFalse(Signer::verifyManifest(strtoupper($u['sha256']), $u['signature'], $this->pub));
     }
 
-    /** CORE-DS-26 (server side): an agent that announces `update:signed` also gets the platform and a signature over the whole manifest; every other agent gets exactly what it got before. */
-    public function testTheWholeManifestIsSignedForAnAgentThatAsksForIt(): void
+    /** CORE-DS-26 (contract SIGNED_UPDATE_MANIFEST): the stored offline release signature, with os and arch, is relayed with the package it belongs to; nothing is invented. */
+    public function testTheStoredReleaseSignatureIsRelayedWithThePackageItBelongsTo(): void
     {
         $b = $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
-        [, , $plain] = $this->h->checkin($this->T, ['capabilities' => ['check:disk']]);
-        $this->assertSame(['version', 'url', 'sha256', 'signature', 'min_version'], array_keys($plain['update']), 'unchanged for an agent that did not ask');
-        [, , $r] = $this->h->checkin($this->T, ['capabilities' => ['check:disk', 'update:signed']]);
-        $u = $r['update'];
-        $this->assertSame(['version', 'url', 'sha256', 'signature', 'min_version', 'os', 'arch', 'manifest_signature'], array_keys($u));
-        $m = ['version' => $u['version'], 'os' => $u['os'], 'arch' => $u['arch'], 'sha256' => $u['sha256'], 'min_version' => $u['min_version']];
-        $this->assertSame(['windows', 'amd64'], [$u['os'], $u['arch']]);
-        $this->assertTrue(Signer::verify(Signer::updateManifestMessage($m), $u['manifest_signature'], $this->pub));
-        foreach (['version' => '9.9.9', 'os' => 'linux', 'arch' => 'arm64', 'min_version' => '1.0.0'] as $k => $v) {
-            $this->assertFalse(Signer::verify(Signer::updateManifestMessage([$k => $v] + $m), $u['manifest_signature'], $this->pub), "the $k is bound by the signature");
+        [, , $plain] = $this->h->checkin($this->T);
+        $this->assertSame(['version', 'url', 'sha256', 'signature', 'min_version'], array_keys($plain['update']), 'no release signature stored: exactly what it always was');
+        $this->assertArrayNotHasKey('release_rollover', $plain);
+        $admin = $this->h->module->admin();
+        $sig = base64_encode(random_bytes(64));
+        foreach (['', 'not base64!', base64_encode('short'), $sig . '='] as $bad) {
+            $this->assertFalse($admin->setReleaseSignature($this->h->principal(), (int) $b['binary_id'], $bad)->ok, $bad);
         }
-        $this->assertFalse(Signer::verify($u['sha256'], $u['manifest_signature'], $this->pub), 'it is not the bare-hash signature');
-        $this->assertSame($b['sha256'], $u['sha256']);
+        $this->assertFalse($admin->setReleaseSignature($this->h->principal(), 99999, $sig)->ok, 'a binary that does not exist');
+        $this->assertTrue($admin->setReleaseSignature($this->h->principal(), (int) $b['binary_id'], $sig)->ok);
+        $this->h->module->updates()->releasesChanged();
+        [, , $r] = $this->h->checkin($this->T);
+        $this->assertSame(['version', 'url', 'sha256', 'signature', 'min_version', 'os', 'arch', 'release_signature'], array_keys($r['update']));
+        $this->assertSame(['windows', 'amd64', $sig], [$r['update']['os'], $r['update']['arch'], $r['update']['release_signature']]);
+        // the byte format the release owner signs (the Go test release_test.go fixes it)
+        $this->assertSame("rivetit-update-manifest-v1\n" . '{"arch":"amd64","kind":"agent_update","min_version":"0.0.0","os":"windows","sha256":"' . $b['sha256'] . '","version":"1.1.0"}',
+            Signer::updateManifestMessage(['version' => '1.1.0', 'os' => 'windows', 'arch' => 'amd64', 'sha256' => strtoupper($b['sha256']), 'min_version' => '0.0.0']));
+    }
+
+    /** CORE-DS-26: a signed release-key rollover is stored as given and relayed at the top level of the check-in response; the server never makes one. */
+    public function testASignedReleaseKeyRolloverIsRelayed(): void
+    {
+        $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
+        $m = ['kind' => 'release_key_rollover', 'new_key' => base64_encode(random_bytes(32)), 'seq' => 3, 'signature' => base64_encode(random_bytes(64))];
+        $admin = $this->h->module->admin();
+        foreach (['not json', '{}', json_encode([...$m, 'seq' => 0]), json_encode([...$m, 'new_key' => base64_encode('x')]), json_encode([...$m, 'kind' => 'other'])] as $bad) {
+            $this->assertFalse($admin->setReleaseRollover($this->h->principal(), (string) $bad)->ok, (string) $bad);
+        }
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m))->ok);
+        [, , $r] = $this->h->checkin($this->T);
+        $this->assertSame($m, $r['release_rollover']);
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), '')->ok);
+        $this->assertArrayNotHasKey('release_rollover', $this->h->checkin($this->T)[2]);
     }
 
     public function testRingsRolloutMinVersionAndArchitecture(): void

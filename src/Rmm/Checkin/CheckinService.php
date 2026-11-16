@@ -204,7 +204,10 @@ final class CheckinService
             $out['config']['policy'] = ['version' => $policy['version'], 'applied' => $policy['applied'], 'features' => $policy['features']];
         }
         if ($features['updates']) {
-            $out['update'] = $this->updates->manifestFor($policy !== null && $policy['ring'] !== null ? ['ring' => $policy['ring']] + $dev : $dev, in_array(\RivetCore\Rmm\RmmProtocol::CAP_UPDATE_SIGNED, $this->capsOf($dev, $announce['caps']) ?? [], true));
+            $out['update'] = $this->updates->manifestFor($policy !== null && $policy['ring'] !== null ? ['ring' => $policy['ring']] + $dev : $dev);
+            if (($rollover = $this->updates->releaseRollover()) !== null) {
+                $out['release_rollover'] = $rollover;   // CORE-DS-26: relayed while any agent may need it; the server cannot create one
+            }
         }
         $out['server_time'] = $this->sql->isoNow();
         $out['signing_key_id'] = $this->settings->get()['signing_key_id'];

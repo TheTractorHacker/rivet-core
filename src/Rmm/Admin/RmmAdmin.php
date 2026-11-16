@@ -277,7 +277,7 @@ final class RmmAdmin
      *
      * `$opts['os']` is `windows` (default; a PE executable) or `linux` (an ELF executable); the file must match it (1.0.0-rc.30).
      *
-     * @param array{activate?:bool,release_ring?:?string,rollout_pct?:int,notes?:string,os?:string} $opts
+     * @param array{activate?:bool,release_ring?:?string,rollout_pct?:int,notes?:string,os?:string,release_signature?:string} $opts `release_signature`: the offline release signature (CORE-DS-26)
      * @return ActionResult data: `binary` row on success
      */
     public function uploadBinary(RmmPrincipal $by, string $tmpPath, string $version, string $arch, array $opts = []): ActionResult
@@ -296,6 +296,9 @@ final class RmmAdmin
             return ActionResult::fail(422, 'invalid', (string) ($res['error'] ?? 'The binary could not be published.'));
         }
         $b = $res['binary'];
+        if (is_string($opts['release_signature'] ?? null) && $opts['release_signature'] !== '' && ($why = $this->updates->setReleaseSignature((int) $b['binary_id'], $opts['release_signature'])) !== null) {
+            return ActionResult::fail(422, 'invalid', "The binary was stored, but its release signature was not: $why");   // CORE-DS-26
+        }
         $this->audit->record('Binary Uploaded', "{$by->userName} uploaded agent binary {$b['version']} ({$b['arch']}, " . AgentOs::ofRow($b) . ", sha256 {$b['sha256']}, {$b['size_bytes']} bytes)"
             . ((int) $b['is_current'] === 1 ? ' and made it current' : '') . ($opts['release_ring'] !== null ? " and offered it to the {$opts['release_ring']} ring" : ''), 0, 0);
 
@@ -362,6 +365,38 @@ final class RmmAdmin
         $this->audit->record('MSI Template Changed', "{$by->userName} ran '$action' on MSI template #$templateId ({$t['version']} {$t['arch']})", 0, 0);
 
         return ActionResult::ok($msg);
+    }
+
+    /**
+     * CORE-DS-26: attach the offline release signature to a stored binary (when it was uploaded without one).
+     */
+    public function setReleaseSignature(RmmPrincipal $by, int $binaryId, string $signatureB64): ActionResult
+    {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+            return $d;
+        }
+        if (($why = $this->updates->setReleaseSignature($binaryId, $signatureB64)) !== null) {
+            return ActionResult::fail(422, 'invalid', $why);
+        }
+        $this->audit->record('Release Signature Stored', "{$by->userName} stored the release signature of binary #$binaryId", 0, 0);
+
+        return ActionResult::ok('Stored.');
+    }
+
+    /**
+     * CORE-DS-26: store (or clear, with an empty string) the signed release-key rollover message relayed to agents.
+     */
+    public function setReleaseRollover(RmmPrincipal $by, string $json): ActionResult
+    {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+            return $d;
+        }
+        if (($why = $this->updates->setReleaseRollover($json)) !== null) {
+            return ActionResult::fail(422, 'invalid', $why);
+        }
+        $this->audit->record('Release Rollover Stored', "{$by->userName} " . ($json === '' ? 'cleared' : 'stored') . ' the release key rollover message', 0, 0);
+
+        return ActionResult::ok('Saved.');
     }
 
     /**
