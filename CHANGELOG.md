@@ -2,6 +2,10 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.61 (enrolment tolerates container hosts with many NICs; no migration)
+
+- **Fix.** A Docker, Kubernetes or libvirt host has hundreds of veth/bridge interfaces; the agent sent them all and the server refused enrolment with `422 device.mac_addresses is invalid` (more than 32 entries). `DeviceValidator::validateDevice()` now keeps at most 32 unique addresses (`MAX_MACS`), universally administered (hardware) addresses before locally administered virtual ones, and only refuses a list longer than 1024 entries (`MAX_MACS_IN`). Agents already in the field enrol without an update. The agent (`collect.MACs()`) also caps its list at 32, real NICs first. The device protocol is unchanged (a request the old server accepted is accepted identically).
+
 ## 1.0.0-rc.60 (device move completeness; installer: managed by another RMM; no link underline on hover; unused Ceph is not an error; migration 0049)
 
 - **Fix: a device transfer left client-keyed rows behind.** `DeviceService::transfer()` (and `TechnicianActions::transfer()`) now also moves `rmm_alert_meta` (open rows only), `rmm_deploy_state`, `rmm_device_apps`, `rmm_package_installs`, `rmm_package_jobs`, `rmm_package_history`, `rmm_patch_available`, `rmm_patch_jobs`, `rmm_patch_history`, `rmm_patch_scans` and `endpoint_agent_transfers`, in the same transaction. Resolved alerts and audit rows keep their client; the credential, `install_id` and the agent link are untouched, so the machine keeps checking in. A move to the client the device is already in is a no-op (`true`, no audit row); a retired device can be moved. Signatures unchanged. A test fails when a new table with `device_id` and `client_id` appears that the transfer does not know about.
