@@ -88,6 +88,37 @@ final class LogsTest extends RemoteTestCase
         $this->assertFalse($this->h->module->settings()->featureOn('logs'));
     }
 
+    /** CORE-DS-16 contract version 2: with signed_config 2 the logs configuration carries this device (a string) and a monotonic seq inside the signature. */
+    public function testContractVersionTwoBindsTheLogsConfigurationToTheDeviceAndANonDecreasingSeq(): void
+    {
+        $this->switchOn(['logs']);
+        $this->enableLogs();
+        $this->h->module->settings()->set(['signed_config' => 2]);
+        $r = $this->announce($this->devToken, self::allCaps());
+        $this->assertSame(2, $r['config']['signed_config']);
+        $cfg = $r['config']['logs'];
+        $this->assertIsString($cfg['device_id']);
+        $this->assertSame((string) $this->dev, $cfg['device_id']);
+        $this->assertIsInt($cfg['seq']);
+        [, $pub] = $this->h->module->settings()->signingKey();
+        $this->assertTrue(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::logsConfigMessage($cfg), $cfg['signature'], $pub));
+        $foreign = ['device_id' => '99999'] + $cfg;
+        $this->assertFalse(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::logsConfigMessage($foreign), $cfg['signature'], $pub), 'the device is inside the signature');
+        $again = $this->announce($this->devToken, self::allCaps())['config']['logs'];
+        $this->assertSame($cfg['seq'], $again['seq'], 'unchanged configuration: the same seq');
+        // a changed configuration never lowers it
+        $this->enableLogs(['logs_rate_per_min' => 300]);
+        $changed = $this->announce($this->devToken, self::allCaps())['config']['logs'];
+        $this->assertNotSame($cfg['version'], $changed['version'], 'the configuration really changed');
+        $this->assertGreaterThan($cfg['seq'], $changed['seq'], 'and a changed configuration is a higher seq');
+        // level 1 keeps the version 1 shape: no device_id, no seq
+        $this->h->module->settings()->set(['signed_config' => 1]);
+        $v1 = $this->announce($this->devToken, self::allCaps());
+        $this->assertSame(1, $v1['config']['signed_config']);
+        $this->assertArrayNotHasKey('seq', $v1['config']['logs']);
+        $this->assertArrayNotHasKey('device_id', $v1['config']['logs']);
+    }
+
     public function testTheConfigIsOfferedOnlyToAnAgentThatAskedWhileTheSwitchIsOnAndASourceExists(): void
     {
         $this->switchOn(['logs']);

@@ -250,7 +250,7 @@ final class EnrollmentService
             'matched_asset_id' => $result['matched_asset_id'],
             'signing_public_key' => $pub,
             'signing_key_id' => $kid,
-            'config' => ['checks' => $this->settings->signedChecks(null, $os, (int) $result['device_id']), 'collect_interval_s' => (int) $cfg['collect_interval_s']] + ($this->settings->signedConfig() ? ['signed_config' => 1] : []),
+            'config' => ['checks' => $this->settings->signedChecks(null, $os, (int) $result['device_id']), 'collect_interval_s' => (int) $cfg['collect_interval_s']] + ($this->settings->signedConfig() ? ['signed_config' => $this->settings->signedConfigLevel()] : []),
         ];
     }
 

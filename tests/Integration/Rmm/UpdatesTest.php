@@ -103,14 +103,23 @@ final class UpdatesTest extends RmmTestCase
     public function testASignedReleaseKeyRolloverIsRelayed(): void
     {
         $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
-        $m = ['kind' => 'release_key_rollover', 'new_key' => base64_encode(random_bytes(32)), 'seq' => 3, 'signature' => base64_encode(random_bytes(64))];
+        $old = base64_encode(random_bytes(32));
+        $m = ['kind' => 'release_key_rollover', 'new_key' => base64_encode(random_bytes(32)), 'revoke' => [$old], 'seq' => 3, 'signature' => base64_encode(random_bytes(64))];
         $admin = $this->h->module->admin();
-        foreach (['not json', '{}', json_encode([...$m, 'seq' => 0]), json_encode([...$m, 'new_key' => base64_encode('x')]), json_encode([...$m, 'kind' => 'other'])] as $bad) {
+        $manyKeys = array_map(static fn (int $i): string => base64_encode(random_bytes(32)), range(1, 17));
+        foreach (['not json', '{}', json_encode([...$m, 'seq' => 0]), json_encode([...$m, 'new_key' => base64_encode('x')]), json_encode([...$m, 'kind' => 'other']),
+            json_encode([...$m, 'revoke' => 'abc']), json_encode([...$m, 'revoke' => ['not base64!']]), json_encode([...$m, 'revoke' => [base64_encode('short')]]), json_encode([...$m, 'revoke' => $manyKeys]),
+            json_encode([...$m, 'revoke' => [$m['new_key']]]), json_encode([...$m, 'revoke' => ['a' => $old]])] as $bad) {
             $this->assertFalse($admin->setReleaseRollover($this->h->principal(), (string) $bad)->ok, (string) $bad);
         }
         $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m))->ok);
         [, , $r] = $this->h->checkin($this->T);
-        $this->assertSame($m, $r['release_rollover']);
+        $this->assertSame($m, $r['release_rollover'], 'the revoke list is relayed as the release owner signed it');
+        // a message without revoke (the first form of the contract) is relayed with revoke: [], which is what the agent signs over
+        $legacy = $m;
+        unset($legacy['revoke']);
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($legacy))->ok);
+        $this->assertSame([], $this->h->checkin($this->T)[2]['release_rollover']['revoke']);
         $this->assertTrue($admin->setReleaseRollover($this->h->principal(), '')->ok);
         $this->assertArrayNotHasKey('release_rollover', $this->h->checkin($this->T)[2]);
     }

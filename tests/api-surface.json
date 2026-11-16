@@ -7670,6 +7670,7 @@
                 "signCheckList": "signCheckList(array $checks, ?array $caps = NULL, ?string $os = NULL, ?int $deviceId = NULL): array",
                 "signedChecks": "signedChecks(?array $caps = NULL, ?string $os = NULL, ?int $deviceId = NULL): array",
                 "signedConfig": "signedConfig(): bool",
+                "signedConfigLevel": "signedConfigLevel(): int",
                 "signingKey": "signingKey(): array",
                 "update": "update(array $in): array",
                 "validateFeatures": "static validateFeatures(mixed $in): array",

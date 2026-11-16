@@ -865,7 +865,16 @@ final class RmmSettings
      */
     public function signedConfig(): bool
     {
-        return (int) ($this->get()['signed_config'] ?? 0) === 1;
+        return $this->signedConfigLevel() >= 1;
+    }
+
+    /**
+     * The contract version announced as `config.signed_config`: 0 off, 1 signed checks and logs, 2 as 1 and `config.logs` also carries `device_id` (a string) and a monotonic `seq`
+     * inside the signature (docs/design/SIGNED_CONFIG_CONTRACT.md, item 3). Anything else stored counts as the nearest valid value.
+     */
+    public function signedConfigLevel(): int
+    {
+        return max(0, min(2, (int) ($this->get()['signed_config'] ?? 0)));
     }
 
     /**

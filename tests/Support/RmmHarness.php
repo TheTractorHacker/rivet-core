@@ -42,7 +42,7 @@ use RivetCore\Testing\InMemorySecretBox;
  */
 final class RmmHarness
 {
-    public const TABLES = ['endpoint_agent_checkins', 'endpoint_agent_checks', 'endpoint_agent_jobs', 'endpoint_agent_mesh_nodes', 'endpoint_agent_releases',
+    public const TABLES = ['rmm_agent_release_sigs', 'endpoint_agent_checkins', 'endpoint_agent_checks', 'endpoint_agent_jobs', 'endpoint_agent_mesh_nodes', 'endpoint_agent_releases',
         'endpoint_agent_enroll_attempts', 'endpoint_agent_enrollment_tokens', 'endpoint_agent_devices', 'endpoint_agent_binaries',
         'endpoint_agent_check_history', 'rmm_device_state', 'rmm_device_software', 'rmm_software_history', 'rmm_tags', 'rmm_device_tags', 'rmm_groups', 'rmm_group_devices',
         'rmm_group_tags', 'rmm_metric_latest', 'rmm_metric_hourly', 'rmm_policies', 'rmm_policy_versions', 'rmm_policy_assignments', 'rmm_scripts_v2',

@@ -28,6 +28,7 @@ use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Software\SoftwareService;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\ConfigSequence;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Update\UpdateService;
@@ -196,7 +197,7 @@ final class CheckinService
                 : ['checks' => $this->settings->signCheckList($policy['checks'], $this->capsOf($dev, $announce['caps']) ?? [], RmmChecks::deviceOs($dev), (int) $dev['device_id']), 'collect_interval_s' => $policy['collect_interval_s']],
         ];
         if ($this->settings->signedConfig()) {
-            $out['config']['signed_config'] = 1;   // CORE-DS-16: from now on the agent refuses an unsigned check or an unsigned log configuration
+            $out['config']['signed_config'] = $this->settings->signedConfigLevel();   // CORE-DS-16: from now on the agent refuses an unsigned check or an unsigned log configuration
         }
         $this->reconcileDelivered($dev, $out['config']['checks'], $policy === null ? ($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null) : ($this->capsOf($dev, $announce['caps']) ?? []));
         if ($knowsPolicies) {
@@ -225,6 +226,11 @@ final class CheckinService
             if ($logConfig !== null) {
                 try {
                     [$sec] = $this->settings->signingKey();
+                    if ($this->settings->signedConfigLevel() >= 2) {
+                        // contract version 2: the device and a monotonic revision are inside the signature, so the configuration cannot be replayed on another device or after a newer one
+                        $logConfig['device_id'] = (string) (int) $dev['device_id'];
+                        $logConfig['seq'] = (new ConfigSequence($this->sql))->seq('logs:' . (int) $dev['device_id'], $logConfig, max(1, $this->sql->time()));
+                    }
                     $logConfig['signature'] = Signer::sign(Signer::logsConfigMessage($logConfig), $sec);   // CORE-DS-16: which logs are shipped is not an unsigned setting
                     $offered[] = RemoteProtocol::CAP_LOGS;
                     $out['config']['logs'] = $logConfig;

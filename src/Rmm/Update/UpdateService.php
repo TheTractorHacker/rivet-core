@@ -160,7 +160,7 @@ final class UpdateService
      * The signed release-key rollover message to relay in the check-in response (top-level `release_rollover`), or null. The server cannot create one: it only stores what the
      * release owner signed.
      *
-     * @return array{kind:string,new_key:string,seq:int,signature:string}|null
+     * @return array{kind:string,new_key:string,revoke:list<string>,seq:int,signature:string}|null
      */
     public function releaseRollover(): ?array
     {
@@ -168,7 +168,27 @@ final class UpdateService
         $m = is_string($j) && $j !== '' ? json_decode($j, true) : null;
 
         return is_array($m) && ($m['kind'] ?? '') === 'release_key_rollover' && is_string($m['new_key'] ?? null) && is_int($m['seq'] ?? null) && is_string($m['signature'] ?? null)
-            ? ['kind' => 'release_key_rollover', 'new_key' => $m['new_key'], 'seq' => $m['seq'], 'signature' => $m['signature']] : null;
+            ? ['kind' => 'release_key_rollover', 'new_key' => $m['new_key'], 'revoke' => self::cleanRevoke($m['revoke'] ?? []) ?? [], 'seq' => $m['seq'], 'signature' => $m['signature']] : null;
+    }
+
+    /**
+     * The revoke list of a rollover message (the release owner signed it; the server only relays it): at most 16 distinct base64 Ed25519 public keys. null when it is not that.
+     *
+     * @return list<string>|null
+     */
+    private static function cleanRevoke(mixed $revoke): ?array
+    {
+        if (!is_array($revoke) || !array_is_list($revoke) || count($revoke) > 16) {
+            return null;
+        }
+        foreach ($revoke as $k) {
+            $raw = is_string($k) ? base64_decode($k, true) : false;
+            if ($raw === false || strlen($raw) !== 32 || base64_encode($raw) !== $k) {
+                return null;
+            }
+        }
+
+        return $revoke;
     }
 
     /**
@@ -187,9 +207,16 @@ final class UpdateService
         $key = is_array($m) && is_string($m['new_key'] ?? null) ? base64_decode($m['new_key'], true) : false;
         $sig = is_array($m) && is_string($m['signature'] ?? null) ? base64_decode($m['signature'], true) : false;
         if (!is_array($m) || ($m['kind'] ?? '') !== 'release_key_rollover' || !is_int($m['seq'] ?? null) || $m['seq'] < 1 || $key === false || strlen($key) !== 32 || $sig === false || strlen($sig) !== 64) {
-            return 'A rollover message is {"kind":"release_key_rollover","new_key":<base64 of 32 bytes>,"seq":<positive integer>,"signature":<base64 of 64 bytes>}.';
+            return 'A rollover message is {"kind":"release_key_rollover","new_key":<base64 of 32 bytes>,"revoke":[<base64 of 32 bytes>, ...],"seq":<positive integer>,"signature":<base64 of 64 bytes>}.';
         }
-        $this->settings->set(['release_rollover_json' => (string) json_encode(['kind' => 'release_key_rollover', 'new_key' => $m['new_key'], 'seq' => $m['seq'], 'signature' => $m['signature']], JSON_UNESCAPED_SLASHES)]);
+        $revoke = self::cleanRevoke($m['revoke'] ?? []);
+        if ($revoke === null) {
+            return 'revoke is a list of up to 16 base64 public keys of 32 bytes each (an empty list when nothing is revoked), and cannot name new_key.';
+        }
+        if (in_array($m['new_key'], $revoke, true)) {
+            return 'revoke is a list of up to 16 base64 public keys of 32 bytes each (an empty list when nothing is revoked), and cannot name new_key.';
+        }
+        $this->settings->set(['release_rollover_json' => (string) json_encode(['kind' => 'release_key_rollover', 'new_key' => $m['new_key'], 'revoke' => $revoke, 'seq' => $m['seq'], 'signature' => $m['signature']], JSON_UNESCAPED_SLASHES)]);
 
         return null;
     }
