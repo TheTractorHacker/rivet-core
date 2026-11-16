@@ -287,6 +287,12 @@ final class RmmAdmin
         }
         $ring = (string) ($opts['release_ring'] ?? '');
         $opts['release_ring'] = in_array($ring, RmmProtocol::RINGS, true) ? $ring : null;
+        // CRR-11: a release signature that cannot be stored is refused BEFORE the binary is published (it could otherwise become current or reach a ring), and the refusal is audited
+        if (is_string($opts['release_signature'] ?? null) && $opts['release_signature'] !== '' && ($why = UpdateService::releaseSignatureProblem($opts['release_signature'])) !== null) {
+            $this->audit->record('Binary Upload Refused', "{$by->userName} tried to upload agent binary " . trim($version) . " ($arch) with a malformed release signature; nothing was published", 0, 0);
+
+            return ActionResult::fail(422, 'invalid', "Nothing was published: $why");
+        }
         try {
             $res = $this->binaries->publish($tmpPath, trim($version), $arch, $by->userId, $opts);
         } catch (\RuntimeException $e) {
@@ -297,6 +303,8 @@ final class RmmAdmin
         }
         $b = $res['binary'];
         if (is_string($opts['release_signature'] ?? null) && $opts['release_signature'] !== '' && ($why = $this->updates->setReleaseSignature((int) $b['binary_id'], $opts['release_signature'])) !== null) {
+            $this->audit->record('Binary Uploaded', "{$by->userName} uploaded agent binary {$b['version']} ({$b['arch']}); its release signature was not stored: $why", 0, 0);
+
             return ActionResult::fail(422, 'invalid', "The binary was stored, but its release signature was not: $why");   // CORE-DS-26
         }
         $this->audit->record('Binary Uploaded', "{$by->userName} uploaded agent binary {$b['version']} ({$b['arch']}, " . AgentOs::ofRow($b) . ", sha256 {$b['sha256']}, {$b['size_bytes']} bytes)"

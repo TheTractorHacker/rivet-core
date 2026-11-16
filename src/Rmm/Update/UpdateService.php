@@ -130,9 +130,8 @@ final class UpdateService
      */
     public function setReleaseSignature(int $binaryId, string $signatureB64): ?string
     {
-        $raw = base64_decode($signatureB64, true);
-        if ($raw === false || strlen($raw) !== 64 || base64_encode($raw) !== $signatureB64) {
-            return 'The release signature must be the standard base64 of a 64-byte Ed25519 signature.';
+        if (($why = self::releaseSignatureProblem($signatureB64)) !== null) {
+            return $why;
         }
         $b = $this->sql->one('SELECT binary_id, arch, os FROM endpoint_agent_binaries WHERE binary_id = ?', [$binaryId]);
         if ($b === null) {
@@ -142,6 +141,19 @@ final class UpdateService
             ON DUPLICATE KEY UPDATE os = VALUES(os), arch = VALUES(arch), release_signature = VALUES(release_signature)', [$binaryId, AgentOs::ofRow($b), (string) $b['arch'], $signatureB64, $this->sql->utcNow()]);
 
         return null;
+    }
+
+    /**
+     * CRR-11: is this the standard base64 of a 64-byte Ed25519 signature? Checked before a binary is published, so a malformed one never leaves the binary live.
+     *
+     * @return string|null why not, or null when it is well formed
+     */
+    public static function releaseSignatureProblem(string $signatureB64): ?string
+    {
+        $raw = base64_decode($signatureB64, true);
+
+        return $raw === false || strlen($raw) !== 64 || base64_encode($raw) !== $signatureB64
+            ? 'The release signature must be the standard base64 of a 64-byte Ed25519 signature.' : null;
     }
 
     /**
