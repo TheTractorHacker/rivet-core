@@ -89,8 +89,12 @@ func TestUpdateWaitsForRunningJobs(t *testing.T) {
 			"update": map[string]any{"version": "9.9.9", "url": r.s.ts.URL + "/bin", "sha256": strings.Repeat("a", 64), "signature": "AAAA", "min_version": "1.0.0"}}, nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	r.a.newExecutor(ctx)
+	defer func() { // the running job writes into the state dir: stop it before the temp dir is removed
+		cancel()
+		r.a.executor().Halt()
+		r.a.executor().Wait()
+	}()
 	r.a.checkIn(ctx, 0) // delivers the job and the update offer
 	deadline := time.Now().Add(5 * time.Second)
 	for r.a.executor().Idle() && time.Now().Before(deadline) {
