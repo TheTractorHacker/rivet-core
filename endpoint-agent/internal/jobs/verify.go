@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"rivetit-agent/internal/api"
@@ -32,10 +33,30 @@ const (
 )
 
 // Verifier checks a job against the pinned signing key BEFORE anything runs.
+//
+// PublicKey and DeviceID may be set directly before the Verifier is shared. Once other goroutines verify with it, change them only through SetKey and
+// SetDevice: the verify methods read both under the same lock (CORE-DS-52).
 type Verifier struct {
 	PublicKey ed25519.PublicKey
 	DeviceID  string
 	Now       func() time.Time // skew-corrected clock
+
+	mu sync.RWMutex
+}
+
+// SetKey replaces the pinned signing key (nil = none).
+func (v *Verifier) SetKey(pub ed25519.PublicKey) { v.mu.Lock(); v.PublicKey = pub; v.mu.Unlock() }
+
+// SetDevice replaces the device id jobs must be bound to.
+func (v *Verifier) SetDevice(id string) { v.mu.Lock(); v.DeviceID = id; v.mu.Unlock() }
+
+// Key is the pinned signing key.
+func (v *Verifier) Key() ed25519.PublicKey { v.mu.RLock(); defer v.mu.RUnlock(); return v.PublicKey }
+
+func (v *Verifier) snapshot() (ed25519.PublicKey, string) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.PublicKey, v.DeviceID
 }
 
 func decodeB64(s string) ([]byte, error) {
@@ -52,7 +73,8 @@ func decodeB64(s string) ([]byte, error) {
 // (minus its "signature" member). It applies no job policy, so it also
 // serves signed check definitions.
 func (v *Verifier) VerifyObject(raw []byte, sigB64 string) error {
-	if len(v.PublicKey) != ed25519.PublicKeySize {
+	pub, _ := v.snapshot()
+	if len(pub) != ed25519.PublicKeySize {
 		return fmt.Errorf("%w: no pinned signing key", ErrBadSignature)
 	}
 	if len(raw) == 0 || sigB64 == "" {
@@ -66,7 +88,7 @@ func (v *Verifier) VerifyObject(raw []byte, sigB64 string) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidJob, err)
 	}
-	if !ed25519.Verify(v.PublicKey, canon, sig) {
+	if !ed25519.Verify(pub, canon, sig) {
 		return ErrBadSignature
 	}
 	return nil
@@ -76,7 +98,8 @@ func (v *Verifier) VerifyObject(raw []byte, sigB64 string) error {
 // its "signature" member). The domain line separates a change-monitoring
 // configuration from a job or a check: neither can ever verify as the other.
 func (v *Verifier) VerifyDomain(domain string, raw []byte, sigB64 string) error {
-	if len(v.PublicKey) != ed25519.PublicKeySize {
+	pub, _ := v.snapshot()
+	if len(pub) != ed25519.PublicKeySize {
 		return fmt.Errorf("%w: no pinned signing key", ErrBadSignature)
 	}
 	if len(raw) == 0 || sigB64 == "" {
@@ -90,7 +113,7 @@ func (v *Verifier) VerifyDomain(domain string, raw []byte, sigB64 string) error 
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidJob, err)
 	}
-	if !ed25519.Verify(v.PublicKey, append([]byte(domain+"\n"), canon...), sig) {
+	if !ed25519.Verify(pub, append([]byte(domain+"\n"), canon...), sig) {
 		return ErrBadSignature
 	}
 	return nil
@@ -99,7 +122,8 @@ func (v *Verifier) VerifyDomain(domain string, raw []byte, sigB64 string) error 
 // Verify order: key sanity, signature over canonical JSON, then expiry,
 // device scope, type and bounds. All must pass.
 func (v *Verifier) Verify(j api.Job) error {
-	if len(v.PublicKey) != ed25519.PublicKeySize {
+	pub, dev := v.snapshot()
+	if len(pub) != ed25519.PublicKeySize {
 		return fmt.Errorf("%w: no pinned signing key", ErrBadSignature)
 	}
 	if len(j.Raw) == 0 || j.Signature == "" {
@@ -113,7 +137,7 @@ func (v *Verifier) Verify(j api.Job) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidJob, err)
 	}
-	if !ed25519.Verify(v.PublicKey, canon, sig) {
+	if !ed25519.Verify(pub, canon, sig) {
 		return ErrBadSignature
 	}
 	// ---- signature OK; everything below is policy on authentic data ----
@@ -133,7 +157,7 @@ func (v *Verifier) Verify(j api.Job) error {
 	if j.IssuedAt.OK && j.IssuedAt.T.After(now.Add(futureSkew)) {
 		return fmt.Errorf("%w: issued_at in the future", ErrInvalidJob)
 	}
-	if j.DeviceID != "" && v.DeviceID != "" && string(j.DeviceID) != v.DeviceID {
+	if j.DeviceID != "" && dev != "" && string(j.DeviceID) != dev {
 		return ErrWrongDevice
 	}
 	switch j.Type {

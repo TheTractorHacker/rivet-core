@@ -167,7 +167,7 @@ func New(o Options) (*Agent, error) {
 			return errors.New("unsigned")
 		}
 		a.mu.Lock()
-		v := &jobs.Verifier{PublicKey: a.verifier.PublicKey}
+		v := &jobs.Verifier{PublicKey: a.verifier.Key()}
 		a.mu.Unlock()
 		return v.VerifyObject(c.Raw, c.Signature)
 	}
@@ -203,7 +203,7 @@ func New(o Options) (*Agent, error) {
 		TaskRoot: change.TaskRoot(),
 		Verify: func(domain string, raw []byte, sig string) error {
 			a.mu.Lock()
-			v := &jobs.Verifier{PublicKey: a.verifier.PublicKey}
+			v := &jobs.Verifier{PublicKey: a.verifier.Key()}
 			a.mu.Unlock()
 			return v.VerifyDomain(domain, raw, sig)
 		},
@@ -216,7 +216,7 @@ func New(o Options) (*Agent, error) {
 		SeqPath: o.Store.HypervisorSeqPath(),
 		Verify: func(domain string, raw []byte, sig string) error {
 			a.mu.Lock()
-			v := &jobs.Verifier{PublicKey: a.verifier.PublicKey}
+			v := &jobs.Verifier{PublicKey: a.verifier.Key()}
 			a.mu.Unlock()
 			return v.VerifyDomain(domain, raw, sig)
 		},
@@ -316,14 +316,14 @@ func (a *Agent) syncVerifier(st store.State) {
 	defer a.mu.Unlock()
 	if st.SigningPublicKey != "" {
 		if b, err := base64.StdEncoding.DecodeString(st.SigningPublicKey); err == nil && len(b) == ed25519.PublicKeySize {
-			a.verifier.PublicKey = ed25519.PublicKey(b)
+			a.verifier.SetKey(ed25519.PublicKey(b))
 		} else {
-			a.verifier.PublicKey = nil
+			a.verifier.SetKey(nil)
 		}
 	} else {
-		a.verifier.PublicKey = nil
+		a.verifier.SetKey(nil)
 	}
-	a.verifier.DeviceID = st.DeviceID
+	a.verifier.SetDevice(st.DeviceID)
 }
 
 func (a *Agent) newExecutor(ctx context.Context) {
