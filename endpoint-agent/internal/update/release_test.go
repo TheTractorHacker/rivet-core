@@ -4,6 +4,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -164,5 +166,21 @@ func TestEmptyKeySetDoesNotDisableReleaseVerification(t *testing.T) {
 	m.ReleaseRequired = func() bool { return false }
 	if restart, err := e.apply(m, e.manifest("1.1.0")); err != nil || !restart {
 		t.Fatalf("an agent that never had release keys must keep the legacy behaviour: %v", err)
+	}
+}
+
+// review R4-1: an unreadable trust state is a TRANSIENT error (retry later), not a signature failure that would be recorded for the version.
+func TestUnreadableReleaseStateIsTransient(t *testing.T) {
+	e := newEnv(t)
+	m := e.mgr("1.0.0")
+	m.ReleaseKeys = func() []ed25519.PublicKey { return nil }
+	m.ReleaseRequired = func() bool { return true }
+	m.ReleaseState = func() error { return errors.New("EIO") }
+	_, err := e.apply(m, e.manifest("1.1.0"))
+	if err == nil || !errors.Is(err, ErrReleaseKeysUnavailable) || !Transient(err) {
+		t.Fatalf("got %v (transient=%v)", err, err != nil && Transient(err))
+	}
+	if _, serr := os.Stat(m.Paths.Staged); serr == nil {
+		t.Fatal("something was downloaded")
 	}
 }

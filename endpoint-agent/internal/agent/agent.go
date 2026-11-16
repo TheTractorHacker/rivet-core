@@ -232,7 +232,7 @@ func New(o Options) (*Agent, error) {
 	if o.Updater != nil {
 		a.upd = o.Updater
 	} else if o.Exe != "" {
-		a.upd = &update.Manager{Paths: update.PathsFor(o.Exe), Version: o.Version, StatePath: o.Store.UpdatePath(), Now: o.Now, ReleaseKeys: a.releaseKeys, ReleaseRequired: a.releaseRequired}
+		a.upd = &update.Manager{Paths: update.PathsFor(o.Exe), Version: o.Version, StatePath: o.Store.UpdatePath(), Now: o.Now, ReleaseKeys: a.releaseKeys, ReleaseRequired: a.releaseRequired, ReleaseState: a.releaseState}
 	}
 	return a, nil
 }
@@ -459,7 +459,7 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 	if err != nil {
 		return nil, err
 	}
-	a.signedSeen.Store(0)
+	a.signedSeen.Store(int32(resp.Config.SignedConfig))
 	a.observeResponse(resp.ServerTime, a.o.Now())
 	st, _ := a.o.Store.LoadState()
 	a.syncVerifier(st)
@@ -1197,6 +1197,12 @@ func (a *Agent) releaseKeys() []ed25519.PublicKey {
 		}
 	}
 	return out
+}
+
+// releaseState reports whether the persisted trust state can be read at this moment (R4-1).
+func (a *Agent) releaseState() error {
+	_, err := a.o.Store.LoadState()
+	return err
 }
 
 // releaseRequired is true once release keys have ever been configured on this agent (embedded, or learned or revoked through a rollover), or the state

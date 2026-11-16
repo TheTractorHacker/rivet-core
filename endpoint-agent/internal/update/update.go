@@ -37,6 +37,9 @@ var (
 	ErrIncompatible = errors.New("running version is older than the update's min_version; intermediate update required")
 )
 
+// ErrReleaseKeysUnavailable: the trusted release key set could not be read; temporary.
+var ErrReleaseKeysUnavailable = errors.New("release keys cannot be read right now")
+
 // ErrSelfTestTimeout: the staged binary did not answer `selftest` in time.
 var ErrSelfTestTimeout = errors.New("staged binary selftest timed out")
 
@@ -53,7 +56,7 @@ func Transient(err error) bool {
 	switch {
 	case err == nil:
 		return false
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrSelfTestTimeout), errors.Is(err, io.ErrUnexpectedEOF):
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrSelfTestTimeout), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, ErrReleaseKeysUnavailable):
 		return true
 	case errors.As(err, &hs):
 		return hs.Status == 408 || hs.Status == 429 || hs.Status >= 500
@@ -257,8 +260,11 @@ type Manager struct {
 	// ReleaseRequired reports whether release signatures must be verified even when ReleaseKeys is empty: once release keys have EVER been configured
 	// (embedded, rolled over or revoked) an empty set means "nothing is trusted", never "verification is off" (review CRR-1). nil = only ReleaseKeys decides.
 	ReleaseRequired func() bool
-	VerifyFn        func(path string) error
-	SelfTestFn      func(ctx context.Context, path, want string) error
+	// ReleaseState returns an error when the trusted key set cannot be read right now (state file locked, I/O error). Apply then returns the TRANSIENT
+	// ErrReleaseKeysUnavailable instead of judging the signature against an empty set, so a correctly signed release is retried, not recorded as failed.
+	ReleaseState func() error
+	VerifyFn     func(path string) error
+	SelfTestFn   func(ctx context.Context, path, want string) error
 }
 
 func (m *Manager) now() time.Time {
@@ -298,6 +304,11 @@ func (m *Manager) Apply(ctx context.Context, man api.UpdateManifest, pub ed25519
 			return false, nil
 		}
 		return false, err
+	}
+	if m.ReleaseState != nil {
+		if err := m.ReleaseState(); err != nil {
+			return false, fmt.Errorf("%w: %v", ErrReleaseKeysUnavailable, err)
+		}
 	}
 	if m.ReleaseKeys != nil {
 		keys := m.ReleaseKeys()

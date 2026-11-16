@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -271,5 +272,18 @@ func TestEnrolResetsPerServerSigningState(t *testing.T) {
 	st, _ := r.st.LoadState()
 	if st.LogsConfigSeq != 0 || st.SignedConfigV != 0 || r.a.signedSeen.Load() != 0 {
 		t.Fatalf("not reset: logs_seq=%d signed_v=%d seen=%d", st.LogsConfigSeq, st.SignedConfigV, r.a.signedSeen.Load())
+	}
+}
+
+// review R4-2: the enrolment response's signed_config announcement applies immediately (its checks run before the first check-in).
+func TestEnrolAppliesTheSignedConfigAnnouncement(t *testing.T) {
+	r := newRig(t)
+	r.s.enrollFn = func(api.EnrollRequest) (int, any, http.Header) {
+		return 201, map[string]any{"device_id": 7, "signing_key_id": "key-1", "device_token": "tok", "check_in_interval_s": 60,
+			"status": "linked", "config": map[string]any{"checks": []any{}, "signed_config": 1}}, nil
+	}
+	r.enroll()
+	if !r.a.signingRequired() {
+		t.Fatal("unsigned checks are still accepted after an enrolment that announced signed_config")
 	}
 }
