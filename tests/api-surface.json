@@ -4033,6 +4033,9 @@
         },
         "RivetCore\\Rmm\\Deploy\\DeployService": {
             "kind": "final class",
+            "constants": {
+                "ARGS_UNRESOLVED": "unresolved"
+            },
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Deploy\\PackageCatalog $catalog, RivetCore\\Rmm\\Deploy\\DeployExpectations $expectations, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Deploy\\PackageParams $params = NULL, ?RivetCore\\Rmm\\Deploy\\HostedFiles $hosted = NULL, ?RivetCore\\Rmm\\Store\\DeploymentHistoryStore $history = NULL)",
                 "applyJob": "applyJob(array $dev, array $job): bool",

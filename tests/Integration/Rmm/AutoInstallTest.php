@@ -795,6 +795,30 @@ final class AutoInstallTest extends DeployTestCase
         $this->assertNotNull($this->jobOf($tok, $dev));
     }
 
+    /** CORE-DS-64, fail closed: a request made while the parameters did not resolve freezes that fact; approving after they resolve is a change. */
+    public function testARunRequestMadeBeforeTheParametersResolvedIsNotApprovedAfterTheyDo(): void
+    {
+        $p = $this->package('Unset EDR', true);
+        $vid = $this->exe($p);
+        $this->assertSame(200, $this->param($p, 'account_key', self::ACCT, 'global', 0, $this->tech));
+        [$dev, $tok] = $this->enrollNew('W-DS64B');
+        $devRow = $this->h->module->devices()->find($dev);
+        $ver = $this->h->module->packageCatalog()->version($vid) ?? [];
+        $this->assertSame('unresolved', $this->h->module->deployService()->argsDigest($devRow, $ver), 'org_key is not set yet');
+        $ap = $this->h->module->deployApprovals()->requestRun($devRow, $ver, 'install', 11, 30);
+        $aid = (int) $ap['approval_id'];
+        $this->assertStringContainsString('"args_sha256":"unresolved"', (string) $this->h->one("SELECT request_json FROM rmm_approvals WHERE approval_id = $aid"));
+        $this->assertSame(200, $this->param($p, 'org_key', 'Attacker99', 'global', 0, $this->tech));
+        $this->h->module->scriptActions()->decide($this->second, $aid, true);
+        $this->assertNull($this->jobOf($tok, $dev), 'nothing was queued');
+        // a request that carries no digest at all (made before the check existed) is refused for a version with placeholders
+        $ap = $this->h->module->deployApprovals()->requestRun($devRow, $ver, 'install', 11, 30);
+        $aid = (int) $ap['approval_id'];
+        $this->h->q("UPDATE rmm_approvals SET request_json = JSON_REMOVE(request_json, '$.args_sha256') WHERE approval_id = $aid");
+        $this->h->module->scriptActions()->decide($this->second, $aid, true);
+        $this->assertNull($this->jobOf($tok, $dev));
+    }
+
     /** The starter-template route adds a version to an existing package: the same gate as DeployActions::addVersion. */
     public function testAddingAVersionThroughATemplateIsGatedLikeAddingOne(): void
     {

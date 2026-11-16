@@ -28,6 +28,9 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class DeployService
 {
+    /** The frozen value of a run request whose vendor parameters did not resolve when it was made (CORE-DS-64). */
+    public const ARGS_UNRESOLVED = 'unresolved';
+
     private readonly \RivetCore\Rmm\Store\DeploymentHistoryStore $deployHistory;
 
     public function __construct(
@@ -202,8 +205,9 @@ final class DeployService
 
     /**
      * CORE-DS-64: a digest of the install arguments a job for this device and version would carry NOW (the vendor parameters filled in), so a two-person run
-     * request can freeze them and the approval can refuse when they changed in between. '' when the version has no placeholders (nothing can change) or the
-     * parameters do not resolve (the job would fail on its own).
+     * request can freeze them and the approval can refuse when they changed in between. '' when the version has no placeholders (nothing can change);
+     * {@see self::ARGS_UNRESOLVED} when it has placeholders the parameters do not (yet) fill, so that "not resolved at request time" is itself frozen and
+     * an approval after they resolve is a change, not a pass.
      *
      * @param array<string,mixed> $dev
      * @param array<string,mixed> $v a catalog version row
@@ -217,7 +221,7 @@ final class DeployService
         $values = $this->params?->resolve((int) $v['package_id'], (int) $dev['client_id'], (int) ($dev['location_id'] ?? 0), $names) ?? [];
         $args = array_diff($names, array_keys($values)) === [] ? ArgsTemplate::render((string) $v['silent_args'], $values) : null;
 
-        return $args === null ? '' : hash('sha256', $args);
+        return $args === null ? self::ARGS_UNRESOLVED : hash('sha256', $args);
     }
 
     /**

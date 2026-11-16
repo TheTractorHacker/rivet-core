@@ -80,7 +80,7 @@ final class DeployApprovalService
                 $this->sql->run("UPDATE rmm_device_apps SET status = 'queued', reason = ?, updated_at = ? WHERE device_id = ? AND package_id = ? AND status = 'approval'",
                     ['paused: automation is switched off for this device', $this->sql->utcNow(), (int) $dev['device_id'], (int) $v['package_id']]);
                 $out['reason'] = 'automation_disabled';
-            } elseif (is_string($request['args_sha256'] ?? null) && !hash_equals($request['args_sha256'], $this->service->argsDigest($dev, $v))) {
+            } elseif ($this->argsChanged($request, $dev, $v, (string) $action)) {
                 // CORE-DS-64: a vendor parameter that feeds the install command was changed after the run was asked for; what the second person approved is gone.
                 $out['reason'] = 'parameters_changed';
             } else {
@@ -97,6 +97,28 @@ final class DeployApprovalService
         $this->approvals->recordResult($approvalId, $out);
 
         return $out;
+    }
+
+    /**
+     * CORE-DS-64, fail closed: for an install of a version that has placeholders the request must carry the digest it was made with and it must equal the
+     * digest now (the 'unresolved' marker included). A request made before this check existed has none and is refused for such a version.
+     *
+     * @param array<string,mixed> $request
+     * @param array<string,mixed> $dev
+     * @param array<string,mixed> $v
+     */
+    private function argsChanged(array $request, array $dev, array $v, string $action): bool
+    {
+        if ($action !== 'install') {
+            return false;
+        }
+        $now = $this->service->argsDigest($dev, $v);
+        $has = array_key_exists('args_sha256', $request);
+        if ($now === '' && !$has) {
+            return false;   // nothing to freeze
+        }
+
+        return !$has || !is_string($request['args_sha256']) || !hash_equals($request['args_sha256'], $now);
     }
 
     /** An auto-install plan row of this device and package that is waiting for exactly this kind of approval. */
