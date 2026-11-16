@@ -1,3 +1,4 @@
 # Test fixtures in earlier commits of this branch (history cannot be rewritten): a migration id and a sample webhook secret that the generic rule reads as keys. The current files no longer contain them.
 f269b2cb1577c51a928c3e16e0c9c131e09a3a64:tests/Unit/Rmm/RemoteSession/RemoteSessionStorageTest.php:generic-api-key:82
 6fa9adcbbcbe8d128d45da6d12afa5a88272191d:tests/Integration/JobsAutomationWebhookTest.php:generic-api-key:114
+c8e387cacf3aef2019cb0832203f7ea393b16b6e:tests/Unit/Rmm/RemoteSession/RemoteSessionStorageTest.php:generic-api-key:82
