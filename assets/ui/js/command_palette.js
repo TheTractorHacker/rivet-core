@@ -13,11 +13,25 @@
     var RECENT_KEY = 'rivet.palette.recent.v1';
     // CORE-DS-46: earlier versions kept recents (record titles included) in localStorage for good: remove what is still there
     try { localStorage.removeItem(RECENT_KEY); } catch (e) { /* storage blocked */ }
-    // CR22: sessionStorage outlives a logout inside the same tab, so signing out clears the list
+    // CR22 / CRR-20: sessionStorage outlives a sign-out inside the same tab, so the list is cleared on every sign that the session ended: a click on a sign-out link or button,
+    // the submit of a sign-out form, a page that is not an app page (no sidebar: the login page, a timeout redirect, an error page), and after a while without use.
+    var RECENT_TTL_MS = 30 * 60 * 1000;
+    function clearRecent() {
+        try { sessionStorage.removeItem(RECENT_KEY); sessionStorage.removeItem(RECENT_KEY + '.at'); } catch (e) { /* storage blocked */ }
+    }
+    function isSignOut(v) { return /log[-_ ]?out|sign[-_ ]?out/i.test(v || ''); }
     document.addEventListener('click', function (ev) {
-        var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
-        if (a && /logout/i.test(a.getAttribute('href') || '')) { try { sessionStorage.removeItem(RECENT_KEY); } catch (e) { /* storage blocked */ } }
+        var a = ev.target && ev.target.closest ? ev.target.closest('a[href], button[formaction], input[formaction]') : null;
+        if (a && (isSignOut(a.getAttribute('href')) || isSignOut(a.getAttribute('formaction')))) { clearRecent(); }
     }, true);
+    document.addEventListener('submit', function (ev) {
+        var f = ev.target;
+        if (f && f.getAttribute && isSignOut(f.getAttribute('action'))) { clearRecent(); }
+    }, true);
+    function checkSignedInPage() {
+        if (!document.querySelector('.navbar-vertical')) { clearRecent(); }
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', checkSignedInPage); } else { checkSignedInPage(); }
     var MAX_RECENT = 6;
     var MAX_PAGES = 8;
     var overlay, box, input, list, hint;
@@ -116,7 +130,12 @@
 
     /* ---------- recent ---------- */
     function getRecent() {
-        try { var v = JSON.parse(sessionStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+        try {
+            var at = parseInt(sessionStorage.getItem(RECENT_KEY + '.at') || '0', 10);
+            if (!at || Date.now() - at > RECENT_TTL_MS) { clearRecent(); return []; }   // CRR-20: a list nobody used for half an hour belongs to a session that may be over
+            var v = JSON.parse(sessionStorage.getItem(RECENT_KEY) || '[]');
+            return Array.isArray(v) ? v : [];
+        } catch (e) { return []; }
     }
     function remember(it) {
         try {
@@ -127,6 +146,7 @@
             var r = getRecent().filter(function (x) { return x.url !== url; });
             r.unshift({ title: it.title, sub: it.sub || '', icon: it.icon, url: url });
             sessionStorage.setItem(RECENT_KEY, JSON.stringify(r.slice(0, MAX_RECENT)));
+            sessionStorage.setItem(RECENT_KEY + '.at', String(Date.now()));
         } catch (e) { /* private mode: no recents, the palette still works */ }
     }
 
