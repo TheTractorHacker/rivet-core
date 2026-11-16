@@ -756,6 +756,28 @@ func (a *Agent) buildInflight(ctx context.Context) (*store.Inflight, error) {
 			return nil, err
 		}
 	}
+	// CORE-DS-2: a body the request cap would refuse is never persisted (it would be replayed, and refused, forever). Shed what can wait: the oldest
+	// buffered samples first, then the software list, the inventory and the Mesh block, which are re-offered by a later check-in.
+	for len(body) > checkinBodyMax {
+		switch {
+		case len(req.Buffered) > 0:
+			drop := max(1, len(req.Buffered)/4)
+			req.Buffered = req.Buffered[drop:]
+			a.log.Warn("check-in body over the size cap; dropping the oldest buffered samples", "dropped", drop, "bytes", len(body))
+		case req.Software != nil:
+			req.Software, in.WithSoftware, in.SoftwareHash, in.SoftwareFull = nil, false, "", false
+			a.sw.pending, a.sw.collectedAt = nil, time.Time{} // collect and offer it again next time
+		case req.Inventory != nil:
+			req.Inventory, in.WithInventory, in.InventoryHash = nil, false, ""
+		case req.MeshAgent != nil:
+			req.MeshAgent, in.WithMesh, in.MeshHash = nil, false, ""
+		default:
+			return nil, fmt.Errorf("check-in body %d bytes cannot be reduced below the %d byte cap", len(body), checkinBodyMax)
+		}
+		if body, err = json.Marshal(req); err != nil {
+			return nil, err
+		}
+	}
 	in.Seq, in.Body = seq, body
 	if err := a.o.Store.SaveInflight(*in); err != nil {
 		return nil, err
@@ -823,6 +845,12 @@ func (a *Agent) checkIn(ctx context.Context, attempt int) checkinOutcome {
 		return checkinOutcome{delay: a.o.MinInterval}
 	}
 	in, err := a.o.Store.LoadInflight()
+	if in != nil && len(in.Body) > api.MaxRequestBytes {
+		// written by an older agent: it can never be sent, so rebuild it from what is buffered now (CORE-DS-2)
+		a.log.Warn("dropping a persisted check-in that is over the request cap", "seq", in.Seq, "bytes", len(in.Body))
+		a.o.Store.ClearInflight()
+		in = nil
+	}
 	if err != nil || in == nil {
 		in, err = a.buildInflight(ctx)
 		if err != nil {
@@ -843,6 +871,13 @@ func (a *Agent) checkIn(ctx context.Context, attempt int) checkinOutcome {
 func (a *Agent) checkinFailed(in *store.Inflight, err error, attempt int, bo api.Backoff) checkinOutcome {
 	_ = a.o.Store.Update(func(st *store.State) error { st.LastError = trunc(err.Error(), 300); return nil })
 	var ae *api.APIError
+	if errors.Is(err, api.ErrRequestTooLarge) {
+		// the same body is refused locally every time: drop it and rebuild a smaller one (CORE-DS-2)
+		a.log.Error("check-in body is over the request cap; dropping it", "seq", in.Seq, "err", err)
+		a.sw.pending = nil
+		a.o.Store.ClearInflight()
+		return checkinOutcome{delay: bo.Delay(attempt)}
+	}
 	if !errors.As(err, &ae) {
 		return checkinOutcome{delay: bo.Delay(attempt)}
 	}
@@ -1038,6 +1073,9 @@ func (a *Agent) configureChange(resp *api.CheckinResponse) {
 	}
 	_ = a.chg.Configure(resp.Config.Change)
 }
+
+// checkinBodyMax is the largest check-in body the agent builds: the request cap minus a margin for the retry-time clock correction fields.
+const checkinBodyMax = api.MaxRequestBytes - 32<<10
 
 // hypervisorBodyMax keeps a check-in carrying a hypervisor block clear of the server's 1 MiB body cap.
 const hypervisorBodyMax = 900 << 10

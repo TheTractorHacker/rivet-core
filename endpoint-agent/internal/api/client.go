@@ -198,10 +198,13 @@ func (c *Client) Do(ctx context.Context, method, name string, body any, out any)
 	return c.DoRaw(ctx, method, name, raw, out)
 }
 
+// ErrRequestTooLarge is returned, without sending anything, for a body over MaxRequestBytes. Retrying the same body can never succeed.
+var ErrRequestTooLarge = errors.New("request body too large")
+
 // DoRaw sends pre-encoded JSON (used to replay an in-flight check-in exactly).
 func (c *Client) DoRaw(ctx context.Context, method, name string, raw []byte, out any) error {
 	if len(raw) > MaxRequestBytes {
-		return fmt.Errorf("request body %d bytes exceeds the %d byte cap", len(raw), MaxRequestBytes)
+		return fmt.Errorf("%w: %d bytes exceeds the %d byte cap", ErrRequestTooLarge, len(raw), MaxRequestBytes)
 	}
 	var rd io.Reader
 	if raw != nil {
