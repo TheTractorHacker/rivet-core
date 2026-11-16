@@ -330,7 +330,7 @@ func (s *server) job(id, typ, script string) json.RawMessage {
 
 func (s *server) jobWith(id, typ, script string, params map[string]any, timeoutS int) json.RawMessage {
 	now := time.Now().UTC()
-	f := map[string]any{"job_id": id, "attempt": 1, "type": typ, "script": script,
+	f := map[string]any{"job_id": id, "device_id": 1, "attempt": 1, "type": typ, "script": script,
 		"params": params, "timeout_s": timeoutS, "max_output_bytes": 4096,
 		"issued_at": now.Format(time.RFC3339), "expires_at": now.Add(time.Hour).Format(time.RFC3339)}
 	raw, _ := json.Marshal(f)
