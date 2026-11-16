@@ -23,7 +23,7 @@ The agent is built per instance (build host). Pass the instance signing PUBLIC k
 Key rotation of the instance signing key changes the stamper key: rebuild agents with the new key (`TRUST_KEYS` accepts a list, so old and new can overlap).
 
 ## MSI note
-The `.msi` payload is read through the same `embed.Read`, so it is covered. Reading it under an exclusive handle is done by CORE-DS-48 (`--payload-from` is pinned).
+The `.msi` payload is read through the same `embed.Read`, so a STAMPED msi is covered. MSI property mode (`SERVER=...`, `--server`) carries no signed payload, so a build with `TRUST_KEYS` REFUSES it (exit 2): such builds enrol only from a stamped installer (review CRR-4).
 
 ## Dev tool
 `rivetit-agent stamp --sign-seed <base64 seed>` (devtools build) signs a test installer.

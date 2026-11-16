@@ -18,6 +18,9 @@ const TrailerDomain = "rivetit-installer-payload-v1"
 // leaves the trailer protected only by its SHA-256, exactly as before; set, the trailer MUST be signed by one of the keys (CORE-DS-20).
 var EmbeddedTrustKeys string
 
+// TrustAnchorActive reports whether this build carries an installer trust anchor (EmbeddedTrustKeys).
+func TrustAnchorActive() bool { return len(trustKeys()) > 0 }
+
 func trustKeys() []ed25519.PublicKey {
 	var out []ed25519.PublicKey
 	for _, s := range strings.Split(EmbeddedTrustKeys, ",") {

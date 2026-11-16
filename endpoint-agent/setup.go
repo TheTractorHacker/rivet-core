@@ -227,6 +227,11 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 	var pl *embed.Payload
 	refresh := false // an MSI upgrade without a usable payload: keep the enrollment, only re-register the service
 	var embedErr error
+	if o.server != "" && embed.TrustAnchorActive() {
+		// MSI property mode (SERVER=..., --server) carries no signed payload, so it would bypass the build's trust anchor: refuse it (CORE-DS-20, review CRR-4)
+		say("This build only installs from a stamped installer signed by your RivetIT server (SERVER/--server properties are not accepted). Download the installer from your RivetIT server.", true)
+		return exitBadConfig
+	}
 	if o.server != "" {
 		var perr error
 		if pl, perr = o.propertyPayload(now()); perr != nil {

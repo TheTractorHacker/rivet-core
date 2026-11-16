@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"rivetit-agent/internal/embed"
 	"rivetit-agent/internal/store"
 )
 
@@ -153,5 +155,18 @@ func TestSetupVerifiesThePinnedInstallerBeforeUsingThePath(t *testing.T) {
 	}
 	if _, err := os.Stat(e2.installed()); err == nil {
 		t.Fatal("a swapped installer was installed")
+	}
+}
+
+// CORE-DS-20 (review CRR-4): a build with a trust anchor does not enrol from MSI property / --server mode, which carries no signed payload.
+func TestPropertyModeRefusedWhenATrustAnchorIsCompiledIn(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	prev := embed.EmbeddedTrustKeys
+	embed.EmbeddedTrustKeys = base64.StdEncoding.EncodeToString(make([]byte, 32))
+	defer func() { embed.EmbeddedTrustKeys = prev }()
+	if code := e.setup("--from-msi", "--server", "https://evil.example"); code != exitBadConfig {
+		t.Fatalf("exit %d, want the property mode refused", code)
 	}
 }
