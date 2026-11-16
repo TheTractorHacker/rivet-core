@@ -20,6 +20,7 @@ import (
 
 	"rivetit-agent/internal/api"
 	"rivetit-agent/internal/store"
+	"rivetit-agent/internal/strictjson"
 )
 
 // The extended check types (RMM Phase 3). Every one reports a number in api.CheckResult.Value where it measures one (latency in ms,
@@ -285,7 +286,7 @@ func unmarshalParams(raw json.RawMessage, v any) error {
 	if len(raw) == 0 {
 		return nil
 	}
-	return json.Unmarshal(raw, v)
+	return strictjson.Unmarshal(raw, v)
 }
 
 func (c *Collector) hardTimeout(d time.Duration) time.Duration {
