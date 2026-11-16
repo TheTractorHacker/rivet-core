@@ -125,9 +125,13 @@ type State struct {
 	// SignedConfigV is the highest signing contract version a server has announced (config.signed_config). It only ever rises: a later response
 	// without it cannot switch the requirement off (a downgrade). CORE-DS-16.
 	SignedConfigV int `json:"signed_config_v,omitempty"`
+	// LogsConfigSeq is the highest signed config.logs sequence accepted; a signed logs configuration below it is refused (CORE-DS-16, review CRR-2).
+	LogsConfigSeq int `json:"logs_config_seq,omitempty"`
 	// ReleaseKeys are release public keys learned through signed rollover messages (base64), on top of the build-time embedded ones; ReleaseRolloverSeq is
 	// the highest rollover sequence applied (CORE-DS-26).
-	ReleaseKeys        []string `json:"release_keys,omitempty"`
+	ReleaseKeys []string `json:"release_keys,omitempty"`
+	// ReleaseRevoked are release public keys (base64) retired by a signed rollover; they are removed from the embedded and learned sets (review CRR-1).
+	ReleaseRevoked     []string `json:"release_revoked,omitempty"`
 	ReleaseRolloverSeq int      `json:"release_rollover_seq,omitempty"`
 	// Software snapshot bookkeeping: the hash of the list the server acknowledged
 	// (the list itself is software.json), when the last full report was acked and

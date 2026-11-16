@@ -63,19 +63,39 @@ func TestReleaseSignatureCoversEveryField(t *testing.T) {
 func TestReleaseKeyRollover(t *testing.T) {
 	oldPub, oldPriv := relKey(t)
 	newPub, newPriv := relKey(t)
-	roll := api.ReleaseRollover{Kind: "release_key_rollover", NewKey: base64.StdEncoding.EncodeToString(newPub), Seq: 1}
+	b64 := func(k ed25519.PublicKey) string { return base64.StdEncoding.EncodeToString(k) }
+	roll := api.ReleaseRollover{Kind: "release_key_rollover", NewKey: b64(newPub), Revoke: []string{b64(oldPub)}, Seq: 1}
 	roll.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(oldPriv, RolloverMessage(roll)))
 	got, err := VerifyRollover([]ed25519.PublicKey{oldPub}, 0, roll)
-	if err != nil || !got.Equal(newPub) {
-		t.Fatalf("%v", err)
+	if err != nil || !got.NewKey.Equal(newPub) || len(got.Revoked) != 1 || got.Revoked[0] != b64(oldPub) {
+		t.Fatalf("%v %+v", err, got)
 	}
 	if _, err := VerifyRollover([]ed25519.PublicKey{oldPub}, 1, roll); err == nil {
-		t.Error("a replayed rollover (seq not above the stored one) was accepted")
+		t.Error("a replayed rollover (seq not the next one) was accepted")
+	}
+	// review CRR-1: a huge sequence number cannot skip ahead and lock out later rollovers
+	big := roll
+	big.Seq = 1 << 62
+	big.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(oldPriv, RolloverMessage(big)))
+	if _, err := VerifyRollover([]ed25519.PublicKey{oldPub}, 0, big); err == nil {
+		t.Error("a rollover with a far-future sequence number was accepted")
+	}
+	// the revoke list is signed: dropping or adding an entry breaks the signature
+	tampered := roll
+	tampered.Revoke = nil
+	if _, err := VerifyRollover([]ed25519.PublicKey{oldPub}, 0, tampered); err == nil {
+		t.Error("the revoke list is not covered by the signature")
 	}
 	forged := roll
 	forged.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(newPriv, RolloverMessage(roll))) // signed by the NEW key, which is not trusted yet
 	if _, err := VerifyRollover([]ed25519.PublicKey{oldPub}, 0, forged); err == nil {
 		t.Error("a rollover signed by an untrusted key was accepted")
+	}
+	self := roll
+	self.Revoke = []string{b64(newPub)}
+	self.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(oldPriv, RolloverMessage(self)))
+	if _, err := VerifyRollover([]ed25519.PublicKey{oldPub}, 0, self); err == nil {
+		t.Error("a rollover that revokes its own new key was accepted")
 	}
 	bad := roll
 	bad.NewKey = "!!!"

@@ -51,7 +51,7 @@ func TestAcceptLogsConfig(t *testing.T) {
 		{"signed by another key", wrongKey, false, false},
 	}
 	for _, c := range cases {
-		if err := acceptLogsConfig(c.raw, c.required, v.VerifyDomain); (err == nil) != c.ok {
+		if _, err := acceptLogsConfig(c.raw, c.required, v.VerifyDomain, "7", 0); (err == nil) != c.ok {
 			t.Errorf("%s: %v", c.name, err)
 		}
 	}
@@ -73,31 +73,44 @@ func TestCheckDeviceBinding(t *testing.T) {
 	}
 }
 
-// CORE-DS-26: a signed rollover adds a release key to the agent's trusted set, persists, and cannot be replayed.
-func TestReleaseRolloverIsAppliedAndPersisted(t *testing.T) {
+// CORE-DS-26 (review CRR-1): a signed rollover adds the new key AND retires the revoked ones, persists, cannot be replayed or skip ahead.
+func TestReleaseRolloverAddsAndRevokes(t *testing.T) {
 	r := newRig(t)
 	oldPub, oldPriv, _ := ed25519.GenerateKey(rand.Reader)
-	newPub, _, _ := ed25519.GenerateKey(rand.Reader)
+	newPub, newPriv, _ := ed25519.GenerateKey(rand.Reader)
+	b64 := base64.StdEncoding.EncodeToString
 	prev := update.EmbeddedReleaseKeys
-	update.EmbeddedReleaseKeys = base64.StdEncoding.EncodeToString(oldPub)
+	update.EmbeddedReleaseKeys = b64(oldPub)
 	defer func() { update.EmbeddedReleaseKeys = prev }()
 	if n := len(r.a.releaseKeys()); n != 1 {
 		t.Fatalf("embedded keys: %d", n)
 	}
-	roll := &api.ReleaseRollover{Kind: update.RolloverKind, NewKey: base64.StdEncoding.EncodeToString(newPub), Seq: 1}
-	roll.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(oldPriv, update.RolloverMessage(*roll)))
-	r.a.applyRollover(roll)
-	keys := r.a.releaseKeys()
-	if len(keys) != 2 {
-		t.Fatalf("keys after rollover: %d", len(keys))
+	mk := func(priv ed25519.PrivateKey, newKey ed25519.PublicKey, revoke []string, seq int) *api.ReleaseRollover {
+		x := &api.ReleaseRollover{Kind: update.RolloverKind, NewKey: b64(newKey), Revoke: revoke, Seq: seq}
+		x.Signature = b64(ed25519.Sign(priv, update.RolloverMessage(*x)))
+		return x
 	}
-	// after a restart on the same state dir the new key is still trusted
-	if n := len(r.newAgent().releaseKeys()); n != 2 {
-		t.Fatalf("keys after restart: %d", n)
-	}
-	r.a.applyRollover(roll) // replay: ignored
+	// 1: add the new key but keep the old one
+	r.a.applyRollover(mk(oldPriv, newPub, nil, 1))
 	if n := len(r.a.releaseKeys()); n != 2 {
-		t.Fatalf("replay changed the key set: %d", n)
+		t.Fatalf("keys after rollover 1: %d", n)
+	}
+	// a skip-ahead sequence is refused and does not block the next legitimate one
+	r.a.applyRollover(mk(oldPriv, newPub, nil, 1<<40))
+	// 2: signed by the new key, revokes the (leaked) old one
+	r.a.applyRollover(mk(newPriv, newPub, []string{b64(oldPub)}, 2))
+	keys := r.a.releaseKeys()
+	if len(keys) != 1 || !keys[0].Equal(newPub) {
+		t.Fatalf("the revoked key is still trusted: %d keys", len(keys))
+	}
+	// the revoked key can no longer sign a rollover (nor an update)
+	r.a.applyRollover(mk(oldPriv, oldPub, nil, 3))
+	if n := len(r.a.releaseKeys()); n != 1 {
+		t.Fatalf("a revoked key signed a rollover: %d keys", n)
+	}
+	// persisted across a restart
+	if n := len(r.newAgent().releaseKeys()); n != 1 {
+		t.Fatalf("keys after restart: %d", n)
 	}
 }
 
@@ -110,5 +123,26 @@ func TestDisableUpdateSwitch(t *testing.T) {
 	a := r.newAgent()
 	if !a.updateDisabled() {
 		t.Fatal("disable_update not honoured")
+	}
+}
+
+// CORE-DS-16 (review CRR-2): a signed config.logs is bound to its device and cannot be rolled back.
+func TestAcceptLogsConfigDeviceAndSequence(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	v := &jobs.Verifier{PublicKey: pub}
+	cfg := func(dev any, seq int) json.RawMessage {
+		return signedLogs(t, priv, map[string]any{"version": "v1", "sources": []any{}, "device_id": dev, "seq": seq})
+	}
+	if seq, err := acceptLogsConfig(cfg(7, 5), true, v.VerifyDomain, "7", 3); err != nil || seq != 5 {
+		t.Fatalf("own device, newer seq: %d %v", seq, err)
+	}
+	if _, err := acceptLogsConfig(cfg(8, 5), true, v.VerifyDomain, "7", 3); err == nil {
+		t.Error("device A's signed logs config was accepted on device B")
+	}
+	if _, err := acceptLogsConfig(cfg(7, 2), true, v.VerifyDomain, "7", 3); err == nil {
+		t.Error("a rolled-back logs config (seq 2 after 3) was accepted")
+	}
+	if seq, err := acceptLogsConfig(cfg(7, 3), true, v.VerifyDomain, "7", 3); err != nil || seq != 3 {
+		t.Errorf("the same seq again must be fine: %d %v", seq, err)
 	}
 }

@@ -1077,10 +1077,15 @@ func (a *Agent) configureLogs(resp *api.CheckinResponse) {
 	a.mu.Lock()
 	vf := &jobs.Verifier{PublicKey: a.verifier.Key()}
 	a.mu.Unlock()
-	if err := acceptLogsConfig(resp.Config.Logs, a.signingRequired(), vf.VerifyDomain); err != nil {
+	st, _ := a.o.Store.LoadState()
+	seq, err := acceptLogsConfig(resp.Config.Logs, a.signingRequired(), vf.VerifyDomain, a.verifier.Device(), st.LogsConfigSeq)
+	if err != nil {
 		a.log.Error("log collection configuration refused", "err", err)
 		a.logs.Configure(nil)
 		return
+	}
+	if seq > st.LogsConfigSeq {
+		_ = a.o.Store.Update(func(s *store.State) error { s.LogsConfigSeq = seq; return nil })
 	}
 	a.logs.Configure(logs.Normalize(api.ParseLogsConfig(resp.Config.Logs)))
 }
@@ -1102,48 +1107,81 @@ func checkBoundToDevice(raw []byte, deviceID string) error {
 // LogsConfigSignDomain is the first line of the signed message of config.logs (domain separation from jobs, checks and the other configurations).
 const LogsConfigSignDomain = "rivetit-logs-config-v1"
 
-// acceptLogsConfig decides whether config.logs may be used. A signature, when present, must verify (domain-separated, over the canonical object); an
-// unsigned block is accepted only from a server that has not announced signed_config and while the local configuration does not demand signatures.
-func acceptLogsConfig(raw json.RawMessage, required bool, verify func(domain string, raw []byte, sig string) error) error {
+// acceptLogsConfig decides whether config.logs may be used. A signature, when present, must verify (domain-separated, over the canonical object).
+// Inside the signed object an optional device_id must name this device and an optional seq must not go below lastSeq (replay across devices and
+// roll-back to an older, wider configuration; review CRR-2). It returns the sequence to remember. An unsigned block is accepted only from a server that
+// has not announced signed_config and while the local configuration does not demand signatures.
+func acceptLogsConfig(raw json.RawMessage, required bool, verify func(domain string, raw []byte, sig string) error, deviceID string, lastSeq int) (int, error) {
 	var w struct {
-		Signature string `json:"signature"`
+		Signature string          `json:"signature"`
+		DeviceID  json.RawMessage `json:"device_id"`
+		Seq       *int            `json:"seq"`
 	}
 	_ = json.Unmarshal(raw, &w)
 	if w.Signature == "" {
 		if required {
-			return errors.New("unsigned log configuration while signed configuration is required")
+			return lastSeq, errors.New("unsigned log configuration while signed configuration is required")
 		}
-		return nil
+		return lastSeq, nil
 	}
-	return verify(LogsConfigSignDomain, raw, w.Signature)
+	if err := verify(LogsConfigSignDomain, raw, w.Signature); err != nil {
+		return lastSeq, err
+	}
+	if len(w.DeviceID) > 0 && string(w.DeviceID) != "null" && strings.Trim(string(w.DeviceID), `"`) != deviceID {
+		return lastSeq, errors.New("log configuration is signed for a different device")
+	}
+	if w.Seq != nil {
+		if *w.Seq < lastSeq {
+			return lastSeq, errors.New("log configuration is older than one already accepted")
+		}
+		return *w.Seq, nil
+	}
+	return lastSeq, nil
 }
 
-// releaseKeys is the trusted release public key set: the build-time embedded keys plus those learned through rollover messages.
+// releaseKeys is the trusted release public key set: the build-time embedded keys plus those learned through rollover messages, minus every key a
+// signed rollover revoked.
 func (a *Agent) releaseKeys() []ed25519.PublicKey {
 	keys := update.ParseKeys(update.EmbeddedReleaseKeys)
+	var revoked map[string]bool
 	if st, err := a.o.Store.LoadState(); err == nil {
 		keys = append(keys, update.ParseKeys(strings.Join(st.ReleaseKeys, ","))...)
+		revoked = map[string]bool{}
+		for _, r := range st.ReleaseRevoked {
+			revoked[r] = true
+		}
 	}
-	return keys
+	var out []ed25519.PublicKey
+	seen := map[string]bool{}
+	for _, k := range keys {
+		id := base64.StdEncoding.EncodeToString(k)
+		if !revoked[id] && !seen[id] {
+			seen[id] = true
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
-// applyRollover applies a signed release key rollover message (ignored when it does not verify or is not newer than the one already applied).
+// applyRollover applies a signed release key rollover message (ignored when it does not verify or is not the next sequence number): it adds the new
+// key and retires the revoked ones.
 func (a *Agent) applyRollover(r *api.ReleaseRollover) {
 	if r == nil {
 		return
 	}
 	st, _ := a.o.Store.LoadState()
-	nk, err := update.VerifyRollover(a.releaseKeys(), st.ReleaseRolloverSeq, *r)
+	res, err := update.VerifyRollover(a.releaseKeys(), st.ReleaseRolloverSeq, *r)
 	if err != nil {
 		a.log.Warn("release key rollover refused", "err", err)
 		return
 	}
 	_ = a.o.Store.Update(func(s *store.State) error {
-		s.ReleaseKeys = append(s.ReleaseKeys, base64.StdEncoding.EncodeToString(nk))
+		s.ReleaseKeys = append(s.ReleaseKeys, base64.StdEncoding.EncodeToString(res.NewKey))
+		s.ReleaseRevoked = append(s.ReleaseRevoked, res.Revoked...)
 		s.ReleaseRolloverSeq = r.Seq
 		return nil
 	})
-	a.log.Info("release signing key rolled over", "seq", r.Seq)
+	a.log.Info("release signing key rolled over", "seq", r.Seq, "revoked", len(res.Revoked))
 }
 
 // updateDisabled is the local disable_update switch.

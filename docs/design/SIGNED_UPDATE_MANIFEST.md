@@ -20,9 +20,14 @@ The instance signature of an update (`Signer::signManifest`) covers only the low
 ## Agent behaviour
 With at least one trusted release key, `Manager.Apply` refuses, before downloading anything, a manifest that has no `release_signature`, whose `os`/`arch` differ from the running platform, or whose signature does not verify under any trusted key. The instance signature, host allow-list, sha256, size cap, probation and rollback are unchanged and still required.
 
-## Key rollover
+## Key rollover and revocation
 Check-in response gains an optional top-level `release_rollover`:
-`{"kind":"release_key_rollover","new_key":"<b64 ed25519 public>","seq":<int>,"signature":"<b64>"}`, signature by a key the agent already trusts over `"rivetit-release-rollover-v1" + "\n" + {"kind":"release_key_rollover","new_key":"...","seq":N}` (canonical JSON, sorted keys). The agent applies it only if `seq` is above the highest applied, adds the key to `state.json` (`release_keys`) and keeps trusting the embedded keys. The server just stores and relays the message (e.g. in `rmm_settings`) while any agent might need it; it cannot create one.
+`{"kind":"release_key_rollover","new_key":"<b64 ed25519 public>","revoke":["<b64 public key>",...],"seq":<int>,"signature":"<b64>"}`
+signed by a key the agent currently trusts over `"rivetit-release-rollover-v1" + "\n" + canonical JSON` of `{"kind":"release_key_rollover","new_key":"...","revoke":[sorted b64 keys],"seq":N}` (sorted keys, no whitespace; `revoke` is always present, `[]` when empty). Rules the agent enforces:
+* `seq` must be EXACTLY the next one (highest applied + 1). A message with a huge `seq` is refused and cannot lock out later rollovers.
+* The new key is added; every key in `revoke` (embedded or learned) is removed from the trusted set and can no longer sign updates or rollovers. A message cannot revoke its own `new_key`; at most 16 entries.
+* State (`state.json`): `release_keys`, `release_revoked`, `release_rollover_seq`.
+To retire a leaked key K1: sign `{new_key: K2, revoke: [K1], seq: N+1}` with a still-trusted key (K1 itself if K1 is the only one: do this before the attacker does). The server stores and relays the message and cannot create one.
 
 ## Local switch
 `config.json` `"disable_update": true` stops self-update entirely (independent of `disable_jobs`, which deliberately does not).
@@ -31,7 +36,7 @@ Check-in response gains an optional top-level `release_rollover`:
 1. Ship agents with `RELEASE_KEYS` empty plus the server change: nothing changes.
 2. Start signing releases offline and publishing `release_signature`.
 3. Ship an agent build with `RELEASE_KEYS` set (that build still accepts the update that delivers it: it is validated by the previous build, which has no key). From then on enforcement is on for that build and every later one.
-Rolling the key: sign a `release_rollover` with the current key, publish it, then start signing with the new key; agents that applied it trust both.
+Rolling the key: sign a `release_rollover` with the current key, publish it, then start signing with the new key; keep the old key trusted until the fleet has applied it, then publish a second rollover that revokes it.
 
 ## Server tests to write
 Manifest vectors (the Go test `release_test.go` fixes the byte format), a rollover vector, `UpdateService` serving per-platform signatures, a migration for the table, and golden transcripts re-recorded only for update-bearing cases with entries in `expected-deltas.json`.

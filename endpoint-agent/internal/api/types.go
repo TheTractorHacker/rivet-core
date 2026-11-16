@@ -298,24 +298,26 @@ type UpdateManifest struct {
 
 // ReleaseRollover moves the agents' trust to a new release key: signed by a release key the agent already trusts (CORE-DS-26).
 type ReleaseRollover struct {
-	Kind      string `json:"kind"`
-	NewKey    string `json:"new_key"`
-	Seq       int    `json:"seq"`
-	Signature string `json:"signature"`
+	Kind   string `json:"kind"`
+	NewKey string `json:"new_key"`
+	// Revoke lists release public keys (base64) that stop being trusted once the rollover is applied; it is part of the signed message (review CRR-1).
+	Revoke    []string `json:"revoke,omitempty"`
+	Seq       int      `json:"seq"`
+	Signature string   `json:"signature"`
 }
 
 type CheckinResponse struct {
-	OK            bool            `json:"ok"`
-	NextCheckInS  int             `json:"next_check_in_s"`
-	JobsPending   *int            `json:"jobs_pending"`
-	Config        *ServerConfig   `json:"config"`
-	Update        *UpdateManifest `json:"update"`
+	OK           bool            `json:"ok"`
+	NextCheckInS int             `json:"next_check_in_s"`
+	JobsPending  *int            `json:"jobs_pending"`
+	Config       *ServerConfig   `json:"config"`
+	Update       *UpdateManifest `json:"update"`
 	// ReleaseRollover is a signed release key rollover message (additive, CORE-DS-26); the agent applies it with or without an update offer.
 	ReleaseRollover *ReleaseRollover `json:"release_rollover,omitempty"`
-	ServerTime    ServerTime      `json:"server_time"`
-	SigningKeyID  string          `json:"signing_key_id"`
-	Status        string          `json:"status"`
-	MatchedAssetI *int64          `json:"matched_asset_id"` // optional extension
+	ServerTime      ServerTime       `json:"server_time"`
+	SigningKeyID    string           `json:"signing_key_id"`
+	Status          string           `json:"status"`
+	MatchedAssetI   *int64           `json:"matched_asset_id"` // optional extension
 	// Features the server offers this device (e.g. "software_inventory"); Resync
 	// asks for a full re-send of a data set (e.g. "software"). Both optional.
 	Features []string `json:"features,omitempty"`

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"rivetit-agent/internal/api"
@@ -38,7 +39,9 @@ func ManifestMessage(m api.UpdateManifest) []byte {
 
 // RolloverMessage is the byte string an existing release key signs to hand trust to a new one.
 func RolloverMessage(r api.ReleaseRollover) []byte {
-	b, _ := json.Marshal(map[string]any{"kind": RolloverKind, "new_key": r.NewKey, "seq": r.Seq})
+	rev := append([]string{}, r.Revoke...)
+	sort.Strings(rev) // sorted, so the signed bytes do not depend on the order the server listed them in
+	b, _ := json.Marshal(map[string]any{"kind": RolloverKind, "new_key": r.NewKey, "revoke": rev, "seq": r.Seq})
 	return append([]byte(RolloverDomain+"\n"), b...)
 }
 
@@ -69,22 +72,42 @@ func VerifyRelease(keys []ed25519.PublicKey, m api.UpdateManifest, goos, goarch 
 	return nil
 }
 
-// VerifyRollover checks a rollover message against the trusted keys and the highest sequence already applied, and returns the new public key.
-func VerifyRollover(trusted []ed25519.PublicKey, haveSeq int, r api.ReleaseRollover) (ed25519.PublicKey, error) {
+// RolloverResult is what a verified rollover changes: the key to trust from now on and the keys to stop trusting.
+type RolloverResult struct {
+	NewKey  ed25519.PublicKey
+	Revoked []string // base64 public keys
+}
+
+// VerifyRollover checks a rollover message against the currently trusted keys and the sequence already applied. The sequence must be EXACTLY the next
+// one (haveSeq+1): a message signed with a huge sequence number can neither skip ahead nor lock out the legitimate later ones (review CRR-1). The new
+// key cannot be in its own revoke list.
+func VerifyRollover(trusted []ed25519.PublicKey, haveSeq int, r api.ReleaseRollover) (RolloverResult, error) {
+	var zero RolloverResult
 	if r.Kind != RolloverKind {
-		return nil, errors.New("not a release key rollover")
+		return zero, errors.New("not a release key rollover")
 	}
-	if r.Seq <= haveSeq {
-		return nil, errors.New("rollover is not newer than the one already applied")
+	if r.Seq != haveSeq+1 {
+		return zero, fmt.Errorf("rollover sequence %d is not the next one (%d)", r.Seq, haveSeq+1)
 	}
 	nk, err := base64.StdEncoding.DecodeString(strings.TrimSpace(r.NewKey))
 	if err != nil || len(nk) != ed25519.PublicKeySize {
-		return nil, errors.New("rollover key is not an ed25519 public key")
+		return zero, errors.New("rollover key is not an ed25519 public key")
+	}
+	for _, rv := range r.Revoke {
+		if strings.TrimSpace(rv) == strings.TrimSpace(r.NewKey) {
+			return zero, errors.New("rollover revokes its own new key")
+		}
+		if b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rv)); err != nil || len(b) != ed25519.PublicKeySize {
+			return zero, errors.New("rollover revokes something that is not an ed25519 public key")
+		}
+	}
+	if len(r.Revoke) > 16 {
+		return zero, errors.New("rollover revokes too many keys")
 	}
 	if !verifyAny(trusted, RolloverMessage(r), r.Signature) {
-		return nil, errors.New("rollover signature invalid")
+		return zero, errors.New("rollover signature invalid")
 	}
-	return ed25519.PublicKey(nk), nil
+	return RolloverResult{NewKey: ed25519.PublicKey(nk), Revoked: append([]string(nil), r.Revoke...)}, nil
 }
 
 // ParseKeys decodes a comma separated list of base64 ed25519 public keys (the build-time embedded release keys). Invalid entries are skipped.
