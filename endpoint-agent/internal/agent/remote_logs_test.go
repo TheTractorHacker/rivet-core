@@ -175,6 +175,7 @@ func TestRemoteToolJobsRunThroughTheWholeAgent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r.a.newExecutor(ctx)
+	stopExecutorAfterTest(t, r, cancel)
 	r.a.checkIn(ctx, 0)
 	deadline := time.Now().Add(30 * time.Second)
 	final := func(id string) (reportOutput string, state string, ok bool) {
