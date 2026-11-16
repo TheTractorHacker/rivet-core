@@ -3,6 +3,7 @@ package jobs
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -162,6 +163,26 @@ func PowerShellPrelude(ps []Param) string {
 		}
 	}
 	return b.String()
+}
+
+// maxWindowsEnvValue is the longest value a Windows environment variable can hold (32767 characters including the name).
+const maxWindowsEnvValue = 30000
+
+// PowerShellParamsSetup is the prelude and environment of a Windows script job. The whole parameter object travels in RIVETIT_JOB_PARAMS (the
+// environment, as on Linux) and the prelude only reads it with ConvertFrom-Json, so no parameter value, sealed secrets included, is ever part of
+// the -EncodedCommand text that process auditing, EDR and script-block logging record (CORE-DS-12). It is platform independent so it is tested on
+// Linux; shell_windows.go uses it.
+func PowerShellParamsSetup(params []byte) (prelude string, env []string, err error) {
+	if len(params) == 0 || string(params) == "null" {
+		return "", nil, nil
+	}
+	if len(params) > maxWindowsEnvValue {
+		return "", nil, errors.New("job parameters too large to pass through the environment")
+	}
+	parsed := ParseParams(params)
+	prelude = "$Params=ConvertFrom-Json $env:RIVETIT_JOB_PARAMS;" + PowerShellPrelude(parsed)
+	env = append([]string{"RIVETIT_JOB_PARAMS=" + string(params)}, ParamEnv(parsed)...)
+	return prelude, env, nil
 }
 
 // PythonPrelude defines a variable per parameter: a string from os.environ, an

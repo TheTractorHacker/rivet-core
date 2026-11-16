@@ -41,8 +41,8 @@ type Executor struct {
 	// Both exist because Flush runs on the check-in goroutine (CORE-DS-4).
 	RetryAfterCap time.Duration
 	FlushBudget   time.Duration
-	Log         *slog.Logger
-	Disabled    bool // config.disable_jobs: never execute
+	Log           *slog.Logger
+	Disabled      bool // config.disable_jobs: never execute
 
 	// Remote holds the handlers of the remote-tool job types (RMM Phase 6) by type; DisableRemote
 	// (config.disable_remote) makes every one of them fail with disabled_locally without running.

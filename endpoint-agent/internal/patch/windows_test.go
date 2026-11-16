@@ -255,3 +255,25 @@ func TestWindowsScanRealWindows11Capture(t *testing.T) {
 		t.Errorf("%+v", o.Updates[0])
 	}
 }
+
+// CORE-DS-5: the real install.ps1 prints ok:false whenever ANY result is failed/eula_required/not_found/locked, next to the full results array. The
+// per-update results (and reboot_required) must survive; only a document WITHOUT results is a script failure.
+func TestWindowsInstallKeepsPerUpdateResultsWhenOneFails(t *testing.T) {
+	doc := `{"v":1,"ok":false,"mode":"install","manager":"wua","results":[{"id":"` + wid1 + `","title":"CU","result":"needs_reboot","code":"0x00000000","detail":"installed, restart required","reboot_required":true},{"id":"` + wid2 + `","title":"Drv","result":"eula_required","code":"","detail":"EULA","reboot_required":false}],"reboot_required":true,"truncated":false}`
+	res := psEngine(ok(doc), nil).Install(context.Background(), json.RawMessage(`{"ids":"`+wid1+","+wid2+`","mode":"install"}`), 1<<20)
+	o := installOf(t, res)
+	if strings.Contains(res.Output, "scan_failed") {
+		t.Fatalf("the batch was reported as a total failure: %s", res.Output)
+	}
+	if len(o.Results) != 2 || o.Results[0].Result != "needs_reboot" || o.Results[1].Result != "eula_required" || !o.RebootRequired {
+		t.Fatalf("%+v", o)
+	}
+	if res.OK {
+		t.Error("a batch with a failed update is not a success")
+	}
+	// no results at all stays a script failure with its own code
+	fail := `{"v":1,"ok":false,"detail":"wu_unavailable","message":"x"}`
+	if res := psEngine(ok(fail), nil).Install(context.Background(), json.RawMessage(`{"ids":"`+wid1+`","mode":"install"}`), 1<<20); !strings.Contains(res.Output, "wu_unavailable") {
+		t.Errorf("%+v", res)
+	}
+}
