@@ -108,8 +108,8 @@
             "origin": "rivetit-verbatim"
         },
         "js/command_palette.js": {
-            "sha256": "ab466ed86e3f661cf6a4aa92ffd5f32ace9ad7741edb45cb394576916ffa032e",
-            "bytes": 15615,
+            "sha256": "a7e7edebd14f6783d4fa43dfa854e24d64fee1660908880adaac22c327f20b83",
+            "bytes": 16281,
             "origin": "core"
         },
         "js/date_range_picker.js": {
@@ -133,8 +133,8 @@
             "origin": "core"
         },
         "js/webhook_wizard.js": {
-            "sha256": "7f3c1105c42ad9d154d699f1b57259d20c08a49608979cfa8f42a8856996bed3",
-            "bytes": 56416,
+            "sha256": "ccd12c482cdf012744ed40c1336d34d8a0b496736c76a8935c48e055f5abdde3",
+            "bytes": 56537,
             "origin": "core"
         }
     },

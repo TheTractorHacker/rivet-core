@@ -1,7 +1,7 @@
 /*
  * Command palette: Ctrl/Cmd+K (or "/" outside a field) opens one box that jumps to any page in the navigation the signed-in user can
  * already see, to recent destinations, and - while typing - to records (departments, contacts, tickets, assets, KB ...) through the same
- * live-search endpoint the header search uses. Nothing is stored on the server: "recent" lives in this browser's localStorage.
+ * live-search endpoint the header search uses. Nothing is stored on the server: "recent" lives in this tab's sessionStorage (CORE-DS-46: pages only, never the titles of records).
  *
  * Every string that came from the page or the server is placed with textContent; hrefs are only taken from same-origin links.
  */
@@ -11,6 +11,8 @@
     window.__rivetPalette = true;
 
     var RECENT_KEY = 'rivet.palette.recent.v1';
+    // CORE-DS-46: earlier versions kept recents (record titles included) in localStorage for good: remove what is still there
+    try { localStorage.removeItem(RECENT_KEY); } catch (e) { /* storage blocked */ }
     var MAX_RECENT = 6;
     var MAX_PAGES = 8;
     var overlay, box, input, list, hint;
@@ -42,7 +44,8 @@
     }
 
     function sameOrigin(href) {
-        try { var u = new URL(href, location.href); return u.origin === location.origin ? u.pathname + u.search + u.hash : null; } catch (e) { return null; }
+        // CORE-DS-45: '/.//evil.example/x' has pathname '//evil.example/x', which a link or location would resolve as another host: collapse the leading slashes
+        try { var u = new URL(href, location.href); return u.origin === location.origin ? (u.pathname.replace(/^\/{2,}/, '/') + u.search + u.hash) : null; } catch (e) { return null; }
     }
 
     /* ---------- pages: scraped from the sidebar, so they honour the user's permissions and modules for free ---------- */
@@ -108,15 +111,17 @@
 
     /* ---------- recent ---------- */
     function getRecent() {
-        try { var v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+        try { var v = JSON.parse(sessionStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
     }
     function remember(it) {
         try {
+            // CORE-DS-46: only pages are kept. The title of a credential, ticket or contact must not outlive the session in a browser that the next user shares.
+            if (it.type !== 'page') { return; }
             var url = sameOrigin(it.url);
             if (!url) { return; }
             var r = getRecent().filter(function (x) { return x.url !== url; });
             r.unshift({ title: it.title, sub: it.sub || '', icon: it.icon, url: url });
-            localStorage.setItem(RECENT_KEY, JSON.stringify(r.slice(0, MAX_RECENT)));
+            sessionStorage.setItem(RECENT_KEY, JSON.stringify(r.slice(0, MAX_RECENT)));
         } catch (e) { /* private mode: no recents, the palette still works */ }
     }
 

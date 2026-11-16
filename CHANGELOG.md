@@ -2,6 +2,23 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.73 (deep-scan fixes C: crypto, panel attachments, automation, ITSM, job queue, command palette; no migration)
+
+Provisional number, stacked on rc.72. Fixes from the 2026-11-15 deep security scan (CORE-DS-29 to 33, 45, 46, 58 to 60). No migration, no new route, no released constant changed. Not fixed here, with the question for the owner: CORE-DS-61 (panel re-enrollment re-keys the device), and the cleartext `send_webhook` secret of CORE-DS-58.
+
+- **CORE-DS-29.** `BackupEncryptionInspector` calls a binary OpenPGP message encrypted only when its first packet header parses (old or new format, plausible length) and the first body byte is the version that packet kind has (PKESK 3 or 6, SKESK 4 to 6, SEIPD 1 or 2). UTF-8 text that starts with a Latin-1 letter, MessagePack and other binaries no longer pass the "Backups are encrypted" check. The legacy symmetric-data packet (9) has no version byte and is no longer recognised from the header alone (armor or the suffix hint still work).
+- **CORE-DS-30.** `KeyRing::withKey()` refuses a key id that is already in the ring under a different key (it silently replaced it), `KeyGenerator::kid()` draws 32 random bits (was 16) and `rotate()` never draws a key id the ring holds. A new key id is `k20261115-1a2b3c4d`; the id pattern is unchanged.
+- **CORE-DS-31.** The legacy readers of text values (vault fields, settings `ENC:`, TOTP seeds) accept only plaintext that is valid UTF-8 without control characters (`LegacyCbc::decryptText()`): a wrong legacy key (valid padding about once in 256 values) now fails the row instead of sealing random bytes into a v3 envelope over the only good copy.
+- **CORE-DS-32.** Panel text attachments are refused when they contain any tag-like markup (`<` followed by a letter, `!`, `?` or `/`), not only a list of names. The gateway must still serve them as attachments with `nosniff`.
+- **CORE-DS-33.** The CSV formula check also sees a quoted cell (`"=HYPERLINK(...)"`, `"=1+1"` as the first cell).
+- **CORE-DS-45.** `command_palette.js` and `webhook_wizard.js` collapse leading slashes of the same-origin path they return (`/.//evil.example/x` can no longer be read as another host). **The editions copy `assets/ui/js`: re-promote them (`scripts/promote-ui-assets.php`) so RivetIT and RivetMSP carry the same bytes.**
+- **CORE-DS-46.** The palette keeps its "Recent" list in `sessionStorage` (this tab), only for pages and never for the titles of records, and removes what an earlier version left in `localStorage`.
+- **CORE-DS-58.** `EventContext::flatten()` gives a bare alias only to a leaf that exactly one nested path ends in (it used to give it to the first). The cleartext `send_webhook` secret in `AutomationRuleStore` is not changed here.
+- **CORE-DS-59 (CORE-37).** `ChangeService::setStatus()` and `ProblemService::setStatus()` write conditionally on the status they read (a lost race throws `InvalidArgumentException` "changed by someone else"), and `ChangeService::reschedule()` refuses a change that is running, finished or cancelled.
+- **CORE-DS-60.** `JobQueue::heartbeat()` and `release()` take a trailing optional attempt fence (`$attempts`); `JobWorker` passes the attempt it claimed, so a job another worker reclaimed is neither run a second time nor released or refreshed from under it.
+- **Tests.** `BackupEncryptionInspectorTest`, `KeysTest`, `LegacyReadersTest`, `PanelAttachmentsTest`, `PaletteJsTest` (runs `node` when installed), `AutomationEventContextTest`, `ItsmTest`, `JobWorkerTest`, `UiAssetsTest` (the wizard's reviewed deviation).
+- **API surface.** Additive: `LegacyCbc::decryptText()` (internal), trailing optional parameters of `JobQueue::heartbeat()` and `release()`. Regenerated: docs/api-surface.md, tests/api-surface.json, docs/PUBLIC-API.md, assets/ui/MANIFEST.json.
+
 ## 1.0.0-rc.72 (deep-scan fixes B: RMM server hardening, UrlPolicy, host names; no migration)
 
 Provisional number, stacked on rc.71. Fixes from the 2026-11-15 deep security scan (CORE-DS-34 to 44, 62, 63, 65, 68 to 73, 75) and one finding from the RivetIT session (IT-DS-19/42, host names). No migration, no new route, no constant of a released value changed, the device protocol transcripts are untouched. Not fixed here, with the question for the owner: CORE-DS-38 (per-client rule caps), 39 (Mesh token lifetime 300 s); partly: 72 (audit and rate), 70 (deleting stays open on purpose).

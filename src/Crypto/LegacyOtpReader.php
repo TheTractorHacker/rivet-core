@@ -36,6 +36,6 @@ final class LegacyOtpReader implements LegacyReader
             throw new DecryptionFailed('The value is not in a readable format.');
         }
 
-        return LegacyCbc::decrypt(substr($payload, 16), $this->masterKey, substr($payload, 0, 16), 0);
+        return LegacyCbc::decryptText(substr($payload, 16), $this->masterKey, substr($payload, 0, 16), 0);
     }
 }

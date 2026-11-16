@@ -175,11 +175,14 @@ final class PanelAttachments
             return false;   // binary, NUL, or terminal escape sequences
         }
         // markup anywhere in the file (it used to be the first 8 KiB only)
-        if (preg_match('/<\s*(script|html|iframe|svg|object|embed|\?php|!doctype)/i', $b) === 1) {
+        // CORE-DS-32: any tag (an opening or closing tag, a comment, a declaration, a processing instruction), not a list of names: an event handler needs only <img onerror=...>
+        if (preg_match('/<\s*[A-Za-z!?\/]/', $b) === 1) {
             return false;
         }
         // a spreadsheet opens the file as a formula when the first character says so (tab and CR are control characters, but the check above lets a tab and a CR through)
-        $start = str_starts_with($b, "\xEF\xBB\xBF") ? substr($b, 3, 1) : substr($b, 0, 1);
+        $first = str_starts_with($b, "\xEF\xBB\xBF") ? substr($b, 3) : $b;
+        $first = preg_replace('/^[ ]*"?[ ]*/', '', $first) ?? $first;   // CORE-DS-33: a quoted first cell ("=1+1") is the same formula to a spreadsheet
+        $start = substr($first, 0, 1);
         if ($start !== '' && strpbrk($start, "=+-@\t\r") !== false) {
             return false;
         }
@@ -190,7 +193,7 @@ final class PanelAttachments
     /** CSV only: a cell that starts with `=`, a function or DDE call (`+cmd|' /C calc'!A0`, `@SUM(...)`), at the start of the file, a line or after a delimiter. */
     private static function csvOk(string $b): bool
     {
-        $cell = '(?:^|[\r\n,;\t])[ ]*';
+        $cell = '(?:^|[\r\n,;\t])[ ]*"?[ ]*';   // CORE-DS-33: a spreadsheet strips the CSV quotes and then evaluates the cell, so "=..." is =...
 
         return preg_match('/' . $cell . '=/', $b) !== 1
             && preg_match('/' . $cell . '[+\-@][ ]*[A-Za-z_][A-Za-z0-9_.]*[ ]*\(/', $b) !== 1

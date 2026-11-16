@@ -146,6 +146,29 @@ final class KeysTest extends TestCase
         $this->assertNotSame(KeyGenerator::key(), KeyGenerator::key());
     }
 
+    /** CORE-DS-30: a key id that is already in the ring never replaces its key. */
+    public function testAReusedKeyIdIsRefusedAndRotationNeverDrawsOne(): void
+    {
+        $a = KeyGenerator::newRing();
+        $kid = (string) $a->activeKid();
+        try {
+            $a->withKey(KeyGenerator::key(), $kid, null, true);
+            $this->fail('the active key was replaced');
+        } catch (\RivetCore\Crypto\InvalidKeyMaterial) {
+            $this->assertSame(KeyGenerator::fingerprint(bin2hex($a->activeKey())), $a->fingerprint($kid), 'the ring is untouched');
+        }
+        $same = $a->withKey($a->activeKey(), $kid);
+        $this->assertSame($a->activeKey(), $same->activeKey(), 'adding the same key under its own id again is not a replacement');
+        // a rotation on the same day, many times: every key survives
+        $ring = $a;
+        $at = new \DateTimeImmutable('2026-11-15T12:00:00Z');
+        for ($i = 0; $i < 200; $i++) {
+            $ring = KeyGenerator::rotate($ring, $at);
+        }
+        $this->assertCount(201, $ring->kids());
+        $this->assertSame(1, preg_match('/^k20261115-[0-9a-f]{8}$/', KeyGenerator::kid($at)));
+    }
+
     public function testFileRoundTripAndPermissions(): void
     {
         $ring = KeyGenerator::rotate(KeyGenerator::newRing());

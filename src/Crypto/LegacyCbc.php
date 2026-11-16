@@ -24,4 +24,21 @@ final class LegacyCbc
 
         return $plain;
     }
+
+    /**
+     * CORE-DS-31: {@see self::decrypt()} for a value that is TEXT (a credential, a setting, a TOTP seed). The old formats carry no authentication, so a wrong key still gives
+     * valid padding about once in 256 values and the result is random bytes; those must not be accepted (and then sealed into a v3 envelope over the only good copy). The
+     * plaintext must be valid UTF-8 without control characters other than tab, line feed and carriage return.
+     *
+     * @throws DecryptionFailed
+     */
+    public static function decryptText(string $data, #[\SensitiveParameter] string $key, string $iv, int $flags): string
+    {
+        $plain = self::decrypt($data, $key, $iv, $flags);
+        if (!mb_check_encoding($plain, 'UTF-8') || preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', $plain) === 1) {
+            throw new DecryptionFailed('The value could not be decrypted.');
+        }
+
+        return $plain;
+    }
 }
