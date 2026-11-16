@@ -164,9 +164,9 @@ final class AdminTest extends RmmTestCase
         $r = $a->saveMesh($this->admin, ['mesh_url' => 'https://mesh.example.com', 'mesh_login_key' => 'not hex']);
         $this->assertFalse($r->ok);
         $this->assertStringContainsString('loginTokenKey', $r->message);
-        $this->assertTrue($a->saveMesh($this->admin, ['mesh_enabled' => 1, 'mesh_url' => 'https://mesh.example.com/', 'mesh_domain' => 'corp', 'mesh_account_template' => 'rivet-{username}', 'mesh_policy' => 'attended', 'mesh_token_ttl_s' => 9999, 'mesh_login_key' => strtoupper($key)])->ok);
+        $this->assertTrue($a->saveMesh($this->admin, ['mesh_enabled' => 1, 'mesh_url' => 'https://mesh.example.com/', 'mesh_domain' => 'corp', 'mesh_account_template' => 'rivet-{user_id}', 'mesh_policy' => 'attended', 'mesh_token_ttl_s' => 9999, 'mesh_login_key' => strtoupper($key)])->ok);
         $row = $this->row();
-        $this->assertSame([1, 'https://mesh.example.com', 'corp', 'rivet-{username}', 'attended', 3600], [(int) $row['mesh_enabled'], $row['mesh_url'], $row['mesh_domain'], $row['mesh_account_template'], $row['mesh_policy'], (int) $row['mesh_token_ttl_s']]);
+        $this->assertSame([1, 'https://mesh.example.com', 'corp', 'rivet-{user_id}', 'attended', 3600], [(int) $row['mesh_enabled'], $row['mesh_url'], $row['mesh_domain'], $row['mesh_account_template'], $row['mesh_policy'], (int) $row['mesh_token_ttl_s']]);
         $this->assertNotSame($key, $row['mesh_login_key_enc'], 'stored encrypted');
         $this->assertSame($key, $this->h->box->decrypt($row['mesh_login_key_enc']), 'lower-cased before it is sealed');
         // leaving the key empty keeps it

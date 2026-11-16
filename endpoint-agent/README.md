@@ -177,7 +177,7 @@ make e2e                            # self-contained end-to-end run against e2e/
 ./e2e/run_linux_systemd_e2e.sh      # optional: the same unit under a REAL systemd (privileged container; run the previous script first)
 ```
 
-No Go on the host? Everything runs in Docker: `docker run --rm -v "$PWD":/src -w /src golang:1.27 make vet test dist VERSION=...` (see `docs/rmm/AGENT_BUILD.md`).
+No Go on the host? Everything runs in Docker: `docker run --rm -v "$PWD":/src -w /src golang:1.27.4 make vet test dist VERSION=...` (see `docs/rmm/AGENT_BUILD.md`).
 
 Needs Go >= the version in `go.mod` (built and tested with 1.27.1) and network access for `golang.org/x/sys` on first build
 (`go.sum` is committed). Only one third-party module is used: `golang.org/x/sys` (Windows registry/service/DPAPI/ACL APIs).

@@ -93,6 +93,9 @@ final class ScriptActions
         if (($e = $this->role($who->userId, RmmAbility::JOB_RUN_SCRIPT)) !== null) {
             return $e;
         }
+        if (($e = $this->fleetWide($who->userId)) !== null) {
+            return $e;   // CORE-24: a library script runs on any client's devices, so creating one is as fleet-wide as changing or retiring one
+        }
         try {
             $s = $this->scripts->create($in, $who->userId);
         } catch (\InvalidArgumentException $ex) {

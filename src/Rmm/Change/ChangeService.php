@@ -78,6 +78,9 @@ final class ChangeService
         $version = $body['config_version'] ?? '';
         $version = is_string($version) && preg_match('/^[0-9a-f]{16}$/D', $version) === 1 ? $version : '';
         $status = self::cleanStatus($body['status'] ?? null);
+        if (($dev['link_state'] ?? 'linked') !== 'linked') {
+            return ['ok' => true, 'accepted' => 0, 'dropped' => count($changes), 'duplicates' => 0];   // CORE-19: only a linked device may fill the shared change store
+        }
         $deviceId = (int) $dev['device_id'];
         $os = (string) ($dev['os'] ?? 'windows');
         $known = $this->settings->knownWatches($os);

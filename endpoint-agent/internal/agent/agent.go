@@ -147,6 +147,11 @@ func New(o Options) (*Agent, error) {
 		return nil, err
 	}
 	a := &Agent{o: o, log: o.Log, cfg: cfg, meshRep: o.Mesh}
+	if o.Log != nil {
+		mesh.OnUntrusted = func(path, reason string) {
+			o.Log.Error("refusing to run the Mesh agent executable (mesh_agent_path or the default location): it is not in a trusted location or not owned and protected by SYSTEM/Administrators; Mesh features are disabled until that is fixed", "path", path, "reason", reason)
+		}
+	}
 	if st0, err := o.Store.LoadState(); err == nil {
 		a.loadClock(st0)
 	}
