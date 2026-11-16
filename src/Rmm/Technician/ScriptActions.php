@@ -208,7 +208,7 @@ final class ScriptActions
         }
         $timeout = isset($in['timeout_s']) && is_numeric($in['timeout_s']) ? (int) $in['timeout_s'] : null;
         if ((int) $script['requires_approval'] === 1) {
-            return $this->requestRun($who, $loaded, ['type' => 'device', 'id' => $deviceId], $params, $timeout, 1, $client, $asset);
+            return $this->requestRun($who, $loaded, ['type' => 'device', 'id' => $deviceId], $params, $timeout, 1, $client, $asset, [$deviceId]);
         }
         $prep = $this->runner->prepare($loaded, $dev, $params, $timeout);
         if (!$prep['ok']) {
@@ -263,7 +263,10 @@ final class ScriptActions
         }
         $threshold = $limits['approval_bulk_threshold'];
         if ((int) $script['requires_approval'] === 1 || ($threshold > 0 && $count > $threshold)) {
-            return $this->requestRun($who, $loaded, $target, $params, $timeout, $count, 0, 0);
+            // CR19: freeze WHICH devices the approver is shown, not only how many
+            $ids = array_map(static fn (array $d): int => (int) $d['device_id'], $this->targets->devices($target['type'], $target['id'], $visible, $platforms, 0, $limits['bulk_run_max']));
+
+            return $this->requestRun($who, $loaded, $target, $params, $timeout, $count, 0, 0, $ids);
         }
         $res = $this->bulk->run($loaded, $target, $params, $timeout, $who->userId, $visible, fn (int $client): bool => $this->authz->allowed($who->userId, RmmAbility::JOB_RUN_SAVED, $client), 'manual', null, $limits['bulk_run_max']);
         $this->audit->record('Script Run', "{$who->userName} ran library script \"{$script['name']}\" version {$loaded['version']['version']} (sha256 " . substr((string) $loaded['version']['body_sha256'], 0, 16)
@@ -277,7 +280,10 @@ final class ScriptActions
      * @param array{type:string,id:int} $target
      * @param array<array-key,mixed> $params
      */
-    private function requestRun(RmmPrincipal $who, array $loaded, array $target, array $params, ?int $timeout, int $count, int $client, int $asset): ActionResult
+    /**
+     * @param list<int> $deviceIds the devices the target reached when it was asked for (frozen in the request)
+     */
+    private function requestRun(RmmPrincipal $who, array $loaded, array $target, array $params, ?int $timeout, int $count, int $client, int $asset, array $deviceIds = []): ActionResult
     {
         $err = $this->runner->checkStatic($loaded['schema'], $params, true);
         if ($err !== null) {
@@ -285,7 +291,7 @@ final class ScriptActions
         }
         $script = $loaded['script'];
         $req = ['type' => 'run', 'script_id' => (int) $script['script_id'], 'script_version' => (int) $loaded['version']['version'], 'body_sha256' => (string) $loaded['version']['body_sha256'],
-            'params' => $params === [] ? new \stdClass() : $params, 'timeout_s' => $timeout, 'target' => $target, 'confirmed' => (int) $script['destructive'] === 1, 'device_count' => $count];
+            'params' => $params === [] ? new \stdClass() : $params, 'timeout_s' => $timeout, 'target' => $target, 'confirmed' => (int) $script['destructive'] === 1, 'device_count' => $count] + ($deviceIds === [] ? [] : ['device_ids' => $deviceIds]);
         $summary = "Run \"{$script['name']}\" v{$loaded['version']['version']} on " . ($target['type'] === 'all' ? 'all devices' : "{$target['type']} {$target['id']}") . " ($count device" . ($count === 1 ? '' : 's') . ')';
         $a = $this->approvals->request('run', $req, $summary, $count, (int) $script['script_id'], (int) $loaded['version']['version'], $who->userId);
         $this->audit->record('Approval Requested', "{$who->userName} requested approval #{$a['approval_id']}: $summary (script sha256 " . substr((string) $loaded['version']['body_sha256'], 0, 16) . ')', $client, $asset);

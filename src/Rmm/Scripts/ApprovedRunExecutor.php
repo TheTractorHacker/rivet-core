@@ -49,9 +49,22 @@ final class ApprovedRunExecutor
         }
         $t = $request['target'];
         $visible = $this->tenancy === null ? null : $this->tenancy->visibleClientIds($requesterId);
-        $now = $this->targets->count((string) ($t['type'] ?? 'device'), (int) ($t['id'] ?? 0), $visible, ScriptLanguage::platforms((string) $loaded['script']['language']));
+        $platforms = ScriptLanguage::platforms((string) $loaded['script']['language']);
+        $now = $this->targets->count((string) ($t['type'] ?? 'device'), (int) ($t['id'] ?? 0), $visible, $platforms);
+        if ($now > $request['device_count']) {
+            return "The target now reaches $now devices; the request was made for {$request['device_count']}. Ask again so the approver sees the real number.";
+        }
+        // CR19: the same number is not the same devices. Every device the target reaches now must be one the approver was shown.
+        if (is_array($request['device_ids'] ?? null)) {
+            $frozen = array_flip(array_map('intval', $request['device_ids']));
+            foreach ($this->targets->devices((string) ($t['type'] ?? 'device'), (int) ($t['id'] ?? 0), $visible, $platforms, 0, max(1, $request['device_count'] + 1)) as $d) {
+                if (!isset($frozen[(int) $d['device_id']])) {
+                    return 'The devices of the target changed after the request was made (device ' . (int) $d['device_id'] . ' was not among those the approver saw). Ask again.';
+                }
+            }
+        }
 
-        return $now > $request['device_count'] ? "The target now reaches $now devices; the request was made for {$request['device_count']}. Ask again so the approver sees the real number." : null;
+        return null;
     }
 
     /**
