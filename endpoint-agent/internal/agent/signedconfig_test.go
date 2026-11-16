@@ -287,3 +287,17 @@ func TestEnrolAppliesTheSignedConfigAnnouncement(t *testing.T) {
 		t.Fatal("unsigned checks are still accepted after an enrolment that announced signed_config")
 	}
 }
+
+// review R4-2 polish: the enrolment's signed_config is PERSISTED in the same state update, so a restart before the first check-in keeps it.
+func TestEnrolSignedConfigSurvivesARestart(t *testing.T) {
+	r := newRig(t)
+	r.s.enrollFn = func(api.EnrollRequest) (int, any, http.Header) {
+		return 201, map[string]any{"device_id": 7, "signing_key_id": "key-1", "device_token": "tok", "check_in_interval_s": 60,
+			"status": "linked", "config": map[string]any{"checks": []any{}, "signed_config": 2}}, nil
+	}
+	r.enroll()
+	a2 := r.newAgent() // a fresh process on the same state directory: no in-memory announcement
+	if !a2.signingRequired() || !a2.bindingRequired() {
+		t.Fatal("the announcement was lost across a restart")
+	}
+}

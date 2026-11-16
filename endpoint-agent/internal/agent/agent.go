@@ -232,7 +232,7 @@ func New(o Options) (*Agent, error) {
 	if o.Updater != nil {
 		a.upd = o.Updater
 	} else if o.Exe != "" {
-		a.upd = &update.Manager{Paths: update.PathsFor(o.Exe), Version: o.Version, StatePath: o.Store.UpdatePath(), Now: o.Now, ReleaseKeys: a.releaseKeys, ReleaseRequired: a.releaseRequired, ReleaseState: a.releaseState}
+		a.upd = &update.Manager{Paths: update.PathsFor(o.Exe), Version: o.Version, StatePath: o.Store.UpdatePath(), Now: o.Now, ReleaseTrust: a.releaseTrust}
 	}
 	return a, nil
 }
@@ -454,6 +454,9 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 		st.EnrolledAt = a.o.Now().UTC()
 		st.ServerFeatures, st.SoftwareHash = nil, "" // unknown until the new server says so
 		st.LogsConfigSeq, st.SignedConfigV = 0, 0    // per-server signing memory: a new enrolment may be a different server (review R3-3)
+		if resp.Config.SignedConfig > 0 {
+			st.SignedConfigV = resp.Config.SignedConfig // persisted with the rest of the enrolment state (review R4-2)
+		}
 		return nil
 	})
 	if err != nil {
@@ -1175,12 +1178,11 @@ func (a *Agent) bindingRequired() bool {
 	return err != nil || st.SignedConfigV >= 2
 }
 
-// releaseKeys is the trusted release public key set: the build-time embedded keys plus those learned through rollover messages, minus every key a
-// signed rollover revoked. An unreadable state fails closed: nothing is trusted (the revoked filter cannot be applied).
-func (a *Agent) releaseKeys() []ed25519.PublicKey {
-	st, err := a.o.Store.LoadState()
+// trustFrom computes the trusted release keys and whether verification is required from ONE loaded state (st, err): the embedded keys plus learned ones,
+// minus revoked ones. A read error trusts nothing and requires verification.
+func trustFrom(st store.State, err error) ([]ed25519.PublicKey, bool) {
 	if err != nil {
-		return nil
+		return nil, true
 	}
 	keys := append(update.ParseKeys(update.EmbeddedReleaseKeys), update.ParseKeys(strings.Join(st.ReleaseKeys, ","))...)
 	revoked := map[string]bool{}
@@ -1196,23 +1198,33 @@ func (a *Agent) releaseKeys() []ed25519.PublicKey {
 			out = append(out, k)
 		}
 	}
-	return out
+	required := len(update.ParseKeys(update.EmbeddedReleaseKeys)) > 0 || len(st.ReleaseKeys) > 0 || len(st.ReleaseRevoked) > 0 || st.ReleaseRolloverSeq > 0
+	return out, required
 }
 
-// releaseState reports whether the persisted trust state can be read at this moment (R4-1).
-func (a *Agent) releaseState() error {
-	_, err := a.o.Store.LoadState()
-	return err
-}
-
-// releaseRequired is true once release keys have ever been configured on this agent (embedded, or learned or revoked through a rollover), or the state
-// cannot be read: an empty trusted set then means "trust nothing", not "do not verify".
-func (a *Agent) releaseRequired() bool {
-	if len(update.ParseKeys(update.EmbeddedReleaseKeys)) > 0 {
-		return true
-	}
+// releaseTrust is the update Manager's single, consistent read of the trust state (review R4-1 polish): a read error is reported as such, never as an
+// empty key set.
+func (a *Agent) releaseTrust() ([]ed25519.PublicKey, bool, error) {
 	st, err := a.o.Store.LoadState()
-	return err != nil || len(st.ReleaseKeys) > 0 || len(st.ReleaseRevoked) > 0 || st.ReleaseRolloverSeq > 0
+	if err != nil {
+		return nil, true, err
+	}
+	keys, required := trustFrom(st, nil)
+	return keys, required, nil
+}
+
+// releaseKeys is the trusted release public key set (embedded + learned - revoked); an unreadable state trusts nothing.
+func (a *Agent) releaseKeys() []ed25519.PublicKey {
+	st, err := a.o.Store.LoadState()
+	keys, _ := trustFrom(st, err)
+	return keys
+}
+
+// releaseRequired is true once release keys have ever been configured, or the state cannot be read.
+func (a *Agent) releaseRequired() bool {
+	st, err := a.o.Store.LoadState()
+	_, req := trustFrom(st, err)
+	return req
 }
 
 // applyRollovers applies the single message and the chain of a response, in sequence order (each must be the next one), so an agent that missed one

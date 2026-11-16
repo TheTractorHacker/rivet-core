@@ -263,6 +263,9 @@ type Manager struct {
 	// ReleaseState returns an error when the trusted key set cannot be read right now (state file locked, I/O error). Apply then returns the TRANSIENT
 	// ErrReleaseKeysUnavailable instead of judging the signature against an empty set, so a correctly signed release is retried, not recorded as failed.
 	ReleaseState func() error
+	// ReleaseTrust returns keys, whether verification is required and a read error from ONE consistent read of the trust state. When set it replaces
+	// ReleaseKeys, ReleaseRequired and ReleaseState, so a read error between separate reads cannot turn into "signature invalid".
+	ReleaseTrust func() (keys []ed25519.PublicKey, required bool, err error)
 	VerifyFn     func(path string) error
 	SelfTestFn   func(ctx context.Context, path, want string) error
 }
@@ -305,12 +308,22 @@ func (m *Manager) Apply(ctx context.Context, man api.UpdateManifest, pub ed25519
 		}
 		return false, err
 	}
-	if m.ReleaseState != nil {
+	if m.ReleaseTrust != nil {
+		keys, required, err := m.ReleaseTrust()
+		if err != nil {
+			return false, fmt.Errorf("%w: %v", ErrReleaseKeysUnavailable, err)
+		}
+		if len(keys) > 0 || required {
+			if err := VerifyRelease(keys, man, runtime.GOOS, runtime.GOARCH); err != nil {
+				return false, err
+			}
+		}
+	} else if m.ReleaseState != nil {
 		if err := m.ReleaseState(); err != nil {
 			return false, fmt.Errorf("%w: %v", ErrReleaseKeysUnavailable, err)
 		}
 	}
-	if m.ReleaseKeys != nil {
+	if m.ReleaseTrust == nil && m.ReleaseKeys != nil {
 		keys := m.ReleaseKeys()
 		if len(keys) > 0 || (m.ReleaseRequired != nil && m.ReleaseRequired()) {
 			if err := VerifyRelease(keys, man, runtime.GOOS, runtime.GOARCH); err != nil {

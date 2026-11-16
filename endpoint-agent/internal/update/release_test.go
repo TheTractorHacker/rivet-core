@@ -184,3 +184,24 @@ func TestUnreadableReleaseStateIsTransient(t *testing.T) {
 		t.Fatal("something was downloaded")
 	}
 }
+
+// review R4-1 polish: the trust state is read ONCE per Apply; a read error is transient, never "signature invalid".
+func TestReleaseTrustIsReadOnce(t *testing.T) {
+	e := newEnv(t)
+	m := e.mgr("1.0.0")
+	calls := 0
+	m.ReleaseTrust = func() ([]ed25519.PublicKey, bool, error) { calls++; return nil, true, errors.New("EIO") }
+	_, err := e.apply(m, e.manifest("1.1.0"))
+	if calls != 1 || !errors.Is(err, ErrReleaseKeysUnavailable) || !Transient(err) {
+		t.Fatalf("calls=%d err=%v", calls, err)
+	}
+	pub, priv := relKey(t)
+	calls = 0
+	m.ReleaseTrust = func() ([]ed25519.PublicKey, bool, error) { calls++; return []ed25519.PublicKey{pub}, true, nil }
+	man := e.manifest("1.1.0")
+	man.OS, man.Arch = runtime.GOOS, runtime.GOARCH
+	man.ReleaseSignature = base64.StdEncoding.EncodeToString(ed25519.Sign(priv, ManifestMessage(man)))
+	if restart, err := e.apply(m, man); err != nil || !restart || calls != 1 {
+		t.Fatalf("restart=%v err=%v calls=%d", restart, err, calls)
+	}
+}
