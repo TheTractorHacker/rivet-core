@@ -42,7 +42,7 @@ final class PatchApprovalService
      *
      * @param array{update_ids?:list<string>,device_id?:?int,client_id?:?int,kinds?:list<string>,status?:list<string>} $f
      * @param list<int>|null $visible client ids the caller may reach (null = all)
-     * @return list<array{id:int,device_id:int,client_id:int,update_id:string,kind:string,status:string,title:string}>
+     * @return list<array{id:int,device_id:int,client_id:int,update_id:string,kind:string,status:string,title:string,kb:string,severity:string}>
      */
     public function select(array $f, ?array $visible, int $limit = self::MAX_PAIRS + 1): array
     {
@@ -75,9 +75,9 @@ final class PatchApprovalService
         $where[] = 'status IN (' . implode(',', array_fill(0, count($status), '?')) . ')';
         array_push($p, ...$status);
         $out = [];
-        foreach ($this->sql->all('SELECT id, device_id, client_id, update_id, kind, status, title FROM rmm_patch_available WHERE ' . implode(' AND ', $where) . ' ORDER BY id LIMIT ' . max(1, $limit), $p) as $r) {
+        foreach ($this->sql->all('SELECT id, device_id, client_id, update_id, kind, status, title, kb, severity FROM rmm_patch_available WHERE ' . implode(' AND ', $where) . ' ORDER BY id LIMIT ' . max(1, $limit), $p) as $r) {
             $out[] = ['id' => (int) $r['id'], 'device_id' => (int) $r['device_id'], 'client_id' => (int) $r['client_id'], 'update_id' => (string) $r['update_id'], 'kind' => (string) $r['kind'],
-                'status' => (string) $r['status'], 'title' => (string) $r['title']];
+                'status' => (string) $r['status'], 'title' => (string) $r['title'], 'kb' => (string) $r['kb'], 'severity' => (string) $r['severity']];
         }
 
         return $out;
@@ -190,10 +190,10 @@ final class PatchApprovalService
             if (!is_array($pair) || count($pair) !== 2 || !is_int($pair[0]) || !is_string($pair[1])) {
                 continue;
             }
-            $r = $this->sql->one('SELECT id, device_id, client_id, update_id, kind, status, title FROM rmm_patch_available WHERE device_id = ? AND update_id = ?', [$pair[0], $pair[1]]);
+            $r = $this->sql->one('SELECT id, device_id, client_id, update_id, kind, status, title, kb, severity FROM rmm_patch_available WHERE device_id = ? AND update_id = ?', [$pair[0], $pair[1]]);
             if ($r !== null) {
                 $rows[] = ['id' => (int) $r['id'], 'device_id' => (int) $r['device_id'], 'client_id' => (int) $r['client_id'], 'update_id' => (string) $r['update_id'], 'kind' => (string) $r['kind'],
-                    'status' => (string) $r['status'], 'title' => (string) $r['title']];
+                    'status' => (string) $r['status'], 'title' => (string) $r['title'], 'kb' => (string) $r['kb'], 'severity' => (string) $r['severity']];
             }
         }
         $n = $this->approve($rows, 'manual', $approverId, $approvalId);

@@ -393,11 +393,12 @@ final class PatchActions
         if (($f['device_id'] ?? 0) === 0 && ($f['client_id'] ?? 0) === 0 && ($in['acknowledge_disagreeing_reports'] ?? false) !== true) {
             $seen = [];
             foreach ($rows as $r) {
-                $seen[$r['update_id']][$r['kind'] . "\0" . $r['title']] = true;
+                // CRR-13: the same four things the fleet view compares (title, kind, kb, severity)
+                $seen[$r['update_id']][$r['kind'] . "\0" . $r['title'] . "\0" . $r['kb'] . "\0" . $r['severity']] = true;
             }
             $bad = array_keys(array_filter($seen, static fn (array $v): bool => count($v) > 1));
             if ($bad !== []) {
-                return ActionResult::fail(409, 'reports_disagree', 'The devices do not agree on what ' . implode(', ', array_slice($bad, 0, 5)) . ' is (title or kind). Decide per client or device, or send acknowledge_disagreeing_reports: true.');
+                return ActionResult::fail(409, 'reports_disagree', 'The devices do not agree on what ' . implode(', ', array_slice($bad, 0, 5)) . ' is (title, kind, KB or severity). Decide per client or device, or send acknowledge_disagreeing_reports: true.');
             }
         }
         $clientForAudit = (int) $rows[0]['client_id'];
@@ -620,6 +621,34 @@ final class PatchActions
         if (($e = $this->approvalSettingsGate($who, null, array_intersect_key($values, array_flip(['install_enabled', 'approval_mode', 'reboot_policy', 'two_person']) + array_flip(array_map(static fn (string $k): string => 'auto_days_' . $k, PatchPolicySettings::AUTO_KINDS))))) !== null) {
             return $e;
         }
+        // CRR-10: normalise priority and enforce once, the way the store reads them, and refuse anything unrecognised (a string or an array must not slip past the comparison below)
+        $priority = $in['priority'] ?? 100;
+        if (is_string($priority) && preg_match('/^-?\d{1,9}$/D', $priority) === 1) {
+            $priority = (int) $priority;
+        }
+        if (!is_int($priority) || $priority < 0 || $priority > 1000000) {
+            return ActionResult::fail(422, 'invalid', 'priority must be a whole number from 0 to 1000000.');
+        }
+        $enforce = false;
+        if (array_key_exists('enforce', $in)) {
+            $enforce = is_bool($in['enforce']) ? $in['enforce'] : filter_var($in['enforce'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($enforce === null) {
+                return ActionResult::fail(422, 'invalid', 'enforce must be true or false.');
+            }
+        }
+        $in['priority'] = $priority;
+        $in['enforce'] = $enforce;   // the store then reads exactly what the gate compared
+        // re-posting an existing assignment with enforce off or a lower priority hands the scope to whatever more specific policy there is, so it is a weakening
+        $scopeType = is_string($in['scope_type'] ?? null) ? $in['scope_type'] : '';
+        $sid = $in['scope_id'] ?? 0;
+        $scopeId = $scopeType === 'global' ? 0 : (is_int($sid) ? $sid : (is_string($sid) && ctype_digit($sid) ? (int) $sid : 0));
+        foreach ($this->policies->assignments($policyId) as $existing) {
+            if ((string) $existing['scope_type'] === $scopeType && (int) $existing['scope_id'] === $scopeId
+                && ((bool) $existing['enforce'] && !$enforce || $priority < (int) $existing['priority'])
+                && ($e = $this->protectiveGate($who, $values, 'weaken the assignment of')) !== null) {
+                return $e;
+            }
+        }
         try {
             $a = $this->policies->assign($policyId, $in, $who->userId);
         } catch (\InvalidArgumentException $ex) {
@@ -807,20 +836,35 @@ final class PatchActions
     }
 
     /**
-     * CR5: removing, unassigning or disabling a policy that carries the second-person rule takes the rule away from the devices it reached, so it needs the same grant as switching it off.
+     * CR5 / CRR-10: removing, unassigning, disabling or weakening the assignment of a policy takes away what it enforces on the devices it reached, so it needs the grant that
+     * governs each protective value it carries: the second-person rule (two_person) or a manual approval mode need rmm.job.approve, install_enabled false needs
+     * rmm.patch.install, a reboot_policy other than if_required_now needs rmm.job.reboot. Gating on the effect, not on one key, closes the case where a restrictive
+     * layer sits over a permissive one.
      *
      * @param array<string,mixed> $values the policy's stored settings
      */
     private function protectiveGate(RmmPrincipal $who, array $values, string $verb): ?ActionResult
     {
-        if (($values['two_person'] ?? null) !== true) {
-            return null;
+        $need = [];
+        if (($values['two_person'] ?? null) === true) {
+            $need[RmmAbility::JOB_APPROVE] = 'requires a second person';
         }
-        $why = $this->authz->check($who->userId, RmmAbility::JOB_APPROVE, 0);
-        if ($why !== null) {
-            $this->audit->record('Patch Denied', "User {$who->userId} denied trying to $verb a patch policy that carries the second-person rule: $why", 0, 0);
+        if (($values['approval_mode'] ?? null) === 'manual') {
+            $need[RmmAbility::JOB_APPROVE] = ($need[RmmAbility::JOB_APPROVE] ?? '') === '' ? 'approves updates by hand' : 'requires a second person and approves updates by hand';
+        }
+        if (($values['install_enabled'] ?? null) === false) {
+            $need[RmmAbility::PATCH_INSTALL] = 'turns unattended installs off';
+        }
+        if (isset($values['reboot_policy']) && $values['reboot_policy'] !== 'if_required_now') {
+            $need[RmmAbility::JOB_REBOOT] = 'keeps devices from restarting by themselves';
+        }
+        foreach ($need as $ability => $what) {
+            $why = $this->authz->check($who->userId, $ability, 0);
+            if ($why !== null) {
+                $this->audit->record('Patch Denied', "User {$who->userId} denied trying to $verb a patch policy that $what: $why", 0, 0);
 
-            return ActionResult::fail(403, 'forbidden', "To $verb a policy that requires a second person needs the grant to approve jobs. " . $why);
+                return ActionResult::fail(403, 'forbidden', "To $verb a policy that $what needs the matching grant ($ability). " . $why);
+            }
         }
 
         return null;

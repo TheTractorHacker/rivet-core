@@ -210,7 +210,16 @@ final class McpTest extends TestCase
     public function testDiagnosticsRefuseAnInternalIssuerOrSigningKeyAddressWhenGivenAPolicy(): void
     {
         $fetched = [];
-        $http = new Client(['handler' => HandlerStack::create(new MockHandler([new Response(200, [], json_encode(['issuer' => 'https://idp.example/realm', 'jwks_uri' => 'https://10.0.0.5/jwks']) ?: '')]))]);
+        $mock = new MockHandler([new Response(200, [], json_encode(['issuer' => 'https://idp.example/realm', 'jwks_uri' => 'https://10.0.0.5/jwks']) ?: '')]);
+        $reporting = static function (\Psr\Http\Message\RequestInterface $r, array $o) use ($mock) {   // a curl-like handler: it says where it connected
+            $orig = $o['on_stats'] ?? null;
+            if ($orig !== null) {
+                $o['on_stats'] = static fn (\GuzzleHttp\TransferStats $st) => $orig(new \GuzzleHttp\TransferStats($st->getRequest(), $st->getResponse(), 0.01, null, ['primary_ip' => '93.184.216.34']));
+            }
+
+            return $mock($r, $o);
+        };
+        $http = new Client(['handler' => HandlerStack::create($reporting)]);
         $policy = new \RivetCore\Webhooks\UrlPolicy(false, static function (string $h) use (&$fetched): array {
             $fetched[] = $h;
             return $h === 'idp.example' ? ['93.184.216.34'] : ['10.0.0.5'];
@@ -225,26 +234,56 @@ final class McpTest extends TestCase
         $this->assertSame('fail', array_column($d2->run($this->cfg(), 'rivet.example'), null, 'label')['Identity provider reachable']['status']);
     }
 
-    /** CR20 (CORE-DS-73): the diagnostics connect to the addresses the policy vetted instead of resolving the name again. */
-    public function testDiagnosticsPinTheVettedAddresses(): void
+    /**
+     * @param string|null $primaryIp what the handler reports as the address it connected to (null: it reports nothing, as the stream handler does)
+     * @param list<array<string,mixed>> $seen
+     */
+    private function pinnedDiagnostics(?string $primaryIp, array &$seen = []): McpDiagnostics
     {
-        $seen = [];
-        $handler = static function (\Psr\Http\Message\RequestInterface $r, array $o) use (&$seen) {
+        $handler = static function (\Psr\Http\Message\RequestInterface $r, array $o) use (&$seen, $primaryIp) {
             $seen[] = $o;
+            $res = new Response(200, [], json_encode(['issuer' => 'https://idp.example/realm', 'jwks_uri' => 'https://idp.example/keys', 'keys' => []]) ?: '');
+            if ($primaryIp !== null && isset($o['on_stats'])) {
+                $o['on_stats'](new \GuzzleHttp\TransferStats($r, $res, 0.01, null, ['primary_ip' => $primaryIp]));
+            }
 
-            return new \GuzzleHttp\Promise\FulfilledPromise(new Response(200, [], json_encode(['issuer' => 'https://idp.example/realm', 'jwks_uri' => 'https://idp.example/keys', 'keys' => []]) ?: ''));
+            return new \GuzzleHttp\Promise\FulfilledPromise($res);
         };
         $http = new Client(['handler' => HandlerStack::create($handler)]);
         $policy = new \RivetCore\Webhooks\UrlPolicy(false, static fn (string $h): array => ['93.184.216.34']);
-        (new McpDiagnostics($this->directory(1), $http, 'X_MCP_ENABLED', 'RivetX', $policy))->run($this->cfg(), 'rivet.example');
+
+        return new McpDiagnostics($this->directory(1), $http, 'X_MCP_ENABLED', 'RivetX', $policy);
+    }
+
+    /** CR20 (CORE-DS-73): the diagnostics connect to the addresses the policy vetted instead of resolving the name again, and check where the connection went. */
+    public function testDiagnosticsPinTheVettedAddresses(): void
+    {
+        $seen = [];
+        $out = $this->pinnedDiagnostics('93.184.216.34', $seen)->run($this->cfg(), 'rivet.example');
         $this->assertNotEmpty($seen);
         foreach ($seen as $o) {
-            if (isset($o['curl'])) {
-                $this->assertSame(['idp.example:443:93.184.216.34'], $o['curl'][CURLOPT_RESOLVE]);
-                $this->assertSame('', $o['proxy']);
-            }
+            $this->assertSame(['idp.example:443:93.184.216.34'], $o['curl'][CURLOPT_RESOLVE]);
+            $this->assertSame('', $o['proxy']);
         }
-        $this->assertTrue(in_array(true, array_map(static fn (array $o): bool => isset($o['curl']), $seen), true), 'the pin was passed');
+        $this->assertSame('ok', array_column($out, 'status', 'label')['Identity provider reachable']);
+    }
+
+    /** CRR-15/19: a connection that went to an address that was not vetted is discarded. */
+    public function testDiagnosticsDiscardAnAnswerFromAnAddressThatWasNotVetted(): void
+    {
+        $by = array_column($this->pinnedDiagnostics('10.0.0.5')->run($this->cfg(), 'rivet.example'), 'status', 'label');
+        $this->assertSame('fail', $by['Identity provider reachable']);
+        $texts = array_column($this->pinnedDiagnostics('10.0.0.5')->run($this->cfg(), 'rivet.example'), 'detail', 'label');
+        $this->assertStringContainsString('not vetted', $texts['Identity provider reachable']);
+    }
+
+    /** CRR-15/19: a handler that does not say where it connected (and so ignores the pin) fails closed, it is not trusted. */
+    public function testDiagnosticsFailClosedWhenTheHandlerDoesNotReportTheAddress(): void
+    {
+        $out = $this->pinnedDiagnostics(null)->run($this->cfg(), 'rivet.example');
+        $by = array_column($out, 'status', 'label');
+        $this->assertSame('fail', $by['Identity provider reachable']);
+        $this->assertStringContainsString('could not confirm which address', array_column($out, 'detail', 'label')['Identity provider reachable']);
     }
 
     public function testDiagnosticsHealthyProvider(): void

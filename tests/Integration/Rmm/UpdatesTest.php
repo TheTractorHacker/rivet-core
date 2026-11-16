@@ -52,6 +52,30 @@ final class UpdatesTest extends RmmTestCase
         $this->assertFalse(Signer::verifyManifest(strtoupper($u['sha256']), $u['signature'], $this->pub));
     }
 
+    /** CRR-11: a malformed release signature is refused BEFORE the binary is published (it must not become current or reach a ring) and the refusal is audited. */
+    public function testAMalformedReleaseSignatureIsRefusedBeforeTheBinaryIsPublished(): void
+    {
+        $dir = sys_get_temp_dir() . '/crr11-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        $file = $dir . '/a.exe';
+        file_put_contents($file, \RivetCore\Tests\Support\RmmHarness::fakePe(0x8664, 4096, 'crr11'));
+        $admin = $this->h->module->admin();
+        $r = $admin->uploadBinary($this->h->principal(), $file, '9.1.0', 'amd64', ['activate' => true, 'release_ring' => 'stable', 'release_signature' => 'not base64!']);
+        $this->assertFalse($r->ok);
+        $this->assertSame(422, $r->http);
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_binaries WHERE version = '9.1.0'"), 'nothing was published');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_releases WHERE version = '9.1.0'"), 'and nothing was offered to a ring');
+        $actions = array_column($this->h->audit->records(), 'action');
+        $this->assertContains('Binary Upload Refused', $actions);
+        $this->assertNotContains('Binary Uploaded', $actions);
+        // the well-formed signature publishes, is current and carries its audit row
+        $ok = $admin->uploadBinary($this->h->principal(), $file, '9.1.0', 'amd64', ['activate' => true, 'release_signature' => base64_encode(random_bytes(64))]);
+        $this->assertTrue($ok->ok, json_encode($ok));
+        $this->assertContains('Binary Uploaded', array_column($this->h->audit->records(), 'action'));
+        unlink($file);
+        rmdir($dir);
+    }
+
     /** CORE-DS-26 (contract SIGNED_UPDATE_MANIFEST): the stored offline release signature, with os and arch, is relayed with the package it belongs to; nothing is invented. */
     public function testTheStoredReleaseSignatureIsRelayedWithThePackageItBelongsTo(): void
     {
@@ -79,14 +103,23 @@ final class UpdatesTest extends RmmTestCase
     public function testASignedReleaseKeyRolloverIsRelayed(): void
     {
         $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
-        $m = ['kind' => 'release_key_rollover', 'new_key' => base64_encode(random_bytes(32)), 'seq' => 3, 'signature' => base64_encode(random_bytes(64))];
+        $old = base64_encode(random_bytes(32));
+        $m = ['kind' => 'release_key_rollover', 'new_key' => base64_encode(random_bytes(32)), 'revoke' => [$old], 'seq' => 3, 'signature' => base64_encode(random_bytes(64))];
         $admin = $this->h->module->admin();
-        foreach (['not json', '{}', json_encode([...$m, 'seq' => 0]), json_encode([...$m, 'new_key' => base64_encode('x')]), json_encode([...$m, 'kind' => 'other'])] as $bad) {
+        $manyKeys = array_map(static fn (int $i): string => base64_encode(random_bytes(32)), range(1, 17));
+        foreach (['not json', '{}', json_encode([...$m, 'seq' => 0]), json_encode([...$m, 'new_key' => base64_encode('x')]), json_encode([...$m, 'kind' => 'other']),
+            json_encode([...$m, 'revoke' => 'abc']), json_encode([...$m, 'revoke' => ['not base64!']]), json_encode([...$m, 'revoke' => [base64_encode('short')]]), json_encode([...$m, 'revoke' => $manyKeys]),
+            json_encode([...$m, 'revoke' => [$m['new_key']]]), json_encode([...$m, 'revoke' => ['a' => $old]])] as $bad) {
             $this->assertFalse($admin->setReleaseRollover($this->h->principal(), (string) $bad)->ok, (string) $bad);
         }
         $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m))->ok);
         [, , $r] = $this->h->checkin($this->T);
-        $this->assertSame($m, $r['release_rollover']);
+        $this->assertSame($m, $r['release_rollover'], 'the revoke list is relayed as the release owner signed it');
+        // a message without revoke (the first form of the contract) is relayed with revoke: [], which is what the agent signs over
+        $legacy = $m;
+        unset($legacy['revoke']);
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($legacy))->ok);
+        $this->assertSame([], $this->h->checkin($this->T)[2]['release_rollover']['revoke']);
         $this->assertTrue($admin->setReleaseRollover($this->h->principal(), '')->ok);
         $this->assertArrayNotHasKey('release_rollover', $this->h->checkin($this->T)[2]);
     }

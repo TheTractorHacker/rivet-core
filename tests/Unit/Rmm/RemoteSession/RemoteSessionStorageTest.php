@@ -84,8 +84,9 @@ final class RemoteSessionStorageTest extends TestCase
                 '0052_rmm_mesh_verify',
                 '0053_rmm_mesh_token_exact',
                 '0054_rmm_signed_contracts',
+                '0055_rmm_hardening_repair',
             ],
-            array_slice($ids, -3),
+            array_slice($ids, -4),
             'update this when a later migration is added',
         );
         $this->assertSame($ids, array_values(array_unique($ids)));

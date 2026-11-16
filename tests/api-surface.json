@@ -140,7 +140,7 @@
         "RivetCore\\Automation\\AutomationRuleEvaluator": {
             "kind": "class",
             "methods": {
-                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, ?RivetCore\\Crypto\\SettingsVault $vault = NULL)",
                 "conditionsMatch": "conditionsMatch(?string $conditionJson, array $eventData): bool",
                 "findMatchingRules": "findMatchingRules(string $eventType, array $eventData): array"
             }
@@ -160,8 +160,10 @@
                 "all": "all(bool $withSecret = false): array",
                 "delete": "delete(int $id): void",
                 "find": "find(int $id, bool $withSecret = false): ?array",
+                "revealed": "revealed(array $row): array",
                 "save": "save(?int $id, string $name, string $triggerEvent, array $conditions, string $actionType, array $config, bool $enabled): int",
                 "sealStoredSecrets": "sealStoredSecrets(): int",
+                "secretContext": "static secretContext(int $ruleId): string",
                 "setEnabled": "setEnabled(int $id, bool $enabled): void"
             }
         },
@@ -7668,6 +7670,7 @@
                 "signCheckList": "signCheckList(array $checks, ?array $caps = NULL, ?string $os = NULL, ?int $deviceId = NULL): array",
                 "signedChecks": "signedChecks(?array $caps = NULL, ?string $os = NULL, ?int $deviceId = NULL): array",
                 "signedConfig": "signedConfig(): bool",
+                "signedConfigLevel": "signedConfigLevel(): int",
                 "signingKey": "signingKey(): array",
                 "update": "update(array $in): array",
                 "validateFeatures": "static validateFeatures(mixed $in): array",
@@ -8757,6 +8760,7 @@
                 "recordResult": "recordResult(array $dev, mixed $res): void",
                 "releaseRollover": "releaseRollover(): ?array",
                 "releaseSignature": "releaseSignature(array $release): ?array",
+                "releaseSignatureProblem": "static releaseSignatureProblem(string $signatureB64): ?string",
                 "releasesChanged": "releasesChanged(): void",
                 "serviceBase": "serviceBase(): ?string",
                 "setReleaseRollover": "setReleaseRollover(string $json): ?string",
@@ -9963,6 +9967,7 @@
         "RivetCore\\Rmm\\Migration\\Migration0052MeshVerify",
         "RivetCore\\Rmm\\Migration\\Migration0053MeshTokenExact",
         "RivetCore\\Rmm\\Migration\\Migration0054SignedContracts",
+        "RivetCore\\Rmm\\Migration\\Migration0055HardeningRepair",
         "RivetCore\\Rmm\\Migration\\MsiTemplateSchema",
         "RivetCore\\Rmm\\Migration\\PatchSchema",
         "RivetCore\\Rmm\\Migration\\RemotePolicySchema",
@@ -10103,7 +10108,8 @@
         "0051_rmm_console_sessions",
         "0052_rmm_mesh_verify",
         "0053_rmm_mesh_token_exact",
-        "0054_rmm_signed_contracts"
+        "0054_rmm_signed_contracts",
+        "0055_rmm_hardening_repair"
     ],
     "tables": {
         "audit_chain_checkpoint": {

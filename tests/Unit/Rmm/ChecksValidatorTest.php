@@ -105,7 +105,7 @@ final class ChecksValidatorTest extends TestCase
     /** CR1 (server half of CORE-DS-3): a cert check cannot point into the kernel interfaces. */
     public function testACertCheckCannotPointIntoProcSysOrDev(): void
     {
-        foreach (['/proc/kmsg', '/proc/self/fd/0', '/sys/kernel/x', '/dev/zero', '/DEV/random', '/proc'] as $path) {
+        foreach (['/proc/kmsg', '/proc/self/fd/0', '/sys/kernel/x', '/dev/zero', '/DEV/random', '/proc', '/./proc/kmsg', '/././sys/kernel/x', '/dev/./zero', '/proc/.'] as $path) {
             [$out, $err] = C::validate((string) json_encode([['key' => 'c1', 'type' => 'cert', 'interval_s' => 3600, 'params' => ['paths' => [$path]]]]));
             $this->assertNull($out, $path);
             $this->assertStringContainsString('/proc, /sys or /dev', (string) $err);

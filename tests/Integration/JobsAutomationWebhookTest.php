@@ -138,6 +138,59 @@ final class JobsAutomationWebhookTest extends TestCase
         self::assertSame('fresh-secret-456', json_decode((string) $s->find($new, true)['action_config_json'], true)['secret']);
     }
 
+    /** CRR-16: the documented pipeline (evaluator, then executor) hands the handler the real secret, not an empty one. */
+    public function testASealedWebhookSecretReachesTheHandlerThroughEvaluatorAndExecutor(): void
+    {
+        $vault = new \RivetCore\Crypto\SettingsVault(\RivetCore\Crypto\KeyRing::single(random_bytes(32)));
+        $store = new AutomationRuleStore($this->db, $vault);
+        $store->save(null, 'Hook', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/h', 'secret' => 'hmac-key-for-delivery'], true);
+        $seen = [];
+        $handlers = ['send_webhook' => static function (array $config, array $ctx, array $rule) use (&$seen): string {
+            $seen[] = $config;
+
+            return 'sent';
+        }];
+        $rules = (new \RivetCore\Automation\AutomationRuleEvaluator($this->db, $vault))->findMatchingRules('ticket.created', []);
+        $this->assertCount(1, $rules);
+        $res = (new \RivetCore\Automation\AutomationExecutor())->execute($rules[0], [], $handlers);
+        $this->assertTrue($res['ok'], json_encode($res));
+        $this->assertSame('hmac-key-for-delivery', $seen[0]['secret'], 'the handler signs with the real secret');
+        $this->assertArrayNotHasKey('secret_enc', $seen[0]);
+        // a secret that cannot be opened (another key) is not delivered unsigned: the rule is left out
+        $other = new \RivetCore\Crypto\SettingsVault(\RivetCore\Crypto\KeyRing::single(random_bytes(32)));
+        $this->assertSame([], (new \RivetCore\Automation\AutomationRuleEvaluator($this->db, $other))->findMatchingRules('ticket.created', []));
+    }
+
+    /** CRR-21: a sealed secret is bound to its rule (a copy in another rule does not open) and rows sealed by the first version are still read and re-sealed per rule. */
+    public function testASealedSecretIsBoundToItsRuleAndOldRowsStillRead(): void
+    {
+        $vault = new \RivetCore\Crypto\SettingsVault(\RivetCore\Crypto\KeyRing::single(random_bytes(32)));
+        $s = new AutomationRuleStore($this->db, $vault);
+        $a = $s->save(null, 'A', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/a', 'secret' => 'secret-of-a'], true);
+        $b = $s->save(null, 'B', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/b', 'secret' => 'secret-of-b'], true);
+        $encA = json_decode((string) $this->db->fetchOne('SELECT action_config_json FROM automation_rules WHERE rule_id = ?', [$a])['action_config_json'], true)['secret_enc'];
+        $cfgB = json_decode((string) $this->db->fetchOne('SELECT action_config_json FROM automation_rules WHERE rule_id = ?', [$b])['action_config_json'], true);
+        $cfgB['secret_enc'] = $encA;
+        $this->db->execute('UPDATE automation_rules SET action_config_json = ? WHERE rule_id = ?', [json_encode($cfgB), $b]);
+        $this->assertSame('secret-of-a', json_decode((string) $s->find($a, true)['action_config_json'], true)['secret']);
+        $threw = false;
+        try {
+            $s->find($b, true);
+        } catch (\RivetCore\Crypto\CryptoException) {
+            $threw = true;
+        }
+        $this->assertTrue($threw, 'rule A\'s sealed secret copied into rule B does not open there');
+        // a row sealed by the first version (one shared name) still reads and is re-sealed under its own name
+        $legacy = $s->save(null, 'Legacy', 'ticket.created', [], 'send_webhook', ['url' => 'https://hooks.example/l', 'secret' => 'x'], true);
+        $cfg = json_decode((string) $this->db->fetchOne('SELECT action_config_json FROM automation_rules WHERE rule_id = ?', [$legacy])['action_config_json'], true);
+        $cfg['secret_enc'] = $vault->encrypt(AutomationRuleStore::SECRET_CONTEXT, 'old-first-version');
+        $this->db->execute('UPDATE automation_rules SET action_config_json = ? WHERE rule_id = ?', [json_encode($cfg), $legacy]);
+        $this->assertSame('old-first-version', json_decode((string) $s->find($legacy, true)['action_config_json'], true)['secret']);
+        $this->assertGreaterThanOrEqual(1, $s->sealStoredSecrets());
+        $after = json_decode((string) $this->db->fetchOne('SELECT action_config_json FROM automation_rules WHERE rule_id = ?', [$legacy])['action_config_json'], true)['secret_enc'];
+        $this->assertSame('old-first-version', $vault->decrypt(AutomationRuleStore::secretContext($legacy), $after), 're-sealed under the rule\'s own name');
+    }
+
     public function testStoreValidatesAndEvaluatorMatches(): void
     {
         $s = new AutomationRuleStore($this->db);
