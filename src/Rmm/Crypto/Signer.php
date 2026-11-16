@@ -179,6 +179,19 @@ final class Signer
         return \RivetCore\Rmm\RmmProtocol::UPDATE_MANIFEST_DOMAIN . "\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($o), false)));
     }
 
+    /**
+     * CORE-DS-20: the message signed for a stamped installer's payload: the domain line `rivetit-installer-payload-v1`, a line feed, then the canonical JSON of the payload object
+     * without its `signature` member. The agent reproduces it byte for byte (docs/design/SIGNED_INSTALLER_TRAILER.md).
+     *
+     * @param array<string,mixed> $payload
+     */
+    public static function installerPayloadMessage(array $payload): string
+    {
+        unset($payload['signature']);
+
+        return "rivetit-installer-payload-v1\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($payload), false)));
+    }
+
     public static function verifyManifest(string $sha256Hex, string $sigB64, string $publicKeyB64): bool
     {
         return self::verify($sha256Hex, $sigB64, $publicKeyB64);
