@@ -55,3 +55,13 @@ func TestOversizedPersistedInflightIsDroppedAndRebuilt(t *testing.T) {
 		t.Fatalf("no check-in reached the server (%d -> %d): the oversized body is wedging the agent", before, got)
 	}
 }
+
+// CORE-DS-51: hosted installer downloads trust the configured ca_file (the server may use a private CA).
+func TestDownloadClientUsesTheConfiguredCA(t *testing.T) {
+	r := newRig(t)
+	resp, err := r.a.downloadClient().Get(r.s.ts.URL + "/nothing")
+	if err != nil {
+		t.Fatalf("download client does not trust the configured CA: %v", err)
+	}
+	resp.Body.Close()
+}

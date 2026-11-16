@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -290,6 +291,21 @@ func (a *Agent) api() *api.Client {
 	return a.client
 }
 
+// liveTransport sends through the CURRENT API client's transport, so hosted installer downloads use the configured ca_file and the SPKI pin (for the
+// server host) and follow a configuration change without rebuilding the executor (CORE-DS-51).
+type liveTransport struct{ a *Agent }
+
+func (t liveTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	c := t.a.api()
+	if c == nil {
+		return nil, errors.New("no server configured")
+	}
+	return c.HTTPClient().Transport.RoundTrip(r)
+}
+
+// downloadClient is the http.Client of software deployment downloads: the API client's TLS trust, no overall timeout (the engine bounds the transfer).
+func (a *Agent) downloadClient() *http.Client { return &http.Client{Transport: liveTransport{a}} }
+
 // ReportJob implements jobs.Reporter.
 func (a *Agent) ReportJob(ctx context.Context, r api.JobReport) error {
 	return a.api().ReportJob(ctx, r)
@@ -349,7 +365,7 @@ func (a *Agent) newExecutor(ctx context.Context) {
 	}
 	e.DisablePatching = cfg.DisablePatching
 	// Software deployment (software_detect, software_install): withdrawn by config.disable_software only.
-	for typ, h := range (deploy.Engine{StateDir: a.o.Store.Dir}).Handlers() {
+	for typ, h := range (deploy.Engine{StateDir: a.o.Store.Dir, HTTP: a.downloadClient()}).Handlers() {
 		e.Remote[typ] = h
 	}
 	e.DisableSoftware = cfg.DisableSoftware

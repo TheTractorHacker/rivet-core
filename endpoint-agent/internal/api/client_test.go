@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -251,5 +253,26 @@ func TestIDAcceptsNumberOrString(t *testing.T) {
 	b, _ := json.Marshal(ID("42"))
 	if string(b) != "42" {
 		t.Error(string(b))
+	}
+}
+
+// CORE-DS-50: the SPKI pin is the server's key; a connection to another host (update_hosts, a CDN) is not held to it.
+func TestPinVerifierAppliesOnlyToTheServerHost(t *testing.T) {
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	defer srv.Close()
+	cert := srv.Certificate()
+	good := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+	bad := sha256.Sum256([]byte("other key"))
+	cs := func(host string) tls.ConnectionState {
+		return tls.ConnectionState{ServerName: host, PeerCertificates: []*x509.Certificate{cert}}
+	}
+	if err := PinVerifier(good[:], "rmm.example.com")(cs("rmm.example.com")); err != nil {
+		t.Errorf("right key refused: %v", err)
+	}
+	if err := PinVerifier(bad[:], "rmm.example.com")(cs("RMM.example.com")); err == nil {
+		t.Error("wrong key accepted for the server host")
+	}
+	if err := PinVerifier(bad[:], "rmm.example.com")(cs("cdn.example.net")); err != nil {
+		t.Errorf("pin enforced on another host: %v", err)
 	}
 }

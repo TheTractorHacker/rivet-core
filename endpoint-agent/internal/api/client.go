@@ -138,16 +138,7 @@ func New(o Options) (*Client, error) {
 			return nil, errors.New("pin_spki_sha256 must be 64 hex characters")
 		}
 		// Runs after normal chain verification (we never set InsecureSkipVerify).
-		tlsCfg.VerifyConnection = func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 {
-				return errors.New("no peer certificate")
-			}
-			sum := sha256.Sum256(cs.PeerCertificates[0].RawSubjectPublicKeyInfo)
-			if !bytes.Equal(sum[:], want) {
-				return errors.New("server public key does not match the pinned SPKI hash")
-			}
-			return nil
-		}
+		tlsCfg.VerifyConnection = PinVerifier(want, u.Hostname())
 	}
 	tr := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
@@ -172,6 +163,26 @@ func New(o Options) (*Client, error) {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	return &Client{base: u, hc: hc, opt: o}, nil
+}
+
+// PinVerifier is the tls.Config.VerifyConnection of the SPKI pin. The pin is the RivetIT server's key, so it is enforced only for connections to the
+// server's own host: the same transport also fetches self-updates and hosted installers, possibly from another allowed host (update_hosts, a CDN) whose
+// key can never match; those keep the normal chain verification (CORE-DS-50, CORE-DS-51).
+func PinVerifier(want []byte, serverHost string) func(tls.ConnectionState) error {
+	return func(cs tls.ConnectionState) error {
+		// ServerName is empty when the host is an IP literal (no SNI): then the pin is enforced, the safe side.
+		if cs.ServerName != "" && !strings.EqualFold(cs.ServerName, serverHost) {
+			return nil
+		}
+		if len(cs.PeerCertificates) == 0 {
+			return errors.New("no peer certificate")
+		}
+		sum := sha256.Sum256(cs.PeerCertificates[0].RawSubjectPublicKeyInfo)
+		if !bytes.Equal(sum[:], want) {
+			return errors.New("server public key does not match the pinned SPKI hash")
+		}
+		return nil
+	}
 }
 
 // HTTPClient exposes the underlying client (the updater reuses its TLS config).
