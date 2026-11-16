@@ -279,8 +279,6 @@ final class ScriptActions
      * @param array{script:array<string,mixed>,version:array<string,mixed>,schema:list<array<string,mixed>>} $loaded
      * @param array{type:string,id:int} $target
      * @param array<array-key,mixed> $params
-     */
-    /**
      * @param list<int> $deviceIds the devices the target reached when it was asked for (frozen in the request)
      */
     private function requestRun(RmmPrincipal $who, array $loaded, array $target, array $params, ?int $timeout, int $count, int $client, int $asset, array $deviceIds = []): ActionResult

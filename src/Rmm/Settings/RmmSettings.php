@@ -825,6 +825,15 @@ final class RmmSettings
     }
 
     /**
+     * CORE-DS-16: is the signed-configuration contract on (`endpoint_agent_settings.signed_config`, migration 0054)? Then responses announce `config.signed_config: 1` and signed
+     * checks carry the device they are for. Off (the default, and when the column does not exist yet) the wire is exactly what it was.
+     */
+    public function signedConfig(): bool
+    {
+        return (int) ($this->get()['signed_config'] ?? 0) === 1;
+    }
+
+    /**
      * Check definitions as delivered to the agent, each signed (script checks execute code on the endpoint).
      *
      * A Phase 3 check type is included only when $caps (the device's announced capabilities) lists `check:<type>`; the four original types
@@ -836,15 +845,6 @@ final class RmmSettings
      * @param list<string>|null $caps
      * @return list<array<string,mixed>>
      */
-    /**
-     * CORE-DS-16: is the signed-configuration contract on (`endpoint_agent_settings.signed_config`, migration 0054)? Then responses announce `config.signed_config: 1` and signed
-     * checks carry the device they are for. Off (the default, and when the column does not exist yet) the wire is exactly what it was.
-     */
-    public function signedConfig(): bool
-    {
-        return (int) ($this->get()['signed_config'] ?? 0) === 1;
-    }
-
     public function signedChecks(?array $caps = null, ?string $os = null, ?int $deviceId = null): array
     {
         return $this->signCheckList($this->checks(), $caps, $os, $deviceId);
