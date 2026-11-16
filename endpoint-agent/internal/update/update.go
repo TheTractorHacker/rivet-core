@@ -53,7 +53,7 @@ func Transient(err error) bool {
 	switch {
 	case err == nil:
 		return false
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrSelfTestTimeout):
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrSelfTestTimeout), errors.Is(err, io.ErrUnexpectedEOF):
 		return true
 	case errors.As(err, &hs):
 		return hs.Status == 408 || hs.Status == 429 || hs.Status >= 500

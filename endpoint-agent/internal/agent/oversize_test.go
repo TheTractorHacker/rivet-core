@@ -121,3 +121,19 @@ func stopExecutorAfterTest(t *testing.T, r *rig, cancel context.CancelFunc) {
 		}
 	})
 }
+
+// CORE-DS-15 (review CR9): temporary update failures are retried, but not for ever: after updateTransientLimit the version counts as failed.
+func TestTransientUpdateFailuresAreCapped(t *testing.T) {
+	r := newRig(t)
+	for i := 1; i < updateTransientLimit; i++ {
+		if r.a.transientUpdateExhausted("9.9.9") {
+			t.Fatalf("gave up after %d attempts", i)
+		}
+	}
+	if !r.a.transientUpdateExhausted("9.9.9") {
+		t.Fatal("never gives up")
+	}
+	if r.a.transientUpdateExhausted("10.0.0") {
+		t.Fatal("the count leaked to another version")
+	}
+}
