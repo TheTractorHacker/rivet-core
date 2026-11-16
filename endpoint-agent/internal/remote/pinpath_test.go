@@ -20,7 +20,7 @@ func TestCheckPinnedDir(t *testing.T) {
 		{attrDirectory | attrReparsePoint, tagSymlink, `C:\Users\alice\drop`, `C:\Users\alice\drop`, false},
 		{attrDirectory | attrReparsePoint, tagMountPoint, `C:\Users\alice\drop`, `C:\Users\alice\drop`, false},
 		{attrDirectory | attrReparsePoint, tagCloud, `C:\Users\alice\OneDrive\Desktop`, `C:\Users\alice\OneDrive\Desktop`, true}, // review CR2
-		{attrDirectory, 0, `C:\Windows\System32`, `C:\Users\alice\drop`, false}, // junction followed: the final path is elsewhere
+		{attrDirectory, 0, `C:\Windows\System32`, `C:\Users\alice\drop`, false},                                                  // junction followed: the final path is elsewhere
 		{0, 0, `C:\Users\alice\drop`, `C:\Users\alice\drop`, false},
 	}
 	for i, c := range cases {
