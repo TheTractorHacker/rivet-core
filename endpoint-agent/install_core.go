@@ -73,7 +73,8 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 	prevCfg, _ := st.LoadConfig()
 	prevSnap := snapshotConfig(st)
 	hadCredential, _ := st.LoadToken()
-	switchesServer := movesToAnotherServer(prevCfg, hadCredential != "", p.flags)
+	pendingTok, _ := st.LoadEnrollToken() // a one-shot token waiting for the service to enrol is a credential for the OLD server too (review CRR-6)
+	switchesServer := movesToAnotherServer(prevCfg, hadCredential != "" || pendingTok != "", p.flags)
 	if err := applyConfig(st, p.flags); err != nil {
 		return installResult{Kind: instConfig, Msg: err.Error()}
 	}
