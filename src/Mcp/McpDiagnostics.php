@@ -47,8 +47,17 @@ final class McpDiagnostics
             };
         }
         $res = $this->http->request('GET', $url, $options);
-        if ($this->policy !== null && isset($vettedIp) && !\RivetCore\Webhooks\UrlPolicy::connectedToVetted($vettedIp, $target)) {
-            throw new \RuntimeException('the connection went to an address that was not vetted');
+        if ($this->policy !== null) {
+            // CRR-15/19: fail closed. A handler that does not report where it connected (no ext-curl, a stream handler, a custom stack) also ignores the pin, so the answer cannot be
+            // trusted; only a literal IP address needs no check (nothing to resolve a second time).
+            if (filter_var($target['host'], FILTER_VALIDATE_IP) === false) {
+                if (!is_string($vettedIp) || $vettedIp === '') {
+                    throw new \RuntimeException('could not confirm which address the connection went to');
+                }
+                if (!\RivetCore\Webhooks\UrlPolicy::connectedToVetted($vettedIp, $target)) {
+                    throw new \RuntimeException('the connection went to an address that was not vetted');
+                }
+            }
         }
         if ($res->getStatusCode() !== 200) throw new \RuntimeException('HTTP ' . $res->getStatusCode());
         $data = json_decode((string) $res->getBody(), true);
