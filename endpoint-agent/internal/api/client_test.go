@@ -276,3 +276,21 @@ func TestPinVerifierAppliesOnlyToTheServerHost(t *testing.T) {
 		t.Errorf("pin enforced on another host: %v", err)
 	}
 }
+
+// CORE-DS-50 (review CR7): the pin must also hold when the configured host is not spelled the way the TLS stack reports it (trailing dot, IDN).
+func TestPinVerifierFailsClosedForUnusualServerHosts(t *testing.T) {
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	defer srv.Close()
+	cert := srv.Certificate()
+	bad := sha256.Sum256([]byte("other key"))
+	for _, host := range []string{"example.com.", "EXAMPLE.com", "b\u00fccher.example", "xn--bcher-kva.example"} {
+		sn := "example.com"
+		if strings.HasPrefix(host, "b") || strings.HasPrefix(host, "xn") {
+			sn = "xn--bcher-kva.example"
+		}
+		cs := tls.ConnectionState{ServerName: sn, PeerCertificates: []*x509.Certificate{cert}}
+		if err := PinVerifier(bad[:], host)(cs); err == nil {
+			t.Errorf("wrong pin accepted for server host %q (SNI %q)", host, sn)
+		}
+	}
+}
