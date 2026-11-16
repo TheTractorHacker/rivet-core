@@ -21,6 +21,7 @@ use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\Policy\EffectivePolicy;
+use RivetCore\Rmm\Crypto\Signer;
 use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Remote\RemoteSettings;
 use RivetCore\Rmm\RmmEvent;
@@ -216,8 +217,14 @@ final class CheckinService
         if ($features['logs'] && $this->remote !== null && (int) ($cfg['shed_level'] ?? 0) === 0 && in_array(RemoteProtocol::CAP_LOGS, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
             $logConfig = $this->remote->agentLogConfig((string) ($dev['os'] ?? 'windows'), $this->capsOf($dev, $announce['caps']));
             if ($logConfig !== null) {
-                $offered[] = RemoteProtocol::CAP_LOGS;
-                $out['config']['logs'] = $logConfig;
+                try {
+                    [$sec] = $this->settings->signingKey();
+                    $logConfig['signature'] = Signer::sign(Signer::logsConfigMessage($logConfig), $sec);   // CORE-DS-16: which logs are shipped is not an unsigned setting
+                    $offered[] = RemoteProtocol::CAP_LOGS;
+                    $out['config']['logs'] = $logConfig;
+                } catch (\Throwable) {
+                    // no usable signing key: an unsigned log configuration is never offered
+                }
             }
         }
         // Change monitoring, additive: only an agent that announced `change:monitor`, while the `change_monitor` sub-switch is on, below load shedding level 2 and with at

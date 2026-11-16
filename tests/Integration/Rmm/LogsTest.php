@@ -97,7 +97,12 @@ final class LogsTest extends RemoteTestCase
         $r = $this->announce($this->devToken, self::allCaps());
         $this->assertSame(['logs:collect'], $r['features']);
         $cfg = $r['config']['logs'];
-        $this->assertSame(['version', 'interval_s', 'batch_max', 'max_message_bytes', 'rate_per_min', 'sources'], array_keys($cfg));
+        $this->assertSame(['version', 'interval_s', 'batch_max', 'max_message_bytes', 'rate_per_min', 'sources', 'signature'], array_keys($cfg), 'CORE-DS-16: the only protocol-visible delta is the signature member');
+        [, $pub] = $this->h->module->settings()->signingKey();
+        $this->assertTrue(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::logsConfigMessage($cfg), $cfg['signature'], $pub), 'verifies against the key the agent pinned');
+        $tampered = $cfg;
+        $tampered['sources'][0]['contains'] = ['x'];
+        $this->assertFalse(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::logsConfigMessage($tampered), $cfg['signature'], $pub));
         $this->assertSame([60, 200, 1024, 600], [$cfg['interval_s'], $cfg['batch_max'], $cfg['max_message_bytes'], $cfg['rate_per_min']]);
         $this->assertSame([['kind' => 'eventlog', 'channel' => 'System', 'levels' => ['critical', 'error', 'warning'], 'event_ids' => [7036], 'contains' => []]], $cfg['sources']);
         $this->assertSame($cfg['version'], $this->announce($this->devToken, self::allCaps())['config']['logs']['version'], 'the version only changes when the configuration does');
