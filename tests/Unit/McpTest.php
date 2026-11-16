@@ -225,6 +225,28 @@ final class McpTest extends TestCase
         $this->assertSame('fail', array_column($d2->run($this->cfg(), 'rivet.example'), null, 'label')['Identity provider reachable']['status']);
     }
 
+    /** CR20 (CORE-DS-73): the diagnostics connect to the addresses the policy vetted instead of resolving the name again. */
+    public function testDiagnosticsPinTheVettedAddresses(): void
+    {
+        $seen = [];
+        $handler = static function (\Psr\Http\Message\RequestInterface $r, array $o) use (&$seen) {
+            $seen[] = $o;
+
+            return new \GuzzleHttp\Promise\FulfilledPromise(new Response(200, [], json_encode(['issuer' => 'https://idp.example/realm', 'jwks_uri' => 'https://idp.example/keys', 'keys' => []]) ?: ''));
+        };
+        $http = new Client(['handler' => HandlerStack::create($handler)]);
+        $policy = new \RivetCore\Webhooks\UrlPolicy(false, static fn (string $h): array => ['93.184.216.34']);
+        (new McpDiagnostics($this->directory(1), $http, 'X_MCP_ENABLED', 'RivetX', $policy))->run($this->cfg(), 'rivet.example');
+        $this->assertNotEmpty($seen);
+        foreach ($seen as $o) {
+            if (isset($o['curl'])) {
+                $this->assertSame(['idp.example:443:93.184.216.34'], $o['curl'][CURLOPT_RESOLVE]);
+                $this->assertSame('', $o['proxy']);
+            }
+        }
+        $this->assertTrue(in_array(true, array_map(static fn (array $o): bool => isset($o['curl']), $seen), true), 'the pin was passed');
+    }
+
     public function testDiagnosticsHealthyProvider(): void
     {
         $json = ['Content-Type' => 'application/json'];
