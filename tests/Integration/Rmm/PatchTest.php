@@ -510,6 +510,26 @@ final class PatchTest extends PatchTestCase
         $this->assertSame(200, $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB], 'acknowledge_disagreeing_reports' => true])[0]);
     }
 
+    /** CRR-13: the decision gate uses the same definition of "disagree" as the fleet view: severity and KB count too, not only title and kind. */
+    public function testAFleetDecisionAlsoStopsOnADisagreeingSeverityOrKb(): void
+    {
+        $devs = [$this->linked('Q1'), $this->linked('Q2')];
+        foreach ($devs as [$d, $t]) {
+            $this->scanWith($d, $t, self::winScan([self::WIN_KB => ['security', 'Real: 2026-11 Security Update']]));
+        }
+        $decline = fn (array $extra = []): array => $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB]] + $extra);
+        $this->assertSame(200, $this->api('GET', ['patches'], $this->admin)[0]);
+        foreach (['severity' => "'low'", 'kb' => "'KB0000001'"] as $col => $val) {
+            $this->h->q("UPDATE rmm_patch_available SET status = 'available' WHERE update_id = '" . self::WIN_KB . "'");
+            $this->h->q("UPDATE rmm_patch_available SET $col = $val WHERE device_id = " . (int) $devs[1][0] . " AND update_id = '" . self::WIN_KB . "'");
+            [$c, $j] = $decline();
+            $this->assertSame([409, 'reports_disagree'], [$c, $j['code']], "$col: " . json_encode($j));
+            $this->assertSame(2, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_available WHERE update_id = '" . self::WIN_KB . "' AND status = 'available'"), "$col: nothing was declined");
+            $this->assertSame(200, $decline(['acknowledge_disagreeing_reports' => true])[0], "$col: acknowledged");
+            $this->h->q("UPDATE rmm_patch_available SET severity = (SELECT severity FROM (SELECT severity FROM rmm_patch_available WHERE device_id = " . (int) $devs[0][0] . " AND update_id = '" . self::WIN_KB . "') x), kb = (SELECT kb FROM (SELECT kb FROM rmm_patch_available WHERE device_id = " . (int) $devs[0][0] . " AND update_id = '" . self::WIN_KB . "') y) WHERE device_id = " . (int) $devs[1][0]);
+        }
+    }
+
     /** CR5 / CR13 (CORE-DS-10): the second-person rule cannot be taken away, and a staged policy cannot be switched on, with patch.manage alone. */
     public function testThePatchSecondPersonRuleAndStagedPoliciesNeedTheirGrantsToChange(): void
     {

@@ -393,11 +393,12 @@ final class PatchActions
         if (($f['device_id'] ?? 0) === 0 && ($f['client_id'] ?? 0) === 0 && ($in['acknowledge_disagreeing_reports'] ?? false) !== true) {
             $seen = [];
             foreach ($rows as $r) {
-                $seen[$r['update_id']][$r['kind'] . "\0" . $r['title']] = true;
+                // CRR-13: the same four things the fleet view compares (title, kind, kb, severity)
+                $seen[$r['update_id']][$r['kind'] . "\0" . $r['title'] . "\0" . $r['kb'] . "\0" . $r['severity']] = true;
             }
             $bad = array_keys(array_filter($seen, static fn (array $v): bool => count($v) > 1));
             if ($bad !== []) {
-                return ActionResult::fail(409, 'reports_disagree', 'The devices do not agree on what ' . implode(', ', array_slice($bad, 0, 5)) . ' is (title or kind). Decide per client or device, or send acknowledge_disagreeing_reports: true.');
+                return ActionResult::fail(409, 'reports_disagree', 'The devices do not agree on what ' . implode(', ', array_slice($bad, 0, 5)) . ' is (title, kind, KB or severity). Decide per client or device, or send acknowledge_disagreeing_reports: true.');
             }
         }
         $clientForAudit = (int) $rows[0]['client_id'];
