@@ -74,6 +74,16 @@ func sameServer(a, b string) bool {
 // performInstall is the single install code path shared by `install` and
 // `setup`: config, enroll (or defer), unstamped binary copy, service, ARP.
 func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult {
+	// Where pinning is wired (Windows) the installer MUST be pinned: its bytes are then read and copied from that handle only. Anything else would fall
+	// back to re-opening the path, which a re-pointed junction can swap, so it stops here, before a token is used or a service is stopped (CORE-DS-48).
+	var pinnedRd io.ReaderAt
+	var pinnedSize int64
+	if ops.openPinned != nil {
+		var ok bool
+		if pinnedRd, pinnedSize, ok = ops.openPinned(p.self); !ok {
+			return installResult{Kind: instFail, Msg: "the installer file is not locked against changes (installer not pinned); refusing to read it by path"}
+		}
+	}
 	st, err := openStore(p.stateDir)
 	if err != nil {
 		return installResult{Kind: instConfig, Msg: err.Error()}
@@ -149,12 +159,7 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 				return installResult{Kind: instFail, Msg: "stopping existing service: " + err.Error()}
 			}
 		}
-		var rd io.ReaderAt
-		var size int64
-		if ops.openPinned != nil {
-			rd, size, _ = ops.openPinned(p.self)
-		}
-		if err := installBinary(p.self, dst, rd, size); err != nil {
+		if err := installBinary(p.self, dst, pinnedRd, pinnedSize); err != nil {
 			return installResult{Kind: instFail, Msg: "installing binary: " + err.Error(), Dst: dst}
 		}
 		log.Info("binary installed (embedded configuration stripped)", "path", dst)

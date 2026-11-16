@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,5 +180,52 @@ func TestInstallCommandPinsItsOwnExecutable(t *testing.T) {
 	ops.pinFile = func(string) (func(), error) { return nil, errors.New("sharing violation") }
 	if _, err := pinInstaller(ops, "/x"); err == nil {
 		t.Fatal("a pin failure must be reported before anything is enrolled")
+	}
+}
+
+// CORE-DS-48 (review CRR-5): where pinning is wired, a missing pinned handle FAILS CLOSED: no fall back to the path, nothing enrolled, no service
+// stopped, nothing installed.
+func TestMissingPinnedHandleFailsClosed(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	ops := e.ops()
+	ops.pinFile = func(string) (func(), error) { return func() {}, nil }
+	ops.openPinned = func(string) (io.ReaderAt, int64, bool) { return nil, 0, false } // pinning is active but this path was never pinned
+	args := []string{"--silent", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
+	if code := runSetup(args, ops, time.Now); code != exitInstallFail {
+		t.Fatalf("setup exit %d, want %d", code, exitInstallFail)
+	}
+	if srv.enrolls.Load() != 0 {
+		t.Fatal("the token was used")
+	}
+	for _, c := range e.calls {
+		if c == "stop" || strings.HasPrefix(c, "install:") {
+			t.Fatalf("a service action ran: %v", e.calls)
+		}
+	}
+	if _, err := os.Stat(e.installed()); err == nil {
+		t.Fatal("a binary was installed")
+	}
+	// performInstall (the install command path) refuses too, before touching the state directory or the token
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	res := performInstall(installParams{flags: enrollFlags{server: srv.URL, token: setupToken}, stateDir: e.state, installDir: filepath.Join(e.state, "bin2"), self: e.exe}, ops, log)
+	if res.Kind != instFail || srv.enrolls.Load() != 0 {
+		t.Fatalf("performInstall: %+v enrolls=%d", res, srv.enrolls.Load())
+	}
+}
+
+// Without pinning (Linux: openPinned nil) nothing changes: the path is read as before.
+func TestNoPinningWiredKeepsReadingThePath(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	ops := e.ops() // pinFile and openPinned are nil
+	args := []string{"--silent", "--no-service", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
+	if code := runSetup(args, ops, time.Now); code != 0 {
+		t.Fatal(code)
+	}
+	if srv.enrolls.Load() != 1 {
+		t.Fatal("not enrolled")
 	}
 }

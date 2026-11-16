@@ -227,6 +227,10 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 		}
 	} else {
 		pl, err = readStamped(ops, src, now())
+		if errors.Is(err, errNotPinned) {
+			say(err.Error(), true)
+			return exitInstallFail
+		}
 		if err != nil {
 			if o.fromMSI && (errors.Is(err, embed.ErrNotStamped) || errors.Is(err, embed.ErrExpired)) {
 				refresh, embedErr = true, err // decided after the elevation check, when the state directory can be read
@@ -383,12 +387,17 @@ func setupOutcome(r installResult, logPath string) (code int, msg string, isErr 
 	return exitInstallFail, "RivetIT Agent could not be installed: " + r.Msg + tail, true
 }
 
-// readStamped reads the payload of src from the pinned handle when src was pinned (so the file parsed is the file locked), else by path.
+// readStamped reads the payload of src. Where pinning is wired src MUST have been pinned and is read from that handle only; a missing handle is an
+// error, never a silent fall back to opening the path (a re-pointed junction would swap the file). Without pinning (Linux) it reads the path.
 func readStamped(ops sysOps, src string, now time.Time) (*embed.Payload, error) {
-	if ops.openPinned != nil {
-		if rd, size, ok := ops.openPinned(src); ok {
-			return embed.Parse(rd, size, now)
-		}
+	if ops.openPinned == nil {
+		return embed.Read(src, now)
 	}
-	return embed.Read(src, now)
+	rd, size, ok := ops.openPinned(src)
+	if !ok {
+		return nil, errNotPinned
+	}
+	return embed.Parse(rd, size, now)
 }
+
+var errNotPinned = errors.New("the installer file is not locked against changes (installer not pinned)")
