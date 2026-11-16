@@ -24,6 +24,9 @@ final class MariaDbSoftwareHistoryStore implements SoftwareHistoryStore
 
     public function append(int $deviceId, array $changes, string $atUtc): void
     {
+        // CORE-DS-43: a device's history is bounded; what does not fit is dropped (the oldest rows age out by retention as before)
+        $room = \RivetCore\Rmm\Software\SoftwareService::MAX_HISTORY_PER_DEVICE - (int) $this->sql->val('SELECT COUNT(*) FROM rmm_software_history WHERE device_id = ?', [$deviceId]);
+        $changes = array_slice($changes, 0, max(0, $room));
         foreach (array_chunk($changes, self::CHUNK) as $chunk) {
             $params = [];
             foreach ($chunk as $c) {
