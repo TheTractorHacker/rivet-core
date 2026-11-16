@@ -71,6 +71,9 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 	}
 	tok, _ := readToken(p.flags.token, p.flags.tokenFile)
 	prevCfg, _ := st.LoadConfig()
+	prevSnap := snapshotConfig(st)
+	hadCredential, _ := st.LoadToken()
+	switchesServer := movesToAnotherServer(prevCfg, hadCredential != "", p.flags)
 	if err := applyConfig(st, p.flags); err != nil {
 		return installResult{Kind: instConfig, Msg: err.Error()}
 	}
@@ -88,8 +91,16 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 		case enrollOK:
 			log.Info("enrolled")
 		case enrollRejected:
+			if switchesServer {
+				prevSnap.restore(st) // CORE-DS-14: never leave the new server_url next to the old server's credential
+			}
 			return installResult{Kind: instRejected, Msg: o.Msg}
 		default:
+			if switchesServer {
+				// A deferred enrollment would leave the old credential pointed at the new host (the service only enrolls when it has no credential).
+				prevSnap.restore(st)
+				return installResult{Kind: instFail, Msg: "could not enroll with the new server now (" + o.Msg + "); the device keeps its previous server configuration, run the installer again later"}
+			}
 			// Offline at install time (imaging/GPO): keep the one-shot token,
 			// protected, and let the service finish enrollment.
 			log.Warn("could not enroll now; the service will retry using the stored one-shot token", "reason", o.Msg)

@@ -55,6 +55,38 @@ func applyConfig(st *store.Store, f enrollFlags) error {
 	return st.SaveConfig(cfg)
 }
 
+// cfgSnapshot is the connection configuration (config.json and the CA file) before applyConfig changed it.
+type cfgSnapshot struct {
+	cfg   store.Config
+	ca    []byte
+	hasCA bool
+}
+
+func snapshotConfig(st *store.Store) cfgSnapshot {
+	cfg, _ := st.LoadConfig()
+	s := cfgSnapshot{cfg: cfg}
+	if cfg.CAFile != "" {
+		if b, err := os.ReadFile(cfg.CAFile); err == nil {
+			s.ca, s.hasCA = b, true
+		}
+	}
+	return s
+}
+
+// restore puts the configuration back (CORE-DS-14). Best effort: it is only called on a path that is already failing.
+func (s cfgSnapshot) restore(st *store.Store) {
+	if s.hasCA && s.cfg.CAFile != "" {
+		_ = store.WriteFileAtomic(s.cfg.CAFile, s.ca, 0o600)
+	}
+	_ = st.SaveConfig(s.cfg)
+}
+
+// movesToAnotherServer reports whether applying f would point a device that already holds a credential at a different server. Until the exchange
+// with the new server succeeds, the old credential must never be sent there, so the switch is undone when it does not (CORE-DS-14).
+func movesToAnotherServer(prev store.Config, hasCredential bool, f enrollFlags) bool {
+	return hasCredential && f.server != "" && !sameServer(prev.ServerURL, f.server)
+}
+
 func cmdEnroll(args []string, rotate bool) int {
 	name := "enroll"
 	if rotate {
@@ -82,11 +114,17 @@ func cmdEnroll(args []string, rotate bool) int {
 		fmt.Fprintln(os.Stderr, "error: an enrollment token is required (--token-file, --token or RIVETIT_ENROLL_TOKEN)")
 		return 2
 	}
+	prev := snapshotConfig(st)
+	hadToken, _ := st.LoadToken()
 	if err := applyConfig(st, f); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
 	}
 	if code := enrollNow(st, tok, *level, rotate); code != 0 {
+		if movesToAnotherServer(prev.cfg, hadToken != "", f) {
+			prev.restore(st)
+			fmt.Fprintln(os.Stderr, "the device keeps its previous server configuration")
+		}
 		return code
 	}
 	return printStatus(st)

@@ -1,7 +1,6 @@
 package update
 
 import (
-	"net"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -13,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
