@@ -1,6 +1,11 @@
 package remote
 
-import "testing"
+import (
+	"errors"
+	"testing"
+
+	"rivetit-agent/internal/winacl"
+)
 
 func TestCheckPinnedDir(t *testing.T) {
 	const (
@@ -27,5 +32,20 @@ func TestCheckPinnedDir(t *testing.T) {
 		if err := checkPinnedDir(c.attrs, c.tag, c.final, c.approved); (err == nil) != c.ok {
 			t.Errorf("case %d: %v", i, err)
 		}
+	}
+}
+
+func TestUnreadableReparseTagFailsClosed(t *testing.T) {
+	if !winacl.IsNameSurrogate(tagOrSurrogate(0, errors.New("query failed"))) {
+		t.Fatal("a failed tag query was treated as no link")
+	}
+	if winacl.IsNameSurrogate(tagOrSurrogate(0x9000701A, nil)) {
+		t.Fatal("a Cloud Files tag was treated as a link")
+	}
+}
+
+func TestSameFileIdentity(t *testing.T) {
+	if !sameFileIdentity(1, 2, 1, 2) || sameFileIdentity(1, 2, 1, 3) || sameFileIdentity(1, 2, 2, 2) || sameFileIdentity(0, 0, 0, 0) {
+		t.Fatal("identity comparison")
 	}
 }

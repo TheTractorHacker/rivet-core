@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	pathpkg "path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -745,8 +746,10 @@ func safeCertPath(p string) bool {
 		}
 	}
 	// kernel pseudo file systems are never certificate stores (CORE-DS-3, review CR1)
+	// compared on the cleaned path, so "/./proc/kmsg" and "/etc/../proc/kmsg" are refused too (review CRR-extra); ".." is already refused above
+	cp := pathpkg.Clean(p)
 	for _, d := range []string{"/proc", "/sys", "/dev"} {
-		if p == d || strings.HasPrefix(p, d+"/") {
+		if cp == d || strings.HasPrefix(cp, d+"/") {
 			return false
 		}
 	}
