@@ -208,6 +208,7 @@ final class CheckinService
             $out['update'] = $this->updates->manifestFor($policy !== null && $policy['ring'] !== null ? ['ring' => $policy['ring']] + $dev : $dev);
             if (($rollover = $this->updates->releaseRollover()) !== null) {
                 $out['release_rollover'] = $rollover;   // CORE-DS-26: relayed while any agent may need it; the server cannot create one
+                $out['release_rollovers'] = $this->updates->releaseRollovers();   // R3-2: the chain, so an agent that missed one catches up
             }
         }
         $out['server_time'] = $this->sql->isoNow();

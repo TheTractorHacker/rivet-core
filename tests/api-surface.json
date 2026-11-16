@@ -8759,6 +8759,7 @@
                 "platformOk": "platformOk(array $row): ?bool",
                 "recordResult": "recordResult(array $dev, mixed $res): void",
                 "releaseRollover": "releaseRollover(): ?array",
+                "releaseRollovers": "releaseRollovers(): array",
                 "releaseSignature": "releaseSignature(array $release): ?array",
                 "releaseSignatureProblem": "static releaseSignatureProblem(string $signatureB64): ?string",
                 "releasesChanged": "releasesChanged(): void",
