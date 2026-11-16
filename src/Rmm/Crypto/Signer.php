@@ -165,6 +165,9 @@ final class Signer
         return self::sign($sha256Hex, $secretKeyB64);
     }
 
+    /** The domain line of the update manifest the release owner signs offline (CORE-DS-26). */
+    public const UPDATE_MANIFEST_DOMAIN = 'rivetit-update-manifest-v1';
+
     /**
      * CORE-DS-26: the message of the signed update manifest: the domain line, a line feed, then the canonical JSON of {kind: "agent_update", version, os, arch, sha256, min_version}.
      * Unlike {@see signManifest()} (the bare SHA-256, kept for agents that do not know this), it binds the version, platform and minimum version to the signature, so a signed

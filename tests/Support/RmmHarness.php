@@ -186,6 +186,10 @@ final class RmmHarness
         $this->mysqli->query('DELETE FROM integration_jobs');
         $this->mysqli->query('DELETE FROM endpoint_agent_settings');
         $this->mysqli->query('INSERT INTO endpoint_agent_settings (id) VALUES (1)');
+        try {
+            $this->mysqli->query('DELETE FROM rmm_hardening_settings');   // switches of the deep-scan fixes: every test starts with them off
+        } catch (\Throwable) {
+        }
         $this->mysqli->query("INSERT IGNORE INTO rmm_patch_rings (name, delay_days, sort_order, description) VALUES ('pilot', 0, 10, ''), ('broad', 7, 20, ''), ('last', 14, 30, '')");
     }
 
