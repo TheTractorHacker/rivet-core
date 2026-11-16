@@ -2,12 +2,18 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"rivetit-agent/internal/api"
 	"rivetit-agent/internal/buffer"
+	"rivetit-agent/internal/jobs"
 	"rivetit-agent/internal/store"
+	"rivetit-agent/internal/update"
 )
 
 func fatChecks(n int) []api.CheckResult {
@@ -64,4 +70,37 @@ func TestDownloadClientUsesTheConfiguredCA(t *testing.T) {
 		t.Fatalf("download client does not trust the configured CA: %v", err)
 	}
 	resp.Body.Close()
+}
+
+// CORE-DS-49: a self-update restart would kill a running patch/software install, so an offered update waits until the executor is idle.
+func TestUpdateWaitsForRunningJobs(t *testing.T) {
+	r := newRig(t)
+	r.enroll()
+	exe := t.TempDir() + "/rivetit-agent"
+	os.WriteFile(exe, []byte("x"), 0o700)
+	r.a.upd = &update.Manager{Paths: update.PathsFor(exe), Version: "1.0.0", StatePath: r.st.UpdatePath()}
+	now := time.Now().UTC()
+	job := r.s.signJob(map[string]any{"job_id": "long-1", "device_id": 7, "attempt": 1, "type": jobs.ScriptType(), "script": "sleep 2",
+		"params": map[string]any{}, "timeout_s": 20, "max_output_bytes": 4096,
+		"issued_at": now.Format(time.RFC3339), "expires_at": now.Add(time.Hour).Format(time.RFC3339)})
+	r.s.jobsOut = []json.RawMessage{job}
+	r.s.checkinFn = func(int, []byte) (int, any, http.Header) {
+		return 200, map[string]any{"ok": true, "next_check_in_s": 60, "jobs_pending": 1,
+			"update": map[string]any{"version": "9.9.9", "url": r.s.ts.URL + "/bin", "sha256": strings.Repeat("a", 64), "signature": "AAAA", "min_version": "1.0.0"}}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r.a.newExecutor(ctx)
+	r.a.checkIn(ctx, 0) // delivers the job and the update offer
+	deadline := time.Now().Add(5 * time.Second)
+	for r.a.executor().Idle() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if r.a.executor().Idle() {
+		t.Fatal("the job never started")
+	}
+	r.a.checkIn(ctx, 0) // the job is still running: the update must not even be attempted
+	if st, _ := r.st.LoadState(); st.UpdateFailure != nil {
+		t.Fatalf("an update was attempted while a job was running: %+v", st.UpdateFailure)
+	}
 }

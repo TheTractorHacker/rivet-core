@@ -1143,6 +1143,12 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 	if a.o.Now().Before(a.updRetryAt) {
 		return
 	}
+	// The restart that follows kills a running job's process (a package manager or installer mid-transaction): wait for an idle executor. The server
+	// offers the manifest again at the next check-in (CORE-DS-49).
+	if e := a.executor(); e != nil && !e.Idle() {
+		a.log.Info("update offered but jobs are running; will apply it when they have finished", "version", man.Version)
+		return
+	}
 	pub, err := base64.StdEncoding.DecodeString(st.SigningPublicKey)
 	if err != nil {
 		return
