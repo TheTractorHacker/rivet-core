@@ -30,6 +30,8 @@ final class DeviceTransferCompletenessTest extends RmmTestCase
         'endpoint_agent_change_state' => 'hot store, moved by ClientMoves',
         'rmm_pending_client_moves' => 'the retry queue of ClientMoves itself',
         'panel_ticket_owner' => 'a ticket record: the ticket stays with the client it was raised for',
+        'rmm_console_codes' => 'single-use Rivet Console redeem codes: they expire in 60 seconds, bound to the technician, device and client of the launch',
+        'rmm_console_sessions' => 'Rivet Console session history (an audit record): it keeps the client the session was launched for',
     ];
 
     private int $dev = 0;

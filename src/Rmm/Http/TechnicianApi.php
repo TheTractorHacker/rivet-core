@@ -26,7 +26,7 @@ use RivetCore\Rmm\Technician\TechnicianActions;
  *   POST endpoint_devices/{id}/jobs            {type: powershell|reboot|collect, script|script_id, params, timeout_s, destructive, confirm}
  *   POST endpoint_devices/{id}/jobs/{job}/cancel
  *   POST endpoint_devices/{id}/remote          {force?} -> {url, session_id}
- *   POST endpoint_devices/{id}/remote          {console: true, console_kind?, view?, force?} -> {url, session_id, console: {kind, url, fallback_url}} (only with the remote_console switch on; otherwise the plain result)
+ *   POST endpoint_devices/{id}/remote          {console: true, console_kind?, view?, force?} -> {url, session_id, console: {url, fallback_url}} (only with the remote_console switch on and console_public_url set; otherwise the plain result or 409 not_configured)
  *
  * Phase 1 additions (all additive; the routes above are unchanged, and the list also accepts the filters tag, group, software and
  * location_id):
