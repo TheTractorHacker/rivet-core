@@ -143,8 +143,12 @@ func removeInstallDir(dir string) {
 		_ = os.Remove(dir) // only succeeds when empty
 		return
 	}
-	cmdline := fmt.Sprintf(`/c ping -n 4 127.0.0.1 >nul & del /f /q "%s" & rmdir "%s"`, self, dir)
-	c := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe"))
+	// cmd.exe searches its current directory before PATH for a bare "ping": use the absolute System32 path and run from System32 (CORE-DS-18).
+	sys32 := filepath.Join(os.Getenv("SystemRoot"), "System32")
+	// /s /c "<whole line>": the outer quotes are stripped, so the quoted paths inside survive
+	cmdline := fmt.Sprintf(`/s /c ""%s" -n 4 127.0.0.1 >nul & del /f /q "%s" & rmdir "%s""`, filepath.Join(sys32, "ping.exe"), self, dir)
+	c := exec.Command(filepath.Join(sys32, "cmd.exe"))
+	c.Dir = sys32
 	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CmdLine: `cmd.exe ` + cmdline, CreationFlags: 0x00000008} // DETACHED_PROCESS
 	_ = c.Start()
 	fmt.Println("agent binary scheduled for deletion")
