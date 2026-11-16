@@ -1204,13 +1204,30 @@ func (a *Agent) configureChange(resp *api.CheckinResponse) {
 // out must not be downloaded every ten minutes for ever; review CR9).
 const updateTransientLimit = 6
 
-// transientUpdateExhausted counts one more temporary failure of version and reports whether the limit is now reached.
-func (a *Agent) transientUpdateExhausted(version string) bool {
+// transientUpdateCount counts one more temporary failure of version and returns how many there have been.
+func (a *Agent) transientUpdateCount(version string) int {
 	if a.updTransient == nil {
 		a.updTransient = map[string]int{}
 	}
 	a.updTransient[version]++
-	return a.updTransient[version] >= updateTransientLimit
+	return a.updTransient[version]
+}
+
+// updateBackoff is the pause before the same version is tried again after the n-th temporary failure: 10 minutes, doubling, at most 24 hours. A
+// version is never given up for network, 429/5xx or shutdown errors (an on-path attacker or a flaky CDN must not be able to block a security update
+// for good, review CRR-7).
+func updateBackoff(n int) time.Duration {
+	d := updateRetryPause
+	for i := 1; i < n && d < 24*time.Hour; i++ {
+		d *= 2
+	}
+	return min(d, 24*time.Hour)
+}
+
+// selfTestGivesUp is true when a staged binary has repeatedly timed out its selftest (a build that is itself broken): only then is the version recorded
+// as failed.
+func selfTestGivesUp(err error, n int) bool {
+	return errors.Is(err, update.ErrSelfTestTimeout) && n >= updateTransientLimit
 }
 
 // updateRetryPause is how long a temporary self-update failure waits before the same version is tried again.
@@ -1280,10 +1297,10 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 	a.mu.Unlock()
 	hosts := append([]string{c.Host()}, cfg.UpdateHosts...)
 	restart, err := a.upd.Apply(ctx, *man, ed25519.PublicKey(pub), c.HTTPClient(), c.Host(), a.token(), hosts)
-	if err != nil && update.Transient(err) && !a.transientUpdateExhausted(man.Version) {
+	if err != nil && update.Transient(err) && !selfTestGivesUp(err, a.transientUpdateCount(man.Version)) {
 		// shutdown, timeout, network, 429/5xx, slow selftest: keep the version eligible and try again after a pause (CORE-DS-15)
 		a.log.Warn("update attempt failed (temporary); will try again", "version", man.Version, "err", err)
-		a.updRetryAt = a.o.Now().Add(updateRetryPause)
+		a.updRetryAt = a.o.Now().Add(updateBackoff(a.updTransient[man.Version]))
 		return
 	}
 	if err != nil {
@@ -1295,6 +1312,7 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 		})
 		return
 	}
+	delete(a.updTransient, man.Version)
 	if restart {
 		a.log.Info("update staged and activated; restarting", "version", man.Version)
 		a.mu.Lock()

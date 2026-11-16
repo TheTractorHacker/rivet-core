@@ -3,6 +3,10 @@
 package main
 
 import (
+	"errors"
+	"path/filepath"
+	"strings"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -38,5 +42,47 @@ func pinFileWindows(path string) (func(), error) {
 		windows.CloseHandle(h)
 		return nil, err
 	}
-	return func() { windows.CloseHandle(h) }, nil
+	pinMu.Lock()
+	pinned[strings.ToLower(filepath.Clean(path))] = fileID{uint64(info.VolumeSerialNumber), uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow)}
+	pinMu.Unlock()
+	return func() {
+		pinMu.Lock()
+		delete(pinned, strings.ToLower(filepath.Clean(path)))
+		pinMu.Unlock()
+		windows.CloseHandle(h)
+	}, nil
+}
+
+var (
+	pinMu  sync.Mutex
+	pinned = map[string]fileID{}
+)
+
+// verifyPinnedWindows opens path the way later code will (following every link, parents included) and requires it to be the very file that was pinned
+// (volume serial + file index). A junction in a parent folder re-pointed after the pin is caught here (review CRR-5). UNVERIFIED on Windows.
+func verifyPinnedWindows(path string) error {
+	pinMu.Lock()
+	want, ok := pinned[strings.ToLower(filepath.Clean(path))]
+	pinMu.Unlock()
+	if !ok {
+		return errors.New("the installer file is not pinned")
+	}
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	h, err := windows.CreateFile(p, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(h)
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
+		return err
+	}
+	got := fileID{uint64(info.VolumeSerialNumber), uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow)}
+	if !sameFile(want, got) {
+		return errors.New("the path now leads to a different file")
+	}
+	return nil
 }

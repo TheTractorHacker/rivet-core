@@ -19,3 +19,9 @@ func TestCheckPinnedFile(t *testing.T) {
 		}
 	}
 }
+
+func TestSameFile(t *testing.T) {
+	if !sameFile(fileID{1, 2}, fileID{1, 2}) || sameFile(fileID{1, 2}, fileID{1, 3}) || sameFile(fileID{}, fileID{}) {
+		t.Fatal("identity comparison")
+	}
+}

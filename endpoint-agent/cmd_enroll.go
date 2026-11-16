@@ -116,6 +116,9 @@ func cmdEnroll(args []string, rotate bool) int {
 	}
 	prev := snapshotConfig(st)
 	hadToken, _ := st.LoadToken()
+	if hadToken == "" {
+		hadToken, _ = st.LoadEnrollToken()
+	}
 	if err := applyConfig(st, f); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1

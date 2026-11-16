@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -122,18 +124,23 @@ func stopExecutorAfterTest(t *testing.T, r *rig, cancel context.CancelFunc) {
 	})
 }
 
-// CORE-DS-15 (review CR9): temporary update failures are retried, but not for ever: after updateTransientLimit the version counts as failed.
-func TestTransientUpdateFailuresAreCapped(t *testing.T) {
-	r := newRig(t)
-	for i := 1; i < updateTransientLimit; i++ {
-		if r.a.transientUpdateExhausted("9.9.9") {
-			t.Fatalf("gave up after %d attempts", i)
+// CORE-DS-15 (review CRR-7): network/5xx/shutdown errors back off (10 min doubling to 24 h) and are never given up; only a selftest that keeps timing
+// out records the version as failed.
+func TestTransientUpdateBackoffAndGiveUp(t *testing.T) {
+	if updateBackoff(1) != 10*time.Minute || updateBackoff(2) != 20*time.Minute || updateBackoff(4) != 80*time.Minute || updateBackoff(50) != 24*time.Hour {
+		t.Fatalf("backoff %v %v %v %v", updateBackoff(1), updateBackoff(2), updateBackoff(4), updateBackoff(50))
+	}
+	netErr := errors.New("connection reset")
+	for n := 1; n < 100; n++ {
+		if selfTestGivesUp(netErr, n) || selfTestGivesUp(io.ErrUnexpectedEOF, n) {
+			t.Fatalf("a network error was given up after %d attempts", n)
 		}
 	}
-	if !r.a.transientUpdateExhausted("9.9.9") {
-		t.Fatal("never gives up")
+	if selfTestGivesUp(update.ErrSelfTestTimeout, updateTransientLimit-1) || !selfTestGivesUp(update.ErrSelfTestTimeout, updateTransientLimit) {
+		t.Fatal("selftest give-up limit")
 	}
-	if r.a.transientUpdateExhausted("10.0.0") {
-		t.Fatal("the count leaked to another version")
+	r := newRig(t)
+	if r.a.transientUpdateCount("1") != 1 || r.a.transientUpdateCount("1") != 2 || r.a.transientUpdateCount("2") != 1 {
+		t.Fatal("counter is per version")
 	}
 }
