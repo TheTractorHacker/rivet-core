@@ -2,6 +2,18 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.74 (endpoint agent: deep-scan fixes D, Windows Lows; no migration)
+
+Provisional number (follows rc.73, stacked). Windows installer, MSI and Windows-only agent code for CORE-DS-18/47/48/55/56/57/74. **UNVERIFIED on Windows** (no Windows machine; cross-compiled and vetted, the MSI built in the pinned wixl image and table-checked, the Linux-testable parts unit-tested): docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md.
+
+- **CORE-DS-18** `powershell.exe`, `tasklist` and `ping` run from `%SystemRoot%\System32` by absolute path (`systemTool`); the agent calls `SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32)` at start; the uninstall self-delete runs `ping` by absolute path from System32.
+- **CORE-DS-47** a custom `--install-dir` is created with an explicit owner and a protected SYSTEM/Administrators DACL (`store.EnsureProtectedDir`); a pre-existing directory owned by anyone else is refused.
+- **CORE-DS-48** setup holds the installer exe (and the MSI payload source) open without write/delete sharing for the whole run.
+- **CORE-DS-55** at startup only the `Agent` directory's contents are vetted entry by entry; the `RivetIT` parent is checked and tightened but a stray entry in it no longer stops the agent.
+- **CORE-DS-56** the setup custom action that carries the enrollment token gets the HideTarget bit (wixl ignores the attribute, so `build.sh` sets it with msibuild and `check` asserts it); the Mesh installer no longer inherits `RIVETIT_*` environment variables.
+- **CORE-DS-57** the stop-service action no longer runs in a plain repair/reinstall; `ARPNOREPAIR=1`.
+- **CORE-DS-74** `install-windows.ps1` creates every directory atomically with an owner and protected DACL, tightens a legacy one first, re-checks the owner, and hashes through a `FileShare.Read` handle kept open until the install ends.
+
 ## 1.0.0-rc.73 (endpoint agent: deep-scan fixes C, Lows; no migration)
 
 Provisional number (follows rc.72, stacked). Go endpoint agent and `install-linux.sh` only; no PHP, no protocol change. Windows-affecting items are in docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md as UNVERIFIED.
