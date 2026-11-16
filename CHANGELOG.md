@@ -10,7 +10,7 @@ Provisional number (follows rc.73, stacked). Windows installer, MSI and Windows-
 - **CORE-DS-47** a custom `--install-dir` is created with an explicit owner and a protected SYSTEM/Administrators DACL (`store.EnsureProtectedDir`); a pre-existing directory owned by anyone else is refused.
 - **CORE-DS-48** setup holds the installer exe (and the MSI payload source) open without write/delete sharing for the whole run.
 - **CORE-DS-55** at startup only the `Agent` directory's contents are vetted entry by entry; the `RivetIT` parent is checked and tightened but a stray entry in it no longer stops the agent.
-- **CORE-DS-56** the setup custom action that carries the enrollment token gets the HideTarget bit (wixl ignores the attribute, so `build.sh` sets it with msibuild and `check` asserts it); the Mesh installer no longer inherits `RIVETIT_*` environment variables.
+- **CORE-DS-56** the setup custom action that carries the enrollment token gets the HideTarget bit (wixl ignores the attribute, so `build.sh` sets it with msibuild and `check` asserts it). This keeps the token out of the Windows Installer log only: the agent exe is still started with `--token` on its command line, so use `ENROLL_TOKEN_FILE` where process-command-line telemetry matters; the Mesh installer no longer inherits `RIVETIT_*` environment variables.
 - **CORE-DS-57** the stop-service action no longer runs in a plain repair/reinstall; `ARPNOREPAIR=1`.
 - **CORE-DS-74** `install-windows.ps1` creates every directory atomically with an owner and protected DACL, tightens a legacy one first, re-checks the owner, and hashes through a `FileShare.Read` handle kept open until the install ends.
 
