@@ -108,3 +108,16 @@ func TestUpdateWaitsForRunningJobs(t *testing.T) {
 		t.Fatalf("an update was attempted while a job was running: %+v", st.UpdateFailure)
 	}
 }
+
+// stopExecutorAfterTest halts the executor and waits for its workers when the test ends: a worker that is still writing jobs.json while the temp state
+// directory is removed makes the test flaky on a slow machine ("directory not empty").
+func stopExecutorAfterTest(t *testing.T, r *rig, cancel context.CancelFunc) {
+	t.Helper()
+	t.Cleanup(func() {
+		cancel()
+		if e := r.a.executor(); e != nil {
+			e.Halt()
+			e.Wait()
+		}
+	})
+}

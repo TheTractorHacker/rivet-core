@@ -381,6 +381,7 @@ func TestJobsEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r.a.newExecutor(ctx)
+	stopExecutorAfterTest(t, r, cancel)
 	r.a.checkIn(ctx, 0)
 	deadline := time.Now().Add(20 * time.Second)
 	for {
@@ -564,6 +565,7 @@ func TestIntegerDeviceIDEverywhere(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r.a.newExecutor(ctx)
+	stopExecutorAfterTest(t, r, cancel)
 	r.a.checkIn(ctx, 0)
 	deadline := time.Now().Add(20 * time.Second)
 	for {
