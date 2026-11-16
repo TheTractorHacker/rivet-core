@@ -171,6 +171,9 @@ final class RmmAdmin
         if (preg_match('/^[A-Za-z0-9._{}-]{1,100}$/', $account) !== 1 || ($domain !== '' && preg_match('/^[A-Za-z0-9._-]{1,100}$/', $domain) !== 1)) {
             return ActionResult::fail(422, 'invalid', 'The MeshCentral domain and account name may only contain letters, digits and . _ -');
         }
+        if (\RivetCore\Rmm\Mesh\MeshCookie::usesDisplayName($account)) {
+            return ActionResult::fail(422, 'invalid', 'The MeshCentral account name may not use {username}: it is the technician\'s editable display name, so a technician could rename themselves into another Mesh account. Use {user_id} (for example rivetit-{user_id}).');
+        }
         $policy = $in['mesh_policy'] ?? 'unattended';
         $ttl = $in['mesh_token_ttl_s'] ?? RmmSettings::MESH_TOKEN_TTL_DEFAULT_S;
         $vals = [
@@ -194,9 +197,9 @@ final class RmmAdmin
         }
         $install = [];
         $warnings = [];
-        if ($vals['mesh_enabled'] === 1 && !str_contains($account, '{user_id}') && !str_contains($account, '{username}')) {
+        if ($vals['mesh_enabled'] === 1 && !str_contains($account, '{user_id}')) {
             // One shared Mesh account means every technician is the same Mesh user: Core's per-ability and per-client limits do not bind the Mesh session (CORE-12).
-            $warnings[] = 'The MeshCentral account name has no {user_id} or {username}, so every technician signs in to the same Mesh account. Use a per-technician account and give each Mesh account rights only to the device groups of the clients that technician may reach; Core cannot enforce that inside MeshCentral.';
+            $warnings[] = 'The MeshCentral account name has no {user_id}, so every technician signs in to the same Mesh account. Use a per-technician account and give each Mesh account rights only to the device groups of the clients that technician may reach; Core cannot enforce that inside MeshCentral.';
         }
         if ($this->meshSettings !== null) {
             $install = array_intersect_key($in, array_flip(['mesh_group_id', 'mesh_server_cert_pin', 'mesh_auto_map_overwrite', 'mesh_agent_ids', 'mesh_install_args', 'mesh_hide', 'mesh_hide_tools']));
@@ -423,6 +426,17 @@ final class RmmAdmin
         }
         if ($os !== null && AgentOs::normalize($os) === null) {
             return ActionResult::fail(422, 'invalid', 'The platform must be windows or linux.');
+        }
+        // TEN-5: a caller limited to some clients clears the update state of a device of his own, never of another client's device or of every device.
+        $visible = $this->authz->visibleClientIds($by->userId);
+        if ($visible !== null) {
+            if ($deviceId === null) {
+                return ActionResult::fail(403, 'forbidden', 'Clearing every device reaches every client; ask an administrator whose access is not limited to some clients.');
+            }
+            $dev = $this->devices->find($deviceId);
+            if ($dev === null || !in_array((int) $dev['client_id'], $visible, true)) {
+                return ActionResult::fail(404, 'not_found', 'Device not found.');
+            }
         }
         $n = $this->updates->clearUpdateFailures($deviceId, $version, $os === null ? null : AgentOs::normalize($os));
         $this->audit->record('Agent Update Failures Cleared', "{$by->userName} cleared update failures (device " . ($deviceId ?? 'all') . ', version ' . ($version ?? 'all') . ", $n changed)", 0, 0);

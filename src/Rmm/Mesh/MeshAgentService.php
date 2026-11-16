@@ -251,6 +251,30 @@ final class MeshAgentService
     }
 
     /**
+     * What a claim of `$node` by the device would be decided as right now, for the callers that map a node on evidence other than the device's own report (the
+     * administrator approval of the node the device reported, the verification against MeshCentral). Nothing is written. `action` is `same`, `kept_manual`, `conflict`,
+     * `move` or `needs_approval`; only `needs_approval` (and, for an administrator, `move`) may be mapped, a `conflict` never.
+     *
+     * @internal
+     * @param array<string,mixed> $dev
+     * @return array{action:string,other:?array<string,mixed>,mine:?array<string,mixed>,conflict_with:?int,why:string,conflict_client:?int}
+     */
+    public function claimDecision(array $dev, string $node): array
+    {
+        return $this->decide($dev, $node);
+    }
+
+    /**
+     * Record that the node the device reported is now mapped (after an approval or a verification), so the device no longer shows `needs_approval`.
+     *
+     * @internal
+     */
+    public function markMapped(int $deviceId): void
+    {
+        $this->sql->run('UPDATE endpoint_agent_mesh_agents SET map_state = ?, conflict_device_id = NULL WHERE device_id = ?', [self::MAP_MAPPED, $deviceId]);
+    }
+
+    /**
      * Decide what a claim of `$node` by the device may do. Nothing is written here.
      *
      * action: `same` (already mapped to this device), `kept_manual`, `conflict`, `move` (the node was approved for a retired device of the SAME client and
@@ -292,7 +316,7 @@ final class MeshAgentService
         if ($rival !== null) {
             return $res('conflict', (int) $rival['device_id'], 'also reported by device ' . (int) $rival['device_id'], (int) $rival['client_id']);
         }
-        if ($mine !== null && (string) $mine['source'] !== 'agent' && !$this->meshSettings->get()['auto_map_overwrite']) {
+        if ($mine !== null && !in_array((string) $mine['source'], ['agent', 'verified'], true) && !$this->meshSettings->get()['auto_map_overwrite']) {
             return $res('kept_manual');
         }
 

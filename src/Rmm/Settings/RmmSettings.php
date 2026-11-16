@@ -351,6 +351,15 @@ final class RmmSettings
         $this->floors = $floors;
     }
 
+    /**
+     * CORE-39: true when floors were set but could not be read (a {@see \RivetCore\Compliance\Profile\RetentionFloors} whose load failed). They then answer
+     * "none", which is wrong for a framework minimum: the housekeeping skips its history, log, change and metric prunes for that run instead of deleting below it.
+     */
+    public function retentionFloorsUnavailable(): bool
+    {
+        return $this->floors instanceof \RivetCore\Compliance\Profile\RetentionFloors && $this->floors->unavailable();
+    }
+
     public function retentionFloors(): ?RetentionFloorsInterface
     {
         return $this->floors;

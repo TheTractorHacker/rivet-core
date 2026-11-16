@@ -46,7 +46,7 @@ if (preg_match('/^[A-Za-z0-9_-]{0,32}$/D', $domain) !== 1 || preg_match('/^[A-Za
     fwrite(STDERR, "The domain may hold letters, digits, '_' and '-' (32 at most); the account letters, digits, '.', '_' and '-'.\n");
     exit(2);
 }
-$cookie = MeshCookie::login(trim($key), $domain, $account, time(), null, true);
+$cookie = MeshCookie::login(trim($key), $domain, $account, time(), null, null, true);
 if ($cookie === null) {
     fwrite(STDERR, "The login key is not usable (it must be hex, at least 32 bytes).\n");
     exit(1);

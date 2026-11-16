@@ -177,7 +177,7 @@ make e2e                            # self-contained end-to-end run against e2e/
 ./e2e/run_linux_systemd_e2e.sh      # optional: the same unit under a REAL systemd (privileged container; run the previous script first)
 ```
 
-No Go on the host? Everything runs in Docker: `docker run --rm -v "$PWD":/src -w /src golang:1.27 make vet test dist VERSION=...` (see `docs/rmm/AGENT_BUILD.md`).
+No Go on the host? Everything runs in Docker: `docker run --rm -v "$PWD":/src -w /src golang:1.27.4 make vet test dist VERSION=...` (see `docs/rmm/AGENT_BUILD.md`).
 
 Needs Go >= the version in `go.mod` (built and tested with 1.27.1) and network access for `golang.org/x/sys` on first build
 (`go.sum` is committed). Only one third-party module is used: `golang.org/x/sys` (Windows registry/service/DPAPI/ACL APIs).
@@ -346,7 +346,7 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 Local kill switches (set in `config.json` by an administrator of the endpoint): `disable_jobs` (never execute server jobs) and
 `disable_script_checks`, plus (RMM Phases 6 and 8) `disable_remote` (the service, process and file tools fail with `disabled_locally`, and the agent stops announcing
-`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_software` (software_detect and software_install fail with `disabled_locally`; `software:detect`, `software:install` and `job:software_*` are not announced), `disable_patching` (patch_scan and patch_install fail with `disabled_locally`; `patch:scan`, `patch:install` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` and `logs:presets` are not announced) and `disable_change` (never watch the registry, files, groups or tasks, and forget what was kept; `change:monitor` is not announced). `change_extra_roots` (a list of absolute folders) adds file roots a signed change-monitoring file watch may read; the server can never widen that list and an extra root never unlocks a credential file.
+`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_software` (software_detect and software_install fail with `disabled_locally`; `software:detect`, `software:install` and `job:software_*` are not announced), `disable_patching` (patch_scan, patch_install and patch_configure fail with `disabled_locally`; `patch:scan`, `patch:install`, `patch:configure` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` and `logs:presets` are not announced) and `disable_change` (never watch the registry, files, groups or tasks, and forget what was kept; `change:monitor` is not announced). `change_extra_roots` (a list of absolute folders) adds file roots a signed change-monitoring file watch may read; the server can never widen that list and an extra root never unlocks a credential file.
 
 ## Patch management (RMM Phase 4)
 

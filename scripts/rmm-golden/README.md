@@ -137,3 +137,7 @@ body keys are the same. Every other difference (the `<DEVICE#n>` renumbering in 
 and one more `enrolled` / one fewer `reinstalled` attempt in `04` and `08`) is a knock-on of that one exchange.
 
 To re-record after a future deliberate delta: `php scripts/rmm-golden/replay-core.php record --dir=<tmp>`, inspect every difference, copy over only the files you can explain, keep the old copy in `golden-original/`, and extend `expected-deltas.json`.
+
+### CORE-17 (rc.62): one more deliberate delta
+
+The Core replay's golden files record the original RivetIT rule that an identity-only reinstall of a linked device reuses that device. CORE-17 changes that (a separate pending device is enrolled and the linked device keeps its credential), so the scenario script now binds the newcomer of step `reinstall-new-install-id-new-guid-same-serial` as `dev2r` and leaves `dev2` (and its token) as the linked device of the later scenarios. Files 04 to 09 were re-recorded with `replay-core.php record`; `07-update.json` therefore also has a copy in `golden-original/`. New declared units: `CORE-17` (the step itself) and `CORE-17-token-numbering` (every later request made with dev2's token is numbered `<TOKEN#3>` instead of `<TOKEN#5>`); the extra pending device shows up in units that were already declared (`technician-list`, the devices snapshots). `01` to `03` are byte-identical. Because `golden.php` is shared, a replay of the CORE-17 recording against the original RivetIT server is expected to differ at that step.

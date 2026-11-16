@@ -23,7 +23,9 @@ use RivetCore\Rmm\Technician\ActionResult;
  * not restricted to some clients; a restricted caller may manage rules of their own clients.
  *
  * ABILITIES: `rmm.patch.view` reads, `rmm.patch.manage` scans, approves, declines, dry-runs and manages rings, rules and policies, `rmm.patch.install` runs a REAL installation
- * (an install that asks to restart the device afterwards also needs `rmm.job.reboot`).
+ * (an install that asks to restart the device afterwards also needs `rmm.job.reboot`). WINDOWS UPDATE CONTROL (1.0.0-rc.65): a dry run of `configure` is a manage action, a real change
+ * needs the install grant (and `confirm`), and so does changing any of the three policy settings `windows_update_mode`, `windows_feature_target`, `windows_quality_defer_days`
+ * (they decide what Windows installs on every device the policy reaches).
  *
  * @api
  */
@@ -40,6 +42,7 @@ final class PatchActions
         private readonly PatchReader $reader,
         private readonly RmmAuditInterface $audit,
         private readonly ?RmmEventPublisher $events = null,
+        private readonly ?PatchConfigureService $configure = null,
     ) {
     }
 
@@ -245,6 +248,58 @@ final class PatchActions
         return ActionResult::ok('Queued. The device picks it up at its next check-in.', 202, 'queued', ['job_id' => $r['job_id'] ?? null, 'mode' => $mode, 'queued' => $r['queued'] ?? 0, 'remaining' => $r['remaining'] ?? 0, 'ids' => $r['ids'] ?? []]);
     }
 
+    /**
+     * Bring a Windows device to the Windows Update state its effective patch policy asks for (`patches/configure`). Nothing the caller types reaches the device: the job carries the
+     * desired state of the policy. A dry run (the default) only reports what would change; `mode` = `apply` needs the install grant and `confirm` = true, and is still a dry run while
+     * the `patch_live_install` limit is off.
+     *
+     * @param array<string,mixed> $in {mode?: dry_run|apply (default dry_run), confirm?}
+     */
+    public function configure(RmmPrincipal $who, int $deviceId, array $in): ActionResult
+    {
+        $mode = $in['mode'] ?? 'dry_run';
+        if (!is_string($mode) || !in_array($mode, PatchProtocol::CONFIGURE_MODES, true)) {
+            [$d] = $this->deviceFor($who, $deviceId, RmmAbility::PATCH_VIEW);
+
+            return $d === null ? ActionResult::fail(404, 'not_found', 'Device not found.') : ActionResult::fail(422, 'invalid', 'mode must be dry_run or apply.');
+        }
+        [$dev, $err] = $this->deviceFor($who, $deviceId, $mode === 'apply' ? RmmAbility::PATCH_INSTALL : RmmAbility::PATCH_MANAGE);
+        if ($err !== null || $dev === null) {
+            return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
+        }
+        if (($off = $this->featureOff()) !== null) {
+            return $off;
+        }
+        if ($this->configure === null) {
+            return ActionResult::fail(409, 'unsupported', 'Windows Update control is not available.');
+        }
+        if ($dev['link_state'] !== 'linked') {
+            return ActionResult::fail(409, 'conflict', 'Only a device linked to an asset can receive jobs. Approve it first.');
+        }
+        if ($mode === 'apply' && empty($in['confirm'])) {
+            return ActionResult::fail(422, 'confirmation_required', 'This changes the Windows Update policy on the device. Confirm it explicitly.');
+        }
+        $live = (int) $this->settings->limits()['patch_live_install'] === 1;
+        $r = $this->configure->queue($dev, $mode === 'apply' && $live ? 'apply' : 'dry_run', ['source' => 'manual', 'user_id' => $who->userId]);
+        if (!$r['ok']) {
+            $code = (string) ($r['code'] ?? 'invalid');
+
+            return ActionResult::fail($code === 'unsupported' ? 409 : 422, $code === 'unsupported' ? 'unsupported' : 'invalid', (string) ($r['error'] ?? 'The job could not be queued.'));
+        }
+        if (isset($r['skipped'])) {
+            return ActionResult::ok(match ($r['skipped']) {
+                'already_queued' => 'A Windows Update policy job is already waiting or running on this device.',
+                'automation_disabled' => 'This device is marked as managed by another RMM: nothing is changed on it.',
+                'externally_managed' => 'Windows Update on this device is managed by something else (WSUS, a group policy or MDM). Nothing is changed.',
+                'not_reported' => 'The device has not reported its Windows Update state yet. Scan it first.',
+                default => 'The device already matches its policy: nothing to change.',
+            }, 200, (string) $r['skipped'], ['skipped' => $r['skipped']]);
+        }
+        $this->audit->record('Patch Configure Requested', "{$who->userName} asked for a Windows Update policy " . ($mode === 'apply' && $live ? 'change' : 'dry run') . " on device $deviceId (job {$r['job_id']})", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+
+        return ActionResult::ok('Queued. The device picks it up at its next check-in.', 202, 'queued', ['job_id' => $r['job_id'] ?? null, 'mode' => $mode === 'apply' && $live ? 'apply' : 'dry_run', 'changes' => $r['changes'] ?? []]);
+    }
+
     // ------------------------------------------------------------------ approvals
 
     /**
@@ -358,9 +413,13 @@ final class PatchActions
         $approvalId = (int) $approval['approval_id'];
         $clients = $this->approvals->clientsOf($request);
         foreach ($clients ?: [0] as $c) {
+            // TEN-8: a request that reaches a client outside the caller's scope (or names none) is the same 404 as an unknown approval; only then the ability.
+            if (!$this->authz->clientOk($who->userId, $c) || ($c === 0 && $this->authz->visibleClientIds($who->userId) !== null)) {
+                return ActionResult::fail(404, 'not_found', 'Approval not found.');
+            }
             $denied = $this->authz->check($who->userId, RmmAbility::PATCH_MANAGE, $c);
-            if ($denied !== null || !$this->authz->clientOk($who->userId, $c)) {
-                return ActionResult::fail($denied !== null ? 403 : 404, $denied !== null ? 'forbidden' : 'not_found', $denied ?? 'Approval not found.');
+            if ($denied !== null) {
+                return ActionResult::fail(403, 'forbidden', $denied);
             }
         }
         /** @var array{ok:bool,code?:string,error?:string} $d */
@@ -422,13 +481,36 @@ final class PatchActions
         }
         $rules = array_values(array_filter($this->approvals->rules(), static fn (array $r): bool => $visible === null || in_array($r['client_id'], $visible, true)));
         $policies = $this->policies->all();
-        $assign = $this->policies->assignments();
+        $assign = $this->visibleAssignments($this->policies->assignments(), $visible);
         foreach ($policies as &$p) {
             $p['assignments'] = array_values(array_filter($assign, static fn (array $a): bool => $a['policy_id'] === $p['policy_id']));
         }
         unset($p);
 
         return ActionResult::ok('ok', 200, 'ok', ['policies' => $policies, 'rings' => $this->policies->rings(), 'rules' => $rules, 'settings' => PatchPolicySettings::keys()]);
+    }
+
+    /**
+     * The assignments a caller limited to some clients may know about (TEN-11): a client or device scope only when it lies inside his clients; the scopes that name
+     * no device (everyone, a site, a group, a tag) stay visible.
+     *
+     * @param list<array<string,mixed>> $rows
+     * @param list<int>|null $visible
+     * @return list<array<string,mixed>>
+     */
+    private function visibleAssignments(array $rows, ?array $visible): array
+    {
+        if ($visible === null) {
+            return $rows;
+        }
+
+        return array_values(array_filter($rows, function (array $a) use ($visible): bool {
+            return match ((string) $a['scope_type']) {
+                'client' => in_array((int) $a['scope_id'], $visible, true),
+                'device' => ($d = $this->devices->find((int) $a['scope_id'])) !== null && in_array((int) $d['client_id'], $visible, true),
+                default => true,
+            };
+        }));
     }
 
     public function getPolicy(RmmPrincipal $who, int $policyId): ActionResult
@@ -441,7 +523,7 @@ final class PatchActions
         if ($p === null) {
             return ActionResult::fail(404, 'not_found', 'Policy not found.');
         }
-        $p['assignments'] = $this->policies->assignments($policyId);
+        $p['assignments'] = $this->visibleAssignments($this->policies->assignments($policyId), $this->authz->visibleClientIds($who->userId));
 
         return ActionResult::ok('ok', 200, 'ok', ['policy' => $p]);
     }
@@ -454,6 +536,9 @@ final class PatchActions
     public function savePolicy(RmmPrincipal $who, ?int $policyId, array $in): ActionResult
     {
         if (($e = $this->writeGate($who)) !== null) {
+            return $e;
+        }
+        if (is_array($in['settings'] ?? null) && ($e = $this->windowsSettingsGate($who, $policyId, $in['settings'])) !== null) {
             return $e;
         }
         $confirmedBy = null;
@@ -598,6 +683,42 @@ final class PatchActions
         $this->audit->record('Patch Rule Deleted', "{$who->userName} deleted patch approval rule #$ruleId", (int) $rule['client_id'], 0);
 
         return ActionResult::ok('Deleted.');
+    }
+
+    /**
+     * Changing a Windows Update control setting (set, change or remove) needs the grant to install patches, on top of the policy write gate: it decides what Windows installs on
+     * every device the policy reaches.
+     *
+     * @param array<array-key,mixed> $settings
+     */
+    private function windowsSettingsGate(RmmPrincipal $who, ?int $policyId, array $settings): ?ActionResult
+    {
+        $cur = $policyId === null ? [] : $this->policies->values($policyId);
+        foreach (PatchPolicySettings::WINDOWS_KEYS as $k) {
+            if (!array_key_exists($k, $settings) && !array_key_exists($k, $cur)) {
+                continue;
+            }
+            $new = $settings[$k] ?? null;
+            if (!array_key_exists($k, $settings) || $new === ($cur[$k] ?? null)) {
+                continue;   // a `settings` object replaces all: a key left out is removed, handled below
+            }
+            $why = $this->authz->check($who->userId, RmmAbility::PATCH_INSTALL, 0);
+            if ($why !== null) {
+                $this->audit->record('Patch Denied', "User {$who->userId} denied changing the Windows Update control of a patch policy: $why", 0, 0);
+
+                return ActionResult::fail(403, 'forbidden', 'Changing how Windows Update is controlled needs the grant to install patches. ' . $why);
+            }
+        }
+        foreach (array_keys($cur) as $k) {
+            if (in_array($k, PatchPolicySettings::WINDOWS_KEYS, true) && !array_key_exists($k, $settings)) {
+                $why = $this->authz->check($who->userId, RmmAbility::PATCH_INSTALL, 0);
+                if ($why !== null) {
+                    return ActionResult::fail(403, 'forbidden', 'Changing how Windows Update is controlled needs the grant to install patches. ' . $why);
+                }
+            }
+        }
+
+        return null;
     }
 
     private function writeGate(RmmPrincipal $who): ?ActionResult

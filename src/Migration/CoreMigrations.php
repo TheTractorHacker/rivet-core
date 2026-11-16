@@ -51,6 +51,7 @@ use RivetCore\Rmm\Migration\Migration0044RmmStoreSwitch;
 use RivetCore\Rmm\Migration\Migration0049InstallerManagedExternally;
 use RivetCore\Rmm\Migration\Migration0050ClientRemotePolicy;
 use RivetCore\Rmm\Migration\Migration0051ConsoleSessions;
+use RivetCore\Rmm\Migration\Migration0052MeshVerify;
 use RivetCore\Reporting\Migration\Migration0047ReportingViews;
 use RivetCore\Webhooks\Migration\Migration0005WebhookDeliveries;
 use RivetCore\Workflow\Migration\Migration0007WorkflowTables;
@@ -115,6 +116,7 @@ final class CoreMigrations
             new Migration0049InstallerManagedExternally(),
             new Migration0050ClientRemotePolicy(),
             new Migration0051ConsoleSessions(),
+            new Migration0052MeshVerify(),
         ];
     }
 }

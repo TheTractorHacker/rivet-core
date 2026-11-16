@@ -48,7 +48,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-[ -x "$SIM" ] || { echo "rmm-sim missing; build: docker run --rm -v \"$ROOT/endpoint-agent\":/src -w /src golang:1.27 sh -c 'GOOS=linux GOARCH=amd64 go build -ldflags \"-s -w\" -o dist/rmm-sim ./cmd/rmm-sim'"; exit 2; }
+[ -x "$SIM" ] || { echo "rmm-sim missing; build: docker run --rm -v \"$ROOT/endpoint-agent\":/src -w /src golang:1.27.4 sh -c 'GOOS=linux GOARCH=amd64 go build -ldflags \"-s -w\" -o dist/rmm-sim ./cmd/rmm-sim'"; exit 2; }
 [ -f "$ROOT/vendor/autoload.php" ] || { echo "vendor/ missing in $ROOT (copy it, do not symlink)"; exit 2; }
 
 start_db() {

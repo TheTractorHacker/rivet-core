@@ -17,6 +17,7 @@ use RivetCore\Rmm\Technician\ActionResult;
  *   GET    endpoint_devices/{id}/patches                      the patch summary (last scan, counts, effective policy) and the device's updates (status = available|approved|declined|installed|failed|missing, kind, q, limit, offset)
  *   GET    endpoint_devices/{id}/patches/history              install and dry-run history (limit, offset)
  *   POST   endpoint_devices/{id}/patches/scan                 ask for a scan (read only) -> 202 {job_id} | 200 {skipped}
+ *   POST   endpoint_devices/{id}/patches/configure            {mode?: dry_run (default) | apply, confirm?} bring a Windows device to the Windows Update state its patch policy asks for (nothing typed reaches the device) -> 202 {job_id, mode, changes} | 200 {skipped}
  *   POST   endpoint_devices/{id}/patches/install              {ids?, mode?: dry_run (default) | install, confirm?, reboot_policy?, confirm_reboot?, max_minutes?} -> 202 {job_id, queued, remaining}
  * Across the fleet:
  *   GET    endpoint_devices/patches                           one row per missing update id across the caller's devices (status, client_id, limit, offset)
@@ -237,6 +238,13 @@ final class PatchApi
                 [$in, $bad] = $this->body($req);
 
                 return $bad ?? self::result($this->patches->install($who, $id, $in));
+            case 'configure':
+                if ($m !== 'POST') {
+                    return self::method();
+                }
+                [$in, $bad] = $this->body($req);
+
+                return $bad ?? self::result($this->patches->configure($who, $id, $in));
         }
 
         return self::notFound();

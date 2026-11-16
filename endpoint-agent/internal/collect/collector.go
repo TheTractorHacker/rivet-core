@@ -238,12 +238,25 @@ func Networks() []api.NetInfo {
 }
 
 // MACs returns the sorted unique MAC addresses.
+const maxEnrollMACs = 32
+
 func MACs() []string {
+	return capMACs(Networks())
+}
+
+// capMACs picks at most maxEnrollMACs unique, non-zero MACs, real NICs before container/virtual ones.
+func capMACs(nets []api.NetInfo) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, n := range Networks() {
+	nets = append([]api.NetInfo(nil), nets...)
+	// Real NICs first, so container veth/bridge noise never crowds out the machine's own addresses.
+	sort.SliceStable(nets, func(i, j int) bool { return !isVirtualNIC(nets[i].Name) && isVirtualNIC(nets[j].Name) })
+	for _, n := range nets {
 		if n.MAC == "" || n.MAC == "00:00:00:00:00:00" || seen[n.MAC] {
 			continue
+		}
+		if len(out) >= maxEnrollMACs {
+			break // the server rejects more than 32; a container host can have hundreds of veth/bridge NICs
 		}
 		seen[n.MAC] = true
 		out = append(out, n.MAC)
@@ -350,4 +363,14 @@ func InventoryHash(inv api.Inventory) string {
 	b, _ := json.Marshal(c)
 	s := sha256.Sum256(b)
 	return hex.EncodeToString(s[:8])
+}
+
+// isVirtualNIC flags container/virtual interfaces that are not the machine's identity.
+func isVirtualNIC(name string) bool {
+	for _, p := range []string{"veth", "docker", "br-", "virbr", "cni", "flannel", "cali", "lxc", "tap", "vnet"} {
+		if strings.HasPrefix(strings.ToLower(name), p) {
+			return true
+		}
+	}
+	return false
 }

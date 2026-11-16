@@ -76,17 +76,18 @@ final class RemoteSessionStorageTest extends TestCase
         $this->assertNotNull($err, 'the dropped switch is refused, not ignored');
     }
 
-    public function testTheMigrationIsRegisteredWithAUniqueIdAndSkipsTheMissing0045(): void
+    public function testTheMigrationIsRegisteredInOrderWithAUniqueIdAndSkipsTheMissing0045(): void
     {
         $ids = array_map(static fn ($m): string => $m->id(), CoreMigrations::all());
-        $this->assertSame(['0050_rmm_client_remote_policy', '0051_rmm_console_sessions'], array_slice($ids, -2));
+        $this->assertSame(['0050_rmm_client_remote_policy', '0051_rmm_console_sessions', '0052_rmm_mesh_verify'], array_slice($ids, -3), 'update this when a later migration is added');
         $this->assertSame($ids, array_values(array_unique($ids)));
         $nums = array_map(static fn (string $id): int => (int) substr($id, 0, 4), $ids);
         $sorted = $nums;
         sort($sorted);
         $this->assertSame($sorted, $nums, 'ordered');
         $this->assertNotContains(45, $nums, '0045 was never shipped (the reporting views became 0047)');
-        $this->assertNotContains(50, array_slice($nums, 0, -2));
+        $this->assertCount(1, array_keys($nums, 50, true));
+        $this->assertCount(1, array_keys($nums, 51, true));
     }
 
     public function testTheMigrationIsAdditiveAndIdempotent(): void

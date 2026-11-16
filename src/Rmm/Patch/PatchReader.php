@@ -27,6 +27,7 @@ final class PatchReader
         private readonly PatchPolicyStore $policies,
         private readonly ?RmmTenancyInterface $tenancy = null,
         ?\RivetCore\Rmm\Store\PatchHistoryStore $history = null,
+        private readonly ?PatchConfigureService $configure = null,
     ) {
         $this->patchHistory = $history ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbPatchHistoryStore($sql);
     }
@@ -70,8 +71,36 @@ final class PatchReader
             'compliant' => $scanned && $overdue === 0,
             'policy' => ['ring' => $eff['ring'], 'ring_delay_days' => $eff['ring_delay_days'], 'approval_mode' => $eff['approval_mode'], 'auto_days' => $eff['auto_days'], 'install_enabled' => $eff['install_enabled'],
                 'window' => $eff['window'], 'reboot_policy' => $eff['reboot_policy'], 'max_minutes' => $eff['max_minutes'], 'two_person' => $eff['two_person'], 'sources' => $eff['sources'],
-                'live_install' => (int) $limits['patch_live_install'] === 1],
+                'live_install' => (int) $limits['patch_live_install'] === 1, 'windows' => $eff['windows']],
+            'windows_update' => $this->windowsUpdate($dev, $eff['windows']),
         ];
+    }
+
+    /**
+     * Windows Update control of one device (additive; null for a device that is not a Windows device). `status`: see {@see WindowsUpdatePlan::evaluate()}, or `automation_disabled` for a
+     * device another RMM manages (Core never touches it). `external` lists who manages the setting when it is not Core: wsus, gpo, mdm or changed_since.
+     *
+     * @param array<string,mixed> $dev
+     * @param array{update_mode:string,feature_target:string,quality_defer_days:int,active:bool} $windows
+     * @return array<string,mixed>|null
+     */
+    private function windowsUpdate(array $dev, array $windows): ?array
+    {
+        if (($dev['os'] ?? '') !== 'windows' || $this->configure === null) {
+            return null;
+        }
+        $st = $this->configure->state((int) $dev['device_id']);
+        $state = $st['state'] ?? null;
+        $capable = $this->configure->capable($dev);
+        $plan = WindowsUpdatePlan::evaluate($windows, $state, $capable);
+        $status = (int) ($dev['device_automation_disabled'] ?? 0) === 1 ? 'automation_disabled' : $plan['status'];
+        $target = WindowsUpdatePlan::targetVersion($windows, $state);
+        $running = $state['feature_version'] ?? '';
+
+        return ['status' => $status, 'capable' => $capable, 'reported_at' => $st === null ? null : Sql::iso($st['at']), 'feature_version' => $running === '' ? null : $running, 'build' => ($state['build'] ?? '') === '' ? null : $state['build'],
+            'product' => ($state['product'] ?? '') === '' ? null : $state['product'], 'target_version' => $target, 'newer_than_target' => $target !== null && $running !== '' && PatchProtocol::compareFeatureVersions($running, $target) > 0,
+            'external' => $state['external'] ?? [], 'policy' => $state === null ? new \stdClass() : ($state['policy'] === [] ? new \stdClass() : $state['policy']), 'core_keys' => $state['core']['keys'] ?? [],
+            'pending_changes' => $plan['changes'], 'last_configure' => $this->configure->lastResult((int) $dev['device_id'])];
     }
 
     /**
