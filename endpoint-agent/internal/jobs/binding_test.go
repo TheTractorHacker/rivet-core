@@ -44,3 +44,15 @@ func TestDedupeRecordsLiveUntilTheJobExpires(t *testing.T) {
 		t.Errorf("%d records kept", len(s.recs))
 	}
 }
+
+// review CR11: the device check runs after the type and params policy, so an unknown type in an unbound job reports the type problem.
+func TestDeviceCheckIsAfterTheTypePolicy(t *testing.T) {
+	k := newKeys(t)
+	v := &Verifier{PublicKey: k.pub, DeviceID: "dev-1"}
+	f := baseJob("j9", "echo hi")
+	delete(f, "device_id")
+	f["type"] = "format_disk"
+	if err := v.Verify(k.signJob(t, f)); !errors.Is(err, ErrInvalidJob) {
+		t.Fatalf("got %v, want the unknown-type error first", err)
+	}
+}
