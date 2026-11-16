@@ -158,21 +158,26 @@ final class PdfConverterTest extends ConverterTestCase
         return $out . "trailer\n<< /Size " . (count($objs) + 1) . " /Root 1 0 R >>\nstartxref\n$xref\n%%EOF\n";
     }
 
-    /** CORE-DS-7: pdftohtml writes one image file per DRAW; a PDF that draws one image thousands of times must be stopped, and what it wrote removed. */
-    public function testAnImageDrawnManyTimesIsStoppedBeforeItFillsTheTempDirectory(): void
+    /** CORE-DS-7 / CR16: pdftohtml writes one image file per DRAW; a PDF that draws one image thousands of times is stopped before it fills the temp directory, and its text is still imported without images. */
+    public function testAnImageDrawnManyTimesIsStoppedBeforeItFillsTheTempDirectoryAndTheTextIsKept(): void
     {
         $before = glob(sys_get_temp_dir() . '/itflow-pdf-*') ?: [];
         $pdf = $this->tmp('amp.pdf', $this->imageHeavyPdf(1500));
         $this->assertLessThan(2000000, filesize($pdf), 'the upload is small');
         $t = microtime(true);
-        try {
-            PdfConverter::convert($pdf);
-            $this->fail('a PDF that writes gigabytes of images was accepted');
-        } catch (PdfConversionException $e) {
-            $this->assertStringContainsString('too much', $e->getMessage());
-        }
+        $r = PdfConverter::convert($pdf);
         $this->assertLessThan(30, microtime(true) - $t);
+        $this->assertStringContainsString('Some text', $r['text']);
+        $this->assertSame([], $r['media'], 'no images were imported');
+        $this->assertStringContainsString('images of this PDF were not imported', implode(' ', $r['warnings']));
         $this->assertSame([], array_values(array_diff(glob(sys_get_temp_dir() . '/itflow-pdf-*') ?: [], $before)), 'the scratch directory is gone');
+    }
+
+    /** CR16: a long document with a few small icons per page (well past the old file cap of 1000 files) still imports its text. */
+    public function testALongDocumentWithManySmallIconsStillImports(): void
+    {
+        $r = PdfConverter::convert($this->tmp('icons.pdf', $this->imageHeavyPdf(1200, 16)));
+        $this->assertStringContainsString('Some text', $r['text']);
     }
 
     public function testAnOrdinaryPdfWithOneImageStillConverts(): void
