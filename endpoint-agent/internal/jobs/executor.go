@@ -385,6 +385,34 @@ func (e *Executor) toReport(r Record, attempt int) api.JobReport {
 		f := r.FinishedAt
 		rep.FinishedAt = &f
 	}
+	return fitReport(rep)
+}
+
+// reportMargin leaves room under api.MaxRequestBytes for transport framing and fields added later.
+const reportMargin = 4 << 10
+
+// fitReport shortens Output until the JSON-encoded report is under the request cap. The output is capped in raw bytes, but encoding/json writes each
+// control byte, invalid UTF-8 byte and < > & as a 6-byte escape, so 200000 raw bytes can encode to over 1 MiB, which the client refuses and a retry
+// can never fix (CORE-DS-23).
+func fitReport(rep api.JobReport) api.JobReport {
+	limit := api.MaxRequestBytes - reportMargin
+	size := func(r api.JobReport) int { b, _ := json.Marshal(r); return len(b) }
+	if size(rep) <= limit {
+		return rep
+	}
+	full := rep.Output
+	const marker = "\n[output truncated to fit the report size limit]"
+	lo, hi := 0, len(full) // largest prefix length that fits (binary search; encoded size is monotonic in the prefix)
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		rep.Output = capUTF8(full, mid) + marker
+		if size(rep) <= limit {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	rep.Output = capUTF8(full, lo) + marker
 	return rep
 }
 
@@ -429,6 +457,12 @@ func (e *Executor) reportRecord(ctx context.Context, r Record, attempt int) {
 			return
 		}
 		if e.noteReportErr(err) {
+			return
+		}
+		if errors.Is(err, api.ErrRequestTooLarge) {
+			e.log().Warn("job report is over the request size cap and can never be sent; giving up", "job", r.JobID, "err", err)
+			r.Reported, r.Output = true, ""
+			_ = e.Store.Put(r)
 			return
 		}
 		var ae *api.APIError

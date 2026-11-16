@@ -2,6 +2,9 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -83,5 +86,38 @@ func TestFlushHasATimeBudget(t *testing.T) {
 	e.Flush(context.Background())
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("Flush ignored its budget: %v", d)
+	}
+}
+
+// CORE-DS-23: output whose JSON escaping (6 bytes per control byte) pushes the report over the request cap is shortened to fit, never sent over the cap.
+func TestToReportShrinksOutputThatEncodesOverTheCap(t *testing.T) {
+	e := newExec(t, newKeys(t), OpenStore(""), &errReporter{})
+	out := strings.Repeat("\x00", 200000) // 200000 bytes, about 1.2 MB once JSON-escaped
+	rep := e.toReport(Record{JobID: "j", State: StateSucceeded, Output: out}, 1)
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) > api.MaxRequestBytes-reportMargin {
+		t.Fatalf("encoded report is %d bytes", len(b))
+	}
+	if len(rep.Output) < 100000 || !strings.Contains(rep.Output, "truncated") {
+		t.Fatalf("kept %d bytes, marker missing: %q", len(rep.Output), rep.Output[len(rep.Output)-60:])
+	}
+	// a normal report is untouched
+	if rep := e.toReport(Record{JobID: "j", State: StateSucceeded, Output: "hello"}, 1); rep.Output != "hello" {
+		t.Fatal(rep.Output)
+	}
+}
+
+// CORE-DS-23: a report the client refuses as too large can never succeed; the record is acknowledged locally instead of retried for ever.
+func TestReportTooLargeIsGivenUp(t *testing.T) {
+	k := newKeys(t)
+	rep := &errReporter{err: fmt.Errorf("%w: 1 bytes", api.ErrRequestTooLarge)}
+	e := newExec(t, k, OpenStore(""), rep)
+	unreportedRecord(t, e, "a")
+	e.Flush(context.Background())
+	if len(e.Store.Unreported()) != 0 || rep.calls != 1 {
+		t.Fatalf("unreported=%d calls=%d", len(e.Store.Unreported()), rep.calls)
 	}
 }
