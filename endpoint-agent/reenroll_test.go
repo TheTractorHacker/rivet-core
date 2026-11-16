@@ -56,3 +56,20 @@ func TestFirstInstallKeepsItsConfigWhenEnrollmentRejected(t *testing.T) {
 		t.Fatalf("first install lost its configuration: %q", got)
 	}
 }
+
+// CORE-DS-14 (review CR8): moving to another server WITHOUT a token (an MSI upgrade with a changed SERVER property) must not pair the old credential
+// with the new server_url either.
+func TestMovingToAnotherServerWithoutATokenIsRefused(t *testing.T) {
+	srvA := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srvA, nil)
+	if code := e.setup(); code != 0 {
+		t.Fatal(code)
+	}
+	if code := e.setup("--from-msi", "--server", "https://other-server.example"); code == 0 {
+		t.Fatal("setup moved an enrolled device to another server without a token")
+	}
+	if got := serverURLOf(t, e.state); got != srvA.URL {
+		t.Fatalf("server_url is %s, want the old %s", got, srvA.URL)
+	}
+}
