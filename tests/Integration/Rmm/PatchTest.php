@@ -540,4 +540,44 @@ final class PatchTest extends PatchTestCase
         // taking the rule away by deleting needs the grant, and the grant holder can
         $this->assertSame(200, $call('DELETE', ['patch_policies', (string) $g], $this->second)[0]);
     }
+
+    /** CRR-10: a restrictive layer (installs off, manual approval) and a second-person assignment cannot be taken away or weakened with patch.manage alone. */
+    public function testARestrictiveLayerAndAnEnforcedAssignmentCannotBeWeakenedWithManageAlone(): void
+    {
+        $call = fn (string $m, array $seg, object $by, ?array $body = null): array => $this->api($m, $seg, $by, $body);
+        [$c, $j] = $call('POST', ['patch_policies'], $this->admin, ['name' => 'No installs', 'settings' => ['install_enabled' => false, 'approval_mode' => 'manual']]);
+        $this->assertSame(201, $c, json_encode($j));
+        $r = (int) $j['policy']['policy_id'];
+        [$c, $j] = $call('POST', ['patch_policies', (string) $r, 'assignments'], $this->admin, ['scope_type' => 'global', 'scope_id' => 0]);
+        $this->assertSame(200, $c, json_encode($j));
+        $rAssign = (int) $j['assignment']['assignment_id'];
+        $this->assertSame(403, $call('DELETE', ['patch_policies', (string) $r, 'assignments', (string) $rAssign], $this->tech)[0], 'unassigning a layer that keeps installs off');
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $r], $this->tech, ['name' => 'No installs', 'enabled' => false])[0], 'disabling it');
+        $this->assertSame(403, $call('DELETE', ['patch_policies', (string) $r], $this->tech)[0], 'deleting it');
+        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_assignments WHERE policy_id = $r"));
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $r], $this->installer, ['name' => 'No installs', 'enabled' => false])[0], 'install alone does not cover the manual approval mode');
+        $this->assertSame(200, $call('DELETE', ['patch_policies', (string) $r], $this->admin)[0], 'the grant holders may');
+
+        // an enforced two-person assignment cannot be demoted by posting it again
+        [$c, $j] = $call('POST', ['patch_policies'], $this->second, ['name' => 'Two person', 'settings' => ['two_person' => true]]);
+        $g = (int) $j['policy']['policy_id'];
+        $this->assertSame(200, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->second, ['scope_type' => 'global', 'scope_id' => 0, 'priority' => 100, 'enforce' => true])[0]);
+        $this->assertSame(403, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->tech, ['scope_type' => 'global', 'scope_id' => 0, 'priority' => 100, 'enforce' => false])[0], 'enforce taken away');
+        $this->assertSame(403, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->tech, ['scope_type' => 'global', 'scope_id' => 0, 'priority' => 0, 'enforce' => true])[0], 'priority lowered');
+        $this->assertSame('1', (string) $this->h->one("SELECT enforce FROM rmm_patch_assignments WHERE policy_id = $g"));
+        // type confusion: strings, boolean strings and arrays are read exactly as the store reads them, or refused
+        foreach ([['priority' => '0', 'enforce' => true], ['priority' => 100, 'enforce' => 'false'], ['priority' => 100, 'enforce' => '0'], ['priority' => 100, 'enforce' => 'no'], ['priority' => '0']] as $weak) {
+            $this->assertSame(403, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->tech, ['scope_type' => 'global', 'scope_id' => 0] + $weak)[0], json_encode($weak));
+        }
+        foreach ([['priority' => '-5', 'enforce' => true], ['priority' => [], 'enforce' => true], ['priority' => 100, 'enforce' => []], ['priority' => 100, 'enforce' => 'maybe'], ['priority' => 1.5, 'enforce' => true]] as $junk) {
+            $this->assertSame(422, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->tech, ['scope_type' => 'global', 'scope_id' => 0] + $junk)[0], json_encode($junk));
+        }
+        $this->assertSame('1', (string) $this->h->one("SELECT enforce FROM rmm_patch_assignments WHERE policy_id = $g"), 'none of those changed the stored assignment');
+        $this->assertSame(100, (int) $this->h->one("SELECT priority FROM rmm_patch_assignments WHERE policy_id = $g"));
+        // the settings gates read booleans strictly because the settings are validated: a string cannot carry a lowering past them
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $g], $this->tech, ['name' => 'Two person', 'settings' => ['two_person' => 'false']])[0]);
+        $this->assertSame(422, $call('PUT', ['patch_policies', (string) $g], $this->tech, ['name' => 'Two person', 'settings' => ['two_person' => true, 'install_enabled' => 'true']])[0]);
+        $this->assertSame(200, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->tech, ['scope_type' => 'global', 'scope_id' => 0, 'priority' => 200, 'enforce' => true])[0], 'strengthening needs nothing extra');
+        $this->assertSame(200, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->second, ['scope_type' => 'global', 'scope_id' => 0, 'priority' => 100, 'enforce' => false])[0], 'job.approve may');
+    }
 }
