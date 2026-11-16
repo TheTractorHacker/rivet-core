@@ -388,6 +388,18 @@ final class PatchActions
         if (count($rows) > PatchApprovalService::MAX_PAIRS) {
             return ActionResult::fail(422, 'invalid', 'That reaches more than ' . PatchApprovalService::MAX_PAIRS . ' updates on devices. Narrow it to one client or device.');
         }
+        // CORE-DS-40: a decision by update id alone reaches every device that reports the update, and what an update is called comes from those devices. When they do not agree on its
+        // title or kind (one device can say anything), the decision is not made on a label nobody can trust: look at it per client or device, or say so explicitly.
+        if (($f['device_id'] ?? 0) === 0 && ($f['client_id'] ?? 0) === 0 && ($in['acknowledge_disagreeing_reports'] ?? false) !== true) {
+            $seen = [];
+            foreach ($rows as $r) {
+                $seen[$r['update_id']][$r['kind'] . "\0" . $r['title']] = true;
+            }
+            $bad = array_keys(array_filter($seen, static fn (array $v): bool => count($v) > 1));
+            if ($bad !== []) {
+                return ActionResult::fail(409, 'reports_disagree', 'The devices do not agree on what ' . implode(', ', array_slice($bad, 0, 5)) . ' is (title or kind). Decide per client or device, or send acknowledge_disagreeing_reports: true.');
+            }
+        }
         $clientForAudit = (int) $rows[0]['client_id'];
         if ($approve && $this->approvals->needsSecondPerson($rows)) {
             $a = $this->approvals->requestSecond($rows, $who->userId);

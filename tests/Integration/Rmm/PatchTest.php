@@ -501,6 +501,13 @@ final class PatchTest extends PatchTestCase
         $this->scanWith($devs[2][0], $devs[2][1], self::winScan([self::WIN_KB => ['security', 'Real: 2026-11 Security Update']]));
         $items = $this->api('GET', ['patches'], $this->admin)[1]['items'];
         $this->assertFalse($items[0]['reports_disagree']);
+        // the decision half: with the reports disagreeing a fleet-wide decision is refused unless acknowledged; a per-device one is fine
+        $this->scanWith($devs[2][0], $devs[2][1], self::winScan([self::WIN_KB => ['driver', '!Contoso Bluetooth driver (safe to decline)']]));
+        [$c, $j] = $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB]]);
+        $this->assertSame([409, 'reports_disagree'], [$c, $j['code']], json_encode($j));
+        $this->assertSame(3, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_available WHERE update_id = '" . self::WIN_KB . "' AND status = 'available'"), 'nothing was declined');
+        $this->assertSame(200, $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB], 'device_id' => $devs[2][0]])[0], 'one device is its own report');
+        $this->assertSame(200, $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB], 'acknowledge_disagreeing_reports' => true])[0]);
     }
 
     /** CR5 / CR13 (CORE-DS-10): the second-person rule cannot be taken away, and a staged policy cannot be switched on, with patch.manage alone. */
