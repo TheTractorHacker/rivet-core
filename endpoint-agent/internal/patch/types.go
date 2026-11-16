@@ -84,6 +84,8 @@ type ScanOut struct {
 	Truncated     bool     `json:"truncated"`
 	Total         int      `json:"total"`
 	Updates       []Update `json:"updates"`
+	// WindowsUpdate is the Windows Update policy state (Windows only, additive: absent on Linux and when the registry cannot be read).
+	WindowsUpdate *WUState `json:"windows_update,omitempty"`
 }
 
 // Kinds, severities and install results of the wire contract.

@@ -70,6 +70,7 @@ use RivetCore\Rmm\Read\AutomationReader;
 use RivetCore\Rmm\Patch\PatchActions;
 use RivetCore\Rmm\Patch\PatchApprovalService;
 use RivetCore\Rmm\Patch\PatchComplianceService;
+use RivetCore\Rmm\Patch\PatchConfigureService;
 use RivetCore\Rmm\Patch\PatchInstallService;
 use RivetCore\Rmm\Patch\PatchPolicyStore;
 use RivetCore\Rmm\Patch\PatchProtocol;
@@ -232,6 +233,7 @@ final class RmmModule
     private ?PatchPolicyStore $patchPolicies = null;
     private ?PatchScanService $patchScans = null;
     private ?PatchInstallService $patchInstalls = null;
+    private ?PatchConfigureService $patchConfigure = null;
     private ?PatchApprovalService $patchApprovals = null;
     private ?PatchComplianceService $patchCompliance = null;
     private ?PatchReader $patchReader = null;
@@ -389,6 +391,8 @@ final class RmmModule
         }
         if ($type === PatchProtocol::JOB_SCAN) {
             $this->patchScans()->applyJob($dev, $row);
+        } elseif ($type === PatchProtocol::JOB_CONFIGURE) {
+            $this->patchConfigure()->applyJob($dev, $row);
         } else {
             $this->patchInstalls()->applyJob($dev, $row);
         }
@@ -414,6 +418,12 @@ final class RmmModule
         return $this->patchInstalls ??= new PatchInstallService($this->sql(), $this->settings(), $this->jobs(), $this->patchScans(), $this->patchPolicies(), $this->eventPublisher(), $this->patchCompliance(), $this->dataStores()->patchHistory());
     }
 
+    /** Windows Update control: the policy-driven `patch_configure` job, the reported state and the reconciler. */
+    public function patchConfigure(): PatchConfigureService
+    {
+        return $this->patchConfigure ??= new PatchConfigureService($this->sql(), $this->settings(), $this->jobs(), $this->patchScans(), $this->patchPolicies(), $this->devices(), $this->audit, $this->patchCompliance());
+    }
+
     /** Approve, decline, approval rules and automatic approval. */
     public function patchApprovals(): PatchApprovalService
     {
@@ -423,20 +433,20 @@ final class RmmModule
     /** The `patch.compliance` and `patch.install_failed` checks. */
     public function patchCompliance(): PatchComplianceService
     {
-        return $this->patchCompliance ??= new PatchComplianceService($this->sql(), $this->settings(), $this->checks());
+        return $this->patchCompliance ??= new PatchComplianceService($this->sql(), $this->settings(), $this->checks(), $this->patchPolicies());
     }
 
     /** Patch reads: one device, the fleet's compliance. */
     public function patchReader(): PatchReader
     {
-        return $this->patchReader ??= new PatchReader($this->sql(), $this->settings(), $this->patchPolicies(), $this->tenancy, $this->dataStores()->patchHistory());
+        return $this->patchReader ??= new PatchReader($this->sql(), $this->settings(), $this->patchPolicies(), $this->tenancy, $this->dataStores()->patchHistory(), $this->patchConfigure());
     }
 
     /** What technicians do with patching (shared by the REST API and the edition's pages). */
     public function patchActions(): PatchActions
     {
         if ($this->patchActions === null) {
-            $this->patchActions = new PatchActions($this->devices(), $this->authorizer(), $this->settings(), $this->patchScans(), $this->patchInstalls(), $this->patchApprovals(), $this->patchPolicies(), $this->patchReader(), $this->audit, $this->eventPublisher());
+            $this->patchActions = new PatchActions($this->devices(), $this->authorizer(), $this->settings(), $this->patchScans(), $this->patchInstalls(), $this->patchApprovals(), $this->patchPolicies(), $this->patchReader(), $this->audit, $this->eventPublisher(), $this->patchConfigure());
             $this->scriptActions()->setPatchActions($this->patchActions);
         }
 
@@ -677,7 +687,7 @@ final class RmmModule
     public function patchScheduler(): PatchScheduler
     {
         return $this->patchScheduler ??= new PatchScheduler($this->sql(), $this->settings(), $this->devices(), $this->patchScans(), $this->patchInstalls(), $this->patchApprovals(), $this->patchCompliance(), $this->patchPolicies(), $this->maintenance(),
-            $this->scheduleGate ?? new MaintenanceScheduleGate($this->maintenance(), $this->settings()), $this->dataStores()->patchHistory());
+            $this->scheduleGate ?? new MaintenanceScheduleGate($this->maintenance(), $this->settings()), $this->dataStores()->patchHistory(), $this->patchConfigure());
     }
 
     public function checks(): CheckEvaluator
