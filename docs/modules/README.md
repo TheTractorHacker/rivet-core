@@ -18,6 +18,7 @@ configuration, how it fails, security notes, which edition features use it, and 
 | Compliance | [compliance.md](compliance.md) | `RivetCore\Compliance` | `compliance_*` | checks, attestation provider | A check that throws is recorded as an error and scores 0; stores throw `InvalidArgumentException` for bad input |
 | Retention | [retention.md](retention.md) | `RivetCore\Retention` | none | policy values | A horizon below 1 keeps everything for that table; floors apply only when a compliance profile is passed |
 | MCP | [mcp.md](mcp.md) | `RivetCore\Mcp` | `mcp_unlinked_identities` | agent directory, SDK glue, tool queries | Unlinked identities are recorded and denied |
+| Inbound monitoring | [inbound-monitoring.md](inbound-monitoring.md) | `RivetCore\Monitoring\Inbound` | none (edition owns the incident table) | ticket gateway, incident store, monitor-to-client map | Fail closed on an empty secret (401); bad bodies are typed rejections (400/413); an edition exception is 500 with state unchanged |
 | KB converters | [kb.md](kb.md) | `RivetCore\KB` | none | uploaded file | Throws `DocxConversionException` / `PdfConversionException` on bad or oversized input |
 | Knowledge | [knowledge.md](knowledge.md) | `RivetCore\Knowledge` | none | credential lookup / reveal control | Renders a placeholder when the credential is not visible |
 | Ui | [ui.md](ui.md) | `RivetCore\Ui` | none | the picker and filter UI | `IconCatalog::normalize()` falls back to the default; `DateRange` falls back to all time for bad input |

@@ -123,3 +123,6 @@
 
 # Redactor tests feed obviously fake credentials (hunter22hunter, base64:abc123...) to prove they are masked; none is a real value.
 /tests/Unit/Rmm/RedactorHardeningTest.php
+
+# Inbound webhook handler test uses a synthetic shared secret constant (s3cret-value-for-tests-...) that is not a credential; the first commit that added it cannot be rewritten.
+/tests/Unit/Monitoring/Inbound/InboundHandlerTest.php
