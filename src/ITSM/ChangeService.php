@@ -86,15 +86,27 @@ class ChangeService
             throw new \InvalidArgumentException('A scheduled change needs a scheduled_at time');
         }
 
+        // CORE-DS-59 (CORE-37): the write is conditional on the status that was read, so two people acting at once cannot both win (a cancelled change stays cancelled)
         if ($scheduledAt) {
-            $this->database->execute('UPDATE changes SET status = ?, scheduled_at = ? WHERE change_id = ?', [$status, $scheduledAt, $changeId]);
+            $done = $this->database->execute('UPDATE changes SET status = ?, scheduled_at = ? WHERE change_id = ? AND status = ?', [$status, $scheduledAt, $changeId, $from]);
         } else {
-            $this->database->execute('UPDATE changes SET status = ? WHERE change_id = ?', [$status, $changeId]);
+            $done = $this->database->execute('UPDATE changes SET status = ? WHERE change_id = ? AND status = ?', [$status, $changeId, $from]);
+        }
+        if ($done->affectedRows < 1) {
+            throw new \InvalidArgumentException("Change $changeId was changed by someone else; reload it and try again");
         }
     }
 
+    /** Statuses a change can still be moved in time: once it runs or has finished, its schedule is history. */
+    private const RESCHEDULABLE = ['draft', 'awaiting_approval', 'approved', 'scheduled'];
+
     public function reschedule(int $changeId, string $scheduledAt): void
     {
-        $this->database->execute('UPDATE changes SET scheduled_at = ? WHERE change_id = ?', [$scheduledAt, $changeId]);
+        // CORE-DS-59: not for a change that is running, finished or cancelled
+        $done = $this->database->execute('UPDATE changes SET scheduled_at = ? WHERE change_id = ? AND status IN (' . implode(',', array_fill(0, count(self::RESCHEDULABLE), '?')) . ')',
+            [$scheduledAt, $changeId, ...self::RESCHEDULABLE]);
+        if ($done->affectedRows < 1 && $this->database->fetchOne('SELECT 1 AS x FROM changes WHERE change_id = ? AND status NOT IN (' . implode(',', array_fill(0, count(self::RESCHEDULABLE), '?')) . ')', [$changeId, ...self::RESCHEDULABLE]) !== null) {
+            throw new \InvalidArgumentException("Change $changeId can no longer be rescheduled");
+        }
     }
 }

@@ -407,7 +407,7 @@ final class PanelTicketsTest extends PanelTestCase
         $this->assertSame(1, count($this->p->call('GET', 'panel_tickets', null, $a['device_token'])[2]['tickets']));
 
         // the PC goes to Joe: same install id, a token for his contact
-        [$c, , $b] = $this->p->enroll($this->p->mint($this->p->clientA, $joe)['token'], ['install_id' => $install]);
+        [$c, , $b] = $this->p->enroll($this->p->mint($this->p->clientA, $joe)['token'], ['install_id' => $install, 'previous_token' => $a['device_token']]);
         $this->assertSame([201, $a['device_id']], [$c, $b['device_id']], 'the same device row');
         [$c, , $j] = $this->p->call('GET', 'panel_tickets', null, $b['device_token']);
         $this->assertSame([200, []], [$c, $j['tickets']], 'the list is empty');
@@ -421,7 +421,7 @@ final class PanelTicketsTest extends PanelTestCase
         $this->assertSame(201, $this->create($b['device_token'], ['subject' => 'Joe ticket'])[0]);
         $this->assertCount(1, $this->p->call('GET', 'panel_tickets', null, $b['device_token'])[2]['tickets']);
         // the old person coming back brings the old tickets back (the identity is the pair)
-        [, , $back] = $this->p->enroll($this->p->mint($this->p->clientA, $jane)['token'], ['install_id' => $install]);
+        [, , $back] = $this->p->enroll($this->p->mint($this->p->clientA, $jane)['token'], ['install_id' => $install, 'previous_token' => $b['device_token']]);
         $ids = array_column($this->p->call('GET', 'panel_tickets', null, $back['device_token'])[2]['tickets'], 'ticket_id');
         $this->assertContains($ticket, $ids);
     }
@@ -434,12 +434,12 @@ final class PanelTicketsTest extends PanelTestCase
         [$c, , $made] = $this->create($a['device_token'], ['subject' => 'shared kiosk issue']);
         $this->assertSame(201, $c);
         $jane = $this->p->gateway->addClientContact($this->p->clientA, 'Jane');
-        [, , $b] = $this->p->enroll($this->p->mint($this->p->clientA, $jane)['token'], ['install_id' => $install]);
+        [, , $b] = $this->p->enroll($this->p->mint($this->p->clientA, $jane)['token'], ['install_id' => $install, 'previous_token' => $a['device_token']]);
         $this->assertSame([], $this->p->call('GET', 'panel_tickets', null, $b['device_token'])[2]['tickets']);
         $this->assertSame(404, $this->p->call('GET', 'panel_ticket_chat', null, $b['device_token'], [], [(string) $made['ticket_id']])[0]);
         // and the other way round: a contact's tickets are not visible once the device is client-level again
         $this->assertSame(201, $this->create($b['device_token'], ['subject' => 'Jane ticket'])[0]);
-        [, , $c2] = $this->p->enroll($this->p->mint($this->p->clientA, null)['token'], ['install_id' => $install]);
+        [, , $c2] = $this->p->enroll($this->p->mint($this->p->clientA, null)['token'], ['install_id' => $install, 'previous_token' => $b['device_token']]);
         $subjects = array_column($this->p->call('GET', 'panel_tickets', null, $c2['device_token'])[2]['tickets'], 'subject');
         $this->assertSame(['shared kiosk issue'], $subjects);
     }
@@ -451,7 +451,7 @@ final class PanelTicketsTest extends PanelTestCase
         $joe = $this->p->gateway->addClientContact($this->p->clientA, 'Joe');
         [, , $a] = $this->p->enroll($this->p->mint($this->p->clientA, $jane)['token'], ['install_id' => $install]);
         $this->assertSame(201, $this->create($a['device_token'], ['client_request_id' => self::RID])[0]);
-        [, , $b] = $this->p->enroll($this->p->mint($this->p->clientA, $joe)['token'], ['install_id' => $install]);
+        [, , $b] = $this->p->enroll($this->p->mint($this->p->clientA, $joe)['token'], ['install_id' => $install, 'previous_token' => $a['device_token']]);
         [$c, , $j] = $this->create($b['device_token'], ['client_request_id' => self::RID]);
         $this->assertSame([409, 'conflict'], [$c, $j['code']]);
         $this->assertCount(1, $this->p->gateway->created, 'the gateway was not called again and no id leaked');

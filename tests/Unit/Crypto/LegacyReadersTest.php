@@ -105,6 +105,30 @@ final class LegacyReadersTest extends TestCase
         $this->assertSame('JBSWY3DPEHPK3PXP', (new LegacyOtpReader($master))->read(Editions::encryptOtpSecret('JBSWY3DPEHPK3PXP', $master), 'x'));
     }
 
+    /** CORE-DS-31: a wrong legacy key gives valid padding (and random bytes) about once in 256 values; none of those may be accepted as the plaintext. */
+    public function testAWrongLegacyKeyNeverYieldsGarbageAsAnAcceptedValue(): void
+    {
+        $right = Editions::randomString();
+        $wrong = Editions::randomString();
+        $accepted = 0;
+        $paddingHits = 0;
+        for ($i = 0; $i < 4000; $i++) {
+            $stored = Editions::encryptCredentialEntryWithKey('pw-' . $i . '-' . bin2hex(random_bytes(4)), $right);
+            // does the wrong key give valid padding at all? (what the old code then returned as the value)
+            $raw = openssl_decrypt(substr($stored, 16), 'aes-128-cbc', substr(str_pad($wrong, 16, "\0"), 0, 16), 0, substr($stored, 0, 16));
+            if ($raw !== false) {
+                ++$paddingHits;
+            }
+            try {
+                (new LegacyVaultFieldReader($wrong))->read($stored, 'x');
+                ++$accepted;
+            } catch (DecryptionFailed) {
+            }
+        }
+        $this->assertGreaterThan(3, $paddingHits, 'the test did hit the 1 in 256 case');
+        $this->assertSame(0, $accepted);
+    }
+
     public function testWrongKeyFailsClosedInsteadOfReturningEmpty(): void
     {
         $key = bin2hex(random_bytes(32));

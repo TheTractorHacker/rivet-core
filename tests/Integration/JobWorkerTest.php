@@ -156,6 +156,37 @@ final class JobWorkerTest extends TestCase
         $this->assertSame(0, $this->q->heartbeat($b), 'a reclaimed job reports that it is no longer ours');
     }
 
+    /** CORE-DS-60: a job that was reclaimed and claimed again by another worker is not "still ours" for the first worker, and is not released or refreshed from under the second. */
+    public function testAReclaimedAndReclaimedJobIsNotStillOursByItsAttempt(): void
+    {
+        $id = $this->q->enqueue('t');
+        $first = $this->q->claim(1)[0];
+        $this->assertSame(1, (int) $first['attempts']);
+        $this->db->execute('UPDATE integration_jobs SET started_at = NOW() - INTERVAL 2 HOUR, heartbeat_at = NOW() - INTERVAL 2 HOUR');
+        $this->assertSame(1, $this->q->requeueStale(15));
+        $second = $this->q->claim(1)[0];   // worker 2
+        $this->assertSame([$id, 2], [(int) $second['job_id'], (int) $second['attempts']]);
+        // worker 1 asks whether the job is still its own, as the attempt it claimed
+        $this->assertSame(0, $this->q->heartbeat([$id], [$id => 1]), 'running again, but as attempt 2');
+        $this->assertSame(1, $this->q->heartbeat([$id], [$id => 2]), 'the owner is alive');
+        $before = $this->row($id)['heartbeat_at'];
+        $this->assertFalse($this->q->release($id, 1), 'worker 1 cannot hand back what worker 2 runs');
+        $this->assertSame('running', $this->row($id)['status']);
+        $this->assertSame((string) $before, (string) $this->row($id)['heartbeat_at']);
+        $this->assertTrue($this->q->release($id, 2));
+        $this->assertSame('pending', $this->row($id)['status']);
+        // and the worker loop does not run the job a second time
+        $ran = 0;
+        $this->db->execute('UPDATE integration_jobs SET status = \'pending\', attempts = 0, heartbeat_at = NULL, started_at = NULL');
+        $w = (new JobWorker($this->q))->register('t', function () use (&$ran): array {
+            ++$ran;
+
+            return [];
+        });
+        $this->assertSame(1, $w->run(5, 5)['completed']);
+        $this->assertSame(1, $ran);
+    }
+
     public function testJobsWithoutHeartbeatFallBackToStartedAt(): void
     {
         $a = $this->q->enqueue('t');

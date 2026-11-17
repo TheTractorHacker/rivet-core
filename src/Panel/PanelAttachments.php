@@ -164,22 +164,110 @@ final class PanelAttachments
             'webp' => strlen($b) >= 12 && str_starts_with($b, 'RIFF') && substr($b, 8, 4) === 'WEBP',
             'pdf' => str_starts_with($b, '%PDF-'),
             'text' => self::plainText($b),
-            'csv' => self::plainText($b) && self::csvOk($b),
+            'csv' => self::plainText($b, true) && self::csvOk($b),
             default => false,
         };
     }
 
-    private static function plainText(string $b): bool
+    /**
+     * CRR-17 / R5-1: does any start tag carry an event handler, `href`, `src`, `srcdoc`, `style`, `action` or `formaction`? The attributes are read the way an HTML tokenizer reads them
+     * (one pass with a single cursor, so the time is linear in the size of the file: nothing is scanned twice, which an adversarial file of a million `<x a=b` cannot change):
+     * a tag name runs to white space, `/` or `>`; a tag name that ends at `>` (or the end) has no attributes and the cursor moves past it; attribute names end at white space, `/`,
+     * `=` or `>` (a `<`, a quote or anything else inside a name is an ordinary character); a value after `=` is quoted only when it starts with a quote (an unterminated quote, or a tag start inside the quoted value, refuses the file: nothing hides a tag from
+     * the scan), otherwise it ends at white space or `>`; a tag ends at `>`. A `<` followed by white space and then a letter counts as a tag start (a browser reads `< x` as text; refusing it is the
+     * safe direction). A step budget bounds the work as a second line: when it runs out the file is refused.
+     */
+    private static function hasActiveAttribute(string $b, ?int $budget = null): bool
+    {
+        // no attribute name that matters occurs anywhere: nothing to look for (one pass of the regex engine, which keeps ordinary files and most adversarial ones out of the tokenizer)
+        if (preg_match('/(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)\s*=/i', $b) === 0) {
+            return false;
+        }
+        $n = strlen($b);
+        // The budget counts tag starts and attributes: 100 000 plus one step per 16 bytes. A text file that holds more markup than that is not a log or a note and is refused. (A parameter
+        // only so a test can reach the branch that runs out of it.)
+        $budget ??= 100000 + intdiv($n, 16);
+        $i = 0;
+        $steps = 0;
+        // the next tag start is found by the regex engine (a run of `<` or of white space is skipped natively, not one PHP step at a time)
+        while (preg_match('/<\s*[A-Za-z]/', $b, $m, PREG_OFFSET_CAPTURE, $i) === 1) {
+            if (++$steps > $budget) {
+                return true;
+            }
+            $j = $m[0][1] + strlen($m[0][0]) - 1;   // the first letter of the tag name
+            $j += strcspn($b, " \t\r\n\f/>", $j);   // the tag name
+            if ($j >= $n || $b[$j] === '>') {
+                $i = $j;   // no attributes; a `<` inside the name belongs to the name
+                continue;
+            }
+            $i = $j;
+            while ($i < $n) {
+                if (++$steps > $budget) {
+                    return true;
+                }
+                $i += strspn($b, " \t\r\n\f/", $i);
+                if ($i >= $n || $b[$i] === '>') {
+                    break;
+                }
+                $len = strcspn($b, " \t\r\n\f/=>", $i);
+                if ($len === 0) {
+                    ++$i;   // a `=` where a name should start
+                    continue;
+                }
+                $name = substr($b, $i, min($len, 64));   // an attribute name longer than 64 bytes is none of the names that matter; only its tail is looked at
+                $name = $len > 64 ? substr($b, $i + $len - 64, 64) : $name;
+                $i += $len;
+                $i += strspn($b, " \t\r\n\f", $i);
+                if ($i >= $n || $b[$i] !== '=') {
+                    continue;
+                }
+                if (preg_match('/(?:^|[^A-Za-z0-9_])(?:on[a-z]+|href|src|srcdoc|style|action|formaction|xlink:href)$/iD', $name) === 1) {
+                    return true;
+                }
+                ++$i;
+                $i += strspn($b, " \t\r\n\f", $i);
+                if ($i < $n && ($b[$i] === '"' || $b[$i] === "'")) {
+                    $close = strpos($b, $b[$i], $i + 1);
+                    if ($close === false) {
+                        return true;   // the quote is never closed: what follows may be a tag or a handler to a parser that began somewhere else; refuse
+                    }
+                    // fail closed: a tag start inside the skipped value would never be looked at (a parser that began its quote in another context reads it as a tag)
+                    if (preg_match('/<\s*[A-Za-z]/', substr($b, $i + 1, $close - $i - 1)) === 1) {
+                        return true;
+                    }
+                    $i = $close + 1;
+                } else {
+                    $i += strcspn($b, " \t\r\n\f>", $i);
+                }
+            }
+            // the tag ended at `>` (or the file did); the scan for the next `<` goes on from here
+        }
+
+        return false;
+    }
+
+    private static function plainText(string $b, bool $csv = false): bool
     {
         if (!mb_check_encoding($b, 'UTF-8') || preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $b) === 1) {
             return false;   // binary, NUL, or terminal escape sequences
         }
         // markup anywhere in the file (it used to be the first 8 KiB only)
-        if (preg_match('/<\s*(script|html|iframe|svg|object|embed|\?php|!doctype)/i', $b) === 1) {
+        // CORE-DS-32 / CR6: markup that is ACTIVE as HTML, not every `<letter`: a declaration or processing instruction (`<!`, `<?`), an opening or closing tag of an element that can run
+        // or load something (a list, because a log full of <DIR>, <init>, <module> or "Name <a@b>" is ordinary text), or any tag with an event handler or a URL/style attribute
+        // (`<x onerror=...>`). The real control stays what it was: the file is served as an attachment with nosniff.
+        // CRR-17: the tag name is anything up to a space, `/` or `>` (`<x.y onclick=...>`, `<x"y onclick=...>`: a quote or `=` in a name is an ordinary character), the attributes are read the way an HTML tokenizer reads them (a quote is special only right after `=`;
+        // anywhere else it is an ordinary character: `<x data=it's onclick=...>`, `<x a"b onclick=...>`), and a regex that errors (a backtracking limit) counts as a match: fail closed.
+        if (preg_match('/<[!?]/', $b) !== 0
+            || preg_match('/<\/?\s*(?:script|img|image|body|svg|iframe|frame|frameset|a|form|style|meta|base|link|object|embed|applet|html|head|title|input|button|select|textarea|details|summary|video|audio|source|track|math|marquee|template|noscript|canvas|portal|xml|xsl\w*|xmp|noembed|noframes|plaintext|listing)(?=[\s\/>])/i', $b) !== 0
+            || self::hasActiveAttribute($b)) {
             return false;
         }
         // a spreadsheet opens the file as a formula when the first character says so (tab and CR are control characters, but the check above lets a tab and a CR through)
-        $start = str_starts_with($b, "\xEF\xBB\xBF") ? substr($b, 3, 1) : substr($b, 0, 1);
+        $first = str_starts_with($b, "\xEF\xBB\xBF") ? substr($b, 3) : $b;
+        if ($csv) {
+            $first = preg_replace('/^[ ]*"?[ ]*/', '', $first) ?? $first;   // CORE-DS-33 (csv only, CR6): a quoted first cell ("=1+1") is the same formula to a spreadsheet
+        }
+        $start = substr($first, 0, 1);
         if ($start !== '' && strpbrk($start, "=+-@\t\r") !== false) {
             return false;
         }
@@ -190,7 +278,7 @@ final class PanelAttachments
     /** CSV only: a cell that starts with `=`, a function or DDE call (`+cmd|' /C calc'!A0`, `@SUM(...)`), at the start of the file, a line or after a delimiter. */
     private static function csvOk(string $b): bool
     {
-        $cell = '(?:^|[\r\n,;\t])[ ]*';
+        $cell = '(?:^|[\r\n,;\t])[ ]*"?[ ]*';   // CORE-DS-33: a spreadsheet strips the CSV quotes and then evaluates the cell, so "=..." is =...
 
         return preg_match('/' . $cell . '=/', $b) !== 1
             && preg_match('/' . $cell . '[+\-@][ ]*[A-Za-z_][A-Za-z0-9_.]*[ ]*\(/', $b) !== 1

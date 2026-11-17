@@ -22,7 +22,7 @@ final class KeyGenerator
     /** A new, unique key id such as "k20261010-3fa9": sortable by creation date. */
     public static function kid(?\DateTimeInterface $now = null): string
     {
-        return 'k' . ($now ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Ymd') . '-' . bin2hex(random_bytes(2));
+        return 'k' . ($now ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Ymd') . '-' . bin2hex(random_bytes(4));   // CORE-DS-30: 32 random bits (was 16) after the date
     }
 
     /** A ring holding one fresh active key. */
@@ -39,7 +39,11 @@ final class KeyGenerator
     {
         $now ??= new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
 
-        return $ring->withKey(self::key(), self::kid($now), $now->format('c'), true);
+        do {
+            $kid = self::kid($now);   // CORE-DS-30: never a key id the ring already holds
+        } while ($ring->has($kid));
+
+        return $ring->withKey(self::key(), $kid, $now->format('c'), true);
     }
 
     /**

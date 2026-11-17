@@ -28,8 +28,6 @@ final class BackupEncryptionInspector
     public const PLAINTEXT = 'plaintext';
     public const UNKNOWN = 'unknown';
 
-    /** Encrypted-data OpenPGP packet tags: 1 public-key session key, 3 symmetric-key session key, 9 encrypted data, 18 SEIPD. */
-    private const PGP_ENCRYPTED_TAGS = [1, 3, 9, 18];
 
     /** Inspect a file. A missing, unreadable or empty file is `unknown`. */
     public function inspectFile(string $path): BackupEncryptionReport
@@ -125,17 +123,65 @@ final class BackupEncryptionInspector
         return $unknown ? null : true;
     }
 
+    /**
+     * CORE-DS-29: a binary OpenPGP message starts with an encrypted-data packet whose header parses (old or new format, a plausible length) and whose first body byte is the version
+     * that kind of packet has: PKESK 3 or 6, SKESK 4, 5 or 6, SEIPD 1 or 2. A first byte that merely has the high bit set (UTF-8 text starting with a Latin-1 letter, MessagePack, other
+     * binary formats) fails this. The legacy symmetrically-encrypted-data packet (9) has no version and is not recognised here: use an armored message or the suffix hint.
+     */
     private static function looksLikeBinaryPgpEncrypted(string $head): bool
     {
+        $n = strlen($head);
         $b = ord($head[0]);
         if (($b & 0x80) === 0) {
             return false;
         }
-        $tag = ($b & 0x40) !== 0 ? $b & 0x3f : ($b >> 2) & 0x0f;
-        if (!in_array($tag, self::PGP_ENCRYPTED_TAGS, true) || strlen($head) < 3) {
+        if (($b & 0x40) !== 0) {
+            $tag = $b & 0x3f;
+            if ($n < 2) {
+                return false;
+            }
+            $l = ord($head[1]);
+            if ($l < 192) {
+                $len = $l;
+                $at = 2;
+            } elseif ($l < 224) {
+                if ($n < 3) {
+                    return false;
+                }
+                $len = (($l - 192) << 8) + ord($head[2]) + 192;
+                $at = 3;
+            } elseif ($l === 255) {
+                if ($n < 6) {
+                    return false;
+                }
+                $len = (ord($head[2]) << 24) | (ord($head[3]) << 16) | (ord($head[4]) << 8) | ord($head[5]);
+                $at = 6;
+            } else {
+                // partial body length: only a data packet may use it
+                $len = null;
+                $at = 2;
+                if ($tag !== 18) {
+                    return false;
+                }
+            }
+        } else {
+            $tag = ($b >> 2) & 0x0f;
+            $lenType = $b & 0x03;
+            $width = [1, 2, 4][$lenType] ?? 0;
+            if ($width === 0 || $n < 1 + $width) {
+                return false;   // indeterminate length: only for data packets, which have no version we can check
+            }
+            $len = 0;
+            for ($k = 1; $k <= $width; $k++) {
+                $len = ($len << 8) | ord($head[$k]);
+            }
+            $at = 1 + $width;
+        }
+        $versions = [1 => [3, 6], 3 => [4, 5, 6], 18 => [1, 2]][$tag] ?? null;
+        if ($versions === null || $at >= $n || ($len !== null && $len < 2)) {
             return false;
         }
-        // a session-key packet is version 3 (PKESK/SKESK v4 start with 3/4), SEIPD is version 1: reject a first byte that merely has the high bit set
-        return true;
+
+        return in_array(ord($head[$at]), $versions, true);
     }
 }
