@@ -138,6 +138,8 @@ Everything here is optional on both sides; an agent that does not announce `logs
      {"kind": "journal", "units": ["ssh.service"], "identifiers": [], "min_level": "warning", "contains": ["failed password"]}]}}}
 ```
 
+  `config.logs` carries a `signature` (CORE-DS-16): Ed25519 over the line `rivetit-logs-config-v1`, a line feed, and the canonical JSON of the object without `signature` (the same construction as `config.change`). An agent that verifies it against the key it pinned at enrolment cannot be told which logs to ship by anyone without the signing key; an older agent ignores the member. With no usable signing key the configuration is not offered. With `config.signed_config: 2` (announced when the installation switches on contract version 2) the signed object also carries `device_id` (this device's id as a string) and `seq` (a non-negative integer that never decreases and repeats while the configuration is unchanged); an agent refuses a signed logs configuration for another device or with a lower `seq`.
+
   A device receives only the sources of its own platform (`eventlog` for Windows, `journal` for Linux). `version` changes exactly when something the agent is told changes. The agent collects only while the latest response offers the feature and carries `config.logs`; the moment a response does not, it stops reading (its saved bookmark is kept) and drops what it had not sent.
 * **Sources.** Windows: `channel` (letters, digits, space and `_ . / % -`, at most 100), `levels` (`critical`, `error`, `warning`, `info`, `verbose`), `event_ids` (at most 50 numbers, 0 to 65535; empty means all), `contains` (at most 10 phrases of at most 80 characters, any may match, case-insensitive). Linux: `units` and `identifiers` (at most 20 names each, letters, digits and `: _ . @ -`), `min_level` (`critical`, `error`, `warning`, `info`, `debug`: that severity or worse), `contains` as above. No source ever carries a regular expression. Windows sources may also carry `"levels": []` (every level) and, for an agent that announced `logs:presets`, `aggregate` (3.2.7).
 
@@ -277,6 +279,7 @@ Two job types, queued only by the patch endpoints and the scheduler, only for a 
 |---|---|---|---|---|
 | `patch_scan` | `patch:scan` | `categories` (comma list of `security,critical,important,definition,feature,driver,optional,other`, empty for all), `max_items` (1 to 1000, default 500) | no | `{v, ok, manager, scanned_at, scan_state, wu_state, reboot_pending, last_install_at, truncated, total, updates: [{id, kb, title, kind, severity, size, reboot_required, released_at, eula_accepted, categories, current, version}]}`; `manager` `wua`, `apt`, `dnf`, `yum`, `zypper`; `kind` critical, security, important, optional, driver, other; failure `{v, ok: false, detail, message?}` with `detail` `no_package_manager`, `wu_unavailable`, `timeout`, `lock_held`, `parse_error`, `invalid_params`, `busy`, `scan_failed` |
 | `patch_install` | `patch:install` | `ids` (at most 40 ids and 1000 characters; a Windows Update id in lower-case GUID form or a Linux package id), `mode` (`dry_run` default, `install`), `max_minutes` (1 to 240, default 60) | always | `{v, ok, mode, manager, results: [{id, title, result, code, detail, reboot_required}], reboot_required, truncated}`; `result` `would_install`, `installed`, `needs_reboot`, `failed`, `skipped`, `not_applicable`, `eula_required`, `not_found`, `locked` |
+| `patch_configure` | `patch:configure` | `mode` (`dry_run` default, `apply`), `update_mode` (`leave` default, `managed`), `feature_target` (`none` default, `hold`, or a version such as `25H2`: two digits, `H1` or `H2`), `defer_days` (0 to 30) | Windows only; destructive (offered once) | `{v, ok, mode, outcome, detail?, changes: [{key, from, to}], before, after}`; `outcome` `unchanged`, `changed`, `restored`, `would_change`, `would_restore`, `externally_managed`, `cannot_hold`; `before` and `after` are the Windows Update policy state (`feature_version`, `build`, `product`, `external`, `policy`, `core`). A `patch_scan` result from a Windows agent that has it carries the same object as `windows_update` (additive). Not run on Windows yet: [WINDOWS_UPDATE_CONTROL_TEST.md](WINDOWS_UPDATE_CONTROL_TEST.md) |
 
 The agent validates every parameter again (an unknown key, an out-of-range number, an id that does not match the platform's syntax, a duplicate or more than 40 ids is refused as `invalid_params` before any command is built), re-scans before an install and installs only ids that are still applicable, never accepts an EULA, never removes a package, never restarts the machine and never breaks a package manager lock. The job is `succeeded` when every requested id ended `installed`, `would_install`, `needs_reboot`, `skipped` or `not_applicable`; it is `failed` (the document is still the full result) when any ended `failed`, `eula_required`, `not_found` or `locked`. The server keeps no other channel: results are applied from the job report, nothing rides on the check-in. `disable_patching` withdraws both capabilities on a machine.
 
@@ -677,7 +680,7 @@ content-type: application/json
 
 ```http
 POST /api/v1/agent_checkin
-authorization: Bearer <TOKEN#5>
+authorization: Bearer <TOKEN#3>
 content-type: application/json
 
 {
@@ -804,7 +807,7 @@ content-type: application/json
 
 ```http
 GET /api/v1/agent_jobs
-authorization: Bearer <TOKEN#5>
+authorization: Bearer <TOKEN#3>
 
 HTTP 200
 cache-control: no-store
@@ -836,7 +839,7 @@ content-type: application/json
 
 ```http
 POST /api/v1/agent_jobs
-authorization: Bearer <TOKEN#5>
+authorization: Bearer <TOKEN#3>
 content-type: application/json
 
 {
@@ -859,7 +862,7 @@ content-type: application/json
 
 ```http
 POST /api/v1/agent_jobs
-authorization: Bearer <TOKEN#5>
+authorization: Bearer <TOKEN#3>
 content-type: application/json
 
 {
@@ -885,7 +888,7 @@ content-type: application/json
 
 ```http
 GET /api/v1/agent_update?arch=amd64&version=1.1.0
-authorization: Bearer <TOKEN#5>
+authorization: Bearer <TOKEN#3>
 
 HTTP 200
 cache-control: no-store

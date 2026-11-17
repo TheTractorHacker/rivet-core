@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"rivetit-agent/internal/logx"
 	"rivetit-agent/internal/store"
 	"rivetit-agent/internal/svc"
+	"rivetit-agent/internal/update"
 )
 
 func newFlags(name string) (*flag.FlagSet, *string) {
@@ -30,6 +32,12 @@ func newFlags(name string) (*flag.FlagSet, *string) {
 func openStore(dir string) (*store.Store, error) {
 	if dir == "" {
 		return nil, errors.New("--state-dir is required on this OS (or set RIVETIT_AGENT_STATE_DIR)")
+	}
+	store.OnRepair = func(msg string) { // only ever called on Windows (a legacy state directory was tightened in place)
+		fmt.Fprintln(os.Stderr, "notice:", msg)
+		if svc.IsWindowsService() {
+			svc.ReportInfo("rivetit-agent: " + msg)
+		}
 	}
 	return store.Open(dir)
 }
@@ -61,6 +69,16 @@ func newAgent(st *store.Store, log *slog.Logger, exe string, tune ...time.Durati
 
 func consoleLog(level string) *slog.Logger { return logx.New(os.Stderr, level) }
 
+// earlyRollback is the CORE-DS-11 safety net: a freshly updated agent that exits before Agent.Run never reaches the probation checks, so count the
+// failed start here and restore the previous binary once the limit is hit.
+func earlyRollback(stateDir string) bool {
+	exe, err := os.Executable()
+	if err != nil || stateDir == "" {
+		return false
+	}
+	return update.EarlyFailureRollback(exe, filepath.Join(stateDir, "update.json"), version, nil)
+}
+
 func cmdRun(args []string) int {
 	fs, dir := newFlags("run")
 	level := fs.String("log-level", "info", "debug|info|warn|error")
@@ -73,6 +91,13 @@ func cmdRun(args []string) int {
 	st, err := openStore(*dir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
+		if !*noUpdate && earlyRollback(*dir) {
+			return agent.ExitRestart
+		}
+		if svc.IsWindowsService() {
+			// no console under the SCM, and the state directory (the usual log location) is exactly what was refused
+			svc.ReportFatal("rivetit-agent cannot start: " + err.Error())
+		}
 		return 1
 	}
 	inService := svc.IsWindowsService()
@@ -96,6 +121,10 @@ func cmdRun(args []string) int {
 	a, err := newAgent(st, log, exe, time.Duration(*minIv)*time.Second, time.Duration(*pendIv)*time.Second)
 	if err != nil {
 		log.Error("startup failed", "err", err)
+		if !*noUpdate && earlyRollback(*dir) {
+			log.Error("new version cannot start; rolled back to the last good binary; restarting")
+			return agent.ExitRestart
+		}
 		return 1
 	}
 	runAgent := func(ctx context.Context) int {

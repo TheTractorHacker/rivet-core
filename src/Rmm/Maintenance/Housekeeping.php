@@ -95,6 +95,9 @@ final class Housekeeping
         ?MetricStore $metricStore = null,
         ?StoreMaintenance $storeMaintenance = null,
         private readonly ?\RivetCore\Rmm\Store\RmmDataStores $stores = null,
+        private readonly ?\RivetCore\Rmm\Remote\RemoteSettings $remoteSettings = null,
+        private readonly ?\RivetCore\Rmm\Remote\ConsoleRetention $console = null,
+        private readonly ?\Closure $meshVerify = null,
     ) {
         $this->metrics = $metricStore ?? $metricSink;
         $this->maintenance = $storeMaintenance ?? $storage;
@@ -129,9 +132,16 @@ final class Housekeeping
             $out['client_moves_retried'] = (new \RivetCore\Rmm\Store\ClientMoves($this->sql, $this->stores))->retryPending();   // device moves the hot store could not take when they happened
         }
         $limits = $this->settings->limits();
+        // CORE-39: when the selected framework's retention minimums could not be read they answer "none". Fail closed for DELETION only: this run keeps the
+        // history, log, change and metric data it would have pruned (check-ins, alerts and everything else carry on). The next run tries again.
+        $hold = $this->settings->retentionFloorsUnavailable();
+        if ($hold) {
+            $out['retention_held'] = 1;
+            error_log('rmm housekeeping: the retention floors of the selected compliance framework are unavailable; history, log, change and metric pruning is skipped for this run');
+        }
         // Scale S5: roll days up and keep the time partitions; a partitioned table is pruned by dropping partitions, every other one by batched DELETE as before.
         $partitioned = [];
-        if ($this->maintenance !== null) {
+        if ($this->maintenance !== null && !$hold) {
             $st = $this->maintenance->run($limits, $this->settings->effectiveExplicitLimits($this->metrics?->retentionDays() ?? 14, $this->metrics?->dailyRetentionDays() ?? 400), $this->metrics?->retentionDays() ?? 14, $this->metrics?->dailyRetentionDays() ?? 400);
             $partitioned = $st['partitioned'];
             $out['rollup_days'] = (int) ($st['rollup']['days'] ?? 0);
@@ -139,12 +149,12 @@ final class Housekeeping
             $out['partitions_created'] = array_sum(array_column($st['partitions'], 'created'));
             $out['partitions_dropped'] = array_sum(array_column($st['partitions'], 'dropped'));
         }
-        $out['pruned_check_history'] = in_array('endpoint_agent_check_history', $partitioned, true) ? 0
+        $out['pruned_check_history'] = $hold || in_array('endpoint_agent_check_history', $partitioned, true) ? 0
             : $this->pruneStore(fn (int $n): int => $this->checkHistory->deleteOlderThan($this->sql->utcAt(-max(1, $limits['check_history_days']) * 86400), $n));
         $softwareBefore = $this->sql->utcAt(-$limits['software_history_days'] * 86400);
-        $out['pruned_software_history'] = $this->pruneStore(fn (int $n): int => $this->softwareHistory->deleteOlderThan($softwareBefore, $n));
-        $out['pruned_software_removed'] = $this->prune('rmm_device_software', 'removed_at IS NOT NULL AND removed_at < ?', [$softwareBefore]);
-        if ($this->metrics !== null) {
+        $out['pruned_software_history'] = $hold ? 0 : $this->pruneStore(fn (int $n): int => $this->softwareHistory->deleteOlderThan($softwareBefore, $n));
+        $out['pruned_software_removed'] = $hold ? 0 : $this->prune('rmm_device_software', 'removed_at IS NOT NULL AND removed_at < ?', [$softwareBefore]);
+        if ($this->metrics !== null && !$hold) {
             $explicit = $this->settings->effectiveExplicitLimits($this->metrics->retentionDays(), $this->metrics->dailyRetentionDays());
             $out['pruned_metrics'] = $this->metrics->prune(self::PRUNE_RUN_CAP, $this->pause, $explicit['metric_hourly_days'] ?? null, $explicit['metric_daily_days'] ?? null, $partitioned);
         }
@@ -163,7 +173,7 @@ final class Housekeeping
         }
         // Phases 6 and 8: collected logs age out and are trimmed to their caps whatever the switch says (switching a feature off never keeps its data forever),
         // log rules recover their alerts, and transfer files past their expiry are deleted. A failure here never stops the rest of the run.
-        $out += $this->remoteAndLogs((int) $cfg['job_retention_days']);
+        $out += $this->remoteAndLogs((int) $cfg['job_retention_days'], $hold);
         // Phase 4: scans, approvals, installs and the clean-up of patch data, only while the `patching` switch is on. A failure here never stops the rest of the run.
         if ($this->patches !== null && $this->settings->featureOn('patching')) {
             try {
@@ -183,7 +193,7 @@ final class Housekeeping
         // Change monitoring: retention and caps, and the recovery of change-rule alerts. Runs while the switch is on or records / rules still exist (so turning it off still cleans up).
         if ($this->changes !== null) {
             try {
-                if ($this->settings->featureOn('change_monitor') || $this->changes->hasRecorded()) {
+                if (!$hold && ($this->settings->featureOn('change_monitor') || $this->changes->hasRecorded())) {
                     foreach ($this->changes->prune($this->pause) as $k => $v) {
                         $out['pruned_changes_' . $k] = $v;
                     }
@@ -207,6 +217,15 @@ final class Housekeeping
                 error_log('rmm housekeeping (hypervisor): ' . get_class($e) . ': ' . $e->getMessage());   // e.g. migration 0036 not applied yet
             }
         }
+        // Verified Mesh node mapping (rc.67): off unless an administrator turned it on; one Mesh connection per run, at most MAX_DEVICES_PER_RUN devices, never inside a launch.
+        if ($this->meshVerify !== null) {
+            try {
+                $v = ($this->meshVerify)()->run();
+                $out['mesh_verified'] = $v['mapped'];
+            } catch (\Throwable $e) {
+                error_log('rmm housekeeping (mesh verify): ' . get_class($e));   // the class only: nothing the Mesh server sent
+            }
+        }
         if ($this->events !== null && $this->events->enabled() && $this->deviceState !== null) {
             $out['offline_events'] = $this->announceOffline((int) $cfg['offline_after_s'], (int) $cfg['stale_after_s']);
         }
@@ -221,11 +240,11 @@ final class Housekeeping
     /**
      * @return array<string,int>
      */
-    private function remoteAndLogs(int $retentionDays): array
+    private function remoteAndLogs(int $retentionDays, bool $hold = false): array
     {
         $out = [];
         try {
-            if ($this->logs !== null) {
+            if ($this->logs !== null && !$hold) {
                 foreach ($this->logs->prune($this->pause) as $k => $v) {
                     $out['pruned_logs_' . $k] = $v;
                 }
@@ -236,6 +255,12 @@ final class Housekeeping
             if ($this->transfers !== null) {
                 foreach ($this->transfers->prune($retentionDays) as $k => $v) {
                     $out['transfers_' . $k] = $v;
+                }
+            }
+            // Rivet Console redeem codes and sessions past their retention (whatever the switch says); the audit log is never touched.
+            if ($this->console !== null && $this->remoteSettings !== null) {
+                foreach ($this->console->prune($this->remoteSettings->limits()['console_session_retention_days']) as $k => $v) {
+                    $out['pruned_console_' . $k] = $v;
                 }
             }
         } catch (\Throwable $e) {

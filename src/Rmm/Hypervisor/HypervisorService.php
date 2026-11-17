@@ -20,6 +20,8 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class HypervisorService
 {
+    /** CORE-DS-43: storage rows one device may hold, missing ones included (a report carries at most 200). */
+    private const MAX_STORAGE_ROWS = 600;
     private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
     private const VM_KEY_RE = '/^(?:(qemu|lxc)\/[1-9][0-9]{0,8}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
@@ -446,6 +448,12 @@ final class HypervisorService
      */
     private function upsertStorage(int $deviceId, array $storage, bool $complete, array $limits, string $now): void
     {
+        // CORE-DS-43: a device holds a bounded number of storage rows, the ones that went missing included; names past the budget are not stored
+        $have = array_column($this->sql->all('SELECT name FROM rmm_hypervisor_storage WHERE device_id = ?', [$deviceId]), 'name', 'name');
+        $room = max(0, self::MAX_STORAGE_ROWS - count($have));
+        $storage = array_values(array_filter($storage, static function (array $s) use ($have, &$room): bool {
+            return isset($have[$s['name']]) || $room-- > 0;
+        }));
         foreach (array_chunk($storage, 100) as $chunk) {
             $values = [];
             $params = [];

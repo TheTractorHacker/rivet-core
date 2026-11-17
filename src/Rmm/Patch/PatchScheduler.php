@@ -20,6 +20,9 @@ use RivetCore\Rmm\Support\Sql;
  * `patch:install`; no install is already waiting on it; fewer than `patch_max_installs` devices (and `patch_max_installs_per_client` per client) are installing;
  * and load shedding is at level 0 or 1. Until the `patch_live_install` limit is 1 the scheduler queues DRY RUNS only (at most one a day per device).
  *
+ * WINDOWS UPDATE CONTROL. After the installs the pass hands devices that reported a Windows Update policy state to {@see PatchConfigureService::reconcileDue()} (same gates: dry run
+ * until live installs are on, caps, never a device another RMM manages).
+ *
  * CAPACITY. One pass works on at most `patch_batch` devices per step, halved at shed level 1; nothing is queued at level 2 and above. Devices are spread by a stable
  * hash of the device id (scan time within the interval, start inside the window).
  *
@@ -41,6 +44,7 @@ final class PatchScheduler
         private readonly ?MaintenanceService $maintenance = null,
         private readonly ?ScheduleGateInterface $gate = null,
         ?\RivetCore\Rmm\Store\PatchHistoryStore $history = null,
+        private readonly ?PatchConfigureService $configures = null,
     ) {
         $this->patchHistory = $history ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbPatchHistoryStore($sql);
     }
@@ -48,7 +52,7 @@ final class PatchScheduler
     /** @return array<string,int> */
     public function run(): array
     {
-        $out = ['patch_applied' => 0, 'patch_scans_queued' => 0, 'patch_evaluated' => 0, 'patch_approved' => 0, 'patch_installs_queued' => 0, 'patch_dry_runs_queued' => 0, 'patch_install_deferred' => 0, 'patch_pruned' => 0];
+        $out = ['patch_applied' => 0, 'patch_scans_queued' => 0, 'patch_evaluated' => 0, 'patch_approved' => 0, 'patch_installs_queued' => 0, 'patch_dry_runs_queued' => 0, 'patch_install_deferred' => 0, 'patch_pruned' => 0, 'patch_configures_queued' => 0, 'patch_configure_dry_runs_queued' => 0, 'patch_configure_skipped' => 0];
         if (!$this->settings->featureOn(PatchProtocol::FEATURE)) {
             return $out;
         }
@@ -56,7 +60,7 @@ final class PatchScheduler
         $shed = max(0, min(3, (int) ($this->settings->get()['shed_level'] ?? 0)));
         $batch = max(10, intdiv($limits['patch_batch'], [1, 2, 4, 4][$shed]));
         if ($shed <= 1) {
-            $out['patch_applied'] = $this->scans->applyPending($batch, $this->installs);
+            $out['patch_applied'] = $this->scans->applyPending($batch, $this->installs, $this->configures);
         }
         if ($shed <= 1 && $this->settings->featureOn('jobs')) {
             $out['patch_scans_queued'] = $this->queueDueScans($limits, $batch);
@@ -65,6 +69,12 @@ final class PatchScheduler
             $out['patch_installs_queued'] = $r['live'];
             $out['patch_dry_runs_queued'] = $r['dry'];
             $out['patch_install_deferred'] = $r['deferred'];
+            if ($this->configures !== null) {
+                $c = $this->configures->reconcileDue($limits, $batch);
+                $out['patch_configures_queued'] = $c['live'];
+                $out['patch_configure_dry_runs_queued'] = $c['dry'];
+                $out['patch_configure_skipped'] = $c['skipped'];
+            }
         }
         $out['patch_pruned'] = $this->prune($limits);
 
@@ -227,7 +237,7 @@ final class PatchScheduler
     {
         $n = $this->patchHistory->deleteOlderThan($this->sql->utcAt(-(int) $limits['patch_history_days'] * 86400), 5000);
         $n += $this->sql->run("DELETE FROM rmm_patch_available WHERE status = 'installed' AND status_at < ? LIMIT 5000", [$this->sql->utcAt(-14 * 86400)]);
-        $n += $this->sql->run('DELETE FROM rmm_patch_jobs WHERE applied_at IS NOT NULL AND created_at < ? LIMIT 5000', [$this->sql->utcAt(-30 * 86400)]);
+        $n += $this->sql->run('DELETE FROM rmm_patch_jobs WHERE applied_at IS NOT NULL AND type <> ? AND created_at < ? LIMIT 5000', [PatchProtocol::LEDGER_WU_STATE, $this->sql->utcAt(-30 * 86400)]);
         $n += $this->policies->dropOrphanAssignments();
 
         return $n;

@@ -33,6 +33,18 @@ type Record struct {
 	FinishedAt string `json:"finished_at,omitempty"`
 	Reported   bool   `json:"reported"`
 	UpdatedAt  string `json:"updated_at"`
+	// ExpiresAt is the signed job's expiry. The record is the dedupe entry that stops a re-offered job from running twice, so it is kept at least
+	// until then (CORE-DS-76).
+	ExpiresAt string `json:"expires_at,omitempty"`
+}
+
+// pinned reports whether the record must not be pruned yet: its job could still be re-offered and accepted.
+func (r *Record) pinned(now time.Time) bool {
+	if r.ExpiresAt == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, r.ExpiresAt)
+	return err == nil && now.Before(t)
 }
 
 const (
@@ -71,22 +83,30 @@ func (s *Store) flush() error {
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].UpdatedAt < list[j].UpdatedAt })
 	// prune acknowledged, old records
-	cutoff := time.Now().Add(-recordTTL).UTC().Format(time.RFC3339)
+	now := time.Now()
+	cutoff := now.Add(-recordTTL).UTC().Format(time.RFC3339)
 	kept := list[:0]
 	for _, r := range list {
-		if r.Reported && r.UpdatedAt < cutoff {
+		if r.Reported && r.UpdatedAt < cutoff && !r.pinned(now) {
 			delete(s.recs, r.JobID)
 			continue
 		}
 		kept = append(kept, r)
 	}
 	for len(kept) > maxRecords {
-		if kept[0].Reported {
-			delete(s.recs, kept[0].JobID)
-			kept = kept[1:]
-			continue
+		// drop the oldest acknowledged record whose job can no longer be re-offered; stop when only protected ones are left
+		drop := -1
+		for i, r := range kept {
+			if r.Reported && !r.pinned(now) {
+				drop = i
+				break
+			}
 		}
-		break
+		if drop < 0 {
+			break
+		}
+		delete(s.recs, kept[drop].JobID)
+		kept = append(kept[:drop], kept[drop+1:]...)
 	}
 	return store.WriteJSON(s.path, kept)
 }

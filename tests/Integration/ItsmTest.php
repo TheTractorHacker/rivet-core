@@ -109,6 +109,84 @@ final class ItsmTest extends TestCase
         $this->changes->create('x', null, null, 'extreme', null, null, null, null);
     }
 
+    /** A database whose first read of a status is followed by somebody else's write (the second person's click landing between our read and our write). */
+    private function racing(string $table, string $setSql): \RivetCore\Database\DatabaseInterface
+    {
+        $inner = $this->db;
+
+        return new class ($inner, $table, $setSql) implements \RivetCore\Database\DatabaseInterface {
+            private bool $done = false;
+
+            public function __construct(private \RivetCore\Database\DatabaseInterface $db, private string $table, private string $setSql)
+            {
+            }
+
+            public function fetchOne(string $sql, array $params = []): ?array
+            {
+                $row = $this->db->fetchOne($sql, $params);
+                if (!$this->done && str_contains($sql, $this->table)) {
+                    $this->done = true;
+                    $this->db->execute($this->setSql);
+                }
+
+                return $row;
+            }
+
+            public function fetchAll(string $sql, array $params = []): array
+            {
+                return $this->db->fetchAll($sql, $params);
+            }
+
+            public function execute(string $sql, array $params = []): \RivetCore\Database\ExecutionResult
+            {
+                return $this->db->execute($sql, $params);
+            }
+
+            public function transaction(callable $callback): mixed
+            {
+                return $this->db->transaction($callback);
+            }
+        };
+    }
+
+    /** CORE-DS-59 (CORE-37): the status write is conditional on the status that was read. */
+    public function testAStatusWriteThatLostARaceIsRefusedAndTheTerminalStateStays(): void
+    {
+        $id = $this->changes->create('Upgrade', null, null, 'medium', null, null, null, null);
+        $this->changes->setStatus($id, 'awaiting_approval');
+        $this->changes->setStatus($id, 'approved');
+        $this->changes->setStatus($id, 'in_progress');
+        $racing = new ChangeService($this->racing('changes', "UPDATE changes SET status = 'cancelled' WHERE change_id = $id"));
+        try {
+            $racing->setStatus($id, 'successful');
+            $this->fail('the cancelled change was overwritten');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('changed by someone else', $e->getMessage());
+        }
+        $this->assertSame('cancelled', $this->db->fetchOne('SELECT status FROM changes WHERE change_id = ?', [$id])['status']);
+        // problems
+        $p = $this->problems->create('Disk', 'desc', 1);
+        $racingP = new ProblemService($this->racing('problems', "UPDATE problems SET status = 'closed' WHERE problem_id = $p"), $this->tickets);
+        try {
+            $racingP->setStatus($p, 'investigating');
+            $this->fail('the closed problem was overwritten');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('changed by someone else', $e->getMessage());
+        }
+        $this->assertSame('closed', $this->db->fetchOne('SELECT status FROM problems WHERE problem_id = ?', [$p])['status']);
+    }
+
+    public function testAFinishedOrCancelledChangeCannotBeRescheduled(): void
+    {
+        $id = $this->changes->create('Upgrade', null, null, 'medium', null, null, '2030-01-01 00:00:00', null);
+        $this->changes->reschedule($id, '2030-03-03 00:00:00');
+        $this->changes->reschedule($id, '2030-03-03 00:00:00');   // the same value again is not an error
+        $this->assertSame('2030-03-03 00:00:00', $this->db->fetchOne('SELECT scheduled_at FROM changes WHERE change_id = ?', [$id])['scheduled_at']);
+        $this->changes->setStatus($id, 'cancelled');
+        $this->expectExceptionMessage('can no longer be rescheduled');
+        $this->changes->reschedule($id, '2031-01-01 00:00:00');
+    }
+
     public function testChangeWorkflow(): void
     {
         $id = $this->changes->create('Upgrade', null, null, 'medium', null, null, null, null);

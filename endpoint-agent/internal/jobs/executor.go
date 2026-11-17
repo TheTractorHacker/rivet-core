@@ -37,8 +37,12 @@ type Executor struct {
 	Now         func() time.Time
 	Backoff     api.Backoff
 	Attempts    int // report attempts per transition (default 5)
-	Log         *slog.Logger
-	Disabled    bool // config.disable_jobs: never execute
+	// RetryAfterCap bounds the wait a server Retry-After can impose between report attempts (default 60s); FlushBudget bounds one Flush (default 30s).
+	// Both exist because Flush runs on the check-in goroutine (CORE-DS-4).
+	RetryAfterCap time.Duration
+	FlushBudget   time.Duration
+	Log           *slog.Logger
+	Disabled      bool // config.disable_jobs: never execute
 
 	// Remote holds the handlers of the remote-tool job types (RMM Phase 6) by type; DisableRemote
 	// (config.disable_remote) makes every one of them fail with disabled_locally without running.
@@ -205,6 +209,9 @@ func (e *Executor) process(j api.Job) {
 	}
 	started := e.now()
 	rec := Record{JobID: j.JobID, Attempt: j.Attempt, Type: j.Type, State: StateRunning, StartedAt: ts(started)}
+	if j.ExpiresAt.OK {
+		rec.ExpiresAt = j.ExpiresAt.T.UTC().Format(time.RFC3339)
+	}
 	// Durable BEFORE launch: a crash after this point can only lead to
 	// "failed/agent_restarted", never to a second execution.
 	if err := e.Store.Put(rec); err != nil {
@@ -227,7 +234,7 @@ func (e *Executor) process(j api.Job) {
 	switch j.Type {
 	case TypePowerShell, TypeShell, TypePython:
 		state, reason, output, exit = e.runScript(ctx, j, timeout, maxOut)
-	case TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall, TypePatchScan, TypePatchInstall, TypeSoftwareDetect, TypeSoftwareInstall:
+	case TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall, TypePatchScan, TypePatchInstall, TypePatchConfigure, TypeSoftwareDetect, TypeSoftwareInstall:
 		state, reason, output, exit = e.runRemote(ctx, j, timeout, maxOut)
 	case "collect":
 		state, reason, output = StateSucceeded, "", ""
@@ -381,6 +388,34 @@ func (e *Executor) toReport(r Record, attempt int) api.JobReport {
 		f := r.FinishedAt
 		rep.FinishedAt = &f
 	}
+	return fitReport(rep)
+}
+
+// reportMargin leaves room under api.MaxRequestBytes for transport framing and fields added later.
+const reportMargin = 4 << 10
+
+// fitReport shortens Output until the JSON-encoded report is under the request cap. The output is capped in raw bytes, but encoding/json writes each
+// control byte, invalid UTF-8 byte and < > & as a 6-byte escape, so 200000 raw bytes can encode to over 1 MiB, which the client refuses and a retry
+// can never fix (CORE-DS-23).
+func fitReport(rep api.JobReport) api.JobReport {
+	limit := api.MaxRequestBytes - reportMargin
+	size := func(r api.JobReport) int { b, _ := json.Marshal(r); return len(b) }
+	if size(rep) <= limit {
+		return rep
+	}
+	full := rep.Output
+	const marker = "\n[output truncated to fit the report size limit]"
+	lo, hi := 0, len(full) // largest prefix length that fits (binary search; encoded size is monotonic in the prefix)
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		rep.Output = capUTF8(full, mid) + marker
+		if size(rep) <= limit {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	rep.Output = capUTF8(full, lo) + marker
 	return rep
 }
 
@@ -427,6 +462,12 @@ func (e *Executor) reportRecord(ctx context.Context, r Record, attempt int) {
 		if e.noteReportErr(err) {
 			return
 		}
+		if errors.Is(err, api.ErrRequestTooLarge) {
+			e.log().Warn("job report is over the request size cap and can never be sent; giving up", "job", r.JobID, "err", err)
+			r.Reported, r.Output = true, ""
+			_ = e.Store.Put(r)
+			return
+		}
 		var ae *api.APIError
 		if errors.As(err, &ae) && !ae.Transient() && !ae.AuthRejected() {
 			e.log().Warn("server rejected job report; giving up", "job", r.JobID, "err", err)
@@ -434,9 +475,25 @@ func (e *Executor) reportRecord(ctx context.Context, r Record, attempt int) {
 			_ = e.Store.Put(r)
 			return
 		}
+		if ae != nil && ae.ModuleDisabled() {
+			// the jobs feature (or module) is switched off: nothing will be accepted until it is on again, so leave the record unreported
+			// and return at once instead of sleeping the server's Retry-After (CORE-DS-4)
+			e.log().Warn("jobs are disabled on the server; job report kept for later", "job", r.JobID)
+			return
+		}
+		if i == attempts-1 {
+			break
+		}
 		d := bo.Delay(i)
 		if ae != nil && ae.RetryAfter > d {
 			d = ae.RetryAfter
+		}
+		capD := e.RetryAfterCap
+		if capD <= 0 {
+			capD = 60 * time.Second
+		}
+		if d > capD {
+			d = capD
 		}
 		select {
 		case <-time.After(d):
@@ -450,7 +507,16 @@ func (e *Executor) reportRecord(ctx context.Context, r Record, attempt int) {
 
 // Flush re-sends terminal states whose acknowledgement was lost.
 func (e *Executor) Flush(ctx context.Context) {
+	budget := e.FlushBudget
+	if budget <= 0 {
+		budget = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
 	for _, r := range e.Store.Unreported() {
+		if ctx.Err() != nil {
+			return
+		}
 		e.mu.Lock()
 		busy := e.active[r.JobID]
 		e.mu.Unlock()

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,6 +36,35 @@ var (
 	ErrDowngrade    = errors.New("downgrade refused")
 	ErrIncompatible = errors.New("running version is older than the update's min_version; intermediate update required")
 )
+
+// ErrReleaseKeysUnavailable: the trusted release key set could not be read; temporary.
+var ErrReleaseKeysUnavailable = errors.New("release keys cannot be read right now")
+
+// ErrSelfTestTimeout: the staged binary did not answer `selftest` in time.
+var ErrSelfTestTimeout = errors.New("staged binary selftest timed out")
+
+// HTTPStatusError is a download answered with a non-200 status.
+type HTTPStatusError struct{ Status int }
+
+func (e *HTTPStatusError) Error() string { return fmt.Sprintf("download: HTTP %d", e.Status) }
+
+// Transient reports whether an Apply error is temporary (shutdown, timeout, network, HTTP 408/429/5xx, slow selftest), so the same version should be
+// offered again later. A bad signature, a checksum mismatch, a downgrade or an incompatible version are permanent for that version (CORE-DS-15).
+func Transient(err error) bool {
+	var hs *HTTPStatusError
+	var ne net.Error
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrSelfTestTimeout), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, ErrReleaseKeysUnavailable):
+		return true
+	case errors.As(err, &hs):
+		return hs.Status == 408 || hs.Status == 429 || hs.Status >= 500
+	case errors.As(err, &ne):
+		return true
+	}
+	return false
+}
 
 // Validate performs every check that needs no download: sane fields, https
 // and an allowed host, no downgrade, min_version compatibility, and the
@@ -113,7 +143,7 @@ func Download(ctx context.Context, hc *http.Client, m api.UpdateManifest, dest, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("download: HTTP %d", resp.StatusCode)
+		return &HTTPStatusError{Status: resp.StatusCode}
 	}
 	if resp.ContentLength > MaxBinaryBytes {
 		return errors.New("download exceeds size cap")
@@ -193,6 +223,9 @@ func VerifyBinary(path string) error {
 // SelfTest runs `<binary> selftest` and requires it to report want.
 func SelfTest(ctx context.Context, path, want string) error {
 	r := jobs.RunBounded(ctx, jobs.ExecSpec{Name: path, Args: []string{"selftest"}, Timeout: 20 * time.Second, MaxOutput: 1024})
+	if r.TimedOut || r.Cancelled {
+		return ErrSelfTestTimeout // a slow disk or an antivirus scan of the new exe, not a bad binary (CORE-DS-15)
+	}
 	if !r.HaveExit || r.ExitCode != 0 {
 		return fmt.Errorf("staged binary selftest failed (exit=%d start=%v)", r.ExitCode, r.StartErr)
 	}
@@ -221,8 +254,20 @@ type Manager struct {
 	Now       func() time.Time
 	Probation time.Duration
 	// Injectable for tests; defaults are the real implementations.
-	VerifyFn   func(path string) error
-	SelfTestFn func(ctx context.Context, path, want string) error
+	// ReleaseKeys returns the trusted release public keys (nil or empty = none configured: the legacy instance-signature-only behaviour). With at
+	// least one key every update must carry a valid release signature (CORE-DS-26).
+	ReleaseKeys func() []ed25519.PublicKey
+	// ReleaseRequired reports whether release signatures must be verified even when ReleaseKeys is empty: once release keys have EVER been configured
+	// (embedded, rolled over or revoked) an empty set means "nothing is trusted", never "verification is off" (review CRR-1). nil = only ReleaseKeys decides.
+	ReleaseRequired func() bool
+	// ReleaseState returns an error when the trusted key set cannot be read right now (state file locked, I/O error). Apply then returns the TRANSIENT
+	// ErrReleaseKeysUnavailable instead of judging the signature against an empty set, so a correctly signed release is retried, not recorded as failed.
+	ReleaseState func() error
+	// ReleaseTrust returns keys, whether verification is required and a read error from ONE consistent read of the trust state. When set it replaces
+	// ReleaseKeys, ReleaseRequired and ReleaseState, so a read error between separate reads cannot turn into "signature invalid".
+	ReleaseTrust func() (keys []ed25519.PublicKey, required bool, err error)
+	VerifyFn     func(path string) error
+	SelfTestFn   func(ctx context.Context, path, want string) error
 }
 
 func (m *Manager) now() time.Time {
@@ -262,6 +307,29 @@ func (m *Manager) Apply(ctx context.Context, man api.UpdateManifest, pub ed25519
 			return false, nil
 		}
 		return false, err
+	}
+	if m.ReleaseTrust != nil {
+		keys, required, err := m.ReleaseTrust()
+		if err != nil {
+			return false, fmt.Errorf("%w: %v", ErrReleaseKeysUnavailable, err)
+		}
+		if len(keys) > 0 || required {
+			if err := VerifyRelease(keys, man, runtime.GOOS, runtime.GOARCH); err != nil {
+				return false, err
+			}
+		}
+	} else if m.ReleaseState != nil {
+		if err := m.ReleaseState(); err != nil {
+			return false, fmt.Errorf("%w: %v", ErrReleaseKeysUnavailable, err)
+		}
+	}
+	if m.ReleaseTrust == nil && m.ReleaseKeys != nil {
+		keys := m.ReleaseKeys()
+		if len(keys) > 0 || (m.ReleaseRequired != nil && m.ReleaseRequired()) {
+			if err := VerifyRelease(keys, man, runtime.GOOS, runtime.GOARCH); err != nil {
+				return false, err
+			}
+		}
 	}
 	if err := ensureParent(m.Paths.Staged); err != nil {
 		return false, err
@@ -368,4 +436,18 @@ func (m *Manager) Confirm() error {
 		return nil
 	}
 	return os.Remove(m.StatePath)
+}
+
+// EarlyFailureRollback is for a process that is about to exit before Agent.Run
+// could start the probation machinery (the state directory was refused, the
+// configuration did not load). Without it a new version that fails that early
+// is never rolled back: it crash-loops under the service manager and the device
+// stays offline (CORE-DS-11). Each call counts as one start of the version
+// under probation; after MaxStartAttempts, or past the health deadline, the
+// previous binary is restored and the caller must exit with the restart code.
+// Outside probation it does nothing. now may be nil.
+func EarlyFailureRollback(exe, statePath, version string, now func() time.Time) bool {
+	m := &Manager{Paths: PathsFor(exe), Version: version, StatePath: statePath, Now: now}
+	rolled, _, _ := m.OnStart()
+	return rolled
 }

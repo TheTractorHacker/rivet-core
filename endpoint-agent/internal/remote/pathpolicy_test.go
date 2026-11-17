@@ -76,6 +76,10 @@ func TestLinuxPathPolicyTable(t *testing.T) {
 		{"/srv/data/store.pfx", allow, ReasonDenyList},
 		{"/srv/data/vault.kdbx", allow, ReasonDenyList},
 		{"/srv/data/app.keystore", allow, ReasonDenyList},
+		{"/srv/data/app.JKS", allow, ReasonDenyList},           // CORE-DS-77: the server denies .jks too
+		{"/etc/ssl/private/site", "/etc", ReasonDenyList},      // suffix-less private key directory
+		{"/var/lib/rivetit/state", "/var/lib", ReasonDenyList}, // the server's PathPolicy denies /var/lib/rivetit
+		{"/srv/data/ssh_host_rsa_key", allow, ReasonDenyList},  // host keys outside /etc/ssh
 		{"/srv/data/keynote.txt", allow, ""},
 		{"/var/lib/rivetit-agent/device.token", "/var/lib", ReasonDenyList},
 		{"/var/lib/rivetit-agent", "/var/lib", ReasonDenyList},

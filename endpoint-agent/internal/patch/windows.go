@@ -156,6 +156,7 @@ func (e Engine) normaliseScan(res jobs.ExecResult, p ScanParams, maxOut int) rem
 		out.ScannedAt = rfc3339(t)
 	}
 	out.LastInstallAt = normTime(in.LastInstallAt)
+	out.WindowsUpdate = e.windowsState()
 	seen := map[string]bool{}
 	for _, u := range in.Updates {
 		if !ValidWindowsID(u.ID) || seen[u.ID] {
@@ -165,6 +166,20 @@ func (e Engine) normaliseScan(res jobs.ExecResult, p ScanParams, maxOut int) rem
 		out.Updates = append(out.Updates, normUpdate(u))
 	}
 	return finishScan(out, p.MaxItems, maxOut)
+}
+
+// windowsState reads the Windows Update policy state for the scan report (nil when there is no registry to read: the field is then absent).
+func (e Engine) windowsState() *WUState {
+	r := e.reg()
+	if r == nil {
+		return nil
+	}
+	snap, err := Read(r)
+	if err != nil {
+		return nil
+	}
+	st := BuildState(snap)
+	return &st
 }
 
 func normTime(s *string) *string {
@@ -217,12 +232,15 @@ func (e Engine) normaliseInstall(res jobs.ExecResult, p InstallParams, maxOut in
 		return remote.Fail(DetailParseError, map[string]any{"message": clip(fmt.Sprintf("no JSON document in the script output (exit %d)", res.ExitCode), maxDetail)})
 	}
 	var head struct {
-		OK *bool `json:"ok"`
+		OK      *bool           `json:"ok"`
+		Results json.RawMessage `json:"results"`
 	}
 	if err := json.Unmarshal(raw, &head); err != nil || head.OK == nil {
 		return remote.Fail(DetailParseError, nil)
 	}
-	if !*head.OK {
+	// install.ps1 prints ok:false whenever ANY update failed, needed a EULA, was not found or was locked, together with the full results array. Only a
+	// document without results is a failure of the script itself; the verdict for the rest is computed below from the per-update results (CORE-DS-5).
+	if !*head.OK && (len(head.Results) == 0 || string(head.Results) == "null") {
 		// A script failure (wu_unavailable, invalid_params) keeps its code and the mode, so the server can tell a dry run from a real one.
 		r := scriptFailure(raw)
 		return r

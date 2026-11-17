@@ -72,8 +72,49 @@ func CompareVersions(a, b string) (int, error) {
 		return 1, nil
 	case vb.pre == "":
 		return -1, nil
-	case va.pre < vb.pre:
-		return -1, nil
 	}
-	return 1, nil
+	return comparePre(va.pre, vb.pre), nil
+}
+
+// comparePre orders two non-empty pre-release strings by SemVer 2.0 section 11: dot-separated identifiers from the left, numeric ones as numbers, a
+// numeric identifier below an alphanumeric one, and a shorter list below a longer one that starts the same way (CORE-DS-27: "rc.10" is above "rc.9").
+func comparePre(a, b string) int {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		x, y := as[i], bs[i]
+		if x == y {
+			continue
+		}
+		xn, xerr := strconv.ParseUint(x, 10, 64)
+		yn, yerr := strconv.ParseUint(y, 10, 64)
+		switch {
+		case xerr == nil && yerr == nil:
+			if xn != yn {
+				if xn < yn {
+					return -1
+				}
+				return 1
+			}
+			// equal values with different spelling (007 vs 7): fall back to text so the order stays total
+			if x < y {
+				return -1
+			}
+			return 1
+		case xerr == nil:
+			return -1
+		case yerr == nil:
+			return 1
+		case x < y:
+			return -1
+		default:
+			return 1
+		}
+	}
+	switch {
+	case len(as) < len(bs):
+		return -1
+	case len(as) > len(bs):
+		return 1
+	}
+	return 0
 }

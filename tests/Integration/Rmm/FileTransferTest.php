@@ -156,6 +156,28 @@ final class FileTransferTest extends RemoteTestCase
         $this->assertCount(1, $this->api('GET', [$this->d(), 'files'], $this->tech)[1]['data']);
     }
 
+    /** CORE-DS-70: switching file transfer (or remote tools) off stops the REST reads of what was stored, not only the actions that queue jobs; deleting stays possible. */
+    public function testTurningTheSwitchOffStopsTheReadsToo(): void
+    {
+        $this->enableTransfers();
+        [$tid] = $this->startDownload();
+        $this->assertSame(200, $this->api('GET', [$this->d(), 'files'], $this->tech)[0]);
+        $this->assertSame(200, $this->api('GET', [$this->d(), 'files', $tid], $this->tech)[0]);
+        $this->assertSame(200, $this->api('GET', [$this->d(), 'services'], $this->tech)[0]);
+        $this->switchOn(['remote_tools']);
+        $this->h->module->settings()->refresh();
+        foreach ([[$this->d(), 'files'], [$this->d(), 'files', $tid], [$this->d(), 'files', $tid, 'content']] as $seg) {
+            [$c, $j] = $this->api('GET', $seg, $this->tech);
+            $this->assertSame([409, 'feature_disabled'], [$c, $j['code']], implode('/', $seg));
+        }
+        $this->assertSame(200, $this->api('GET', [$this->d(), 'services'], $this->tech)[0], 'remote tools are still on');
+        $this->assertSame(200, $this->api('DELETE', [$this->d(), 'files', $tid], $this->tech)[0], 'stored files can still be deleted');
+        $this->switchOn([]);
+        $this->h->module->settings()->refresh();
+        $this->assertSame(409, $this->api('GET', [$this->d(), 'services'], $this->tech)[0]);
+        $this->assertSame(409, $this->api('GET', [$this->d(), 'processes'], $this->tech)[0]);
+    }
+
     public function testADamagedOrOversizedDownloadIsRefusedAndNeverKept(): void
     {
         $this->enableTransfers(['transfer_max_bytes' => 2048]);
@@ -314,6 +336,22 @@ final class FileTransferTest extends RemoteTestCase
         $s = $this->api('GET', [$this->d(), 'files', $j['transfer_id']], $this->admin)[1];
         $this->assertSame(['failed', 'failed'], [$s['state'], $s['job_state']]);
         $this->assertStringContainsString('failed', $s['error']);
+    }
+
+    /** CORE-DS-71: download requests whose job ended without data (refused path, offline device, cancelled) do not keep their reservation. */
+    public function testDownloadsThatEndedWithoutDataFreeTheirReservation(): void
+    {
+        $this->enableTransfers(['transfer_store_max_bytes' => 1048576, 'transfer_ttl_s' => 86400, 'transfer_max_bytes' => 400000]);
+        $dl = fn (): array => $this->api('POST', [$this->d(), 'files', 'download'], $this->tech, ['path' => 'C:\\Data\\x.txt']);
+        $this->assertSame(202, $dl()[0]);
+        $this->assertSame(202, $dl()[0]);
+        $this->assertSame(507, $dl()[0], 'two downloads reserve 800000 of 1048576, a third does not fit');
+        // the jobs end without data
+        $this->h->q("UPDATE endpoint_agent_jobs SET state = 'failed', reason = 'refused', finished_at = UTC_TIMESTAMP() WHERE type = 'file_get'");
+        $this->assertSame(202, $dl()[0], 'the failed ones reserve nothing any more');
+        $this->h->module->housekeeping()->run();
+        $this->assertSame(2, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_transfers WHERE state = 'failed'"));
+        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_transfers WHERE state = 'queued'"));
     }
 
     public function testLimitsExpiryAndCleanUp(): void

@@ -2,6 +2,8 @@ package collect
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"rivetit-agent/internal/api"
 	"rivetit-agent/internal/jobs"
 	"rivetit-agent/internal/store"
+	"rivetit-agent/internal/strictjson"
 )
 
 // Check statuses.
@@ -35,6 +38,23 @@ const (
 	maxDetail            = 300
 )
 
+// serverKeyPrefixes are the check-key families the server itself writes
+// (RmmChecks::SERVER_KEY_PREFIXES). The agent never reports under them.
+var serverKeyPrefixes = []string{"log.rule_", "change.rule_", "patch.", "hv."}
+
+// IsServerOwnedKey reports whether key is in a server-owned family. The match is
+// case-insensitive on purpose: the server's check table is case-insensitive, so
+// "LOG.RULE_7" addresses the same row as "log.rule_7" (CORE-DS-8).
+func IsServerOwnedKey(key string) bool {
+	k := strings.ToLower(key)
+	for _, p := range serverKeyPrefixes {
+		if strings.HasPrefix(k, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func res(key, status, detail string) api.CheckResult {
 	if len(detail) > maxDetail {
 		detail = detail[:maxDetail]
@@ -50,9 +70,17 @@ func resv(key, status, detail string, value float64) api.CheckResult {
 	return r
 }
 
+// signedCheckKey carries "this check definition carried a signature that verified" down to the checks whose parameters are only honoured when signed.
+type signedCheckKey struct{}
+
+func checkIsSigned(ctx context.Context) bool { v, _ := ctx.Value(signedCheckKey{}).(bool); return v }
+
 // RunCheck evaluates one check. Any collector error yields `unknown`.
 func (c *Collector) RunCheck(ctx context.Context, spec store.CheckSpec) api.CheckResult {
 	key := spec.Key
+	if spec.Signature == "" && c.RequireSigned != nil && c.RequireSigned() {
+		return res(key, Unknown, "unsigned check refused: this server signs every check definition")
+	}
 	if spec.Signature != "" || spec.Type == "script" {
 		// Scripts execute code, so they must be signed by the instance key.
 		// Other types are verified only when a signature is present.
@@ -64,6 +92,7 @@ func (c *Collector) RunCheck(ctx context.Context, spec store.CheckSpec) api.Chec
 			return res(key, Unknown, "check definition refused: "+err.Error())
 		}
 	}
+	ctx = context.WithValue(ctx, signedCheckKey{}, spec.Signature != "" && c.VerifyCheck != nil)
 	switch spec.Type {
 	case "service":
 		return c.checkService(ctx, key, spec.Params)
@@ -89,7 +118,7 @@ func (c *Collector) checkService(ctx context.Context, key string, raw json.RawMe
 		// "warn" or "ignore" (reported ok, so no alert). Same on Windows and Linux.
 		Missing string `json:"missing"`
 	}
-	if err := json.Unmarshal(raw, &p); err != nil || strings.TrimSpace(p.Name) == "" {
+	if err := strictjson.Unmarshal(raw, &p); err != nil || strings.TrimSpace(p.Name) == "" {
 		return res(key, Unknown, "invalid service check parameters")
 	}
 	if p.Expected == "" {
@@ -128,7 +157,7 @@ func (c *Collector) checkDisk(ctx context.Context, key string, raw json.RawMessa
 		FailFreeGB *float64 `json:"fail_free_gb"`
 	}
 	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &p); err != nil {
+		if err := strictjson.Unmarshal(raw, &p); err != nil {
 			return res(key, Unknown, "invalid disk check parameters")
 		}
 	}
@@ -197,7 +226,7 @@ func (c *Collector) checkScript(ctx context.Context, key string, raw json.RawMes
 		TimeoutS       int    `json:"timeout_s"`
 		MaxOutputBytes int    `json:"max_output_bytes"`
 	}
-	if err := json.Unmarshal(raw, &p); err != nil || strings.TrimSpace(p.Script) == "" || len(p.Script) > jobs.MaxScriptBytes {
+	if err := strictjson.Unmarshal(raw, &p); err != nil || strings.TrimSpace(p.Script) == "" || len(p.Script) > jobs.MaxScriptBytes {
 		return res(key, Unknown, "invalid script check parameters")
 	}
 	if p.TimeoutS <= 0 || p.TimeoutS > 120 {
@@ -257,7 +286,7 @@ func (r *CheckRunner) Run(ctx context.Context, specs []store.CheckSpec, now time
 	r.mu.Lock()
 	keep := map[string]bool{}
 	for _, s := range specs {
-		keep[s.Key] = true
+		keep[s.Key] = !IsServerOwnedKey(s.Key)
 	}
 	for k := range r.last {
 		if !keep[k] {
@@ -266,8 +295,13 @@ func (r *CheckRunner) Run(ctx context.Context, specs []store.CheckSpec, now time
 		}
 	}
 	r.mu.Unlock()
+	budget := r.C.RunBudget
+	if budget <= 0 {
+		budget = 90 * time.Second
+	}
+	deadline := time.Now().Add(budget)
 	for _, s := range specs {
-		if s.Key == "" {
+		if s.Key == "" || IsServerOwnedKey(s.Key) {
 			continue
 		}
 		iv := time.Duration(s.IntervalS) * time.Second
@@ -283,7 +317,27 @@ func (r *CheckRunner) Run(ctx context.Context, specs []store.CheckSpec, now time
 		if !due || ctx.Err() != nil {
 			continue
 		}
-		out := r.C.RunCheck(ctx, s)
+		// CORE-DS-3: the loop must never wait on one check forever (a read that blocks in the kernel ignores the context). The check runs under the hard
+		// per-key limit; a hung one is abandoned and the same key then fails fast until it returns.
+		lim := r.C.CheckHardLimit
+		if lim <= 0 {
+			lim = 150 * time.Second
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break // budget spent: the rest is still due and runs on the next pass
+		}
+		if lim > remaining {
+			lim = remaining
+		}
+		// the hung-key guard is per key AND parameters: a corrected definition under the same key must run (review CR1)
+		hsum := sha256.Sum256(s.Params)
+		out, err := call(r.C, ctx, "check:"+s.Key+":"+hex.EncodeToString(hsum[:6]), lim, func(cctx context.Context) (api.CheckResult, error) {
+			return r.C.RunCheck(cctx, s), nil
+		})
+		if err != nil {
+			out = res(s.Key, Unknown, "check did not finish: "+err.Error())
+		}
 		r.mu.Lock()
 		r.last[s.Key], r.at[s.Key] = out, now
 		r.mu.Unlock()

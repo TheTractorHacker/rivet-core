@@ -46,7 +46,7 @@ func (k keys) signJob(t testing.TB, fields map[string]any) api.Job {
 func baseJob(id, script string) map[string]any {
 	now := time.Now().UTC()
 	return map[string]any{
-		"job_id": id, "attempt": 1, "type": ScriptType(), "script": script,
+		"job_id": id, "device_id": "dev-1", "attempt": 1, "type": ScriptType(), "script": script,
 		"params": map[string]any{}, "timeout_s": 20, "max_output_bytes": 4096,
 		"issued_at":  now.Format(time.RFC3339),
 		"expires_at": now.Add(time.Hour).Format(time.RFC3339),

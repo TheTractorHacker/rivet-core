@@ -130,6 +130,13 @@ func (m *Manager) Configure(raw json.RawMessage) error {
 	if m.cfg == nil || m.cfg.Version != cfg.Version {
 		m.lastFullAt, m.lastProbeAt = time.Time{}, time.Time{} // a changed configuration collects at once
 		m.gen++
+		// The running worker (if any) now belongs to an old generation: its finish() is ignored and would never clear running, so clear it here
+		// or collection stops for good (CORE-DS-21).
+		if m.cancel != nil {
+			m.cancel()
+			m.cancel = nil
+		}
+		m.running = false
 	}
 	m.cfg = cfg
 	return nil
@@ -143,6 +150,7 @@ func (m *Manager) reset() {
 		m.cancel = nil
 	}
 	m.gen++
+	m.running = false // see Configure: the old worker's finish() is ignored (CORE-DS-21)
 	m.cfg, m.coll, m.ready, m.pending, m.baseline, m.readyStates, m.pendStates = nil, nil, nil, nil, nil, nil, nil
 	m.lastFullAt, m.lastProbeAt, m.notHost = time.Time{}, time.Time{}, time.Time{}
 }

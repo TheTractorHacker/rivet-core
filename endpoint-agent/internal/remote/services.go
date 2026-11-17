@@ -86,13 +86,13 @@ var linuxProtected = map[string]map[string]bool{
 }
 
 var windowsProtected = map[string]map[string]bool{
-	"rpcss":                {"stop": true, "restart": true, "disable": true},
-	"rpceptmapper":         {"stop": true, "restart": true, "disable": true},
-	"dcomlaunch":           {"stop": true, "restart": true, "disable": true},
-	"lsm":                  {"stop": true, "restart": true, "disable": true},
-	"brokerinfrastructure": {"stop": true, "restart": true, "disable": true},
-	"samss":                {"stop": true, "restart": true, "disable": true},
-	"eventlog":             {"stop": true, "disable": true}, // may be restarted, never stopped or disabled
+	"rpcss":                {"stop": true, "restart": true, "disable": true, "manual": true},
+	"rpceptmapper":         {"stop": true, "restart": true, "disable": true, "manual": true},
+	"dcomlaunch":           {"stop": true, "restart": true, "disable": true, "manual": true},
+	"lsm":                  {"stop": true, "restart": true, "disable": true, "manual": true},
+	"brokerinfrastructure": {"stop": true, "restart": true, "disable": true, "manual": true},
+	"samss":                {"stop": true, "restart": true, "disable": true, "manual": true},
+	"eventlog":             {"stop": true, "disable": true, "manual": true}, // may be restarted, never stopped or disabled
 }
 
 func isProtected(goos, canonical, action string) bool {
@@ -124,7 +124,8 @@ func CheckServiceAction(goos, name, action string) (string, string) {
 	if goos != "windows" && action == "manual" {
 		return canon, DetailUnsupportedAct
 	}
-	if action == "stop" || action == "restart" || action == "disable" {
+	// The agent's own service may only be started or enabled: "manual" on Windows has the same lasting effect as "disable" after a reboot (CORE-DS-54).
+	if action != "start" && action != "enable" {
 		if isSelfService(goos, canon) {
 			return canon, DetailRefusedSelf
 		}

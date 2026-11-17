@@ -122,16 +122,85 @@ final class MeshService
         }
         $keyHex = $this->box->decrypt((string) $cfg['mesh_login_key_enc']);
         $domain = (string) $cfg['mesh_domain'];
+        if (MeshCookie::usesDisplayName((string) $cfg['mesh_account_template'])) {
+            // CORE-13: the display name is user-editable, so it must not pick the Mesh account. Fail closed until an administrator changes the template.
+            return self::fail('not_configured', 'The MeshCentral account name uses {username}, which is no longer allowed (a technician could rename themselves into another Mesh account). An administrator must change it to use {user_id} in the RMM MeshCentral settings.');
+        }
         $account = MeshCookie::accountName((string) $cfg['mesh_account_template'], $userId, $username);
         if ($keyHex === '' || $account === '') {
             return self::fail('not_configured', 'The MeshCentral login key or account is missing.');
         }
-        $cookie = MeshCookie::login($keyHex, $domain, $account, $this->sql->time());
+        $cookie = MeshCookie::login($keyHex, $domain, $account, $this->sql->time(), null, $this->tokenTtl($cfg));
         if ($cookie === null) {
             return self::fail('not_configured', 'The MeshCentral login key is not usable.');
         }
 
         return ['ok' => true, 'code' => 'ok', 'message' => 'Opening the remote session.', 'url' => MeshCookie::launchUrl($base, $domain, $cookie, $node, self::VIEWMODES[$view] ?? \RivetCore\Rmm\RmmProtocol::MESH_VIEWMODE, $this->viewSettings?->hideFor(isset(self::VIEWMODES[$view]) ? $view : 'desktop') ?? 0), 'session_id' => bin2hex(random_bytes(8))];
+    }
+
+    /**
+     * What the Rivet Console redeem hands the console: the Mesh server (the configured address, normalised to a bare origin), the domain, the technician's account id and a
+     * login cookie for it. Core's own record decides every value (`mesh_url`, `mesh_domain`, `mesh_account_template`, the technician's id and name), never the caller. No network
+     * call is made (the launch already probed the server) and nothing here is stored or logged. `userid` is the cookie's `u` claim, byte for byte.
+     *
+     * @param bool $once add the random `once` claim (setting `console_cookie_once`)
+     * @return array{ok:true,server:string,domain:string,account:string,userid:string,cookie:string}|array{ok:false,code:string}
+     */
+    public function consoleCredentials(int $userId, string $username, bool $once): array
+    {
+        $cfg = $this->settings->get();
+        if ((int) $cfg['mesh_enabled'] !== 1 || (string) $cfg['mesh_url'] === '' || empty($cfg['mesh_login_key_enc'])) {
+            return ['ok' => false, 'code' => 'not_configured'];
+        }
+        $base = $this->normalizeUrl((string) $cfg['mesh_url']);
+        $p = $base === null ? false : parse_url($base);
+        if ($base === null || $p === false || empty($p['scheme']) || empty($p['host'])) {
+            return ['ok' => false, 'code' => 'not_configured'];
+        }
+        $server = $p['scheme'] . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '');
+        $domain = (string) $cfg['mesh_domain'];
+        $account = MeshCookie::accountName((string) $cfg['mesh_account_template'], $userId, $username);
+        $keyHex = $this->box->decrypt((string) $cfg['mesh_login_key_enc']);
+        if ($keyHex === '' || $account === '') {
+            return ['ok' => false, 'code' => 'not_configured'];
+        }
+        $cookie = MeshCookie::login($keyHex, $domain, $account, $this->sql->time(), null, $this->tokenTtl($cfg), $once);
+        if ($cookie === null) {
+            return ['ok' => false, 'code' => 'not_configured'];
+        }
+
+        return ['ok' => true, 'server' => $server, 'domain' => $domain, 'account' => $account, 'userid' => MeshCookie::userId($domain, $account), 'cookie' => $cookie];
+    }
+
+    /** True when the configured Mesh address is https, or the module allows insecure http (the Rivet Console refuses a non-https `mesh.server`). */
+    public function consoleServerAllowed(): bool
+    {
+        $url = trim((string) $this->settings->get()['mesh_url']);
+
+        return $this->allowInsecureHttp || str_starts_with(strtolower($url), 'https://');
+    }
+
+    /** The MeshCentral domain id the launch uses (`mesh_domain`, empty for the default domain). */
+    public function domain(): string
+    {
+        return (string) $this->settings->get()['mesh_domain'];
+    }
+
+    /**
+     * The token lifetime to honour (CORE-3). The stored default (RmmSettings::MESH_TOKEN_TTL_DEFAULT_S, also the column default of every
+     * existing install) keeps the legacy ~58 minute window so that upgrading changes nothing; any other value is honoured.
+     *
+     * @param array<string,mixed> $cfg
+     */
+    private function tokenTtl(array $cfg): ?int
+    {
+        $ttl = (int) ($cfg['mesh_token_ttl_s'] ?? 0);
+
+        if ($ttl > 0 && (int) ($cfg['mesh_token_ttl_exact'] ?? 0) === 1) {
+            return $ttl;   // CORE-DS-39: the administrator asked for exactly this lifetime, 300 s included
+        }
+
+        return $ttl > 0 && $ttl !== \RivetCore\Rmm\Settings\RmmSettings::MESH_TOKEN_TTL_DEFAULT_S ? $ttl : null;
     }
 
     /**
@@ -180,9 +249,10 @@ final class MeshService
         curl_setopt_array($ch, $opts);
         curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $vetted = \RivetCore\Webhooks\UrlPolicy::connectedToVetted(curl_getinfo($ch, CURLINFO_PRIMARY_IP), $target);   // CORE-DS-73
         unset($ch);   // the handle is freed here (curl_close() has had no effect since PHP 8.0 and is deprecated in 8.5)
 
-        return $code >= 200 && $code < 400 ? null : self::UNREACHABLE;
+        return $vetted && $code >= 200 && $code < 400 ? null : self::UNREACHABLE;
     }
 
     /**
@@ -234,6 +304,9 @@ final class MeshService
         curl_setopt_array($ch, $opts);
         curl_exec($ch);
         $info = curl_getinfo($ch, CURLINFO_CERTINFO);
+        if (!\RivetCore\Webhooks\UrlPolicy::connectedToVetted(curl_getinfo($ch, CURLINFO_PRIMARY_IP), $target)) {
+            $info = [];   // CORE-DS-73: the handshake was not with a vetted address: nothing of it is shown
+        }
         unset($ch);
         $leaf = $info[0] ?? null;
         $pem = is_array($leaf) && is_string($leaf['Cert'] ?? null) ? $leaf['Cert'] : null;
@@ -286,8 +359,9 @@ final class MeshService
         curl_setopt_array($ch, $opts);
         curl_exec($ch);
         $errno = curl_errno($ch);
+        $vetted = \RivetCore\Webhooks\UrlPolicy::connectedToVetted(curl_getinfo($ch, CURLINFO_PRIMARY_IP), $target);   // CORE-DS-73
         unset($ch);
 
-        return $errno === 0;
+        return $errno === 0 && $vetted;
     }
 }

@@ -59,6 +59,37 @@ final class BackupEncryptionInspectorTest extends TestCase
         }
     }
 
+    /** CORE-DS-29: a first byte with the high bit set is not enough; the packet header and the version byte must parse. */
+    public function testBinaryTextThatMerelyStartsWithAHighBitByteIsNotCalledEncrypted(): void
+    {
+        $i = new I();
+        foreach ([
+            'utf-8 csv with a latin letter' => "\xC3\x84rger;Betrag;Datum\n1;2;3\n",
+            'utf-8 text' => "\xC3\xA9t\xC3\xA9 report for the board\n",
+            'messagepack map' => "\x84\xa1a\x01\xa1b\x02\xa1c\x03\xa1d\x04",
+            'sixteen bit tag 18 lookalike' => "\xd2AAAA" . str_repeat('B', 40),
+            'old tag 1 but no version' => "\x84\x10" . str_repeat("\x55", 20),
+        ] as $what => $bytes) {
+            $this->assertNotSame(I::ENCRYPTED, $i->inspectHeader($bytes)->state, $what);
+        }
+    }
+
+    public function testRealOpenPgpPacketHeadersAreStillRecognised(): void
+    {
+        $i = new I();
+        foreach ([
+            'new PKESK v3' => "\xc1\x5e\x03" . random_bytes(80),
+            'new SKESK v4' => "\xc3\x0d\x04\x09\x03" . random_bytes(80),
+            'old SKESK v4' => "\x8c\x0d\x04\x09\x03" . random_bytes(80),
+            'old PKESK v3 (two byte length)' => "\x85\x01\x0c\x03" . random_bytes(80),
+            'SEIPD v1 partial length' => "\xd2\xe0\x01" . random_bytes(80),
+            'SEIPD v2 five byte length' => "\xd2\xff\x00\x01\x00\x00\x02" . random_bytes(80),
+        ] as $what => $bytes) {
+            $r = $i->inspectHeader($bytes);
+            $this->assertSame([I::ENCRYPTED, 'gpg'], [$r->state, $r->method], $what);
+        }
+    }
+
     public function testRecognisesPlaintextAndUnknown(): void
     {
         $i = new I();

@@ -236,6 +236,24 @@ final class PolicyStore
         return $n;
     }
 
+    /**
+     * The client a policy assignment scope belongs to: the client itself, or the client of a device; null for a scope that spans clients (global, site, group, tag),
+     * for a device that does not exist, and for any other value.
+     */
+    public function scopeClientId(string $type, int $scopeId): ?int
+    {
+        if ($type === 'client') {
+            return $scopeId;
+        }
+        if ($type === 'device') {
+            $d = $this->sql->one('SELECT client_id FROM endpoint_agent_devices WHERE device_id = ?', [$scopeId]);
+
+            return $d === null ? null : (int) $d['client_id'];
+        }
+
+        return null;
+    }
+
     private function checkScope(string $type, int $scopeId): void
     {
         $ok = match ($type) {
@@ -283,6 +301,34 @@ final class PolicyStore
         }
 
         return $out;
+    }
+
+    /**
+     * CORE-DS-37: the same data without the text of any script check, for a reader who may not read script text (rmm.job.run_saved). Every `script` check keeps its key,
+     * interval and the rest of its parameters; its `script` parameter is dropped and `script_hidden` is set. Works on a policy row, a version row or a list of them.
+     *
+     * @param mixed $data
+     * @return mixed
+     */
+    public static function withoutScriptBodies(mixed $data): mixed
+    {
+        if ($data instanceof \stdClass) {
+            return $data;
+        }
+        if (!is_array($data)) {
+            return $data;
+        }
+        if (($data['type'] ?? null) === 'script' && is_array($data['params'] ?? null)) {
+            unset($data['params']['script']);
+            $data['script_hidden'] = true;
+        }
+        foreach ($data as $k => $v) {
+            if (is_array($v)) {
+                $data[$k] = self::withoutScriptBodies($v);
+            }
+        }
+
+        return $data;
     }
 
     /** @return array<string,array{mode:string,value:mixed}> */

@@ -91,9 +91,11 @@ Every successful answer and every error includes `"server_time"` (RFC 3339 UTC).
  "server_time": "2026-10-23T17:57:22Z"}
 ```
 
-`contact` is `null` for a client-level device. Enrolling again with the same `install_id` and a new token keeps `device_id` and rotates the credential (the old one stops
+`contact` is `null` for a client-level device. Enrolling again with the same `install_id`, a new token and `device.previous_token` (the credential the install holds now; CORE-DS-61) keeps `device_id` and rotates the credential (the old one stops
 working at once). Failures: 401 `invalid_token` / `revoked` / `expired` (token), 403 `forbidden` (token used up; device revoked or retired until an administrator allows
 re-enrollment), 403 `contact_invalid` (the contact the token was issued for is gone; the token is not consumed), 409 `conflict`, 422 `invalid`, 429 `rate_limited`.
+
+The install id is not a secret, so it is not proof: an enrollment for an existing install id WITHOUT a valid `device.previous_token` creates a new device (new `device_id`, new credential, its own tickets) and leaves the existing device untouched. A panel app that lost its credential therefore starts over as a new device.
 
 ### GET /panel_me
 
@@ -186,7 +188,7 @@ A rejected attachment answers 422 `attachment_rejected` (or 413 `too_large`) and
 Core never writes or serves a file; the gateway stores the bytes. Core checks the type but cannot look inside a PNG, GIF or PDF for active content (`GIF89a<script>`, a PDF with
 `/OpenAction /JavaScript` pass the magic-byte check). So the gateway must (1) store the bytes **outside the web root**, under a name it generates, (2) serve them only to an
 authorized staff user, as a **download**: `Content-Disposition: attachment`, `Content-Type` from its own table (never from the upload), `X-Content-Type-Options: nosniff`, and
-ideally from a cookie-less origin, never inline from the application origin, and (3) remember that a CSV opened in a spreadsheet is the remaining risk Core reduces but cannot remove.
+ideally from a cookie-less origin, never inline from the application origin, and with `Content-Security-Policy: sandbox` (so a file that is opened anyway runs in no origin and without scripts), and (3) remember that a CSV opened in a spreadsheet is the remaining risk Core reduces but cannot remove. The text scan in Core (`PanelAttachments`) is a second line, not the control: it refuses text that could be active markup (a tag with an event handler or a URL or style attribute, also when a quoted value hides another tag or a quote is never closed), but only these three response headers make a stored text file harmless. An edition must verify them on every serve path (download, preview, thumbnail, e-mail attachment).
 
 ## Text handling
 

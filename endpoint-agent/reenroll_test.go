@@ -1,0 +1,246 @@
+package main
+
+import (
+	"bytes"
+	"encoding/base64"
+	"errors"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"rivetit-agent/internal/embed"
+	"rivetit-agent/internal/store"
+)
+
+func serverURLOf(t *testing.T, state string) string {
+	t.Helper()
+	st, err := store.Open(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := st.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg.ServerURL
+}
+
+// CORE-DS-14: re-enrolling a device that already has a credential to a DIFFERENT server must not leave the new server_url behind when the exchange
+// fails, or the old server's device token would be sent to the new host.
+func TestFailedReenrollToAnotherServerKeepsTheOldServer(t *testing.T) {
+	srvA := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srvA, nil)
+	if code := e.setup(); code != 0 {
+		t.Fatal(code)
+	}
+	oldCA, _ := os.ReadFile(filepath.Join(e.state, "ca.pem"))
+	srvB := newEnrollSrv(t)
+	srvB.mode.Store(1) // rejects the enrollment token
+	e.stampWith(srvB, nil)
+	if code := e.setup(); code == 0 {
+		t.Fatal("setup against a rejecting server succeeded")
+	}
+	if got := serverURLOf(t, e.state); got != srvA.URL {
+		t.Fatalf("server_url is %s after a failed re-enroll, want the old %s", got, srvA.URL)
+	}
+	if ca, _ := os.ReadFile(filepath.Join(e.state, "ca.pem")); string(ca) != string(oldCA) {
+		t.Fatal("the old server's CA was overwritten")
+	}
+}
+
+// A first enrollment (no credential yet) still keeps the new configuration when the server is only temporarily unavailable.
+func TestFirstInstallKeepsItsConfigWhenEnrollmentRejected(t *testing.T) {
+	srv := newEnrollSrv(t)
+	srv.mode.Store(1)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	e.setup()
+	if got := serverURLOf(t, e.state); got != srv.URL {
+		t.Fatalf("first install lost its configuration: %q", got)
+	}
+}
+
+// CORE-DS-48: setup pins the installer file (and refuses to continue when it cannot) before it parses it.
+func TestSetupPinsTheInstallerForTheWholeRun(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	var pinned []string
+	released := 0
+	ops := e.ops()
+	ops.pinFile = func(p string) (func(), error) {
+		pinned = append(pinned, p)
+		return func() { released++ }, nil
+	}
+	args := []string{"--silent", "--no-service", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
+	if code := runSetup(args, ops, time.Now); code != 0 {
+		t.Fatal(code)
+	}
+	if len(pinned) != 1 || pinned[0] != e.exe || released != 1 {
+		t.Fatalf("pinned %v released %d", pinned, released)
+	}
+	ops.pinFile = func(string) (func(), error) { return nil, errors.New("sharing violation") }
+	if code := runSetup(args, ops, time.Now); code != exitInstallFail {
+		t.Fatalf("exit %d when the installer cannot be pinned", code)
+	}
+}
+
+// CORE-DS-14 (review CR8): moving to another server WITHOUT a token (an MSI upgrade with a changed SERVER property) must not pair the old credential
+// with the new server_url either.
+func TestMovingToAnotherServerWithoutATokenIsRefused(t *testing.T) {
+	srvA := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srvA, nil)
+	if code := e.setup(); code != 0 {
+		t.Fatal(code)
+	}
+	if code := e.setup("--from-msi", "--server", "https://other-server.example"); code == 0 {
+		t.Fatal("setup moved an enrolled device to another server without a token")
+	}
+	if got := serverURLOf(t, e.state); got != srvA.URL {
+		t.Fatalf("server_url is %s, want the old %s", got, srvA.URL)
+	}
+}
+
+// CORE-DS-14 (review CRR-6): a PENDING one-shot enrollment token (offline install) counts as a credential too: moving to another server without a new
+// token must not leave the old token next to the new server_url.
+func TestPendingEnrollTokenIsNotSentToANewServer(t *testing.T) {
+	e := newEnv(t)
+	st, err := store.Open(e.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveConfig(store.Config{ServerURL: "https://old-server.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveEnrollToken(setupToken); err != nil {
+		t.Fatal(err)
+	}
+	srvB := newEnrollSrv(t)
+	e.stampWith(srvB, nil)
+	if code := e.setup("--from-msi", "--server", "https://new-server.example"); code == 0 {
+		t.Fatal("setup moved a device holding a pending enrollment token to another server without a token")
+	}
+	if got := serverURLOf(t, e.state); got != "https://old-server.example" {
+		t.Fatalf("server_url is %s", got)
+	}
+}
+
+// CORE-DS-48 (review CRR-5): payload and exe come from the PINNED HANDLE. The file at the path is swapped for a different, attacker-stamped installer
+// after the pin; setup must still enrol with the pinned file's server and install the pinned file's exe bytes, never re-reading the path.
+func TestSetupReadsAndCopiesFromThePinnedHandle(t *testing.T) {
+	srv := newEnrollSrv(t)
+	evil := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	good, err := os.ReadFile(e.exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.stampWith(evil, nil) // the path now holds the attacker's installer
+	ops := e.ops()
+	ops.pinFile = func(string) (func(), error) { return func() {}, nil }
+	ops.openPinned = func(p string) (io.ReaderAt, int64, bool) {
+		if p != e.exe {
+			return nil, 0, false
+		}
+		return bytes.NewReader(good), int64(len(good)), true
+	}
+	args := []string{"--silent", "--no-service", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
+	if code := runSetup(args, ops, time.Now); code != 0 {
+		t.Fatal(code)
+	}
+	if srv.enrolls.Load() != 1 || evil.enrolls.Load() != 0 {
+		t.Fatalf("enrolled with the wrong server: pinned=%d swapped=%d", srv.enrolls.Load(), evil.enrolls.Load())
+	}
+	if got, _ := os.ReadFile(e.installed()); !bytes.Equal(got, fakeExeBytes) {
+		t.Fatal("the installed binary is not the pinned file's exe")
+	}
+}
+
+// R3-1: the install COMMAND pins its own exe too (it used to fail on Windows because only setup pinned).
+func TestInstallCommandPinsItsOwnExecutable(t *testing.T) {
+	var pinned []string
+	released := 0
+	ops := sysOps{pinFile: func(p string) (func(), error) { pinned = append(pinned, p); return func() { released++ }, nil }}
+	rel, err := pinInstaller(ops, "/x/rivetit-agent")
+	if err != nil || len(pinned) != 1 || pinned[0] != "/x/rivetit-agent" {
+		t.Fatalf("%v %v", err, pinned)
+	}
+	rel()
+	if released != 1 {
+		t.Fatal("not released")
+	}
+	if rel, err := pinInstaller(sysOps{}, "/x"); err != nil || rel == nil {
+		t.Fatal("no pinFile must be a no-op")
+	}
+	ops.pinFile = func(string) (func(), error) { return nil, errors.New("sharing violation") }
+	if _, err := pinInstaller(ops, "/x"); err == nil {
+		t.Fatal("a pin failure must be reported before anything is enrolled")
+	}
+}
+
+// CORE-DS-48 (review CRR-5): where pinning is wired, a missing pinned handle FAILS CLOSED: no fall back to the path, nothing enrolled, no service
+// stopped, nothing installed.
+func TestMissingPinnedHandleFailsClosed(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	ops := e.ops()
+	ops.pinFile = func(string) (func(), error) { return func() {}, nil }
+	ops.openPinned = func(string) (io.ReaderAt, int64, bool) { return nil, 0, false } // pinning is active but this path was never pinned
+	args := []string{"--silent", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
+	if code := runSetup(args, ops, time.Now); code != exitInstallFail {
+		t.Fatalf("setup exit %d, want %d", code, exitInstallFail)
+	}
+	if srv.enrolls.Load() != 0 {
+		t.Fatal("the token was used")
+	}
+	for _, c := range e.calls {
+		if c == "stop" || strings.HasPrefix(c, "install:") {
+			t.Fatalf("a service action ran: %v", e.calls)
+		}
+	}
+	if _, err := os.Stat(e.installed()); err == nil {
+		t.Fatal("a binary was installed")
+	}
+	// performInstall (the install command path) refuses too, before touching the state directory or the token
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	res := performInstall(installParams{flags: enrollFlags{server: srv.URL, token: setupToken}, stateDir: e.state, installDir: filepath.Join(e.state, "bin2"), self: e.exe}, ops, log)
+	if res.Kind != instFail || srv.enrolls.Load() != 0 {
+		t.Fatalf("performInstall: %+v enrolls=%d", res, srv.enrolls.Load())
+	}
+}
+
+// Without pinning (Linux: openPinned nil) nothing changes: the path is read as before.
+func TestNoPinningWiredKeepsReadingThePath(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	ops := e.ops() // pinFile and openPinned are nil
+	args := []string{"--silent", "--no-service", "--state-dir", e.state, "--install-dir", filepath.Join(e.state, "bin")}
+	if code := runSetup(args, ops, time.Now); code != 0 {
+		t.Fatal(code)
+	}
+	if srv.enrolls.Load() != 1 {
+		t.Fatal("not enrolled")
+	}
+}
+
+// CORE-DS-20 (review CRR-4): a build with a trust anchor does not enrol from MSI property / --server mode, which carries no signed payload.
+func TestPropertyModeRefusedWhenATrustAnchorIsCompiledIn(t *testing.T) {
+	srv := newEnrollSrv(t)
+	e := newEnv(t)
+	e.stampWith(srv, nil)
+	prev := embed.EmbeddedTrustKeys
+	embed.EmbeddedTrustKeys = base64.StdEncoding.EncodeToString(make([]byte, 32))
+	defer func() { embed.EmbeddedTrustKeys = prev }()
+	if code := e.setup("--from-msi", "--server", "https://evil.example"); code != exitBadConfig {
+		t.Fatalf("exit %d, want the property mode refused", code)
+	}
+}

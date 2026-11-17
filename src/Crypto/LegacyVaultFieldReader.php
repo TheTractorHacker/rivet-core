@@ -43,6 +43,6 @@ final class LegacyVaultFieldReader implements LegacyReader
             throw new KeyUnavailable('The legacy vault master key is not available.');
         }
 
-        return LegacyCbc::decrypt(substr($stored, 16), $this->masterKey, substr($stored, 0, 16), 0);
+        return LegacyCbc::decryptText(substr($stored, 16), $this->masterKey, substr($stored, 0, 16), 0);
     }
 }

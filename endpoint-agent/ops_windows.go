@@ -21,5 +21,7 @@ func realOps() sysOps {
 		registerARP:  registerARPEntry,
 		removeARP:    removeARPEntry,
 		message:      showMessage,
+		pinFile:      pinFileWindows,
+		openPinned:   openPinnedWindows,
 	}
 }

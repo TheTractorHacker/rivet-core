@@ -65,6 +65,27 @@ final class CheckinTest extends RmmTestCase
         $this->assertSame([401, 'expired'], [$c, $r['code']]);
     }
 
+    /** CORE-DS-16: with the signed-configuration contract on, responses announce it and every signed check is bound to the device; off, the wire is what it was. */
+    public function testTheSignedConfigurationContractIsAnnouncedAndBindsChecksToTheDevice(): void
+    {
+        $this->linkedDevice();
+        [, , $off] = $this->h->checkin($this->T);
+        [, $pub] = $this->h->module->settings()->signingKey();
+        $this->assertSame(['checks', 'collect_interval_s'], array_keys($off['config']));
+        $this->assertArrayNotHasKey('device_id', $off['config']['checks'][0]);
+        $this->h->module->settings()->set(['signed_config' => 1]);
+        [, , $on] = $this->h->checkin($this->T);
+        $this->assertSame(1, $on['config']['signed_config']);
+        $this->assertNotEmpty($on['config']['checks']);
+        foreach ($on['config']['checks'] as $c) {
+            $this->assertSame($this->dev, $c['device_id']);
+            $this->assertTrue(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::checkMessage($c), $c['signature'], $pub));
+            $other = $c;
+            $other['device_id'] = $this->dev + 1;
+            $this->assertFalse(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::checkMessage($other), $c['signature'], $pub), 'replayed on another device');
+        }
+    }
+
     public function testFirstCheckinWithInventoryUpdatesTheDeviceTheLinkAndTheSink(): void
     {
         $this->linkedDevice();

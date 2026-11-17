@@ -43,12 +43,12 @@ token echoed by a hostile server never reaches the log, CommandLineToArgvW round
 
 ## Toolchain without Go on the host (Docker)
 
-The module needs Go 1.27 (`go.mod`). On a machine without Go run everything in the official image; mount a host directory as the module/build cache to avoid re-downloading:
+The module needs Go 1.27.4 or newer (the `go` line in `go.mod`; CORE-25 stdlib fixes; `make` refuses an older Go). On a machine without Go run everything in the official image; mount a host directory as the module/build cache to avoid re-downloading:
 
 ```
 mkdir -p /tmp/gocache /tmp/gobuild
 alias gor='docker run --rm -u "$(id -u):$(id -g)" -v "$PWD/endpoint-agent":/src -v /tmp/gocache:/gocache -v /tmp/gobuild:/gobuild \
-  -e GOCACHE=/gobuild -e GOMODCACHE=/gocache -e HOME=/tmp -w /src golang:1.27'
+  -e GOCACHE=/gobuild -e GOMODCACHE=/gocache -e HOME=/tmp -w /src golang:1.27.4'
 gor make vet                                   # vet: linux amd64+arm64, windows amd64+arm64, test tags
 gor sh -c 'CGO_ENABLED=1 go test -race -count=1 ./...'     # -race needs cgo (the golang image has gcc)
 gor go test -run xxx -fuzz=FuzzEmbedded -fuzztime=20s ./internal/embed

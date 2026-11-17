@@ -77,13 +77,51 @@ if ($want -notmatch '^[0-9a-fA-F]{64}$') { Fail 'Expected SHA-256 must be 64 hex
 # Token: parameter, file, or environment (the environment is preferred; it does not appear in process listings).
 if (-not $Token -and $TokenFile) { $Token = (Get-Content -LiteralPath $TokenFile -Raw).Trim() }
 if (-not $Token) { $Token = $env:RIVETIT_ENROLL_TOKEN }
-$existing = Test-Path -LiteralPath (Join-Path $env:ProgramData 'RivetIT\Agent\device.token')
+$existing = Test-Path -LiteralPath (Join-Path $env:ProgramData 'RivetIT\Agent\device.token') # only trusted below: the owner check further down refuses an Agent folder a user created
 if (-not $Token -and -not $existing) { Fail 'An enrollment token is required for a first install.' 2 }
 
 # --- private work dir (SYSTEM + Administrators only) ----------------------------
-$work = Join-Path $env:ProgramData ('RivetIT\Setup\' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $work -Force | Out-Null
-& icacls.exe $work /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null
+# CORE-16: a standard user can create folders under ProgramData and owns them. If RivetIT, RivetIT\Setup or RivetIT\Agent already exist they must be
+# owned by SYSTEM, Administrators or TrustedInstaller; otherwise the downloaded executable (hashed, then run by path) and the agent's configuration
+# could be swapped by that user. The agent itself repeats this check for its state directory.
+foreach ($sub in @('RivetIT', 'RivetIT\Setup', 'RivetIT\Agent')) {
+  $d = Join-Path $env:ProgramData $sub
+  if (Test-Path -LiteralPath $d) {
+    $item = Get-Item -LiteralPath $d -Force
+    $ownerSid = (Get-Acl -LiteralPath $d).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or ($ownerSid -notin @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'))) {
+      Fail "$d already exists but is a link or is owned by $ownerSid (a standard user may have created it). Remove it from an elevated prompt (takeown /F `"$d`" /R /D Y; Remove-Item -Recurse -Force `"$d`") and run this script again." 5
+    }
+  }
+}
+# CORE-DS-74: every level is created ATOMICALLY with an explicit owner (Administrators) and a protected DACL (SYSTEM and Administrators only), so there is
+# never a moment in which a standard user can own or write to it; a level that already exists (older agents left RivetIT with the inherited ProgramData ACL)
+# is tightened BEFORE anything is created inside it, and the owner of the working directory is re-checked after it was created.
+$protectedSddl = 'O:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)'
+function New-ProtectedDirectory([string]$Path) {
+  $sec = New-Object System.Security.AccessControl.DirectorySecurity
+  $sec.SetSecurityDescriptorSddlForm($protectedSddl)
+  if ($PSVersionTable.PSEdition -eq 'Core') {
+    [System.IO.FileSystemAclExtensions]::Create((New-Object System.IO.DirectoryInfo $Path), $sec) | Out-Null
+  } else {
+    [System.IO.Directory]::CreateDirectory($Path, $sec) | Out-Null
+  }
+}
+function Set-ProtectedAcl([string]$Path) {
+  $sec = New-Object System.Security.AccessControl.DirectorySecurity
+  $sec.SetSecurityDescriptorSddlForm($protectedSddl)
+  Set-Acl -LiteralPath $Path -AclObject $sec
+}
+$vendorDir = Join-Path $env:ProgramData 'RivetIT'
+$setupDir  = Join-Path $vendorDir 'Setup'
+foreach ($d in @($vendorDir, $setupDir)) {
+  if (Test-Path -LiteralPath $d) { Set-ProtectedAcl $d } else { New-ProtectedDirectory $d }
+}
+$work = Join-Path $setupDir ([guid]::NewGuid().ToString('N'))
+New-ProtectedDirectory $work
+$workOwner = (Get-Acl -LiteralPath $work).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+if ($workOwner -notin @('S-1-5-18', 'S-1-5-32-544')) { Fail "The work directory $work is owned by $workOwner. Refusing to continue." 5 }
+$pin = $null
 try {
   $exe = Join-Path $work $file
   $url = $BaseDownloadUrl.TrimEnd('/') + '/' + $file
@@ -91,7 +129,12 @@ try {
   Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing -MaximumRedirection 0
 
   # --- verify BEFORE running anything -----------------------------------------
-  $got = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+  # CORE-DS-74: hash the very bytes that will run. The file is opened once with FileShare.Read (nobody can write, rename or delete it while the handle is
+  # open) and the handle is kept until the install has finished.
+  $pin = [System.IO.File]::Open($exe, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  $got = ([System.BitConverter]::ToString($sha.ComputeHash($pin)) -replace '-', '')
+  $sha.Dispose()
   if ($got -ne $want.ToUpper()) { Fail "SHA-256 mismatch for $file (got $got). Refusing to install." 4 }
   if ($RequireSignature) {
     $sig = Get-AuthenticodeSignature -LiteralPath $exe
@@ -109,6 +152,7 @@ try {
   Write-Host 'RivetIT agent installed.'
 }
 finally {
+  if ($pin) { $pin.Dispose() }
   Remove-Item Env:\RIVETIT_ENROLL_TOKEN -ErrorAction SilentlyContinue
   if ($DeleteTokenFile -and $TokenFile) { Remove-Item -LiteralPath $TokenFile -Force -ErrorAction SilentlyContinue }
   Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

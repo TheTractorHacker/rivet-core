@@ -369,7 +369,7 @@ func TestJobsEndToEnd(t *testing.T) {
 	r := newRig(t)
 	r.enroll()
 	now := time.Now().UTC()
-	job := r.s.signJob(map[string]any{"job_id": "job-1", "attempt": 1, "type": jobs.ScriptType(), "script": "echo from-job; exit 0",
+	job := r.s.signJob(map[string]any{"job_id": "job-1", "device_id": 7, "attempt": 1, "type": jobs.ScriptType(), "script": "echo from-job; exit 0",
 		"params": map[string]any{}, "timeout_s": 20, "max_output_bytes": 4096,
 		"issued_at": now.Format(time.RFC3339), "expires_at": now.Add(time.Hour).Format(time.RFC3339)})
 	forged := append([]byte(nil), job...)
@@ -381,6 +381,7 @@ func TestJobsEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r.a.newExecutor(ctx)
+	stopExecutorAfterTest(t, r, cancel)
 	r.a.checkIn(ctx, 0)
 	deadline := time.Now().Add(20 * time.Second)
 	for {
@@ -564,6 +565,7 @@ func TestIntegerDeviceIDEverywhere(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r.a.newExecutor(ctx)
+	stopExecutorAfterTest(t, r, cancel)
 	r.a.checkIn(ctx, 0)
 	deadline := time.Now().Add(20 * time.Second)
 	for {

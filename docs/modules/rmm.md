@@ -224,7 +224,7 @@ Migration `0028_rmm_patching` (eight new tables, nothing existing altered, idemp
 
 | Area | Behaviour | Core classes | Storage |
 |---|---|---|---|
-| Job types | `patch_scan` (read only; params `categories`, `max_items`) and `patch_install` (params `ids` of at most 40, `mode` = `dry_run` by default, `max_minutes`; destructive: offered at most once). Strict allow-list validators; each needs an announced capability (`patch:scan`, `patch:install`); the generic job endpoint refuses both | `Patch\PatchProtocol`, `PatchJobTypes` | `endpoint_agent_jobs` |
+| Job types | `patch_configure` (Windows Update control, 1.0.0-rc.65, capability `patch:configure`; see PATCHING.md section 12), `patch_scan` (read only; params `categories`, `max_items`) and `patch_install` (params `ids` of at most 40, `mode` = `dry_run` by default, `max_minutes`; destructive: offered at most once). Strict allow-list validators; each needs an announced capability (`patch:scan`, `patch:install`); the generic job endpoint refuses both | `Patch\PatchProtocol`, `PatchJobTypes` | `endpoint_agent_jobs` |
 | Scan | Queue (never twice while one waits), signed job, result applied from the job report (or by the next housekeeping pass: load shedding, a lost result that arrives late). The report is validated defensively: ids that are not valid for the platform are dropped, strings are cleaned, counts are recomputed, a truncated list never marks the rest installed | `PatchScanService` | `rmm_patch_scans`, `rmm_patch_available`, `rmm_patch_jobs` |
 | Approval | By hand (`update_ids`, narrowed by device or client, only the caller's clients), by rule, by policy (`auto_days_<kind>` plus the ring's delay), optionally by two people (a Phase 2 approval of kind `patch` freezing the (device, update) pairs). A declined update is never approved automatically | `PatchApprovalService` | `rmm_patch_available`, `rmm_patch_rules`, `rmm_approvals` |
 | Policies and rings | A patch policy holds only the settings it decides (ring, approval mode, per-kind days, install enabled, window, restart policy, max minutes, two person). The scope mechanism and the resolver are Phase 2's (`Policy\PolicyResolver`): client, site, group, tag, device, priority, enforce; no policy means the safe defaults | `PatchPolicyStore`, `PatchPolicyResolver`, `PatchPolicySettings` | `rmm_patch_policies`, `rmm_patch_assignments`, `rmm_patch_rings` |
@@ -320,7 +320,7 @@ Built after v1.0.0-rc.10 (migration `0022_rmm_remote_and_logs`, five new tables,
 | Retention | `Housekeeping::run()` prunes by age, then trims devices above their cap, then the fleet above its cap, in transactions of 2000 rows that also lower the counters (keys `pruned_logs_retention`, `pruned_logs_device_cap`, `pruned_logs_fleet_cap`, `transfers_expired`, `transfers_pruned`, `log_rule_alerts_recovered`) | `Logs\LogService::prune()`, `Remote\TransferService::prune()` | |
 | Search | newest first; device, client, time range (a fleet search spans at most 7 days, a device search 90), severity or worse, source, event id, text (substring, wildcards escaped); client scoped | `Logs\LogService::search()`, `RmmReadModel::logSearch()` | |
 | Log rules | `Logs\LogRuleService` (CRUD, evaluation per accepted batch, `sweep()` from housekeeping); a match reports `log.rule_<id>` through `CheckEvaluator::apply()`; never a regular expression | `Logs\LogRuleService`, `LogActions` | `endpoint_agent_log_rules` |
-| Events | `rmm.file.transferred`, `rmm.log.rule_matched` (and the existing `rmm.job.*`, `rmm.check.*`, `rmm.alert.*`) | `RmmEvent`, `Webhooks\EventCatalog` | |
+| Events | `rmm.file.transferred`, `rmm.log.rule_matched`, (and the existing `rmm.job.*`, `rmm.check.*`, `rmm.alert.*`) | `RmmEvent`, `Webhooks\EventCatalog` | |
 
 **Read model additions** (`RmmReadModel`, no authorization inside, the caller has authorized the device): `remoteSnapshot($deviceId, 'services'|'processes')`, `fileTransfers($deviceId)`, `logSearch($filters, $visibleClientIds, $limit, $offset)`, `logStats($deviceId)`. `jobs()` and `deviceView()` no longer carry the output of a remote-tool job (it is read through the remote endpoints, which need `rmm.remote.manage`); `job()` asks for `rmm.remote.manage` on those types.
 
@@ -439,6 +439,204 @@ Device authentication, SYSTEM-level job execution and remote access make this a 
 
 What is **verified**: the golden transcripts of the original replay identically through `DeviceApi` and `TechnicianApi` (`php scripts/rmm-golden/replay-core.php replay`); the RivetIT role matrix (`RoleMatrixTest`), deployment (`DeployTest`), administration (`AdminTest`), read models (`ReadModelTest`) and technician actions (`TechnicianTest`) run against a scratch database. **Not verified**: a real MeshCentral server (only `tests/Support/MockMeshCentral.php`; the Phase 6 terminal and files views use MeshCentral's `viewmode` 12 and 13 from its URL scheme and have not been opened in a real MeshCentral), the Windows installer on a Windows host, the Windows code of the Phase 6 and 8 agent (cross-compiled and vetted only), the Linux agent on a physical host.
 
+## Client scoping matrix
+
+MeshCentral does not separate clients: one Mesh account reaches every device of the server, so Core's own client scoping is the barrier between one client's devices and a technician who works for another. `tests/Integration/Rmm/TenantIsolationMatrixTest.php` proves it for every public method of the action and service entry points that takes a device id or an id derived from a device (job, transfer, alert, approval, package assignment, schedule, policy assignment, token, rule, window, VM ...) and for every id-bearing REST route. The principal holds EVERY `rmm.*` ability and is restricted by the tenancy to client A. For client B's object, and for an id that does not exist, the method must answer the same refusal (403 or 404, the same status, code and text, so there is no existence oracle) and change nothing: no table of the module, no audit row, no event, no remote session, no request to the Mesh server, no file in the transfer folder. A positive control per method (a fresh object of client A, same principal) must succeed, so the test cannot pass vacuously. A "fleet-wide object" (script library, package catalog, tags, groups, patch policies and rings, custom field definitions, script policies, a schedule or window on every client) belongs to no client: a caller limited to some clients may not change it at all, and the control runs as the unrestricted administrator. A coverage guard walks the public methods of these classes by reflection and fails when one that takes an id-like parameter is neither in the matrix nor in the allow-list below (with its reason). When you add such a method or a REST route, add a row to the matrix and a line here.
+
+| Method | Ability | Client scope enforced | Where |
+|---|---|---|---|
+| `AlertingActions::acknowledge` | `rmm.alert.manage` | yes | manageable(): find(id, visibleClientIds()) -> 404, then alert.manage for the client |
+| `AlertingActions::clearParent` | `rmm.alert.manage` | yes | device(alert.manage): 404 |
+| `AlertingActions::createPolicy` | `rmm.admin` | yes | (all) scopeWriteRefusal(): a policy on every client (all, site, group, tag) needs a caller not limited to some clients (TEN-4); (scope) scopeWriteRefusal(): a client or device scope must be inside the caller's clients (404) (TEN-4) |
+| `AlertingActions::createWindow` | `rmm.alert.manage`, `rmm.admin` | yes | (client) windowScopeAllowed(): alert.manage for that client (incl. clientOk -> 403); (device) windowScopeAllowed(): the device must be inside the caller's clients (404); (all) windowScopeAllowed(): a window on every client (all, site, group, tag) needs a caller not limited to some clients (TEN-4) |
+| `AlertingActions::deletePolicy` | `rmm.admin` | yes | scopeVisible() on the policy's scope -> 404, then scopeWriteRefusal() |
+| `AlertingActions::deleteWindow` | `rmm.alert.manage` | yes | scopeVisible() (404) then windowScopeAllowed() |
+| `AlertingActions::deviceAlerting` | `rmm.device.view` | yes | device() |
+| `AlertingActions::deviceMaintenance` | `rmm.device.view` | yes | device(): DEVICE_VIEW for the client -> 404 |
+| `AlertingActions::getAlert` | `rmm.device.view` | yes | alerts->find($id, visibleClientIds()) -> 404 |
+| `AlertingActions::getParent` | `rmm.device.view` | yes | device(): 404 |
+| `AlertingActions::getPolicy` | `rmm.device.view` | yes | scopeVisible(): an escalation policy of a client outside the caller's clients is 404 |
+| `AlertingActions::getThresholds` | `rmm.device.view` | yes | device(): 404 |
+| `AlertingActions::getWindow` | `rmm.device.view` | yes | (client) scopeVisible(): a client scope outside the caller's clients is 404; (device) scopeVisible(): a device scope whose client is outside the caller's clients is 404 |
+| `AlertingActions::listAlerts` | `rmm.device.view` | yes | alerts->list() is bounded by visibleClientIds(): a filter on another client's device returns nothing |
+| `AlertingActions::resolve` | `rmm.alert.manage` | yes | manageable() |
+| `AlertingActions::setParent` | `rmm.alert.manage` | yes | (child) device(alert.manage): 404; (parent) the PARENT device is looked up with the same scope: 404 |
+| `AlertingActions::setThresholds` | `rmm.device.manage` | yes | device(device.manage): 404 |
+| `AlertingActions::updatePolicy` | `rmm.admin` | yes | scopeVisible() on the policy's scope -> 404, then scopeWriteRefusal() on the old scope; (rescope) the NEW scope is checked too: an own policy cannot be moved onto another client |
+| `AlertingActions::updateWindow` | `rmm.alert.manage` | yes | scopeVisible() (404) then windowScopeAllowed() for the old AND the new scope; (rescope) the NEW scope is checked too: an own window cannot be moved onto another client |
+| `AutoInstallActions::clearParam` | `rmm.software.manage` | yes | (client) a client parameter needs that client: clientOk -> 404 |
+| `AutoInstallActions::deleteFile` | `rmm.software.manage` | yes (fleet-wide object) | unrestricted(): hosted installers are shared by every client |
+| `AutoInstallActions::deviceApps` | `rmm.software.view` | yes | clientOk + DEVICE_VIEW + SOFTWARE_VIEW for the client -> 404 |
+| `AutoInstallActions::mayTick` | `rmm.software.deploy` | yes | SOFTWARE_DEPLOY(client) incl. clientOk |
+| `AutoInstallActions::selectable` | `rmm.software.view` | yes | clientOk -> 404 |
+| `AutoInstallActions::setAuto` | `rmm.software.deploy` | yes (fleet-wide object) | unrestricted(): a package that installs on new devices of every client |
+| `AutoInstallActions::setParam` | `rmm.software.manage` | yes | (client) a client parameter needs that client: clientOk -> 404 |
+| `ChangeActions::createRule` | `rmm.change.manage` | yes | client_id is checked with the grant for that client |
+| `ChangeActions::deleteRule` | `rmm.change.manage` | yes | the rule of another client is 404 |
+| `ChangeActions::deviceChanges` | `rmm.change.view` | yes | device(): clientOk + the grant for the client -> 404 |
+| `ChangeActions::deviceStatus` | `rmm.change.view` | yes | device() |
+| `ChangeActions::fleetChanges` | `rmm.change.view` | yes | (device) a device filter goes through device() (404); (client) a client filter outside the caller's clients is 404 |
+| `ChangeActions::getRule` | `rmm.change.view` | yes | the rule of another client is 404 |
+| `ChangeActions::timeline` | `rmm.change.view` | yes | device() |
+| `ChangeActions::updateRule` | `rmm.change.manage` | yes | the rule of another client is 404; (rescope) a NEW client_id is checked too |
+| `DeployActions::addHost` | `rmm.admin` | yes (fleet-wide object) | unrestricted() (a download host is allowed for every client) |
+| `DeployActions::addVersion` | `rmm.software.manage` | yes (fleet-wide object) | unrestricted() |
+| `DeployActions::assign` | `rmm.software.deploy` | yes | (device) a device scope must be a device inside the caller's clients (404); (client) a client scope must be a client inside the caller's clients (404) |
+| `DeployActions::decideApproval` | `rmm.software.deploy` | yes | every client of the frozen request must be inside the caller's scope BEFORE the decision closure runs |
+| `DeployActions::deletePackage` | `rmm.software.manage` | yes (fleet-wide object) | unrestricted() |
+| `DeployActions::detect` | `rmm.software.manage` | yes | deviceFor() before the queue |
+| `DeployActions::deviceHistory` | `rmm.software.view` | yes | deviceFor() |
+| `DeployActions::deviceStatus` | `rmm.software.view` | yes | deviceFor(): clientOk + DEVICE_VIEW + SOFTWARE_VIEW for the client -> 404 |
+| `DeployActions::removeHost` | `rmm.admin` | yes (fleet-wide object) | unrestricted() |
+| `DeployActions::report` | `rmm.software.view` | yes | a client filter outside the caller's clients is 404 |
+| `DeployActions::reportCsv` | `rmm.software.view` | yes | report() |
+| `DeployActions::retireVersion` | `rmm.software.manage` | yes (fleet-wide object) | unrestricted() |
+| `DeployActions::run` | `rmm.software.manage`, `rmm.software.deploy` | yes | (dry) deviceFor(); (install) deviceFor() |
+| `DeployActions::savePackage` | `rmm.software.manage` | yes (fleet-wide object) | unrestricted(): a catalog write needs a caller whose access is not limited to some clients |
+| `DeployActions::unassign` | `rmm.software.deploy` | yes | (device) assignmentVisible(): the device of the assignment must be inside the caller's clients; (client) assignmentVisible(): the client scope must be inside the caller's clients |
+| `FieldActions::change` | `rmm.admin` | yes (fleet-wide object) | a custom field definition is fleet-wide (no client owns it): a caller limited to some clients may not change it |
+| `FieldActions::delete` | `rmm.admin` | yes (fleet-wide object) | a custom field definition is fleet-wide |
+| `FieldActions::setValue` | `rmm.device.manage` | yes | (device) a device-scope value: the device must be inside the caller's clients (404); (client) a client-scope value: clientOk -> 404; (site) a site-scope value: the client the site belongs to must be inside the caller's clients |
+| `HypervisorActions::host` | `rmm.hypervisor.view` | yes | clientOk + the grant for the device's client -> 404 |
+| `HypervisorActions::hosts` | `rmm.hypervisor.view` | yes | a client filter outside the caller's clients is 404 |
+| `HypervisorActions::setHostIgnored` | `rmm.hypervisor.manage` | yes | clientOk + the grant for the device's client -> 404 |
+| `HypervisorActions::setVmIgnored` | `rmm.hypervisor.manage` | yes | reader->vm($id, visible clients) -> 404 |
+| `HypervisorActions::suggestAssets` | `rmm.hypervisor.view` | yes | reader->vm($id, visible clients) -> 404 |
+| `HypervisorActions::vm` | `rmm.hypervisor.view` | yes | reader->vm($id, visible clients) -> 404 |
+| `HypervisorActions::vms` | `rmm.hypervisor.view` | yes | a client filter outside the caller's clients is 404 |
+| `InventoryActions::addGroupDevices` | `rmm.device.manage` | yes | every device is checked with device(): one outside the scope refuses the whole call (404) |
+| `InventoryActions::deleteGroup` | `rmm.device.manage` | yes (fleet-wide object) | fleetWide() |
+| `InventoryActions::deleteTag` | `rmm.device.manage` | yes (fleet-wide object) | fleetWide() |
+| `InventoryActions::refreshSoftware` | `rmm.job.run_saved` | yes | device() -> 404 |
+| `InventoryActions::removeGroupDevice` | `rmm.device.manage` | yes | device() -> 404 |
+| `InventoryActions::setGroupTags` | `rmm.device.manage` | yes (fleet-wide object) | fleetWide() |
+| `InventoryActions::tagDevice` | `rmm.device.manage` | yes | device(): clientOk + DEVICE_VIEW(client) -> 404 |
+| `InventoryActions::untagDevice` | `rmm.device.manage` | yes | device() -> 404 |
+| `InventoryActions::updateGroup` | `rmm.device.manage` | yes (fleet-wide object) | fleetWide(): groups are shared by every client |
+| `InventoryActions::updateTag` | `rmm.device.manage` | yes (fleet-wide object) | fleetWide(): tags are shared by every client |
+| `LogActions::createRule` | `rmm.device.manage` | yes | manage(client): clientOk |
+| `LogActions::deleteRule` | `rmm.device.manage` | yes | visibleRule(): 404 |
+| `LogActions::deviceLogs` | `rmm.job.run_saved` | yes | device(): clientOk + the grant for the client -> 404 |
+| `LogActions::fleetLogs` | `rmm.job.run_saved` | yes | (device) a device filter goes through device() (404); (client) a client filter outside the caller's clients is 404 |
+| `LogActions::getRule` | `rmm.device.view` | yes | visibleRule(): 404 |
+| `LogActions::stats` | `rmm.job.run_saved` | yes | a device goes through device() (404) |
+| `LogActions::updateRule` | `rmm.device.manage` | yes | visibleRule(): a rule of another client is 404; (rescope) a NEW client_id is checked with manage() too |
+| `PatchActions::approve` | `rmm.patch.manage` | yes | (device) a named device goes through deviceFor() (404); (client) a client filter outside visibleClientIds() is 404 |
+| `PatchActions::assignPolicy` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
+| `PatchActions::compliance` | `rmm.patch.view` | yes | a client filter outside visibleClientIds() is 404 |
+| `PatchActions::decideApproval` | `rmm.patch.manage` | yes | every client of the frozen request must be inside the caller's scope BEFORE the decision closure runs |
+| `PatchActions::decline` | `rmm.patch.manage` | yes | (device) a named device goes through deviceFor() (404); (client) a client filter outside visibleClientIds() is 404 |
+| `PatchActions::deletePolicy` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
+| `PatchActions::deleteRing` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
+| `PatchActions::deleteRule` | `rmm.patch.manage` | yes | the rule's client is checked first: 404 |
+| `PatchActions::fleetUpdates` | `rmm.patch.view` | yes | a client filter outside visibleClientIds() is 404 |
+| `PatchActions::history` | `rmm.patch.view` | yes | deviceFor() |
+| `PatchActions::configure` | `rmm.patch.manage` | no | deviceFor() |
+| `PatchActions::install` | `rmm.patch.manage`, `rmm.patch.install` | yes | (dry) deviceFor(); (install) deviceFor() |
+| `PatchActions::savePolicy` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate(): a patch policy is fleet-wide, needs a caller not limited to some clients |
+| `PatchActions::saveRing` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
+| `PatchActions::saveRule` | `rmm.patch.manage` | yes | (update) a rule of a client outside the caller's clients is 404 (the rule's client is read first); (create) a rule for another client or for every client is 403 |
+| `PatchActions::scan` | `rmm.patch.manage` | yes | deviceFor() before the queue |
+| `PatchActions::summary` | `rmm.patch.view` | yes | deviceFor(): clientOk + DEVICE_VIEW + PATCH_VIEW for the client -> 404 |
+| `PatchActions::unassignPolicy` | `rmm.patch.manage` | yes (fleet-wide object) | writeGate() |
+| `PatchActions::updates` | `rmm.patch.view` | yes | deviceFor() |
+| `PatchApprovalService::select` | `rmm.patch.view` | yes | the visible clients bound the SQL: nothing of another client is selected |
+| `PolicyActions::assign` | `rmm.admin` | yes | (client) an assignment to a client outside the caller's clients is refused; (device) an assignment to a device outside the caller's clients is refused; (global) a fleet-wide assignment (global scope) needs a caller not limited to some clients |
+| `PolicyActions::delete` | `rmm.admin` | yes (fleet-wide object) | a script policy is fleet-wide |
+| `PolicyActions::unassign` | `rmm.admin` | yes | (client) the assignment of another client is 404; (device) the assignment of a device of another client is 404 |
+| `PolicyActions::update` | `rmm.admin` | yes (fleet-wide object) | a script policy is fleet-wide: a caller limited to some clients may not change it |
+| `RemoteActions::controlService` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::createUpload` | `rmm.admin` | yes | gate() |
+| `RemoteActions::deleteTransfer` | `rmm.remote.manage` | yes | transferOf(); (cross) own device + the transfer of another client: not found |
+| `RemoteActions::downloadContent` | `rmm.remote.manage` | yes | transferOf(); (cross) own device + the transfer of another client: not found |
+| `RemoteActions::headerRemote` | `rmm.remote.launch` | yes | deviceFor() (404) |
+| `RemoteActions::installMeshAgent` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::installMeshAgentBulk` | `rmm.remote.manage` | yes | (device) TargetResolver counts only devices inside visibleClientIds(); (client) TargetResolver counts only devices inside visibleClientIds() |
+| `RemoteActions::jobResult` | `rmm.remote.manage` | yes | deviceFor(); the job is looked up by (job, device); (cross) own device + the job of another client: looked up by (job, device), not found |
+| `RemoteActions::killProcess` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::listProcesses` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::listServices` | `rmm.remote.manage` | yes | gate(): deviceFor() (404) before the ability, the feature and the queue |
+| `RemoteActions::listTransfers` | `rmm.remote.manage` | yes | deviceFor() (404) then remote.manage |
+| `RemoteActions::meshInfo` | `rmm.remote.launch` | yes | deviceFor() (404) before any node is revealed |
+| `RemoteActions::requestDownload` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::snapshot` | `rmm.remote.manage` | yes | deviceFor() (404) then remote.manage |
+| `RemoteActions::transfer` | `rmm.remote.manage` | yes | transferOf(): deviceFor() then the transfer by (transfer, device); (cross) own device + the transfer of another client: not found |
+| `RemoteActions::uninstallMeshAgent` | `rmm.remote.manage` | yes | gate() |
+| `RemoteActions::uploadContent` | `rmm.admin` | yes | gate(); the transfer is looked up by (transfer, device); (cross) own device + the transfer of another client: looked up by (transfer, device), not found |
+| `RmmAdmin::clearUpdateFailures` | `rmm.binary.publish` | yes | a named device must be inside the caller's clients (404); (all) with no device the call reaches every client: needs a caller not limited to some clients |
+| `RmmAdmin::deploymentCommands` | `rmm.token.manage` | yes | deny(TOKEN_MANAGE, client) incl. clientOk -> 403, before any token is minted |
+| `RmmAdmin::downloadInstaller` | `rmm.token.manage` | yes | deny(TOKEN_MANAGE, client) incl. clientOk -> 403, before any token is minted |
+| `ScriptActions::approvalVisible` | `rmm.job.approve` | yes | approvalVisible(): target inside visibleClientIds() |
+| `ScriptActions::cancel` | `rmm.job.approve` | yes | the requester or an administrator withdraws a request; an administrator limited to some clients only a visible one |
+| `ScriptActions::decide` | `rmm.job.approve`, `rmm.software.deploy`, `rmm.patch.manage` | yes | the approval is visible only when its target lies inside the caller's clients (approvalVisible); approving also checks approverScope; (reject) rejecting needs the same visibility as approving; (software) delegates to DeployActions::decideApproval(): every client of the request; (patch) delegates to PatchActions::decideApproval(): every client of the request |
+| `ScriptActions::deleteSchedule` | `rmm.admin` | yes | a schedule of a client the caller cannot see is 404 |
+| `ScriptActions::resignScript` | `rmm.admin` | yes (fleet-wide object) | fleetWide() (re-signing rewrites the signature every client's devices verify) |
+| `ScriptActions::retireScript` | `rmm.job.run_script` | yes (fleet-wide object) | fleetWide() |
+| `ScriptActions::runOnDevice` | `rmm.job.run_saved` | yes | device view check (404) before the ability and the script |
+| `ScriptActions::runOnTarget` | `rmm.job.run_saved` | yes | (device) TargetResolver counts only devices inside visibleClientIds(): nothing to run on; (client) TargetResolver counts only devices inside visibleClientIds() |
+| `ScriptActions::saveSchedule` | `rmm.admin` | yes | an existing schedule of a client the caller cannot see is 404; a schedule is scoped by its target; (create) a new schedule may only target devices inside the caller's clients |
+| `ScriptActions::updateScript` | `rmm.job.run_script` | yes (fleet-wide object) | fleetWide(): a caller limited to some clients may not change library scripts (shared by every client) |
+| `TechnicianActions::allowReenroll` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::cancelJob` | `rmm.job.run_saved` | yes | deviceFor() (404), then the job is looked up by (job, device); (cross) own device + the job of another client: the job is looked up by (job, device), so it is not found |
+| `TechnicianActions::clearUpdateFailures` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::createToken` | `rmm.token.manage` | yes | authz->check(TOKEN_MANAGE, client) incl. clientOk -> 403 |
+| `TechnicianActions::meshMapping` | `rmm.device.view` | no | deviceFor(): a device of another client is the same 404 as a missing one |
+| `TechnicianActions::launchRemote` | `rmm.remote.launch`, `rmm.remote.manage` | yes | deviceFor() before any Mesh call, session or token; (forced) deviceFor() (force only skips the offline check); (terminal) deviceFor() before the remote.manage and feature checks; (files) deviceFor() before the remote.manage and feature checks |
+| `TechnicianActions::resolvePending` | `rmm.device.manage` | yes | manage(); (link) manage(), then the asset's client must be one the caller manages (CORE-02) |
+| `TechnicianActions::retire` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::revoke` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::revokeToken` | `rmm.token.manage` | yes | the token's client is checked (clientOk + TOKEN_MANAGE) before it is revoked: missing and foreign both 404 |
+| `TechnicianActions::rotateCredential` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::setAutomationDisabled` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::setAutomationDisabledBulk` | `rmm.device.manage` | yes | (devices) each device must be inside the caller's clients and manageable; any other is "skipped" exactly like an unknown id; (client) a client selection needs clientOk + DEVICE_MANAGE for that client -> 403 (same for an unknown client) |
+| `TechnicianActions::setMeshNode` | `rmm.device.manage` | yes | manage(): deviceFor(administrative) -> 404 |
+| `TechnicianActions::setRing` | `rmm.device.manage` | yes | manage() |
+| `TechnicianActions::submitJob` | `rmm.job.run_script`, `rmm.job.run_saved`, `rmm.job.reboot` | yes | deviceFor(): clientOk + DEVICE_VIEW(client) -> 404, then the ability for the client; (saved) deviceFor() as above (saved script path); (reboot) deviceFor() as above (reboot); (library) delegates to ScriptActions::runOnDevice() |
+| `TechnicianActions::transfer` | `rmm.device.manage` | yes | manage() on the device (404): a device of another client is never reached (moving into the device's own client is a no-op, so no change is asserted); (target) manage() on the device, then the TARGET client: clientOk + DEVICE_MANAGE(target) -> 403 (the control moves into the device's own client: a no-op) |
+| `TechnicianActions::visibleDevice` | `rmm.device.view` | yes | visibleDevice(): authz->check(DEVICE_VIEW, client) incl. clientOk -> null |
+| `TransferService::find` | none | yes | keyed by (transfer, device): the transfer of another device is never returned for this one |
+| `DeployActions::package` | n/a | no (not client-scoped) | Reads one package of the catalog, which is shared by every client; the installer address is masked for a caller who is not fleet-wide. Writes are in the matrix. |
+| `AutoInstallActions::paramsOf` | n/a | no (not client-scoped) | Reads where the parameters of a catalog package are set (never a value); the client-scoped entries are filtered to the caller's clients. Writes are in the matrix. |
+| `TechnicianActions::approveMeshNodes` | n/a | no (not client-scoped) | Bulk approve-and-map: every id goes through setMeshNode(), whose deviceFor() hides a device of another client; an id outside the caller's clients is reported per device as refused, never acted on. |
+| `PatchActions::getPolicy` | n/a | no (not client-scoped) | Reads one patch policy, a fleet-wide object: settings only. Its assignments are filtered to the caller's clients (testPolicyDetailsHideTheAssignmentsOfOtherClients); its writes are in the matrix. |
+| `RmmAdmin::msiTemplateAction` | n/a | no (not client-scoped) | Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
+| `RmmAdmin::setReleaseSignature` | n/a | no (not client-scoped) | Stores the offline release signature of a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish (CORE-DS-26). |
+| `RmmAdmin::binaryAction` | n/a | no (not client-scoped) | Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
+| `RmmAdmin::updateRelease` | n/a | no (not client-scoped) | Changes the rollout percentage of an agent release: fleet-wide, no client owns it; needs rmm.binary.publish. |
+| `TransferService::listFor` | n/a | no (not client-scoped) | Service layer, no principal: RemoteActions::listTransfers() resolves the device and the ability first (matrix row). |
+| `TransferService::receiveChunk` | n/a | no (not client-scoped) | Agent-facing: the device is authenticated by its own token and the transfer by a one-time token; find() is keyed by (transfer, device), see TransferService::find. |
+| `TransferService::serveChunk` | n/a | no (not client-scoped) | Agent-facing: the device is authenticated by its own token and the transfer by a one-time token; find() is keyed by (transfer, device), see TransferService::find. |
+| `TransferService::storeUploadContent` | n/a | no (not client-scoped) | Service layer: RemoteActions::uploadContent() resolves the device and the ability first (matrix row). |
+| `PatchApprovalService::saveRule` | n/a | no (not client-scoped) | Service layer: PatchActions::saveRule() applies the client scope first (matrix rows). |
+| `PatchApprovalService::deleteRule` | n/a | no (not client-scoped) | Service layer: PatchActions::deleteRule() applies the client scope first (matrix row). |
+| `PatchApprovalService::rule` | n/a | no (not client-scoped) | Service layer lookup; PatchActions::saveRule()/deleteRule() filter on the rule's client before it is used. |
+| `PatchApprovalService::applyApproved` | n/a | no (not client-scoped) | Applies a frozen approval request after PatchActions::decideApproval() checked the approver against every client of the request. |
+| `PatchApprovalService::approve` | n/a | no (not client-scoped) | Service layer: PatchActions::approve() selects only rows inside the caller's scope first (PatchApprovalService::select is in the matrix). |
+| `PatchApprovalService::decline` | n/a | no (not client-scoped) | Service layer: PatchActions::decline() selects only rows inside the caller's scope first. |
+| `PatchApprovalService::requestSecond` | n/a | no (not client-scoped) | Service layer: called with rows PatchActions::approve() already scoped. |
+| `PatchApprovalService::autoApprove` | n/a | no (not client-scoped) | Server-side rule engine (scheduler), no principal; it works device by device on the rules of the device's own client. |
+| `PatchInstallService::queue` | n/a | no (not client-scoped) | Service layer: PatchActions::install() resolves the device, the client scope and the ability first (matrix rows). |
+| `PatchInstallService::applyJob` | n/a | no (not client-scoped) | Agent-facing: applies the report of a job to the device that authenticated. |
+| `RemoteActions::installMeshAgentAfterApproval` | n/a | no (not client-scoped) | Server-side (MeshAfterApproval), no principal: the administrator's tick-box on the installer was the decision; it takes the device row of the device that was just approved. |
+
+REST routes (`{d}` is the device id, `{dq}` a device a request may queue on; the other `{...}` are the object of the same name: all go through the same checks; the matrix asserts unknown and another client's id answer identically at the HTTP layer):
+
+- `AlertingApi::device`: `GET {d}/alerts`, `GET {d}/alerting`, `GET {d}/maintenance`, `GET {d}/parent`, `PUT {dq}/parent (child)`, `PUT {dfresh}/parent (parent of another client)`, `DELETE {d}/parent`, `GET {d}/checks/cpu_tm/thresholds`, `PUT {d}/checks/cpu_tm/thresholds`
+- `AlertingApi::fleet`: `GET alerts/{alert}`, `POST alerts/{alert}/ack`, `POST alerts/{alert}/resolve`, `GET alerts?device_id={d} (filter)`, `GET maintenance/{win}`, `PATCH maintenance/{win}`, `DELETE maintenance/{win}`, `GET maintenance/{wind} (device-scope window)`, `GET escalation_policies/{esc}`, `PATCH escalation_policies/{esc}`, `DELETE escalation_policies/{esc}`
+- `AutoInstallApi::device`: `GET {d}/autoinstall`
+- `AutoInstallApi::fleet`: `GET software_autoinstall/selectable?client_id={client}`, `PUT software_autoinstall/{pkg} (fleet-wide)`, `PUT software_params/{pkgfix}`, `DELETE software_files/{fileid} (fleet-wide)`
+- `ChangeApi::device`: `GET {d}/changes`, `GET {d}/changes/timeline`, `GET {d}/changes/status`
+- `ChangeApi::fleet`: `GET changes?device_id={d}`, `GET changes?client_id={client}`, `GET changes/rules/{cr}`, `PATCH changes/rules/{cr}`, `DELETE changes/rules/{cr}`
+- `DeployApi::device`: `GET {d}/deployments`, `GET {d}/deployments/history`, `POST {d}/deployments/detect`, `POST {dq}/deployments/run`
+- `DeployApi::fleet`: `DELETE software_assignments/{ad} (device assignment)`, `DELETE software_assignments/{ac} (client assignment)`, `POST software_assignments (device scope)`, `POST software_assignments (client scope)`, `GET software_report?client_id={client}`, `PUT software_packages/{pkg} (fleet-wide)`, `DELETE software_packages/{pkg} (fleet-wide)`
+- `HypervisorApi::device`: `GET {d}/hypervisor`, `PUT {d}/hypervisor`
+- `HypervisorApi::fleet`: `GET hypervisor/vms/{vm}`, `PUT hypervisor/vms/{vm}`, `GET hypervisor/vms?client_id={client}`
+- `PatchApi::device`: `GET {d}/patches`, `GET {d}/patches/history`, `POST {dq}/patches/scan`, `POST {d}/patches/install`
+- `PatchApi::fleet`: `POST patches/approve`, `POST patches/decline`, `GET patches/compliance?client_id={client}`, `GET patches?client_id={client}`, `PUT patches/rules/{prule}`, `DELETE patches/rules/{prule}`, `PUT patch_policies/{ppolicy} (fleet-wide)`, `DELETE patch_policies/{ppolicy} (fleet-wide)`
+- `RemoteApi::device`: `GET {d}/services`, `POST {d}/services/query`, `POST {d}/services/Spooler/start`, `GET {d}/processes`, `POST {d}/processes/query`, `POST {d}/processes/4242/kill`, `GET {d}/remote/mesh`, `GET {d}/remote/jobs/{tooljob}`, `PUT {d}/remote/node`, `POST {dq}/mesh/install`, `POST {dq}/mesh/uninstall`, `GET {d}/files`, `POST {d}/files/download`, `POST {d}/files/upload`, `GET {d}/files/{tid}`, `DELETE {d}/files/{tid}`, `GET {d}/files/{tid}/content`, `GET {dA}/files/{tid}/content (own device, transfer of another client)`, `GET {d}/logs`, `GET {d}/logs/stats`
+- `RemoteApi::fleet`: `GET logs?device_id={d}`, `GET logs?client_id={client}`, `GET logs/rules/{lr}`, `PATCH logs/rules/{lr}`, `DELETE logs/rules/{lr}`, `POST logs/rules`, `POST mesh/install (device target)`
+- `TechnicianApi::handle`: `GET {d}`, `GET {d}/jobs`, `POST {d}/jobs`, `POST {d}/jobs/{job}/cancel`, `POST {d}/remote`, `POST {d}/remote (terminal)`, `GET {d}/live`, `GET {d}/network`, `GET {d}/policy`, `GET {d}/fields`, `PUT {d}/fields/{fieldid}`, `GET {d}/software`, `POST {d}/software/refresh`, `GET {d}/tags`, `POST {d}/tags`, `GET {d}/checks/cpu_tm/history`, `GET policies/{policy} (fleet-wide read)`, `PUT policies/{policy} (fleet-wide)`, `DELETE policies/{policy} (fleet-wide)`, `POST policies/{policyfix}/assignments (client scope)`, `DELETE policies/{policyfix}/assignments/{pac} (client assignment)`, `DELETE policies/{policyfix}/assignments/{pad} (device assignment)`, `GET scripts/{script} (fleet-wide read)`, `PUT scripts/{script} (fleet-wide)`, `DELETE scripts/{script} (fleet-wide)`, `GET scripts/{script}/runs (runs filtered to the caller's clients)`, `GET approvals/{appr}`, `POST approvals/{appr}/approve`, `POST approvals/{appr}/reject`, `POST approvals/{appr}/cancel`, `GET schedules/{sched}`, `PUT schedules/{sched}`, `DELETE schedules/{sched}`, `GET schedules/{sched}/history?device_id={d}`, `PUT fields/{fieldid}/values/{d}`, `POST runs (device target)`, `POST groups/{groupfix}/devices`, `DELETE groups/{groupfix}/devices/{dgrp}`
+
 ## Used by
 
 Not yet adopted: RivetIT adopts first (it already has the tables), then RivetMSP.
@@ -516,3 +714,94 @@ Edition steps: add the check box to the installer and token dialogs, add the bul
 - A move to the client the device already belongs to returns `true` and writes nothing, not even an audit row. A retired or revoked device can be moved (its history and asset follow); it stays retired or revoked. `false` only for an unknown device or client.
 - A table with `device_id` and `client_id` added later must be added to `DeviceService::CLIENT_CARRYING_TABLES`; `DeviceTransferCompletenessTest::testEveryClientCarryingTableIsHandled()` fails until it is decided.
 - An edition's own bulk asset transfer must call `TechnicianActions::transfer()` for an asset that has an endpoint device, otherwise the agent state is orphaned in the old client.
+
+## Remote session policy (1.0.0-rc.68, migration 0050)
+
+What the person at a client's devices is owed when a technician opens a remote session on one of them: RivetMSP's per-client policy. **Policy only**: Core decides and records; it runs nothing on a device, does not hide any session from the person at the device (Mesh's own session indicators are not touched) and never replaces the ability checks (`rmm.remote.launch`, `rmm.remote.manage`) or the switches. The Rivet Console (below) is what shows the notice. (An earlier draft also had a "Background Mode" with its own ability, switch, sessions and events; it was dropped before release and does not exist.)
+
+- **Policy** (`Remote\RemoteSessionPolicy::decide($clientId)`, edition-neutral, reads `Contracts\RemoteSessionPolicyStoreInterface`; answer `Remote\RemoteSessionDecision`): `allow` (nothing extra), `notify` (allowed, `notice = notify`: the console shows a banner to the technician; it does not notify the person at the device) or `approve` (refused, code `approval_required`, until an approval flow exists). **No stored policy and client 0 mean no extra requirement**, exactly as before the policy existed; an unknown or empty stored value and any lookup that throws DENY.
+- **Storage.** `DbRemoteSessionPolicyStore` over `rmm_client_remote_policy` (migration `0050_rmm_client_remote_policy`, additive and idempotent; `0045` is absent from the list on purpose, it was reserved for the reporting views that shipped as `0047`). The edition's `rmm_remote_sessions` is not altered (ADR-002). An edition with its own policy storage passes `remote_session_policy` (a `RemoteSessionPolicyStoreInterface`) to `RmmModule` and then changes and audits that policy itself.
+- **Changing the policy (audited).** `RmmModule::remoteSessionPolicySettings()` (`Remote\RemoteSessionPolicySettingsService::setClientPolicy($who, $clientId, 'allow'|'notify'|'approve'|null)`): needs `rmm.admin` (the same ability as the remote-tools settings), writes one `Remote Session Policy Changed` row (who, client, old and new value) BEFORE it changes anything and changes nothing if that write fails (the exception propagates); a refused caller gets 403 and a `Remote Session Policy Denied` row, an invalid value 422. `DbRemoteSessionPolicyStore::setClientPolicy()` does not check or audit and is internal to Core. There is no setting that switches the audit off.
+- **Where it is used.** The policy is read when a Rivet Console session is issued and again at redeem (see "Rivet Console redeem and events"). RivetIT has no per-client policy and does not need the table.
+- **Tests.** `tests/Unit/Rmm/RemoteSession/*` (no database) and `tests/Integration/Rmm/RemoteSessionPolicyTest.php` (scratch database).
+
+
+## Optional Rivet Console (desktop app): the `remote_console` switch (1.0.0-rc.69)
+
+The Rivet Console is an installed desktop application a technician can use instead of a MeshCentral browser tab. It is **optional**: the switch is off by default and, while it is off, `launchRemote()` and `POST endpoint_devices/{id}/remote` behave exactly as before (a stock MeshCentral login-token URL that opens in a browser tab; the result is `url` and `session_id`, nothing more). Nothing is removed when it is on: the stock URL is still returned as the fallback.
+
+- **Switch.** Sub-switch `remote_console` in `RmmSettings::FEATURES` (`RemoteProtocol::FEATURE_REMOTE_CONSOLE`), stored in `features_json` like `remote_tools`; a NULL `features_json` never turns it on. Set through `RemoteActions::updateSettings()` (`features: {remote_console: true|false}`, administrators only, audited as `Remote Settings Changed`; read back in `settings()` under `features.remote_console`). Unlike `filetransfer` it has **no risk acknowledgement**: it grants nothing (the same abilities, device scope and `remote_tools` rules apply, and the deep link carries no credential).
+- **Launch.** `launchRemote($who, $deviceId, $force, $ip, $ua, $view, console: true, consoleKind: null)` (REST body `{"console": true, "console_kind": "terminal-ps", "view": "desktop|terminal|files"}`). The flag is ignored while the switch is off. With the switch on, every existing check still runs first (`rmm.remote.launch`, `rmm.remote.manage` and `remote_tools` for terminal and files, device scope, the offline rule, the audit rows) and the result gains a `console` object:
+
+  ```json
+  {"url": "https://mesh.example/?login=...&gotonode=...&viewmode=11", "session_id": "...",
+   "console": {"url": "rivetconsole://connect?v=1&origin=https%3A%2F%2Frmm.example.com&code=<43 characters>", "fallback_url": "https://mesh.example/?login=..."}}
+  ```
+
+  **Changed in 1.0.0-rc.70** (the rc.69 descriptor `{kind, url, fallback_url}` with `?kind=&node=` never left a release candidate): `console.url` is the deep link `rivetconsole://connect?v=1&origin=<percent-encoded https origin>&code=<code>`, only those three parameters; the kind and the node are not in it, Core stores them with the code. `kind` defaults from `view` (`desktop`, `terminal`, `files`); `terminal-ps` (a PowerShell terminal) is only accepted with `view = terminal`, anything else is a 422. The link carries **no login token and no long-lived secret**: the `code` is single use and valid 60 seconds, see "Rivet Console redeem and events" below (`Remote\ConsoleLink`). Without a configured `console_public_url` the launch is refused (409 `not_configured`, audited, nothing minted); a device whose node id or the Mesh domain does not fit gets 409 `unsupported`. `console.fallback_url` is the stock MeshCentral URL (same value as the top-level `url`, which holds a short-lived login token, so treat it as before: never log it). The audit row of a console launch ends with `(Rivet Console link, <kind>)`; with the switch off the row text is unchanged.
+- **What the editions must render** (the UI lives in RivetIT and RivetMSP, not in Core):
+  1. On the remote-tools settings page, a toggle labelled **`Use Rivet Console (desktop app)`** bound to `features.remote_console` (save with `updateSettings`, administrators only; no confirmation dialog is required).
+  2. Helper text under it: that the console is optional, that it needs the Rivet Console app installed on the technician's PC, and that **stock MeshCentral launch remains available** (a link to the browser session stays on the page, and turning the toggle off restores today's behaviour for everyone).
+  3. On the device page, when `features.remote_console` is on, send `console: true` with the launch. The deep link is returned in **`data.console.url`** (REST `console.url`); open it with `window.location = console.url` (or a hidden link click) rather than `window.open`. Offer **`data.console.fallback_url`** as "Open in browser instead" for a PC without the app. When `console` is absent or null, open `url` in a tab as before.
+- **Tests.** `tests/Unit/Rmm/ConsoleLinkTest.php` (link shape, no credentials, kind and node validation, switch default and validation), and `tests/Integration/Rmm/RemoteConsoleTest.php` (stock output unchanged with the switch off; descriptor and minted code with it on; scratch database and MockMeshServer).
+
+## Rivet Console redeem and events (1.0.0-rc.70; migration 0051)
+
+The Core side of the contract the Rivet Console desktop app is built against (v1.2). **Optional and off by default:** everything here sits behind the `remote_console` switch; with it off nothing is minted, the launch is byte-identical to the stock one, and the two public routes answer as if no code existed. The audit log is always on: no setting turns any of these rows off. Direct mode of the console is a console-side setting and **not a security control**; real enforcement is a MeshCentral technician account without a usable password.
+
+**Flow.** `launchRemote(..., console: true)` runs every existing check, then the stock Mesh launch, then `Remote\ConsoleSessionService::issue()` mints one code (32 random bytes, base64url, 43 characters) and returns the deep link. The console calls `POST <console_public_url>/api/v1/endpoint_console/redeem` with the code and gets the MeshCentral login for that technician and device; it then reports what it did to `POST .../events` with the per-session report token.
+
+**Settings** (flat keys of `RemoteActions::updateSettings()`, administrators only, validated before anything is written, audited as `Remote Settings Changed`, read back by `RemoteActions::settings()`; table `rmm_console_settings`, class `Remote\ConsoleSettings`):
+
+| Key | Meaning | Default |
+|---|---|---|
+| `console_public_url` | bare https origin (`https://host[:port]`, no path, query, user info or fragment); the link origin and the events URL, **never** taken from the request Host header. Empty refuses every console launch (409 `not_configured`, audited) | empty |
+| `min_console_version` | `x.y.z`; a console reporting less (or no valid version) gets 426 `client_too_old`. Empty enforces nothing | empty |
+| `console_log_file_paths` | store the file paths a console reports (capped at 256 characters, control characters stripped) and tell it so (`report.paths`) | off |
+| `console_cookie_once` | add a random `once` claim to the cookie the redeem hands out; switch it off for multi-Mesh-server set-ups | on |
+
+New limit `console_session_retention_days` (30 to 3650, default 365) in the remote-tools limits.
+
+**Routes and the classes behind them.** Core keeps no route manifest; an edition mounts exactly two routes, as **public** (no session, no CSRF, no CORS headers), **POST-only**, **JSON-only** routes whose response is sent as given (`Cache-Control: no-store` is set by `RmmResponse`):
+
+| Route | Call |
+|---|---|
+| `POST /api/v1/endpoint_console/redeem` | `RmmModule::consoleApi($rateLimit)->redeem(RmmRequest)` (class `Http\ConsoleApi`, service `Remote\ConsoleRedeemService`) |
+| `POST /api/v1/endpoint_console/events` | `RmmModule::consoleApi($rateLimit)->events(RmmRequest)` (service `Remote\ConsoleEventsService`) |
+
+`ConsoleApi::handle()` routes on `pathSegments[0]` (`redeem` or `events`) for an edition that prefers one entry point. `$rateLimit` is the same `Closure(bucket, limit, windowSeconds): bool` that `deviceApi()` takes. Requirements for the edition: build the `RmmRequest` with the client address from **its trusted-proxy setting only** (never a client header), `secureTransport` from the same rule, `Content-Type` and `Authorization` in `headers`; **never log the request body anywhere** (web server, WAF, application): it holds a login code or a bearer token. Core logs an unexpected failure as its exception class name only.
+
+**Redeem** (`{"code": "...", "client": {"app", "version", "platform"}}`). Order: per-address limit (20 a minute, every request) -> `min_console_version` (426) -> code shape -> look-up -> per-technician limit (10 a minute, only after a valid code, so it does not burn the code) -> **one atomic conditional UPDATE** consumes the code (`used_at IS NULL AND expires_at > now`; of any number of parallel redeems exactly one wins, a second one fails even inside the 60 seconds) -> the **gate re-run at redeem time** for the code's technician -> cookie, report token, session row -> audit row, written before anything is returned.
+
+| Status | Body | When |
+|---|---|---|
+| 200 | `{ok, session_id, node, kind, technician{username, display}, mesh{server, domain, cookie, userid}, notice, expires_in: 180, report{url, token, paths}, bg_authorization: null}` (`bg_authorization` is a reserved key of contract v1.2, always null; clients ignore it) | success |
+| 400 | `{"ok":false,"error":"invalid_or_expired"}` | **identical bytes** for: unknown, expired, used, malformed code or body; the technician revoked, out of scope, lost an ability, a switch off (`remote_console`, `remote_tools` for terminal and files, the module), the device retired, revoked or re-mapped since the launch |
+| 403 | `{"ok":false,"error":"approval_required","message":"..."}` | a valid code whose client policy is `approve` (Core cannot arrange approval yet; only possible when the policy changed after the launch, see below); never for an invalid code |
+| 405, 415 | `{"ok":false,"error":"method_not_allowed" / "unsupported_media_type"}` | not POST; not `application/json` |
+| 403 | `{"ok":false,"error":"tls_required"}` | not over TLS (unless the edition allows insecure http) |
+| 426 | `{"ok":false,"error":"client_too_old","min_version":"x.y.z"}` | only when a minimum is set; says nothing about the code |
+| 429 | `{"ok":false,"error":"rate_limited"}` + `Retry-After` | per address or per technician |
+| 500, 503 | `{"ok":false,"error":"internal" / "unavailable"}` | generic |
+
+`session_id` is the id of the launch (the same id as the `Remote Session` audit row). `node` is `node/<mesh domain>/<id>` and `mesh.domain`, `mesh.userid` (`user/<domain>/<account>`) and the cookie's `u` claim all come from Core's own record (`mesh_domain`, `mesh_account_template`, the technician's id and name) and agree by construction; nothing is taken from the request. `mesh.server` is the configured `mesh_url` reduced to its origin. The cookie is `MeshCookie::login()`-style (`u`, `a: 3`, `time` back-dated 120 s) with a random `once` claim and **no `ip` and no `x` claim**; the `once` claim is only on this cookie, never on the stock `fallback_url` cookie. It is minted per redeem and never stored or logged. `notice` is `"notify"` when the client's policy (the per-client remote session policy) says `notify`, else null; it is a banner for the technician only, not a message to the person at the device. Whether the device is online is checked at launch only.
+
+**Events** (`Authorization: Bearer <report.token>`, `{"session_id", "events": [...]}`). The token is random, bound to the session, stored only as its SHA-256, valid until the session ends plus 5 minutes and never longer than 12 hours. Answers: 200 `{"ok":true,"accepted":N}` (N = events stored); 401 `unauthorized` (identical for a missing, unknown, wrong or expired token); 400 `invalid_request` (bad JSON or types, session id not the token's; nothing is stored); 413 `too_large` (over 100 events or 32 KB); 429 `rate_limited` (60 requests a minute per session). Accepted types: `session_start`, `session_end`, `file_upload`, `file_download`, `file_delete`, `file_rename`, `file_mkdir`, `clipboard_sync_on`, `clipboard_sync_off`; anything else, including the reserved `chat_*` and `background_*` prefixes, is dropped silently and not counted. Every stored event is one audit row marked "reported by console, unverified" with the claimed time and Core's receive time, the technician and device from Core's own session record, control characters stripped; at most 500 per session, then one `Console Events Truncated` row (a `session_end` is always recorded, as `Console Session Ended`). Events are kept **only as audit rows** (there is no events table). Clipboard, chat and file contents, cookies, codes and the token are never present.
+
+**Audit rows** (always on): `Remote Session ... (Rivet Console link, <kind>)` at mint (denied launches keep their existing `Remote Denied` / `Remote Failed` rows, nothing is minted); `Console Link Redeemed`; `Console Link Denied` (throttled to 10 a minute per client address so a flood of bad codes cannot flood the log; no technician is named for an unknown code); `Console Event Reported`; `Console Events Truncated`; `Console Session Ended`. No row, log line, event payload or exception text holds a code, its hash, the cookie, the report token or a URL with a login token.
+
+**Webhook events** (`RmmEvent`, `Webhooks\EventCatalog`; 51 `rmm.*` events in all): `rmm.console.link_redeemed` (session_id, user_id, user_name, kind), `rmm.console.link_denied` (user_id and kind null for an unknown code, reason), `rmm.console.session_ended` (unverified), `rmm.console.events_reported` (counts only: accepted, dropped, truncated). No secrets.
+
+**Storage and retention.** Migration `0051_rmm_console_sessions` (additive, idempotent): `rmm_console_settings`, `rmm_console_codes` (SHA-256 of the code, technician, device, client, node, kind, mode `standard`, session id, hashed client address, created, expires, used), `rmm_console_sessions` (session id, SHA-256 of the report token, technician, device, client, node, kind, started, ended, token expiry, 12 h cap, event count). `Housekeeping` (`Remote\ConsoleRetention`) deletes codes a day after they expired and sessions `console_session_retention_days` after they ended (or, unended, after their token's cap); it never touches the audit log.
+
+**Behind a reverse proxy (`tls_required`).** The console always uses https, so a `403 tls_required` means the edition did not see the request as secure. Set `RmmRequest::secureTransport` from `X-Forwarded-Proto` **only** when the request comes from the edition's configured trusted proxy; otherwise every redeem fails behind the edition's own TLS-terminating proxy. A forged `X-Forwarded-Proto` from an untrusted client must not count as secure. The same trusted-proxy rule gives the client address.
+
+**Mesh address must be https for the console.** The console refuses a non-https `mesh.server`. A console launch is therefore refused at launch with 409 `not_configured` (clear message, audited, nothing minted) when `mesh_url` is `http://`, unless the module's `allow_insecure_http` option is on (loopback test servers only; the same option that lets `MeshService::normalizeUrl()` accept http at all).
+
+**Approval at launch.** With `remote_console` on and the device's client remote session policy `approve`, a console launch is refused at launch: 403 `approval_required` (`This client requires approval before a remote session can start.`), audited as a `Remote Denied` row, no Mesh session and no code minted. The redeem re-checks (a policy changed between mint and redeem). Stock launches (no console flag, or the switch off) are unchanged. `notify` is returned only at redeem.
+
+**Operator notes.** Mesh accounts, groups and rights are created by the operator in MeshCentral: Core does not create them, and contractors and portal users get none. Changing `mesh_url` means technicians approve the new address once in the console. MeshCentral `dns`-domain set-ups are not supported in v1. Cookie use from another IP through a real reverse proxy is **unverified** (the cookie carries no `ip` claim, so it should not matter). Not exercised: a real MeshCentral accepting the `once` claim (the mock does not check it), and the console itself.
+
+**Mint a cookie by hand** (testing only; use a MeshCentral you own): `MESH_LOGIN_KEY=<hex> php scripts/mint-test-cookie.php [domain|-] [account]` prints a once-cookie valid about 58 minutes. The key is read from the environment only and the script refuses it on the command line.
+
+**Tests.** `tests/Unit/Rmm/ConsoleLinkTest.php`; integration (scratch database, MockMeshServer): `ConsoleRedeemTest` (contract body, cookie claims, byte-identical 400 across 16 causes, 403, 426, 429, the parallel-process race, the gate at redeem time, no secret in any log, row, event or table, tenant isolation), `ConsoleEventsTest`, `ConsoleSettingsAndRetentionTest`, `RemoteConsoleTest`; `tests/Support/ConsoleTestCase.php` and `console_consume_worker.php`. `TenantIsolationMatrixTest` is not on this branch: the tenant tests are focused ones.

@@ -79,27 +79,72 @@ final class MeshCookie
         return is_array($data) ? $data : null;
     }
 
-    /** The MeshCentral account name for a technician: template placeholders replaced, then reduced to [A-Za-z0-9._-]. */
+    /** True when the template uses the retired `{username}` placeholder (CORE-13): see {@see self::accountName()}. */
+    public static function usesDisplayName(string $template): bool
+    {
+        return str_contains($template, '{username}');
+    }
+
+    /**
+     * The MeshCentral account name for a technician: `{user_id}` replaced, then reduced to [A-Za-z0-9._-].
+     *
+     * CORE-13: `{username}` is no longer substituted. The name is the technician's display name, which the technician can edit, and the
+     * login token signs in as whatever account is named: renaming oneself "admin" yielded a token for the Mesh admin. A template that
+     * still contains `{username}` now yields '' (the launch is refused, fail closed) instead of an account chosen by the caller.
+     * `$username` is kept only for signature compatibility and is ignored.
+     */
     public static function accountName(string $template, int $userId, string $username): string
     {
-        $account = str_replace(['{user_id}', '{username}'], [(string) $userId, (string) preg_replace('/[^A-Za-z0-9._-]/', '', $username)], $template);
+        if (self::usesDisplayName($template)) {
+            return '';
+        }
+        $account = str_replace('{user_id}', (string) $userId, $template);
 
         return (string) preg_replace('/[^A-Za-z0-9._-]/', '', $account);
+    }
+
+    /** The MeshCentral user id `user/<domain>/<account>` (the cookie's `u` claim; the Rivet Console redeem response carries the same string). */
+    public static function userId(string $domain, string $account): string
+    {
+        return 'user/' . $domain . '/' . $account;
     }
 
     /**
      * The login cookie for one MeshCentral account: {u:'user/<domain>/<account>', a:3, time: now - 120}. Null when the key is
      * unusable or the account is empty.
      *
+     * `$once` (the Rivet Console redeem cookie only, never the stock launch URL) adds a random `once` claim, 16 random bytes in hex, after `time`: a MeshCentral
+     * that honours it can refuse to accept the same cookie twice. Default false: the payload is then exactly the stock one.
+     *
      * @param int $now unix seconds (the caller's clock)
+     * @param int|null $ttlS CORE-3/14: the configured token lifetime in seconds. MeshCentral accepts a token for {@see self::MESH_ACCEPT_S} after its
+     *                       "time", so the lifetime is shortened by back-dating "time" by (MESH_ACCEPT_S - ttl). Null (the default) or a ttl of
+     *                       MESH_ACCEPT_S - BACKDATE_S or more keeps the fixed 120 s back-date, that is the original ~58 minute window.
      */
-    public static function login(string $keyHex, string $domain, string $account, int $now, ?string $iv = null): ?string
+    public static function login(string $keyHex, string $domain, string $account, int $now, ?string $iv = null, ?int $ttlS = null, bool $once = false): ?string
     {
         if ($account === '') {
             return null;
         }
+        $payload = ['u' => self::userId($domain, $account), 'a' => RmmProtocol::MESH_COOKIE_ACCESS, 'time' => $now - self::backdate($ttlS)];
+        if ($once) {
+            $payload['once'] = bin2hex(random_bytes(16));
+        }
 
-        return self::encode(['u' => 'user/' . $domain . '/' . $account, 'a' => RmmProtocol::MESH_COOKIE_ACCESS, 'time' => $now - self::BACKDATE_S], $keyHex, $iv);
+        return self::encode($payload, $keyHex, $iv);
+    }
+
+    /** MeshCentral's default login-token acceptance window (minutes 60) in seconds. */
+    public const MESH_ACCEPT_S = 3600;
+
+    /** Seconds to back-date the cookie: at least BACKDATE_S (clock skew), at most the acceptance window less 60 s. */
+    public static function backdate(?int $ttlS): int
+    {
+        if ($ttlS === null) {
+            return self::BACKDATE_S;
+        }
+
+        return max(self::BACKDATE_S, min(self::MESH_ACCEPT_S - 60, self::MESH_ACCEPT_S - $ttlS));
     }
 
     /**

@@ -223,7 +223,8 @@ var linuxProtectedProcs = map[string]bool{
 
 var windowsProtectedProcs = map[string]bool{
 	"system": true, "smss.exe": true, "csrss.exe": true, "wininit.exe": true, "winlogon.exe": true,
-	"services.exe": true, "lsass.exe": true, "registry": true, "memory compression": true,
+	"services.exe": true, "lsass.exe": true, "svchost.exe": true, // svchost hosts RpcSs, DcomLaunch, LSM, EventLog (CORE-DS-53)
+	"registry": true, "memory compression": true,
 }
 
 // ProtectedProcess reports whether a process name is on the never-kill list.

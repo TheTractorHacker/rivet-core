@@ -118,7 +118,7 @@ final class DeployProtocol
     /** The visible name of an uninstall entry (Windows DisplayName): printable text, no control characters. */
     public static function displayNameOk(mixed $v): bool
     {
-        return is_string($v) && $v !== '' && mb_strlen($v) <= self::NAME_MAX && preg_match('/^[^\x00-\x1f\x7f]+$/Du', $v) === 1 && mb_check_encoding($v, 'UTF-8');
+        return is_string($v) && $v !== '' && mb_strlen($v) <= self::NAME_MAX && preg_match('/^[\p{L}\p{M}\p{N}\p{P}\p{S} ]+$/Du', $v) === 1 && mb_check_encoding($v, 'UTF-8');
     }
 
     /** Whether a detection triple is well formed for the operating system. */

@@ -110,6 +110,9 @@ func TestCheckServiceAction(t *testing.T) {
 		{"windows", "Spooler", "manual", "Spooler", ""},
 		{"windows", "RivetITAgent", "stop", "RivetITAgent", DetailRefusedSelf},
 		{"windows", "rivetitagent", "restart", "rivetitagent", DetailRefusedSelf},
+		{"windows", "RivetITAgent", "manual", "RivetITAgent", DetailRefusedSelf}, // CORE-DS-54
+		{"windows", "RivetITAgent", "start", "RivetITAgent", ""},
+		{"windows", "RpcSs", "manual", "RpcSs", DetailRefusedProtect},
 		{"windows", "RpcSs", "stop", "RpcSs", DetailRefusedProtect},
 		{"windows", "RPCSS", "disable", "RPCSS", DetailRefusedProtect},
 		{"windows", "EventLog", "disable", "EventLog", DetailRefusedProtect},

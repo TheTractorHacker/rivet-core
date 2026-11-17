@@ -62,6 +62,19 @@ final class LogsTest extends RemoteTestCase
         return ['ts' => gmdate('Y-m-d\TH:i:s\Z', time() - $age), 'level' => $level, 'source' => $source, 'event_id' => $code, 'message' => $msg];
     }
 
+    /** CORE-19: a device that is not linked (pending approval) cannot fill the shared log store or feed the log rules. */
+    public function testAnUnlinkedDeviceIngestsNothing(): void
+    {
+        $this->enableLogs();
+        $this->h->q("UPDATE endpoint_agent_devices SET link_state = 'pending_approval' WHERE device_id = $this->dev");
+        [$c, $j] = $this->ship([self::ev(), self::ev('another')]);
+        $this->assertSame([200, 0, 2], [$c, $j['accepted'], $j['dropped']]);
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM endpoint_agent_log_events'));
+        $this->h->q("UPDATE endpoint_agent_devices SET link_state = 'linked' WHERE device_id = $this->dev");
+        [$c, $j] = $this->ship([self::ev()]);
+        $this->assertSame([200, 1], [$c, $j['accepted']], 'once linked it is stored as before');
+    }
+
     // ------------------------------------------------------------------ off by default, offered on request
 
     public function testOffByDefault(): void
@@ -75,6 +88,37 @@ final class LogsTest extends RemoteTestCase
         $this->assertFalse($this->h->module->settings()->featureOn('logs'));
     }
 
+    /** CORE-DS-16 contract version 2: with signed_config 2 the logs configuration carries this device (a string) and a monotonic seq inside the signature. */
+    public function testContractVersionTwoBindsTheLogsConfigurationToTheDeviceAndANonDecreasingSeq(): void
+    {
+        $this->switchOn(['logs']);
+        $this->enableLogs();
+        $this->h->module->settings()->set(['signed_config' => 2]);
+        $r = $this->announce($this->devToken, self::allCaps());
+        $this->assertSame(2, $r['config']['signed_config']);
+        $cfg = $r['config']['logs'];
+        $this->assertIsString($cfg['device_id']);
+        $this->assertSame((string) $this->dev, $cfg['device_id']);
+        $this->assertIsInt($cfg['seq']);
+        [, $pub] = $this->h->module->settings()->signingKey();
+        $this->assertTrue(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::logsConfigMessage($cfg), $cfg['signature'], $pub));
+        $foreign = ['device_id' => '99999'] + $cfg;
+        $this->assertFalse(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::logsConfigMessage($foreign), $cfg['signature'], $pub), 'the device is inside the signature');
+        $again = $this->announce($this->devToken, self::allCaps())['config']['logs'];
+        $this->assertSame($cfg['seq'], $again['seq'], 'unchanged configuration: the same seq');
+        // a changed configuration never lowers it
+        $this->enableLogs(['logs_rate_per_min' => 300]);
+        $changed = $this->announce($this->devToken, self::allCaps())['config']['logs'];
+        $this->assertNotSame($cfg['version'], $changed['version'], 'the configuration really changed');
+        $this->assertGreaterThan($cfg['seq'], $changed['seq'], 'and a changed configuration is a higher seq');
+        // level 1 keeps the version 1 shape: no device_id, no seq
+        $this->h->module->settings()->set(['signed_config' => 1]);
+        $v1 = $this->announce($this->devToken, self::allCaps());
+        $this->assertSame(1, $v1['config']['signed_config']);
+        $this->assertArrayNotHasKey('seq', $v1['config']['logs']);
+        $this->assertArrayNotHasKey('device_id', $v1['config']['logs']);
+    }
+
     public function testTheConfigIsOfferedOnlyToAnAgentThatAskedWhileTheSwitchIsOnAndASourceExists(): void
     {
         $this->switchOn(['logs']);
@@ -84,7 +128,12 @@ final class LogsTest extends RemoteTestCase
         $r = $this->announce($this->devToken, self::allCaps());
         $this->assertSame(['logs:collect'], $r['features']);
         $cfg = $r['config']['logs'];
-        $this->assertSame(['version', 'interval_s', 'batch_max', 'max_message_bytes', 'rate_per_min', 'sources'], array_keys($cfg));
+        $this->assertSame(['version', 'interval_s', 'batch_max', 'max_message_bytes', 'rate_per_min', 'sources', 'signature'], array_keys($cfg), 'CORE-DS-16: the only protocol-visible delta is the signature member');
+        [, $pub] = $this->h->module->settings()->signingKey();
+        $this->assertTrue(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::logsConfigMessage($cfg), $cfg['signature'], $pub), 'verifies against the key the agent pinned');
+        $tampered = $cfg;
+        $tampered['sources'][0]['contains'] = ['x'];
+        $this->assertFalse(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::logsConfigMessage($tampered), $cfg['signature'], $pub));
         $this->assertSame([60, 200, 1024, 600], [$cfg['interval_s'], $cfg['batch_max'], $cfg['max_message_bytes'], $cfg['rate_per_min']]);
         $this->assertSame([['kind' => 'eventlog', 'channel' => 'System', 'levels' => ['critical', 'error', 'warning'], 'event_ids' => [7036], 'contains' => []]], $cfg['sources']);
         $this->assertSame($cfg['version'], $this->announce($this->devToken, self::allCaps())['config']['logs']['version'], 'the version only changes when the configuration does');
@@ -382,6 +431,27 @@ final class LogsTest extends RemoteTestCase
         $this->assertSame(201, $c, json_encode($j));
 
         return $j;
+    }
+
+    /** CORE-DS-38: the cap is per scope (a client, or all clients), so filling one client's room does not take anybody else's. */
+    public function testTheRuleCapIsPerClientNotPerInstallation(): void
+    {
+        $this->enableLogs();
+        $svc = $this->h->module->logRules();
+        $a = $this->h->clientA;
+        for ($i = 0; $i < \RivetCore\Rmm\Logs\LogRuleService::MAX_RULES; $i++) {
+            [$id, $err] = $svc->create(['name' => "A$i", 'min_level' => 'error', 'contains' => "x$i", 'severity' => 'warn', 'client_id' => $a], 1);
+            $this->assertNotNull($id, json_encode($err));
+        }
+        [$id, $err] = $svc->create(['name' => 'one too many', 'min_level' => 'error', 'contains' => 'y', 'severity' => 'warn', 'client_id' => $a], 1);
+        $this->assertNull($id);
+        $this->assertSame(['At most 50 log rules for one client.'], $err);
+        [$id] = $svc->create(['name' => 'B rule', 'min_level' => 'error', 'contains' => 'y', 'severity' => 'warn', 'client_id' => $this->h->clientB], 1);
+        $this->assertNotNull($id, 'another client still has room');
+        [$id] = $svc->create(['name' => 'All rule', 'min_level' => 'error', 'contains' => 'y', 'severity' => 'warn', 'client_id' => 0], 1);
+        $this->assertNotNull($id, 'and so does the all-clients scope');
+        // moving a rule into the full client is refused too
+        $this->assertSame(['At most 50 log rules for one client.'], $svc->update((int) $id, ['client_id' => $a]));
     }
 
     public function testRuleManagementAndItsRules(): void

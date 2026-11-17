@@ -93,6 +93,9 @@ final class ScriptActions
         if (($e = $this->role($who->userId, RmmAbility::JOB_RUN_SCRIPT)) !== null) {
             return $e;
         }
+        if (($e = $this->fleetWide($who->userId)) !== null) {
+            return $e;   // CORE-24: a library script runs on any client's devices, so creating one is as fleet-wide as changing or retiring one
+        }
         try {
             $s = $this->scripts->create($in, $who->userId);
         } catch (\InvalidArgumentException $ex) {
@@ -150,6 +153,9 @@ final class ScriptActions
         if (($e = $this->role($who->userId, RmmAbility::ADMIN)) !== null) {
             return $e;
         }
+        if (($e = $this->fleetWide($who->userId)) !== null) {
+            return $e;   // TEN-7: the signature is the one every client's devices verify
+        }
         try {
             $n = $this->scripts->resign($scriptId);
         } catch (\InvalidArgumentException $ex) {
@@ -202,7 +208,7 @@ final class ScriptActions
         }
         $timeout = isset($in['timeout_s']) && is_numeric($in['timeout_s']) ? (int) $in['timeout_s'] : null;
         if ((int) $script['requires_approval'] === 1) {
-            return $this->requestRun($who, $loaded, ['type' => 'device', 'id' => $deviceId], $params, $timeout, 1, $client, $asset);
+            return $this->requestRun($who, $loaded, ['type' => 'device', 'id' => $deviceId], $params, $timeout, 1, $client, $asset, [$deviceId]);
         }
         $prep = $this->runner->prepare($loaded, $dev, $params, $timeout);
         if (!$prep['ok']) {
@@ -233,7 +239,8 @@ final class ScriptActions
             return $res ?? ActionResult::fail(422, 'invalid', 'Script not found.');
         }
         $script = $loaded['script'];
-        [$target, $terr] = $this->targets->validate($in['target'] ?? null);
+        $visible = $this->authz->visibleClientIds($who->userId);
+        [$target, $terr] = $this->targets->validateFor($in['target'] ?? null, $visible);   // TEN-9: a device or client outside the caller's scope "does not exist"
         if ($target === null) {
             return ActionResult::fail(422, 'invalid', $terr ?? 'Invalid target.');
         }
@@ -245,7 +252,6 @@ final class ScriptActions
             return ActionResult::fail(422, 'invalid', $params);
         }
         $timeout = isset($in['timeout_s']) && is_numeric($in['timeout_s']) ? (int) $in['timeout_s'] : null;
-        $visible = $this->authz->visibleClientIds($who->userId);
         $platforms = \RivetCore\Rmm\Scripts\ScriptLanguage::platforms((string) $script['language']);
         $count = $this->targets->count($target['type'], $target['id'], $visible, $platforms);
         $limits = $this->settings->limits();
@@ -257,7 +263,10 @@ final class ScriptActions
         }
         $threshold = $limits['approval_bulk_threshold'];
         if ((int) $script['requires_approval'] === 1 || ($threshold > 0 && $count > $threshold)) {
-            return $this->requestRun($who, $loaded, $target, $params, $timeout, $count, 0, 0);
+            // CR19: freeze WHICH devices the approver is shown, not only how many
+            $ids = array_map(static fn (array $d): int => (int) $d['device_id'], $this->targets->devices($target['type'], $target['id'], $visible, $platforms, 0, $limits['bulk_run_max']));
+
+            return $this->requestRun($who, $loaded, $target, $params, $timeout, $count, 0, 0, $ids);
         }
         $res = $this->bulk->run($loaded, $target, $params, $timeout, $who->userId, $visible, fn (int $client): bool => $this->authz->allowed($who->userId, RmmAbility::JOB_RUN_SAVED, $client), 'manual', null, $limits['bulk_run_max']);
         $this->audit->record('Script Run', "{$who->userName} ran library script \"{$script['name']}\" version {$loaded['version']['version']} (sha256 " . substr((string) $loaded['version']['body_sha256'], 0, 16)
@@ -270,8 +279,9 @@ final class ScriptActions
      * @param array{script:array<string,mixed>,version:array<string,mixed>,schema:list<array<string,mixed>>} $loaded
      * @param array{type:string,id:int} $target
      * @param array<array-key,mixed> $params
+     * @param list<int> $deviceIds the devices the target reached when it was asked for (frozen in the request)
      */
-    private function requestRun(RmmPrincipal $who, array $loaded, array $target, array $params, ?int $timeout, int $count, int $client, int $asset): ActionResult
+    private function requestRun(RmmPrincipal $who, array $loaded, array $target, array $params, ?int $timeout, int $count, int $client, int $asset, array $deviceIds = []): ActionResult
     {
         $err = $this->runner->checkStatic($loaded['schema'], $params, true);
         if ($err !== null) {
@@ -279,7 +289,7 @@ final class ScriptActions
         }
         $script = $loaded['script'];
         $req = ['type' => 'run', 'script_id' => (int) $script['script_id'], 'script_version' => (int) $loaded['version']['version'], 'body_sha256' => (string) $loaded['version']['body_sha256'],
-            'params' => $params === [] ? new \stdClass() : $params, 'timeout_s' => $timeout, 'target' => $target, 'confirmed' => (int) $script['destructive'] === 1];
+            'params' => $params === [] ? new \stdClass() : $params, 'timeout_s' => $timeout, 'target' => $target, 'confirmed' => (int) $script['destructive'] === 1, 'device_count' => $count] + ($deviceIds === [] ? [] : ['device_ids' => $deviceIds]);
         $summary = "Run \"{$script['name']}\" v{$loaded['version']['version']} on " . ($target['type'] === 'all' ? 'all devices' : "{$target['type']} {$target['id']}") . " ($count device" . ($count === 1 ? '' : 's') . ')';
         $a = $this->approvals->request('run', $req, $summary, $count, (int) $script['script_id'], (int) $loaded['version']['version'], $who->userId);
         $this->audit->record('Approval Requested', "{$who->userName} requested approval #{$a['approval_id']}: $summary (script sha256 " . substr((string) $loaded['version']['body_sha256'], 0, 16) . ')', $client, $asset);
@@ -301,6 +311,17 @@ final class ScriptActions
         $a = $this->approvals->get($approvalId);
         if ($a === null) {
             return ActionResult::fail(404, 'not_found', 'Approval not found.');
+        }
+        // TEN-1: a request that reaches devices outside the caller's clients does not exist for the caller, to approve OR to reject (software and patch requests
+        // check every client of the request themselves, in their own decideApproval()).
+        if (!in_array($a['kind'], [\RivetCore\Rmm\Patch\PatchApprovalService::KIND, \RivetCore\Rmm\Deploy\DeployApprovalService::KIND], true)) {
+            $reach = $this->approvalReach($who->userId, $a);
+            if ($reach === 0) {
+                return ActionResult::fail(404, 'not_found', 'Approval not found.');
+            }
+            if ($reach === 1) {
+                return ActionResult::fail(403, 'forbidden', 'This request reaches devices outside the clients you can access.');   // a request he sees part of
+            }
         }
         $req = $this->approvals->requestOf($approvalId);
         if ($req === null) {
@@ -345,6 +366,9 @@ final class ScriptActions
                 $denied = $this->approverScope($who->userId, $target, $loaded);
                 if ($denied !== null) {
                     return $denied;
+                }
+                if (($why = $this->executor->targetChanged($req, (int) $a['requested_by'], $loaded)) !== null) {
+                    return ActionResult::fail(409, 'conflict', $why);   // CORE-DS-44
                 }
             } else {
                 $sched = $this->schedules->get((int) ($req['schedule_id'] ?? 0));
@@ -391,8 +415,8 @@ final class ScriptActions
         if ($a === null) {
             return ActionResult::fail(404, 'not_found', 'Approval not found.');
         }
-        if ((int) $a['requested_by'] !== $who->userId && $this->authz->check($who->userId, RmmAbility::ADMIN, 0) !== null) {
-            return ActionResult::fail(404, 'not_found', 'Approval not found.');
+        if ((int) $a['requested_by'] !== $who->userId && ($this->authz->check($who->userId, RmmAbility::ADMIN, 0) !== null || $this->approvalReach($who->userId, $a) !== 2)) {
+            return ActionResult::fail(404, 'not_found', 'Approval not found.');   // TEN-1: an administrator limited to some clients withdraws only what lies inside them
         }
         if (!$this->approvals->cancel($approvalId, $who->userId)) {
             return ActionResult::fail(409, 'conflict', 'Only a pending request can be cancelled.');
@@ -475,23 +499,37 @@ final class ScriptActions
      */
     public function approvalVisible(int $userId, array $approval): bool
     {
+        return $this->approvalReach($userId, $approval) === 2;
+    }
+
+    /**
+     * How much of a request lies inside the caller's clients: 2 = all of it (or he made it, or he sees every client), 1 = some of it, 0 = none of it.
+     *
+     * @param array<string,mixed> $approval
+     */
+    private function approvalReach(int $userId, array $approval): int
+    {
         $visible = $this->authz->visibleClientIds($userId);
         if ($visible === null || (int) $approval['requested_by'] === $userId) {
-            return true;
+            return 2;
         }
         $req = $this->approvals->requestOf((int) $approval['approval_id']);
         $t = is_array($req['target'] ?? null) ? $req['target'] : null;
         if ($t === null) {
-            return false;
+            return 0;
+        }
+        $type = (string) ($t['type'] ?? '');
+        $id = (int) ($t['id'] ?? 0);
+        if (in_array($type, ['client', 'device'], true)) {
+            return $this->targetInside($visible, $type, $id) ? 2 : 0;
         }
         $platforms = [];
         if (isset($approval['script_id']) && ($s = $this->scripts->get((int) $approval['script_id'])) !== null) {
             $platforms = \RivetCore\Rmm\Scripts\ScriptLanguage::platforms((string) $s['language']);
         }
-        $type = (string) ($t['type'] ?? '');
-        $id = (int) ($t['id'] ?? 0);
+        $inside = $this->targets->count($type, $id, $visible, $platforms);
 
-        return $this->targets->count($type, $id, null, $platforms) === $this->targets->count($type, $id, $visible, $platforms);
+        return $inside === $this->targets->count($type, $id, null, $platforms) ? 2 : ($inside > 0 ? 1 : 0);
     }
 
     // ------------------------------------------------------------------ schedules
@@ -504,6 +542,14 @@ final class ScriptActions
     public function saveSchedule(RmmPrincipal $who, ?int $scheduleId, array $in): ActionResult
     {
         if (($e = $this->role($who->userId, RmmAbility::ADMIN)) !== null) {
+            return $e;
+        }
+        // TEN-2: a schedule runs on every device of its target (the runner is not limited to its author's clients), so an administrator limited to some
+        // clients may only schedule on a client or a device of his own, and only change a schedule that does the same.
+        if ($scheduleId !== null && ($cur = $this->schedules->get($scheduleId)) !== null && ($e = $this->scheduleWriteRefusal($who->userId, $cur)) !== null) {
+            return $e;
+        }
+        if (($e = $this->scheduleTargetAllowed($who->userId, $in)) !== null) {
             return $e;
         }
         try {
@@ -539,12 +585,87 @@ final class ScriptActions
             return $e;
         }
         $s = $this->schedules->get($scheduleId);
-        if ($s === null || !$this->schedules->delete($scheduleId)) {
+        if ($s === null) {
+            return ActionResult::fail(404, 'not_found', 'Schedule not found.');
+        }
+        if (($e = $this->scheduleWriteRefusal($who->userId, $s)) !== null) {
+            return $e;
+        }
+        if (!$this->schedules->delete($scheduleId)) {
             return ActionResult::fail(404, 'not_found', 'Schedule not found.');
         }
         $this->audit->record('Schedule Deleted', "{$who->userName} deleted schedule \"{$s['name']}\" (#$scheduleId)", 0, (int) $s['script_id']);
 
         return ActionResult::ok('Deleted.');
+    }
+
+    /**
+     * May this user know about the schedule? A schedule on a client or a device is visible only inside the caller's clients (the same 404 as for a missing one);
+     * one on a tag, group, site, policy or "all" spans clients and stays visible to everyone who may view devices (its history is filtered to the caller's clients).
+     *
+     * @param array<string,mixed> $schedule a row of {@see ScheduleService::get()}
+     */
+    public function scheduleVisible(int $userId, array $schedule): bool
+    {
+        $visible = $this->authz->visibleClientIds($userId);
+        $type = (string) ($schedule['target']['type'] ?? $schedule['target_type'] ?? '');
+        if ($visible === null || !in_array($type, ['client', 'device'], true)) {
+            return true;
+        }
+
+        return $this->targetInside($visible, $type, (int) ($schedule['target']['id'] ?? $schedule['target_id'] ?? 0));
+    }
+
+    /**
+     * Changing or deleting a schedule: a caller limited to some clients may only touch one on a client or a device of his own (one he cannot see is the same 404 as a
+     * missing one; one that spans clients is a 403).
+     *
+     * @param array<string,mixed> $schedule
+     */
+    private function scheduleWriteRefusal(int $userId, array $schedule): ?ActionResult
+    {
+        if (!$this->scheduleVisible($userId, $schedule)) {
+            return ActionResult::fail(404, 'not_found', 'Schedule not found.');
+        }
+        $type = (string) ($schedule['target']['type'] ?? $schedule['target_type'] ?? '');
+
+        return $this->authz->visibleClientIds($userId) === null || in_array($type, ['client', 'device'], true) ? null
+            : ActionResult::fail(403, 'forbidden', 'A schedule on a tag, group, site, policy or everyone reaches every client; ask an administrator whose access is not limited to some clients.');
+    }
+
+    /**
+     * @param list<int> $visible
+     */
+    private function targetInside(array $visible, string $type, int $id): bool
+    {
+        if ($type === 'client') {
+            return in_array($id, $visible, true);
+        }
+        if ($type === 'device') {
+            $d = $this->devices->find($id);
+
+            return $d !== null && in_array((int) $d['client_id'], $visible, true);
+        }
+
+        return false;
+    }
+
+    /** @param array<string,mixed> $in the schedule input: its `target`, when given, must be inside the caller's clients */
+    private function scheduleTargetAllowed(int $userId, array $in): ?ActionResult
+    {
+        $visible = $this->authz->visibleClientIds($userId);
+        if ($visible === null || !array_key_exists('target', $in)) {
+            return null;
+        }
+        $t = is_array($in['target']) ? $in['target'] : [];
+        $type = is_string($t['type'] ?? null) ? $t['type'] : '';
+        if (in_array($type, ['client', 'device'], true)) {
+            $id = is_int($t['id'] ?? null) ? $t['id'] : (is_string($t['id'] ?? null) && ctype_digit($t['id']) ? (int) $t['id'] : 0);
+
+            return $this->targetInside($visible, $type, $id) ? null : ActionResult::fail(404, 'not_found', 'Target not found.');
+        }
+
+        return ActionResult::fail(403, 'forbidden', 'A schedule on a tag, group, site, policy or everyone reaches every client; ask an administrator whose access is not limited to some clients.');
     }
 
     // ------------------------------------------------------------------ helpers

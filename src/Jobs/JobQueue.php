@@ -51,10 +51,12 @@ final class JobQueue
      * Tell the queue the worker is still alive for these running jobs, so requeueStale() leaves them alone.
      *
      * @param int|list<int> $jobIds
+     * @param array<int,int>|null $attempts CORE-DS-60: job id => the attempt number this worker claimed (the `attempts` of the claimed row). With it only a job that is still
+     *        running as THAT attempt counts and is refreshed: a job another worker reclaimed (attempts + 1) is not ours any more and its lease is left alone.
      * @return int how many running jobs were refreshed. Fewer than asked means another worker reclaimed the rest.
      *             Without the heartbeat column nothing is recorded and every id is reported as alive.
      */
-    public function heartbeat(int|array $jobIds): int
+    public function heartbeat(int|array $jobIds, ?array $attempts = null): int
     {
         $ids = array_map('intval', is_array($jobIds) ? $jobIds : [$jobIds]);
         if ($ids === []) {
@@ -63,29 +65,36 @@ final class JobQueue
         if (!$this->supportsHeartbeat()) {
             return count($ids);
         }
-        $in = implode(',', array_fill(0, count($ids), '?'));
+        if ($attempts === null) {
+            $where = 'job_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')';
+            $params = $ids;
+        } else {
+            $where = '(' . implode(' OR ', array_fill(0, count($ids), '(job_id = ? AND attempts = ?)')) . ')';
+            $params = [];
+            foreach ($ids as $id) {
+                array_push($params, $id, (int) ($attempts[$id] ?? -1));
+            }
+        }
 
-        $this->database->execute(
-            "UPDATE integration_jobs SET heartbeat_at = NOW() WHERE status = 'running' AND job_id IN ($in)",
-            $ids
-        );
+        $this->database->execute("UPDATE integration_jobs SET heartbeat_at = NOW() WHERE status = 'running' AND $where", $params);
         // Count with a SELECT: affected-rows is 0 for a row already stamped within the same second.
-        $row = $this->database->fetchOne(
-            "SELECT COUNT(*) AS c FROM integration_jobs WHERE status = 'running' AND job_id IN ($in)",
-            $ids
-        );
+        $row = $this->database->fetchOne("SELECT COUNT(*) AS c FROM integration_jobs WHERE status = 'running' AND $where", $params);
 
         return (int) ($row['c'] ?? 0);
     }
 
-    /** Hand a claimed-but-not-started job back without spending an attempt. */
-    public function release(int $jobId): bool
+    /**
+     * Hand a claimed-but-not-started job back without spending an attempt.
+     *
+     * @param int|null $attempts CORE-DS-60: the attempt number this worker claimed; a job that another worker has reclaimed since (a higher number) is not released from under it
+     */
+    public function release(int $jobId, ?int $attempts = null): bool
     {
         $hb = $this->supportsHeartbeat() ? ', heartbeat_at = NULL' : '';
 
         return $this->database->execute(
-            "UPDATE integration_jobs SET status = 'pending', attempts = GREATEST(attempts - 1, 0), started_at = NULL{$hb} WHERE job_id = ? AND status = 'running'",
-            [$jobId]
+            "UPDATE integration_jobs SET status = 'pending', attempts = GREATEST(attempts - 1, 0), started_at = NULL{$hb} WHERE job_id = ? AND status = 'running'" . ($attempts === null ? '' : ' AND attempts = ?'),
+            $attempts === null ? [$jobId] : [$jobId, $attempts]
         )->affectedRows === 1;
     }
 

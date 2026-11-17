@@ -12,11 +12,13 @@ use GuzzleHttp\ClientInterface;
  * through an injected Guzzle client so the checks can be tested without a real identity provider.
  *
  * @api
+ *
+ * Pass a {@see \RivetCore\Webhooks\UrlPolicy} (the same one the webhook sender uses) to have the issuer and the signing-key address checked before they are fetched.
  */
 final class McpDiagnostics
 {
     /** @param string $envVarName shown to the admin when the kill switch is set, e.g. MYAPP_MCP_ENABLED */
-    public function __construct(private AgentDirectoryInterface $agents, private ClientInterface $http, private string $envVarName = 'MCP_ENABLED', private string $appName = 'this app') {}
+    public function __construct(private AgentDirectoryInterface $agents, private ClientInterface $http, private string $envVarName = 'MCP_ENABLED', private string $appName = 'this app', private ?\RivetCore\Webhooks\UrlPolicy $policy = null) {}
 
     /** @return array{status:string,label:string,detail:string} */
     private static function check(string $status, string $label, string $detail): array
@@ -27,7 +29,36 @@ final class McpDiagnostics
     /** @return array<string,mixed> */
     private function getJson(string $url): array
     {
-        $res = $this->http->request('GET', $url, ['timeout' => 5, 'allow_redirects' => false, 'http_errors' => false, 'headers' => ['Accept' => 'application/json']]);
+        $options = ['timeout' => 5, 'allow_redirects' => false, 'http_errors' => false, 'headers' => ['Accept' => 'application/json']];
+        if ($this->policy !== null) {
+            // CORE-DS-73: the issuer is typed by an administrator and the jwks_uri comes from the identity provider; neither may point at an internal service. https only, no proxy from the environment.
+            $target = $this->policy->vet($url, false);
+            if ($target === null) {
+                throw new \RuntimeException('that address is not allowed (it must be a public https address)');
+            }
+            $options['proxy'] = '';
+            // CR20: connect to the addresses that were vetted (the host is not resolved a second time), and check where the connection really went
+            $vettedIp = null;
+            if (filter_var($target['host'], FILTER_VALIDATE_IP) === false && $target['ips'] !== []) {
+                $options['curl'] = [CURLOPT_RESOLVE => [$target['host'] . ':' . $target['port'] . ':' . implode(',', $target['ips'])]];
+            }
+            $options['on_stats'] = static function (\GuzzleHttp\TransferStats $st) use (&$vettedIp): void {
+                $vettedIp = $st->getHandlerStats()['primary_ip'] ?? null;
+            };
+        }
+        $res = $this->http->request('GET', $url, $options);
+        if ($this->policy !== null) {
+            // CRR-15/19: fail closed. A handler that does not report where it connected (no ext-curl, a stream handler, a custom stack) also ignores the pin, so the answer cannot be
+            // trusted; only a literal IP address needs no check (nothing to resolve a second time).
+            if (filter_var($target['host'], FILTER_VALIDATE_IP) === false) {
+                if (!is_string($vettedIp) || $vettedIp === '') {
+                    throw new \RuntimeException('could not confirm which address the connection went to');
+                }
+                if (!\RivetCore\Webhooks\UrlPolicy::connectedToVetted($vettedIp, $target)) {
+                    throw new \RuntimeException('the connection went to an address that was not vetted');
+                }
+            }
+        }
         if ($res->getStatusCode() !== 200) throw new \RuntimeException('HTTP ' . $res->getStatusCode());
         $data = json_decode((string) $res->getBody(), true);
         if (!is_array($data)) throw new \RuntimeException('not JSON');

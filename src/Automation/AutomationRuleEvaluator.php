@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Automation;
 
+use RivetCore\Crypto\SettingsVault;
 use RivetCore\Database\DatabaseInterface;
 
 /**
@@ -16,8 +17,15 @@ use RivetCore\Database\DatabaseInterface;
  */
 class AutomationRuleEvaluator
 {
-    public function __construct(private DatabaseInterface $database)
+    private ?AutomationRuleStore $store;
+
+    /**
+     * @param SettingsVault|null $vault CRR-16: the vault the {@see AutomationRuleStore} seals `send_webhook` secrets with. Given one, the rules this returns carry the UNSEALED secret
+     *        in `action_config_json` (that is what the executor's handler signs with); a rule whose secret cannot be opened is left out (it must not be delivered unsigned).
+     */
+    public function __construct(private DatabaseInterface $database, ?SettingsVault $vault = null)
     {
+        $this->store = $vault === null ? null : new AutomationRuleStore($database, $vault);
     }
 
     /**
@@ -31,10 +39,23 @@ class AutomationRuleEvaluator
             [$eventType]
         );
 
-        return array_values(array_filter(
+        $matched = array_values(array_filter(
             $rules,
             fn (array $rule) => $this->conditionsMatch($rule['condition_json'], $eventData)
         ));
+        if ($this->store === null) {
+            return $matched;
+        }
+        $out = [];
+        foreach ($matched as $rule) {
+            try {
+                $out[] = $this->store->revealed($rule);
+            } catch (\Throwable) {
+                continue;   // fail closed: no delivery with a secret that cannot be opened
+            }
+        }
+
+        return $out;
     }
 
     /**

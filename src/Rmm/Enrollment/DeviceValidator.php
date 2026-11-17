@@ -19,6 +19,11 @@ final class DeviceValidator
     /** Serial numbers firmware vendors ship as placeholders; a match on one of these is never an identity. */
     public const JUNK_SERIALS = RmmProtocol::JUNK_SERIALS;
 
+    /** Most MAC addresses kept for one device. */
+    public const MAX_MACS = 32;
+    /** Most entries an enrollment request may list before it is refused as malformed (container hosts have hundreds). */
+    public const MAX_MACS_IN = 1024;
+
     /** Lower-case colon form of a MAC, or null for anything else including the null MAC. */
     public static function normalizeMac(string $mac): ?string
     {
@@ -51,6 +56,25 @@ final class DeviceValidator
         $v = trim($v);
 
         return $v === '' ? null : mb_substr($v, 0, $max);
+    }
+
+    /**
+     * CORE-DS (IT-DS-19/42): a host name is shown in many places and becomes the asset name, and it comes from an enrolling or checking-in device, so beyond
+     * {@see self::cleanText()} the characters that open markup or break out of an attribute (`<` `>` `"` backtick) and the backslash become `_`, and format characters
+     * (bidirectional overrides, zero-width, line and paragraph separators) are dropped. Every character a real computer name can have (letters, digits, `-` `_` `.` and the
+     * rest of NetBIOS, `'` and `&` included) is kept, so a legitimate name never changes. Null when nothing is left.
+     */
+    public static function cleanHostname(mixed $v, int $max = 200): ?string
+    {
+        $s = self::cleanText($v, $max * 2);
+        if ($s === null) {
+            return null;
+        }
+        $s = preg_replace('/[\p{Cf}\x{2028}\x{2029}]+/u', '', $s) ?? '';
+        $s = preg_replace('/[<>"`\\\\]/u', '_', $s) ?? '';
+        $s = trim($s);
+
+        return $s === '' ? null : mb_substr($s, 0, $max);
     }
 
     /**
@@ -100,7 +124,7 @@ final class DeviceValidator
         if ($guid !== null && (!is_string($guid) || !RmmProtocol::matches(RmmProtocol::MACHINE_GUID_RE, $guid))) {
             throw $bad('machine_guid');
         }
-        $host = self::cleanText($d['hostname'] ?? null, 200);
+        $host = self::cleanHostname($d['hostname'] ?? null, 200);
         if ($host === null) {
             throw $bad('hostname');
         }
@@ -117,16 +141,25 @@ final class DeviceValidator
             throw $bad('agent_version');
         }
         $macsIn = $d['mac_addresses'] ?? [];
-        if (!is_array($macsIn) || count($macsIn) > 32) {
+        if (!is_array($macsIn) || count($macsIn) > self::MAX_MACS_IN) {
             throw $bad('mac_addresses');
         }
-        $macs = [];
+        // A container host (Docker, Kubernetes, libvirt) has hundreds of veth/bridge interfaces; an agent that sends them all must still enrol. Keep at most
+        // MAX_MACS unique addresses, hardware ones (universally administered: bit 0x02 of the first octet clear) before locally administered virtual ones.
+        $real = [];
+        $virtual = [];
         foreach ($macsIn as $m) {
             $n = is_string($m) ? self::normalizeMac($m) : null;
-            if ($n !== null) {
-                $macs[$n] = $n;
+            if ($n === null) {
+                continue;
+            }
+            if ((hexdec(substr($n, 0, 2)) & 0x02) === 0) {
+                $real[$n] = $n;
+            } else {
+                $virtual[$n] = $n;
             }
         }
+        $macs = array_slice(array_merge($real, $virtual), 0, self::MAX_MACS, true);
 
         return [
             'install_id' => strtolower($install),

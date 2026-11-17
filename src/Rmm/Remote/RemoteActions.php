@@ -46,6 +46,8 @@ final class RemoteActions
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentSettings $meshSettings = null,
         private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
         private readonly ?\RivetCore\Rmm\Scripts\TargetResolver $targets = null,
+        private readonly ?ConsoleSettings $console = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshVerifySettings $meshVerify = null,
     ) {
     }
 
@@ -234,6 +236,9 @@ final class RemoteActions
         if ($denied !== null) {
             return ActionResult::fail(403, 'forbidden', $denied);
         }
+        if (!$this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_TOOLS)) {
+            return ActionResult::fail(409, 'feature_disabled', self::offText(RemoteProtocol::FEATURE_REMOTE_TOOLS));   // CORE-DS-70: a switch that is off stops the reads too
+        }
         $type = $kind === 'services' ? RemoteProtocol::JOB_SERVICE_LIST : RemoteProtocol::JOB_PROCESS_LIST;
         $j = $this->sql->one('SELECT job_id, state, reason, output, output_truncated, created_at, finished_at FROM endpoint_agent_jobs WHERE device_id = ? AND type = ? ORDER BY created_at DESC, job_id LIMIT 1', [$deviceId, $type]);
         if ($j === null) {
@@ -265,6 +270,9 @@ final class RemoteActions
         $denied = $this->authz->check($who->userId, RmmAbility::REMOTE_MANAGE, (int) $dev['client_id']);
         if ($denied !== null) {
             return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        if (!$this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_TOOLS)) {
+            return ActionResult::fail(409, 'feature_disabled', self::offText(RemoteProtocol::FEATURE_REMOTE_TOOLS));   // CORE-DS-70: a switch that is off stops the reads too
         }
         $j = $this->sql->one('SELECT job_id, type, state, reason, exit_code, output, created_at, finished_at FROM endpoint_agent_jobs WHERE job_id = ? AND device_id = ?', [strtolower($jobId), $deviceId]);
         if ($j === null || !RemoteProtocol::isToolJob($j['type'])) {
@@ -362,6 +370,9 @@ final class RemoteActions
         if ($denied !== null) {
             return ActionResult::fail(403, 'forbidden', $denied);
         }
+        if (!$this->settings->featureOn(RemoteProtocol::FEATURE_FILE_TRANSFER)) {
+            return ActionResult::fail(409, 'feature_disabled', self::offText(RemoteProtocol::FEATURE_FILE_TRANSFER));   // CORE-DS-70: a switch that is off stops the reads too
+        }
 
         return ActionResult::ok('ok', 200, 'ok', ['data' => $this->transfers->listFor($deviceId)]);
     }
@@ -397,7 +408,7 @@ final class RemoteActions
 
     public function deleteTransfer(RmmPrincipal $who, int $deviceId, string $transferId): ActionResult
     {
-        [$dev, $t, $err] = $this->transferOf($who, $deviceId, $transferId);
+        [$dev, $t, $err] = $this->transferOf($who, $deviceId, $transferId, true);   // CORE-DS-70: deleting stays possible with the switch off, it is how stored files are cleaned up
         if ($err !== null || $t === null) {
             return $err ?? ActionResult::fail(404, 'not_found', 'Transfer not found.');
         }
@@ -409,7 +420,7 @@ final class RemoteActions
     /**
      * @return array{0:?array<string,mixed>,1:?array<string,mixed>,2:?ActionResult} [device, transfer row, error]
      */
-    private function transferOf(RmmPrincipal $who, int $deviceId, string $transferId): array
+    private function transferOf(RmmPrincipal $who, int $deviceId, string $transferId, bool $forDelete = false): array
     {
         [$dev, $err] = $this->deviceFor($who, $deviceId);
         if ($err !== null || $dev === null) {
@@ -418,6 +429,9 @@ final class RemoteActions
         $denied = $this->authz->check($who->userId, RmmAbility::REMOTE_MANAGE, (int) $dev['client_id']);
         if ($denied !== null) {
             return [null, null, ActionResult::fail(403, 'forbidden', $denied)];
+        }
+        if (!$forDelete && !$this->settings->featureOn(RemoteProtocol::FEATURE_FILE_TRANSFER)) {
+            return [null, null, ActionResult::fail(409, 'feature_disabled', self::offText(RemoteProtocol::FEATURE_FILE_TRANSFER))];   // CORE-DS-70
         }
         $t = $this->transfers->find(strtolower($transferId), $deviceId);
         if ($t === null) {
@@ -626,7 +640,7 @@ final class RemoteActions
         if ($this->targets === null) {
             return ActionResult::fail(409, 'not_configured', 'Bulk installs are not available.');
         }
-        [$target, $terr] = $this->targets->validate($in['target'] ?? null);
+        [$target, $terr] = $this->targets->validateFor($in['target'] ?? null, $this->authz->visibleClientIds($who->userId));   // TEN-9: as in ScriptActions::runOnTarget()
         if ($target === null) {
             return ActionResult::fail(422, 'invalid', $terr ?? 'Invalid target.');
         }
@@ -715,7 +729,9 @@ final class RemoteActions
         $f = $this->settings->features();
 
         return ['features' => [RemoteProtocol::FEATURE_REMOTE_TOOLS => $f[RemoteProtocol::FEATURE_REMOTE_TOOLS], RemoteProtocol::FEATURE_FILE_TRANSFER => $f[RemoteProtocol::FEATURE_FILE_TRANSFER],
-            RemoteProtocol::FEATURE_LOGS => $f[RemoteProtocol::FEATURE_LOGS]], 'transfer_storage_error' => $this->transfers->unavailable()] + $this->remote->summary();
+            RemoteProtocol::FEATURE_LOGS => $f[RemoteProtocol::FEATURE_LOGS],
+            RemoteProtocol::FEATURE_REMOTE_CONSOLE => $f[RemoteProtocol::FEATURE_REMOTE_CONSOLE]], 'transfer_storage_error' => $this->transfers->unavailable()] + $this->remote->summary()
+            + ($this->console?->view() ?? ['console_public_url' => '', 'min_console_version' => '', 'console_log_file_paths' => false, 'console_cookie_once' => true]);
     }
 
     public function settings(RmmPrincipal $who): ActionResult
@@ -750,7 +766,13 @@ final class RemoteActions
      * Change the remote-tools settings. Turning `filetransfer` on needs `accept_filetransfer_risk: true`, turning `logs` on needs `accept_logs_storage: true`: the
      * request is refused with the plain-language text when the acknowledgement is missing, so no client can switch them on by accident.
      *
-     * @param array<string,mixed> $in features {remote_tools, filetransfer, logs}, transfer_allow, logs_collect, limits, accept_filetransfer_risk, accept_logs_storage,
+     * `remote_console` (the optional Rivet Console desktop app) needs no acknowledgement: it grants nothing (the same abilities apply, the deep link carries no credential).
+     *
+     * The Rivet Console settings ride along as flat keys ({@see ConsoleSettings}): `console_public_url` (a bare https origin, empty clears it), `min_console_version` (`x.y.z`, empty
+     * enforces nothing), `console_log_file_paths` and `console_cookie_once` (booleans). They are validated before anything is written, audited as `Remote Settings Changed` (no
+     * secret is involved) and read back by {@see settings()}. Only administrators can change them; the audit row cannot be turned off.
+     *
+     * @param array<string,mixed> $in features {remote_tools, filetransfer, logs, remote_console}, console_public_url, min_console_version, console_log_file_paths, console_cookie_once, transfer_allow, logs_collect, limits, accept_filetransfer_risk, accept_logs_storage, accept_background_risk,
      *        compliance_baseline_if_unset (true with the first enable: store the compliance log-preset baseline if no preset choice was ever saved)
      */
     public function updateSettings(RmmPrincipal $who, array $in): ActionResult
@@ -761,7 +783,7 @@ final class RemoteActions
 
             return ActionResult::fail(403, 'forbidden', $denied);
         }
-        $known = ['features', 'transfer_allow', 'logs_collect', 'limits', 'accept_filetransfer_risk', 'accept_logs_storage', 'compliance_baseline_if_unset'];
+        $known = ['features', 'transfer_allow', 'logs_collect', 'limits', 'accept_filetransfer_risk', 'accept_logs_storage', 'compliance_baseline_if_unset', ...ConsoleSettings::KEYS];
         foreach (array_keys($in) as $k) {
             if (!in_array($k, $known, true)) {
                 return ActionResult::fail(422, 'invalid', 'Unknown setting ' . mb_substr((string) $k, 0, 40) . '.');
@@ -774,8 +796,8 @@ final class RemoteActions
         }
         $changed = [];
         foreach ($wanted as $k => $v) {
-            if (!in_array($k, [RemoteProtocol::FEATURE_REMOTE_TOOLS, RemoteProtocol::FEATURE_FILE_TRANSFER, RemoteProtocol::FEATURE_LOGS], true) || !is_bool($v)) {
-                return ActionResult::fail(422, 'invalid', 'features takes remote_tools, filetransfer and logs, each true or false.');
+            if (!in_array($k, [RemoteProtocol::FEATURE_REMOTE_TOOLS, RemoteProtocol::FEATURE_FILE_TRANSFER, RemoteProtocol::FEATURE_LOGS, RemoteProtocol::FEATURE_REMOTE_CONSOLE], true) || !is_bool($v)) {
+                return ActionResult::fail(422, 'invalid', 'features takes remote_tools, filetransfer, logs and remote_console, each true or false.');
             }
             if ($features[$k] !== $v) {
                 $changed[$k] = $v;
@@ -786,6 +808,17 @@ final class RemoteActions
         }
         if (($changed[RemoteProtocol::FEATURE_LOGS] ?? false) === true && empty($in['accept_logs_storage'])) {
             return ActionResult::fail(422, 'confirmation_required', RemoteSettings::LOGS_STORAGE_WARNING . ' Send accept_logs_storage: true to turn log collection on.');
+        }
+        $consoleIn = array_intersect_key($in, array_flip(ConsoleSettings::KEYS));
+        $consoleVals = [];
+        if ($consoleIn !== []) {
+            if ($this->console === null) {
+                return ActionResult::fail(422, 'invalid', 'The Rivet Console settings are not available.');
+            }
+            [$consoleVals, $consoleErr] = $this->console->validate($consoleIn);
+            if ($consoleErr !== []) {
+                return ActionResult::fail(422, 'invalid', implode(' ', $consoleErr));
+            }
         }
         $errors = $this->remote->update(array_intersect_key($in, array_flip(['transfer_allow', 'logs_collect', 'limits', 'compliance_baseline_if_unset'])), $who->userId);
         if ($errors !== []) {
@@ -800,6 +833,12 @@ final class RemoteActions
         $what = [];
         foreach ($changed as $k => $v) {
             $what[] = "$k " . ($v ? 'ON' : 'off');
+        }
+        if ($consoleVals !== []) {
+            $this->console->save($consoleVals, $who->userId);
+            foreach ($consoleVals as $k => $v) {
+                $what[] = is_bool($v) ? "$k " . ($v ? 'ON' : 'off') : ($v === '' ? "$k cleared" : "$k set to $v");
+            }
         }
         foreach (['transfer_allow', 'logs_collect', 'limits'] as $k) {
             if (array_key_exists($k, $in)) {
@@ -881,5 +920,63 @@ final class RemoteActions
         }
 
         return ActionResult::ok('Saved.', 200, 'saved', $data);
+    }
+
+    // ------------------------------------------------------------------ verified node mapping (administrators)
+
+    public const MESH_VERIFY_WARNING = 'MeshCentral does not separate clients: every client\'s devices can live in one Mesh server. A node is mapped automatically ONLY when MeshCentral itself confirms that it exists, that its name or host matches the device host name, and that it is in the Mesh device group configured for that device\'s client below. A client without a group here is never mapped automatically, and a group listed for two clients is refused.';
+
+    /** @return array<string,mixed> */
+    private function meshVerifyView(): array
+    {
+        $v = $this->meshVerify?->get() ?? ['enabled' => false, 'service_account' => '', 'group_map' => []];
+        $cfg = $this->settings->get();
+
+        return ['mesh_verify_nodes' => $v['enabled'], 'mesh_service_account' => $v['service_account'], 'mesh_group_map' => (object) array_map(static fn (string $g): string => $g, array_combine(array_map('strval', array_keys($v['group_map'])), array_values($v['group_map']))),
+            'available' => $this->meshVerify !== null && $this->meshVerify->available(), 'mesh_enabled' => (int) $cfg['mesh_enabled'] === 1, 'login_key_set' => !empty($cfg['mesh_login_key_enc']),
+            'per_run_max' => \RivetCore\Rmm\Mesh\MeshVerifyService::MAX_DEVICES_PER_RUN, 'warning' => self::MESH_VERIFY_WARNING];
+    }
+
+    public function meshVerifySettings(RmmPrincipal $who): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::ADMIN, 0, false);
+        if ($denied !== null) {
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+
+        return ActionResult::ok('ok', 200, 'ok', $this->meshVerifyView());
+    }
+
+    /**
+     * Change the verified mapping settings: `mesh_verify_nodes` (off by default), `mesh_service_account` and `mesh_group_map` (client id => Mesh device group id). Administrators
+     * only, audited (the keys changed, never a value that could be a secret: there is none). Switching it on needs Mesh enabled with a login key and a service account.
+     *
+     * @param array<string,mixed> $in
+     */
+    public function updateMeshVerifySettings(RmmPrincipal $who, array $in): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::ADMIN, 0, false);
+        if ($denied !== null) {
+            $this->audit->record('Remote Settings Denied', "User {$who->userId} denied Mesh verification settings change: $denied", 0, 0);
+
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        if ($this->meshVerify === null) {
+            return ActionResult::fail(409, 'unsupported', 'The verified Mesh mapping is not available.');
+        }
+        $cfg = $this->settings->get();
+        if (($in['mesh_verify_nodes'] ?? false) === true && ((int) $cfg['mesh_enabled'] !== 1 || empty($cfg['mesh_login_key_enc']))) {
+            return ActionResult::fail(409, 'not_configured', 'Switch MeshCentral on and set its login key before turning the verification on.');
+        }
+        $errors = $this->meshVerify->update($in, $who->userId);
+        if ($errors !== []) {
+            return ActionResult::fail(422, 'invalid', implode(' ', $errors));
+        }
+        if ($in !== []) {
+            $flag = ($in['mesh_verify_nodes'] ?? null) === true ? ': automatic mapping is ON' : (($in['mesh_verify_nodes'] ?? null) === false ? ': automatic mapping is OFF' : '');
+            $this->audit->record('Settings', "{$who->userName} changed the Mesh verification settings (" . implode(', ', array_keys($in)) . ')' . $flag, 0, 0);
+        }
+
+        return ActionResult::ok('Saved.', 200, 'saved', $this->meshVerifyView());
     }
 }

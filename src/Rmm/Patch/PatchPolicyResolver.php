@@ -35,20 +35,24 @@ final class PatchPolicyResolver
         'two_person' => false,
     ];
 
+    /** Defaults of the Windows Update control settings (kept apart so {@see DEFAULTS} keeps its released value). */
+    public const WINDOWS_DEFAULTS = ['windows_update_mode' => 'leave', 'windows_feature_target' => 'none', 'windows_quality_defer_days' => 0];
+
     /**
      * @param list<PolicyLayer> $layers
      * @param array<string,int> $ringDelays ring name => delay days
      * @return array{
      *     ring:?string, ring_delay_days:int, approval_mode:string, auto_days:array<string,?int>, install_enabled:bool,
      *     window:array{mode:string,maintenance_id:?int,days:list<string>,start:string,minutes:int,tz:string},
-     *     reboot_policy:string, reboot_confirm:bool, max_minutes:int, two_person:bool, sources:array<string,array{policy_id:int,scope_type:string,enforced:bool}>
+     *     reboot_policy:string, reboot_confirm:bool, max_minutes:int, two_person:bool,
+     *     windows:array{update_mode:string,feature_target:string,quality_defer_days:int,active:bool}, sources:array<string,array{policy_id:int,scope_type:string,enforced:bool}>
      * }
      */
     public static function resolve(array $layers, array $ringDelays): array
     {
         $decisions = PolicyResolver::resolve($layers);
         $sources = [];
-        $v = self::DEFAULTS;
+        $v = self::DEFAULTS + self::WINDOWS_DEFAULTS;
         foreach (PatchPolicySettings::keys() as $key) {
             if (!isset($decisions[$key]) || $decisions[$key]['mode'] !== 'override') {
                 continue;   // absent, or a `disable` (which patch settings never use)
@@ -84,8 +88,27 @@ final class PatchPolicyResolver
             'reboot_confirm' => $confirm,
             'max_minutes' => max(1, min(PatchProtocol::MAX_MINUTES_MAX, (int) $v['max_minutes'])),
             'two_person' => (bool) $v['two_person'],
+            'windows' => self::windows($v),
             'sources' => $sources,
         ];
+    }
+
+    /**
+     * The Windows Update control a device's policy asks for. `active` is false when all three settings are at their defaults: Core then touches nothing
+     * (and only restores what it changed earlier).
+     *
+     * @param array<string,mixed> $v
+     * @return array{update_mode:string,feature_target:string,quality_defer_days:int,active:bool}
+     */
+    private static function windows(array $v): array
+    {
+        $mode = $v['windows_update_mode'] === 'managed' ? 'managed' : 'leave';
+        $t = $v['windows_feature_target'];
+        $target = is_string($t) && ($t === PatchProtocol::FEATURE_TARGET_HOLD || PatchProtocol::validFeatureVersion($t)) ? $t : PatchProtocol::FEATURE_TARGET_NONE;
+        $d = $v['windows_quality_defer_days'];
+        $defer = is_int($d) ? max(0, min(PatchProtocol::DEFER_DAYS_MAX, $d)) : 0;
+
+        return ['update_mode' => $mode, 'feature_target' => $target, 'quality_defer_days' => $defer, 'active' => $mode === 'managed' || $target !== PatchProtocol::FEATURE_TARGET_NONE || $defer > 0];
     }
 
     /**

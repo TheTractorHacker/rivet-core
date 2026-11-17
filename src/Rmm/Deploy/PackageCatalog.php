@@ -29,6 +29,59 @@ final class PackageCatalog
     {
     }
 
+    /**
+     * CORE-15: does something install the NEWEST version of this package by itself? An install assignment without a pinned version, or an enabled
+     * auto-install policy ({@see DeployExpectations::versionFor()} follows the newest non-retired version in both cases). CORE-DS-1: so does an app ticked
+     * on an installer that can still enrol devices and a per-device plan that has not run yet ({@see self::ticked()}): the tick approves the package, and the
+     * version is resolved when the install is queued.
+     */
+    public function followsNewest(int $packageId): bool
+    {
+        return $this->sql->one("SELECT 1 AS x FROM rmm_package_assignments WHERE package_id = ? AND action = 'install' AND version_id IS NULL LIMIT 1", [$packageId]) !== null
+            || $this->autoInstalls($packageId)
+            || $this->ticked($packageId);
+    }
+
+    /**
+     * CORE-15: is any install of this package set up to happen without a person starting it (any install assignment, pinned or not, or an
+     * enabled auto-install policy, or an app ticked on a usable installer: CORE-DS-1)? Its vendor parameters feed the install command of every such install.
+     */
+    public function installsByItself(int $packageId): bool
+    {
+        return $this->sql->one("SELECT 1 AS x FROM rmm_package_assignments WHERE package_id = ? AND action = 'install' LIMIT 1", [$packageId]) !== null
+            || $this->autoInstalls($packageId)
+            || $this->ticked($packageId);
+    }
+
+    /**
+     * CORE-DS-1: is the package ticked on an installer (enrollment token) that is not revoked, not expired and has uses left, or planned for a device
+     * that has not finished installing it (queued, waiting for approval, or installing: a lost or locked install goes back to queued, CR4)? Such an app installs "the newest version" of the package when its turn comes.
+     */
+    private function ticked(int $packageId): bool
+    {
+        $now = $this->sql->utcNow();
+
+        return $this->sql->one('SELECT 1 AS x FROM rmm_installer_apps i JOIN endpoint_agent_enrollment_tokens t ON t.token_id = i.token_id
+                WHERE i.package_id = ? AND t.revoked_at IS NULL AND t.expires_at > ? AND t.use_count < t.max_uses LIMIT 1', [$packageId, $now]) !== null
+            || $this->sql->one("SELECT 1 AS x FROM rmm_device_apps WHERE package_id = ? AND status IN ('queued','approval','installing') LIMIT 1", [$packageId]) !== null;
+    }
+
+    /**
+     * CR14: is a tick on a usable installer (or a planned device row) the ONLY reason this package counts as installing by itself, with no assignment and no auto-install policy
+     * behind it? Then the way out is not to pin an assignment (there is none) but to revoke the installers or let the planned installs finish.
+     */
+    public function heldByTicksOnly(int $packageId, bool $versionAdded): bool
+    {
+        $assigned = $this->sql->one("SELECT 1 AS x FROM rmm_package_assignments WHERE package_id = ? AND action = 'install'" . ($versionAdded ? ' AND version_id IS NULL' : '') . ' LIMIT 1', [$packageId]) !== null;
+
+        return !$assigned && !$this->autoInstalls($packageId) && $this->ticked($packageId);
+    }
+
+    private function autoInstalls(int $packageId): bool
+    {
+        return $this->sql->one("SELECT 1 AS x FROM rmm_package_auto WHERE package_id = ? AND scope <> 'off' LIMIT 1", [$packageId]) !== null;
+    }
+
     public function sources(): PackageSourcePolicyInterface
     {
         return $this->sources;

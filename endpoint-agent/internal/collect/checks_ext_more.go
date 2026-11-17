@@ -64,7 +64,7 @@ func (c *Collector) checkCert(ctx context.Context, key string, raw json.RawMessa
 				files = nil
 				for _, e := range ents {
 					ext := strings.ToLower(filepath.Ext(e.Name()))
-					if !e.IsDir() && (ext == ".pem" || ext == ".crt" || ext == ".cer") && len(files) < 50 {
+					if e.Type()&(os.ModeNamedPipe|os.ModeSocket|os.ModeDevice|os.ModeCharDevice) == 0 && !e.IsDir() && (ext == ".pem" || ext == ".crt" || ext == ".cer") && len(files) < 50 {
 						files = append(files, filepath.Join(path, e.Name()))
 					}
 				}

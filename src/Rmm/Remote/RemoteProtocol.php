@@ -38,11 +38,15 @@ final class RemoteProtocol
     public const CAP_PROCESSES = 'remote:processes';
     public const CAP_FILES = 'remote:files';
     public const CAP_LOGS = 'logs:collect';
+    /** CORE-DS-16: the domain line of the signed log collection configuration (`config.logs.signature`), separate from every other signed object. */
+    public const LOGS_SIGN_DOMAIN = 'rivetit-logs-config-v1';
 
     // ---- sub-switches (RmmSettings::FEATURES)
     public const FEATURE_REMOTE_TOOLS = 'remote_tools';
     public const FEATURE_FILE_TRANSFER = 'filetransfer';
     public const FEATURE_LOGS = 'logs';
+    /** The optional Rivet Console desktop app (default off): when on, a launch also returns a `rivetconsole://` deep link; off is stock MeshCentral launch. */
+    public const FEATURE_REMOTE_CONSOLE = 'remote_console';
 
     // ---- service and process manager
     public const SERVICE_ACTIONS = ['start', 'stop', 'restart', 'enable', 'disable', 'manual'];

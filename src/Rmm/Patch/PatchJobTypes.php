@@ -26,6 +26,9 @@ final class PatchJobTypes
         $r->register(new JobType(PatchProtocol::JOB_SCAN, RmmAbility::PATCH_MANAGE, false, $both, false, self::scan(...), 900, true, PatchProtocol::CAP_SCAN));
         // destructive: offered at most once and never re-sent when the acknowledgement is lost (an install must not run twice by accident).
         $r->register(new JobType(PatchProtocol::JOB_INSTALL, RmmAbility::PATCH_INSTALL, true, $both, false, self::install(...), 3600, true, PatchProtocol::CAP_INSTALL));
+        // Windows Update control: writes (or restores) policy registry values. Destructive like an install (offered once, never re-sent after a lost acknowledgement), Windows only,
+        // needs the device to have ANNOUNCED patch:configure (an older agent never does, so it is never offered the job).
+        $r->register(new JobType(PatchProtocol::JOB_CONFIGURE, RmmAbility::PATCH_INSTALL, true, ['windows'], false, self::configure(...), 300, true, PatchProtocol::CAP_CONFIGURE));
     }
 
     /**
@@ -90,5 +93,37 @@ final class PatchJobTypes
         }
 
         return [['ids' => implode(',', $parts), 'mode' => $mode, 'max_minutes' => $mins], null];
+    }
+
+    /**
+     * `patch_configure`: the DESIRED Windows Update policy state, never a registry path or value name (the agent owns the fixed list of keys). An empty desired state
+     * (`update_mode` leave, `feature_target` none, `defer_days` 0) asks the agent to restore whatever it changed earlier.
+     *
+     * @param array<array-key,mixed> $p
+     * @return array{0:array<string,mixed>,1:?string}
+     */
+    public static function configure(array $p): array
+    {
+        if (array_diff(array_keys($p), ['mode', 'update_mode', 'feature_target', 'defer_days']) !== []) {
+            return [$p, 'Only mode, update_mode, feature_target and defer_days are accepted.'];
+        }
+        $mode = array_key_exists('mode', $p) ? $p['mode'] : 'dry_run';
+        if (!is_string($mode) || !in_array($mode, PatchProtocol::CONFIGURE_MODES, true)) {
+            return [$p, 'mode must be dry_run or apply.'];
+        }
+        $um = array_key_exists('update_mode', $p) ? $p['update_mode'] : 'leave';
+        if (!is_string($um) || !in_array($um, PatchProtocol::WU_MODES, true)) {
+            return [$p, 'update_mode must be leave or managed.'];
+        }
+        $ft = array_key_exists('feature_target', $p) ? $p['feature_target'] : PatchProtocol::FEATURE_TARGET_NONE;
+        if (!is_string($ft) || !($ft === PatchProtocol::FEATURE_TARGET_NONE || $ft === PatchProtocol::FEATURE_TARGET_HOLD || PatchProtocol::validFeatureVersion($ft))) {
+            return [$p, 'feature_target must be none, hold or a feature version such as 25H2.'];
+        }
+        $dd = array_key_exists('defer_days', $p) ? $p['defer_days'] : 0;
+        if (!is_int($dd) || $dd < 0 || $dd > PatchProtocol::DEFER_DAYS_MAX) {
+            return [$p, 'defer_days must be 0 to ' . PatchProtocol::DEFER_DAYS_MAX . '.'];
+        }
+
+        return [['mode' => $mode, 'update_mode' => $um, 'feature_target' => $ft, 'defer_days' => $dd], null];
     }
 }

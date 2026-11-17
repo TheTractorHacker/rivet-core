@@ -24,7 +24,15 @@ type Collector struct {
 	P       Platform
 	Cfg     func() store.Config
 	Timeout time.Duration // hard per-call timeout (default 15s)
-	Now     func() time.Time
+	// CheckHardLimit abandons one check that has run this long (default 150s, above the longest check timeout); see CheckRunner.Run.
+	CheckHardLimit time.Duration
+	// RequireSigned says whether every check definition must carry a verified signature (the server announced signed_config >= 1, or the local
+	// configuration demands it). nil = tolerate unsigned checks of the non-script types, as older servers send them (CORE-DS-16).
+	RequireSigned func() bool
+	// RunBudget is the total time one CheckRunner.Run may spend (default 90s): checks still due when it is spent wait for the next pass, and a running
+	// check is cut at the remaining budget, so a pass cannot hold the check-in for 50 x CheckHardLimit (CORE-DS-3, review CR1).
+	RunBudget time.Duration
+	Now       func() time.Time
 
 	mu      sync.Mutex
 	cpuPrev *cpuSample
@@ -238,12 +246,25 @@ func Networks() []api.NetInfo {
 }
 
 // MACs returns the sorted unique MAC addresses.
+const maxEnrollMACs = 32
+
 func MACs() []string {
+	return capMACs(Networks())
+}
+
+// capMACs picks at most maxEnrollMACs unique, non-zero MACs, real NICs before container/virtual ones.
+func capMACs(nets []api.NetInfo) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, n := range Networks() {
+	nets = append([]api.NetInfo(nil), nets...)
+	// Real NICs first, so container veth/bridge noise never crowds out the machine's own addresses.
+	sort.SliceStable(nets, func(i, j int) bool { return !isVirtualNIC(nets[i].Name) && isVirtualNIC(nets[j].Name) })
+	for _, n := range nets {
 		if n.MAC == "" || n.MAC == "00:00:00:00:00:00" || seen[n.MAC] {
 			continue
+		}
+		if len(out) >= maxEnrollMACs {
+			break // the server rejects more than 32; a container host can have hundreds of veth/bridge NICs
 		}
 		seen[n.MAC] = true
 		out = append(out, n.MAC)
@@ -350,4 +371,14 @@ func InventoryHash(inv api.Inventory) string {
 	b, _ := json.Marshal(c)
 	s := sha256.Sum256(b)
 	return hex.EncodeToString(s[:8])
+}
+
+// isVirtualNIC flags container/virtual interfaces that are not the machine's identity.
+func isVirtualNIC(name string) bool {
+	for _, p := range []string{"veth", "docker", "br-", "virbr", "cni", "flannel", "cali", "lxc", "tap", "vnet"} {
+		if strings.HasPrefix(strings.ToLower(name), p) {
+			return true
+		}
+	}
+	return false
 }

@@ -264,6 +264,70 @@ final class ApprovalsTest extends AutomationTestCase
         $this->assertSame(0, $this->h->module->housekeeping()->run()['approved_runs_resumed'], 'and once is enough');
     }
 
+    /** CORE-DS-41: a resumed approved run asks the same per-client run question as the approval did, for the requester as they are now. */
+    public function testAResumedApprovedRunDoesNotQueueForAClientTheRequesterMayNoLongerRunOn(): void
+    {
+        $s = $this->script(['name' => 'Many2']);
+        $r = $this->actions()->runOnTarget($this->admin, ['library_script_id' => $s['script_id'], 'target' => ['type' => 'client', 'id' => $this->h->clientA]]);
+        $id = (int) $r->data['approval_id'];
+        $this->assertTrue($this->actions()->decide($this->approver, $id, true)->ok);
+        $this->h->q("UPDATE rmm_approvals SET result_json = NULL, decided_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE) WHERE approval_id = $id");
+        $this->h->q("DELETE FROM endpoint_agent_jobs WHERE device_id = {$this->a[2]}");
+        $this->h->q("DELETE FROM rmm_job_extra WHERE device_id = {$this->a[2]}");
+        $this->h->policy->grant((int) $this->admin->userId, []);
+        $this->h->module->authorizer()->forget();   // the requester lost every grant (or was switched off) since the approval
+        $this->h->module->housekeeping()->run();
+        $this->assertCount(2, $this->h->rows('SELECT * FROM endpoint_agent_jobs'), 'nothing was added for the device that was missing');
+        $res = $this->h->module->approvals()->get($id)['result'];
+        $this->assertSame([0, 1], [$res['created'], (int) ($res['skipped_denied'] > 0)]);
+    }
+
+    /** CORE-DS-44: the approver saw N devices; a tag or group that grew since is not approved as it stands. */
+    public function testATargetThatGrewAfterTheRequestIsNotApprovedAsItStands(): void
+    {
+        $s = $this->script(['name' => 'Grow']);
+        $tag = $this->tagDevice($this->a[0], 'g1');
+        $r = $this->actions()->runOnTarget($this->tech, ['library_script_id' => $s['script_id'], 'target' => ['type' => 'tag', 'id' => $tag]]);
+        $this->assertSame(202, $r->http, $r->message);
+        $id = (int) $r->data['approval_id'];
+        $this->assertSame(1, $this->h->module->approvals()->get($id)['device_count']);
+        $this->tagDevice($this->a[1], 'g1');   // the requester adds a device to the tag after asking
+        $this->tagDevice($this->a[2], 'g1');
+        $d = $this->actions()->decide($this->approver, $id, true);
+        $this->assertSame([false, 409], [$d->ok, $d->http], $d->message);
+        $this->assertStringContainsString('now reaches 3 devices', $d->message);
+        $this->assertSame([], $this->jobs($this->a[1]));
+        $this->assertSame('pending_approval', $this->h->module->approvals()->get($id)['state'], 'the decision was not recorded');
+        // a target that did not grow is approved as before; so is one that shrank
+        $r2 = $this->actions()->runOnTarget($this->tech, ['library_script_id' => $s['script_id'], 'target' => ['type' => 'tag', 'id' => $tag]]);
+        $id2 = (int) $r2->data['approval_id'];
+        $this->h->q("DELETE FROM rmm_device_tags WHERE tag_id = $tag AND device_id = {$this->a[2]}");
+        $this->assertTrue($this->actions()->decide($this->approver, $id2, true)->ok);
+        $this->assertCount(2, $this->h->rows('SELECT * FROM endpoint_agent_jobs'));
+    }
+
+    /** CR19 (CORE-DS-44): the same NUMBER of devices is not the same devices: swapping a member of the target after the request is refused. */
+    public function testSwappingAMemberOfTheTargetKeepsTheCountButIsStillRefused(): void
+    {
+        $s = $this->script(['name' => 'Swap']);
+        $tag = $this->tagDevice($this->a[0], 'swap');
+        $r = $this->actions()->runOnTarget($this->tech, ['library_script_id' => $s['script_id'], 'target' => ['type' => 'tag', 'id' => $tag]]);
+        $this->assertSame(202, $r->http, $r->message);
+        $id = (int) $r->data['approval_id'];
+        $this->h->q("DELETE FROM rmm_device_tags WHERE tag_id = $tag AND device_id = {$this->a[0]}");
+        $this->tagDevice($this->a[1], 'swap');
+        $d = $this->actions()->decide($this->approver, $id, true);
+        $this->assertSame([false, 409], [$d->ok, $d->http], $d->message);
+        $this->assertStringContainsString('was not among those the approver saw', $d->message);
+        $this->assertSame([], $this->jobs($this->a[1]));
+        // the unchanged target is approved as before
+        $this->tagDevice($this->a[0], 'swap');
+        $this->h->q("DELETE FROM rmm_device_tags WHERE tag_id = $tag AND device_id = {$this->a[1]}");
+        $r2 = $this->actions()->runOnTarget($this->tech, ['library_script_id' => $s['script_id'], 'target' => ['type' => 'tag', 'id' => $tag]]);
+        $this->assertTrue($this->actions()->decide($this->approver, (int) $r2->data['approval_id'], true)->ok);
+        $this->assertCount(1, $this->h->rows('SELECT * FROM endpoint_agent_jobs'));
+    }
+
     public function testSecretParametersInAnApprovedRunMustBePlaceholders(): void
     {
         $s = $this->script(['name' => 'Tok', 'params' => [['name' => 'token', 'type' => 'secret']]]);

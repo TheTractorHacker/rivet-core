@@ -36,6 +36,6 @@ final class LegacySettingsCbcReader implements LegacyReader
             throw new DecryptionFailed('The value is not in a readable format.');
         }
 
-        return LegacyCbc::decrypt(substr($data, 16), substr(hash('sha256', $this->legacyKey, true), 0, 16), substr($data, 0, 16), OPENSSL_RAW_DATA);
+        return LegacyCbc::decryptText(substr($data, 16), substr(hash('sha256', $this->legacyKey, true), 0, 16), substr($data, 0, 16), OPENSSL_RAW_DATA);
     }
 }

@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -416,5 +418,115 @@ func TestDownloadSendsTheAgentsOS(t *testing.T) {
 	}
 	if want := "os=" + runtime.GOOS; !strings.Contains(gotQuery, want) || !strings.Contains(gotQuery, "arch=amd64") {
 		t.Fatalf("query %q does not carry %s", gotQuery, want)
+	}
+}
+
+// CORE-DS-11: a new version that dies before Agent.Run (state directory refused, bad config) never reaches OnStart or the watchdog, so the process
+// entry point calls EarlyFailureRollback; after MaxStartAttempts early exits the previous binary is restored.
+func TestEarlyFailureRollbackRestoresThePreviousBinary(t *testing.T) {
+	e := newEnv(t)
+	if _, err := e.apply(e.mgr("1.0.0"), e.manifest("1.1.0")); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(e.dir, "update.json")
+	rolled := false
+	for i := 0; i < MaxStartAttempts+1 && !rolled; i++ {
+		rolled = EarlyFailureRollback(e.paths.Current, statePath, "1.1.0", nil)
+	}
+	if !rolled {
+		t.Fatal("no rollback after repeated early failures")
+	}
+	if read(t, e.paths.Current) != "OLD-BINARY" {
+		t.Fatalf("current=%q after rollback", read(t, e.paths.Current))
+	}
+}
+
+func TestEarlyFailureRollbackIsANoOpOutsideProbation(t *testing.T) {
+	e := newEnv(t)
+	for i := 0; i < MaxStartAttempts+2; i++ {
+		if EarlyFailureRollback(e.paths.Current, filepath.Join(e.dir, "update.json"), "1.0.0", nil) {
+			t.Fatal("rolled back with no update in flight")
+		}
+	}
+	if read(t, e.paths.Current) != "OLD-BINARY" {
+		t.Fatal("binary changed")
+	}
+}
+
+// CORE-DS-27: SemVer 2.0 pre-release precedence (numeric identifiers compare as numbers; numeric < alphanumeric; fewer fields < more).
+func TestComparePrereleasePrecedence(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+	}{
+		{"1.0.0-rc.9", "1.0.0-rc.10", -1},
+		{"1.0.0-rc.10", "1.0.0-rc.9", 1},
+		{"1.0.0-rc.10", "1.0.0-rc.10", 0},
+		{"1.0.0-alpha", "1.0.0-alpha.1", -1},
+		{"1.0.0-alpha.1", "1.0.0-alpha.beta", -1},
+		{"1.0.0-alpha.beta", "1.0.0-beta", -1},
+		{"1.0.0-beta.2", "1.0.0-beta.11", -1},
+		{"1.0.0-beta.11", "1.0.0-rc.1", -1},
+		{"1.0.0-rc.1", "1.0.0", -1},
+		{"1.0.0-1", "1.0.0-a", -1},
+	}
+	for _, c := range cases {
+		got, err := CompareVersions(c.a, c.b)
+		if err != nil || got != c.want {
+			t.Errorf("%s vs %s: got %d (%v), want %d", c.a, c.b, got, err, c.want)
+		}
+	}
+}
+
+// CORE-DS-15: shutdown, timeouts, 429/5xx and a slow selftest are temporary; a bad signature, a checksum mismatch or a downgrade are not.
+func TestTransientClassification(t *testing.T) {
+	e := newEnv(t)
+	m := e.mgr("1.0.0")
+	e.status = 503
+	_, err := e.apply(m, e.manifest("1.1.0"))
+	if err == nil || !Transient(err) {
+		t.Fatalf("503 download: %v transient=%v", err, err != nil && Transient(err))
+	}
+	e.status = 429
+	if _, err = e.apply(e.mgr("1.0.0"), e.manifest("1.1.0")); err == nil || !Transient(err) {
+		t.Fatalf("429: %v", err)
+	}
+	e.status = 404
+	if _, err = e.apply(e.mgr("1.0.0"), e.manifest("1.1.0")); err == nil || Transient(err) {
+		t.Fatalf("404 is not temporary: %v", err)
+	}
+	e.status = 200
+	for _, err := range []error{context.Canceled, context.DeadlineExceeded, fmt.Errorf("wrapped: %w", context.Canceled), ErrSelfTestTimeout} {
+		if !Transient(err) {
+			t.Errorf("%v should be transient", err)
+		}
+	}
+	for _, err := range []error{ErrDowngrade, ErrIncompatible, errors.New("sha256 mismatch"), errors.New("update signature invalid")} {
+		if Transient(err) {
+			t.Errorf("%v should be permanent", err)
+		}
+	}
+	// bad checksum is permanent
+	man := e.manifest("1.1.0")
+	man.SHA256 = strings.Repeat("0", 64)
+	man.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(e.priv, []byte(man.SHA256)))
+	if _, err := e.apply(e.mgr("1.0.0"), man); err == nil || Transient(err) {
+		t.Fatalf("sha mismatch: %v", err)
+	}
+}
+
+// CORE-DS-15 (review CR9): a connection dropped mid-download is temporary.
+func TestTruncatedDownloadIsTransient(t *testing.T) {
+	if !Transient(io.ErrUnexpectedEOF) || !Transient(fmt.Errorf("copy: %w", io.ErrUnexpectedEOF)) {
+		t.Fatal("unexpected EOF is not transient")
+	}
+	e := newEnv(t)
+	e.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100000")
+		w.Write([]byte("short"))
+	})
+	_, err := e.apply(e.mgr("1.0.0"), e.manifest("1.1.0"))
+	if err == nil || !Transient(err) {
+		t.Fatalf("truncated body: %v (transient=%v)", err, err != nil && Transient(err))
 	}
 }

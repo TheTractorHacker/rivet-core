@@ -90,11 +90,15 @@ final class JobWorker
                 break;
             }
             $pending = array_map(static fn (array $j): int => (int) $j['job_id'], $jobs);
+            $claimedAs = [];   // CORE-DS-60: job id => the attempt this worker claimed
+            foreach ($jobs as $j) {
+                $claimedAs[(int) $j['job_id']] = (int) $j['attempts'];
+            }
             foreach ($jobs as $job) {
                 $id = (int) $job['job_id'];
                 if (microtime(true) >= $deadline) {
                     // Out of budget: give the job back, attempt not spent.
-                    if ($this->queue->release($id)) {
+                    if ($this->queue->release($id, $claimedAs[$id])) {
                         $out['deferred']++;
                     }
                     $pending = array_values(array_diff($pending, [$id]));
@@ -103,7 +107,7 @@ final class JobWorker
                 $remaining--;
                 $out['claimed']++;
                 // Keep the rest of the batch (and this job) visibly alive while earlier jobs run.
-                if ($this->queue->heartbeat($pending) < count($pending) && $this->queue->heartbeat($id) < 1) {
+                if ($this->queue->heartbeat($pending, $claimedAs) < count($pending) && $this->queue->heartbeat($id, $claimedAs) < 1) {
                     $out['claimed']--;
                     $remaining++;
                     $pending = array_values(array_diff($pending, [$id]));
@@ -137,8 +141,8 @@ final class JobWorker
         $timeout = $this->timeoutFor($type);
         $started = microtime(true);
         $queue = $this->queue;
-        $context = new JobContext($id, $type, $timeout !== null ? $started + $timeout : null, $runDeadline, static function () use ($queue, $id): void {
-            $queue->heartbeat($id);
+        $context = new JobContext($id, $type, $timeout !== null ? $started + $timeout : null, $runDeadline, static function () use ($queue, $id, $attempts): void {
+            $queue->heartbeat($id, [$id => $attempts]);   // CORE-DS-60: only this attempt's lease
         });
         $payload = json_decode((string) ($job['payload'] ?? ''), true);
         try {

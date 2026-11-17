@@ -156,7 +156,10 @@ final class ScheduleService
         $params = $paramsIn === [] ? '{}' : (string) json_encode($paramsIn);
         $material = $cur === null || (int) $cur['script_id'] !== $scriptId || (int) $cur['script_version'] !== (int) $loaded['version']['version']
             || (string) $cur['body_sha256'] !== $bodyHash || (string) ($cur['params_json'] ?? '{}') !== $params
-            || $cur['target_type'] !== $target['type'] || (int) $cur['target_id'] !== $target['id'];
+            || $cur['target_type'] !== $target['type'] || (int) $cur['target_id'] !== $target['id']
+            // CORE-DS-42 (CORE-30): how often and how long it runs is part of what was approved
+            || (string) $cur['kind'] !== (string) $kind || (int) $cur['interval_s'] !== (int) $interval || (string) ($cur['cron_expr'] ?? '') !== (string) $cron
+            || (int) $cur['jitter_s'] !== (int) $jitter || (string) $cur['overlap'] !== (string) $overlap || (int) $cur['expires_s'] !== (int) $expires || (int) $cur['timeout_s'] !== (int) $timeout;
         $retime = $cur === null || array_key_exists('kind', $in) || array_key_exists('interval_s', $in) || array_key_exists('cron', $in) || array_key_exists('start_in_s', $in) || (!(int) $cur['enabled'] && $enabled);
         $next = $cur === null ? null : $cur['next_run_at'];
         if ($retime || $next === null) {

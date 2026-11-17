@@ -61,16 +61,20 @@ class ProblemService
 
         // resolved_at marks when the root cause was actually fixed - set it the first time a problem reaches
         // resolved/closed, clear it on reopen so a later re-resolve gets a fresh timestamp.
+        // CORE-DS-59 (CORE-37): conditional on the status that was read (compare and swap)
         if (in_array($status, ['resolved', 'closed'], true)) {
-            $this->database->execute(
-                'UPDATE problems SET status = ?, resolved_at = COALESCE(resolved_at, NOW()) WHERE problem_id = ?',
-                [$status, $problemId]
+            $done = $this->database->execute(
+                'UPDATE problems SET status = ?, resolved_at = COALESCE(resolved_at, NOW()) WHERE problem_id = ? AND status = ?',
+                [$status, $problemId, $from]
             );
         } else {
-            $this->database->execute(
-                'UPDATE problems SET status = ?, resolved_at = NULL WHERE problem_id = ?',
-                [$status, $problemId]
+            $done = $this->database->execute(
+                'UPDATE problems SET status = ?, resolved_at = NULL WHERE problem_id = ? AND status = ?',
+                [$status, $problemId, $from]
             );
+        }
+        if ($done->affectedRows < 1) {
+            throw new \InvalidArgumentException("Problem $problemId was changed by someone else; reload it and try again");
         }
     }
 

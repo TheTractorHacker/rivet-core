@@ -194,6 +194,22 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 		say("Cannot locate the installer: "+err.Error(), true)
 		return exitInstallFail
 	}
+	// Hold the installer (and the MSI payload source) open without write/delete sharing for the whole run, so the bytes that are parsed now are the
+	// bytes that are copied into the program directory later (CORE-DS-48).
+	if ops.pinFile != nil {
+		pins := []string{self}
+		if o.payloadFrom != "" && o.payloadFrom != self {
+			pins = append(pins, o.payloadFrom)
+		}
+		for _, f := range pins {
+			release, err := ops.pinFile(f)
+			if err != nil {
+				say("Cannot lock the installer file against changes: "+err.Error(), true)
+				return exitInstallFail
+			}
+			defer release()
+		}
+	}
 	// Where the configuration comes from: the payload appended to this program (the exe installer), to the .msi named by --payload-from (the MSI
 	// package), or the MSI's public properties. Validate before any elevation prompt: a bad installer should fail early.
 	src := self
@@ -203,6 +219,11 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 	var pl *embed.Payload
 	refresh := false // an MSI upgrade without a usable payload: keep the enrollment, only re-register the service
 	var embedErr error
+	if o.server != "" && embed.TrustAnchorActive() {
+		// MSI property mode (SERVER=..., --server) carries no signed payload, so it would bypass the build's trust anchor: refuse it (CORE-DS-20, review CRR-4)
+		say("This build only installs from a stamped installer signed by your RivetIT server (SERVER/--server properties are not accepted). Download the installer from your RivetIT server.", true)
+		return exitBadConfig
+	}
 	if o.server != "" {
 		var perr error
 		if pl, perr = o.propertyPayload(now()); perr != nil {
@@ -210,7 +231,11 @@ func runSetup(args []string, ops sysOps, now func() time.Time) int {
 			return exitBadConfig
 		}
 	} else {
-		pl, err = embed.Read(src, now())
+		pl, err = readStamped(ops, src, now())
+		if errors.Is(err, errNotPinned) {
+			say(err.Error(), true)
+			return exitInstallFail
+		}
 		if err != nil {
 			if o.fromMSI && (errors.Is(err, embed.ErrNotStamped) || errors.Is(err, embed.ErrExpired)) {
 				refresh, embedErr = true, err // decided after the elevation check, when the state directory can be read
@@ -366,3 +391,18 @@ func setupOutcome(r installResult, logPath string) (code int, msg string, isErr 
 	}
 	return exitInstallFail, "RivetIT Agent could not be installed: " + r.Msg + tail, true
 }
+
+// readStamped reads the payload of src. Where pinning is wired src MUST have been pinned and is read from that handle only; a missing handle is an
+// error, never a silent fall back to opening the path (a re-pointed junction would swap the file). Without pinning (Linux) it reads the path.
+func readStamped(ops sysOps, src string, now time.Time) (*embed.Payload, error) {
+	if ops.openPinned == nil {
+		return embed.Read(src, now)
+	}
+	rd, size, ok := ops.openPinned(src)
+	if !ok {
+		return nil, errNotPinned
+	}
+	return embed.Parse(rd, size, now)
+}
+
+var errNotPinned = errors.New("the installer file is not locked against changes (installer not pinned)")

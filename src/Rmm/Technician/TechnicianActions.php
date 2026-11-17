@@ -14,6 +14,9 @@ use RivetCore\Rmm\Device\DeviceService;
 use RivetCore\Rmm\Enrollment\EnrollmentService;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Mesh\MeshService;
+use RivetCore\Rmm\Remote\ConsoleLink;
+use RivetCore\Rmm\Remote\ConsoleSessionService;
+use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Update\UpdateService;
 
@@ -46,6 +49,9 @@ final class TechnicianActions
         private readonly string $clientLabel = 'client',
         private readonly ?ScriptActions $library = null,
         private readonly ?\RivetCore\Rmm\Settings\RmmSettings $settings = null,
+        private readonly ?ConsoleSessionService $consoleSessions = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshMapping $meshMapping = null,
+        private readonly ?\RivetCore\Rmm\Mesh\MeshAgentService $meshAgents = null,
     ) {
     }
 
@@ -184,8 +190,14 @@ final class TechnicianActions
      * Launch a MeshCentral session. The session id is the only identifier stored (through the edition's remote-session log): the login
      * token and URL are never written anywhere. `$view` is desktop (the default), terminal or files; the last two (Phase 6) need `rmm.remote.manage` as well
      * and the `remote_tools` sub-switch, because a terminal is a shell on the device.
+     *
+     * `$console = true` asks for the optional Rivet Console. With the `remote_console` switch OFF (the default) the flag is ignored and the result is exactly the stock
+     * one (`url`, `session_id`). With it ON the same checks and the same stock URL apply and the result also carries `console` ({@see ConsoleLink::descriptor()}):
+     * `url` (the `rivetconsole://connect?v=1&origin=...&code=...` deep link, carrying a single-use code valid 60 seconds and no login token, see {@see ConsoleSessionService})
+     * and `fallback_url` (the stock URL, for when the app is not installed). `$consoleKind` may be `terminal-ps` for a terminal view; by default the kind follows `$view`.
+     * Without a configured `console_public_url` the launch is refused (409 `not_configured`, audited, nothing minted); a denied launch mints nothing.
      */
-    public function launchRemote(RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = null, ?string $userAgent = null, string $view = 'desktop'): ActionResult
+    public function launchRemote(RmmPrincipal $who, int $deviceId, bool $force = false, ?string $ip = null, ?string $userAgent = null, string $view = 'desktop', bool $console = false, ?string $consoleKind = null): ActionResult
     {
         if (!isset(MeshService::VIEWMODES[$view])) {
             return ActionResult::fail(422, 'invalid', 'The view must be desktop, terminal or files.');
@@ -213,6 +225,29 @@ final class TechnicianActions
                 return ActionResult::fail(409, 'feature_disabled', 'The Mesh terminal and file views are switched off. An administrator can turn the remote tools on in the RMM remote-tools settings.');
             }
         }
+        $wantConsole = $console && $this->settings !== null && $this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_CONSOLE);
+        $kind = null;
+        if ($wantConsole) {
+            $kind = ConsoleLink::kindFor($view, $consoleKind);
+            if ($kind === null) {
+                return ActionResult::fail(422, 'invalid', 'The console kind must be desktop, terminal, terminal-ps or files, and fit the view.');
+            }
+        }
+        if ($kind !== null && ($this->consoleSessions === null || $this->consoleSessions->origin() === null)) {
+            $this->audit->record('Remote Failed', "{$who->userName} Rivet Console launch on device $deviceId did not start: not_configured", $client, $asset);
+
+            return ActionResult::fail(409, 'not_configured', 'The Rivet Console is not configured: an administrator has to set its public address (console_public_url) in the RMM remote-tools settings.');
+        }
+        if ($kind !== null && !$this->mesh->consoleServerAllowed()) {
+            $this->audit->record('Remote Failed', "{$who->userName} Rivet Console launch on device $deviceId did not start: MeshCentral address is not https", $client, $asset);
+
+            return ActionResult::fail(409, 'not_configured', 'The Rivet Console needs an https MeshCentral address; the configured one is not https. Use the MeshCentral link, or ask an administrator to change the MeshCentral address.');
+        }
+        if ($kind !== null && $this->consoleSessions->approvalRequired($client)) {
+            $this->audit->record('Remote Denied', "User {$who->userId} denied Rivet Console session on device $deviceId: approval_required", $client, $asset);
+
+            return ActionResult::fail(403, 'approval_required', ConsoleSessionService::APPROVAL_MESSAGE);
+        }
         $r = $this->mesh->launch($dev, $who->userName, $who->userId, $force, $view);
         if (!$r['ok']) {
             $this->audit->record('Remote Failed', "{$who->userName} remote session on device $deviceId did not start: {$r['code']}", $client, $asset);
@@ -221,11 +256,27 @@ final class TechnicianActions
             return ActionResult::fail($http, $r['code'], $r['message']);
         }
         $sessionId = (string) ($r['session_id'] ?? '');
+        $url = (string) ($r['url'] ?? '');
+        $console = null;
+        if ($kind !== null) {
+            // Only with the switch on, and only now that every check passed: the single-use code is minted here. Nothing about the code is logged.
+            $console = $this->consoleSessions->issue($who, $dev, $kind, (string) $this->mesh->nodeFor($deviceId), $this->mesh->domain(), $sessionId, $url, $ip);
+            if ($console === null) {
+                $this->audit->record('Remote Failed', "{$who->userName} Rivet Console launch on device $deviceId did not start: unsupported node or Mesh domain", $client, $asset);
+
+                return ActionResult::fail(409, 'unsupported', 'The Rivet Console cannot open this device: its MeshCentral node id or domain is not acceptable. Use the MeshCentral link instead.');
+            }
+        }
         $this->bridge->recordRemoteSession($asset, $client, $who->userId, 'meshcentral', 'meshcentral:session:' . $sessionId,
             $ip === null ? null : substr($ip, 0, 100), $userAgent === null ? null : substr($userAgent, 0, 300));
-        $this->audit->record('Remote Session', "{$who->userName} opened MeshCentral " . ($view === 'desktop' ? '' : "$view ") . "session $sessionId on device $deviceId" . ($force ? ' (forced while offline)' : ''), $client, $asset);
+        $this->audit->record('Remote Session', "{$who->userName} opened MeshCentral " . ($view === 'desktop' ? '' : "$view ") . "session $sessionId on device $deviceId" . ($force ? ' (forced while offline)' : '') . ($kind !== null ? " (Rivet Console link, $kind)" : ''), $client, $asset);
 
-        return ActionResult::ok('Opening the remote session.', 200, 'ok', ['url' => (string) ($r['url'] ?? ''), 'session_id' => $sessionId]);
+        $data = ['url' => $url, 'session_id' => $sessionId];
+        if ($console !== null) {
+            $data['console'] = $console;
+        }
+
+        return ActionResult::ok('Opening the remote session.', 200, 'ok', $data);
     }
 
     /** Map (or, with an empty id, clear) the MeshCentral node of a device. Administrators only. */
@@ -242,6 +293,149 @@ final class TechnicianActions
         });
     }
 
+    /** The most devices one {@see approveMeshNodes()} call takes. */
+    public const MESH_APPROVE_MAX = 200;
+
+    /**
+     * Why each linked device is (not) mapped to a MeshCentral node, for the fleet "Mesh mapping" page. Scope: the caller's clients only, and only those where it may
+     * view devices; a device of another client is simply absent (and a `client_id` filter outside the scope answers as an empty list). `can_approve` is true only
+     * when the caller may also manage devices of that client.
+     *
+     * @param array{state?:string,client_id?:int,q?:string} $filters
+     */
+    public function meshMappings(RmmPrincipal $who, array $filters = [], int $limit = 100, int $offset = 0): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::DEVICE_VIEW, 0);
+        if ($denied !== null) {
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        if ($this->meshMapping === null) {
+            return ActionResult::fail(409, 'not_configured', 'The Mesh mapping view is not available.');
+        }
+        if (isset($filters['state']) && $filters['state'] !== '' && !in_array($filters['state'], \RivetCore\Rmm\Mesh\MeshMapping::STATES, true)) {
+            return ActionResult::fail(422, 'invalid', 'state must be one of ' . implode(', ', \RivetCore\Rmm\Mesh\MeshMapping::STATES) . '.');
+        }
+        $visible = $this->authz->visibleClientIds($who->userId);
+        $candidates = $visible ?? array_map('intval', array_column($this->sql->all("SELECT DISTINCT client_id FROM endpoint_agent_devices WHERE link_state = 'linked'"), 'client_id'));
+        $clients = array_values(array_filter($candidates, fn (int $c): bool => $this->authz->allowed($who->userId, RmmAbility::DEVICE_VIEW, $c)));
+        $r = $this->meshMapping->fleet($clients, $filters, max(1, min(500, $limit)), max(0, $offset));
+        $manage = [];
+        foreach ($r['items'] as &$item) {
+            $c = (int) $item['client_id'];
+            $manage[$c] ??= $this->authz->allowed($who->userId, RmmAbility::DEVICE_MANAGE, $c);
+            $item['can_approve'] = $item['can_approve'] && $manage[$c];
+        }
+        unset($item);
+
+        return ActionResult::ok('ok', 200, 'ok', $r + ['limit' => max(1, min(500, $limit)), 'offset' => max(0, $offset)]);
+    }
+
+    /**
+     * The Mesh mapping state of ONE device (the opt-in the device page uses; the default device detail does not carry it). A device outside the caller's clients is the
+     * same 404 as a missing one; `can_approve` is false without `rmm.device.manage` for its client.
+     */
+    public function meshMapping(RmmPrincipal $who, int $deviceId): ActionResult
+    {
+        [$dev, $err] = $this->deviceFor($who->userId, $deviceId);
+        if ($err !== null || $dev === null) {
+            return $err ?? ActionResult::fail(404, 'not_found', 'Device not found.');
+        }
+        $m = $this->meshMapping?->forDevice($deviceId);
+        if ($m === null) {
+            return ActionResult::fail($this->meshMapping === null ? 409 : 404, $this->meshMapping === null ? 'not_configured' : 'not_found', $this->meshMapping === null ? 'The Mesh mapping view is not available.' : 'Device not found.');
+        }
+        $m['can_approve'] = $m['can_approve'] && $this->authz->allowed($who->userId, RmmAbility::DEVICE_MANAGE, (int) $dev['client_id']);
+
+        return ActionResult::ok('ok', 200, 'ok', $m);
+    }
+
+    /**
+     * Bulk "approve and map": for each device id, map the node THE DEVICE ITSELF REPORTED (the one stored in its Mesh agent state, never a typed one) through the same
+     * audited action as a single approval ({@see setMeshNode()}: `rmm.device.manage` for the device's client). Per device the result is `changed`, `skipped` (nothing
+     * to approve: not waiting for approval, already mapped, a different node kept by hand) or `refused` (not found or not yours, not permitted, or a CONFLICT: a node
+     * another live device holds or also reports is never moved or overridden). At most {@see MESH_APPROVE_MAX} ids per call.
+     *
+     * @param array<mixed> $deviceIds
+     */
+    public function approveMeshNodes(RmmPrincipal $who, array $deviceIds): ActionResult
+    {
+        $denied = $this->authz->check($who->userId, RmmAbility::DEVICE_MANAGE, 0, false);
+        if ($denied !== null) {
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        if ($this->meshAgents === null) {
+            return ActionResult::fail(409, 'not_configured', 'The Mesh mapping is not available.');
+        }
+        if ($deviceIds === [] || !array_is_list($deviceIds) || count($deviceIds) > self::MESH_APPROVE_MAX) {
+            return ActionResult::fail(422, 'invalid', 'Send a list of 1 to ' . self::MESH_APPROVE_MAX . ' device ids.');
+        }
+        $ids = [];
+        foreach ($deviceIds as $id) {
+            if (!is_int($id) || $id < 1) {
+                return ActionResult::fail(422, 'invalid', 'Every device id must be a positive whole number.');
+            }
+            $ids[$id] = $id;
+        }
+        $results = [];
+        $n = ['changed' => 0, 'skipped' => 0, 'refused' => 0];
+        foreach ($ids as $id) {
+            $r = $this->approveOneMeshNode($who, $id);
+            ++$n[$r['result']];
+            $results[] = ['device_id' => $id] + $r;
+        }
+        $this->audit->record('Mesh Nodes Bulk Approved', "{$who->userName} approved the reported MeshCentral node of {$n['changed']} of " . count($ids) . " device(s) ({$n['skipped']} skipped, {$n['refused']} refused)", 0, 0);
+
+        return ActionResult::ok("{$n['changed']} device(s) mapped.", 200, 'ok', ['requested' => count($ids)] + $n + ['results' => $results]);
+    }
+
+    /** @return array{result:string,code:string,message:string} */
+    private function approveOneMeshNode(RmmPrincipal $who, int $deviceId): array
+    {
+        $out = ['result' => 'refused', 'code' => 'not_found', 'message' => 'Device not found.'];
+        $ran = false;
+        $res = $this->manage($who, $deviceId, function (array $dev) use ($who, $deviceId, &$out, &$ran): ActionResult {
+            $ran = true;
+            $state = $this->meshAgents?->stateFor($deviceId);
+            $node = $state['node_id'] ?? null;
+            if ($state === null || !$state['installed'] || $node === null || $state['map_state'] !== \RivetCore\Rmm\Mesh\MeshAgentService::MAP_NEEDS_APPROVAL) {
+                $out = ['result' => 'skipped', 'code' => 'not_awaiting_approval', 'message' => 'This device has no reported Mesh node waiting for approval.'];
+
+                return ActionResult::ok('skipped');
+            }
+            $d = $this->meshAgents->claimDecision($dev, $node);   // re-checked now: the world may have changed since the page was drawn
+            if ($d['action'] === 'conflict') {
+                $out = ['result' => 'refused', 'code' => 'conflict', 'message' => 'Another device holds or also reports this node. It was not mapped.'];
+                $this->audit->record('Mesh Node Approval Refused', "Approving MeshCentral node $node for device $deviceId was refused: it is {$d['why']}", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+
+                return ActionResult::fail(409, 'conflict', 'conflict');
+            }
+            if ($d['action'] !== 'needs_approval' && $d['action'] !== 'move') {
+                $out = ['result' => 'skipped', 'code' => $d['action'] === 'same' ? 'already_mapped' : 'kept_manual', 'message' => $d['action'] === 'same' ? 'This device is already mapped to that node.' : 'A node mapped by hand differs from the reported one and was kept.'];
+
+                return ActionResult::ok('skipped');
+            }
+            if ($d['action'] === 'move' && $d['other'] !== null) {
+                $this->devices->setMeshNode((int) $d['other']['device_id'], null, $who->userId);   // the retired device of the same client and asset releases it
+            }
+            $r = $this->setMeshNode($who, $deviceId, $node);
+            if (!$r->ok) {
+                $out = ['result' => 'refused', 'code' => $r->code, 'message' => $r->message];
+
+                return $r;
+            }
+            $this->meshAgents->markMapped($deviceId);
+            $this->audit->record('Mesh Node Approved', "{$who->userName} approved MeshCentral node $node, which device $deviceId reported itself, and mapped it", (int) $dev['client_id'], (int) ($dev['asset_id'] ?? 0));
+            $out = ['result' => 'changed', 'code' => 'mapped', 'message' => 'Mapped.'];
+
+            return $r;
+        });
+        if (!$ran) {
+            $out = ['result' => 'refused', 'code' => $res->code, 'message' => $res->message];   // 404 (missing or not yours: the same answer) or 403
+        }
+
+        return $out;
+    }
+
     // ------------------------------------------------------------------ administration of one device
 
     /**
@@ -255,9 +449,9 @@ final class TechnicianActions
             if ($action === 'link' && $assetId !== null && $assetId > 0) {
                 // Linking moves the device to the asset's client: the caller must be allowed to manage devices there too (CORE-02).
                 $assetClient = $this->enrollment->assetClientId($assetId);
-                if ($assetClient !== null && $assetClient !== (int) $dev['client_id']
-                    && ($this->authz->check($who->userId, RmmAbility::DEVICE_MANAGE, $assetClient, false) !== null || !$this->authz->clientOk($who->userId, $assetClient))) {
-                    return ActionResult::fail(404, 'not_found', 'That asset does not exist or is archived.');
+                if ($assetClient === null || ($assetClient !== (int) $dev['client_id']
+                    && ($this->authz->check($who->userId, RmmAbility::DEVICE_MANAGE, $assetClient, false) !== null || !$this->authz->clientOk($who->userId, $assetClient)))) {
+                    return ActionResult::fail(404, 'not_found', 'That asset does not exist or is archived.');   // TEN-10: out of scope and missing answer alike
                 }
             }
             $r = $this->enrollment->resolvePending($deviceId, $action, $assetId, $who->userId);

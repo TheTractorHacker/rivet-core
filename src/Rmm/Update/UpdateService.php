@@ -90,7 +90,167 @@ final class UpdateService
         }
         [$sec] = $this->settings->signingKey();
 
-        return ['version' => $best['version'], 'url' => $url, 'sha256' => $best['sha256'], 'signature' => Signer::signManifest((string) $best['sha256'], $sec), 'min_version' => $best['min_version']];
+        $m = ['version' => $best['version'], 'url' => $url, 'sha256' => $best['sha256'], 'signature' => Signer::signManifest((string) $best['sha256'], $sec), 'min_version' => $best['min_version']];
+        // CORE-DS-26: the offline release signature stored with the package this release serves, with the platform it is for. Never invented: a release without one is offered exactly
+        // as before (an agent that has a trusted release key will then refuse it, which is the point).
+        if (($sig = $this->releaseSignature($best)) !== null) {
+            $m['os'] = $sig['os'];
+            $m['arch'] = $sig['arch'];
+            $m['release_signature'] = $sig['release_signature'];
+        }
+
+        return $m;
+    }
+
+    /**
+     * CORE-DS-26: the stored release signature of the package a release row serves (hosted releases only: the signature belongs to a binary).
+     *
+     * @param array<string,mixed> $release a release row
+     * @return array{os:string,arch:string,release_signature:string}|null
+     */
+    public function releaseSignature(array $release): ?array
+    {
+        if (($release['binary_id'] ?? null) === null) {
+            return null;
+        }
+        try {
+            $r = $this->sql->one('SELECT os, arch, release_signature FROM rmm_agent_release_sigs WHERE binary_id = ?', [(int) $release['binary_id']]);
+        } catch (\Throwable) {
+            return null;   // migration 0054 not applied yet
+        }
+
+        return $r === null ? null : ['os' => (string) $r['os'], 'arch' => (string) $r['arch'], 'release_signature' => (string) $r['release_signature']];
+    }
+
+    /**
+     * Store the offline release signature of a stored binary (the release owner signs {@see Signer::updateManifestMessage()} with a key the server never holds). Only the format is
+     * checked here (64 raw bytes, standard base64); the agent verifies it against the release keys compiled into it.
+     *
+     * @return string|null why not, or null when stored
+     */
+    public function setReleaseSignature(int $binaryId, string $signatureB64): ?string
+    {
+        if (($why = self::releaseSignatureProblem($signatureB64)) !== null) {
+            return $why;
+        }
+        $b = $this->sql->one('SELECT binary_id, arch, os FROM endpoint_agent_binaries WHERE binary_id = ?', [$binaryId]);
+        if ($b === null) {
+            return 'That binary does not exist.';
+        }
+        $this->sql->run('INSERT INTO rmm_agent_release_sigs (binary_id, os, arch, release_signature, created_at) VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE os = VALUES(os), arch = VALUES(arch), release_signature = VALUES(release_signature)', [$binaryId, AgentOs::ofRow($b), (string) $b['arch'], $signatureB64, $this->sql->utcNow()]);
+
+        return null;
+    }
+
+    /**
+     * CRR-11: is this the standard base64 of a 64-byte Ed25519 signature? Checked before a binary is published, so a malformed one never leaves the binary live.
+     *
+     * @return string|null why not, or null when it is well formed
+     */
+    public static function releaseSignatureProblem(string $signatureB64): ?string
+    {
+        $raw = base64_decode($signatureB64, true);
+
+        return $raw === false || strlen($raw) !== 64 || base64_encode($raw) !== $signatureB64
+            ? 'The release signature must be the standard base64 of a 64-byte Ed25519 signature.' : null;
+    }
+
+    /**
+     * The signed release-key rollover message to relay in the check-in response (top-level `release_rollover`), or null. The server cannot create one: it only stores what the
+     * release owner signed.
+     *
+     * @return array{kind:string,new_key:string,revoke:list<string>,seq:int,signature:string}|null
+     */
+    public function releaseRollover(): ?array
+    {
+        $chain = $this->releaseRollovers();
+
+        return $chain === [] ? null : $chain[array_key_last($chain)];
+    }
+
+    /**
+     * R3-2: the chain of rollover messages the release owner published, oldest first (at most the last 16, in the order of `seq`). An agent that missed an earlier rollover cannot apply
+     * the newest one alone (it must be exactly the next sequence), so the check-in carries the whole chain as `release_rollovers` next to `release_rollover`; the agent applies the
+     * ones above its own sequence, each signed by a key it trusts at that point. Stored as given; the server cannot create one. A single message stored by the first version is a chain of one.
+     *
+     * @return list<array{kind:string,new_key:string,revoke:list<string>,seq:int,signature:string}>
+     */
+    public function releaseRollovers(): array
+    {
+        $j = $this->settings->get()['release_rollover_json'] ?? null;
+        $m = is_string($j) && $j !== '' ? json_decode($j, true) : null;
+        if (!is_array($m)) {
+            return [];
+        }
+        $list = array_is_list($m) ? $m : [$m];
+        $out = [];
+        foreach ($list as $one) {
+            if (is_array($one) && ($one['kind'] ?? '') === 'release_key_rollover' && is_string($one['new_key'] ?? null) && is_int($one['seq'] ?? null) && is_string($one['signature'] ?? null)) {
+                $out[$one['seq']] = ['kind' => 'release_key_rollover', 'new_key' => $one['new_key'], 'revoke' => self::cleanRevoke($one['revoke'] ?? []) ?? [], 'seq' => $one['seq'], 'signature' => $one['signature']];
+            }
+        }
+        ksort($out);
+
+        return array_values($out);
+    }
+
+    /**
+     * The revoke list of a rollover message (the release owner signed it; the server only relays it): at most 16 distinct base64 Ed25519 public keys. null when it is not that.
+     *
+     * @return list<string>|null
+     */
+    private static function cleanRevoke(mixed $revoke): ?array
+    {
+        if (!is_array($revoke) || !array_is_list($revoke) || count($revoke) > 16) {
+            return null;
+        }
+        foreach ($revoke as $k) {
+            $raw = is_string($k) ? base64_decode($k, true) : false;
+            if ($raw === false || strlen($raw) !== 32 || base64_encode($raw) !== $k) {
+                return null;
+            }
+        }
+
+        return $revoke;
+    }
+
+    /**
+     * Add a signed release-key rollover message to the chain, or clear the whole chain with ''.
+     *
+     * @return string|null why not, or null when stored
+     */
+    public function setReleaseRollover(string $json): ?string
+    {
+        if ($json === '') {
+            $this->settings->set(['release_rollover_json' => null]);
+
+            return null;
+        }
+        $m = json_decode($json, true);
+        $key = is_array($m) && is_string($m['new_key'] ?? null) ? base64_decode($m['new_key'], true) : false;
+        $sig = is_array($m) && is_string($m['signature'] ?? null) ? base64_decode($m['signature'], true) : false;
+        // the keys are compared by value by the agent, so they must be the canonical base64 of their bytes (R3: decode, encode, compare)
+        if (!is_array($m) || ($m['kind'] ?? '') !== 'release_key_rollover' || !is_int($m['seq'] ?? null) || $m['seq'] < 1 || $key === false || strlen($key) !== 32 || base64_encode($key) !== $m['new_key'] || $sig === false || strlen($sig) !== 64 || base64_encode($sig) !== $m['signature']) {
+            return 'A rollover message is {"kind":"release_key_rollover","new_key":<base64 of 32 bytes>,"revoke":[<base64 of 32 bytes>, ...],"seq":<positive integer>,"signature":<base64 of 64 bytes>}.';
+        }
+        $revoke = self::cleanRevoke($m['revoke'] ?? []);
+        if ($revoke === null) {
+            return 'revoke is a list of up to 16 base64 public keys of 32 bytes each (an empty list when nothing is revoked), and cannot name new_key.';
+        }
+        if (in_array($m['new_key'], $revoke, true)) {
+            return 'revoke is a list of up to 16 base64 public keys of 32 bytes each (an empty list when nothing is revoked), and cannot name new_key.';
+        }
+        // the message joins the chain (a message with the same seq replaces the earlier one); the last 16 are kept
+        $bySeq = [];
+        foreach ($this->releaseRollovers() as $one) {
+            $bySeq[$one['seq']] = $one;
+        }
+        $bySeq[$m['seq']] = ['kind' => 'release_key_rollover', 'new_key' => $m['new_key'], 'revoke' => $revoke, 'seq' => $m['seq'], 'signature' => $m['signature']];
+        ksort($bySeq);
+        $this->settings->set(['release_rollover_json' => (string) json_encode(array_slice(array_values($bySeq), -16), JSON_UNESCAPED_SLASHES)]);
+
+        return null;
     }
 
     /**
@@ -392,9 +552,10 @@ final class UpdateService
         if (!is_file($path) || (int) filesize($path) !== (int) $row['size_bytes']) {
             return [null, 'The stored agent binary is missing or damaged.'];
         }
-        if (!hash_equals((string) $row['sha256'], (string) hash_file('sha256', $path))) {
+        if (!$this->verifiedBefore($path, (string) $row['sha256']) && !hash_equals((string) $row['sha256'], (string) hash_file('sha256', $path))) {
             return [null, 'The stored agent binary failed its integrity check.'];
         }
+        $this->rememberVerified($path, (string) $row['sha256']);
         if (!is_readable($path)) {
             return [null, 'The stored agent binary could not be read.'];
         }
@@ -409,5 +570,36 @@ final class UpdateService
         }
 
         return [new RmmFileBody($path, (int) $row['size_bytes'], $trailer === '' ? null : $trailer), null];
+    }
+
+    /** @var array<string,string> path => "sha256|stat fingerprint" of a file that was hashed and found intact, in this worker (CORE-DS-72) */
+    private static array $verified = [];
+
+    /** CORE-DS-72: the stat fingerprint (inode, size, mtime, ctime) of a file that was hashed and found intact; any change to the file changes it. */
+    private static function fingerprint(string $path): string
+    {
+        $st = @stat($path);
+
+        return $st === false ? '' : implode(':', [$st['ino'], $st['size'], $st['mtime'], $st['ctime']]);
+    }
+
+    private function verifiedBefore(string $path, string $sha256): bool
+    {
+        $fp = self::fingerprint($path);
+
+        return $fp !== '' && (self::$verified[$path] ?? null) === $sha256 . '|' . $fp;
+    }
+
+    private function rememberVerified(string $path, string $sha256): void
+    {
+        $st = @stat($path);
+        // only a file at least two seconds old is remembered: stat times have a one second resolution, so a change in the same second as the check could keep the fingerprint
+        if ($st === false || time() - max((int) $st['mtime'], (int) $st['ctime']) < 2) {
+            return;
+        }
+        if (count(self::$verified) > 64) {
+            self::$verified = [];
+        }
+        self::$verified[$path] = $sha256 . '|' . self::fingerprint($path);
     }
 }

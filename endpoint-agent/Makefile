@@ -5,24 +5,35 @@ GO        ?= go
 # CI passes VERSION (tag agent-vX.Y.Z -> X.Y.Z, otherwise 0.0.0-dev.<sha>). Locally: make dist VERSION=0.1.0
 VERSION   ?= 0.0.0-dev.$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-LDFLAGS   := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
+# RELEASE_KEYS: comma separated base64 ed25519 release PUBLIC keys compiled in as the update trust anchor (CORE-DS-26); empty = enforcement off.
+RELEASE_KEYS ?=
+# TRUST_KEYS: the instance signing public key(s) that stamp installers for this build (CORE-DS-20); empty = trailer protected by its SHA-256 only.
+TRUST_KEYS ?=
+LDFLAGS   := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X rivetit-agent/internal/update.EmbeddedReleaseKeys=$(RELEASE_KEYS) -X rivetit-agent/internal/embed.EmbeddedTrustKeys=$(TRUST_KEYS)
 BUILDFLAGS:= -trimpath -buildvcs=false
 DIST      := dist
 export CGO_ENABLED := 0
 
-.PHONY: all build windows linux tarballs packages msi msi-image test vet lint fuzz e2e clean checksums dist clean-dist syso devtools sim
+.PHONY: check-go all build windows linux tarballs packages msi msi-image test vet lint fuzz e2e clean checksums dist clean-dist syso devtools sim
 
 all: vet test build
 
 build: windows linux
 
-windows:
+# CORE-25: refuse to build with a Go older than the go.mod `go` line (stdlib security fixes). The golang:* images set GOTOOLCHAIN=local and
+# do not switch toolchains, hence this explicit check.
+GO_MIN := $(shell awk '/^go [0-9]/{print $$2; exit}' go.mod)
+check-go:
+	@v=$$($(GO) env GOVERSION | sed 's/^go//'); \
+	  [ "$$(printf '%s\n%s\n' "$(GO_MIN)" "$$v" | sort -V | head -1)" = "$(GO_MIN)" ] || { echo "error: Go $$v is older than the go.mod floor go$(GO_MIN); use a newer toolchain (docker pull golang:$(GO_MIN))" >&2; exit 1; }
+
+windows: check-go
 	mkdir -p $(DIST)
 	GOOS=windows GOARCH=amd64 $(GO) build $(BUILDFLAGS) -ldflags '$(LDFLAGS)' -o $(DIST)/rivetit-agent-windows-amd64.exe .
 	GOOS=windows GOARCH=arm64 $(GO) build $(BUILDFLAGS) -ldflags '$(LDFLAGS)' -o $(DIST)/rivetit-agent-windows-arm64.exe .
 
 # Linux (systemd) agent: static binaries, no cgo.
-linux:
+linux: check-go
 	mkdir -p $(DIST)
 	GOOS=linux GOARCH=amd64 $(GO) build $(BUILDFLAGS) -ldflags '$(LDFLAGS)' -o $(DIST)/rivetit-agent-linux-amd64 .
 	GOOS=linux GOARCH=arm64 $(GO) build $(BUILDFLAGS) -ldflags '$(LDFLAGS)' -o $(DIST)/rivetit-agent-linux-arm64 .

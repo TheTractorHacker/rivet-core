@@ -293,4 +293,34 @@ final class SoftwareTest extends RmmTestCase
         $this->assertSame(['z@9'], $this->current());
         $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_device_software WHERE device_id = $first"));
     }
+
+    /** CORE-DS-43: a device's software rows and change history are bounded; a full report past the budget is trimmed, not refused. */
+    public function testSoftwareRowsAndHistoryOfOneDeviceAreBounded(): void
+    {
+        $this->linked();
+        $this->assertSame(200, $this->send(self::full([['dpkg', 'base', '1.0']]))[0]);
+        $dev = $this->dev;
+        // plain multi-row inserts: no sequence engine or recursive CTE, so this runs on MariaDB and MySQL alike
+        for ($from = 1; $from <= 20000; $from += 1000) {
+            $h = [];
+            $r = [];
+            for ($k = $from; $k < $from + 1000 && $k <= 20000; $k++) {
+                $h[] = "($dev, 'k$k', 'x', 'dpkg', 'installed', NULL, '1', '', UTC_TIMESTAMP())";
+                if ($k <= 19990) {
+                    $r[] = "($dev, 'r$k', 'old$k', 'dpkg', '1', '', NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())";
+                }
+            }
+            $this->h->q('INSERT INTO rmm_software_history (device_id, software_key, name, source, change_type, old_version, new_version, publisher, occurred_at) VALUES ' . implode(',', $h));
+            if ($r !== []) {
+                $this->h->q('INSERT INTO rmm_device_software (device_id, software_key, name, source, version, publisher, installed_on, first_seen_at, last_seen_at, removed_at) VALUES ' . implode(',', $r));
+            }
+        }
+        $list = [['dpkg', 'base', '1.0']];
+        for ($i = 0; $i < 100; $i++) {
+            $list[] = ['dpkg', "new$i", '1'];
+        }
+        $this->assertSame(200, $this->send(self::full($list))[0]);
+        $this->assertLessThanOrEqual(20000, (int) $this->h->one("SELECT COUNT(*) FROM rmm_device_software WHERE device_id = $dev"));
+        $this->assertLessThanOrEqual(20000, (int) $this->h->one("SELECT COUNT(*) FROM rmm_software_history WHERE device_id = $dev"), 'no history row past the budget');
+    }
 }

@@ -13,13 +13,16 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	pathpkg "path"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"rivetit-agent/internal/api"
 	"rivetit-agent/internal/store"
+	"rivetit-agent/internal/strictjson"
 )
 
 // The extended check types (RMM Phase 3). Every one reports a number in api.CheckResult.Value where it measures one (latency in ms,
@@ -120,7 +123,26 @@ func (c *capBuf) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// systemTool maps the bare names of the Windows tools the checks run to their absolute path under %SystemRoot%\System32, so a directory on the
+// service's PATH that a user can write to is never searched (CORE-DS-18). Anything else, and every other OS, is returned unchanged.
+func systemTool(goos, systemRoot, name string) string {
+	if goos != "windows" || systemRoot == "" {
+		return name
+	}
+	sys32 := strings.TrimRight(systemRoot, `\/`) + `\System32\`
+	switch strings.ToLower(name) {
+	case "powershell.exe", "powershell":
+		return sys32 + `WindowsPowerShell\v1.0\powershell.exe`
+	case "tasklist", "tasklist.exe":
+		return sys32 + "tasklist.exe"
+	case "ping", "ping.exe":
+		return sys32 + "ping.exe"
+	}
+	return name
+}
+
 func execCapped(ctx context.Context, timeout time.Duration, name string, args ...string) (string, int, error) {
+	name = systemTool(runtime.GOOS, os.Getenv("SystemRoot"), name)
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
@@ -159,11 +181,19 @@ func minimalEnv() []string {
 }
 
 func readFileCapped(path string) ([]byte, error) {
-	f, err := os.Open(path)
+	// O_NONBLOCK: opening a FIFO must not wait for a writer (CORE-DS-3). Only a regular file is read; a device, FIFO or socket is refused.
+	f, err := os.OpenFile(path, os.O_RDONLY|openNonblock, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return nil, errors.New("not a regular file")
+	}
+	// /proc/kmsg and friends report as regular files, are pollable (so O_NONBLOCK does not stop the read parking) and consume kernel data (CR1)
+	if onPseudoFS(f) {
+		return nil, errors.New("not a file on a data file system")
+	}
 	return io.ReadAll(io.LimitReader(f, 1<<20))
 }
 
@@ -285,7 +315,7 @@ func unmarshalParams(raw json.RawMessage, v any) error {
 	if len(raw) == 0 {
 		return nil
 	}
-	return json.Unmarshal(raw, v)
+	return strictjson.Unmarshal(raw, v)
 }
 
 func (c *Collector) hardTimeout(d time.Duration) time.Duration {
@@ -581,6 +611,10 @@ func (c *Collector) checkHTTP(ctx context.Context, key string, raw json.RawMessa
 		p.TimeoutMS = 10000
 	}
 	if p.VerifyTLS != nil {
+		if !*p.VerifyTLS && !checkIsSigned(ctx) {
+			// switching TLS verification off is only honoured from a check definition whose signature verified (CORE-DS-16)
+			return res(key, Unknown, "verify_tls:false needs a signed check definition")
+		}
 		verify = *p.VerifyTLS
 	}
 	if p.FollowRedirec != nil {
@@ -728,6 +762,14 @@ func safeCertPath(p string) bool {
 	}
 	for _, r := range p {
 		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	// kernel pseudo file systems are never certificate stores (CORE-DS-3, review CR1)
+	// compared on the cleaned path, so "/./proc/kmsg" and "/etc/../proc/kmsg" are refused too (review CRR-extra); ".." is already refused above
+	cp := pathpkg.Clean(p)
+	for _, d := range []string{"/proc", "/sys", "/dev"} {
+		if cp == d || strings.HasPrefix(cp, d+"/") {
 			return false
 		}
 	}

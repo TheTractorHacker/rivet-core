@@ -17,13 +17,16 @@ use RivetCore\Rmm\Support\Sql;
  *  - `patch.install_failed`: fail while an update the module tried to install is still marked failed (it recovers when the update installs, the device stops listing it
  *    or an administrator declines it). Only devices that ever failed get this check.
  *
+ *  - `patch.feature_version` (Windows only, 1.0.0-rc.65): fail while the device runs a feature version NEWER than the one its patch policy holds it at (a named version, or what Core
+ *    pinned for `hold`); ok again when it does not. Devices whose policy holds nothing get no such check (an old one recovers).
+ *
  * Nothing here runs while the `patching` switch is off.
  *
  * @api
  */
 final class PatchComplianceService
 {
-    public function __construct(private readonly Sql $sql, private readonly RmmSettings $settings, private readonly CheckEvaluator $checks)
+    public function __construct(private readonly Sql $sql, private readonly RmmSettings $settings, private readonly CheckEvaluator $checks, private readonly ?PatchPolicyStore $policies = null)
     {
     }
 
@@ -83,7 +86,39 @@ final class PatchComplianceService
                 $results[] = ['key' => PatchProtocol::CHECK_INSTALL_FAILED, 'status' => 'ok', 'detail' => 'No update is marked failed.', 'at' => $at];
             }
         }
+        foreach ($this->featureVersionResults($dev, $failN, $okN, $at) as $r) {
+            $results[] = $r;
+        }
         $this->checks->apply($dev, $results);
+
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $dev
+     * @return list<array{key:string,status:string,detail:string,at:string}>
+     */
+    private function featureVersionResults(array $dev, int $failN, int $okN, string $at): array
+    {
+        if ($this->policies === null || ($dev['os'] ?? '') !== 'windows') {
+            return [];
+        }
+        $row = $this->sql->one('SELECT ids_json FROM rmm_patch_jobs WHERE job_id = ?', [PatchProtocol::wuStateRowId((int) $dev['device_id'])]);
+        $state = $row === null ? null : WindowsUpdatePlan::cleanState(json_decode((string) $row['ids_json'], true));
+        $target = $state === null ? null : WindowsUpdatePlan::targetVersion($this->policies->effectiveFor($dev)['windows'], $state);
+        $running = $state['feature_version'] ?? '';
+        $out = [];
+        if ($target !== null && $running !== '' && PatchProtocol::compareFeatureVersions($running, $target) > 0) {
+            $detail = "The device runs Windows $running but its patch policy holds it at $target. Move the target deliberately, or roll the device back.";
+            for ($i = 0; $i < $failN; ++$i) {
+                $out[] = ['key' => PatchProtocol::CHECK_FEATURE_VERSION, 'status' => 'fail', 'detail' => $detail, 'at' => $at];
+            }
+        } elseif ($target !== null || $this->sql->one('SELECT 1 AS x FROM endpoint_agent_checks WHERE device_id = ? AND check_key = ? AND status IN (\'warn\',\'fail\')', [(int) $dev['device_id'], PatchProtocol::CHECK_FEATURE_VERSION]) !== null) {
+            $detail = $target === null ? 'The patch policy holds no feature version for this device.' : ($running === '' ? "The device is held at $target." : "The device runs Windows $running, held at $target.");
+            for ($i = 0; $i < $okN; ++$i) {
+                $out[] = ['key' => PatchProtocol::CHECK_FEATURE_VERSION, 'status' => 'ok', 'detail' => $detail, 'at' => $at];
+            }
+        }
 
         return $out;
     }

@@ -527,7 +527,8 @@ final class AutoInstallTest extends DeployTestCase
         $this->assertSame(200, $this->auto($p, ['scope' => 'all'], $this->deployer)[0]);
         $this->assertSame(403, $this->param($p, 'org_key', 'abcdef', 'global', 0, $this->viewer));
         $this->assertSame(403, $this->param($p, 'org_key', 'abcdef', 'global', 0, $this->scoped));
-        $this->assertSame(200, $this->param($p, 'org_key', 'abcdef', 'global', 0, $this->tech));
+        $this->assertSame(403, $this->param($p, 'org_key', 'abcdef', 'global', 0, $this->tech), 'CORE-15: the package installs by itself now (policy: all), so a manage-only user cannot change what feeds its command');
+        $this->assertSame(200, $this->param($p, 'org_key', 'abcdef', 'global', 0, $this->deployer));
         $this->assertSame(200, $this->param($p, 'org_key', 'bclient', 'client', $this->h->clientB, $this->scoped), 'a restricted user may set the value for their own client');
         $this->assertSame(404, $this->param($p, 'org_key', 'aclient', 'client', $this->h->clientA, $this->scoped), 'and not for another');
         $this->assertSame(200, $this->api('GET', ['software_autoinstall'], $this->viewer)[0]);
@@ -642,6 +643,9 @@ final class AutoInstallTest extends DeployTestCase
         // rc.31 review F7: an intact file is hashed once; the stat fingerprint of that verified state is kept and later requests do not re-hash it
         $this->assertSame('', (string) $this->h->one('SELECT verified_fp FROM rmm_hosted_files LIMIT 1'));
         $this->assertSame(200, $get());
+        $body = $this->h->module->hostedFiles()->open($job['job_id'], $secret);
+        $this->assertNotNull($body);
+        $this->assertNull($body->sha256, 'CORE-DS-36: open() already verified the file, so the emitter must not hash up to 512 MiB a second time');
         $this->assertSame('', (string) $this->h->one('SELECT verified_fp FROM rmm_hosted_files LIMIT 1'), 'a file younger than two seconds is not remembered (stat times are whole seconds)');
         sleep(2);
         $this->assertSame(200, $get());
@@ -706,6 +710,233 @@ final class AutoInstallTest extends DeployTestCase
         $this->assertSame(200, $this->auto((int) $r['package_id'], ['scope' => 'all'])[0]);
         $this->assertSame(200, $this->api('DELETE', ['software_packages', (string) $r['package_id']], $this->admin)[0]);
         $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_package_params') + (int) $this->h->one('SELECT COUNT(*) FROM rmm_package_auto'));
+    }
+
+    // ------------------------------------------------------------------ CORE-15: what an assigned package executes
+
+    /** Vendor parameters fill the install command of every install of the package: changing them is a deployment for a package that installs by itself. */
+    public function testVendorParametersOfAPackageThatInstallsByItselfNeedTheDeployAbility(): void
+    {
+        $p = $this->edr();
+        $this->assertSame(200, $this->param($p, 'org_key', 'Before1234', 'global', 0, $this->tech), 'nothing installs it yet: manage is enough');
+        $this->assertSame(200, $this->auto($p, ['scope' => 'all'])[0]);
+        $set = fn (object $by, string $scope = 'global', int $id = 0): int => $this->api('PUT', ['software_params', (string) $p], $by, ['name' => 'org_key', 'value' => 'Attacker99', 'scope' => $scope, 'scope_id' => $id])[0];
+        $clear = fn (object $by): int => $this->api('DELETE', ['software_params', (string) $p], $by, ['name' => 'org_key', 'scope' => 'global', 'scope_id' => 0])[0];
+        $this->assertSame(403, $set($this->tech));
+        $this->assertSame(403, $set($this->tech, 'client', $this->h->clientA));
+        $this->assertSame(403, $clear($this->tech));
+        $this->assertSame(200, $set($this->deployer), 'the deploy ability may');
+        $this->assertSame(200, $clear($this->deployer));
+        // an assignment (pinned or not) counts the same way
+        $q = $this->package('Assigned EDR');
+        $v = $this->exe($q);
+        $this->assertSame(200, $this->param($q, 'account_key', self::ACCT, 'global', 0, $this->tech));
+        $this->assertSame(201, $this->assign($q, 'global', 0, 'install', $v)[0]);
+        $this->assertSame(403, $this->param($q, 'account_key', 'Attacker99', 'global', 0, $this->tech));
+        // a two-person package that installs by itself cannot be re-parameterised by one person at all
+        $tp = $this->package('Careful EDR', true);
+        $this->exe($tp);
+        $this->assertSame(202, $this->assign($tp, 'client', $this->h->clientA)[0]);
+        $this->assertSame(409, $this->param($tp, 'account_key', 'Attacker99', 'global', 0, $this->deployer));
+    }
+
+    /**
+     * CORE-DS-1: an app ticked on a still-usable installer (or a queued per-device plan) installs the NEWEST version, resolved at install time, so adding a version
+     * or changing a vendor parameter of such a package is a deployment too.
+     */
+    public function testAppsTickedOnAnInstallerCountAsInstallingByThemselves(): void
+    {
+        $p = $this->edr('Ticked EDR');
+        $body = fn (string $v): array => ['version' => $v, 'os' => 'windows', 'fmt' => 'exe', 'url' => 'https://' . self::HOST . "/edr/$v.exe", 'sha256' => self::SHA, 'size_bytes' => 4096,
+            'silent_args' => self::TPL, 'detect_kind' => 'uninstall_name', 'detect_value' => 'Acme EDR'];
+        $route = ['software_packages', (string) $p, 'versions'];
+        $setParam = fn (object $by): int => $this->api('PUT', ['software_params', (string) $p], $by, ['name' => 'org_key', 'value' => 'Attacker99', 'scope' => 'global', 'scope_id' => 0])[0];
+        $this->assertSame(201, $this->api('POST', $route, $this->tech, $body('1.1'))[0], 'nothing ticked yet: manage is enough');
+        $token = $this->installerToken([$p]);
+        $this->assertStringStartsNotWith('ERR:', $token);
+        $tokenId = (int) $this->h->one('SELECT token_id FROM rmm_installer_apps WHERE package_id = ' . $p);
+        $this->assertSame(403, $this->api('POST', $route, $this->tech, $body('99.0'))[0], 'a usable installer carries the app: manage alone cannot move what it installs');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_package_versions WHERE package_id = $p AND version = '99.0'"));
+        $this->assertSame(403, $setParam($this->tech));
+        $this->assertSame(200, $setParam($this->deployer), 'the deploy ability may');
+        // a revoked, expired or used-up installer no longer installs anything
+        foreach (["revoked_at = '2020-01-01 00:00:00'", "expires_at = '2020-01-01 00:00:00'", 'use_count = max_uses'] as $i => $kill) {
+            $this->h->q("UPDATE endpoint_agent_enrollment_tokens SET $kill WHERE token_id = $tokenId");
+            $this->assertSame(201, $this->api('POST', $route, $this->tech, $body("2.$i"))[0], $kill);
+            $this->h->q("UPDATE endpoint_agent_enrollment_tokens SET revoked_at = NULL, expires_at = '2099-01-01 00:00:00', use_count = 0 WHERE token_id = $tokenId");
+        }
+        // a queued per-device plan (an enrolled device that is not ready yet) counts the same way
+        $this->h->q("UPDATE endpoint_agent_enrollment_tokens SET revoked_at = '2020-01-01 00:00:00' WHERE token_id = $tokenId");
+        $this->assertSame(201, $this->api('POST', $route, $this->tech, $body('3.0'))[0]);
+        $this->h->q("INSERT INTO rmm_device_apps (device_id, package_id, client_id, source, status, planned_at, updated_at) VALUES (9001, $p, {$this->h->clientA}, 'chosen', 'queued', UTC_TIMESTAMP(), UTC_TIMESTAMP())");
+        $this->assertSame(403, $this->api('POST', $route, $this->tech, $body('4.0'))[0]);
+        $this->h->q('DELETE FROM rmm_device_apps WHERE device_id = 9001');
+        $this->assertSame(201, $this->api('POST', $route, $this->tech, $body('4.0'))[0]);
+    }
+
+    /** CORE-DS-64: the vendor-parameter values are frozen (as a digest) in a two-person run request: changing one afterwards stops the approved run. */
+    public function testAParameterChangedAfterATwoPersonRunWasAskedForIsNotApplied(): void
+    {
+        $p = $this->package('Careful EDR', true);
+        $this->exe($p);
+        $this->assertSame(200, $this->param($p, 'account_key', self::ACCT, 'global', 0, $this->tech));
+        $this->assertSame(200, $this->param($p, 'org_key', self::ORG, 'global', 0, $this->tech), 'no assignment: manage may still prepare the values');
+        [$dev, $tok] = $this->enrollNew('W-DS64');
+        [$c, $j] = $this->api('POST', [(string) $dev, 'deployments', 'run'], $this->deployer, ['package_id' => $p, 'mode' => 'run', 'confirm' => true]);
+        $this->assertSame([202, 'pending_approval'], [$c, $j['state']], json_encode($j));
+        $aid = (int) $j['approval_id'];
+        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_approvals WHERE approval_id = $aid AND request_json LIKE '%args_sha256%'"), 'the digest is frozen with the request');
+        $this->assertStringNotContainsString(self::ORG, (string) $this->h->one("SELECT request_json FROM rmm_approvals WHERE approval_id = $aid"));
+        // somebody changes where the installer will enrol, after the request and before the approval
+        $this->assertSame(200, $this->param($p, 'org_key', 'Attacker99', 'global', 0, $this->tech));
+        $r = $this->h->module->scriptActions()->decide($this->second, $aid, true);
+        $this->assertSame([], array_values(array_filter($this->offered($tok), static fn (array $x): bool => $x['type'] === 'software_install')), 'nothing was queued: ' . $r->message);
+        // an unchanged value goes through
+        [$c, $j] = $this->api('POST', [(string) $dev, 'deployments', 'run'], $this->deployer, ['package_id' => $p, 'mode' => 'run', 'confirm' => true]);
+        $this->assertSame(202, $c, json_encode($j));
+        $this->assertTrue($this->h->module->scriptActions()->decide($this->second, (int) $j['approval_id'], true)->ok);
+        $this->assertNotNull($this->jobOf($tok, $dev));
+    }
+
+    /** CORE-DS-64, fail closed: a request made while the parameters did not resolve freezes that fact; approving after they resolve is a change. */
+    public function testARunRequestMadeBeforeTheParametersResolvedIsNotApprovedAfterTheyDo(): void
+    {
+        $p = $this->package('Unset EDR', true);
+        $vid = $this->exe($p);
+        $this->assertSame(200, $this->param($p, 'account_key', self::ACCT, 'global', 0, $this->tech));
+        [$dev, $tok] = $this->enrollNew('W-DS64B');
+        $devRow = $this->h->module->devices()->find($dev);
+        $ver = $this->h->module->packageCatalog()->version($vid) ?? [];
+        $this->assertSame('unresolved', $this->h->module->deployService()->argsDigest($devRow, $ver), 'org_key is not set yet');
+        $ap = $this->h->module->deployApprovals()->requestRun($devRow, $ver, 'install', 11, 30);
+        $aid = (int) $ap['approval_id'];
+        $this->assertStringContainsString('"args_sha256":"unresolved"', (string) $this->h->one("SELECT request_json FROM rmm_approvals WHERE approval_id = $aid"));
+        $this->assertSame(200, $this->param($p, 'org_key', 'Attacker99', 'global', 0, $this->tech));
+        $this->h->module->scriptActions()->decide($this->second, $aid, true);
+        $this->assertNull($this->jobOf($tok, $dev), 'nothing was queued');
+        // a request that carries no digest at all (made before the check existed) is refused for a version with placeholders
+        $ap = $this->h->module->deployApprovals()->requestRun($devRow, $ver, 'install', 11, 30);
+        $aid = (int) $ap['approval_id'];
+        $this->h->q("UPDATE rmm_approvals SET request_json = JSON_REMOVE(request_json, '$.args_sha256') WHERE approval_id = $aid");
+        $this->h->module->scriptActions()->decide($this->second, $aid, true);
+        $this->assertNull($this->jobOf($tok, $dev));
+    }
+
+    /**
+     * CR4 (CORE-DS-1): a ticked app whose installer token is spent and whose row is 'installing' still follows the newest version when the job is lost or locked and the row
+     * goes back to 'queued', so the gate counts it, and the retry installs the version it was approved at.
+     */
+    public function testAnAppThatIsInstallingKeepsTheGateAndRetriesTheVersionItWasApprovedAt(): void
+    {
+        $p = $this->edr('Retry EDR');
+        $v1 = (int) $this->h->one("SELECT version_id FROM rmm_package_versions WHERE package_id = $p");
+        $body = fn (string $v): array => ['version' => $v, 'os' => 'windows', 'fmt' => 'exe', 'url' => 'https://' . self::HOST . "/edr/$v.exe", 'sha256' => self::SHA, 'size_bytes' => 4096,
+            'silent_args' => self::TPL, 'detect_kind' => 'uninstall_name', 'detect_value' => 'Acme EDR'];
+        $route = ['software_packages', (string) $p, 'versions'];
+        $plain = $this->installerToken([$p]);
+        [$dev, $tok] = $this->enrollNew('W-RETRY', $plain);
+        $this->h->q('UPDATE endpoint_agent_enrollment_tokens SET use_count = max_uses');   // a single-use installer is spent
+        $this->pass();
+        $job = $this->jobOf($tok, $dev);
+        $this->assertNotNull($job);
+        $this->assertSame('installing', $this->h->one("SELECT status FROM rmm_device_apps WHERE device_id = $dev AND package_id = $p"));
+        $this->assertSame(403, $this->api('POST', $route, $this->tech, $body('99.0'))[0], 'an installing row still follows the newest version');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_package_versions WHERE package_id = $p AND version = '99.0'"));
+        // a deploy-level user may add one; the retry must still install the version this row was approved at
+        $v2 = (int) $this->api('POST', $route, $this->deployer, $body('2.0'))[1]['version_id'];
+        $this->assertGreaterThan($v1, $v2);
+        $this->finish($tok, $job, 'locked');   // msiexec 1618: the row goes back to queued
+        $this->assertSame('queued', $this->h->one("SELECT status FROM rmm_device_apps WHERE device_id = $dev AND package_id = $p"));
+        $this->h->q("UPDATE rmm_device_apps SET updated_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY) WHERE device_id = $dev");
+        $this->h->q('UPDATE rmm_package_jobs SET idem_key = NULL');   // the hourly de-duplication of the first attempt
+        $r = $this->pass();
+        $retry = $this->jobOf($tok, $dev);
+        $this->assertNotNull($retry, json_encode([$r, $this->h->rows("SELECT status, reason, attempts, version_id FROM rmm_device_apps WHERE device_id = $dev")]));
+        $this->assertSame($v1, (int) $this->h->one("SELECT version_id FROM rmm_package_jobs WHERE job_id = '{$retry['job_id']}'"), 'the version the tick was approved at, not the newest');
+    }
+
+    /** CR14: a two-person package that is only ticked on an installer gets an error that names the way out (there is no assignment to pin). */
+    public function testATwoPersonPackageThatIsOnlyTickedExplainsTheWayOut(): void
+    {
+        $p = $this->package('Careful ticked', true);
+        $this->exe($p);
+        $this->assertSame(200, $this->param($p, 'account_key', self::ACCT));
+        $this->assertSame(200, $this->param($p, 'org_key', self::ORG));
+        $this->assertStringNotContainsString('ERR:', $this->installerToken([$p]));
+        $body = ['version' => '2.0', 'os' => 'windows', 'fmt' => 'exe', 'url' => 'https://' . self::HOST . '/edr/2.exe', 'sha256' => self::SHA, 'size_bytes' => 4096, 'silent_args' => self::TPL, 'detect_kind' => 'uninstall_name', 'detect_value' => 'x'];
+        [$c, $j] = $this->api('POST', ['software_packages', (string) $p, 'versions'], $this->deployer, $body);
+        $this->assertSame(409, $c);
+        $this->assertStringContainsString('revoke those installers', $j['error']);
+        $this->assertStringNotContainsString('Pin the assignment', $j['error']);
+        [$c, $j] = $this->api('PUT', ['software_params', (string) $p], $this->deployer, ['name' => 'org_key', 'value' => 'Other12345', 'scope' => 'global', 'scope_id' => 0]);
+        $this->assertSame(409, $c);
+        $this->assertStringContainsString('revoke those installers', $j['error']);
+    }
+
+    /** CR15: an approval refused because a parameter changed puts the planned app back in the queue (a new request is made), instead of leaving it in 'approval' and blocking the device. */
+    public function testAnApprovalRefusedForChangedParametersDoesNotStallTheDevice(): void
+    {
+        $a = $this->package('Two person first', true);
+        $this->exe($a);
+        $this->assertSame(200, $this->param($a, 'account_key', self::ACCT));
+        $this->assertSame(200, $this->param($a, 'org_key', self::ORG));
+        $b = $this->edr('Second app');
+        $this->assertSame(200, $this->auto($a, ['scope' => 'off', 'install_order' => 10])[0]);
+        $this->assertSame(200, $this->auto($b, ['scope' => 'off', 'install_order' => 20])[0]);
+        $plain = $this->installerToken([$a, $b]);
+        $this->assertStringNotContainsString('ERR:', $plain);
+        [$dev, $tok] = $this->enrollNew('W-STALL', $plain);
+        $this->pass();
+        $row = $this->h->rows("SELECT status, reason FROM rmm_device_apps WHERE device_id = $dev AND package_id = $a")[0];
+        $this->assertSame('approval', $row['status'], json_encode($row));
+        $aid = (int) $this->h->one("SELECT approval_id FROM rmm_approvals WHERE kind = 'software' ORDER BY approval_id DESC LIMIT 1");
+        $this->h->module->packageParams()->set($a, 'global', 0, 'org_key', 'Rotated12345', 11);   // a rotation after the request (through the service: the API gate refuses it for a ticked two-person package)
+        $this->h->module->scriptActions()->decide($this->second, $aid, true);
+        $this->assertSame('queued', $this->h->one("SELECT status FROM rmm_device_apps WHERE device_id = $dev AND package_id = $a"), 'back in the queue, not stuck in approval');
+        $this->pass();   // a fresh request is made with the new digest
+        $this->assertSame('approval', $this->h->one("SELECT status FROM rmm_device_apps WHERE device_id = $dev AND package_id = $a"));
+        $this->assertSame(2, (int) $this->h->one("SELECT COUNT(*) FROM rmm_approvals WHERE kind = 'software'"));
+    }
+
+    /** The starter-template route adds a version to an existing package: the same gate as DeployActions::addVersion. */
+    public function testAddingAVersionThroughATemplateIsGatedLikeAddingOne(): void
+    {
+        $p = $this->package('Tpl');
+        $this->exe($p);
+        $in = fn (string $v): array => ['package_id' => $p, 'version' => $v, 'url' => 'https://' . self::HOST . "/t/$v/setup.exe", 'sha256' => self::SHA, 'size_bytes' => 5000, 'detect_kind' => 'uninstall_name', 'detect_value' => 'Acme'];
+        $this->assertSame(201, $this->api('POST', ['software_templates', 'custom_exe'], $this->tech, $in('1.1'))[0], 'not followed yet');
+        $this->assertSame(201, $this->assign($p, 'global')[0]);
+        $this->assertSame(403, $this->api('POST', ['software_templates', 'custom_exe'], $this->tech, $in('99.0'))[0]);
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_package_versions WHERE package_id = $p AND version = '99.0'"));
+        $this->assertSame(201, $this->api('POST', ['software_templates', 'custom_exe'], $this->deployer, $in('2.0'))[0]);
+    }
+
+    /** An upload is a new file with its own id: it cannot replace the installer behind a version, and only a (gated) new version can point at it. */
+    public function testAnUploadCannotChangeTheInstallerBehindAnExistingVersion(): void
+    {
+        $exe = 'MZ' . random_bytes(5000);
+        $tmp = tempnam(sys_get_temp_dir(), 'ai_');
+        file_put_contents($tmp, $exe);
+        $a = $this->h->module->autoInstallActions();
+        $f1 = $a->uploadFile($this->admin, $tmp, 'setup.exe')->data;
+        $p = $this->package('Hosted live');
+        $body = static fn (string $v, int $file): array => ['version' => $v, 'os' => 'windows', 'fmt' => 'exe', 'hosted_file_id' => $file, 'silent_args' => '/S', 'detect_kind' => 'uninstall_name', 'detect_value' => 'Hosted'];
+        $v1 = (int) $this->api('POST', ['software_packages', (string) $p, 'versions'], $this->admin, $body('1.0', (int) $f1['file_id']))[1]['version_id'];
+        $this->assertSame(201, $this->assign($p, 'global')[0]);
+        $before = $this->h->rows("SELECT * FROM rmm_package_versions WHERE version_id = $v1");
+        $beforeFile = $this->h->rows("SELECT * FROM rmm_hosted_files WHERE file_id = {$f1['file_id']}");
+        // a manage-only user uploads the same name with different bytes
+        file_put_contents($tmp, 'MZ' . random_bytes(6000));
+        $r = $a->uploadFile($this->tech, $tmp, 'setup.exe');
+        @unlink($tmp);
+        $this->assertSame(201, $r->http, 'an upload alone is harmless');
+        $this->assertNotSame($f1['file_id'], $r->data['file_id']);
+        $this->assertSame($before, $this->h->rows("SELECT * FROM rmm_package_versions WHERE version_id = $v1"), 'the version still names the old file and hash');
+        $this->assertSame($beforeFile, $this->h->rows("SELECT * FROM rmm_hosted_files WHERE file_id = {$f1['file_id']}"), 'the old file row is untouched');
+        $this->assertSame($f1['sha256'], $this->h->module->deployService()->paramsFor($this->h->module->devices()->find($this->linked('HOSTED-1')[0]) ?? [], $this->h->module->packageCatalog()->version($v1) ?? [], 'install', 'run', 30, JobUuid::other())['params']['sha256'], 'the job pins the original hash');
+        // pointing a version at the new file is the gated step
+        $this->assertSame(403, $this->api('POST', ['software_packages', (string) $p, 'versions'], $this->tech, $body('2.0', (int) $r->data['file_id']))[0]);
+        $this->assertSame(409, $this->api('DELETE', ['software_files', (string) $f1['file_id']], $this->tech)[0], 'a file a version uses cannot be deleted');
     }
 
     // ------------------------------------------------------------------ migration

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"rivetit-agent/internal/strictjson"
 )
 
 // Device is the enrollment identity block.
@@ -52,7 +54,8 @@ type CheckSpec struct {
 func (c *CheckSpec) UnmarshalJSON(b []byte) error {
 	type plain CheckSpec
 	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	// Exact-case members only: the server validated "key"/"params" as spelled, and encoding/json would let a later "Key" win (CORE-DS-8, CORE-DS-17).
+	if err := strictjson.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*c = CheckSpec(p)
@@ -84,6 +87,9 @@ type ServerConfig struct {
 	// the same reason, and because its signature covers the exact object: the
 	// agent verifies it before it reads a single registry value or file.
 	Change json.RawMessage `json:"change,omitempty"`
+	// SignedConfig is the version of the signing contract the server follows: >= 1 means every check definition and config.logs is signed, so the agent
+	// refuses unsigned ones from then on (CORE-DS-16). Absent (an older server) = tolerate unsigned non-script checks and unsigned logs.
+	SignedConfig int `json:"signed_config,omitempty"`
 	// Hypervisor is the signed hypervisor-collection configuration (kept raw like Change).
 	Hypervisor json.RawMessage `json:"hypervisor,omitempty"`
 }
@@ -283,18 +289,38 @@ type UpdateManifest struct {
 	SHA256     string `json:"sha256"`
 	Signature  string `json:"signature"`
 	MinVersion string `json:"min_version"`
+	// Additive (CORE-DS-26): the platform the package is for and a detached signature by the OFFLINE release key over the domain-separated
+	// manifest {kind, version, os, arch, sha256, min_version}. An agent that knows a release key requires them.
+	OS               string `json:"os,omitempty"`
+	Arch             string `json:"arch,omitempty"`
+	ReleaseSignature string `json:"release_signature,omitempty"`
+}
+
+// ReleaseRollover moves the agents' trust to a new release key: signed by a release key the agent already trusts (CORE-DS-26).
+type ReleaseRollover struct {
+	Kind   string `json:"kind"`
+	NewKey string `json:"new_key"`
+	// Revoke lists release public keys (base64) that stop being trusted once the rollover is applied; it is part of the signed message (review CRR-1).
+	Revoke    []string `json:"revoke,omitempty"`
+	Seq       int      `json:"seq"`
+	Signature string   `json:"signature"`
 }
 
 type CheckinResponse struct {
-	OK            bool            `json:"ok"`
-	NextCheckInS  int             `json:"next_check_in_s"`
-	JobsPending   *int            `json:"jobs_pending"`
-	Config        *ServerConfig   `json:"config"`
-	Update        *UpdateManifest `json:"update"`
-	ServerTime    ServerTime      `json:"server_time"`
-	SigningKeyID  string          `json:"signing_key_id"`
-	Status        string          `json:"status"`
-	MatchedAssetI *int64          `json:"matched_asset_id"` // optional extension
+	OK           bool            `json:"ok"`
+	NextCheckInS int             `json:"next_check_in_s"`
+	JobsPending  *int            `json:"jobs_pending"`
+	Config       *ServerConfig   `json:"config"`
+	Update       *UpdateManifest `json:"update"`
+	// ReleaseRollover is a signed release key rollover message (additive, CORE-DS-26); the agent applies it with or without an update offer.
+	ReleaseRollover *ReleaseRollover `json:"release_rollover,omitempty"`
+	// ReleaseRollovers is the chain of rollover messages since the oldest sequence an agent may still need, in any order; the agent applies the ones above
+	// its own sequence one by one, in order, so an agent that missed one catches up (review R3-2).
+	ReleaseRollovers []ReleaseRollover `json:"release_rollovers,omitempty"`
+	ServerTime       ServerTime        `json:"server_time"`
+	SigningKeyID     string            `json:"signing_key_id"`
+	Status           string            `json:"status"`
+	MatchedAssetI    *int64            `json:"matched_asset_id"` // optional extension
 	// Features the server offers this device (e.g. "software_inventory"); Resync
 	// asks for a full re-send of a data set (e.g. "software"). Both optional.
 	Features []string `json:"features,omitempty"`

@@ -30,7 +30,41 @@ final class ApprovedRunExecutor
         private readonly BulkRunner $bulk,
         private readonly ?RmmTenancyInterface $tenancy,
         private readonly RmmAuditInterface $audit,
+        private readonly ?\RivetCore\Rmm\Authz\RmmAuthorizer $authz = null,
+        private readonly ?TargetResolver $targets = null,
     ) {
+    }
+
+    /**
+     * CORE-DS-44: the request froze the number of devices its target reached when it was asked for. A target that reaches MORE devices now (a group or tag that
+     * gained members, a site that grew) is not what the second person saw: why not, or null when it is fine (or the request froze no count: made before this check).
+     *
+     * @param array<string,mixed> $request
+     * @param array{script:array<string,mixed>,version:array<string,mixed>,schema:list<array<string,mixed>>} $loaded
+     */
+    public function targetChanged(array $request, int $requesterId, array $loaded): ?string
+    {
+        if ($this->targets === null || !is_int($request['device_count'] ?? null) || !is_array($request['target'] ?? null)) {
+            return null;
+        }
+        $t = $request['target'];
+        $visible = $this->tenancy === null ? null : $this->tenancy->visibleClientIds($requesterId);
+        $platforms = ScriptLanguage::platforms((string) $loaded['script']['language']);
+        $now = $this->targets->count((string) ($t['type'] ?? 'device'), (int) ($t['id'] ?? 0), $visible, $platforms);
+        if ($now > $request['device_count']) {
+            return "The target now reaches $now devices; the request was made for {$request['device_count']}. Ask again so the approver sees the real number.";
+        }
+        // CR19: the same number is not the same devices. Every device the target reaches now must be one the approver was shown.
+        if (is_array($request['device_ids'] ?? null)) {
+            $frozen = array_flip(array_map('intval', $request['device_ids']));
+            foreach ($this->targets->devices((string) ($t['type'] ?? 'device'), (int) ($t['id'] ?? 0), $visible, $platforms, 0, max(1, $request['device_count'] + 1)) as $d) {
+                if (!isset($frozen[(int) $d['device_id']])) {
+                    return 'The devices of the target changed after the request was made (device ' . (int) $d['device_id'] . ' was not among those the approver saw). Ask again.';
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -50,6 +84,13 @@ final class ApprovedRunExecutor
         $params = is_array($request['params'] ?? null) ? $request['params'] : [];
         $timeout = isset($request['timeout_s']) && is_int($request['timeout_s']) ? $request['timeout_s'] : null;
         $visible = $this->tenancy === null ? null : $this->tenancy->visibleClientIds($requester);
+        if (($why = $this->targetChanged($request, $requester, $loaded)) !== null) {
+            $res = ['created' => 0, 'device_count' => 0, 'skipped_denied' => 0, 'skipped_error' => 0, 'errors' => [$why], 'target_changed' => true];
+            $this->approvals->recordResult($id, $res);
+            $this->audit->record('Approved Run Refused', "Approved request #$id was not run: $why", 0, (int) $loaded['script']['script_id']);
+
+            return $res;
+        }
         $res = $this->bulk->run($loaded, $target, $params, $timeout, $requester, $visible, $allowed, 'approval', $id, $this->settings->limits()['bulk_run_max']);
         $this->approvals->recordResult($id, $res);
         $this->audit->record('Approved Run Queued', "Approved request #$id queued {$res['created']} job(s) of {$res['device_count']} device(s) for script \"{$loaded['script']['name']}\" version {$loaded['version']['version']}", 0, (int) $loaded['script']['script_id']);
@@ -78,7 +119,10 @@ final class ApprovedRunExecutor
                 $this->approvals->recordResult((int) $r['approval_id'], ['error' => 'The script changed or was retired before the approved run could be queued.']);
                 continue;
             }
-            $this->execute($a, $req, $loaded);
+            // CORE-DS-41: the same per-client grant check decide() makes, for the requester as they are now (a grant lost or an account switched off since the approval stops the run).
+            $requester = (int) $a['requested_by'];
+            $allowed = $this->authz === null ? null : fn (int $client): bool => $this->authz->allowed($requester, \RivetCore\Rmm\Authz\RmmAbility::JOB_RUN_SAVED, $client);
+            $this->execute($a, $req, $loaded, $allowed);
             ++$n;
         }
 

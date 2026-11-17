@@ -48,3 +48,6 @@ func unprotect(scheme, blob string) ([]byte, error) {
 	}
 	return []byte(blob), nil
 }
+
+// EnsureProtectedDir is a Windows concern (explicit owner and DACL); elsewhere the installer's mkdir and chmod are enough.
+func EnsureProtectedDir(string) error { return nil }

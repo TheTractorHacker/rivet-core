@@ -40,12 +40,13 @@ var RemoteTypes = []string{TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKi
 // Patch management (RMM Phase 4): same injected-handler mechanism as the remote tools (internal/patch), but withdrawn by their own local switch,
 // config.disable_patching, not by disable_remote. They run on Windows (Windows Update Agent) and Linux (apt, dnf, yum, zypper).
 const (
-	TypePatchScan    = "patch_scan"
-	TypePatchInstall = "patch_install"
+	TypePatchScan      = "patch_scan"
+	TypePatchInstall   = "patch_install"
+	TypePatchConfigure = "patch_configure"
 )
 
 // PatchTypes are the patch management job types.
-var PatchTypes = []string{TypePatchScan, TypePatchInstall}
+var PatchTypes = []string{TypePatchScan, TypePatchInstall, TypePatchConfigure}
 
 // IsPatchType reports whether typ is a patch management job type.
 func IsPatchType(typ string) bool {
@@ -95,6 +96,8 @@ func supportedOn(goos, typ string) bool {
 	switch typ {
 	case TypeCollect, TypeReboot, TypeSvcList, TypeSvcControl, TypeProcList, TypeProcKill, TypeFileGet, TypeFilePut, TypeMeshInstall, TypeMeshUninstall:
 		return true
+	case TypePatchConfigure:
+		return goos == "windows"
 	case TypePatchScan, TypePatchInstall, TypeSoftwareDetect, TypeSoftwareInstall:
 		return goos == "windows" || goos == "linux"
 	case TypePowerShell:

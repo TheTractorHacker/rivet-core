@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"rivetit-agent/internal/embed"
 	"rivetit-agent/internal/mesh"
+	"rivetit-agent/internal/store"
 )
 
 // sysOps is every operating-system side effect of an install, so the flow (and
@@ -25,6 +27,13 @@ type sysOps struct {
 	registerARP  func(installDir, exe string) error
 	removeARP    func() error
 	message      func(title, text string, isError bool)
+	// pinFile keeps a file open without write or delete sharing until the returned release func is called (nil = nothing to do). Windows only: the
+	// installer re-reads its own exe and payload by path after a long enrollment, and the launch folder belongs to a standard user (CORE-DS-48).
+	pinFile func(path string) (release func(), err error)
+	// openPinned returns the open, pinned handle of a file pinFile locked (nil, 0, false when path was not pinned). Parsing the payload and copying the
+	// exe are done FROM that handle, never by re-opening the path, so a junction in a parent folder that is re-pointed after the pin cannot swap the
+	// bytes (CORE-DS-48, review CRR-5). nil = nothing is pinned (every other OS).
+	openPinned func(path string) (rd io.ReaderAt, size int64, ok bool)
 	// meshInstall downloads and runs the optional MeshCentral agent installer (nil = the real one; tests inject a fake).
 	meshInstall func(ctx context.Context, s *mesh.Spec, o mesh.InstallOptions) mesh.Result
 }
@@ -65,12 +74,26 @@ func sameServer(a, b string) bool {
 // performInstall is the single install code path shared by `install` and
 // `setup`: config, enroll (or defer), unstamped binary copy, service, ARP.
 func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult {
+	// Where pinning is wired (Windows) the installer MUST be pinned: its bytes are then read and copied from that handle only. Anything else would fall
+	// back to re-opening the path, which a re-pointed junction can swap, so it stops here, before a token is used or a service is stopped (CORE-DS-48).
+	var pinnedRd io.ReaderAt
+	var pinnedSize int64
+	if ops.openPinned != nil {
+		var ok bool
+		if pinnedRd, pinnedSize, ok = ops.openPinned(p.self); !ok {
+			return installResult{Kind: instFail, Msg: "the installer file is not locked against changes (installer not pinned); refusing to read it by path"}
+		}
+	}
 	st, err := openStore(p.stateDir)
 	if err != nil {
 		return installResult{Kind: instConfig, Msg: err.Error()}
 	}
 	tok, _ := readToken(p.flags.token, p.flags.tokenFile)
 	prevCfg, _ := st.LoadConfig()
+	prevSnap := snapshotConfig(st)
+	hadCredential, _ := st.LoadToken()
+	pendingTok, _ := st.LoadEnrollToken() // a one-shot token waiting for the service to enrol is a credential for the OLD server too (review CRR-6)
+	switchesServer := movesToAnotherServer(prevCfg, hadCredential != "" || pendingTok != "", p.flags)
 	if err := applyConfig(st, p.flags); err != nil {
 		return installResult{Kind: instConfig, Msg: err.Error()}
 	}
@@ -88,8 +111,16 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 		case enrollOK:
 			log.Info("enrolled")
 		case enrollRejected:
+			if switchesServer {
+				prevSnap.restore(st) // CORE-DS-14: never leave the new server_url next to the old server's credential
+			}
 			return installResult{Kind: instRejected, Msg: o.Msg}
 		default:
+			if switchesServer {
+				// A deferred enrollment would leave the old credential pointed at the new host (the service only enrolls when it has no credential).
+				prevSnap.restore(st)
+				return installResult{Kind: instFail, Msg: "could not enroll with the new server now (" + o.Msg + "); the device keeps its previous server configuration, run the installer again later"}
+			}
 			// Offline at install time (imaging/GPO): keep the one-shot token,
 			// protected, and let the service finish enrollment.
 			log.Warn("could not enroll now; the service will retry using the stored one-shot token", "reason", o.Msg)
@@ -98,6 +129,10 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 			}
 			deferred = o.Kind
 		}
+	case tok == "" && switchesServer:
+		// no token to enroll with: keeping the old credential next to the new server_url would send it to that host (review CR8)
+		prevSnap.restore(st)
+		return installResult{Kind: instNoToken, Msg: "a new enrollment token is required to move this device to another server; the device keeps its previous server configuration"}
 	case existing == "":
 		return installResult{Kind: instNoToken, Msg: "an enrollment token is required for a first install"}
 	}
@@ -105,6 +140,11 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 	// 2. binary: only the unstamped bytes ever reach the program directory
 	if p.installDir == "" {
 		return installResult{Kind: instFail, Msg: "no install directory"}
+	}
+	// Windows: the program directory gets an explicit owner and a protected SYSTEM/Administrators DACL at creation, and a directory that already exists
+	// under another owner is refused, so a standard user can never replace the service binary or the .new/.prev files (CORE-DS-47).
+	if err := store.EnsureProtectedDir(p.installDir); err != nil {
+		return installResult{Kind: instFail, Msg: err.Error()}
 	}
 	if err := os.MkdirAll(p.installDir, 0o755); err != nil {
 		return installResult{Kind: instFail, Msg: err.Error()}
@@ -119,7 +159,7 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 				return installResult{Kind: instFail, Msg: "stopping existing service: " + err.Error()}
 			}
 		}
-		if err := installBinary(p.self, dst); err != nil {
+		if err := installBinary(p.self, dst, pinnedRd, pinnedSize); err != nil {
 			return installResult{Kind: instFail, Msg: "installing binary: " + err.Error(), Dst: dst}
 		}
 		log.Info("binary installed (embedded configuration stripped)", "path", dst)
@@ -176,12 +216,27 @@ func stamped(path string) bool {
 	return err != nil || n != fi.Size()
 }
 
+// pinInstaller locks self against changes for the `install` command, as setup does for its installer, so the later read and copy come from one
+// handle (R3-1: the install command used to fail on Windows because only setup pinned). No-op where pinFile is nil.
+func pinInstaller(ops sysOps, self string) (release func(), err error) {
+	if ops.pinFile == nil {
+		return func() {}, nil
+	}
+	return ops.pinFile(self)
+}
+
 // installBinary writes the unstamped bytes of src next to dst and swaps them
 // in, keeping the previous binary as dst.old (a running service exe cannot be
 // overwritten, but it can be renamed).
-func installBinary(src, dst string) error {
+func installBinary(src, dst string, rd io.ReaderAt, size int64) error {
 	tmp := dst + ".tmp"
-	if _, err := embed.WriteUnstamped(src, tmp); err != nil {
+	var err error
+	if rd != nil { // the pinned handle: the bytes that were parsed are the bytes that are copied
+		_, err = embed.WriteUnstampedFrom(rd, size, tmp)
+	} else {
+		_, err = embed.WriteUnstamped(src, tmp)
+	}
+	if err != nil {
 		return err
 	}
 	_ = os.Remove(dst + ".old")

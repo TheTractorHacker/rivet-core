@@ -27,6 +27,7 @@ final class PatchReader
         private readonly PatchPolicyStore $policies,
         private readonly ?RmmTenancyInterface $tenancy = null,
         ?\RivetCore\Rmm\Store\PatchHistoryStore $history = null,
+        private readonly ?PatchConfigureService $configure = null,
     ) {
         $this->patchHistory = $history ?? new \RivetCore\Rmm\Store\MariaDb\MariaDbPatchHistoryStore($sql);
     }
@@ -70,8 +71,36 @@ final class PatchReader
             'compliant' => $scanned && $overdue === 0,
             'policy' => ['ring' => $eff['ring'], 'ring_delay_days' => $eff['ring_delay_days'], 'approval_mode' => $eff['approval_mode'], 'auto_days' => $eff['auto_days'], 'install_enabled' => $eff['install_enabled'],
                 'window' => $eff['window'], 'reboot_policy' => $eff['reboot_policy'], 'max_minutes' => $eff['max_minutes'], 'two_person' => $eff['two_person'], 'sources' => $eff['sources'],
-                'live_install' => (int) $limits['patch_live_install'] === 1],
+                'live_install' => (int) $limits['patch_live_install'] === 1, 'windows' => $eff['windows']],
+            'windows_update' => $this->windowsUpdate($dev, $eff['windows']),
         ];
+    }
+
+    /**
+     * Windows Update control of one device (additive; null for a device that is not a Windows device). `status`: see {@see WindowsUpdatePlan::evaluate()}, or `automation_disabled` for a
+     * device another RMM manages (Core never touches it). `external` lists who manages the setting when it is not Core: wsus, gpo, mdm or changed_since.
+     *
+     * @param array<string,mixed> $dev
+     * @param array{update_mode:string,feature_target:string,quality_defer_days:int,active:bool} $windows
+     * @return array<string,mixed>|null
+     */
+    private function windowsUpdate(array $dev, array $windows): ?array
+    {
+        if (($dev['os'] ?? '') !== 'windows' || $this->configure === null) {
+            return null;
+        }
+        $st = $this->configure->state((int) $dev['device_id']);
+        $state = $st['state'] ?? null;
+        $capable = $this->configure->capable($dev);
+        $plan = WindowsUpdatePlan::evaluate($windows, $state, $capable);
+        $status = (int) ($dev['device_automation_disabled'] ?? 0) === 1 ? 'automation_disabled' : $plan['status'];
+        $target = WindowsUpdatePlan::targetVersion($windows, $state);
+        $running = $state['feature_version'] ?? '';
+
+        return ['status' => $status, 'capable' => $capable, 'reported_at' => $st === null ? null : Sql::iso($st['at']), 'feature_version' => $running === '' ? null : $running, 'build' => ($state['build'] ?? '') === '' ? null : $state['build'],
+            'product' => ($state['product'] ?? '') === '' ? null : $state['product'], 'target_version' => $target, 'newer_than_target' => $target !== null && $running !== '' && PatchProtocol::compareFeatureVersions($running, $target) > 0,
+            'external' => $state['external'] ?? [], 'policy' => $state === null ? new \stdClass() : ($state['policy'] === [] ? new \stdClass() : $state['policy']), 'core_keys' => $state['core']['keys'] ?? [],
+            'pending_changes' => $plan['changes'], 'last_configure' => $this->configure->lastResult((int) $dev['device_id'])];
     }
 
     /**
@@ -294,7 +323,29 @@ final class PatchReader
         $rows = $this->sql->all("SELECT update_id, MIN(title) AS title, MIN(kb) AS kb, MIN(kind) AS kind, MIN(severity) AS severity, COUNT(*) AS devices, MIN(first_seen_at) AS first_seen_at, MAX(reboot_required) AS reboot_required
             FROM rmm_patch_available WHERE $ws GROUP BY update_id ORDER BY FIELD(MIN(kind), 'critical', 'security', 'important', 'optional', 'driver', 'other'), devices DESC, update_id LIMIT $limit OFFSET " . max(0, $offset), $p);
 
-        return ['items' => array_map(static fn (array $r): array => ['update_id' => (string) $r['update_id'], 'title' => (string) $r['title'], 'kb' => (string) $r['kb'], 'kind' => (string) $r['kind'], 'severity' => (string) $r['severity'],
-            'devices' => (int) $r['devices'], 'first_seen_at' => Sql::iso((string) $r['first_seen_at']), 'reboot_required' => (int) $r['reboot_required'] === 1], $rows), 'total' => $total];
+        // CORE-DS-40: title, kb, kind and severity come from the devices, so one device must not decide how an update looks for the fleet: show what most devices
+        // report (ties go to the lowest value, as before) and say when the reports disagree.
+        $shown = [];
+        $disagree = [];
+        if ($rows !== []) {
+            $ids = array_map(static fn (array $r): string => (string) $r['update_id'], $rows);
+            foreach ($this->sql->all("SELECT update_id, title, kb, kind, severity, COUNT(*) AS c FROM rmm_patch_available WHERE $ws AND update_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')
+                GROUP BY update_id, title, kb, kind, severity ORDER BY update_id, c DESC, title, kb, kind, severity', [...$p, ...$ids]) as $v) {
+                $id = (string) $v['update_id'];
+                if (isset($shown[$id])) {
+                    $disagree[$id] = true;
+                    continue;
+                }
+                $shown[$id] = $v;
+            }
+        }
+
+        return ['items' => array_map(static function (array $r) use ($shown, $disagree): array {
+            $id = (string) $r['update_id'];
+            $v = $shown[$id] ?? $r;
+
+            return ['update_id' => $id, 'title' => (string) $v['title'], 'kb' => (string) $v['kb'], 'kind' => (string) $v['kind'], 'severity' => (string) $v['severity'],
+                'devices' => (int) $r['devices'], 'first_seen_at' => Sql::iso((string) $r['first_seen_at']), 'reboot_required' => (int) $r['reboot_required'] === 1, 'reports_disagree' => isset($disagree[$id])];
+        }, $rows), 'total' => $total];
     }
 }

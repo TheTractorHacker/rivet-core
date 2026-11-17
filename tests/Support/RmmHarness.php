@@ -42,7 +42,7 @@ use RivetCore\Testing\InMemorySecretBox;
  */
 final class RmmHarness
 {
-    public const TABLES = ['endpoint_agent_checkins', 'endpoint_agent_checks', 'endpoint_agent_jobs', 'endpoint_agent_mesh_nodes', 'endpoint_agent_releases',
+    public const TABLES = ['rmm_agent_release_sigs', 'endpoint_agent_checkins', 'endpoint_agent_checks', 'endpoint_agent_jobs', 'endpoint_agent_mesh_nodes', 'endpoint_agent_releases',
         'endpoint_agent_enroll_attempts', 'endpoint_agent_enrollment_tokens', 'endpoint_agent_devices', 'endpoint_agent_binaries',
         'endpoint_agent_check_history', 'rmm_device_state', 'rmm_device_software', 'rmm_software_history', 'rmm_tags', 'rmm_device_tags', 'rmm_groups', 'rmm_group_devices',
         'rmm_group_tags', 'rmm_metric_latest', 'rmm_metric_hourly', 'rmm_policies', 'rmm_policy_versions', 'rmm_policy_assignments', 'rmm_scripts_v2',
@@ -51,7 +51,7 @@ final class RmmHarness
         'rmm_escalation_policies', 'rmm_escalation_steps', 'rmm_metric_daily', 'rmm_storage_state', 'rmm_metric_rollup_state', 'rmm_hot_store_faults', 'rmm_pending_client_moves', 'rmm_data_store_connection', 'rmm_store_migration', 'rmm_cache', 'rmm_metric_outbox', 'rmm_token_buckets', 'endpoint_agent_remote_settings', 'endpoint_agent_transfers', 'endpoint_agent_log_events', 'endpoint_agent_log_state', 'endpoint_agent_log_rules', 'endpoint_agent_mesh_settings', 'endpoint_agent_mesh_agents', 'endpoint_agent_installer_options', 'endpoint_agent_msi_templates',
         'rmm_patch_scans', 'rmm_patch_available', 'rmm_patch_history', 'rmm_patch_rings', 'rmm_patch_policies', 'rmm_patch_assignments', 'rmm_patch_rules', 'rmm_patch_jobs',
         'rmm_software_hosts', 'rmm_packages', 'rmm_package_versions', 'rmm_package_assignments', 'rmm_deploy_state', 'rmm_package_installs', 'rmm_package_history', 'rmm_package_jobs', 'rmm_package_auto', 'rmm_package_auto_clients', 'rmm_package_params', 'rmm_installer_apps', 'rmm_device_apps', 'rmm_hosted_files', 'rmm_version_hosted', 'rmm_hosted_grants',
-        'endpoint_agent_change_settings', 'endpoint_agent_change_records', 'endpoint_agent_change_state', 'endpoint_agent_change_rules', 'rmm_device_checkset', 'rmm_hypervisor_hosts', 'rmm_hypervisor_vms', 'rmm_hypervisor_storage', 'rmm_hypervisor_vm_history', 'rmm_mesh_after_approval', 'panel_client_settings', 'panel_ticket_owner', 'rmm_daily_budget'];
+        'endpoint_agent_change_settings', 'endpoint_agent_change_records', 'endpoint_agent_change_state', 'endpoint_agent_change_rules', 'rmm_device_checkset', 'rmm_hypervisor_hosts', 'rmm_hypervisor_vms', 'rmm_hypervisor_storage', 'rmm_hypervisor_vm_history', 'rmm_mesh_after_approval', 'panel_client_settings', 'panel_ticket_owner', 'rmm_daily_budget', 'rmm_client_remote_policy', 'rmm_console_codes', 'rmm_console_sessions', 'rmm_console_settings'];
 
     public \mysqli $mysqli;
     public MysqliDatabase $db;
@@ -106,7 +106,7 @@ final class RmmHarness
         $this->binaryDir = sys_get_temp_dir() . '/rmm_bin_' . bin2hex(random_bytes(4));
         mkdir($this->binaryDir, 0700);
 
-        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs(), new Migration0023MeshAgent(), new Migration0024MeshGroupUrl(), new Migration0025MsiTemplates(), new Migration0026MeshHide(), new \RivetCore\Rmm\Migration\Migration0027MeshNodeIds(), new \RivetCore\Rmm\Migration\Migration0028Patching(), new \RivetCore\Rmm\Migration\Migration0029SoftwareDeploy(), new \RivetCore\Rmm\Migration\Migration0030ChangeMonitor(), new \RivetCore\Rmm\Migration\Migration0031ClockSkew(), new \RivetCore\Rmm\Migration\Migration0032CheckSet(), new \RivetCore\Rmm\Migration\Migration0033AutoInstall(), new \RivetCore\Rmm\Migration\Migration0034MeshAfterApproval(), new \RivetCore\Rmm\Migration\Migration0035DeviceType(), new \RivetCore\Rmm\Migration\Migration0036Hypervisors(), new \RivetCore\Rmm\Migration\Migration0037AgentOs(), new \RivetCore\Rmm\Migration\Migration0038ConfigSeq(), new \RivetCore\Rmm\Migration\Migration0039AutomationDisabled(), new \RivetCore\Panel\Migration\Migration0040PanelApi(), new \RivetCore\Rmm\Migration\Migration0041DailyBudget(), new \RivetCore\Rmm\Migration\Migration0042RmmDataStore(), new \RivetCore\Rmm\Migration\Migration0043RmmStoreDenormalisation(), new \RivetCore\Rmm\Migration\Migration0044RmmStoreSwitch(), new \RivetCore\Rmm\Migration\Migration0049InstallerManagedExternally()] as $mig) {
+        foreach ([new Migration0002IntegrationJobs(), new Migration0012JobHeartbeat(), new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs(), new Migration0023MeshAgent(), new Migration0024MeshGroupUrl(), new Migration0025MsiTemplates(), new Migration0026MeshHide(), new \RivetCore\Rmm\Migration\Migration0027MeshNodeIds(), new \RivetCore\Rmm\Migration\Migration0028Patching(), new \RivetCore\Rmm\Migration\Migration0029SoftwareDeploy(), new \RivetCore\Rmm\Migration\Migration0030ChangeMonitor(), new \RivetCore\Rmm\Migration\Migration0031ClockSkew(), new \RivetCore\Rmm\Migration\Migration0032CheckSet(), new \RivetCore\Rmm\Migration\Migration0033AutoInstall(), new \RivetCore\Rmm\Migration\Migration0034MeshAfterApproval(), new \RivetCore\Rmm\Migration\Migration0035DeviceType(), new \RivetCore\Rmm\Migration\Migration0036Hypervisors(), new \RivetCore\Rmm\Migration\Migration0037AgentOs(), new \RivetCore\Rmm\Migration\Migration0038ConfigSeq(), new \RivetCore\Rmm\Migration\Migration0039AutomationDisabled(), new \RivetCore\Panel\Migration\Migration0040PanelApi(), new \RivetCore\Rmm\Migration\Migration0041DailyBudget(), new \RivetCore\Rmm\Migration\Migration0042RmmDataStore(), new \RivetCore\Rmm\Migration\Migration0043RmmStoreDenormalisation(), new \RivetCore\Rmm\Migration\Migration0044RmmStoreSwitch(), new \RivetCore\Rmm\Migration\Migration0049InstallerManagedExternally(), new \RivetCore\Rmm\Migration\Migration0050ClientRemotePolicy(), new \RivetCore\Rmm\Migration\Migration0051ConsoleSessions(), new \RivetCore\Rmm\Migration\Migration0052MeshVerify(), new \RivetCore\Rmm\Migration\Migration0053MeshTokenExact(), new \RivetCore\Rmm\Migration\Migration0054SignedContracts(), new \RivetCore\Rmm\Migration\Migration0055HardeningRepair()] as $mig) {
             $mig->up($this->db);
         }
         \RivetCore\Rmm\Store\MariaDb\ClientColumn::forget();
@@ -186,6 +186,10 @@ final class RmmHarness
         $this->mysqli->query('DELETE FROM integration_jobs');
         $this->mysqli->query('DELETE FROM endpoint_agent_settings');
         $this->mysqli->query('INSERT INTO endpoint_agent_settings (id) VALUES (1)');
+        try {
+            $this->mysqli->query('DELETE FROM rmm_hardening_settings');   // switches of the deep-scan fixes: every test starts with them off
+        } catch (\Throwable) {
+        }
         $this->mysqli->query("INSERT IGNORE INTO rmm_patch_rings (name, delay_days, sort_order, description) VALUES ('pilot', 0, 10, ''), ('broad', 7, 20, ''), ('last', 14, 30, '')");
     }
 

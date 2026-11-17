@@ -138,16 +138,7 @@ func New(o Options) (*Client, error) {
 			return nil, errors.New("pin_spki_sha256 must be 64 hex characters")
 		}
 		// Runs after normal chain verification (we never set InsecureSkipVerify).
-		tlsCfg.VerifyConnection = func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 {
-				return errors.New("no peer certificate")
-			}
-			sum := sha256.Sum256(cs.PeerCertificates[0].RawSubjectPublicKeyInfo)
-			if !bytes.Equal(sum[:], want) {
-				return errors.New("server public key does not match the pinned SPKI hash")
-			}
-			return nil
-		}
+		tlsCfg.VerifyConnection = PinVerifier(want, u.Hostname())
 	}
 	tr := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
@@ -174,6 +165,39 @@ func New(o Options) (*Client, error) {
 	return &Client{base: u, hc: hc, opt: o}, nil
 }
 
+// PinVerifier is the tls.Config.VerifyConnection of the SPKI pin. The pin is the RivetIT server's key, so it is enforced only for connections to the
+// server's own host: the same transport also fetches self-updates and hosted installers, possibly from another allowed host (update_hosts, a CDN) whose
+// key can never match; those keep the normal chain verification (CORE-DS-50, CORE-DS-51).
+func PinVerifier(want []byte, serverHost string) func(tls.ConnectionState) error {
+	return func(cs tls.ConnectionState) error {
+		// ServerName is empty when the host is an IP literal (no SNI): then the pin is enforced, the safe side.
+		if cs.ServerName != "" && otherHost(cs.ServerName, serverHost) {
+			return nil
+		}
+		if len(cs.PeerCertificates) == 0 {
+			return errors.New("no peer certificate")
+		}
+		sum := sha256.Sum256(cs.PeerCertificates[0].RawSubjectPublicKeyInfo)
+		if !bytes.Equal(sum[:], want) {
+			return errors.New("server public key does not match the pinned SPKI hash")
+		}
+		return nil
+	}
+}
+
+// otherHost reports whether the TLS server name certainly belongs to a different host than the configured one. The stack reports the SNI form (lower
+// case, no trailing dot, punycode), the configuration may say anything, so the comparison only skips the pin for two plain ASCII names that differ after
+// that normalisation; a configured host that is not plain ASCII (IDN) cannot be compared and keeps the pin on (fail closed, review CR7).
+func otherHost(serverName, serverHost string) bool {
+	norm := func(h string) string { return strings.ToLower(strings.TrimRight(h, ".")) }
+	for _, r := range serverHost {
+		if r > 0x7e {
+			return false
+		}
+	}
+	return norm(serverName) != norm(serverHost)
+}
+
 // HTTPClient exposes the underlying client (the updater reuses its TLS config).
 func (c *Client) HTTPClient() *http.Client { return c.hc }
 
@@ -198,10 +222,13 @@ func (c *Client) Do(ctx context.Context, method, name string, body any, out any)
 	return c.DoRaw(ctx, method, name, raw, out)
 }
 
+// ErrRequestTooLarge is returned, without sending anything, for a body over MaxRequestBytes. Retrying the same body can never succeed.
+var ErrRequestTooLarge = errors.New("request body too large")
+
 // DoRaw sends pre-encoded JSON (used to replay an in-flight check-in exactly).
 func (c *Client) DoRaw(ctx context.Context, method, name string, raw []byte, out any) error {
 	if len(raw) > MaxRequestBytes {
-		return fmt.Errorf("request body %d bytes exceeds the %d byte cap", len(raw), MaxRequestBytes)
+		return fmt.Errorf("%w: %d bytes exceeds the %d byte cap", ErrRequestTooLarge, len(raw), MaxRequestBytes)
 	}
 	var rd io.Reader
 	if raw != nil {
