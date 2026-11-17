@@ -117,7 +117,7 @@ final class UiAssetsTest extends TestCase
     {
         $pairs = [
             // rc.59 (CodeQL js/xss-through-dom): the two attributes are reduced to a same-origin path by sameOriginPath()
-            ["  // a navigation target taken from the page must stay on this origin: never a scheme (javascript:, data:) or another host\n  function sameOriginPath(href, fallback) {\n    try { var u = new URL(String(href || ''), location.href); if (u.origin === location.origin) { return u.pathname + u.search + u.hash; } } catch (e) { /* fall through */ }\n    return fallback;\n  }\n  var networksUrl = sameOriginPath(root.getAttribute('data-wz-networks'), 'settings_webhooks.php#internal-networks');\n  var editUrl = sameOriginPath(root.getAttribute('data-wz-edit'), 'webhook_edit.php');\n", ''],
+            ["  // a navigation target taken from the page must stay on this origin: never a scheme (javascript:, data:) or another host\n  function sameOriginPath(href, fallback) {\n    // CORE-DS-45: the returned path never starts with '//' (that would be read as another host)\n    try { var u = new URL(String(href || ''), location.href); if (u.origin === location.origin) { return u.pathname.replace(/^\\/{2,}/, '/') + u.search + u.hash; } } catch (e) { /* fall through */ }\n    return fallback;\n  }\n  var networksUrl = sameOriginPath(root.getAttribute('data-wz-networks'), 'settings_webhooks.php#internal-networks');\n  var editUrl = sameOriginPath(root.getAttribute('data-wz-edit'), 'webhook_edit.php');\n", ''],
             ['a.href = networksUrl;', "a.href = 'settings_webhooks.php#internal-networks';"],
             ["dl.href = editUrl + '?id=' +", "dl.href = 'webhook_edit.php?id=' +"],
             ["'', editUrl + '?id=' +", "'', 'webhook_edit.php?id=' +"],

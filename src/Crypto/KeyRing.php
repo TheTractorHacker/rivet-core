@@ -149,6 +149,10 @@ final class KeyRing
     /** @throws InvalidKeyMaterial */
     public function withKey(#[\SensitiveParameter] string $key, string $kid, ?string $created = null, bool $makeActive = false): self
     {
+        if (isset($this->keys[$kid]) && !hash_equals($this->keys[$kid], $key)) {
+            // CORE-DS-30: a reused key id would silently replace the earlier key and make everything sealed under it unreadable
+            throw new InvalidKeyMaterial("The key id $kid is already in use by another key.");
+        }
         $keys = $this->keys;
         $keys[$kid] = $key;
         $meta = $this->created;
