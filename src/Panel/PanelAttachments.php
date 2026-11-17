@@ -188,9 +188,10 @@ final class PanelAttachments
         // only so a test can reach the branch that runs out of it.)
         $budget ??= 100000 + intdiv($n, 16);
         $i = 0;
+        $steps = 0;
         // the next tag start is found by the regex engine (a run of `<` or of white space is skipped natively, not one PHP step at a time)
         while (preg_match('/<\s*[A-Za-z]/', $b, $m, PREG_OFFSET_CAPTURE, $i) === 1) {
-            if (--$budget < 0) {
+            if (++$steps > $budget) {
                 return true;
             }
             $j = $m[0][1] + strlen($m[0][0]) - 1;   // the first letter of the tag name
@@ -201,7 +202,7 @@ final class PanelAttachments
             }
             $i = $j;
             while ($i < $n) {
-                if (--$budget < 0) {
+                if (++$steps > $budget) {
                     return true;
                 }
                 $i += strspn($b, " \t\r\n\f/", $i);

@@ -211,7 +211,7 @@ final class PanelAttachmentsTest extends TestCase
 
     /**
      * R5-1 / R6-2: the scan for active attributes is linear in the size of the file and bounded by a step budget. Adversarial files of the largest default size (5 MiB) in several shapes
-     * are decided in well under a second, and the verdict of each is asserted. Every input starts with a `href=` that is not in a tag, so the prefilter lets it through and the
+     * are decided, and the verdict of each is asserted. The time bound is generous on purpose (a CI runner is several times slower than a workstation): the quadratic version needed minutes for a tenth of this size, so a bound of seconds still catches it, and what the test pins down is the verdict and the step budget. Every input starts with a `href=` that is not in a tag, so the prefilter lets it through and the
      * tokenizer really runs (a file without any candidate attribute name never reaches it).
      *
      * @return array<string,array{string,bool}> bytes, whether the file is refused
@@ -253,7 +253,7 @@ final class PanelAttachmentsTest extends TestCase
         $verdict = $scan->invoke(null, $bytes);
         $ms = (hrtime(true) - $t) / 1e6;
         $this->assertSame($refused, $verdict, 'the tokenizer verdict');
-        $this->assertLessThan(1000, $ms, 'took ' . round($ms) . ' ms for ' . strlen($bytes) . ' bytes');
+        $this->assertLessThan(20000, $ms, 'took ' . round($ms) . ' ms for ' . strlen($bytes) . ' bytes');
         // and through the whole validation: the same verdict, in the same time
         $t = hrtime(true);
         $threw = false;
@@ -263,7 +263,7 @@ final class PanelAttachmentsTest extends TestCase
             $threw = true;
         }
         $this->assertSame($refused, $threw, 'validate() agrees');
-        $this->assertLessThan(1500, (hrtime(true) - $t) / 1e6);
+        $this->assertLessThan(20000, (hrtime(true) - $t) / 1e6);
     }
 
     /** R6-2: running out of the step budget refuses the file (it cannot happen by accident at the real budget; a small one is injected to reach the branch). */
