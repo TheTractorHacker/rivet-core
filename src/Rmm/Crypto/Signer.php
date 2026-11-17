@@ -136,6 +136,18 @@ final class Signer
     }
 
     /**
+     * CORE-DS-16: the message signed for the log collection configuration (`config.logs`): the domain line, a line feed, then the canonical JSON of the object without its signature.
+     *
+     * @param array<string,mixed> $config
+     */
+    public static function logsConfigMessage(array $config): string
+    {
+        unset($config['signature']);
+
+        return \RivetCore\Rmm\Remote\RemoteProtocol::LOGS_SIGN_DOMAIN . "\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($config), false)));
+    }
+
+    /**
      * The message signed for a hypervisor configuration (docs/rmm/PROTOCOL.md 3.2.10): the domain line, a line feed, then the canonical JSON of the object without its signature.
      *
      * @param array<string,mixed> $config

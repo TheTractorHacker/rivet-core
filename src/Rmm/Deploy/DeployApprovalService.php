@@ -39,8 +39,12 @@ final class DeployApprovalService
         $pkg = $this->catalog->package((int) $v['package_id']);
         $summary = ucfirst($action) . ' ' . mb_substr((string) ($pkg['name'] ?? '?'), 0, 80) . ' ' . $v['version'] . ' on ' . mb_substr((string) ($dev['hostname'] ?? 'a device'), 0, 80);
 
-        return $this->approvals->request(self::KIND, ['type' => 'software', 'op' => 'run', 'device_id' => (int) $dev['device_id'], 'version_id' => (int) $v['version_id'], 'action' => $action, 'max_minutes' => $maxMinutes],
-            $summary, 1, null, null, $userId);
+        $frozen = ['type' => 'software', 'op' => 'run', 'device_id' => (int) $dev['device_id'], 'version_id' => (int) $v['version_id'], 'action' => $action, 'max_minutes' => $maxMinutes];
+        if ($action === 'install' && ($digest = $this->service->argsDigest($dev, $v)) !== '') {
+            $frozen['args_sha256'] = $digest;   // CORE-DS-64: the vendor-parameter values are part of what the second person approves, though they are never shown
+        }
+
+        return $this->approvals->request(self::KIND, $frozen, $summary, 1, null, null, $userId);
     }
 
     /**
@@ -76,6 +80,12 @@ final class DeployApprovalService
                 $this->sql->run("UPDATE rmm_device_apps SET status = 'queued', reason = ?, updated_at = ? WHERE device_id = ? AND package_id = ? AND status = 'approval'",
                     ['paused: automation is switched off for this device', $this->sql->utcNow(), (int) $dev['device_id'], (int) $v['package_id']]);
                 $out['reason'] = 'automation_disabled';
+            } elseif ($this->argsChanged($request, $dev, $v, (string) $action)) {
+                // CORE-DS-64: a vendor parameter that feeds the install command was changed after the run was asked for; what the second person approved is gone.
+                $out['reason'] = 'parameters_changed';
+                // CR15: an app AUTOMATION planned for this device waits in 'approval'; nobody can decide this request again, so put it back in the queue and a fresh request (with the new digest) is made
+                $this->sql->run("UPDATE rmm_device_apps SET status = 'queued', reason = ?, updated_at = ? WHERE device_id = ? AND package_id = ? AND status = 'approval'",
+                    ['the install arguments changed after approval was asked for: asking again', $this->sql->utcNow(), (int) $dev['device_id'], (int) $v['package_id']]);
             } else {
                 $mins = is_int($request['max_minutes'] ?? null) ? $request['max_minutes'] : DeployProtocol::MAX_MINUTES_DEFAULT;
                 $r = $this->service->queueInstall($dev, $v, $action, 'run', ['source' => 'manual', 'user_id' => (int) $approval['requested_by'], 'max_minutes' => $mins]);
@@ -90,6 +100,28 @@ final class DeployApprovalService
         $this->approvals->recordResult($approvalId, $out);
 
         return $out;
+    }
+
+    /**
+     * CORE-DS-64, fail closed: for an install of a version that has placeholders the request must carry the digest it was made with and it must equal the
+     * digest now (the 'unresolved' marker included). A request made before this check existed has none and is refused for such a version.
+     *
+     * @param array<string,mixed> $request
+     * @param array<string,mixed> $dev
+     * @param array<string,mixed> $v
+     */
+    private function argsChanged(array $request, array $dev, array $v, string $action): bool
+    {
+        if ($action !== 'install') {
+            return false;
+        }
+        $now = $this->service->argsDigest($dev, $v);
+        $has = array_key_exists('args_sha256', $request);
+        if ($now === '' && !$has) {
+            return false;   // nothing to freeze
+        }
+
+        return !$has || !is_string($request['args_sha256']) || !hash_equals($request['args_sha256'], $now);
     }
 
     /** An auto-install plan row of this device and package that is waiting for exactly this kind of approval. */

@@ -3791,6 +3791,7 @@
                 "jobMessage": "static jobMessage(array $job): string",
                 "keyId": "static keyId(string $publicKeyB64): string",
                 "keypairFromSeed": "static keypairFromSeed(string $seed): array",
+                "logsConfigMessage": "static logsConfigMessage(array $config): string",
                 "openSecretKey": "static openSecretKey(RivetCore\\Rmm\\Contracts\\SecretBoxInterface $box, string $ciphertext): string",
                 "sealSecretKey": "static sealSecretKey(RivetCore\\Rmm\\Contracts\\SecretBoxInterface $box, string $secretKeyB64): string",
                 "sign": "static sign(string $message, string $secretKeyB64): string",
@@ -4033,10 +4034,14 @@
         },
         "RivetCore\\Rmm\\Deploy\\DeployService": {
             "kind": "final class",
+            "constants": {
+                "ARGS_UNRESOLVED": "unresolved"
+            },
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Deploy\\PackageCatalog $catalog, RivetCore\\Rmm\\Deploy\\DeployExpectations $expectations, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Deploy\\PackageParams $params = NULL, ?RivetCore\\Rmm\\Deploy\\HostedFiles $hosted = NULL, ?RivetCore\\Rmm\\Store\\DeploymentHistoryStore $history = NULL)",
                 "applyJob": "applyJob(array $dev, array $job): bool",
                 "applyPending": "applyPending(int $limit): int",
+                "argsDigest": "argsDigest(array $dev, array $v): string",
                 "cleanDetectResult": "static cleanDetectResult(string $output): ?array",
                 "cleanInstallResult": "static cleanInstallResult(string $output): ?array",
                 "onInstallApplied": "onInstallApplied(Closure $f): void",
@@ -4081,6 +4086,7 @@
                 "addVersion": "addVersion(int $packageId, array $in, int $userId): array",
                 "deletePackage": "deletePackage(int $packageId): ?string",
                 "followsNewest": "followsNewest(int $packageId): bool",
+                "heldByTicksOnly": "heldByTicksOnly(int $packageId, bool $versionAdded): bool",
                 "hostNames": "hostNames(): array",
                 "hosts": "hosts(): array",
                 "installsByItself": "installsByItself(int $packageId): bool",
@@ -6271,6 +6277,7 @@
                     "file_get",
                     "file_put"
                 ],
+                "LOGS_SIGN_DOMAIN": "rivetit-logs-config-v1",
                 "LOG_BATCH_MAX": 200,
                 "LOG_BODY_MAX": 262144,
                 "LOG_CHECK_PREFIX": "log.rule_",

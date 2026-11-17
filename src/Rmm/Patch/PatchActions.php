@@ -541,6 +541,21 @@ final class PatchActions
         if (is_array($in['settings'] ?? null) && ($e = $this->windowsSettingsGate($who, $policyId, $in['settings'])) !== null) {
             return $e;
         }
+        if (is_array($in['settings'] ?? null) && ($e = $this->approvalSettingsGate($who, $policyId, $in['settings'])) !== null) {
+            return $e;
+        }
+        if ($policyId !== null && array_key_exists('enabled', $in) && ($stored = $this->policies->find($policyId)) !== null) {
+            $values = $this->policies->values($policyId);
+            if (!empty($in['enabled']) && !$stored['enabled']) {
+                // CR13: switching a staged policy on is when its settings start to act: the same grants as assigning it (checked against what it will carry after this save)
+                $after = is_array($in['settings'] ?? null) ? $in['settings'] : $values;
+                if (($e = $this->approvalSettingsGate($who, null, $after)) !== null) {
+                    return $e;
+                }
+            } elseif (empty($in['enabled']) && $stored['enabled'] && ($e = $this->protectiveGate($who, $values, 'switch off')) !== null) {
+                return $e;   // CR5: a disabled policy no longer applies its second-person rule
+            }
+        }
         $confirmedBy = null;
         $wantsConfirm = is_array($in['settings'] ?? null) && !empty($in['settings']['reboot_confirm']);
         if ($wantsConfirm) {
@@ -568,6 +583,9 @@ final class PatchActions
         if (($e = $this->writeGate($who)) !== null) {
             return $e;
         }
+        if (($e = $this->protectiveGate($who, $this->policies->values($policyId), 'delete')) !== null) {
+            return $e;   // CR5
+        }
         $p = $this->policies->find($policyId);
         if ($p === null || !$this->policies->delete($policyId)) {
             return ActionResult::fail(404, 'not_found', 'Policy not found.');
@@ -585,6 +603,39 @@ final class PatchActions
         if (($e = $this->writeGate($who)) !== null) {
             return $e;
         }
+        // CORE-DS-10: assigning is what makes the settings of a policy act on devices, so it needs the grants the settings themselves need.
+        $values = $this->policies->values($policyId);
+        if (($e = $this->approvalSettingsGate($who, null, array_intersect_key($values, array_flip(['install_enabled', 'approval_mode', 'reboot_policy', 'two_person']) + array_flip(array_map(static fn (string $k): string => 'auto_days_' . $k, PatchPolicySettings::AUTO_KINDS))))) !== null) {
+            return $e;
+        }
+        // CRR-10: normalise priority and enforce once, the way the store reads them, and refuse anything unrecognised (a string or an array must not slip past the comparison below)
+        $priority = $in['priority'] ?? 100;
+        if (is_string($priority) && preg_match('/^-?\d{1,9}$/D', $priority) === 1) {
+            $priority = (int) $priority;
+        }
+        if (!is_int($priority) || $priority < 0 || $priority > 1000000) {
+            return ActionResult::fail(422, 'invalid', 'priority must be a whole number from 0 to 1000000.');
+        }
+        $enforce = false;
+        if (array_key_exists('enforce', $in)) {
+            $enforce = is_bool($in['enforce']) ? $in['enforce'] : filter_var($in['enforce'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($enforce === null) {
+                return ActionResult::fail(422, 'invalid', 'enforce must be true or false.');
+            }
+        }
+        $in['priority'] = $priority;
+        $in['enforce'] = $enforce;   // the store then reads exactly what the gate compared
+        // re-posting an existing assignment with enforce off or a lower priority hands the scope to whatever more specific policy there is, so it is a weakening
+        $scopeType = is_string($in['scope_type'] ?? null) ? $in['scope_type'] : '';
+        $sid = $in['scope_id'] ?? 0;
+        $scopeId = $scopeType === 'global' ? 0 : (is_int($sid) ? $sid : (is_string($sid) && ctype_digit($sid) ? (int) $sid : 0));
+        foreach ($this->policies->assignments($policyId) as $existing) {
+            if ((string) $existing['scope_type'] === $scopeType && (int) $existing['scope_id'] === $scopeId
+                && ((bool) $existing['enforce'] && !$enforce || $priority < (int) $existing['priority'])
+                && ($e = $this->protectiveGate($who, $values, 'weaken the assignment of')) !== null) {
+                return $e;
+            }
+        }
         try {
             $a = $this->policies->assign($policyId, $in, $who->userId);
         } catch (\InvalidArgumentException $ex) {
@@ -599,6 +650,9 @@ final class PatchActions
     {
         if (($e = $this->writeGate($who)) !== null) {
             return $e;
+        }
+        if (($e = $this->protectiveGate($who, $this->policies->values($policyId), 'unassign')) !== null) {
+            return $e;   // CR5
         }
         $a = $this->policies->unassign($policyId, $assignmentId);
         if ($a === null) {
@@ -715,6 +769,88 @@ final class PatchActions
                 if ($why !== null) {
                     return ActionResult::fail(403, 'forbidden', 'Changing how Windows Update is controlled needs the grant to install patches. ' . $why);
                 }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * CORE-DS-10 (CORE-10): a patch policy decides, for every device it reaches, whether approved updates install by themselves, whether a second person
+     * must approve by hand, whether updates are approved automatically and whether the device restarts. Raising what happens without a person, or lowering
+     * the second-person control, needs the grant that governs that act on top of the policy write gate:
+     *  - install_enabled turned on (or set on a new policy): rmm.patch.install
+     *  - two_person turned off or removed on a policy that had it, approval_mode auto, an auto_days_* newly set or lowered: rmm.job.approve
+     *  - reboot_policy if_required_now newly set: rmm.job.reboot (whatever reboot_confirm already says)
+     * The `settings` object replaces all of them, so a key left out counts as removed. A request that changes none of these needs nothing extra.
+     *
+     * @param array<array-key,mixed> $settings
+     */
+    private function approvalSettingsGate(RmmPrincipal $who, ?int $policyId, array $settings): ?ActionResult
+    {
+        $cur = $policyId === null ? [] : $this->policies->values($policyId);
+        $need = [];
+        if (($settings['install_enabled'] ?? null) === true && ($cur['install_enabled'] ?? null) !== true) {
+            $need[RmmAbility::PATCH_INSTALL] = 'Turning on unattended installs needs the grant to install patches. ';
+        }
+        if ((($cur['two_person'] ?? null) === true && ($settings['two_person'] ?? null) !== true) || (($settings['two_person'] ?? null) === false && ($cur['two_person'] ?? null) !== false)) {
+            // CR5: an explicit `false` is how a more specific policy overrides a two_person: true from a less specific one, so writing it is lowering the rule too
+            $need[RmmAbility::JOB_APPROVE] = 'Switching off the second-person rule needs the grant to approve jobs. ';
+        }
+        if (($settings['approval_mode'] ?? null) === 'auto' && ($cur['approval_mode'] ?? null) !== 'auto') {
+            $need[RmmAbility::JOB_APPROVE] = 'Approving updates automatically needs the grant to approve jobs. ';
+        }
+        foreach (PatchPolicySettings::AUTO_KINDS as $kind) {
+            $new = $settings['auto_days_' . $kind] ?? null;
+            $old = $cur['auto_days_' . $kind] ?? null;
+            if (is_int($new) && (!is_int($old) || $new < $old)) {
+                $need[RmmAbility::JOB_APPROVE] = 'Approving updates automatically needs the grant to approve jobs. ';
+            }
+        }
+        if (($settings['reboot_policy'] ?? null) === 'if_required_now' && ($cur['reboot_policy'] ?? null) !== 'if_required_now') {
+            $need[RmmAbility::JOB_REBOOT] = 'Letting a policy restart devices by itself needs the grant to restart devices. ';
+        }
+        foreach ($need as $ability => $text) {
+            $why = $this->authz->check($who->userId, $ability, 0);
+            if ($why !== null) {
+                $this->audit->record('Patch Denied', "User {$who->userId} denied changing the approval or install settings of a patch policy: $why", 0, 0);
+
+                return ActionResult::fail(403, 'forbidden', $text . $why);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * CR5 / CRR-10: removing, unassigning, disabling or weakening the assignment of a policy takes away what it enforces on the devices it reached, so it needs the grant that
+     * governs each protective value it carries: the second-person rule (two_person) or a manual approval mode need rmm.job.approve, install_enabled false needs
+     * rmm.patch.install, a reboot_policy other than if_required_now needs rmm.job.reboot. Gating on the effect, not on one key, closes the case where a restrictive
+     * layer sits over a permissive one.
+     *
+     * @param array<string,mixed> $values the policy's stored settings
+     */
+    private function protectiveGate(RmmPrincipal $who, array $values, string $verb): ?ActionResult
+    {
+        $need = [];
+        if (($values['two_person'] ?? null) === true) {
+            $need[RmmAbility::JOB_APPROVE] = 'requires a second person';
+        }
+        if (($values['approval_mode'] ?? null) === 'manual') {
+            $need[RmmAbility::JOB_APPROVE] = ($need[RmmAbility::JOB_APPROVE] ?? '') === '' ? 'approves updates by hand' : 'requires a second person and approves updates by hand';
+        }
+        if (($values['install_enabled'] ?? null) === false) {
+            $need[RmmAbility::PATCH_INSTALL] = 'turns unattended installs off';
+        }
+        if (isset($values['reboot_policy']) && $values['reboot_policy'] !== 'if_required_now') {
+            $need[RmmAbility::JOB_REBOOT] = 'keeps devices from restarting by themselves';
+        }
+        foreach ($need as $ability => $what) {
+            $why = $this->authz->check($who->userId, $ability, 0);
+            if ($why !== null) {
+                $this->audit->record('Patch Denied', "User {$who->userId} denied trying to $verb a patch policy that $what: $why", 0, 0);
+
+                return ActionResult::fail(403, 'forbidden', "To $verb a policy that $what needs the matching grant ($ability). " . $why);
             }
         }
 

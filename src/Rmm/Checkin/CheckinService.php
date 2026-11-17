@@ -21,6 +21,7 @@ use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\Policy\EffectivePolicy;
+use RivetCore\Rmm\Crypto\Signer;
 use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Remote\RemoteSettings;
 use RivetCore\Rmm\RmmEvent;
@@ -216,8 +217,14 @@ final class CheckinService
         if ($features['logs'] && $this->remote !== null && (int) ($cfg['shed_level'] ?? 0) === 0 && in_array(RemoteProtocol::CAP_LOGS, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
             $logConfig = $this->remote->agentLogConfig((string) ($dev['os'] ?? 'windows'), $this->capsOf($dev, $announce['caps']));
             if ($logConfig !== null) {
-                $offered[] = RemoteProtocol::CAP_LOGS;
-                $out['config']['logs'] = $logConfig;
+                try {
+                    [$sec] = $this->settings->signingKey();
+                    $logConfig['signature'] = Signer::sign(Signer::logsConfigMessage($logConfig), $sec);   // CORE-DS-16: which logs are shipped is not an unsigned setting
+                    $offered[] = RemoteProtocol::CAP_LOGS;
+                    $out['config']['logs'] = $logConfig;
+                } catch (\Throwable) {
+                    // no usable signing key: an unsigned log configuration is never offered
+                }
             }
         }
         // Change monitoring, additive: only an agent that announced `change:monitor`, while the `change_monitor` sub-switch is on, below load shedding level 2 and with at
@@ -786,13 +793,13 @@ final class CheckinService
                 }
                 continue;
             }
-            if (isset($seen[$key])) {
-                continue;   // one result per check per check-in
+            if (isset($seen[strtolower($key)])) {
+                continue;   // one result per check per check-in (CORE-DS-8: endpoint_agent_checks is case-insensitive, so 'Disk.C' and 'disk.c' are one check)
             }
             if (RmmChecks::isServerKey($key)) {
                 continue;   // CORE-18: log.rule_*, change.rule_*, patch.* and hv.* are written by the server only; an agent report under them is dropped, never stored or evaluated
             }
-            $seen[$key] = 1;
+            $seen[strtolower($key)] = 1;
             /** @var array<string,mixed> $c */
             $detail = DeviceValidator::cleanText($c['detail'] ?? '', 500) ?? '';
             $row = ['key' => $key, 'status' => $status, 'detail' => $detail, 'at' => $this->sql->utcNow()];

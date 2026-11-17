@@ -28,6 +28,9 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class DeployService
 {
+    /** The frozen value of a run request whose vendor parameters did not resolve when it was made (CORE-DS-64). */
+    public const ARGS_UNRESOLVED = 'unresolved';
+
     private readonly \RivetCore\Rmm\Store\DeploymentHistoryStore $deployHistory;
 
     public function __construct(
@@ -158,7 +161,8 @@ final class DeployService
                 $p['product_code'] = $v['product_code'];
             }
         }
-        $p['max_minutes'] = max(1, min(DeployProtocol::MAX_MINUTES_MAX, $maxMinutes));
+        // CORE-DS-67: the agent ends every job after an hour (the job's own deadline is this plus five minutes), so a longer install window was never honoured
+        $p['max_minutes'] = max(1, min(DeployProtocol::MAX_MINUTES_MAX, 55, $maxMinutes));
 
         // Final word: the same validator the job service applies.
         [$clean, $err] = DeployJobTypes::install($p);
@@ -200,6 +204,27 @@ final class DeployService
     }
 
     /**
+     * CORE-DS-64: a digest of the install arguments a job for this device and version would carry NOW (the vendor parameters filled in), so a two-person run
+     * request can freeze them and the approval can refuse when they changed in between. '' when the version has no placeholders (nothing can change);
+     * {@see self::ARGS_UNRESOLVED} when it has placeholders the parameters do not (yet) fill, so that "not resolved at request time" is itself frozen and
+     * an approval after they resolve is a change, not a pass.
+     *
+     * @param array<string,mixed> $dev
+     * @param array<string,mixed> $v a catalog version row
+     */
+    public function argsDigest(array $dev, array $v): string
+    {
+        if (($v['fmt'] ?? '') !== 'exe' || !ArgsTemplate::hasPlaceholders((string) $v['silent_args'])) {
+            return '';
+        }
+        $names = ArgsTemplate::names((string) $v['silent_args']);
+        $values = $this->params?->resolve((int) $v['package_id'], (int) $dev['client_id'], (int) ($dev['location_id'] ?? 0), $names) ?? [];
+        $args = array_diff($names, array_keys($values)) === [] ? ArgsTemplate::render((string) $v['silent_args'], $values) : null;
+
+        return $args === null ? self::ARGS_UNRESOLVED : hash('sha256', $args);
+    }
+
+    /**
      * Queue an installation or removal (or its dry run) of one catalog version on one device.
      *
      * @param array<string,mixed> $dev
@@ -234,7 +259,7 @@ final class DeployService
 
             return ['ok' => true, 'skipped' => 'duplicate'];
         }
-        $timeoutCap = (int) $this->settings->get()['job_max_timeout_s'];
+        $timeoutCap = min(3600, (int) $this->settings->get()['job_max_timeout_s']);   // CORE-DS-67: the agent never runs a job longer than an hour
         $mins = (int) $built['params']['max_minutes'];
         $r = $this->jobs->create($dev, DeployProtocol::JOB_INSTALL, null, $built['params'], min($timeoutCap, $mins * 60 + 300), true, (int) ($opts['user_id'] ?? 0),
             ['job_id' => $jobId] + ($built['secret'] === [] ? [] : ['extra' => ['secret' => $built['secret']]]));
@@ -264,7 +289,7 @@ final class DeployService
         if (($pending = $this->pendingJob($deviceId, DeployProtocol::JOB_DETECT)) !== null) {
             return ['ok' => true, 'skipped' => 'already_queued', 'job_id' => $pending];
         }
-        $rows = $this->sql->all('SELECT package_id, expected_version_id FROM rmm_package_installs WHERE device_id = ? AND expected_action IS NOT NULL ORDER BY package_id LIMIT ' . DeployProtocol::DETECT_ITEMS_MAX, [$deviceId]);
+        $rows = $this->sql->all('SELECT package_id, expected_version_id FROM rmm_package_installs WHERE device_id = ? AND expected_action IS NOT NULL ORDER BY detected_at IS NOT NULL, detected_at, package_id LIMIT ' . DeployProtocol::DETECT_ITEMS_MAX, [$deviceId]);
         $rules = [];
         $keys = [];
         foreach ($rows as $r) {
@@ -275,7 +300,7 @@ final class DeployService
             $key = 'p' . (int) $r['package_id'];
             $rule = ['key' => $key, 'kind' => $v['detect_kind'], 'value' => $v['detect_value'], 'min' => $v['detect_min']];
             if (strlen(DeployJobTypes::encodeRules([...$rules, $rule])) > DeployProtocol::RULES_MAX_CHARS) {
-                break;   // the rest follows in the next job (the detection time is only recorded for the ones asked)
+                break;   // the rest follows in the next job: the batch is the stalest first (never detected, then oldest), and the detection time is only recorded for the ones asked (CORE-DS-9)
             }
             $rules[] = $rule;
             $keys[$key] = (int) $r['package_id'];
@@ -390,7 +415,13 @@ final class DeployService
             $this->sql->run('UPDATE rmm_package_installs SET installed = ?, installed_version = ?, satisfied = ?, detected_at = ?, updated_at = ? WHERE device_id = ? AND package_id = ?',
                 [$it['installed'] ? 1 : 0, $it['installed'] ? $it['version'] : '', $it['satisfied'] ? 1 : 0, $now, $now, $deviceId, $map[$it['key']]]);
         }
-        $this->sql->run('INSERT INTO rmm_deploy_state (device_id, client_id, detected_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE detected_at = VALUES(detected_at)', [$deviceId, (int) $dev['client_id'], $now]);
+        // CORE-DS-9: the device counts as detected only when no expected package with a detection rule is still waiting for its first answer; until then the
+        // scheduler asks again (after its usual re-request delay) and the next job covers the packages that did not fit this one.
+        $waiting = $this->sql->one('SELECT 1 AS x FROM rmm_package_installs i JOIN rmm_package_versions v ON v.version_id = i.expected_version_id
+            WHERE i.device_id = ? AND i.expected_action IS NOT NULL AND i.detected_at IS NULL AND v.detect_kind <> \'\' LIMIT 1', [$deviceId]);
+        if ($waiting === null) {
+            $this->sql->run('INSERT INTO rmm_deploy_state (device_id, client_id, detected_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE detected_at = VALUES(detected_at)', [$deviceId, (int) $dev['client_id'], $now]);
+        }
     }
 
     /**
