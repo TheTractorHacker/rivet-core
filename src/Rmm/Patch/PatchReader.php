@@ -323,7 +323,29 @@ final class PatchReader
         $rows = $this->sql->all("SELECT update_id, MIN(title) AS title, MIN(kb) AS kb, MIN(kind) AS kind, MIN(severity) AS severity, COUNT(*) AS devices, MIN(first_seen_at) AS first_seen_at, MAX(reboot_required) AS reboot_required
             FROM rmm_patch_available WHERE $ws GROUP BY update_id ORDER BY FIELD(MIN(kind), 'critical', 'security', 'important', 'optional', 'driver', 'other'), devices DESC, update_id LIMIT $limit OFFSET " . max(0, $offset), $p);
 
-        return ['items' => array_map(static fn (array $r): array => ['update_id' => (string) $r['update_id'], 'title' => (string) $r['title'], 'kb' => (string) $r['kb'], 'kind' => (string) $r['kind'], 'severity' => (string) $r['severity'],
-            'devices' => (int) $r['devices'], 'first_seen_at' => Sql::iso((string) $r['first_seen_at']), 'reboot_required' => (int) $r['reboot_required'] === 1], $rows), 'total' => $total];
+        // CORE-DS-40: title, kb, kind and severity come from the devices, so one device must not decide how an update looks for the fleet: show what most devices
+        // report (ties go to the lowest value, as before) and say when the reports disagree.
+        $shown = [];
+        $disagree = [];
+        if ($rows !== []) {
+            $ids = array_map(static fn (array $r): string => (string) $r['update_id'], $rows);
+            foreach ($this->sql->all("SELECT update_id, title, kb, kind, severity, COUNT(*) AS c FROM rmm_patch_available WHERE $ws AND update_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')
+                GROUP BY update_id, title, kb, kind, severity ORDER BY update_id, c DESC, title, kb, kind, severity', [...$p, ...$ids]) as $v) {
+                $id = (string) $v['update_id'];
+                if (isset($shown[$id])) {
+                    $disagree[$id] = true;
+                    continue;
+                }
+                $shown[$id] = $v;
+            }
+        }
+
+        return ['items' => array_map(static function (array $r) use ($shown, $disagree): array {
+            $id = (string) $r['update_id'];
+            $v = $shown[$id] ?? $r;
+
+            return ['update_id' => $id, 'title' => (string) $v['title'], 'kb' => (string) $v['kb'], 'kind' => (string) $v['kind'], 'severity' => (string) $v['severity'],
+                'devices' => (int) $r['devices'], 'first_seen_at' => Sql::iso((string) $r['first_seen_at']), 'reboot_required' => (int) $r['reboot_required'] === 1, 'reports_disagree' => isset($disagree[$id])];
+        }, $rows), 'total' => $total];
     }
 }

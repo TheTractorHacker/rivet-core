@@ -344,8 +344,8 @@ final class RemoteToolsTest extends RemoteTestCase
         try {
             $key = \RivetCore\Rmm\Mesh\MeshCookie::newLoginKey();
             $this->assertSame(200, $this->api('PUT', [$this->d(), 'remote', 'node'], $this->admin, ['node_id' => 'node//' . str_repeat('A', 64)])[0]);
-            $age = function (int $ttl) use ($mock, $key): int {
-                $this->assertTrue($this->h->module->admin()->saveMesh($this->admin, ['mesh_enabled' => 1, 'mesh_url' => $mock->url(), 'mesh_login_key' => $key, 'mesh_account_template' => 'rit-{user_id}', 'mesh_token_ttl_s' => $ttl])->ok);
+            $age = function (int $ttl, ?bool $exact = null) use ($mock, $key): int {
+                $this->assertTrue($this->h->module->admin()->saveMesh($this->admin, ['mesh_enabled' => 1, 'mesh_url' => $mock->url(), 'mesh_login_key' => $key, 'mesh_account_template' => 'rit-{user_id}', 'mesh_token_ttl_s' => $ttl] + ($exact === null ? [] : ['mesh_token_ttl_exact' => $exact]))->ok);
                 [$c, $j] = $this->api('POST', [$this->d(), 'remote'], $this->tech, ['force' => true]);
                 $this->assertSame(200, $c);
                 $login = \RivetCore\Rmm\Mesh\MeshCookie::decode(urldecode((string) preg_replace('/^.*[?&]login=([^&]*).*$/', '$1', $j['url'])), $key);
@@ -355,6 +355,10 @@ final class RemoteToolsTest extends RemoteTestCase
             $this->assertEqualsWithDelta(120, $age(300), 5, 'the stored default keeps the original ~58 minute window');
             $this->assertEqualsWithDelta(3000, $age(600), 5, 'a 10 minute lifetime: accepted for 600 s of the 3600 s window');
             $this->assertEqualsWithDelta(120, $age(3600), 5);
+            // CORE-DS-39: with the opt-in flag a 300 s lifetime is a real 5 minute window; clearing it goes back to the legacy behaviour
+            $this->assertEqualsWithDelta(3300, $age(300, true), 5);
+            $this->assertEqualsWithDelta(3300, $age(300), 5, 'saving without the flag keeps what was chosen');
+            $this->assertEqualsWithDelta(120, $age(300, false), 5);
         } finally {
             $mock->stop();
         }

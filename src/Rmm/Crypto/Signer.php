@@ -165,6 +165,36 @@ final class Signer
         return self::sign($sha256Hex, $secretKeyB64);
     }
 
+    /** The domain line of the update manifest the release owner signs offline (CORE-DS-26). */
+    public const UPDATE_MANIFEST_DOMAIN = 'rivetit-update-manifest-v1';
+
+    /**
+     * CORE-DS-26: the message of the signed update manifest: the domain line, a line feed, then the canonical JSON of {kind: "agent_update", version, os, arch, sha256, min_version}.
+     * Unlike {@see signManifest()} (the bare SHA-256, kept for agents that do not know this), it binds the version, platform and minimum version to the signature, so a signed
+     * binary cannot be offered under another label.
+     *
+     * @param array{version:string,os:string,arch:string,sha256:string,min_version:string} $m
+     */
+    public static function updateManifestMessage(array $m): string
+    {
+        $o = ['kind' => 'agent_update', 'version' => (string) $m['version'], 'os' => (string) $m['os'], 'arch' => (string) $m['arch'], 'sha256' => strtolower((string) $m['sha256']), 'min_version' => (string) $m['min_version']];
+
+        return self::UPDATE_MANIFEST_DOMAIN . "\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($o), false)));
+    }
+
+    /**
+     * CORE-DS-20: the message signed for a stamped installer's payload: the domain line `rivetit-installer-payload-v1`, a line feed, then the canonical JSON of the payload object
+     * without its `signature` member. The agent reproduces it byte for byte (docs/design/SIGNED_INSTALLER_TRAILER.md).
+     *
+     * @param array<string,mixed> $payload
+     */
+    public static function installerPayloadMessage(array $payload): string
+    {
+        unset($payload['signature']);
+
+        return "rivetit-installer-payload-v1\n" . CanonicalJson::encode(CanonicalJson::toObject(json_decode((string) json_encode($payload), false)));
+    }
+
     public static function verifyManifest(string $sha256Hex, string $sigB64, string $publicKeyB64): bool
     {
         return self::verify($sha256Hex, $sigB64, $publicKeyB64);

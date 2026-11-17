@@ -643,6 +643,9 @@ final class AutoInstallTest extends DeployTestCase
         // rc.31 review F7: an intact file is hashed once; the stat fingerprint of that verified state is kept and later requests do not re-hash it
         $this->assertSame('', (string) $this->h->one('SELECT verified_fp FROM rmm_hosted_files LIMIT 1'));
         $this->assertSame(200, $get());
+        $body = $this->h->module->hostedFiles()->open($job['job_id'], $secret);
+        $this->assertNotNull($body);
+        $this->assertNull($body->sha256, 'CORE-DS-36: open() already verified the file, so the emitter must not hash up to 512 MiB a second time');
         $this->assertSame('', (string) $this->h->one('SELECT verified_fp FROM rmm_hosted_files LIMIT 1'), 'a file younger than two seconds is not remembered (stat times are whole seconds)');
         sleep(2);
         $this->assertSame(200, $get());

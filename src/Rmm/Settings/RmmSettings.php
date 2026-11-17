@@ -46,6 +46,9 @@ final class RmmSettings
     /** Writable columns added in 1.0.0-rc.41 (kept apart so that {@see WRITABLE_ADDED} keeps its value). @internal */
     public const WRITABLE_ADDED_RC41 = ['data_store_phase'];
 
+    /** Writable columns added by the deep-scan fixes (migration 0053). @internal */
+    public const WRITABLE_ADDED_DS = ['mesh_token_ttl_exact', 'signed_config', 'release_rollover_json'];
+
     /**
      * Server-side bounds for the intervals agents are told to use (design 13.3). The two floors are a DELIBERATE change from RivetIT's
      * original save handler (check-in 30 to 3600, collect 10 to 3600): they are capacity controls, because the check-in rate and the
@@ -305,14 +308,37 @@ final class RmmSettings
         $this->stateListener = $listener;
     }
 
+    /**
+     * The settings row in one query. CORE-DS-16/26/39: the switches of the deep-scan fixes live in a table of their own (migration 0053), joined here so a read costs no more than
+     * before; an install without that table (or without its row) simply has them off.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function read(): ?array
+    {
+        try {
+            $row = $this->sql->one('SELECT s.*, h.mesh_token_ttl_exact, h.signed_config, h.release_rollover_json FROM endpoint_agent_settings s LEFT JOIN rmm_hardening_settings h ON h.id = s.id WHERE s.id = 1');
+        } catch (\Throwable) {
+            $row = $this->sql->one('SELECT * FROM endpoint_agent_settings WHERE id = 1');
+        }
+        if ($row === null) {
+            return null;
+        }
+        $row['mesh_token_ttl_exact'] = (int) ($row['mesh_token_ttl_exact'] ?? 0);
+        $row['signed_config'] = (int) ($row['signed_config'] ?? 0);
+        $row['release_rollover_json'] ??= null;
+
+        return $row;
+    }
+
     /** @return array<string,mixed> the settings row */
     public function get(bool $fresh = false): array
     {
         if ($this->cache === null || $fresh) {
-            $row = $this->sql->one('SELECT * FROM endpoint_agent_settings WHERE id = 1');
+            $row = $this->read();
             if ($row === null) {
                 $this->sql->run('INSERT IGNORE INTO endpoint_agent_settings (id) VALUES (1)');
-                $row = $this->sql->one('SELECT * FROM endpoint_agent_settings WHERE id = 1') ?? [];
+                $row = $this->read() ?? [];
             }
             $this->cache = $row;
         }
@@ -368,7 +394,7 @@ final class RmmSettings
     /** @return list<string> every column {@see set()} may write */
     public static function writableColumns(): array
     {
-        return [...self::WRITABLE, ...self::WRITABLE_ADDED, ...self::WRITABLE_ADDED_RC41];
+        return [...self::WRITABLE, ...self::WRITABLE_ADDED, ...self::WRITABLE_ADDED_RC41, ...self::WRITABLE_ADDED_DS];
     }
 
     /**
@@ -379,15 +405,27 @@ final class RmmSettings
     {
         $sets = [];
         $params = [];
+        $extraSets = [];
+        $extraParams = [];
         foreach ($values as $k => $v) {
             if (!in_array($k, self::writableColumns(), true)) {
                 throw new \InvalidArgumentException("unknown setting $k");
+            }
+            if (in_array($k, self::WRITABLE_ADDED_DS, true)) {
+                $extraSets[] = "`$k` = ?";
+                $extraParams[] = $v;
+
+                continue;
             }
             $sets[] = "`$k` = ?";
             $params[] = $v;
         }
         if ($sets !== []) {
             $this->sql->run('UPDATE endpoint_agent_settings SET ' . implode(', ', $sets) . ' WHERE id = 1', $params);
+        }
+        if ($extraSets !== []) {
+            $this->sql->run('INSERT IGNORE INTO rmm_hardening_settings (id) VALUES (1)');
+            $this->sql->run('UPDATE rmm_hardening_settings SET ' . implode(', ', $extraSets) . ' WHERE id = 1', $extraParams);
         }
         $this->cache = null;
         if ($this->stateListener !== null && array_intersect(array_keys($values), \RivetCore\Rmm\RmmState::MIRRORED_COLUMNS) !== []) {
@@ -822,6 +860,24 @@ final class RmmSettings
     }
 
     /**
+     * CORE-DS-16: is the signed-configuration contract on (`rmm_hardening_settings.signed_config`, migration 0053)? Then responses announce `config.signed_config: 1` and signed
+     * checks carry the device they are for. Off (the default, and when the column does not exist yet) the wire is exactly what it was.
+     */
+    public function signedConfig(): bool
+    {
+        return $this->signedConfigLevel() >= 1;
+    }
+
+    /**
+     * The contract version announced as `config.signed_config`: 0 off, 1 signed checks and logs, 2 as 1 and `config.logs` also carries `device_id` (a string) and a monotonic `seq`
+     * inside the signature (docs/design/SIGNED_CONFIG_CONTRACT.md, item 3). Anything else stored counts as the nearest valid value.
+     */
+    public function signedConfigLevel(): int
+    {
+        return max(0, min(2, (int) ($this->get()['signed_config'] ?? 0)));
+    }
+
+    /**
      * Check definitions as delivered to the agent, each signed (script checks execute code on the endpoint).
      *
      * A Phase 3 check type is included only when $caps (the device's announced capabilities) lists `check:<type>`; the four original types
@@ -833,9 +889,9 @@ final class RmmSettings
      * @param list<string>|null $caps
      * @return list<array<string,mixed>>
      */
-    public function signedChecks(?array $caps = null, ?string $os = null): array
+    public function signedChecks(?array $caps = null, ?string $os = null, ?int $deviceId = null): array
     {
-        return $this->signCheckList($this->checks(), $caps, $os);
+        return $this->signCheckList($this->checks(), $caps, $os, $deviceId);
     }
 
     /**
@@ -845,8 +901,9 @@ final class RmmSettings
      * @param list<string>|null $caps
      * @return list<array<string,mixed>>
      */
-    public function signCheckList(array $checks, ?array $caps = null, ?string $os = null): array
+    public function signCheckList(array $checks, ?array $caps = null, ?string $os = null, ?int $deviceId = null): array
     {
+        $bind = $deviceId !== null && $this->signedConfig();
         [$sec] = $this->signingKey();
         $out = [];
         foreach ($checks as $c) {
@@ -868,6 +925,9 @@ final class RmmSettings
             $target = RmmChecks::osOf($c);
             if ($target !== null) {
                 $item['os'] = $target;
+            }
+            if ($bind) {
+                $item['device_id'] = $deviceId;   // CORE-DS-16: a signed check cannot be replayed on another device
             }
             $item['signature'] = Signer::sign(Signer::checkMessage($item), $sec);
             $out[] = $item;

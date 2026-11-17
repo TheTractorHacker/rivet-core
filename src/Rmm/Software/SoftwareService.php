@@ -31,6 +31,9 @@ final class SoftwareService
     public const SOURCES = ['registry', 'registry32', 'appx', 'dpkg', 'rpm', 'snap', 'flatpak'];
     /** Events published for one report; the change log keeps every change. */
     public const EVENT_CAP = 25;
+    /** CORE-DS-43: rows one device may hold in the current list (removed ones included) and in the change history (enforced by the history stores' append(), outside the control transaction); reports past it are trimmed, never refused. */
+    public const MAX_ROWS_PER_DEVICE = 20000;
+    public const MAX_HISTORY_PER_DEVICE = 20000;
     private const CHUNK = 250;
 
     private readonly SoftwareHistoryStore $history;
@@ -133,9 +136,13 @@ final class SoftwareService
                 $history = [];
                 $events = [];
                 $incoming = [];
+                $room = max(0, self::MAX_ROWS_PER_DEVICE - count($rows));
                 foreach ($report['items'] as $i) {
                     $incoming[$i['key']] = true;
                     $cur = $rows[$i['key']] ?? null;
+                    if ($cur === null && $room-- <= 0) {
+                        continue;   // CORE-DS-43: one device does not get unlimited rows
+                    }
                     if ($cur === null || $cur['removed_at'] !== null) {
                         $upsert[] = $i;
                         $out['installed']++;

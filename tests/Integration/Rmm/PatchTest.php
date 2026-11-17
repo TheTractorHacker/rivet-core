@@ -484,6 +484,52 @@ final class PatchTest extends PatchTestCase
         $this->assertSame(403, $put($this->tech, $rid, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true])[0], 'it becomes if_required_now again: needs the reboot grant though reboot_confirm is already on');
     }
 
+    /** CORE-DS-40: one device's idea of an update's title and kind must not become the fleet view; the majority wins and a disagreement is flagged. */
+    public function testTheFleetViewShowsWhatMostDevicesReportAndFlagsADisagreement(): void
+    {
+        $devs = [$this->linked('P1'), $this->linked('P2'), $this->linked('P3')];
+        foreach ($devs as $n => [$d, $t]) {
+            $update = $n < 2 ? ['security', 'Real: 2026-11 Security Update'] : ['driver', '!Contoso Bluetooth driver (safe to decline)'];
+            $this->scanWith($d, $t, self::winScan([self::WIN_KB => $update]));
+        }
+        [$c, $j] = $this->api('GET', ['patches'], $this->admin);
+        $this->assertSame(200, $c, json_encode($j));
+        $items = $j['items'];
+        $this->assertCount(1, $items);
+        $this->assertSame([3, 'security', 'Real: 2026-11 Security Update', true], [$items[0]['devices'], $items[0]['kind'], $items[0]['title'], $items[0]['reports_disagree']]);
+        // agreeing devices: no flag
+        $this->scanWith($devs[2][0], $devs[2][1], self::winScan([self::WIN_KB => ['security', 'Real: 2026-11 Security Update']]));
+        $items = $this->api('GET', ['patches'], $this->admin)[1]['items'];
+        $this->assertFalse($items[0]['reports_disagree']);
+        // the decision half: with the reports disagreeing a fleet-wide decision is refused unless acknowledged; a per-device one is fine
+        $this->scanWith($devs[2][0], $devs[2][1], self::winScan([self::WIN_KB => ['driver', '!Contoso Bluetooth driver (safe to decline)']]));
+        [$c, $j] = $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB]]);
+        $this->assertSame([409, 'reports_disagree'], [$c, $j['code']], json_encode($j));
+        $this->assertSame(3, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_available WHERE update_id = '" . self::WIN_KB . "' AND status = 'available'"), 'nothing was declined');
+        $this->assertSame(200, $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB], 'device_id' => $devs[2][0]])[0], 'one device is its own report');
+        $this->assertSame(200, $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB], 'acknowledge_disagreeing_reports' => true])[0]);
+    }
+
+    /** CRR-13: the decision gate uses the same definition of "disagree" as the fleet view: severity and KB count too, not only title and kind. */
+    public function testAFleetDecisionAlsoStopsOnADisagreeingSeverityOrKb(): void
+    {
+        $devs = [$this->linked('Q1'), $this->linked('Q2')];
+        foreach ($devs as [$d, $t]) {
+            $this->scanWith($d, $t, self::winScan([self::WIN_KB => ['security', 'Real: 2026-11 Security Update']]));
+        }
+        $decline = fn (array $extra = []): array => $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB]] + $extra);
+        $this->assertSame(200, $this->api('GET', ['patches'], $this->admin)[0]);
+        foreach (['severity' => "'low'", 'kb' => "'KB0000001'"] as $col => $val) {
+            $this->h->q("UPDATE rmm_patch_available SET status = 'available' WHERE update_id = '" . self::WIN_KB . "'");
+            $this->h->q("UPDATE rmm_patch_available SET $col = $val WHERE device_id = " . (int) $devs[1][0] . " AND update_id = '" . self::WIN_KB . "'");
+            [$c, $j] = $decline();
+            $this->assertSame([409, 'reports_disagree'], [$c, $j['code']], "$col: " . json_encode($j));
+            $this->assertSame(2, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_available WHERE update_id = '" . self::WIN_KB . "' AND status = 'available'"), "$col: nothing was declined");
+            $this->assertSame(200, $decline(['acknowledge_disagreeing_reports' => true])[0], "$col: acknowledged");
+            $this->h->q("UPDATE rmm_patch_available SET severity = (SELECT severity FROM (SELECT severity FROM rmm_patch_available WHERE device_id = " . (int) $devs[0][0] . " AND update_id = '" . self::WIN_KB . "') x), kb = (SELECT kb FROM (SELECT kb FROM rmm_patch_available WHERE device_id = " . (int) $devs[0][0] . " AND update_id = '" . self::WIN_KB . "') y) WHERE device_id = " . (int) $devs[1][0]);
+        }
+    }
+
     /** CR5 / CR13 (CORE-DS-10): the second-person rule cannot be taken away, and a staged policy cannot be switched on, with patch.manage alone. */
     public function testThePatchSecondPersonRuleAndStagedPoliciesNeedTheirGrantsToChange(): void
     {

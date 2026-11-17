@@ -196,6 +196,10 @@ final class MeshService
     {
         $ttl = (int) ($cfg['mesh_token_ttl_s'] ?? 0);
 
+        if ($ttl > 0 && (int) ($cfg['mesh_token_ttl_exact'] ?? 0) === 1) {
+            return $ttl;   // CORE-DS-39: the administrator asked for exactly this lifetime, 300 s included
+        }
+
         return $ttl > 0 && $ttl !== \RivetCore\Rmm\Settings\RmmSettings::MESH_TOKEN_TTL_DEFAULT_S ? $ttl : null;
     }
 
@@ -245,9 +249,10 @@ final class MeshService
         curl_setopt_array($ch, $opts);
         curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $vetted = \RivetCore\Webhooks\UrlPolicy::connectedToVetted(curl_getinfo($ch, CURLINFO_PRIMARY_IP), $target);   // CORE-DS-73
         unset($ch);   // the handle is freed here (curl_close() has had no effect since PHP 8.0 and is deprecated in 8.5)
 
-        return $code >= 200 && $code < 400 ? null : self::UNREACHABLE;
+        return $vetted && $code >= 200 && $code < 400 ? null : self::UNREACHABLE;
     }
 
     /**
@@ -299,6 +304,9 @@ final class MeshService
         curl_setopt_array($ch, $opts);
         curl_exec($ch);
         $info = curl_getinfo($ch, CURLINFO_CERTINFO);
+        if (!\RivetCore\Webhooks\UrlPolicy::connectedToVetted(curl_getinfo($ch, CURLINFO_PRIMARY_IP), $target)) {
+            $info = [];   // CORE-DS-73: the handshake was not with a vetted address: nothing of it is shown
+        }
         unset($ch);
         $leaf = $info[0] ?? null;
         $pem = is_array($leaf) && is_string($leaf['Cert'] ?? null) ? $leaf['Cert'] : null;
@@ -351,8 +359,9 @@ final class MeshService
         curl_setopt_array($ch, $opts);
         curl_exec($ch);
         $errno = curl_errno($ch);
+        $vetted = \RivetCore\Webhooks\UrlPolicy::connectedToVetted(curl_getinfo($ch, CURLINFO_PRIMARY_IP), $target);   // CORE-DS-73
         unset($ch);
 
-        return $errno === 0;
+        return $errno === 0 && $vetted;
     }
 }
