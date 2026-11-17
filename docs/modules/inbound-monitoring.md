@@ -50,6 +50,7 @@ internal/unassigned bucket and never under a customer. The ticket keeps its clie
 
 ## Wiring (edition endpoint)
 
+<!-- skip: fragment of an edition-side example, needs a configured edition or live service -->
 ```php
 $auth = new InboundAuthenticator([$settings['secret_current'], $settings['secret_previous']]);   // previous only during rotation
 $engine = new IncidentEngine($store, $gateway, $map, new EngineConfig(minConsecutiveDown: 1, defaultTarget: $default));
