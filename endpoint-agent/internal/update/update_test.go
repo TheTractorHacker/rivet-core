@@ -418,3 +418,35 @@ func TestDownloadSendsTheAgentsOS(t *testing.T) {
 		t.Fatalf("query %q does not carry %s", gotQuery, want)
 	}
 }
+
+// CORE-DS-11: a new version that dies before Agent.Run (state directory refused, bad config) never reaches OnStart or the watchdog, so the process
+// entry point calls EarlyFailureRollback; after MaxStartAttempts early exits the previous binary is restored.
+func TestEarlyFailureRollbackRestoresThePreviousBinary(t *testing.T) {
+	e := newEnv(t)
+	if _, err := e.apply(e.mgr("1.0.0"), e.manifest("1.1.0")); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(e.dir, "update.json")
+	rolled := false
+	for i := 0; i < MaxStartAttempts+1 && !rolled; i++ {
+		rolled = EarlyFailureRollback(e.paths.Current, statePath, "1.1.0", nil)
+	}
+	if !rolled {
+		t.Fatal("no rollback after repeated early failures")
+	}
+	if read(t, e.paths.Current) != "OLD-BINARY" {
+		t.Fatalf("current=%q after rollback", read(t, e.paths.Current))
+	}
+}
+
+func TestEarlyFailureRollbackIsANoOpOutsideProbation(t *testing.T) {
+	e := newEnv(t)
+	for i := 0; i < MaxStartAttempts+2; i++ {
+		if EarlyFailureRollback(e.paths.Current, filepath.Join(e.dir, "update.json"), "1.0.0", nil) {
+			t.Fatal("rolled back with no update in flight")
+		}
+	}
+	if read(t, e.paths.Current) != "OLD-BINARY" {
+		t.Fatal("binary changed")
+	}
+}

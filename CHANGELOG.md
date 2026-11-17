@@ -2,6 +2,17 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.71 (endpoint agent: deep-scan fixes A, CORE-DS-2/3/4/6/8/11/17/24; no migration)
+
+Provisional number (follows rc.70). Go endpoint agent only; no PHP, no protocol change (the golden transcripts are untouched). Windows-only parts are listed in docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md as UNVERIFIED.
+
+- **CORE-DS-8 (agent half) and CORE-DS-17: exact-case decoding.** New `internal/strictjson`: check specs and check params are decoded with exact member names; a case-variant member (compared with Unicode simple folding, so the long s and the Kelvin sign too) or a duplicate member is refused instead of a later one winning. `CheckRunner` never runs or reports a check whose key is in a server-owned family (`log.rule_`, `change.rule_`, `patch.`, `hv.`) in any letter case. **Server hand-off (PHP, not done here):** `RmmChecks::isServerKey()` must be case-insensitive and `CheckEvaluator` must key its row map case-insensitively (the table is `utf8mb4_general_ci`); `ChecksValidator` should rebuild legacy check params from an allow-list.
+- **CORE-DS-6, CORE-DS-24: file_put / file_get path walk.** `beginPut` no longer re-resolves the approved directory; the directory is opened component by component with `openat(O_DIRECTORY|O_NOFOLLOW)` from `/`, and `file_get` opens its file the same way, so an ancestor swapped for a symlink after the policy check is refused.
+- **CORE-DS-11: early-exit rollback.** A new version that exits before `Agent.Run` (state directory refused, bad configuration) now counts the failed start and, after the attempt limit, restores the previous binary and exits with the restart code.
+- **CORE-DS-2: oversized check-in.** `buildInflight` sheds the oldest buffered samples (then software, inventory, Mesh) until the body is under the cap; a persisted or locally refused over-cap body is dropped and rebuilt instead of being resent forever (`api.ErrRequestTooLarge`).
+- **CORE-DS-3: hung checks.** Every check runs under a hard 150 s limit (a hung one is abandoned and fails fast until it returns); `readFileCapped` opens with `O_NONBLOCK` and refuses non-regular files; cert directory scans skip FIFOs, sockets and devices.
+- **CORE-DS-4: job report retries.** `module_disabled`/`feature_disabled` ends the attempt at once, Retry-After is capped at 60 s, the final attempt does not sleep, and `Flush` has a 30 s budget.
+
 ## 1.0.0-rc.76 (deep-scan fixes B: RMM server hardening, UrlPolicy, host names; no migration)
 
 Provisional number, stacked on rc.75 (above the endpoint-agent fixes of rc.71 to 74). Fixes from the 2026-11-15 deep security scan (CORE-DS-34 to 44, 62, 63, 65, 68 to 73, 75) and one finding from the RivetIT session (IT-DS-19/42, host names). Two additive migrations (0053, 0054; the heading is kept as assigned), no new route, no constant of a released value changed, the device protocol transcripts are untouched. Not fixed here, with the question for the owner: CORE-DS-38 (per-client rule caps), 39 (Mesh token lifetime 300 s); partly: 72 (audit and rate), 70 (deleting stays open on purpose).

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"rivetit-agent/internal/strictjson"
 )
 
 // Device is the enrollment identity block.
@@ -52,7 +54,8 @@ type CheckSpec struct {
 func (c *CheckSpec) UnmarshalJSON(b []byte) error {
 	type plain CheckSpec
 	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	// Exact-case members only: the server validated "key"/"params" as spelled, and encoding/json would let a later "Key" win (CORE-DS-8, CORE-DS-17).
+	if err := strictjson.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*c = CheckSpec(p)

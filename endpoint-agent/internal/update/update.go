@@ -369,3 +369,17 @@ func (m *Manager) Confirm() error {
 	}
 	return os.Remove(m.StatePath)
 }
+
+// EarlyFailureRollback is for a process that is about to exit before Agent.Run
+// could start the probation machinery (the state directory was refused, the
+// configuration did not load). Without it a new version that fails that early
+// is never rolled back: it crash-loops under the service manager and the device
+// stays offline (CORE-DS-11). Each call counts as one start of the version
+// under probation; after MaxStartAttempts, or past the health deadline, the
+// previous binary is restored and the caller must exit with the restart code.
+// Outside probation it does nothing. now may be nil.
+func EarlyFailureRollback(exe, statePath, version string, now func() time.Time) bool {
+	m := &Manager{Paths: PathsFor(exe), Version: version, StatePath: statePath, Now: now}
+	rolled, _, _ := m.OnStart()
+	return rolled
+}
