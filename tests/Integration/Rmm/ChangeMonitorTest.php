@@ -563,6 +563,27 @@ final class ChangeMonitorTest extends RemoteTestCase
         return $j;
     }
 
+    /** CORE-DS-38: the recommended rules say why they were not created when the fleet-wide cap stops them. */
+    public function testRecommendedRulesReportTheCapInsteadOfSilentlyStopping(): void
+    {
+        $this->enable();
+        $rules = $this->h->module->changeRules();
+        for ($i = 0; $i < \RivetCore\Rmm\Change\ChangeRuleService::MAX_RULES - 2; $i++) {
+            $this->rule(['name' => "Filler $i"]);
+        }
+        [$c, $j] = $this->api('POST', ['changes', 'rules', 'recommended'], $this->admin, ['client_id' => 0]);
+        $this->assertSame(201, $c, json_encode($j));
+        $this->assertCount(2, $j['created']);
+        $this->assertSame(['At most 50 change rules for all clients.'], $j['errors']);
+        [$c, $j] = $this->api('POST', ['changes', 'rules', 'recommended'], $this->admin, ['client_id' => 0]);
+        $this->assertSame(409, $c, 'the "all clients" scope is full: ' . json_encode($j));
+        // CORE-DS-38: another client has room of its own, whatever the "all clients" scope holds
+        [$c, $j] = $this->api('POST', ['changes', 'rules', 'recommended'], $this->admin, ['client_id' => $this->h->clientA]);
+        $this->assertSame(201, $c, json_encode($j));
+        $this->assertGreaterThanOrEqual(5, count($j['created']));
+        $this->assertNotNull($rules);
+    }
+
     public function testRuleManagementAndItsScope(): void
     {
         $this->enable();

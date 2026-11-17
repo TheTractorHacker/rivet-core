@@ -445,4 +445,159 @@ final class PatchTest extends PatchTestCase
         $this->assertContains(RmmEvent::PATCH_SCAN_COMPLETED, RmmEvent::all());
         $this->assertContains(RmmEvent::PATCH_INSTALL_FAILED, RmmEvent::all());
     }
+
+    /** CORE-DS-10: the policy write gate alone (patch.manage) may not turn on unattended installs, auto-approval or the reboot, or switch off the second-person rule. */
+    public function testPatchPolicyApprovalAndInstallSettingsNeedTheirOwnGrants(): void
+    {
+        $put = fn (object $by, ?int $pid, array $settings): array => $pid === null
+            ? $this->api('POST', ['patch_policies'], $by, ['name' => 'p' . random_int(1, 1000000000), 'settings' => $settings])
+            : $this->api('PUT', ['patch_policies', (string) $pid], $by, ['name' => (string) $this->h->one("SELECT name FROM rmm_patch_policies WHERE policy_id = $pid"), 'settings' => $settings]);
+        // tech (patch.manage only)
+        $this->assertSame(403, $put($this->tech, null, ['install_enabled' => true])[0], 'unattended installs need patch.install');
+        $this->assertSame(403, $put($this->tech, null, ['approval_mode' => 'auto', 'auto_days_security' => 0])[0], 'auto-approval needs job.approve');
+        $this->assertSame(403, $put($this->tech, null, ['auto_days_security' => 3])[0]);
+        $this->assertSame(403, $put($this->tech, null, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true])[0]);
+        $this->assertSame(201, $put($this->tech, null, ['install_enabled' => false, 'window_mode' => 'none', 'max_minutes' => 30])[0], 'every other setting stays open to the manager');
+        // second (patch.manage + job.approve) may not install; installer (patch.install + reboot) may not approve
+        $this->assertSame(403, $put($this->second, null, ['install_enabled' => true])[0]);
+        $this->assertSame(201, $put($this->second, null, ['two_person' => true, 'approval_mode' => 'auto', 'auto_days_optional' => 7])[0]);
+        [$c, $j] = $put($this->installer, null, ['install_enabled' => true, 'two_person' => true]);
+        $this->assertSame(201, $c, json_encode($j));
+        $pid = (int) $j['policy']['policy_id'];
+        $this->assertSame(403, $put($this->installer, null, ['approval_mode' => 'auto'])[0]);
+        // lowering the second-person rule, by setting it false or by leaving it out, needs job.approve; keeping it does not
+        $this->assertSame(403, $put($this->tech, $pid, ['install_enabled' => true, 'two_person' => false])[0]);
+        $this->assertSame(403, $put($this->installer, $pid, ['install_enabled' => true])[0], 'a key left out is removed');
+        $this->assertSame(200, $put($this->installer, $pid, ['install_enabled' => true, 'two_person' => true, 'max_minutes' => 90])[0]);
+        $this->assertSame(200, $put($this->second, $pid, ['install_enabled' => true, 'two_person' => false])[0], 'job.approve may lower it (install_enabled is unchanged)');
+        // assigning a policy that installs by itself needs patch.install
+        $this->assertSame(403, $this->api('POST', ['patch_policies', (string) $pid, 'assignments'], $this->second, ['scope_type' => 'global', 'scope_id' => 0])[0]);
+        $this->assertSame(403, $this->api('POST', ['patch_policies', (string) $pid, 'assignments'], $this->installer, ['scope_type' => 'global', 'scope_id' => 0])[0], 'CR5: it carries an explicit two_person false, which needs job.approve as well');
+        $this->assertSame(200, $this->api('POST', ['patch_policies', (string) $pid, 'assignments'], $this->admin, ['scope_type' => 'global', 'scope_id' => 0])[0]);
+        // reboot_policy if_required_now is re-checked even when reboot_confirm is already stored
+        [$c, $j] = $put($this->installer, null, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true]);
+        $this->assertSame(201, $c, json_encode($j));
+        $rid = (int) $j['policy']['policy_id'];
+        [$c, $j] = $put($this->tech, $rid, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true, 'max_minutes' => 20]);
+        $this->assertSame(200, $c, 'unchanged is not a change: ' . json_encode($j));
+        $this->assertSame(200, $put($this->tech, $rid, ['reboot_policy' => 'never', 'reboot_confirm' => true])[0]);
+        $this->assertSame(403, $put($this->tech, $rid, ['reboot_policy' => 'if_required_now', 'reboot_confirm' => true])[0], 'it becomes if_required_now again: needs the reboot grant though reboot_confirm is already on');
+    }
+
+    /** CORE-DS-40: one device's idea of an update's title and kind must not become the fleet view; the majority wins and a disagreement is flagged. */
+    public function testTheFleetViewShowsWhatMostDevicesReportAndFlagsADisagreement(): void
+    {
+        $devs = [$this->linked('P1'), $this->linked('P2'), $this->linked('P3')];
+        foreach ($devs as $n => [$d, $t]) {
+            $update = $n < 2 ? ['security', 'Real: 2026-11 Security Update'] : ['driver', '!Contoso Bluetooth driver (safe to decline)'];
+            $this->scanWith($d, $t, self::winScan([self::WIN_KB => $update]));
+        }
+        [$c, $j] = $this->api('GET', ['patches'], $this->admin);
+        $this->assertSame(200, $c, json_encode($j));
+        $items = $j['items'];
+        $this->assertCount(1, $items);
+        $this->assertSame([3, 'security', 'Real: 2026-11 Security Update', true], [$items[0]['devices'], $items[0]['kind'], $items[0]['title'], $items[0]['reports_disagree']]);
+        // agreeing devices: no flag
+        $this->scanWith($devs[2][0], $devs[2][1], self::winScan([self::WIN_KB => ['security', 'Real: 2026-11 Security Update']]));
+        $items = $this->api('GET', ['patches'], $this->admin)[1]['items'];
+        $this->assertFalse($items[0]['reports_disagree']);
+        // the decision half: with the reports disagreeing a fleet-wide decision is refused unless acknowledged; a per-device one is fine
+        $this->scanWith($devs[2][0], $devs[2][1], self::winScan([self::WIN_KB => ['driver', '!Contoso Bluetooth driver (safe to decline)']]));
+        [$c, $j] = $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB]]);
+        $this->assertSame([409, 'reports_disagree'], [$c, $j['code']], json_encode($j));
+        $this->assertSame(3, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_available WHERE update_id = '" . self::WIN_KB . "' AND status = 'available'"), 'nothing was declined');
+        $this->assertSame(200, $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB], 'device_id' => $devs[2][0]])[0], 'one device is its own report');
+        $this->assertSame(200, $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB], 'acknowledge_disagreeing_reports' => true])[0]);
+    }
+
+    /** CRR-13: the decision gate uses the same definition of "disagree" as the fleet view: severity and KB count too, not only title and kind. */
+    public function testAFleetDecisionAlsoStopsOnADisagreeingSeverityOrKb(): void
+    {
+        $devs = [$this->linked('Q1'), $this->linked('Q2')];
+        foreach ($devs as [$d, $t]) {
+            $this->scanWith($d, $t, self::winScan([self::WIN_KB => ['security', 'Real: 2026-11 Security Update']]));
+        }
+        $decline = fn (array $extra = []): array => $this->api('POST', ['patches', 'decline'], $this->admin, ['update_ids' => [self::WIN_KB]] + $extra);
+        $this->assertSame(200, $this->api('GET', ['patches'], $this->admin)[0]);
+        foreach (['severity' => "'low'", 'kb' => "'KB0000001'"] as $col => $val) {
+            $this->h->q("UPDATE rmm_patch_available SET status = 'available' WHERE update_id = '" . self::WIN_KB . "'");
+            $this->h->q("UPDATE rmm_patch_available SET $col = $val WHERE device_id = " . (int) $devs[1][0] . " AND update_id = '" . self::WIN_KB . "'");
+            [$c, $j] = $decline();
+            $this->assertSame([409, 'reports_disagree'], [$c, $j['code']], "$col: " . json_encode($j));
+            $this->assertSame(2, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_available WHERE update_id = '" . self::WIN_KB . "' AND status = 'available'"), "$col: nothing was declined");
+            $this->assertSame(200, $decline(['acknowledge_disagreeing_reports' => true])[0], "$col: acknowledged");
+            $this->h->q("UPDATE rmm_patch_available SET severity = (SELECT severity FROM (SELECT severity FROM rmm_patch_available WHERE device_id = " . (int) $devs[0][0] . " AND update_id = '" . self::WIN_KB . "') x), kb = (SELECT kb FROM (SELECT kb FROM rmm_patch_available WHERE device_id = " . (int) $devs[0][0] . " AND update_id = '" . self::WIN_KB . "') y) WHERE device_id = " . (int) $devs[1][0]);
+        }
+    }
+
+    /** CR5 / CR13 (CORE-DS-10): the second-person rule cannot be taken away, and a staged policy cannot be switched on, with patch.manage alone. */
+    public function testThePatchSecondPersonRuleAndStagedPoliciesNeedTheirGrantsToChange(): void
+    {
+        $call = fn (string $m, array $seg, object $by, ?array $body = null): array => $this->api($m, $seg, $by, $body);
+        // lowering through an override policy
+        $this->assertSame(403, $call('POST', ['patch_policies'], $this->tech, ['name' => 'override', 'settings' => ['two_person' => false]])[0], 'an explicit false overrides a true somewhere else');
+        [$c, $j] = $call('POST', ['patch_policies'], $this->second, ['name' => 'G', 'settings' => ['two_person' => true]]);
+        $this->assertSame(201, $c, json_encode($j));
+        $g = (int) $j['policy']['policy_id'];
+        [$c, $j] = $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->second, ['scope_type' => 'global', 'scope_id' => 0]);
+        $this->assertSame(200, $c, json_encode($j));
+        $aid = (int) $j['assignment']['assignment_id'];
+        // taking it away: unassign, disable, delete
+        $this->assertSame(403, $call('DELETE', ['patch_policies', (string) $g, 'assignments', (string) $aid], $this->tech)[0]);
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $g], $this->tech, ['name' => 'G', 'enabled' => false])[0]);
+        $this->assertSame(403, $call('DELETE', ['patch_policies', (string) $g], $this->tech)[0]);
+        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_assignments WHERE policy_id = $g"));
+        $this->assertSame(200, $call('PUT', ['patch_policies', (string) $g], $this->second, ['name' => 'G', 'enabled' => false])[0], 'job.approve may');
+        $this->assertSame(200, $call('PUT', ['patch_policies', (string) $g], $this->second, ['name' => 'G', 'enabled' => true])[0]);
+        // CR13: a policy staged disabled with unattended installs cannot be switched on by patch.manage alone
+        [$c, $j] = $call('POST', ['patch_policies'], $this->admin, ['name' => 'Staged', 'enabled' => false, 'settings' => ['install_enabled' => true, 'approval_mode' => 'auto', 'auto_days_security' => 0]]);
+        $this->assertSame(201, $c, json_encode($j));
+        $staged = (int) $j['policy']['policy_id'];
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $staged], $this->tech, ['name' => 'Staged', 'enabled' => true])[0]);
+        $this->assertSame(0, (int) $this->h->one("SELECT enabled FROM rmm_patch_policies WHERE policy_id = $staged"));
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $staged], $this->installer, ['name' => 'Staged', 'enabled' => true])[0], 'install alone is not enough: it also turns on auto-approval');
+        $this->assertSame(200, $call('PUT', ['patch_policies', (string) $staged], $this->admin, ['name' => 'Staged', 'enabled' => true])[0]);
+        // taking the rule away by deleting needs the grant, and the grant holder can
+        $this->assertSame(200, $call('DELETE', ['patch_policies', (string) $g], $this->second)[0]);
+    }
+
+    /** CRR-10: a restrictive layer (installs off, manual approval) and a second-person assignment cannot be taken away or weakened with patch.manage alone. */
+    public function testARestrictiveLayerAndAnEnforcedAssignmentCannotBeWeakenedWithManageAlone(): void
+    {
+        $call = fn (string $m, array $seg, object $by, ?array $body = null): array => $this->api($m, $seg, $by, $body);
+        [$c, $j] = $call('POST', ['patch_policies'], $this->admin, ['name' => 'No installs', 'settings' => ['install_enabled' => false, 'approval_mode' => 'manual']]);
+        $this->assertSame(201, $c, json_encode($j));
+        $r = (int) $j['policy']['policy_id'];
+        [$c, $j] = $call('POST', ['patch_policies', (string) $r, 'assignments'], $this->admin, ['scope_type' => 'global', 'scope_id' => 0]);
+        $this->assertSame(200, $c, json_encode($j));
+        $rAssign = (int) $j['assignment']['assignment_id'];
+        $this->assertSame(403, $call('DELETE', ['patch_policies', (string) $r, 'assignments', (string) $rAssign], $this->tech)[0], 'unassigning a layer that keeps installs off');
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $r], $this->tech, ['name' => 'No installs', 'enabled' => false])[0], 'disabling it');
+        $this->assertSame(403, $call('DELETE', ['patch_policies', (string) $r], $this->tech)[0], 'deleting it');
+        $this->assertSame(1, (int) $this->h->one("SELECT COUNT(*) FROM rmm_patch_assignments WHERE policy_id = $r"));
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $r], $this->installer, ['name' => 'No installs', 'enabled' => false])[0], 'install alone does not cover the manual approval mode');
+        $this->assertSame(200, $call('DELETE', ['patch_policies', (string) $r], $this->admin)[0], 'the grant holders may');
+
+        // an enforced two-person assignment cannot be demoted by posting it again
+        [$c, $j] = $call('POST', ['patch_policies'], $this->second, ['name' => 'Two person', 'settings' => ['two_person' => true]]);
+        $g = (int) $j['policy']['policy_id'];
+        $this->assertSame(200, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->second, ['scope_type' => 'global', 'scope_id' => 0, 'priority' => 100, 'enforce' => true])[0]);
+        $this->assertSame(403, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->tech, ['scope_type' => 'global', 'scope_id' => 0, 'priority' => 100, 'enforce' => false])[0], 'enforce taken away');
+        $this->assertSame(403, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->tech, ['scope_type' => 'global', 'scope_id' => 0, 'priority' => 0, 'enforce' => true])[0], 'priority lowered');
+        $this->assertSame('1', (string) $this->h->one("SELECT enforce FROM rmm_patch_assignments WHERE policy_id = $g"));
+        // type confusion: strings, boolean strings and arrays are read exactly as the store reads them, or refused
+        foreach ([['priority' => '0', 'enforce' => true], ['priority' => 100, 'enforce' => 'false'], ['priority' => 100, 'enforce' => '0'], ['priority' => 100, 'enforce' => 'no'], ['priority' => '0']] as $weak) {
+            $this->assertSame(403, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->tech, ['scope_type' => 'global', 'scope_id' => 0] + $weak)[0], json_encode($weak));
+        }
+        foreach ([['priority' => '-5', 'enforce' => true], ['priority' => [], 'enforce' => true], ['priority' => 100, 'enforce' => []], ['priority' => 100, 'enforce' => 'maybe'], ['priority' => 1.5, 'enforce' => true]] as $junk) {
+            $this->assertSame(422, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->tech, ['scope_type' => 'global', 'scope_id' => 0] + $junk)[0], json_encode($junk));
+        }
+        $this->assertSame('1', (string) $this->h->one("SELECT enforce FROM rmm_patch_assignments WHERE policy_id = $g"), 'none of those changed the stored assignment');
+        $this->assertSame(100, (int) $this->h->one("SELECT priority FROM rmm_patch_assignments WHERE policy_id = $g"));
+        // the settings gates read booleans strictly because the settings are validated: a string cannot carry a lowering past them
+        $this->assertSame(403, $call('PUT', ['patch_policies', (string) $g], $this->tech, ['name' => 'Two person', 'settings' => ['two_person' => 'false']])[0]);
+        $this->assertSame(422, $call('PUT', ['patch_policies', (string) $g], $this->tech, ['name' => 'Two person', 'settings' => ['two_person' => true, 'install_enabled' => 'true']])[0]);
+        $this->assertSame(200, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->tech, ['scope_type' => 'global', 'scope_id' => 0, 'priority' => 200, 'enforce' => true])[0], 'strengthening needs nothing extra');
+        $this->assertSame(200, $call('POST', ['patch_policies', (string) $g, 'assignments'], $this->second, ['scope_type' => 'global', 'scope_id' => 0, 'priority' => 100, 'enforce' => false])[0], 'job.approve may');
+    }
 }

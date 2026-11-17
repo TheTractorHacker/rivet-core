@@ -1318,7 +1318,7 @@ final class RmmModule
 
     public function approvedRunExecutor(): ApprovedRunExecutor
     {
-        return $this->approvedRunExecutor ??= new ApprovedRunExecutor($this->sql(), $this->settings(), $this->approvals(), $this->scripts(), $this->bulkRunner(), $this->tenancy, $this->audit);
+        return $this->approvedRunExecutor ??= new ApprovedRunExecutor($this->sql(), $this->settings(), $this->approvals(), $this->scripts(), $this->bulkRunner(), $this->tenancy, $this->audit, $this->authorizer(), $this->targets());
     }
 
     /** The Phase 2 reads (also reachable as `readModel()->automation()`). */

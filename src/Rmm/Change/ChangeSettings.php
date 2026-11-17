@@ -226,8 +226,7 @@ final class ChangeSettings
                     if ($k === '') {
                         continue;
                     }
-                    $re = '/^' . str_replace('\\*', '[^\\\\]+', preg_quote($k, '/')) . '(?:\\\\.*)?$/isD';
-                    if (preg_match($re, $t) === 1) {
+                    if (self::registryKeyCovers($k, $t)) {
                         return true;
                     }
                 }
@@ -249,6 +248,26 @@ final class ChangeSettings
         }
 
         return false;
+    }
+
+    /**
+     * CORE-DS-34: is $target the watched key or below it? Compared segment by segment (case-insensitive), in linear time. A segment that is exactly `*` stands for any one
+     * non-empty segment; a `*` inside a longer segment is an ordinary character, as it is for the agent (which only expands `HKU\*`). No pattern is ever built from a key.
+     */
+    private static function registryKeyCovers(string $key, string $target): bool
+    {
+        $k = explode('\\', $key);
+        $t = explode('\\', $target);
+        if (count($t) < count($k)) {
+            return false;
+        }
+        foreach ($k as $i => $seg) {
+            if ($seg === '*' ? $t[$i] === '' : strcasecmp($seg, $t[$i]) !== 0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public static function normaliseKey(string $key): string

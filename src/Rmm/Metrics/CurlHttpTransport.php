@@ -76,6 +76,9 @@ final class CurlHttpTransport implements HttpTransportInterface
         });
         $ok = curl_exec($ch);
         $error = $ok === false ? curl_error($ch) : '';
+        if (!UrlPolicy::connectedToVetted(curl_getinfo($ch, CURLINFO_PRIMARY_IP), $target)) {
+            throw new ExternalStoreException('the connection went to an address that was not vetted');   // CORE-DS-73
+        }
         $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         if ($tooLarge) {
             throw new ExternalStoreException('metric store response is too large');

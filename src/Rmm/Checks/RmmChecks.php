@@ -78,8 +78,10 @@ final class RmmChecks
         return array_values(array_filter($checks, static fn (array $c): bool => self::appliesTo($c, $os)));
     }
 
+    /** CORE-DS-8: case-insensitive, because the check_key column is: 'LOG.RULE_7' and 'log.rule_7' are the same row. */
     public static function isServerKey(string $key): bool
     {
+        $key = strtolower($key);
         foreach (self::SERVER_KEY_PREFIXES as $p) {
             if (str_starts_with($key, $p)) {
                 return true;

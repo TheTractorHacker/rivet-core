@@ -99,12 +99,12 @@ final class PatchConfigureTest extends PatchTestCase
     public function testOnlyAHolderOfTheInstallGrantMayChangeTheWindowsSettings(): void
     {
         // $this->tech may manage patches (policies included) but not install; $this->installer may do both
-        [$c] = $this->api('POST', ['patch_policies'], $this->tech, ['name' => 'plain', 'settings' => ['install_enabled' => true]]);
-        $this->assertSame(201, $c, 'a manager may still write every other setting');
+        [$c] = $this->api('POST', ['patch_policies'], $this->tech, ['name' => 'plain', 'settings' => ['max_minutes' => 30]]);
+        $this->assertSame(201, $c, 'a manager may still write every other setting (CORE-DS-10: not the install or approval ones)');
         [$c, $j] = $this->api('POST', ['patch_policies'], $this->tech, ['name' => 'win', 'settings' => ['windows_update_mode' => 'managed']]);
         $this->assertSame([403, 'forbidden'], [$c, $j['code']]);
         $this->assertStringContainsString('grant to install patches', $j['error']);
-        [$c, $j] = $this->api('POST', ['patch_policies'], $this->installer, ['name' => 'win', 'settings' => ['windows_update_mode' => 'managed']]);
+        [$c, $j] = $this->api('POST', ['patch_policies'], $this->installer, ['name' => 'win', 'settings' => ['windows_update_mode' => 'managed', 'install_enabled' => true]]);
         $this->assertSame(201, $c, json_encode($j));
         $pid = (int) $j['policy']['policy_id'];
         // editing: a manager may not turn it off or change it either, nor drop the key by leaving it out

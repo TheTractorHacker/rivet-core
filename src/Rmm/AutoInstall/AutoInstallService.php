@@ -401,7 +401,9 @@ final class AutoInstallService
         if ((int) $a['enabled'] !== 1) {
             return $skip('the package is switched off');
         }
-        $v = $this->expectations->versionFor($dev, $pid, null, 'install');
+        // CR4 (CORE-DS-1): a row that went back to queued (a lost job, a locked installer) installs the version it was already approved at, not whatever is newest now.
+        $frozen = $a['version_id'] !== null ? (int) $a['version_id'] : null;
+        $v = ($frozen !== null ? $this->expectations->versionFor($dev, $pid, $frozen, 'install') : null) ?? $this->expectations->versionFor($dev, $pid, null, 'install');
         if ($v === null) {
             return $skip('the catalog has no version of this app for this device');
         }

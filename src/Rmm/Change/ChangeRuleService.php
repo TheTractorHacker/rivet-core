@@ -18,7 +18,7 @@ use RivetCore\Rmm\Support\Sql;
  * A rule drives ONE check per device, `change.rule_<id>`, through the existing {@see CheckEvaluator} (so debounce, the Phase 3 alerting engine, maintenance windows,
  * escalation and the edition's alert and ticket path all apply unchanged): a match reports the check as `warn` or `fail`, and {@see sweep()} reports it `ok` once the rule has
  * not matched on that device for `resolve_after_min` minutes (or at once when the rule was disabled or deleted). Evaluation is bounded by the batch (at most 100 records) times
- * the number of enabled rules (at most {@see MAX_RULES}). A change is a fact, not a flaky reading, so a match is reported enough times to pass the failure debounce at once.
+ * the number of rules that apply to the device (at most {@see MAX_RULES} for its client and {@see MAX_RULES} for all clients). A change is a fact, not a flaky reading, so a match is reported enough times to pass the failure debounce at once.
  *
  * @api
  */
@@ -70,12 +70,12 @@ final class ChangeRuleService
      */
     public function create(array $in, int $userId, string $recommended = ''): array
     {
-        if ((int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_change_rules') >= self::MAX_RULES) {
-            return [null, ['At most ' . self::MAX_RULES . ' change rules.']];
-        }
         [$v, $err] = self::validate($in, null);
         if ($err !== []) {
             return [null, $err];
+        }
+        if (($full = $this->capReached((int) $v['client_id'], null)) !== null) {
+            return [null, [$full]];
         }
         $now = $this->sql->utcNow();
         $id = $this->sql->insert('INSERT INTO endpoint_agent_change_rules (name, enabled, client_id, watch, kind, target_contains, item_contains, change_type, threshold, window_min, severity, resolve_after_min, recommended, created_by, created_at, updated_at)
@@ -100,6 +100,9 @@ final class ChangeRuleService
         if ($err !== []) {
             return $err;
         }
+        if ((int) $v['client_id'] !== (int) $cur['client_id'] && ($full = $this->capReached((int) $v['client_id'], $id)) !== null) {
+            return [$full];   // moving a rule into a scope that is full
+        }
         $this->sql->run('UPDATE endpoint_agent_change_rules SET name = ?, enabled = ?, client_id = ?, watch = ?, kind = ?, target_contains = ?, item_contains = ?, change_type = ?, threshold = ?, window_min = ?,
             severity = ?, resolve_after_min = ?, updated_at = ? WHERE rule_id = ?', [$v['name'], $v['enabled'], $v['client_id'], $v['watch'], $v['kind'], $v['target_contains'], $v['item_contains'],
             $v['change_type'], $v['threshold'], $v['window_min'], $v['severity'], $v['resolve_after_min'], $this->sql->utcNow(), $id]);
@@ -120,7 +123,7 @@ final class ChangeRuleService
      * The recommended rules: one per preset that suggests one (any change to the startup entries and the Defender exclusions, an added local administrator, any change to sshd,
      * sudo and the account files). Created once each (matched by preset), never duplicated, never touching a rule an administrator already edited.
      *
-     * @return array{created:list<int>,existing:int}
+     * @return array{created:list<int>,existing:int,errors:list<string>} `errors` (CORE-DS-38): why a rule was not created (the fleet-wide cap), instead of saying nothing
      */
     public function installRecommended(int $userId, int $clientId = 0): array
     {
@@ -129,19 +132,22 @@ final class ChangeRuleService
             $have[(string) $r['recommended']] = true;
         }
         $created = [];
+        $errors = [];
         foreach (ChangePresets::catalog() as $id => $p) {
             if ($p['rule'] === null || isset($have[$id])) {
                 continue;
             }
             $added = $p['rule'] === 'added';
-            [$rid] = $this->create(['name' => 'Change: ' . $p['title'] . ($added ? ' (member added)' : ''), 'client_id' => $clientId, 'watch' => $id, 'change' => $added ? 'added' : 'any',
+            [$rid, $why] = $this->create(['name' => 'Change: ' . $p['title'] . ($added ? ' (member added)' : ''), 'client_id' => $clientId, 'watch' => $id, 'change' => $added ? 'added' : 'any',
                 'severity' => $added || $id === 'win.defender' ? 'fail' : 'warn'], $userId, $id);
             if ($rid !== null) {
                 $created[] = $rid;
+            } else {
+                $errors = array_values(array_unique([...$errors, ...$why]));
             }
         }
 
-        return ['created' => $created, 'existing' => count($have)];
+        return ['created' => $created, 'existing' => count($have), 'errors' => $errors];
     }
 
     /**
@@ -257,10 +263,26 @@ final class ChangeRuleService
         return true;
     }
 
-    /** @return list<array<string,mixed>> */
-    private function enabledRules(): array
+    /**
+     * CORE-DS-38: the cap is per scope, not per installation: {@see MAX_RULES} rules for each client, and {@see MAX_RULES} that apply to every client. A client-restricted technician can
+     * therefore only fill the room of his own clients. Evaluation stays bounded because a device is only ever checked against the rules of its own client plus the ones for all
+     * clients: at most 2 x {@see MAX_RULES} per batch.
+     *
+     * @param int|null $exceptRuleId a rule being changed (it does not count against itself)
+     */
+    private function capReached(int $clientId, ?int $exceptRuleId): ?string
     {
-        return $this->enabled ??= $this->sql->all('SELECT * FROM endpoint_agent_change_rules WHERE enabled = 1 ORDER BY rule_id LIMIT ' . self::MAX_RULES);
+        $n = (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_change_rules WHERE client_id = ?' . ($exceptRuleId === null ? '' : ' AND rule_id <> ' . (int) $exceptRuleId), [$clientId]);
+
+        return $n >= self::MAX_RULES ? 'At most ' . self::MAX_RULES . ' change rules ' . ($clientId === 0 ? 'for all clients.' : 'for one client.') : null;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function enabledRules(int $clientId = 0): array
+    {
+        $this->enabled ??= [];
+
+        return $this->enabled[$clientId] ??= $this->sql->all('SELECT * FROM endpoint_agent_change_rules WHERE enabled = 1 AND (client_id = 0 OR client_id = ?) ORDER BY rule_id LIMIT ' . (2 * self::MAX_RULES), [$clientId]);
     }
 
     /**
@@ -271,7 +293,7 @@ final class ChangeRuleService
      */
     public function evaluate(array $dev, array $records): void
     {
-        $rules = array_values(array_filter($this->enabledRules(), static fn (array $r): bool => (int) $r['client_id'] === 0 || (int) $r['client_id'] === (int) $dev['client_id']));
+        $rules = array_values(array_filter($this->enabledRules((int) $dev['client_id']), static fn (array $r): bool => (int) $r['client_id'] === 0 || (int) $r['client_id'] === (int) $dev['client_id']));
         if ($rules === [] || $records === []) {
             return;
         }

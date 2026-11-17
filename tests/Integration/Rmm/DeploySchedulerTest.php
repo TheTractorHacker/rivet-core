@@ -330,6 +330,44 @@ final class DeploySchedulerTest extends DeployTestCase
         $this->h->q("UPDATE rmm_package_installs SET installed = 1, satisfied = 1, detected_at = UTC_TIMESTAMP() WHERE device_id = {$this->dev}");
     }
 
+    /** CORE-DS-9: a device with more packages than fit in one detection job gets the rest asked in the next jobs (stalest first), not the same first batch forever. */
+    public function testDetectionCoversEveryExpectedPackageAcrossSeveralJobs(): void
+    {
+        $this->assign($this->pkg, 'client', $this->h->clientA);
+        $ids = [$this->pkg];
+        for ($i = 1; $i <= 13; $i++) {
+            $p = $this->package("Pack $i");
+            $this->msi($p, '1.0', ['product_code' => sprintf('{%08X-ABCD-1234-ABCD-1234567890AB}', $i)]);
+            $this->assign($p, 'client', $this->h->clientA);
+            $ids[] = $p;
+        }
+        $this->pass();
+        $this->h->q("DELETE FROM endpoint_agent_jobs WHERE type = 'software_detect'");
+        $this->h->q("DELETE FROM rmm_package_jobs WHERE type = 'software_detect'");
+        $dev = $this->h->module->devices()->find($this->dev);
+        $asked = [];
+        for ($round = 1; $round <= 5; $round++) {
+            $r = $this->h->module->deployService()->queueDetect($dev, 5, 'manual');
+            if (isset($r['skipped']) && $r['skipped'] === 'nothing_to_detect') {
+                break;
+            }
+            $job = $this->offeredOne($this->tok, 'software_detect');
+            $rules = json_decode((string) ((array) $job['params'])['rules'], true);
+            $this->assertNotEmpty($rules);
+            $items = [];
+            foreach ($rules as $rule) {
+                $asked[$rule['key']] = true;
+                $items[] = ['key' => $rule['key'], 'installed' => false, 'version' => '', 'satisfied' => false];
+            }
+            $this->report($this->tok, $job, 'succeeded', self::detectOut($items));
+            if (count($asked) === count($ids)) {
+                break;
+            }
+        }
+        $this->assertCount(count($ids), $asked, 'every package was asked within a few jobs');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_package_installs WHERE device_id = {$this->dev} AND expected_action IS NOT NULL AND detected_at IS NULL"));
+    }
+
     public function testTurningTheSwitchOnCancelsQueuedSchedulerJobsButNotAManualInstall(): void
     {
         $this->assign($this->pkg, 'client', $this->h->clientA);

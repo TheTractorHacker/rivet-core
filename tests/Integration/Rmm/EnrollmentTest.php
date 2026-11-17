@@ -79,6 +79,21 @@ final class EnrollmentTest extends RmmTestCase
         }
     }
 
+    /** Deep scan IT-DS-19/42: a host name with markup in it is stored (and becomes the asset name) without the markup characters. */
+    public function testAHostNameWithMarkupIsStoredWithoutMarkupCharactersAndOrdinaryNamesAreKept(): void
+    {
+        $tok = $this->h->token(null, 24, 60);
+        [$c, , $j] = $this->h->enroll($tok, $this->h::device(['hostname' => '<img src=x onerror=alert(1)>', 'serial' => 'SER-XSS-1']));
+        $this->assertSame(201, $c);
+        $id = (int) $j['device_id'];
+        $this->assertSame('_img src=x onerror=alert(1)_', $this->h->one("SELECT hostname FROM endpoint_agent_devices WHERE device_id=$id"));
+        // the check-in inventory is the second way a name arrives
+        $this->h->checkin($j['device_token'], ['inventory' => ['hostname' => 'A"><script>x</script>', 'os' => 'windows', 'os_version' => 'Windows 11']]);
+        $this->assertSame('A___script_x_/script_', $this->h->one("SELECT hostname FROM endpoint_agent_devices WHERE device_id=$id"));
+        [, , $k] = $this->h->enroll($this->h->token(null, 24, 60), $this->h::device(['hostname' => "Bob's-PC & Co", 'serial' => 'SER-OK-1']));
+        $this->assertSame("Bob's-PC & Co", $this->h->one('SELECT hostname FROM endpoint_agent_devices WHERE device_id=' . (int) $k['device_id']));
+    }
+
     public function testInvalidTokensAndDevicesAreRefusedAndRecorded(): void
     {
         $tok = $this->h->token();
@@ -362,6 +377,39 @@ final class EnrollmentTest extends RmmTestCase
         $this->assertSame('pending_approval', $j['status']);
         $this->assertTrue($this->h->module->enrollment()->resolvePending((int) $j['device_id'], 'link', $aB, 1)['ok']);
         $this->assertSame($this->h->clientB, (int) $this->h->one('SELECT client_id FROM endpoint_agent_devices WHERE device_id=' . $j['device_id']));
+    }
+
+    /** CORE-DS-68 (CORE-23): the cross-client link moves the rows that carry the client (patch rows, jobs, open alerts) like a transfer does. */
+    public function testApprovalAcrossClientsAlsoMovesTheRowsThatCarryTheClient(): void
+    {
+        $tok = $this->h->token(null, 24, 50);
+        $aB = $this->h->asset(['name' => 'B asset 2', 'serial' => 'SER-B2', 'client_id' => $this->h->clientB]);
+        [, , $j] = $this->h->enroll($tok, $this->h::device(['serial' => 'SER-B2']));
+        $id = (int) $j['device_id'];
+        $a = $this->h->clientA;
+        $this->h->q("INSERT INTO rmm_patch_available (device_id, client_id, update_id, kb, title, kind, status, first_seen_at, last_seen_at) VALUES ($id, $a, 'u1', 'KB1', 't', 'security', 'available', UTC_TIMESTAMP(), UTC_TIMESTAMP())");
+        $this->h->q("INSERT INTO rmm_alert_meta (alert_id, device_id, client_id, check_key, episode, severity, opened_at) VALUES (9001, $id, $a, 'cpu', 1, 'warn', UTC_TIMESTAMP())");
+        $this->assertTrue($this->h->module->enrollment()->resolvePending($id, 'link', $aB, 1)['ok']);
+        $b = $this->h->clientB;
+        $this->assertSame($b, (int) $this->h->one("SELECT client_id FROM rmm_patch_available WHERE device_id=$id"));
+        $this->assertSame($b, (int) $this->h->one("SELECT client_id FROM rmm_alert_meta WHERE device_id=$id"));
+    }
+
+    /** CR21 / CORE-DS-63: the site of the old client does not follow a device into another client, and a parent link that now crosses clients ends. */
+    public function testApprovalAcrossClientsDropsTheOldSiteAndCrossClientParentLinks(): void
+    {
+        $tok = $this->h->token(null, 24, 50);
+        $aB = $this->h->asset(['name' => 'B asset 3', 'serial' => 'SER-B3', 'client_id' => $this->h->clientB]);
+        $locA = $this->h->tenancy->addLocation($this->h->clientA);
+        [, , $j] = $this->h->enroll($tok, $this->h::device(['serial' => 'SER-B3']));
+        $id = (int) $j['device_id'];
+        $this->h->q("UPDATE endpoint_agent_devices SET location_id = $locA WHERE device_id = $id");
+        [, , $k] = $this->h->enroll($this->h->token(null, 24, 50), $this->h::device(['serial' => 'SER-A-PARENT']));
+        $peer = (int) $k['device_id'];
+        $this->h->q("INSERT INTO rmm_device_parents (device_id, parent_device_id, created_by, created_at) VALUES ($id, $peer, 1, UTC_TIMESTAMP())");
+        $this->assertTrue($this->h->module->enrollment()->resolvePending($id, 'link', $aB, 1)['ok']);
+        $this->assertSame(0, (int) $this->h->one("SELECT location_id FROM endpoint_agent_devices WHERE device_id=$id"), 'client A site A1 does not stay on a client B device');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_device_parents WHERE device_id=$id OR parent_device_id=$id"));
     }
 
     public function testAnArchivedAssetSendsAReEnrollingDeviceBackToApproval(): void

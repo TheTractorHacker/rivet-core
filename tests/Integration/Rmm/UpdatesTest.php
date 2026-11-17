@@ -52,6 +52,118 @@ final class UpdatesTest extends RmmTestCase
         $this->assertFalse(Signer::verifyManifest(strtoupper($u['sha256']), $u['signature'], $this->pub));
     }
 
+    /** CRR-11: a malformed release signature is refused BEFORE the binary is published (it must not become current or reach a ring) and the refusal is audited. */
+    public function testAMalformedReleaseSignatureIsRefusedBeforeTheBinaryIsPublished(): void
+    {
+        $dir = sys_get_temp_dir() . '/crr11-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        $file = $dir . '/a.exe';
+        file_put_contents($file, \RivetCore\Tests\Support\RmmHarness::fakePe(0x8664, 4096, 'crr11'));
+        $admin = $this->h->module->admin();
+        $r = $admin->uploadBinary($this->h->principal(), $file, '9.1.0', 'amd64', ['activate' => true, 'release_ring' => 'stable', 'release_signature' => 'not base64!']);
+        $this->assertFalse($r->ok);
+        $this->assertSame(422, $r->http);
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_binaries WHERE version = '9.1.0'"), 'nothing was published');
+        $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM endpoint_agent_releases WHERE version = '9.1.0'"), 'and nothing was offered to a ring');
+        $actions = array_column($this->h->audit->records(), 'action');
+        $this->assertContains('Binary Upload Refused', $actions);
+        $this->assertNotContains('Binary Uploaded', $actions);
+        // the well-formed signature publishes, is current and carries its audit row
+        $ok = $admin->uploadBinary($this->h->principal(), $file, '9.1.0', 'amd64', ['activate' => true, 'release_signature' => base64_encode(random_bytes(64))]);
+        $this->assertTrue($ok->ok, json_encode($ok));
+        $this->assertContains('Binary Uploaded', array_column($this->h->audit->records(), 'action'));
+        unlink($file);
+        rmdir($dir);
+    }
+
+    /** CORE-DS-26 (contract SIGNED_UPDATE_MANIFEST): the stored offline release signature, with os and arch, is relayed with the package it belongs to; nothing is invented. */
+    public function testTheStoredReleaseSignatureIsRelayedWithThePackageItBelongsTo(): void
+    {
+        $b = $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
+        [, , $plain] = $this->h->checkin($this->T);
+        $this->assertSame(['version', 'url', 'sha256', 'signature', 'min_version'], array_keys($plain['update']), 'no release signature stored: exactly what it always was');
+        $this->assertArrayNotHasKey('release_rollover', $plain);
+        $admin = $this->h->module->admin();
+        $sig = base64_encode(random_bytes(64));
+        foreach (['', 'not base64!', base64_encode('short'), $sig . '='] as $bad) {
+            $this->assertFalse($admin->setReleaseSignature($this->h->principal(), (int) $b['binary_id'], $bad)->ok, $bad);
+        }
+        $this->assertFalse($admin->setReleaseSignature($this->h->principal(), 99999, $sig)->ok, 'a binary that does not exist');
+        $this->assertTrue($admin->setReleaseSignature($this->h->principal(), (int) $b['binary_id'], $sig)->ok);
+        $this->h->module->updates()->releasesChanged();
+        [, , $r] = $this->h->checkin($this->T);
+        $this->assertSame(['version', 'url', 'sha256', 'signature', 'min_version', 'os', 'arch', 'release_signature'], array_keys($r['update']));
+        $this->assertSame(['windows', 'amd64', $sig], [$r['update']['os'], $r['update']['arch'], $r['update']['release_signature']]);
+        // the byte format the release owner signs (the Go test release_test.go fixes it)
+        $this->assertSame("rivetit-update-manifest-v1\n" . '{"arch":"amd64","kind":"agent_update","min_version":"0.0.0","os":"windows","sha256":"' . $b['sha256'] . '","version":"1.1.0"}',
+            Signer::updateManifestMessage(['version' => '1.1.0', 'os' => 'windows', 'arch' => 'amd64', 'sha256' => strtoupper($b['sha256']), 'min_version' => '0.0.0']));
+    }
+
+    /** CORE-DS-26: a signed release-key rollover is stored as given and relayed at the top level of the check-in response; the server never makes one. */
+    public function testASignedReleaseKeyRolloverIsRelayed(): void
+    {
+        $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
+        $old = base64_encode(random_bytes(32));
+        $m = ['kind' => 'release_key_rollover', 'new_key' => base64_encode(random_bytes(32)), 'revoke' => [$old], 'seq' => 3, 'signature' => base64_encode(random_bytes(64))];
+        $admin = $this->h->module->admin();
+        $manyKeys = array_map(static fn (int $i): string => base64_encode(random_bytes(32)), range(1, 17));
+        foreach (['not json', '{}', json_encode([...$m, 'seq' => 0]), json_encode([...$m, 'new_key' => base64_encode('x')]), json_encode([...$m, 'kind' => 'other']),
+            json_encode([...$m, 'revoke' => 'abc']), json_encode([...$m, 'revoke' => ['not base64!']]), json_encode([...$m, 'revoke' => [base64_encode('short')]]), json_encode([...$m, 'revoke' => $manyKeys]),
+            json_encode([...$m, 'revoke' => [$m['new_key']]]), json_encode([...$m, 'revoke' => ['a' => $old]]),
+            json_encode([...$m, 'revoke' => [' ' . $old]]), json_encode([...$m, 'revoke' => [$old . "\n"]]), json_encode([...$m, 'new_key' => ' ' . $m['new_key']]), json_encode([...$m, 'new_key' => rtrim($m['new_key'], '=') . 'B='])] as $bad) {
+            $this->assertFalse($admin->setReleaseRollover($this->h->principal(), (string) $bad)->ok, (string) $bad);
+        }
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m))->ok);
+        [, , $r] = $this->h->checkin($this->T);
+        $this->assertSame($m, $r['release_rollover'], 'the revoke list is relayed as the release owner signed it');
+        $this->assertSame([$m], $r['release_rollovers'], 'and the chain (here of one) next to it');
+        // a message without revoke (the first form of the contract) is relayed with revoke: [], which is what the agent signs over
+        $legacy = $m;
+        unset($legacy['revoke']);
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($legacy))->ok);
+        $this->assertSame([], $this->h->checkin($this->T)[2]['release_rollover']['revoke']);
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), '')->ok);
+        $this->assertArrayNotHasKey('release_rollover', $this->h->checkin($this->T)[2]);
+    }
+
+    /** R3-2: the rollover CHAIN is stored, relayed next to the newest message (oldest first, last 16), and an agent that missed one can catch up from it. */
+    public function testTheRolloverChainIsStoredAndRelayedForAnAgentThatMissedOne(): void
+    {
+        $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
+        $admin = $this->h->module->admin();
+        $msg = static fn (int $seq): array => ['kind' => 'release_key_rollover', 'new_key' => base64_encode(random_bytes(32)), 'revoke' => [], 'seq' => $seq, 'signature' => base64_encode(random_bytes(64))];
+        $this->assertArrayNotHasKey('release_rollovers', $this->h->checkin($this->T)[2], 'nothing published: nothing relayed');
+        $m = [];
+        foreach ([2, 1, 3] as $seq) {   // published out of order
+            $m[$seq] = $msg($seq);
+            $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m[$seq]))->ok);
+        }
+        [, , $r] = $this->h->checkin($this->T);
+        $this->assertSame([$m[1], $m[2], $m[3]], $r['release_rollovers'], 'the whole chain, in the order of seq');
+        $this->assertSame($m[3], $r['release_rollover'], 'the newest on its own');
+        // the same seq published again replaces the earlier message, it does not stack
+        $m[2] = $msg(2);
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m[2]))->ok);
+        $this->assertSame([$m[1], $m[2], $m[3]], $this->h->checkin($this->T)[2]['release_rollovers']);
+        // only the last 16 are kept
+        for ($seq = 4; $seq <= 20; ++$seq) {
+            $m[$seq] = $msg($seq);
+            $this->assertTrue($admin->setReleaseRollover($this->h->principal(), (string) json_encode($m[$seq]))->ok);
+        }
+        $chain = $this->h->checkin($this->T)[2]['release_rollovers'];
+        $this->assertCount(16, $chain);
+        $this->assertSame([5, 20], [$chain[0]['seq'], $chain[15]['seq']]);
+        $this->assertSame(20, $this->h->checkin($this->T)[2]['release_rollover']['seq']);
+        // clearing removes the whole chain
+        $this->assertTrue($admin->setReleaseRollover($this->h->principal(), '')->ok);
+        $out = $this->h->checkin($this->T)[2];
+        $this->assertArrayNotHasKey('release_rollover', $out);
+        $this->assertArrayNotHasKey('release_rollovers', $out);
+        // a message stored by the first version (one object, not a list) is a chain of one
+        $this->h->module->settings()->set(['release_rollover_json' => (string) json_encode($m[7])]);
+        $this->assertSame([$m[7]], $this->h->checkin($this->T)[2]['release_rollovers']);
+    }
+
     public function testRingsRolloutMinVersionAndArchitecture(): void
     {
         $this->h->publishBinary('2.0.0', 'amd64', 8192, false, 'pilot');
@@ -182,6 +294,21 @@ final class UpdatesTest extends RmmTestCase
         $this->assertContains('Agent Update Downloaded', array_column($this->h->audit->records(), 'action'));
     }
 
+    /** CORE-DS-72: one audit row per device and release an hour and a download budget per device and release (a pending device still updates: that is by design). */
+    public function testRepeatedDownloadsAreAuditedOnceAndBudgeted(): void
+    {
+        $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
+        $q = ['arch' => 'amd64', 'version' => '1.1.0'];
+        for ($i = 1; $i <= 10; $i++) {
+            $this->assertSame(200, $this->h->call('GET', 'agent_update', null, $this->T, $q)[0], "download $i");
+        }
+        $this->assertCount(1, array_filter($this->h->audit->records(), static fn (array $r): bool => $r['action'] === 'Agent Update Downloaded'), 'ten downloads, one audit row');
+        [$c, $hd, $r] = $this->h->call('GET', 'agent_update', null, $this->T, $q);
+        $this->assertSame([429, 'rate_limited'], [$c, $r['code'] ?? null]);
+        // a device that is still pending approval keeps getting updates (the agent must be able to fix itself before anyone approves it): the budget above is what limits it
+        $this->assertSame('pending_approval', $this->h->one('SELECT link_state FROM endpoint_agent_devices LIMIT 1'));
+    }
+
     public function testADamagedOrSwappedStoredFileIsNeverServed(): void
     {
         $b = $this->h->publishBinary('1.1.0', 'amd64', 8192, true, 'stable');
@@ -212,5 +339,27 @@ final class UpdatesTest extends RmmTestCase
         $this->h->q('UPDATE endpoint_agent_binaries SET active=0');
         [$c] = $this->h->call('GET', 'agent_update', null, $this->T, ['arch' => 'amd64', 'version' => '1.1.0']);
         $this->assertSame(404, $c);
+    }
+
+    /** CORE-DS-72: a stored agent binary that was hashed and found intact is not hashed again by the same worker until its stat fingerprint changes. */
+    public function testAnIntactBinaryIsHashedOnceAndATamperedOneIsStillRefused(): void
+    {
+        $b = $this->h->publishBinary('1.2.0', 'amd64', 8192, true);
+        $row = $this->h->rows("SELECT * FROM endpoint_agent_binaries WHERE binary_id = {$b['binary_id']}")[0];
+        $u = $this->h->module->updates();
+        sleep(2);   // stat times have whole seconds: a younger file is not remembered
+        $prop = new \ReflectionProperty(\RivetCore\Rmm\Update\UpdateService::class, 'verified');
+        $prop->setValue(null, []);
+        [$f, $e] = $u->openBinary($row);
+        $this->assertNotNull($f, (string) $e);
+        $this->assertCount(1, $prop->getValue(), 'remembered after the first verification');
+        [$f] = $u->openBinary($row);
+        $this->assertNotNull($f);
+        // same size, different bytes: the fingerprint changes, the file is hashed again and refused
+        clearstatcache();
+        file_put_contents($b['path'], str_repeat('X', $b['size']));
+        [$f, $e] = $u->openBinary($row);
+        $this->assertNull($f);
+        $this->assertStringContainsString('integrity', (string) $e);
     }
 }

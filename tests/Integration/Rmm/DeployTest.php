@@ -443,6 +443,39 @@ final class DeployTest extends DeployTestCase
         $this->assertSame(0, (int) $this->h->one("SELECT COUNT(*) FROM rmm_package_versions WHERE package_id = $p3 AND version = '4.0'"));
     }
 
+    /** CORE-DS-66: retiring the newest version of a followed package moves everything that follows it, so it is a deployment like adding one. */
+    public function testRetiringTheNewestVersionOfAFollowedPackageNeedsTheDeployAbility(): void
+    {
+        $pkg = $this->package();
+        $v1 = $this->msi($pkg, '1.0');
+        $v2 = $this->msi($pkg, '2.0');
+        $route = ['software_packages', (string) $pkg, 'versions'];
+        $this->assertSame(201, $this->assign($pkg, 'global')[0]);
+        $this->assertSame(200, $this->api('PATCH', [...$route, (string) $v1], $this->tech, ['retired' => true])[0], 'an older version moves nothing: manage may retire it');
+        $this->assertSame(403, $this->api('PATCH', [...$route, (string) $v2], $this->tech, ['retired' => true])[0], 'the newest one is what the assignment installs');
+        $this->assertSame(0, (int) $this->h->one("SELECT retired FROM rmm_package_versions WHERE version_id = $v2"));
+        $this->assertSame(200, $this->api('PATCH', [...$route, (string) $v2], $this->deployer, ['retired' => true])[0]);
+        // a package nothing follows is still a catalog matter
+        $p2 = $this->package('Quiet');
+        $q = $this->msi($p2, '1.0', ['product_code' => '{BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB}']);
+        $this->assertSame(200, $this->api('PATCH', ['software_packages', (string) $p2, 'versions', (string) $q], $this->tech, ['retired' => true])[0]);
+    }
+
+    /** CORE-DS-67: the agent ends every job after an hour, so a longer install window is cut to what can run. */
+    public function testAnInstallWindowLongerThanTheAgentRunsIsCutToWhatCanRun(): void
+    {
+        $this->assertSame([], $this->h->module->settings()->update(['job_max_timeout_s' => 86400]));
+        $this->h->module->settings()->refresh();
+        $pkg = $this->package();
+        $v = $this->msi($pkg);
+        $dev = $this->h->module->devices()->find($this->dev);
+        $r = $this->h->module->deployService()->queueInstall($dev, $this->h->module->packageCatalog()->version($v) ?? [], 'install', 'run', ['max_minutes' => 120, 'source' => 'manual']);
+        $this->assertTrue($r['ok'], json_encode($r));
+        $job = $this->offeredOne($this->tok, 'software_install');
+        $this->assertSame(55, ((array) $job['params'])['max_minutes']);
+        $this->assertSame(3600, (int) $this->h->one("SELECT timeout_s FROM endpoint_agent_jobs WHERE job_id = '{$r['job_id']}'"));
+    }
+
     public function testDeletingAPackageNeedsItsAssignmentsGoneFirstAndRemovesItsVersions(): void
     {
         $pkg = $this->package();

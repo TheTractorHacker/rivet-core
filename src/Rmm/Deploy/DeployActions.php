@@ -244,11 +244,30 @@ final class DeployActions
             return $e;
         }
         $pkg = $this->catalog->package($packageId);
+        if ($pkg !== null && $pkg['two_person'] && $this->catalog->heldByTicksOnly($packageId, true)) {
+            return ActionResult::fail(409, 'conflict', 'This package needs a second person and is ticked on an installer that can still enrol devices (or planned for a device that has not finished). There is no assignment to pin: revoke those installers, or wait for the planned installs to finish, before adding, restoring or retiring a version.');
+        }
         if ($pkg !== null && $pkg['two_person']) {
             return ActionResult::fail(409, 'conflict', 'This package has an assignment or auto-install policy that follows its newest version and needs a second person. Pin the assignment to a version (a new assignment goes through approval) before adding or restoring a version.');
         }
 
         return null;
+    }
+
+    /**
+     * CORE-DS-66: is this version the one a follow-newest install of its package resolves to for its OS (and package manager), i.e. the highest version id that is not retired?
+     *
+     * @param array<string,mixed> $version a catalog version row
+     */
+    private function isNewestLive(array $version): bool
+    {
+        foreach ($this->catalog->versions((int) $version['package_id']) as $v) {   // newest first
+            if (!$v['retired'] && $v['os'] === $version['os'] && ($v['os'] !== 'linux' || $v['fmt'] === $version['fmt'])) {
+                return $v['version_id'] === $version['version_id'];
+            }
+        }
+
+        return false;
     }
 
     public function retireVersion(RmmPrincipal $who, int $versionId, bool $retired): ActionResult
@@ -262,6 +281,9 @@ final class DeployActions
         }
         if (!$retired && ($e = $this->liveVersionGate($who, (int) $existing['package_id'])) !== null) {
             return $e;   // restoring a retired version makes it the newest again, exactly like adding one
+        }
+        if ($retired && !$existing['retired'] && $this->isNewestLive($existing) && ($e = $this->liveVersionGate($who, (int) $existing['package_id'])) !== null) {
+            return $e;   // CORE-DS-66: retiring the newest version moves everything that follows the newest back to the one below it
         }
         if (!$this->catalog->retireVersion($versionId, $retired)) {
             return ActionResult::fail(404, 'not_found', 'Version not found.');
