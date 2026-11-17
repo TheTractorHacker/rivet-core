@@ -106,7 +106,28 @@ func TestBeginPutRefusesADirectorySymlink(t *testing.T) {
 	}
 }
 
-// The destination directory may sit below a symlinked ANCESTOR (a /tmp -> /private/tmp style link, a symlinked /var/tmp): that must keep working.
+// CORE-DS-6: beginPut must never resolve a path again. The caller hands it the directory the path policy approved (already symlink-resolved); an
+// ancestor that is a symlink at that moment was swapped in after the check, so it is refused instead of being followed.
+func TestBeginPutRefusesASymlinkedAncestor(t *testing.T) {
+	base := realDir(t)
+	real := filepath.Join(base, "real", "data")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "alias")
+	if err := os.Symlink(filepath.Join(base, "real"), alias); err != nil {
+		t.Fatal(err)
+	}
+	if pt, err := beginPut(filepath.Join(alias, "data"), "x.tmp"); err == nil {
+		pt.Discard()
+		t.Fatal("a directory below a symlinked ancestor was opened")
+	}
+	if entries, _ := os.ReadDir(real); len(entries) != 0 {
+		t.Errorf("a file was created through the link: %v", entries)
+	}
+}
+
+// A symlinked ancestor in the path the technician typed is fine: the policy resolves it before beginPut sees it.
 func TestFilePutThroughASymlinkedAncestorSucceeds(t *testing.T) {
 	base := realDir(t)
 	real := filepath.Join(base, "real", "data")
@@ -117,17 +138,31 @@ func TestFilePutThroughASymlinkedAncestorSucceeds(t *testing.T) {
 	if err := os.Symlink(filepath.Join(base, "real"), alias); err != nil {
 		t.Fatal(err)
 	}
-	// beginPut directly with the unresolved path
-	pt, err := beginPut(filepath.Join(alias, "data"), "x.tmp")
-	if err != nil {
-		t.Fatalf("symlinked ancestor refused: %v", err)
+	srv := newFakeServer(t)
+	srv.content = []byte("hi")
+	f := fastFiles(base, srv)
+	res := f.Put(context.Background(), putParams(filepath.Join(alias, "data", "out.bin"), base, srv.content, false, nil), 4096)
+	if !res.OK {
+		t.Fatalf("put through an ancestor alias refused: %+v", res)
 	}
-	pt.File.WriteString("hi")
-	if err := pt.Commit("out.bin", 0o640, true, false); err != nil {
-		t.Fatal(err)
-	}
-	pt.Close()
 	if b, err := os.ReadFile(filepath.Join(real, "out.bin")); err != nil || string(b) != "hi" {
 		t.Errorf("file not delivered: %q %v", b, err)
 	}
+}
+
+// CORE-DS-24: file_get opens the leaf relative to a no-follow walk of its directory, so an ancestor swapped for a symlink is refused too.
+func TestOpenNoFollowRefusesASymlinkedAncestor(t *testing.T) {
+	base := realDir(t)
+	os.MkdirAll(filepath.Join(base, "real"), 0o755)
+	os.WriteFile(filepath.Join(base, "real", "secret"), []byte("x"), 0o644)
+	os.Symlink(filepath.Join(base, "real"), filepath.Join(base, "alias"))
+	if f, err := openNoFollow(filepath.Join(base, "alias", "secret")); err == nil {
+		f.Close()
+		t.Fatal("opened a file below a symlinked ancestor")
+	}
+	f, err := openNoFollow(filepath.Join(base, "real", "secret"))
+	if err != nil {
+		t.Fatalf("plain open failed: %v", err)
+	}
+	f.Close()
 }

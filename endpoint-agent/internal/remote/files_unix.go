@@ -8,16 +8,46 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
-	"syscall"
+	"strings"
 
 	"golang.org/x/sys/unix"
 )
 
-// openNoFollow opens read-only without following a symlink in the last element
-// and without blocking on a FIFO (the handle is then checked to be a regular file).
+// openDirNoFollow opens the absolute, clean directory path one component at a time with openat(O_DIRECTORY|O_NOFOLLOW), starting at "/". No
+// component may be a symbolic link: the path policy hands over an already symlink-resolved path, so a link met here was put there after the check
+// (CORE-DS-6, CORE-DS-24) and is refused rather than followed. Bind mounts are not links and work.
+func openDirNoFollow(dir string) (int, error) {
+	if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
+		return -1, &fs.PathError{Op: "open", Path: dir, Err: unix.EINVAL}
+	}
+	const flags = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
+	cur, err := unix.Open("/", flags, 0)
+	if err != nil {
+		return -1, &fs.PathError{Op: "open", Path: "/", Err: err}
+	}
+	for _, comp := range strings.Split(strings.TrimPrefix(dir, "/"), "/") {
+		if comp == "" {
+			continue
+		}
+		next, err := unix.Openat(cur, comp, flags, 0)
+		unix.Close(cur)
+		if err != nil {
+			return -1, &fs.PathError{Op: "open", Path: dir, Err: err}
+		}
+		cur = next
+	}
+	return cur, nil
+}
+
+// openNoFollow opens read-only without following a symlink in ANY element of the path (the directory is walked with openDirNoFollow, the last
+// element is opened relative to it with O_NOFOLLOW) and without blocking on a FIFO (the handle is then checked to be a regular file).
 func openNoFollow(path string) (*os.File, error) {
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	dfd, err := openDirNoFollow(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(dfd)
+	fd, err := unix.Openat(dfd, filepath.Base(path), unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, &fs.PathError{Op: "open", Path: path, Err: err}
 	}
@@ -35,24 +65,11 @@ type putTemp struct {
 }
 
 func beginPut(dir, name string) (*putTemp, error) {
-	// Canonicalise the ANCESTORS only (a symlinked /var/tmp, a /tmp -> /private/tmp style link or a bind mount is legitimate), then open the final
-	// component with O_NOFOLLOW so that a symlinked destination directory itself is still refused.
-	if parent := filepath.Dir(dir); parent != dir {
-		rp, err := filepath.EvalSymlinks(parent)
-		if err != nil {
-			return nil, &fs.PathError{Op: "resolve", Path: parent, Err: err}
-		}
-		dir = filepath.Join(rp, filepath.Base(dir))
-	}
-	dfd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	// dir is the symlink-resolved directory the path policy approved. It is NOT resolved again: every component is opened with O_NOFOLLOW, so an
+	// ancestor swapped for a link since the check makes this fail (CORE-DS-6) instead of being followed.
+	dfd, err := openDirNoFollow(dir)
 	if err != nil {
-		return nil, &fs.PathError{Op: "open", Path: dir, Err: err}
-	}
-	// The policy resolved dir moments ago. If a parent component was swapped for a link since, the descriptor leads elsewhere: refuse (best effort,
-	// needs /proc).
-	if got, err := os.Readlink("/proc/self/fd/" + strconv.Itoa(dfd)); err == nil && got != dir {
-		unix.Close(dfd)
-		return nil, fmt.Errorf("destination directory changed: %s is now %s", dir, got)
+		return nil, err
 	}
 	open := func() (int, error) {
 		return unix.Openat(dfd, name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)

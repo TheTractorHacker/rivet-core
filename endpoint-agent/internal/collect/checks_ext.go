@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	pathpkg "path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 	"rivetit-agent/internal/api"
 	"rivetit-agent/internal/store"
+	"rivetit-agent/internal/strictjson"
 )
 
 // The extended check types (RMM Phase 3). Every one reports a number in api.CheckResult.Value where it measures one (latency in ms,
@@ -159,11 +161,19 @@ func minimalEnv() []string {
 }
 
 func readFileCapped(path string) ([]byte, error) {
-	f, err := os.Open(path)
+	// O_NONBLOCK: opening a FIFO must not wait for a writer (CORE-DS-3). Only a regular file is read; a device, FIFO or socket is refused.
+	f, err := os.OpenFile(path, os.O_RDONLY|openNonblock, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return nil, errors.New("not a regular file")
+	}
+	// /proc/kmsg and friends report as regular files, are pollable (so O_NONBLOCK does not stop the read parking) and consume kernel data (CR1)
+	if onPseudoFS(f) {
+		return nil, errors.New("not a file on a data file system")
+	}
 	return io.ReadAll(io.LimitReader(f, 1<<20))
 }
 
@@ -285,7 +295,7 @@ func unmarshalParams(raw json.RawMessage, v any) error {
 	if len(raw) == 0 {
 		return nil
 	}
-	return json.Unmarshal(raw, v)
+	return strictjson.Unmarshal(raw, v)
 }
 
 func (c *Collector) hardTimeout(d time.Duration) time.Duration {
@@ -728,6 +738,14 @@ func safeCertPath(p string) bool {
 	}
 	for _, r := range p {
 		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	// kernel pseudo file systems are never certificate stores (CORE-DS-3, review CR1)
+	// compared on the cleaned path, so "/./proc/kmsg" and "/etc/../proc/kmsg" are refused too (review CRR-extra); ".." is already refused above
+	cp := pathpkg.Clean(p)
+	for _, d := range []string{"/proc", "/sys", "/dev"} {
+		if cp == d || strings.HasPrefix(cp, d+"/") {
 			return false
 		}
 	}

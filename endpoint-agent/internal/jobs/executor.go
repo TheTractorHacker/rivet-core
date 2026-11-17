@@ -37,8 +37,12 @@ type Executor struct {
 	Now         func() time.Time
 	Backoff     api.Backoff
 	Attempts    int // report attempts per transition (default 5)
-	Log         *slog.Logger
-	Disabled    bool // config.disable_jobs: never execute
+	// RetryAfterCap bounds the wait a server Retry-After can impose between report attempts (default 60s); FlushBudget bounds one Flush (default 30s).
+	// Both exist because Flush runs on the check-in goroutine (CORE-DS-4).
+	RetryAfterCap time.Duration
+	FlushBudget   time.Duration
+	Log           *slog.Logger
+	Disabled      bool // config.disable_jobs: never execute
 
 	// Remote holds the handlers of the remote-tool job types (RMM Phase 6) by type; DisableRemote
 	// (config.disable_remote) makes every one of them fail with disabled_locally without running.
@@ -434,9 +438,25 @@ func (e *Executor) reportRecord(ctx context.Context, r Record, attempt int) {
 			_ = e.Store.Put(r)
 			return
 		}
+		if ae != nil && ae.ModuleDisabled() {
+			// the jobs feature (or module) is switched off: nothing will be accepted until it is on again, so leave the record unreported
+			// and return at once instead of sleeping the server's Retry-After (CORE-DS-4)
+			e.log().Warn("jobs are disabled on the server; job report kept for later", "job", r.JobID)
+			return
+		}
+		if i == attempts-1 {
+			break
+		}
 		d := bo.Delay(i)
 		if ae != nil && ae.RetryAfter > d {
 			d = ae.RetryAfter
+		}
+		capD := e.RetryAfterCap
+		if capD <= 0 {
+			capD = 60 * time.Second
+		}
+		if d > capD {
+			d = capD
 		}
 		select {
 		case <-time.After(d):
@@ -450,7 +470,16 @@ func (e *Executor) reportRecord(ctx context.Context, r Record, attempt int) {
 
 // Flush re-sends terminal states whose acknowledgement was lost.
 func (e *Executor) Flush(ctx context.Context) {
+	budget := e.FlushBudget
+	if budget <= 0 {
+		budget = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
 	for _, r := range e.Store.Unreported() {
+		if ctx.Err() != nil {
+			return
+		}
 		e.mu.Lock()
 		busy := e.active[r.JobID]
 		e.mu.Unlock()
