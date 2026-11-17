@@ -19,7 +19,7 @@ use RivetCore\Rmm\Support\Sql;
  * A rule drives ONE check per device, `log.rule_<id>`, through the existing {@see CheckEvaluator} (so debounce, the Phase 3 alerting engine, maintenance
  * windows, escalation and the edition's alert and ticket path all apply unchanged): a match reports the check as `warn` or `fail`, and {@see sweep()} reports it `ok`
  * once the rule has not matched on that device for `resolve_after_min` minutes (or at once when the rule was disabled or deleted). Rules are evaluated on the
- * entries of each accepted batch, so the cost is bounded by the batch (200 entries) times the number of enabled rules (at most {@see MAX_RULES}).
+ * entries of each accepted batch, so the cost is bounded by the batch (200 entries) times the number of rules that apply to the device (at most {@see MAX_RULES} for its client and {@see MAX_RULES} for all clients).
  *
  * @api
  */
@@ -27,7 +27,7 @@ final class LogRuleService
 {
     public const MAX_RULES = 50;
 
-    /** @var list<array<string,mixed>>|null enabled rules, per instance */
+    /** @var array<int,list<array<string,mixed>>>|null enabled rules that apply to a client (and to all), per instance */
     private ?array $enabled = null;
 
     private readonly \RivetCore\Rmm\Store\LogStore $logStore;
@@ -73,12 +73,12 @@ final class LogRuleService
      */
     public function create(array $in, int $userId): array
     {
-        if ((int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_log_rules') >= self::MAX_RULES) {
-            return [null, ['At most ' . self::MAX_RULES . ' log rules.']];
-        }
         [$v, $err] = self::validate($in, null);
         if ($err !== []) {
             return [null, $err];
+        }
+        if (($full = $this->capReached((int) $v['client_id'], null)) !== null) {
+            return [null, [$full]];
         }
         $now = $this->sql->utcNow();
         $id = $this->sql->insert('INSERT INTO endpoint_agent_log_rules (name, enabled, client_id, min_level, source_contains, code, contains, threshold, window_min, severity, resolve_after_min, created_by, created_at, updated_at)
@@ -102,6 +102,9 @@ final class LogRuleService
         [$v, $err] = self::validate($in, $cur);
         if ($err !== []) {
             return $err;
+        }
+        if ((int) $v['client_id'] !== (int) $cur['client_id'] && ($full = $this->capReached((int) $v['client_id'], $id)) !== null) {
+            return [$full];   // moving a rule into a scope that is full
         }
         $this->sql->run('UPDATE endpoint_agent_log_rules SET name = ?, enabled = ?, client_id = ?, min_level = ?, source_contains = ?, code = ?, contains = ?, threshold = ?, window_min = ?, severity = ?,
             resolve_after_min = ?, updated_at = ? WHERE rule_id = ?', [$v['name'], $v['enabled'], $v['client_id'], $v['min_level'], $v['source_contains'], $v['code'], $v['contains'], $v['threshold'],
@@ -226,10 +229,26 @@ final class LogRuleService
         return true;
     }
 
-    /** @return list<array<string,mixed>> */
-    private function enabledRules(): array
+    /**
+     * CORE-DS-38: the cap is per scope, not per installation: {@see MAX_RULES} rules for each client, and {@see MAX_RULES} that apply to every client. A client-restricted technician can
+     * therefore only fill the room of his own clients. Evaluation stays bounded because a device is only ever checked against the rules of its own client plus the ones for all
+     * clients: at most 2 x {@see MAX_RULES} per batch.
+     *
+     * @param int|null $exceptRuleId a rule being changed (it does not count against itself)
+     */
+    private function capReached(int $clientId, ?int $exceptRuleId): ?string
     {
-        return $this->enabled ??= $this->sql->all('SELECT * FROM endpoint_agent_log_rules WHERE enabled = 1 ORDER BY rule_id LIMIT ' . self::MAX_RULES);
+        $n = (int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_log_rules WHERE client_id = ?' . ($exceptRuleId === null ? '' : ' AND rule_id <> ' . (int) $exceptRuleId), [$clientId]);
+
+        return $n >= self::MAX_RULES ? 'At most ' . self::MAX_RULES . ' log rules ' . ($clientId === 0 ? 'for all clients.' : 'for one client.') : null;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function enabledRules(int $clientId = 0): array
+    {
+        $this->enabled ??= [];
+
+        return $this->enabled[$clientId] ??= $this->sql->all('SELECT * FROM endpoint_agent_log_rules WHERE enabled = 1 AND (client_id = 0 OR client_id = ?) ORDER BY rule_id LIMIT ' . (2 * self::MAX_RULES), [$clientId]);
     }
 
     /**
@@ -240,7 +259,7 @@ final class LogRuleService
      */
     public function evaluate(array $dev, array $entries): void
     {
-        $rules = array_values(array_filter($this->enabledRules(), static fn (array $r): bool => (int) $r['client_id'] === 0 || (int) $r['client_id'] === (int) $dev['client_id']));
+        $rules = array_values(array_filter($this->enabledRules((int) $dev['client_id']), static fn (array $r): bool => (int) $r['client_id'] === 0 || (int) $r['client_id'] === (int) $dev['client_id']));
         if ($rules === [] || $entries === []) {
             return;
         }

@@ -896,6 +896,69 @@ final class AlertingTest extends RmmTestCase
         $this->assertSame(404, $c);
     }
 
+    /** CORE-DS-62: a site is one location of one client, so a site-scoped window or escalation policy of another client is a plain 404, and is left out of the lists. */
+    public function testSiteScopedRecordsOfAnotherClientAreInvisibleToARestrictedPrincipal(): void
+    {
+        $this->linked('SITE-A');
+        $locA = $this->h->tenancy->addLocation($this->h->clientA);
+        $locB = $this->h->tenancy->addLocation($this->h->clientB);
+        $winB = $this->window(['scope_type' => 'site', 'scope_id' => $locB, 'name' => 'B site']);
+        $winA = $this->window(['scope_type' => 'site', 'scope_id' => $locA, 'name' => 'A site']);
+        $polB = $this->policy(['name' => 'B site policy', 'scope_type' => 'site', 'scope_id' => $locB]);
+        $polA = $this->policy(['name' => 'A site policy', 'scope_type' => 'site', 'scope_id' => $locA]);
+        $this->h->tenancy->restrictUser(7, [$this->h->clientA]);
+        $this->h->policy->grant(7, ['rmm.device.view', 'rmm.alert.manage']);
+        $me = $this->pt(7);
+        foreach ([['maintenance', (string) $winB], ['escalation_policies', (string) $polB]] as $seg) {
+            $this->assertSame(404, $this->h->tech('GET', $seg, $me)[0], implode('/', $seg));
+        }
+        foreach ([['maintenance', (string) $winA], ['escalation_policies', (string) $polA]] as $seg) {
+            $this->assertSame(200, $this->h->tech('GET', $seg, $me)[0], implode('/', $seg));
+        }
+        $names = static fn (array $j): array => array_column($j['items'] ?? $j['data'] ?? [], 'name');
+        $this->assertNotContains('B site', $names($this->h->tech('GET', ['maintenance'], $me)[1]));
+        $this->assertContains('A site', $names($this->h->tech('GET', ['maintenance'], $me)[1]));
+        $this->assertNotContains('B site policy', $names($this->h->tech('GET', ['escalation_policies'], $me)[1]));
+        $this->assertContains('B site policy', $names($this->h->tech('GET', ['escalation_policies'], $this->pt())[1]), 'an unrestricted administrator still sees it');
+    }
+
+    /** CORE-DS-63: a parent link that outlived a transfer to another client does not show that client's device id or host name to a caller restricted to the first client. */
+    public function testParentLinksDoNotShowADeviceOfAnotherClientToARestrictedPrincipal(): void
+    {
+        $this->linked('PL-A');
+        $child = $this->dev;
+        [$parent] = $this->enrollDevice('PL-P');
+        $this->assertSame(200, $this->h->tech('PUT', [(string) $child, 'parent'], $this->pt(), ['parent_device_id' => $parent])[0]);
+        $this->h->tenancy->restrictUser(7, [$this->h->clientA]);
+        $this->h->policy->grant(7, ['rmm.device.view']);
+        $me = $this->pt(7);
+        $this->assertSame($parent, $this->h->tech('GET', [(string) $child, 'parent'], $me)[1]['parent']['parent_device_id'], 'same client: shown');
+        $this->h->q("UPDATE endpoint_agent_devices SET client_id = {$this->h->clientB} WHERE device_id = $parent");   // the parent moved, the link stayed
+        [, $j] = $this->h->tech('GET', [(string) $child, 'parent'], $me);
+        $this->assertSame([0, '', true], [$j['parent']['parent_device_id'], $j['parent']['parent_hostname'], $j['parent']['hidden']]);
+        [, $j] = $this->h->tech('GET', [(string) $parent, 'parent'], $this->pt());
+        $this->assertSame([$child], array_column($j['children'], 'device_id'), 'an unrestricted administrator still sees it');
+        // the other direction: a user limited to client B looks at the moved parent, whose child stayed in A
+        $this->h->tenancy->restrictUser(8, [$this->h->clientB]);
+        $this->h->policy->grant(8, ['rmm.device.view']);
+        [, $j] = $this->h->tech('GET', [(string) $parent, 'parent'], $this->pt(8));
+        $this->assertSame([], $j['children']);
+        $this->assertSame(1, $j['hidden_children']);
+        $this->assertStringNotContainsString('PL-A', json_encode($j));
+    }
+
+    /** CORE-DS-63: transferring a device to another client ends the parent links that would now cross clients. */
+    public function testATransferEndsParentLinksThatWouldCrossClients(): void
+    {
+        $this->linked('TL-A');
+        $child = $this->dev;
+        [$parent] = $this->enrollDevice('TL-P');
+        $this->assertSame(200, $this->h->tech('PUT', [(string) $child, 'parent'], $this->pt(), ['parent_device_id' => $parent])[0]);
+        $this->assertTrue($this->h->module->deviceService()->transfer($parent, $this->h->clientB, 0, 1));
+        $this->assertSame(0, (int) $this->h->one('SELECT COUNT(*) FROM rmm_device_parents'));
+        $this->assertNull($this->h->tech('GET', [(string) $child, 'parent'], $this->pt())[1]['parent']);
+    }
+
     public function testARestrictedPrincipalCannotSeeOrChangeAnotherClientsRecords(): void
     {
         $this->linked('RS-A');

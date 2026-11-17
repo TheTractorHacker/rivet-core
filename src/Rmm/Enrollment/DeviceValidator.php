@@ -59,6 +59,25 @@ final class DeviceValidator
     }
 
     /**
+     * CORE-DS (IT-DS-19/42): a host name is shown in many places and becomes the asset name, and it comes from an enrolling or checking-in device, so beyond
+     * {@see self::cleanText()} the characters that open markup or break out of an attribute (`<` `>` `"` backtick) and the backslash become `_`, and format characters
+     * (bidirectional overrides, zero-width, line and paragraph separators) are dropped. Every character a real computer name can have (letters, digits, `-` `_` `.` and the
+     * rest of NetBIOS, `'` and `&` included) is kept, so a legitimate name never changes. Null when nothing is left.
+     */
+    public static function cleanHostname(mixed $v, int $max = 200): ?string
+    {
+        $s = self::cleanText($v, $max * 2);
+        if ($s === null) {
+            return null;
+        }
+        $s = preg_replace('/[\p{Cf}\x{2028}\x{2029}]+/u', '', $s) ?? '';
+        $s = preg_replace('/[<>"`\\\\]/u', '_', $s) ?? '';
+        $s = trim($s);
+
+        return $s === '' ? null : mb_substr($s, 0, $max);
+    }
+
+    /**
      * The optional hardware facts of an enrollment device block or a check-in inventory (rc.29): anything outside the closed vocabularies, or of the
      * wrong type, is left out (never a rejection: an old or odd agent must still enroll).
      *
@@ -105,7 +124,7 @@ final class DeviceValidator
         if ($guid !== null && (!is_string($guid) || !RmmProtocol::matches(RmmProtocol::MACHINE_GUID_RE, $guid))) {
             throw $bad('machine_guid');
         }
-        $host = self::cleanText($d['hostname'] ?? null, 200);
+        $host = self::cleanHostname($d['hostname'] ?? null, 200);
         if ($host === null) {
             throw $bad('hostname');
         }

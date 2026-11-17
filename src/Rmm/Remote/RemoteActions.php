@@ -236,6 +236,9 @@ final class RemoteActions
         if ($denied !== null) {
             return ActionResult::fail(403, 'forbidden', $denied);
         }
+        if (!$this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_TOOLS)) {
+            return ActionResult::fail(409, 'feature_disabled', self::offText(RemoteProtocol::FEATURE_REMOTE_TOOLS));   // CORE-DS-70: a switch that is off stops the reads too
+        }
         $type = $kind === 'services' ? RemoteProtocol::JOB_SERVICE_LIST : RemoteProtocol::JOB_PROCESS_LIST;
         $j = $this->sql->one('SELECT job_id, state, reason, output, output_truncated, created_at, finished_at FROM endpoint_agent_jobs WHERE device_id = ? AND type = ? ORDER BY created_at DESC, job_id LIMIT 1', [$deviceId, $type]);
         if ($j === null) {
@@ -267,6 +270,9 @@ final class RemoteActions
         $denied = $this->authz->check($who->userId, RmmAbility::REMOTE_MANAGE, (int) $dev['client_id']);
         if ($denied !== null) {
             return ActionResult::fail(403, 'forbidden', $denied);
+        }
+        if (!$this->settings->featureOn(RemoteProtocol::FEATURE_REMOTE_TOOLS)) {
+            return ActionResult::fail(409, 'feature_disabled', self::offText(RemoteProtocol::FEATURE_REMOTE_TOOLS));   // CORE-DS-70: a switch that is off stops the reads too
         }
         $j = $this->sql->one('SELECT job_id, type, state, reason, exit_code, output, created_at, finished_at FROM endpoint_agent_jobs WHERE job_id = ? AND device_id = ?', [strtolower($jobId), $deviceId]);
         if ($j === null || !RemoteProtocol::isToolJob($j['type'])) {
@@ -364,6 +370,9 @@ final class RemoteActions
         if ($denied !== null) {
             return ActionResult::fail(403, 'forbidden', $denied);
         }
+        if (!$this->settings->featureOn(RemoteProtocol::FEATURE_FILE_TRANSFER)) {
+            return ActionResult::fail(409, 'feature_disabled', self::offText(RemoteProtocol::FEATURE_FILE_TRANSFER));   // CORE-DS-70: a switch that is off stops the reads too
+        }
 
         return ActionResult::ok('ok', 200, 'ok', ['data' => $this->transfers->listFor($deviceId)]);
     }
@@ -399,7 +408,7 @@ final class RemoteActions
 
     public function deleteTransfer(RmmPrincipal $who, int $deviceId, string $transferId): ActionResult
     {
-        [$dev, $t, $err] = $this->transferOf($who, $deviceId, $transferId);
+        [$dev, $t, $err] = $this->transferOf($who, $deviceId, $transferId, true);   // CORE-DS-70: deleting stays possible with the switch off, it is how stored files are cleaned up
         if ($err !== null || $t === null) {
             return $err ?? ActionResult::fail(404, 'not_found', 'Transfer not found.');
         }
@@ -411,7 +420,7 @@ final class RemoteActions
     /**
      * @return array{0:?array<string,mixed>,1:?array<string,mixed>,2:?ActionResult} [device, transfer row, error]
      */
-    private function transferOf(RmmPrincipal $who, int $deviceId, string $transferId): array
+    private function transferOf(RmmPrincipal $who, int $deviceId, string $transferId, bool $forDelete = false): array
     {
         [$dev, $err] = $this->deviceFor($who, $deviceId);
         if ($err !== null || $dev === null) {
@@ -420,6 +429,9 @@ final class RemoteActions
         $denied = $this->authz->check($who->userId, RmmAbility::REMOTE_MANAGE, (int) $dev['client_id']);
         if ($denied !== null) {
             return [null, null, ActionResult::fail(403, 'forbidden', $denied)];
+        }
+        if (!$forDelete && !$this->settings->featureOn(RemoteProtocol::FEATURE_FILE_TRANSFER)) {
+            return [null, null, ActionResult::fail(409, 'feature_disabled', self::offText(RemoteProtocol::FEATURE_FILE_TRANSFER))];   // CORE-DS-70
         }
         $t = $this->transfers->find(strtolower($transferId), $deviceId);
         if ($t === null) {

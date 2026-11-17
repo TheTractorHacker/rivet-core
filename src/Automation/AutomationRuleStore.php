@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RivetCore\Automation;
 
+use RivetCore\Crypto\SettingsVault;
 use RivetCore\Database\DatabaseInterface;
 
 /** Validated create/read/update/delete for event automation rules (the Core-owned `automation_rules` table).
@@ -18,20 +19,144 @@ final class AutomationRuleStore
         'notify_user' => 'Notify a user',
     ];
 
-    public function __construct(private DatabaseInterface $database)
+    /** The vault context name of a webhook rule's signing secret as the first version sealed it (one name for every rule); still read, re-sealed per rule on the next pass. */
+    public const SECRET_CONTEXT = 'automation.webhook_secret';
+
+    /** CRR-21: the vault context name of ONE rule's secret; the rule id is part of the authenticated data, so a sealed value copied to another rule does not open. */
+    public static function secretContext(int $ruleId): string
+    {
+        return self::SECRET_CONTEXT . '.' . $ruleId;
+    }
+
+    /**
+     * @param SettingsVault|null $vault CORE-DS-58: with a vault the `send_webhook` signing secret is stored sealed (`secret_enc`, never in clear) and is left out of every row that
+     *        {@see all()} and {@see find()} return unless the caller asks for it (`$withSecret`, for the code that signs the delivery). Without one nothing changes.
+     */
+    public function __construct(private DatabaseInterface $database, private ?SettingsVault $vault = null)
     {
     }
 
-    /** @return list<array<string,mixed>> */
-    public function all(): array
+    /**
+     * @param bool $withSecret true for the code that sends the webhook: the row then carries the unsealed secret in `action_config_json` exactly as before
+     * @return list<array<string,mixed>>
+     */
+    public function all(bool $withSecret = false): array
     {
-        return $this->database->fetchAll('SELECT * FROM automation_rules ORDER BY trigger_event, rule_id');
+        return array_map(fn (array $r): array => $this->present($r, $withSecret), $this->database->fetchAll('SELECT * FROM automation_rules ORDER BY trigger_event, rule_id'));
     }
 
-    /** @return array<string,mixed>|null */
-    public function find(int $id): ?array
+    /**
+     * @param bool $withSecret see {@see all()}
+     * @return array<string,mixed>|null
+     */
+    public function find(int $id, bool $withSecret = false): ?array
     {
-        return $this->database->fetchOne('SELECT * FROM automation_rules WHERE rule_id = ?', [$id]);
+        $r = $this->database->fetchOne('SELECT * FROM automation_rules WHERE rule_id = ?', [$id]);
+
+        return $r === null ? null : $this->present($r, $withSecret);
+    }
+
+    /**
+     * CORE-DS-58: seal every `send_webhook` secret that is still stored in clear (a rule saved before the vault was given to the store). Safe to run again; call it once after the
+     * upgrade (for example from the edition's housekeeping). A lazy version of the same runs whenever such a row is read.
+     *
+     * @return int rules sealed
+     */
+    public function sealStoredSecrets(): int
+    {
+        if ($this->vault === null) {
+            return 0;
+        }
+        $n = 0;
+        foreach ($this->database->fetchAll("SELECT rule_id, action_config_json FROM automation_rules WHERE action_type = 'send_webhook'") as $r) {
+            $id = (int) $r['rule_id'];
+            $cfg = json_decode((string) $r['action_config_json'], true);
+            if (!is_array($cfg)) {
+                continue;
+            }
+            if (is_string($cfg['secret'] ?? null) && $cfg['secret'] !== '') {
+                $cfg['secret_enc'] = $this->vault->encrypt(self::secretContext($id), $cfg['secret']);
+                $cfg['secret'] = '';
+            } elseif (is_string($cfg['secret_enc'] ?? null) && $cfg['secret_enc'] !== '' && !$this->opensForRule($id, $cfg['secret_enc'])) {
+                // sealed by the first version, under the one shared name: bind it to this rule now
+                try {
+                    $cfg['secret_enc'] = $this->vault->encrypt(self::secretContext($id), $this->vault->decrypt(self::SECRET_CONTEXT, $cfg['secret_enc']));
+                } catch (\RivetCore\Crypto\CryptoException) {
+                    continue;   // not ours to repair (another key, or a value copied in): left as it is, and it does not open for delivery
+                }
+            } else {
+                continue;
+            }
+            $this->database->execute('UPDATE automation_rules SET action_config_json = ? WHERE rule_id = ?', [json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $id]);
+            ++$n;
+        }
+
+        return $n;
+    }
+
+    private function opensForRule(int $ruleId, string $enc): bool
+    {
+        try {
+            $this->vault?->decrypt(self::secretContext($ruleId), $enc);
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** The plaintext of a sealed secret: under the rule's own name, or (rows from the first version) the shared one. @throws \RivetCore\Crypto\CryptoException */
+    private function openSecret(int $ruleId, string $enc): string
+    {
+        \assert($this->vault !== null);
+        try {
+            return $this->vault->decrypt(self::secretContext($ruleId), $enc);
+        } catch (\RivetCore\Crypto\CryptoException) {
+            return $this->vault->decrypt(self::SECRET_CONTEXT, $enc);
+        }
+    }
+
+    /**
+     * CRR-16: a stored row as the code that DELIVERS the webhook needs it: with the unsealed secret in `action_config_json` (and no `secret_enc`). Rows of other actions, and every row
+     * of a store without a vault, come back unchanged. Used by {@see AutomationRuleEvaluator::findMatchingRules()} so an evaluator-to-executor pipeline signs with the real secret.
+     *
+     * @param array<string,mixed> $row a row of `automation_rules`
+     * @return array<string,mixed>
+     * @throws \RivetCore\Crypto\CryptoException when the sealed secret cannot be opened
+     */
+    public function revealed(array $row): array
+    {
+        return $this->present($row, true);
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    private function present(array $row, bool $withSecret): array
+    {
+        if ($this->vault === null || ($row['action_type'] ?? '') !== 'send_webhook') {
+            return $row;
+        }
+        $cfg = json_decode((string) ($row['action_config_json'] ?? ''), true);
+        if (!is_array($cfg)) {
+            return $row;
+        }
+        if (is_string($cfg['secret'] ?? null) && $cfg['secret'] !== '' && !isset($cfg['secret_enc'])) {
+            $this->sealStoredSecrets();   // a clear secret read through a store that has a vault: seal it now
+            $cfg['secret_enc'] = $this->vault->encrypt(self::secretContext((int) ($row['rule_id'] ?? 0)), $cfg['secret']);
+        }
+        $enc = is_string($cfg['secret_enc'] ?? null) ? $cfg['secret_enc'] : '';
+        $plain = '';
+        if ($withSecret && $enc !== '') {
+            $plain = $this->openSecret((int) ($row['rule_id'] ?? 0), $enc);
+        }
+        unset($cfg['secret_enc']);
+        $cfg['secret'] = $plain;
+        $cfg['secret_set'] = $enc !== '';
+        $row['action_config_json'] = json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        return $row;
     }
 
     /**
@@ -65,16 +190,47 @@ final class AutomationRuleStore
             $clean[$field] = (string) $expected;
         }
         $cfg = $this->validateConfig($actionType, $config);
+        $sealFor = null;   // the secret to seal under the rule's own name once its id is known
+        if ($this->vault !== null && $actionType === 'send_webhook') {
+            $keep = !empty($config['keep_secret']) && $id !== null;   // the form did not re-enter it: leave the sealed one alone
+            if ($keep) {
+                $old = $this->database->fetchOne('SELECT action_config_json FROM automation_rules WHERE rule_id = ?', [$id]);
+                $oldCfg = $old === null ? [] : (json_decode((string) $old['action_config_json'], true) ?: []);
+                $sealFor = is_string($oldCfg['secret_enc'] ?? null) && $oldCfg['secret_enc'] !== '' ? $this->openSecret((int) $id, $oldCfg['secret_enc']) : (string) ($oldCfg['secret'] ?? '');
+            } else {
+                $sealFor = (string) $cfg['secret'];
+            }
+            $cfg['secret'] = '';
+            if ($id !== null) {
+                $cfg['secret_enc'] = $this->vault->encrypt(self::secretContext($id), $sealFor);
+                $sealFor = null;
+            }
+        }
         $json = $clean === [] ? null : json_encode($clean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $cfgJson = json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         if ($id === null) {
-            return (int) $this->database->execute(
+            // R3-6: a webhook rule whose secret is sealed after the insert (the id is part of the sealed name) is inserted DISABLED and enabled only once the secret is sealed, so the
+            // evaluator can never see it enabled with an empty secret; when sealing fails nothing is left behind.
+            $newId = (int) $this->database->execute(
                 'INSERT INTO automation_rules (name, trigger_event, condition_json, action_type, action_config_json, is_enabled) VALUES (?, ?, ?, ?, ?, ?)',
-                [$name, $triggerEvent, $json, $actionType, $cfgJson, $enabled ? 1 : 0]
+                [$name, $triggerEvent, $json, $actionType, $cfgJson, $sealFor === null && $enabled ? 1 : 0]
             )->insertId;
+            if ($sealFor !== null) {
+                try {
+                    // CRR-21: the id exists now, so the secret is sealed under this rule's own name
+                    $cfg['secret_enc'] = $this->vault->encrypt(self::secretContext($newId), $sealFor);
+                    $this->database->execute('UPDATE automation_rules SET action_config_json = ?, is_enabled = ? WHERE rule_id = ?', [json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $enabled ? 1 : 0, $newId]);
+                } catch (\Throwable $e) {
+                    $this->database->execute('DELETE FROM automation_rules WHERE rule_id = ?', [$newId]);
+
+                    throw $e;
+                }
+            }
+
+            return $newId;
         }
-        if ($this->find($id) === null) {
+        if ($this->database->fetchOne('SELECT 1 AS x FROM automation_rules WHERE rule_id = ?', [$id]) === null) {
             throw new \InvalidArgumentException('That rule no longer exists.');
         }
         $this->database->execute(

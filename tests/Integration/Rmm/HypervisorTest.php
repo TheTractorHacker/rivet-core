@@ -198,6 +198,24 @@ final class HypervisorTest extends RemoteTestCase
 
     // ------------------------------------------------------------------ ingest
 
+    /** CORE-DS-43: one device cannot grow rmm_hypervisor_storage without bound by reporting new storage names every check-in. */
+    public function testStorageRowsOfOneDeviceAreBounded(): void
+    {
+        $this->on();
+        for ($round = 0; $round < 5; $round++) {
+            $storage = [];
+            for ($i = 0; $i < 200; $i++) {
+                $storage[] = ['name' => "s$round-$i", 'type' => 'dir', 'total_bytes' => 10, 'used_bytes' => 1, 'health' => 'ok'];
+            }
+            $this->assertSame(200, $this->send(self::full([self::vm('qemu/100')], ['storage' => $storage]))[0]);
+            $this->assertLessThanOrEqual(600, (int) $this->h->one('SELECT COUNT(*) FROM rmm_hypervisor_storage'));
+        }
+        $this->assertSame(600, (int) $this->h->one('SELECT COUNT(*) FROM rmm_hypervisor_storage'));
+        // names it already holds are still updated
+        $this->send(self::full([self::vm('qemu/100')], ['storage' => [['name' => 's0-0', 'type' => 'dir', 'total_bytes' => 99, 'used_bytes' => 1, 'health' => 'ok']]]));
+        $this->assertSame(99, (int) $this->h->one("SELECT total_bytes FROM rmm_hypervisor_storage WHERE name = 's0-0'"));
+    }
+
     public function testAFullReportIsStoredIdempotentlyAndKeepsAStateHistoryRing(): void
     {
         $this->on();

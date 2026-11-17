@@ -374,6 +374,27 @@ final class ScriptLibraryTest extends AutomationTestCase
         $this->assertSame([], $j['jobs'], 'it is never sent with the placeholder in place of the value');
     }
 
+    /** CORE-DS-69 (CORE-28): a late result of a job whose sealed values were already wiped is not stored with the secret in it. */
+    public function testALateResultAfterTheSecretsWereWipedIsWithheld(): void
+    {
+        $f = $this->field('late_key', 'client', 'secret');
+        $this->h->module->fieldActions()->setValue($this->admin, (int) $f['field_id'], $this->h->clientA, 'sk-late-0123456789');
+        $s = $this->script('Late', ['params' => [['name' => 'token', 'type' => 'secret']]]);
+        $r = $this->h->module->scriptActions()->runOnDevice($this->tech, $this->lin, ['library_script_id' => $s['script_id'], 'params' => ['token' => '{{field.late_key}}']]);
+        $this->assertTrue($r->ok, $r->message);
+        $jobId = (string) $r->data['job_id'];
+        $this->h->call('GET', 'agent_jobs', null, $this->linT);
+        $this->h->call('POST', 'agent_jobs', ['job_id' => $jobId, 'attempt' => 1, 'state' => 'running'], $this->linT);
+        $this->h->q("UPDATE endpoint_agent_jobs SET state = 'failed', reason = 'result_lost', finished_at = UTC_TIMESTAMP() WHERE job_id = '$jobId'");
+        $this->h->module->housekeeping()->run();
+        $this->assertNull($this->h->one("SELECT secret_params_enc FROM rmm_job_extra WHERE job_id = '$jobId'"), 'housekeeping wiped the sealed values');
+        [$c] = $this->h->call('POST', 'agent_jobs', ['job_id' => $jobId, 'attempt' => 1, 'state' => 'succeeded', 'exit_code' => 0, 'output' => 'token was sk-late-0123456789'], $this->linT);
+        $this->assertSame(200, $c);
+        $row = $this->jobRow($jobId);
+        $this->assertSame(['succeeded', 'late_result'], [$row['state'], $row['reason']]);
+        $this->assertStringNotContainsString('sk-late', (string) $row['output']);
+    }
+
     public function testHousekeepingWipesSecretsOfJobsThatNeverReported(): void
     {
         $s = $this->script('Lit', ['params' => [['name' => 'token', 'type' => 'secret']]]);

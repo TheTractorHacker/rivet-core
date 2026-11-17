@@ -68,6 +68,9 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
             if ($s === '' || $s === '.' || $s === '..' || str_ends_with($s, '.') || self::padded($s)) {
                 return false;
             }
+            if ($s !== '*' && str_contains($s, '*')) {
+                return false;   // CORE-DS-34: a wildcard is a whole segment (the agent expands only HKU\\*); `*` inside a name matched nothing real and cost the matcher
+            }
         }
         $hive = self::hive($seg[0]);
         if ($hive === null) {
@@ -167,7 +170,8 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
         }
         foreach (['/ssl/private', '/letsencrypt', '/networkmanager/system-connections', '/wireguard', '/openvpn', '/ppp/chap-secrets', '/ppp/pap-secrets', '/samba/private',
             '/stunnel', '/davfs2/secrets', '/apt/auth.conf', '/krb5.keytab', '/mysql/debian.cnf', '/ipsec.secrets', '/ipsec.d/private', '/etc/ssh/ssh_host_',
-            '/etc/rancher/k3s/k3s.yaml', '/etc/kubernetes/', '/.kube/'] as $needle) {   // rc.31 (review F15): cluster credentials
+            '/etc/rancher/k3s/k3s.yaml', '/etc/kubernetes/', '/.kube/',
+            '/etc/pve/priv', '/etc/proxmox-backup/'] as $needle) {   // rc.31 (review F15): cluster credentials
             if (str_contains($lower, $needle) && !($needle === '/etc/ssh/ssh_host_' && str_ends_with($lower, '.pub'))) {
                 return true;   // a host's public key is not a secret
             }
@@ -178,7 +182,7 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
         if (preg_match('/^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?|\.netrc|\.pgpass|\.htpasswd|\.git-credentials|credentials|secrets?(?:\..*)?|tokens?|api_?keys?|kubeconfig|admin\.conf|[^\/]*\.token)$/', $base) === 1) {
             return true;
         }
-        if (preg_match('/\.(?:key|pem|p12|pfx|jks|keystore|keytab|kdbx|gpg|asc|secret|secrets)$/', $base) === 1 && !str_ends_with($base, '.pub')) {
+        if ((preg_match('/\.(?:key|pem|p12|pfx|jks|keystore|keytab|kdbx|gpg|asc|secret|secrets|pw|enc|keyring|psk|cred)$/', $base) === 1 || $base === 'token.cfg' || $base === 'token.shadow') && !str_ends_with($base, '.pub')) {
             return true;
         }
         if (str_ends_with($base, '_history') || str_contains($base, 'password') || str_contains($base, 'secret')) {

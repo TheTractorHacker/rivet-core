@@ -236,4 +236,26 @@ final class InstallerManagedExternallyTest extends RmmTestCase
         $this->assertSame(1, $this->disabled($a1));
         $this->assertSame(['changed' => [], 'unchanged' => [$a1], 'not_found' => []], $this->h->module->deviceService()->setAutomationDisabledBulk([$a1], true, 1));
     }
+
+    /** CORE-DS-20 (contract SIGNED_INSTALLER_TRAILER): with the signed-configuration contract on the stamped payload carries the instance signature; off, it is exactly what it was. */
+    public function testTheStampedPayloadIsSignedWhenTheContractIsOn(): void
+    {
+        $r = $this->h->module->installerService()->issue($this->h->clientA, 0, 'stable', 24, 5, 'sig', 'amd64', 1, 'Admin');
+        $this->assertTrue($r['ok'], json_encode($r));
+        $off = $this->download($r['token_plain']);
+        $this->assertArrayNotHasKey('signature', $off, 'off by default: unchanged');
+        $this->h->module->settings()->set(['signed_config' => 1]);
+        $r2 = $this->h->module->installerService()->issue($this->h->clientA, 0, 'stable', 24, 5, 'sig2', 'amd64', 1, 'Admin');
+        $on = $this->download($r2['token_plain']);
+        $this->assertArrayHasKey('signature', $on);
+        [, $pub] = $this->h->module->settings()->signingKey();
+        $this->assertTrue(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::installerPayloadMessage($on), $on['signature'], $pub));
+        $tampered = $on;
+        $tampered['server_url'] = 'https://evil.example.net';
+        $this->assertFalse(\RivetCore\Rmm\Crypto\Signer::verify(\RivetCore\Rmm\Crypto\Signer::installerPayloadMessage($tampered), $on['signature'], $pub), 'a re-stamped server URL does not verify');
+        $this->assertSame(88, strlen($on['signature']));
+        // the members themselves are unchanged
+        unset($on['signature']);
+        $this->assertSame(array_keys($off), array_keys($on));
+    }
 }

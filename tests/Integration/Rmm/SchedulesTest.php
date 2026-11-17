@@ -417,9 +417,30 @@ final class SchedulesTest extends AutomationTestCase
         // renaming it does not
         $d = $this->h->module->scriptActions()->decide($this->approver, (int) $r->data['approval_id'], true);
         $this->assertTrue($d->ok);
-        $r = $this->h->module->scriptActions()->saveSchedule($this->admin, $sid, ['name' => 'Gated, renamed', 'jitter_s' => 30]);
+        $r = $this->h->module->scriptActions()->saveSchedule($this->admin, $sid, ['name' => 'Gated, renamed']);
         $this->assertSame('ok', $r->code);
         $this->assertTrue($this->h->module->schedules()->get($sid)['approved']);
+    }
+
+    /** CORE-DS-42: cadence, timeout, expiry, jitter and overlap are part of what was approved; changing one asks again. */
+    public function testChangingHowOftenOrHowLongAnApprovedScheduleRunsWithdrawsTheApproval(): void
+    {
+        $sec = $this->makeScript('Needs OK 2', ['requires_approval' => true]);
+        $a = $this->h->module->scriptActions();
+        $r = $a->saveSchedule($this->admin, null, ['name' => 'Monthly', 'library_script_id' => $sec['script_id'], 'target' => ['type' => 'client', 'id' => $this->h->clientA], 'kind' => 'cron', 'cron' => '0 0 1 * *']);
+        $this->assertSame('pending_approval', $r->code, $r->message);
+        $sid = (int) $r->data['schedule']['schedule_id'];
+        $this->assertTrue($a->decide($this->approver, (int) $r->data['approval_id'], true)->ok);
+        $this->assertTrue($this->h->module->schedules()->get($sid)['approved']);
+        foreach ([['kind' => 'interval', 'interval_s' => 60], ['timeout_s' => 5], ['expires_s' => 600], ['jitter_s' => 30], ['overlap' => 'queue']] as $change) {
+            $r = $a->saveSchedule($this->admin, $sid, $change);
+            $this->assertSame('pending_approval', $r->code, json_encode($change) . ' ' . $r->message);
+            $this->assertFalse($this->h->module->schedules()->get($sid)['approved'], json_encode($change));
+            $this->assertTrue($a->decide($this->approver, (int) $r->data['approval_id'], true)->ok);
+        }
+        // the same values again are not a change
+        $r = $a->saveSchedule($this->admin, $sid, ['timeout_s' => 5, 'jitter_s' => 30]);
+        $this->assertSame('ok', $r->code);
     }
 
     public function testABigTargetNeedsApprovalToo(): void

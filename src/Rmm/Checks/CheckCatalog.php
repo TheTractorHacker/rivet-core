@@ -242,6 +242,16 @@ final class CheckCatalog
                 if (str_contains($path, '..') || str_starts_with($path, '//')) {
                     return 'cert.paths must be absolute paths without "..".';
                 }
+                // CR1 (CORE-DS-3, server half): kernel interfaces are not certificates. /proc/kmsg is a "regular file" that blocks forever and consumes kernel log records as root.
+                // (the "." and "//" spellings are folded first: /./proc/kmsg, /etc/./../ is already refused above, /dev/./zero)
+                $norm = preg_replace('#/+#', '/', $path) ?? $path;
+                while (str_contains($norm, '/./')) {
+                    $norm = str_replace('/./', '/', $norm);
+                }
+                $norm = preg_replace('#/\.$#', '', $norm) ?? $norm;
+                if (preg_match('#^/(proc|sys|dev)(/|$)#i', $norm) === 1) {
+                    return 'cert.paths cannot point into /proc, /sys or /dev.';
+                }
             }
         }
         if ($type === 'cert') {

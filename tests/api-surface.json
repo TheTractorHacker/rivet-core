@@ -140,7 +140,7 @@
         "RivetCore\\Automation\\AutomationRuleEvaluator": {
             "kind": "class",
             "methods": {
-                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, ?RivetCore\\Crypto\\SettingsVault $vault = NULL)",
                 "conditionsMatch": "conditionsMatch(?string $conditionJson, array $eventData): bool",
                 "findMatchingRules": "findMatchingRules(string $eventType, array $eventData): array"
             }
@@ -152,14 +152,18 @@
                     "create_ticket": "Create a ticket",
                     "send_webhook": "Send a webhook",
                     "notify_user": "Notify a user"
-                }
+                },
+                "SECRET_CONTEXT": "automation.webhook_secret"
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database)",
-                "all": "all(): array",
+                "__construct": "__construct(RivetCore\\Database\\DatabaseInterface $database, ?RivetCore\\Crypto\\SettingsVault $vault = NULL)",
+                "all": "all(bool $withSecret = false): array",
                 "delete": "delete(int $id): void",
-                "find": "find(int $id): ?array",
+                "find": "find(int $id, bool $withSecret = false): ?array",
+                "revealed": "revealed(array $row): array",
                 "save": "save(?int $id, string $name, string $triggerEvent, array $conditions, string $actionType, array $config, bool $enabled): int",
+                "sealStoredSecrets": "sealStoredSecrets(): int",
+                "secretContext": "static secretContext(int $ruleId): string",
                 "setEnabled": "setEnabled(int $id, bool $enabled): void"
             }
         },
@@ -2113,7 +2117,7 @@
         "RivetCore\\Mcp\\McpDiagnostics": {
             "kind": "final class",
             "methods": {
-                "__construct": "__construct(RivetCore\\Mcp\\AgentDirectoryInterface $agents, GuzzleHttp\\ClientInterface $http, string $envVarName = 'MCP_ENABLED', string $appName = 'this app')",
+                "__construct": "__construct(RivetCore\\Mcp\\AgentDirectoryInterface $agents, GuzzleHttp\\ClientInterface $http, string $envVarName = 'MCP_ENABLED', string $appName = 'this app', ?RivetCore\\Webhooks\\UrlPolicy $policy = NULL)",
                 "run": "run(array $cfg, string $baseHost): array"
             }
         },
@@ -2609,6 +2613,8 @@
                 "rotateSigningKey": "rotateSigningKey(RivetCore\\Rmm\\Authz\\RmmPrincipal $by): RivetCore\\Rmm\\Technician\\ActionResult",
                 "saveMesh": "saveMesh(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, array $in, bool $test = false): RivetCore\\Rmm\\Technician\\ActionResult",
                 "saveSettings": "saveSettings(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, array $in): RivetCore\\Rmm\\Technician\\ActionResult",
+                "setReleaseRollover": "setReleaseRollover(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, string $json): RivetCore\\Rmm\\Technician\\ActionResult",
+                "setReleaseSignature": "setReleaseSignature(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, int $binaryId, string $signatureB64): RivetCore\\Rmm\\Technician\\ActionResult",
                 "updateRelease": "updateRelease(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, int $releaseId, int $pct, bool $active): RivetCore\\Rmm\\Technician\\ActionResult",
                 "uploadBinary": "uploadBinary(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, string $tmpPath, string $version, string $arch, array $opts = []): RivetCore\\Rmm\\Technician\\ActionResult",
                 "uploadMsiTemplate": "uploadMsiTemplate(RivetCore\\Rmm\\Authz\\RmmPrincipal $by, string $tmpPath, string $version, string $arch, array $opts = []): RivetCore\\Rmm\\Technician\\ActionResult"
@@ -3074,6 +3080,7 @@
                 "clientOk": "clientOk(int $userId, int $clientId): bool",
                 "denial": "denial(string $ability): string",
                 "forget": "forget(?int $userId = NULL): void",
+                "locationOk": "locationOk(int $userId, int $locationId): bool",
                 "moduleEnabled": "moduleEnabled(): bool",
                 "noClientAccess": "noClientAccess(): string",
                 "visibleClientIds": "visibleClientIds(int $userId): ?array"
@@ -3782,19 +3789,25 @@
         },
         "RivetCore\\Rmm\\Crypto\\Signer": {
             "kind": "final class",
+            "constants": {
+                "UPDATE_MANIFEST_DOMAIN": "rivetit-update-manifest-v1"
+            },
             "methods": {
                 "changeConfigMessage": "static changeConfigMessage(array $config): string",
                 "checkMessage": "static checkMessage(array $check): string",
                 "generateKeypair": "static generateKeypair(): array",
                 "generateStoredKey": "static generateStoredKey(RivetCore\\Rmm\\Contracts\\SecretBoxInterface $box): array",
                 "hypervisorConfigMessage": "static hypervisorConfigMessage(array $config): string",
+                "installerPayloadMessage": "static installerPayloadMessage(array $payload): string",
                 "jobMessage": "static jobMessage(array $job): string",
                 "keyId": "static keyId(string $publicKeyB64): string",
                 "keypairFromSeed": "static keypairFromSeed(string $seed): array",
+                "logsConfigMessage": "static logsConfigMessage(array $config): string",
                 "openSecretKey": "static openSecretKey(RivetCore\\Rmm\\Contracts\\SecretBoxInterface $box, string $ciphertext): string",
                 "sealSecretKey": "static sealSecretKey(RivetCore\\Rmm\\Contracts\\SecretBoxInterface $box, string $secretKeyB64): string",
                 "sign": "static sign(string $message, string $secretKeyB64): string",
                 "signManifest": "static signManifest(string $sha256Hex, string $secretKeyB64): string",
+                "updateManifestMessage": "static updateManifestMessage(array $m): string",
                 "verify": "static verify(string $message, string $sigB64, string $publicKeyB64): bool",
                 "verifyManifest": "static verifyManifest(string $sha256Hex, string $sigB64, string $publicKeyB64): bool"
             }
@@ -4033,10 +4046,14 @@
         },
         "RivetCore\\Rmm\\Deploy\\DeployService": {
             "kind": "final class",
+            "constants": {
+                "ARGS_UNRESOLVED": "unresolved"
+            },
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Job\\JobService $jobs, RivetCore\\Rmm\\Deploy\\PackageCatalog $catalog, RivetCore\\Rmm\\Deploy\\DeployExpectations $expectations, ?RivetCore\\Rmm\\Support\\RmmEventPublisher $events = NULL, ?RivetCore\\Rmm\\Deploy\\PackageParams $params = NULL, ?RivetCore\\Rmm\\Deploy\\HostedFiles $hosted = NULL, ?RivetCore\\Rmm\\Store\\DeploymentHistoryStore $history = NULL)",
                 "applyJob": "applyJob(array $dev, array $job): bool",
                 "applyPending": "applyPending(int $limit): int",
+                "argsDigest": "argsDigest(array $dev, array $v): string",
                 "cleanDetectResult": "static cleanDetectResult(string $output): ?array",
                 "cleanInstallResult": "static cleanInstallResult(string $output): ?array",
                 "onInstallApplied": "onInstallApplied(Closure $f): void",
@@ -4081,6 +4098,7 @@
                 "addVersion": "addVersion(int $packageId, array $in, int $userId): array",
                 "deletePackage": "deletePackage(int $packageId): ?string",
                 "followsNewest": "followsNewest(int $packageId): bool",
+                "heldByTicksOnly": "heldByTicksOnly(int $packageId, bool $versionAdded): bool",
                 "hostNames": "hostNames(): array",
                 "hosts": "hosts(): array",
                 "installsByItself": "installsByItself(int $packageId): bool",
@@ -4160,6 +4178,7 @@
                 "allowReenroll": "allowReenroll(int $deviceId, int $userId): bool",
                 "approve": "approve(int $deviceId, int $assetId, int $userId): array",
                 "approveWithNewAsset": "approveWithNewAsset(int $deviceId, int $userId): array",
+                "moveCarriedRows": "static moveCarriedRows(RivetCore\\Rmm\\Support\\Sql $sql, int $deviceId, int $clientId): void",
                 "reject": "reject(int $deviceId, int $userId): array",
                 "retire": "retire(int $deviceId, int $userId): bool",
                 "revoke": "revoke(int $deviceId, string $reason, int $userId): bool",
@@ -4224,6 +4243,7 @@
             },
             "methods": {
                 "cleanHardware": "static cleanHardware(array $d): array",
+                "cleanHostname": "static cleanHostname(mixed $v, int $max = 200): ?string",
                 "cleanSerial": "static cleanSerial(?string $s): ?string",
                 "cleanText": "static cleanText(mixed $v, int $max): ?string",
                 "normalizeMac": "static normalizeMac(string $mac): ?string",
@@ -4786,6 +4806,7 @@
                 "footer": "static footer(string $payload): string",
                 "hasFooter": "static hasFooter(string $tail): bool",
                 "read": "static read(string $stamped): ?array",
+                "sign": "static sign(string $payloadJson, string $secretKeyB64): string",
                 "stamp": "static stamp(string $exe, string $payload): string",
                 "trailer": "static trailer(string $payload): string"
             }
@@ -5787,7 +5808,8 @@
                 "settingsOf": "static settingsOf(string $bodyJson): array",
                 "unassign": "unassign(int $assignmentId): ?array",
                 "update": "update(int $policyId, array $in, int $userId): array",
-                "versions": "versions(int $policyId, bool $withBody = false): array"
+                "versions": "versions(int $policyId, bool $withBody = false): array",
+                "withoutScriptBodies": "static withoutScriptBodies(mixed $data): mixed"
             }
         },
         "RivetCore\\Rmm\\Policy\\StarterPack\\PolicyPack": {
@@ -6271,6 +6293,7 @@
                     "file_get",
                     "file_put"
                 ],
+                "LOGS_SIGN_DOMAIN": "rivetit-logs-config-v1",
                 "LOG_BATCH_MAX": 200,
                 "LOG_BODY_MAX": 262144,
                 "LOG_CHECK_PREFIX": "log.rule_",
@@ -6892,9 +6915,10 @@
                 "RESUME_AFTER_S": 120
             },
             "methods": {
-                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Approvals\\ApprovalService $approvals, RivetCore\\Rmm\\Scripts\\ScriptService $scripts, RivetCore\\Rmm\\Scripts\\BulkRunner $bulk, ?RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit)",
+                "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql, RivetCore\\Rmm\\Settings\\RmmSettings $settings, RivetCore\\Rmm\\Approvals\\ApprovalService $approvals, RivetCore\\Rmm\\Scripts\\ScriptService $scripts, RivetCore\\Rmm\\Scripts\\BulkRunner $bulk, ?RivetCore\\Rmm\\Contracts\\RmmTenancyInterface $tenancy, RivetCore\\Rmm\\Contracts\\RmmAuditInterface $audit, ?RivetCore\\Rmm\\Authz\\RmmAuthorizer $authz = NULL, ?RivetCore\\Rmm\\Scripts\\TargetResolver $targets = NULL)",
                 "execute": "execute(array $approval, array $request, array $loaded, ?Closure $allowed = NULL): array",
-                "resume": "resume(): int"
+                "resume": "resume(): int",
+                "targetChanged": "targetChanged(array $request, int $requesterId, array $loaded): ?string"
             }
         },
         "RivetCore\\Rmm\\Scripts\\BulkRunner": {
@@ -7052,6 +7076,27 @@
         "RivetCore\\Rmm\\Settings\\ChecksValidator": {
             "kind": "final class",
             "constants": {
+                "LEGACY_PARAMS": {
+                    "service": [
+                        "name",
+                        "expected",
+                        "startup",
+                        "missing"
+                    ],
+                    "disk": [
+                        "mount",
+                        "warn_free_pct",
+                        "fail_free_pct",
+                        "warn_free_gb",
+                        "fail_free_gb"
+                    ],
+                    "pending_reboot": [],
+                    "script": [
+                        "script",
+                        "timeout_s",
+                        "max_output_bytes"
+                    ]
+                },
                 "MAX_CHECKS": 50,
                 "MAX_INTERVAL_S": 86400,
                 "MAX_SCRIPT_BYTES": 8192,
@@ -7586,6 +7631,11 @@
                 "WRITABLE_ADDED": [
                     "data_store"
                 ],
+                "WRITABLE_ADDED_DS": [
+                    "mesh_token_ttl_exact",
+                    "signed_config",
+                    "release_rollover_json"
+                ],
                 "WRITABLE_ADDED_RC41": [
                     "data_store_phase"
                 ]
@@ -7617,8 +7667,10 @@
                 "serviceUrlOk": "static serviceUrlOk(string $url, bool $allowInsecureHttp): bool",
                 "set": "set(array $values): void",
                 "setRetentionFloors": "setRetentionFloors(?RivetCore\\Rmm\\Settings\\RetentionFloorsInterface $floors): void",
-                "signCheckList": "signCheckList(array $checks, ?array $caps = NULL, ?string $os = NULL): array",
-                "signedChecks": "signedChecks(?array $caps = NULL, ?string $os = NULL): array",
+                "signCheckList": "signCheckList(array $checks, ?array $caps = NULL, ?string $os = NULL, ?int $deviceId = NULL): array",
+                "signedChecks": "signedChecks(?array $caps = NULL, ?string $os = NULL, ?int $deviceId = NULL): array",
+                "signedConfig": "signedConfig(): bool",
+                "signedConfigLevel": "signedConfigLevel(): int",
                 "signingKey": "signingKey(): array",
                 "update": "update(array $in): array",
                 "validateFeatures": "static validateFeatures(mixed $in): array",
@@ -7640,8 +7692,10 @@
             "kind": "final class",
             "constants": {
                 "EVENT_CAP": 25,
+                "MAX_HISTORY_PER_DEVICE": 20000,
                 "MAX_ITEMS": 5000,
                 "MAX_REMOVED": 5000,
+                "MAX_ROWS_PER_DEVICE": 20000,
                 "SOURCES": [
                     "registry",
                     "registry32",
@@ -8704,8 +8758,14 @@
                 "openBinary": "openBinary(array $row, string $trailer = '', ?string $expectOs = NULL): array",
                 "platformOk": "platformOk(array $row): ?bool",
                 "recordResult": "recordResult(array $dev, mixed $res): void",
+                "releaseRollover": "releaseRollover(): ?array",
+                "releaseRollovers": "releaseRollovers(): array",
+                "releaseSignature": "releaseSignature(array $release): ?array",
+                "releaseSignatureProblem": "static releaseSignatureProblem(string $signatureB64): ?string",
                 "releasesChanged": "releasesChanged(): void",
                 "serviceBase": "serviceBase(): ?string",
+                "setReleaseRollover": "setReleaseRollover(string $json): ?string",
+                "setReleaseSignature": "setReleaseSignature(int $binaryId, string $signatureB64): ?string",
                 "updateUrl": "updateUrl(string $arch, string $version, string $os = 'windows'): ?string"
             }
         },
@@ -9783,6 +9843,7 @@
             "kind": "final class",
             "methods": {
                 "__construct": "__construct(bool $allowPrivate = false, ?Closure $resolver = NULL, array $allowedNetworks = [])",
+                "connectedToVetted": "static connectedToVetted(mixed $primaryIp, array $target): bool",
                 "destinationProblem": "destinationProblem(string $url, bool $allowHttp = false): ?string",
                 "isPlainHttp": "static isPlainHttp(string $url): bool",
                 "isPublicIp": "static isPublicIp(string $ip): bool",
@@ -9905,6 +9966,9 @@
         "RivetCore\\Rmm\\Migration\\Migration0050ClientRemotePolicy",
         "RivetCore\\Rmm\\Migration\\Migration0051ConsoleSessions",
         "RivetCore\\Rmm\\Migration\\Migration0052MeshVerify",
+        "RivetCore\\Rmm\\Migration\\Migration0053MeshTokenExact",
+        "RivetCore\\Rmm\\Migration\\Migration0054SignedContracts",
+        "RivetCore\\Rmm\\Migration\\Migration0055HardeningRepair",
         "RivetCore\\Rmm\\Migration\\MsiTemplateSchema",
         "RivetCore\\Rmm\\Migration\\PatchSchema",
         "RivetCore\\Rmm\\Migration\\RemotePolicySchema",
@@ -10043,7 +10107,10 @@
         "0049_rmm_installer_managed_externally",
         "0050_rmm_client_remote_policy",
         "0051_rmm_console_sessions",
-        "0052_rmm_mesh_verify"
+        "0052_rmm_mesh_verify",
+        "0053_rmm_mesh_token_exact",
+        "0054_rmm_signed_contracts",
+        "0055_rmm_hardening_repair"
     ],
     "tables": {
         "audit_chain_checkpoint": {

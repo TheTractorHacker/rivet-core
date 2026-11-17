@@ -82,6 +82,9 @@ final class AutoInstallActions
             return $e;
         }
         $pkg = $this->catalog->package($packageId);
+        if ($pkg !== null && $pkg['two_person'] && $this->catalog->heldByTicksOnly($packageId, $versionAdded)) {
+            return ActionResult::fail(409, 'conflict', 'This package needs a second person and is ticked on an installer that can still enrol devices (or planned for a device that has not finished). There is no assignment to pin: revoke those installers, or wait for the planned installs to finish, before changing its ' . ($versionAdded ? 'versions' : 'vendor parameters') . '.');
+        }
         if ($pkg !== null && $pkg['two_person']) {
             return ActionResult::fail(409, 'conflict', 'This package installs by itself and needs a second person. Remove or pin its assignments (a new assignment goes through approval) before changing its ' . ($versionAdded ? 'versions' : 'vendor parameters') . '.');
         }

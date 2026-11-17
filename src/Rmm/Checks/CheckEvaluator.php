@@ -76,15 +76,15 @@ final class CheckEvaluator
         $rows = [];
         foreach ($this->sql->all('SELECT * FROM endpoint_agent_checks WHERE device_id = ? AND check_key IN (' . implode(',', array_fill(0, count($keys), '?')) . ')',
             [$dev['device_id'], ...array_map('strval', array_keys($keys))]) as $row) {
-            $rows[(string) $row['check_key']] = $row;
+            $rows[strtolower((string) $row['check_key'])] = $row;   // CORE-DS-8: the column is case-insensitive, so the map is too
         }
         /** @var array<string,true> $dirty */
         $dirty = [];
         $touch = $limits['check_touch_s'];
         $nowTs = Sql::ts($now);
         foreach ($results as $r) {
-            $isNew = !isset($rows[$r['key']]);
-            $row = $rows[$r['key']] ?? ['status' => 'unknown', 'detail' => '', 'consecutive_failures' => 0, 'consecutive_ok' => 0, 'episode' => 0, 'alert_id' => null,
+            $isNew = !isset($rows[strtolower($r['key'])]);
+            $row = $rows[strtolower($r['key'])] ?? ['status' => 'unknown', 'detail' => '', 'consecutive_failures' => 0, 'consecutive_ok' => 0, 'episode' => 0, 'alert_id' => null,
                 'last_reported_at' => $now, 'last_changed_at' => $now];
             $loaded = $row;
             $fails = (int) ($row['consecutive_failures'] ?? 0);
@@ -117,7 +117,7 @@ final class CheckEvaluator
                 $row['detail'] = $r['detail'];
                 $row['last_reported_at'] = $now;
                 $row['last_changed_at'] = $prevStatus !== $r['status'] ? $now : $row['last_changed_at'];
-                $rows[$r['key']] = $row;
+                $rows[strtolower($r['key'])] = $row;
                 $dirty[$r['key']] = true;
                 continue;
             }
@@ -153,7 +153,7 @@ final class CheckEvaluator
             if ($unchanged && $touch > 0 && $sameBucket && $nowTs - $prev < $touch && !isset($dirty[$r['key']])) {
                 continue;   // opt-in (check_touch_s): nothing but the "last reported" stamp would move, and the history gap logic cannot tell the difference
             }
-            $rows[$r['key']] = ['status' => $r['status'], 'detail' => $r['detail'], 'consecutive_failures' => $fails, 'consecutive_ok' => $oks, 'episode' => $episode,
+            $rows[strtolower($r['key'])] = ['status' => $r['status'], 'detail' => $r['detail'], 'consecutive_failures' => $fails, 'consecutive_ok' => $oks, 'episode' => $episode,
                 'alert_id' => $alertId, 'last_reported_at' => $now, 'last_changed_at' => $prevStatus !== $r['status'] ? $now : $loaded['last_changed_at']];
             $dirty[$r['key']] = true;
         }
@@ -161,7 +161,7 @@ final class CheckEvaluator
         foreach (array_chunk(array_keys($dirty), 200) as $chunk) {
             $params = [];
             foreach ($chunk as $key) {
-                $row = $rows[(string) $key];
+                $row = $rows[strtolower((string) $key)];
                 array_push($params, $dev['device_id'], (string) $key, $row['status'], $row['detail'], $row['consecutive_failures'], $row['consecutive_ok'], $row['episode'], $row['alert_id'],
                     $row['last_reported_at'], $row['last_changed_at']);
             }

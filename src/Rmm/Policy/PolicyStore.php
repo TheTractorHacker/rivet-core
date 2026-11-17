@@ -303,6 +303,34 @@ final class PolicyStore
         return $out;
     }
 
+    /**
+     * CORE-DS-37: the same data without the text of any script check, for a reader who may not read script text (rmm.job.run_saved). Every `script` check keeps its key,
+     * interval and the rest of its parameters; its `script` parameter is dropped and `script_hidden` is set. Works on a policy row, a version row or a list of them.
+     *
+     * @param mixed $data
+     * @return mixed
+     */
+    public static function withoutScriptBodies(mixed $data): mixed
+    {
+        if ($data instanceof \stdClass) {
+            return $data;
+        }
+        if (!is_array($data)) {
+            return $data;
+        }
+        if (($data['type'] ?? null) === 'script' && is_array($data['params'] ?? null)) {
+            unset($data['params']['script']);
+            $data['script_hidden'] = true;
+        }
+        foreach ($data as $k => $v) {
+            if (is_array($v)) {
+                $data[$k] = self::withoutScriptBodies($v);
+            }
+        }
+
+        return $data;
+    }
+
     /** @return array<string,array{mode:string,value:mixed}> */
     public static function settingsOf(string $bodyJson): array
     {

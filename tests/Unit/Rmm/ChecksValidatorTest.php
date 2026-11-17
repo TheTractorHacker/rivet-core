@@ -83,4 +83,35 @@ final class ChecksValidatorTest extends TestCase
         $this->assertNotNull($out);
         $this->assertSame([[], null], C::validate('[]'));
     }
+
+    /** CORE-DS-17: legacy check params are rebuilt from the keys the agent reads; a case variant or an unknown key does not travel to the device. */
+    public function testLegacyParamsAreRebuiltFromAnAllowList(): void
+    {
+        $json = json_encode([
+            ['key' => 's1', 'type' => 'script', 'interval_s' => 60, 'params' => ['script' => 'exit 0', 'Script' => 'rm -rf /', 'SCRIPT' => 'x', 'timeout_s' => 10, 'extra' => 1, 'flap' => ['window' => 10]]],
+            ['key' => 'd1', 'type' => 'disk', 'interval_s' => 60, 'params' => ['mount' => 'C:', 'Mount' => 'D:', 'warn_free_pct' => 20, 'nope' => true]],
+            ['key' => 'v1', 'type' => 'service', 'interval_s' => 60, 'params' => ['name' => 'sshd', 'Name' => 'evil', 'expected' => 'running']],
+            ['key' => 'p1', 'type' => 'pending_reboot', 'interval_s' => 60, 'params' => ['anything' => 'x']],
+        ]);
+        [$out, $err] = C::validate((string) $json);
+        $this->assertNull($err);
+        $this->assertSame(['script', 'timeout_s', 'flap'], array_keys($out[0]['params']));
+        $this->assertSame('exit 0', $out[0]['params']['script']);
+        $this->assertSame(['mount' => 'C:', 'warn_free_pct' => 20], $out[1]['params']);
+        $this->assertSame(['name' => 'sshd', 'expected' => 'running'], $out[2]['params']);
+        $this->assertSame([], $out[3]['params']);
+    }
+
+    /** CR1 (server half of CORE-DS-3): a cert check cannot point into the kernel interfaces. */
+    public function testACertCheckCannotPointIntoProcSysOrDev(): void
+    {
+        foreach (['/proc/kmsg', '/proc/self/fd/0', '/sys/kernel/x', '/dev/zero', '/DEV/random', '/proc', '/./proc/kmsg', '/././sys/kernel/x', '/dev/./zero', '/proc/.'] as $path) {
+            [$out, $err] = C::validate((string) json_encode([['key' => 'c1', 'type' => 'cert', 'interval_s' => 3600, 'params' => ['paths' => [$path]]]]));
+            $this->assertNull($out, $path);
+            $this->assertStringContainsString('/proc, /sys or /dev', (string) $err);
+        }
+        [$out, $err] = C::validate((string) json_encode([['key' => 'c1', 'type' => 'cert', 'interval_s' => 3600, 'params' => ['paths' => ['/etc/ssl/certs/server.pem', '/processing/x.pem']]]]));
+        $this->assertNull($err);
+        $this->assertNotNull($out);
+    }
 }

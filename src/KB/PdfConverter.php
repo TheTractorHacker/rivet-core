@@ -122,6 +122,12 @@ final class PdfConverter
     private const MAX_IMAGE_BYTES_EACH  = 8388608;
     private const MAX_IMAGE_BYTES_TOTAL = 25165824;
     private const MAX_IMAGES            = 100;
+    // CORE-DS-7: what pdftohtml may leave in the scratch directory while it runs. It writes one image file per time a page DRAWS an image, so a
+    // small PDF can ask for gigabytes; the caps above only apply afterwards, when PHP reads the files back. In bytes (the upload itself, the image
+    // budget twice over and the XML) and in files (MAX_IMAGES is for what is kept, this is for what is written).
+    private const MAX_SCRATCH_BYTES = self::MAX_UPLOAD_BYTES + 2 * self::MAX_IMAGE_BYTES_TOTAL + 2 * self::MAX_XML_BYTES;
+    private const MAX_SCRATCH_FILES = 1000;
+    private const MAX_CHILD_FILE_BYTES = 67108864;   // prlimit --fsize: no single file a poppler tool writes may exceed this
     private const MAX_IMAGE_PIXELS      = 64000000;   // same cap as DocxConverter
     private const MAX_HTML_BYTES        = 4194304;
 
@@ -333,9 +339,29 @@ final class PdfConverter
         $r = $this->exec(
             [self::BIN_PDFTOHTML, '-xml', '-enc', 'UTF-8', '-q', '-l', (string) $pages, 'in.pdf', 'out.xml'],
             $dir,
-            self::TIMEOUT_HTML_MS
+            self::TIMEOUT_HTML_MS,
+            true
         );
 
+        if ($r['overflow']) {
+            // CR16: a document that draws many small images (toolbar icons, headers and footers) used to import its text and the first 100 images. Degrade the same way: clear what
+            // was written and convert again WITHOUT images (-i), so only the text is imported and the author is told.
+            foreach (scandir($dir) ?: [] as $e) {
+                if ($e !== '.' && $e !== '..' && $e !== 'in.pdf') {
+                    @unlink($dir . '/' . $e);
+                }
+            }
+            $r = $this->exec(
+                [self::BIN_PDFTOHTML, '-xml', '-i', '-enc', 'UTF-8', '-q', '-l', (string) $pages, 'in.pdf', 'out.xml'],
+                $dir,
+                self::TIMEOUT_HTML_MS,
+                true
+            );
+            if ($r['overflow']) {
+                throw new PdfConversionException('That PDF produced too much output and was stopped.');
+            }
+            $this->warn('The images of this PDF were not imported: it draws images far more often than a normal document does.');
+        }
         if ($r['timedout']) {
             throw new PdfConversionException('That PDF took too long to convert and was stopped.');
         }
@@ -1070,11 +1096,17 @@ final class PdfConverter
      * Run one poppler command. NO SHELL: proc_open() is given an argv array,
      * which PHP hands to execvp() directly.
      *
+     * CORE-DS-7: with $watch the scratch directory is measured while the child runs (bytes and files, see MAX_SCRATCH_*) and the child is killed
+     * as soon as it is over, and /usr/bin/prlimit (when present) caps the size of any one file it writes and its CPU time.
+     *
      * @param list<string> $argv
-     * @return array{code:int,stdout:string,stderr:string,timedout:bool}
+     * @return array{code:int,stdout:string,stderr:string,timedout:bool,overflow:bool}
      */
-    private function exec(array $argv, string $cwd, int $timeoutMs): array
+    private function exec(array $argv, string $cwd, int $timeoutMs, bool $watch = false): array
     {
+        if ($watch && is_executable('/usr/bin/prlimit')) {
+            $argv = ['/usr/bin/prlimit', '--fsize=' . self::MAX_CHILD_FILE_BYTES, '--cpu=' . (int) ceil($timeoutMs / 1000) + 15, '--nofile=256', '--', ...$argv];
+        }
         $desc = [
             0 => ['file', '/dev/null', 'r'],
             1 => ['pipe', 'w'],
@@ -1095,6 +1127,8 @@ final class PdfConverter
         $deadline = microtime(true) + ($timeoutMs / 1000);
         $exitFromStatus = -1;
         $timedout = false;
+        $overflow = false;
+        $nextWatch = microtime(true) + 0.1;
 
         while (true) {
             /* Drain BOTH pipes to EMPTY every tick, not once per tick.
@@ -1136,6 +1170,14 @@ final class PdfConverter
                 proc_terminate($proc, 9);   // SIGKILL - not SIGTERM, which a wedged child may ignore
                 break;
             }
+            if ($watch && microtime(true) >= $nextWatch) {
+                $nextWatch = microtime(true) + 0.1;
+                if ($this->scratchOverLimit($cwd)) {
+                    $overflow = true;
+                    proc_terminate($proc, 9);
+                    break;
+                }
+            }
             usleep(10000);
         }
 
@@ -1158,11 +1200,36 @@ final class PdfConverter
         }
 
         return [
-            'code'     => $timedout ? -1 : (int) $code,
+            'code'     => $timedout || $overflow ? -1 : (int) $code,
             'stdout'   => $stdout,
             'stderr'   => $stderr,
             'timedout' => $timedout,
+            'overflow' => $overflow || ($watch && $this->scratchOverLimit($cwd)),
         ];
+    }
+
+    /** CORE-DS-7: is the scratch directory (flat: poppler never makes a subdirectory) past MAX_SCRATCH_BYTES or MAX_SCRATCH_FILES? */
+    private function scratchOverLimit(string $dir): bool
+    {
+        $entries = @scandir($dir);
+        if (!is_array($entries)) {
+            return false;
+        }
+        $files = 0;
+        $bytes = 0;
+        foreach ($entries as $e) {
+            if ($e === '.' || $e === '..') {
+                continue;
+            }
+            ++$files;
+            $size = @filesize($dir . '/' . $e);
+            $bytes += is_int($size) ? $size : 0;
+            if ($files > self::MAX_SCRATCH_FILES || $bytes > self::MAX_SCRATCH_BYTES) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function makeScratchDir(): string

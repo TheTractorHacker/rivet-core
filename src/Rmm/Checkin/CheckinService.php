@@ -21,12 +21,14 @@ use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Job\JobService;
 use RivetCore\Rmm\Link\RmmLinker;
 use RivetCore\Rmm\Policy\EffectivePolicy;
+use RivetCore\Rmm\Crypto\Signer;
 use RivetCore\Rmm\Remote\RemoteProtocol;
 use RivetCore\Rmm\Remote\RemoteSettings;
 use RivetCore\Rmm\RmmEvent;
 use RivetCore\Rmm\RmmProtocol;
 use RivetCore\Rmm\Software\SoftwareService;
 use RivetCore\Rmm\Settings\RmmSettings;
+use RivetCore\Rmm\Support\ConfigSequence;
 use RivetCore\Rmm\Support\RmmEventPublisher;
 use RivetCore\Rmm\Support\Sql;
 use RivetCore\Rmm\Update\UpdateService;
@@ -191,9 +193,12 @@ final class CheckinService
             'next_check_in_s' => $interval,
             'jobs_pending' => $features['jobs'] ? $this->jobs->pendingCount((int) $dev['device_id']) : 0,
             'config' => $policy === null
-                ? ['checks' => $this->settings->signedChecks($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null, RmmChecks::deviceOs($dev)), 'collect_interval_s' => (int) $cfg['collect_interval_s']]
-                : ['checks' => $this->settings->signCheckList($policy['checks'], $this->capsOf($dev, $announce['caps']) ?? [], RmmChecks::deviceOs($dev)), 'collect_interval_s' => $policy['collect_interval_s']],
+                ? ['checks' => $this->settings->signedChecks($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null, RmmChecks::deviceOs($dev), (int) $dev['device_id']), 'collect_interval_s' => (int) $cfg['collect_interval_s']]
+                : ['checks' => $this->settings->signCheckList($policy['checks'], $this->capsOf($dev, $announce['caps']) ?? [], RmmChecks::deviceOs($dev), (int) $dev['device_id']), 'collect_interval_s' => $policy['collect_interval_s']],
         ];
+        if ($this->settings->signedConfig()) {
+            $out['config']['signed_config'] = $this->settings->signedConfigLevel();   // CORE-DS-16: from now on the agent refuses an unsigned check or an unsigned log configuration
+        }
         $this->reconcileDelivered($dev, $out['config']['checks'], $policy === null ? ($this->settings->hasExtendedChecks() ? $this->capsOf($dev, $announce['caps']) : null) : ($this->capsOf($dev, $announce['caps']) ?? []));
         if ($knowsPolicies) {
             // Additive, offered only to an agent that announced `policies`: every other response is byte-identical to before.
@@ -201,6 +206,10 @@ final class CheckinService
         }
         if ($features['updates']) {
             $out['update'] = $this->updates->manifestFor($policy !== null && $policy['ring'] !== null ? ['ring' => $policy['ring']] + $dev : $dev);
+            if (($rollover = $this->updates->releaseRollover()) !== null) {
+                $out['release_rollover'] = $rollover;   // CORE-DS-26: relayed while any agent may need it; the server cannot create one
+                $out['release_rollovers'] = $this->updates->releaseRollovers();   // R3-2: the chain, so an agent that missed one catches up
+            }
         }
         $out['server_time'] = $this->sql->isoNow();
         $out['signing_key_id'] = $this->settings->get()['signing_key_id'];
@@ -216,8 +225,19 @@ final class CheckinService
         if ($features['logs'] && $this->remote !== null && (int) ($cfg['shed_level'] ?? 0) === 0 && in_array(RemoteProtocol::CAP_LOGS, $this->capsOf($dev, $announce['caps']) ?? [], true)) {
             $logConfig = $this->remote->agentLogConfig((string) ($dev['os'] ?? 'windows'), $this->capsOf($dev, $announce['caps']));
             if ($logConfig !== null) {
-                $offered[] = RemoteProtocol::CAP_LOGS;
-                $out['config']['logs'] = $logConfig;
+                try {
+                    [$sec] = $this->settings->signingKey();
+                    if ($this->settings->signedConfigLevel() >= 2) {
+                        // contract version 2: the device and a monotonic revision are inside the signature, so the configuration cannot be replayed on another device or after a newer one
+                        $logConfig['device_id'] = (string) (int) $dev['device_id'];
+                        $logConfig['seq'] = (new ConfigSequence($this->sql))->seq('logs:' . (int) $dev['device_id'], $logConfig, max(1, $this->sql->time()));
+                    }
+                    $logConfig['signature'] = Signer::sign(Signer::logsConfigMessage($logConfig), $sec);   // CORE-DS-16: which logs are shipped is not an unsigned setting
+                    $offered[] = RemoteProtocol::CAP_LOGS;
+                    $out['config']['logs'] = $logConfig;
+                } catch (\Throwable) {
+                    // no usable signing key: an unsigned log configuration is never offered
+                }
             }
         }
         // Change monitoring, additive: only an agent that announced `change:monitor`, while the `change_monitor` sub-switch is on, below load shedding level 2 and with at
@@ -507,7 +527,7 @@ final class CheckinService
         }
         $cpu = is_array($inv['cpu'] ?? null) ? $inv['cpu'] : [];
         $clean = [
-            'hostname' => $txt($inv['hostname'] ?? null, 200),
+            'hostname' => DeviceValidator::cleanHostname($inv['hostname'] ?? null, 200),   // IT-DS-19/42: no markup in a name a device chooses
             'os' => $txt($inv['os'] ?? null, 50),
             'os_version' => $txt($inv['os_version'] ?? null, 200),
             'manufacturer' => $txt($inv['manufacturer'] ?? null, 200),
@@ -786,13 +806,13 @@ final class CheckinService
                 }
                 continue;
             }
-            if (isset($seen[$key])) {
-                continue;   // one result per check per check-in
+            if (isset($seen[strtolower($key)])) {
+                continue;   // one result per check per check-in (CORE-DS-8: endpoint_agent_checks is case-insensitive, so 'Disk.C' and 'disk.c' are one check)
             }
             if (RmmChecks::isServerKey($key)) {
                 continue;   // CORE-18: log.rule_*, change.rule_*, patch.* and hv.* are written by the server only; an agent report under them is dropped, never stored or evaluated
             }
-            $seen[$key] = 1;
+            $seen[strtolower($key)] = 1;
             /** @var array<string,mixed> $c */
             $detail = DeviceValidator::cleanText($c['detail'] ?? '', 500) ?? '';
             $row = ['key' => $key, 'status' => $status, 'detail' => $detail, 'at' => $this->sql->utcNow()];

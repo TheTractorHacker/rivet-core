@@ -109,7 +109,13 @@ final class InstallerDownload
             $fields[RmmProtocol::EMBED_MEMBER_MESH] = $mesh;
         }
         try {
-            return [InstallerStamp::buildPayload($fields), null];
+            $payload = InstallerStamp::buildPayload($fields);
+            if ($this->settings->signedConfig()) {
+                [$sec] = $this->settings->signingKey();
+                $payload = InstallerStamp::sign($payload, $sec);   // CORE-DS-20: opt-in with the signed-configuration contract, so the stamped bytes do not change until it is on
+            }
+
+            return [$payload, null];
         } catch (\LengthException) {
             return [null, 'The installer payload is too large (' . $this->clientLabel . ' name, CA certificate or Mesh settings).'];
         }
