@@ -51,3 +51,38 @@ func TestRunnerNeverReportsServerOwnedKeys(t *testing.T) {
 		t.Fatalf("got %+v", out)
 	}
 }
+
+// CORE-DS-16: the TLS opt-out is a SIGNED check parameter (as the code comment always said); an unsigned http check cannot switch verification off.
+func TestHTTPCheckVerifyTLSFalseNeedsASignature(t *testing.T) {
+	c := newCol(newFake())
+	c.VerifyCheck = func(store.CheckSpec) error { return nil }
+	params := json.RawMessage(`{"url":"https://127.0.0.1:1/","verify_tls":false,"timeout_ms":500}`)
+	r := c.RunCheck(context.Background(), store.CheckSpec{Key: "k", Type: "http", Params: params})
+	if r.Status != Unknown || !strings.Contains(r.Detail, "signed") {
+		t.Fatalf("unsigned verify_tls:false was honoured: %+v", r)
+	}
+	r = c.RunCheck(context.Background(), store.CheckSpec{Key: "k", Type: "http", Params: params, Signature: "sig", Raw: json.RawMessage(`{}`)})
+	if strings.Contains(r.Detail, "signed") {
+		t.Fatalf("a signed check was refused for lack of a signature: %+v", r)
+	}
+}
+
+// CORE-DS-16: once the server says it signs every check (or the local config demands it) an unsigned check of ANY type is refused.
+func TestUnsignedChecksRefusedWhenSigningIsRequired(t *testing.T) {
+	c := newCol(newFake())
+	c.VerifyCheck = func(store.CheckSpec) error { return nil }
+	required := false
+	c.RequireSigned = func() bool { return required }
+	unsigned := store.CheckSpec{Key: "k", Type: "pending_reboot"}
+	if r := c.RunCheck(context.Background(), unsigned); r.Status == Unknown {
+		t.Fatalf("an older server's unsigned check was refused: %+v", r)
+	}
+	required = true
+	if r := c.RunCheck(context.Background(), unsigned); r.Status != Unknown || !strings.Contains(r.Detail, "unsigned") {
+		t.Fatalf("unsigned check ran although signing is required: %+v", r)
+	}
+	signed := store.CheckSpec{Key: "k", Type: "pending_reboot", Signature: "sig", Raw: json.RawMessage(`{}`)}
+	if r := c.RunCheck(context.Background(), signed); r.Status == Unknown {
+		t.Fatalf("a signed check was refused: %+v", r)
+	}
+}

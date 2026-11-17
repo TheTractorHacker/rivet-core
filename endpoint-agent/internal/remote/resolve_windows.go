@@ -9,8 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"rivetit-agent/internal/winacl"
 )
 
 // hostResolve returns the fully resolved form of an EXISTING path: symbolic links AND junctions (mount points) followed, the true case and long names.
@@ -66,6 +69,13 @@ func stripDevicePrefix(s string) string {
 	return s
 }
 
+// reparseTagOf is the reparse tag of an open handle (0 when there is none or it cannot be read).
+func reparseTagOf(h windows.Handle) uint32 {
+	var ti struct{ FileAttributes, ReparseTag uint32 }
+	err := windows.GetFileInformationByHandleEx(h, windows.FileAttributeTagInfo, (*byte)(unsafe.Pointer(&ti)), uint32(unsafe.Sizeof(ti)))
+	return tagOrSurrogate(ti.ReparseTag, err) // an unreadable tag counts as a link (review CRR-9)
+}
+
 // openNoFollow opens read-only. A final element that is a reparse point (symbolic link, junction, ...) is refused, and the handle's own final
 // path must equal the path the policy resolved, so a link swapped in after the check (or in a parent folder) cannot redirect the read.
 func openNoFollow(path string) (*os.File, error) {
@@ -83,9 +93,29 @@ func openNoFollow(path string) (*os.File, error) {
 		windows.CloseHandle(h)
 		return nil, &fs.PathError{Op: "open", Path: path, Err: err}
 	}
-	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-		windows.CloseHandle(h)
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && winacl.IsNameSurrogate(reparseTagOf(h)) {
+		windows.CloseHandle(h) // a symlink or junction; a Cloud Files placeholder is an ordinary file for this purpose (review CR2)
 		return nil, &fs.PathError{Op: "open", Path: path, Err: errors.New("path is a link")}
+	}
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		// A non-link reparse point (Cloud Files / OneDrive placeholder, dedup): a handle opened WITH FILE_FLAG_OPEN_REPARSE_POINT bypasses the filter's
+		// recall, so reopen normally and require it to be the very same file before reading (review CRR-9). UNVERIFIED on Windows.
+		h2, err := windows.CreateFile(p, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil,
+			windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+		if err != nil {
+			windows.CloseHandle(h)
+			return nil, &fs.PathError{Op: "open", Path: path, Err: err}
+		}
+		var info2 windows.ByHandleFileInformation
+		if err := windows.GetFileInformationByHandle(h2, &info2); err != nil ||
+			!sameFileIdentity(uint64(info.VolumeSerialNumber), uint64(info.FileIndexHigh)<<32|uint64(info.FileIndexLow),
+				uint64(info2.VolumeSerialNumber), uint64(info2.FileIndexHigh)<<32|uint64(info2.FileIndexLow)) {
+			windows.CloseHandle(h2)
+			windows.CloseHandle(h)
+			return nil, &fs.PathError{Op: "open", Path: path, Err: errors.New("path changed while it was opened")}
+		}
+		windows.CloseHandle(h)
+		h = h2
 	}
 	if fp, err := finalPathOf(h); err != nil || !strings.EqualFold(filepath.Clean(fp), filepath.Clean(path)) {
 		windows.CloseHandle(h)
@@ -108,36 +138,127 @@ func commitFile(tmp, dest string, overwrite bool) error {
 	return os.Rename(tmp, dest)
 }
 
-// putTemp on Windows is still path based (CORE-7 tracks the handle-based rename there).
+// putTemp on Windows: the destination directory is PINNED for the whole transfer (CORE-DS-13). It is opened once, by handle, with
+// FILE_FLAG_OPEN_REPARSE_POINT (a link is not followed) and WITHOUT FILE_SHARE_DELETE, and the handle stays open until the put is committed or
+// discarded. NTFS refuses to rename or replace a directory (or any ancestor of it) that has an open handle without delete sharing, so after the
+// check below nobody can swap the directory, or a parent of it, for a junction while the temp file is created, written and moved. The handle's
+// final path must equal the path the policy approved. The temp file and the final rename are still addressed by path, but only inside that
+// pinned directory. The temp file is created with an explicit SYSTEM/Administrators-only DACL and no sharing, and is renamed onto the
+// destination through its own handle (FileRenameInfo), so the written and hashed file is the delivered file. UNVERIFIED on a real Windows machine, see
+// docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md.
 type putTemp struct {
 	File *os.File
 	path string
 	dir  string
+	pin  windows.Handle
+	h    windows.Handle // the temp file's own handle (same as File, kept for the rename)
 }
 
+// pinDirectory opens dir as described above and checks it against the approved path.
+func pinDirectory(dir string) (windows.Handle, error) {
+	p, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
+	}
+	h, err := windows.CreateFile(p, windows.FILE_LIST_DIRECTORY|windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
+	}
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
+		windows.CloseHandle(h)
+		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
+	}
+	fp, err := finalPathOf(h)
+	if err != nil {
+		windows.CloseHandle(h)
+		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
+	}
+	if err := checkPinnedDir(info.FileAttributes, reparseTagOf(h), fp, dir); err != nil {
+		windows.CloseHandle(h)
+		return 0, &fs.PathError{Op: "open", Path: dir, Err: err}
+	}
+	return h, nil
+}
+
+// tempSDDL is the DACL of the temp file: SYSTEM and Administrators only (protected), so a standard user who owns the destination folder cannot open
+// or swap the bytes between the hash and the rename (the CORE-7 byte-swap variant, CORE-DS-13).
+const tempSDDL = "D:P(A;;FA;;;SY)(A;;FA;;;BA)"
+
 func beginPut(dir, name string) (*putTemp, error) {
+	pin, err := pinDirectory(dir)
+	if err != nil {
+		return nil, err
+	}
 	path := filepath.Join(dir, name)
-	open := func() (*os.File, error) { return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) }
-	f, err := open()
-	if errors.Is(err, fs.ErrExist) {
+	open := func() (windows.Handle, error) {
+		sd, err := windows.SecurityDescriptorFromString(tempSDDL)
+		if err != nil {
+			return 0, err
+		}
+		sa := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+		p, err := windows.UTF16PtrFromString(path)
+		if err != nil {
+			return 0, err
+		}
+		// share mode 0: nobody else can open the temp file while it is written, hashed and renamed; DELETE lets us rename it by this very handle,
+		// WRITE_DAC lets us hand the final file the folder's inherited permissions afterwards.
+		return windows.CreateFile(p, windows.GENERIC_WRITE|windows.DELETE|windows.WRITE_DAC|windows.READ_CONTROL, 0, sa, windows.CREATE_NEW,
+			windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	}
+	h, err := open()
+	if errors.Is(err, windows.ERROR_FILE_EXISTS) || errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		if li, lerr := os.Lstat(path); lerr == nil && (li.Mode().IsRegular() || li.Mode()&fs.ModeSymlink != 0) {
 			if os.Remove(path) == nil {
-				f, err = open()
+				h, err = open()
 			}
 		}
 	}
 	if err != nil {
-		return nil, err
+		windows.CloseHandle(pin)
+		return nil, &fs.PathError{Op: "open", Path: path, Err: err}
 	}
-	return &putTemp{File: f, path: path, dir: dir}, nil
+	return &putTemp{File: os.NewFile(uintptr(h), path), path: path, dir: dir, pin: pin, h: h}, nil
 }
 
+// Commit renames the open temp file onto dest THROUGH ITS HANDLE (FileRenameInfo), so the very file that was written and hashed becomes the
+// destination; no path of the temp file is resolved again. Without overwrite an existing destination makes the rename fail (no clobber). The final
+// file then gets the folder's inherited permissions (the temp file had SYSTEM/Administrators only).
 func (t *putTemp) Commit(dest string, _ os.FileMode, _, overwrite bool) error {
-	if err := t.File.Close(); err != nil {
+	target := filepath.Join(t.dir, dest)
+	if li, err := os.Lstat(target); err == nil {
+		if !overwrite {
+			return errExists
+		}
+		if !li.Mode().IsRegular() {
+			return errors.New("destination is not a regular file")
+		}
+	}
+	if err := t.File.Sync(); err != nil {
 		return err
 	}
-	return commitFile(t.path, filepath.Join(t.dir, dest), overwrite)
+	buf := renameInfoBuffer(target, overwrite, int(unsafe.Sizeof(uintptr(0))))
+	if err := windows.SetFileInformationByHandle(t.h, windows.FileRenameInfo, &buf[0], uint32(len(buf))); err != nil {
+		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) || errors.Is(err, windows.ERROR_FILE_EXISTS) {
+			return errExists
+		}
+		return err
+	}
+	// inherit the folder's permissions: an empty DACL, unprotected, makes Windows apply the parent's inheritable ACEs
+	if acl, err := windows.ACLFromEntries(nil, nil); err == nil {
+		_ = windows.SetSecurityInfo(t.h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.UNPROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
+	}
+	return t.File.Close()
 }
 
-func (t *putTemp) Discard() { t.File.Close(); os.Remove(t.path) }
-func (t *putTemp) Close()   { t.File.Close() }
+func (t *putTemp) release() {
+	if t.pin != 0 {
+		windows.CloseHandle(t.pin)
+		t.pin = 0
+	}
+}
+
+func (t *putTemp) Discard() { t.File.Close(); os.Remove(t.path); t.release() }
+func (t *putTemp) Close()   { t.File.Close(); t.release() }

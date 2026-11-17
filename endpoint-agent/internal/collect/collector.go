@@ -26,6 +26,9 @@ type Collector struct {
 	Timeout time.Duration // hard per-call timeout (default 15s)
 	// CheckHardLimit abandons one check that has run this long (default 150s, above the longest check timeout); see CheckRunner.Run.
 	CheckHardLimit time.Duration
+	// RequireSigned says whether every check definition must carry a verified signature (the server announced signed_config >= 1, or the local
+	// configuration demands it). nil = tolerate unsigned checks of the non-script types, as older servers send them (CORE-DS-16).
+	RequireSigned func() bool
 	// RunBudget is the total time one CheckRunner.Run may spend (default 90s): checks still due when it is spent wait for the next pass, and a running
 	// check is cut at the remaining budget, so a pass cannot hold the check-in for 50 x CheckHardLimit (CORE-DS-3, review CR1).
 	RunBudget time.Duration

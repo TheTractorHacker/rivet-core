@@ -2,6 +2,56 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## 1.0.0-rc.75 (endpoint agent: deep-scan fixes E, signing and the CORE-7 remainder; no migration)
+
+Provisional number (follows rc.74, stacked). Agent side only; the server counterparts are specified in docs/design/ (SIGNED_CONFIG_CONTRACT.md, SIGNED_UPDATE_MANIFEST.md, SIGNED_INSTALLER_TRAILER.md) and are PHP hand-offs. Every new enforcement is off until its trust anchor or flag is present, so existing builds and servers keep working.
+
+- **CORE-DS-13 (finish)** Windows `file_put`: the temp file has a SYSTEM/Administrators-only DACL and no sharing, and is renamed onto the destination through its own handle; the final file gets the folder's inherited permissions. UNVERIFIED on Windows.
+- **CORE-DS-16** unsigned checks of any type and unsigned `config.logs` are refused once the server announces `config.signed_config >= 1` (sticky) or `require_signed_config` is set; `config.logs` signature domain `rivetit-logs-config-v1`; optional `device_id` binding of signed checks.
+- **CORE-DS-20** installer payload signature (member `signature`, domain `rivetit-installer-payload-v1`) enforced when the build has a trust anchor (`TRUST_KEYS`); additive for existing installers.
+- **CORE-DS-26** update manifest release signature over `{kind, version, os, arch, sha256, min_version}` by an offline release key (`RELEASE_KEYS` trust anchor), signed key rollover, local `disable_update`.
+
+## 1.0.0-rc.74 (endpoint agent: deep-scan fixes D, Windows Lows; no migration)
+
+Provisional number (follows rc.73, stacked). Windows installer, MSI and Windows-only agent code for CORE-DS-18/47/48/55/56/57/74. **UNVERIFIED on Windows** (no Windows machine; cross-compiled and vetted, the MSI built in the pinned wixl image and table-checked, the Linux-testable parts unit-tested): docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md.
+
+- **CORE-DS-18** `powershell.exe`, `tasklist` and `ping` run from `%SystemRoot%\System32` by absolute path (`systemTool`); the agent calls `SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32)` at start; the uninstall self-delete runs `ping` by absolute path from System32.
+- **CORE-DS-47** a custom `--install-dir` is created with an explicit owner and a protected SYSTEM/Administrators DACL (`store.EnsureProtectedDir`); a pre-existing directory owned by anyone else is refused.
+- **CORE-DS-48** setup holds the installer exe (and the MSI payload source) open without write/delete sharing for the whole run.
+- **CORE-DS-55** at startup only the `Agent` directory's contents are vetted entry by entry; the `RivetIT` parent is checked and tightened but a stray entry in it no longer stops the agent.
+- **CORE-DS-56** the setup custom action that carries the enrollment token gets the HideTarget bit (wixl ignores the attribute, so `build.sh` sets it with msibuild and `check` asserts it). This keeps the token out of the Windows Installer log only: the agent exe is still started with `--token` on its command line, so use `ENROLL_TOKEN_FILE` where process-command-line telemetry matters; the Mesh installer no longer inherits `RIVETIT_*` environment variables.
+- **CORE-DS-57** the stop-service action no longer runs in a plain repair/reinstall; `ARPNOREPAIR=1`.
+- **CORE-DS-74** `install-windows.ps1` creates every directory atomically with an owner and protected DACL, tightens a legacy one first, re-checks the owner, and hashes through a `FileShare.Read` handle kept open until the install ends.
+
+## 1.0.0-rc.73 (endpoint agent: deep-scan fixes C, Lows; no migration)
+
+Provisional number (follows rc.72, stacked). Go endpoint agent and `install-linux.sh` only; no PHP, no protocol change. Windows-affecting items are in docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md as UNVERIFIED.
+
+- **CORE-DS-14** a failed or rejected re-enrollment to a different server restores the old `config.json` and CA file (the old credential is never sent to the new host).
+- **CORE-DS-15** shutdown, timeouts, network errors, 408/429/5xx and a slow selftest no longer mark an update version as failed; it is retried after a 10 minute pause.
+- **CORE-DS-16 (part)** `verify_tls:false` on an http check is honoured only from a signed check definition. Requiring signatures for every check type and for `config.logs` is DEFERRED (needs the server to sign them all).
+- **CORE-DS-19** the inventory's `MeshAgent -nodeid` run goes through the Mesh trust checks (`mesh.TrustedExecutable`).
+- **CORE-DS-21** hypervisor collection resumes after a configuration change or switch-off during a run.
+- **CORE-DS-22** output capping repairs only a rune split at the cut instead of discarding everything after the first invalid byte.
+- **CORE-DS-23** job reports are shortened until they JSON-encode under the request cap; an unsendable report is acknowledged locally instead of retried for ever.
+- **CORE-DS-25** `file_put` hands the delivered file to the replaced file's owner (else the directory's).
+- **CORE-DS-27** SemVer 2.0 pre-release precedence (`rc.10` is above `rc.9`).
+- **CORE-DS-28** `install-linux.sh` refuses `--pin-spki` (and a useless `--ca`) in stamped-installer mode instead of dropping them.
+- **CORE-DS-49** a self-update is applied only when no job is running.
+- **CORE-DS-50, CORE-DS-51** the SPKI pin is enforced only for the server host; hosted software downloads use the API client's TLS trust (`ca_file`, pin for the server host).
+- **CORE-DS-52** the job `Verifier` key and device id are read and written under one lock.
+- **CORE-DS-53, CORE-DS-54** `proc_kill` refuses `svchost.exe`; the agent's own service refuses every action except start/enable (so `manual` too); `manual` refused on the protected system services.
+- **CORE-DS-76** a signed job must name this device; dedupe records live until the job's `expires_at`.
+- **CORE-DS-77** the agent's transfer deny list now covers `.jks`, `/etc/ssl/private`, `/var/lib/rivetit` and `ssh_host_*` everywhere (parity with the server's PathPolicy).
+
+## 1.0.0-rc.72 (endpoint agent: deep-scan fixes B, Windows Mediums CORE-DS-5/12/13; no migration)
+
+Provisional number (follows rc.71, stacked on it). Go endpoint agent only; no PHP, no protocol change. **All three are written without a Windows machine and are UNVERIFIED on Windows** (cross-compiled and vetted; the platform-independent logic is unit-tested on Linux): docs/rmm/AGENT_DEEP_SCAN_WINDOWS_TEST.md.
+
+- **CORE-DS-5: Windows patch_install.** `install.ps1` prints `ok:false` whenever any update failed or needed a EULA, next to the full results array; `normaliseInstall` treated that as a script failure and reported a bare `scan_failed`. Only a document without `results` is a script failure now; the per-update results and `reboot_required` are kept, and the verdict is computed from them. The `win_install_*` fixtures now match what the real script prints.
+- **CORE-DS-12: script job parameters.** On Windows the parameter object (sealed secrets included) was base64 inside the `-EncodedCommand` text. It now travels only in the environment (`RIVETIT_JOB_PARAMS`, as on Linux) and the prelude reads it with `ConvertFrom-Json $env:RIVETIT_JOB_PARAMS`; no value appears in the command line or the script text. Over about 30000 characters the job is refused.
+- **CORE-DS-13: Windows file_put.** The destination directory is pinned for the whole transfer: opened by handle without following reparse points and without delete sharing, its final path compared with the policy-approved one (`checkPinnedDir`, tested on Linux). NTFS then refuses to rename or replace that directory or an ancestor while the put runs. Remaining (CORE-7 byte-swap variant): the temp file still inherits the folder ACL and the final rename is by path.
+
 ## 1.0.0-rc.77 (deep-scan fixes C: crypto, panel attachments, automation, ITSM, job queue, command palette; no migration)
 
 Provisional number, stacked on rc.76 (above the endpoint-agent fixes of rc.71 to 74). Fixes from the 2026-11-15 deep security scan (CORE-DS-29 to 33, 45, 46, 58 to 60). No migration, no new route, no released constant changed. Everything open in the first version of this entry is fixed in the review round below (CORE-DS-58 secret and CORE-DS-61 included).

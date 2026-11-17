@@ -21,7 +21,13 @@ func WriteUnstamped(src, dst string) (written int64, err error) {
 	if err != nil {
 		return 0, err
 	}
-	n, err := UnstampedSize(in, fi.Size())
+	return WriteUnstampedFrom(in, fi.Size(), dst)
+}
+
+// WriteUnstampedFrom is WriteUnstamped over an already open file (a handle pinned against changes), so the bytes copied are the bytes that were
+// parsed and nothing is re-opened by path (CORE-DS-48, review CRR-5).
+func WriteUnstampedFrom(in io.ReaderAt, size int64, dst string) (written int64, err error) {
+	n, err := UnstampedSize(in, size)
 	if err != nil {
 		return 0, err
 	}

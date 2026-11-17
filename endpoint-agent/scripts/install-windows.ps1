@@ -94,15 +94,34 @@ foreach ($sub in @('RivetIT', 'RivetIT\Setup', 'RivetIT\Agent')) {
     }
   }
 }
-# New-Item would create RivetIT with the ProgramData ACL inherited (users may add entries); create it protected, like the agent does.
-$vendorDir = Join-Path $env:ProgramData 'RivetIT'
-if (-not (Test-Path -LiteralPath $vendorDir)) {
-  New-Item -ItemType Directory -Path $vendorDir -Force | Out-Null
-  & icacls.exe $vendorDir /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null
+# CORE-DS-74: every level is created ATOMICALLY with an explicit owner (Administrators) and a protected DACL (SYSTEM and Administrators only), so there is
+# never a moment in which a standard user can own or write to it; a level that already exists (older agents left RivetIT with the inherited ProgramData ACL)
+# is tightened BEFORE anything is created inside it, and the owner of the working directory is re-checked after it was created.
+$protectedSddl = 'O:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)'
+function New-ProtectedDirectory([string]$Path) {
+  $sec = New-Object System.Security.AccessControl.DirectorySecurity
+  $sec.SetSecurityDescriptorSddlForm($protectedSddl)
+  if ($PSVersionTable.PSEdition -eq 'Core') {
+    [System.IO.FileSystemAclExtensions]::Create((New-Object System.IO.DirectoryInfo $Path), $sec) | Out-Null
+  } else {
+    [System.IO.Directory]::CreateDirectory($Path, $sec) | Out-Null
+  }
 }
-$work = Join-Path $env:ProgramData ('RivetIT\Setup\' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $work -Force | Out-Null
-& icacls.exe $work /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null
+function Set-ProtectedAcl([string]$Path) {
+  $sec = New-Object System.Security.AccessControl.DirectorySecurity
+  $sec.SetSecurityDescriptorSddlForm($protectedSddl)
+  Set-Acl -LiteralPath $Path -AclObject $sec
+}
+$vendorDir = Join-Path $env:ProgramData 'RivetIT'
+$setupDir  = Join-Path $vendorDir 'Setup'
+foreach ($d in @($vendorDir, $setupDir)) {
+  if (Test-Path -LiteralPath $d) { Set-ProtectedAcl $d } else { New-ProtectedDirectory $d }
+}
+$work = Join-Path $setupDir ([guid]::NewGuid().ToString('N'))
+New-ProtectedDirectory $work
+$workOwner = (Get-Acl -LiteralPath $work).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+if ($workOwner -notin @('S-1-5-18', 'S-1-5-32-544')) { Fail "The work directory $work is owned by $workOwner. Refusing to continue." 5 }
+$pin = $null
 try {
   $exe = Join-Path $work $file
   $url = $BaseDownloadUrl.TrimEnd('/') + '/' + $file
@@ -110,7 +129,12 @@ try {
   Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing -MaximumRedirection 0
 
   # --- verify BEFORE running anything -----------------------------------------
-  $got = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+  # CORE-DS-74: hash the very bytes that will run. The file is opened once with FileShare.Read (nobody can write, rename or delete it while the handle is
+  # open) and the handle is kept until the install has finished.
+  $pin = [System.IO.File]::Open($exe, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  $got = ([System.BitConverter]::ToString($sha.ComputeHash($pin)) -replace '-', '')
+  $sha.Dispose()
   if ($got -ne $want.ToUpper()) { Fail "SHA-256 mismatch for $file (got $got). Refusing to install." 4 }
   if ($RequireSignature) {
     $sig = Get-AuthenticodeSignature -LiteralPath $exe
@@ -128,6 +152,7 @@ try {
   Write-Host 'RivetIT agent installed.'
 }
 finally {
+  if ($pin) { $pin.Dispose() }
   Remove-Item Env:\RIVETIT_ENROLL_TOKEN -ErrorAction SilentlyContinue
   if ($DeleteTokenFile -and $TokenFile) { Remove-Item -LiteralPath $TokenFile -Force -ErrorAction SilentlyContinue }
   Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

@@ -253,9 +253,10 @@ var (
 	}
 	linuxDenyTrees = [][]string{
 		{"etc", "sudoers.d"}, {"proc"}, {"sys"}, {"dev"}, {"run", "secrets"}, {"root", ".ssh"},
+		{"etc", "ssl", "private"}, {"var", "lib", "rivetit"}, // the server's PathPolicy denies these too (CORE-DS-77)
 	}
-	secretPrefixes = []string{"id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"}
-	secretSuffixes = []string{".pem", ".key", ".p12", ".pfx", ".kdbx", ".keystore"}
+	secretPrefixes = []string{"id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", "ssh_host_"}
+	secretSuffixes = []string{".pem", ".key", ".p12", ".pfx", ".kdbx", ".keystore", ".jks"}
 )
 
 func hasPrefixElems(k []string, prefix []string) bool {

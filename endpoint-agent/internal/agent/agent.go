@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"rivetit-agent/internal/api"
@@ -101,11 +103,15 @@ type Agent struct {
 	verifier     *jobs.Verifier
 	upd          *update.Manager
 	meshRep      *mesh.Reporter
-	logs         *logs.Manager       // RMM Phase 8 log collection; idle until a check-in offers logs:collect
-	hv           *hypervisor.Manager // Proxmox / Hyper-V visibility; idle until a check-in offers "hypervisor" with a signed configuration
-	chg          *change.Manager     // change monitoring; idle until a check-in offers change:monitor with a signed configuration
-	skew         time.Duration       // the correction being applied (zero while the PC clock is close enough)
-	clkOff       time.Duration       // estimate of server time minus the PC clock
+	logs         *logs.Manager        // RMM Phase 8 log collection; idle until a check-in offers logs:collect
+	hv           *hypervisor.Manager  // Proxmox / Hyper-V visibility; idle until a check-in offers "hypervisor" with a signed configuration
+	chg          *change.Manager      // change monitoring; idle until a check-in offers change:monitor with a signed configuration
+	signedSeen   atomic.Int32         // highest signed_config version announced since start
+	updTransient map[string]int       // temporary self-update failures per version (drives the back-off)
+	updSelfTest  map[string]int       // selftest timeouts per version (the only failures that can make a version permanent)
+	updRetryAt   map[string]time.Time // earliest next self-update attempt per version after a temporary failure (review R3-4)
+	skew         time.Duration        // the correction being applied (zero while the PC clock is close enough)
+	clkOff       time.Duration        // estimate of server time minus the PC clock
 	clkHave      bool
 	clkWarned    time.Time // last time the clock warning was logged (once per hour)
 	timeRetrySeq uint64    // the seq a time refusal was already retried for
@@ -165,10 +171,14 @@ func New(o Options) (*Agent, error) {
 			return errors.New("unsigned")
 		}
 		a.mu.Lock()
-		v := &jobs.Verifier{PublicKey: a.verifier.PublicKey}
+		v := &jobs.Verifier{PublicKey: a.verifier.Key()}
 		a.mu.Unlock()
-		return v.VerifyObject(c.Raw, c.Signature)
+		if err := v.VerifyObject(c.Raw, c.Signature); err != nil {
+			return err
+		}
+		return checkBoundToDevice(c.Raw, a.verifier.Device())
 	}
+	a.col.RequireSigned = a.signingRequired
 	a.runner = collect.NewCheckRunner(a.col)
 	a.ring = buffer.Open(o.Store.BufferPath(), cfg.BufferMaxSamples, cfg.BufferMaxBytes)
 	a.verifier = &jobs.Verifier{Now: a.now}
@@ -201,7 +211,7 @@ func New(o Options) (*Agent, error) {
 		TaskRoot: change.TaskRoot(),
 		Verify: func(domain string, raw []byte, sig string) error {
 			a.mu.Lock()
-			v := &jobs.Verifier{PublicKey: a.verifier.PublicKey}
+			v := &jobs.Verifier{PublicKey: a.verifier.Key()}
 			a.mu.Unlock()
 			return v.VerifyDomain(domain, raw, sig)
 		},
@@ -214,7 +224,7 @@ func New(o Options) (*Agent, error) {
 		SeqPath: o.Store.HypervisorSeqPath(),
 		Verify: func(domain string, raw []byte, sig string) error {
 			a.mu.Lock()
-			v := &jobs.Verifier{PublicKey: a.verifier.PublicKey}
+			v := &jobs.Verifier{PublicKey: a.verifier.Key()}
 			a.mu.Unlock()
 			return v.VerifyDomain(domain, raw, sig)
 		},
@@ -222,7 +232,7 @@ func New(o Options) (*Agent, error) {
 	if o.Updater != nil {
 		a.upd = o.Updater
 	} else if o.Exe != "" {
-		a.upd = &update.Manager{Paths: update.PathsFor(o.Exe), Version: o.Version, StatePath: o.Store.UpdatePath(), Now: o.Now}
+		a.upd = &update.Manager{Paths: update.PathsFor(o.Exe), Version: o.Version, StatePath: o.Store.UpdatePath(), Now: o.Now, ReleaseTrust: a.releaseTrust}
 	}
 	return a, nil
 }
@@ -289,6 +299,21 @@ func (a *Agent) api() *api.Client {
 	return a.client
 }
 
+// liveTransport sends through the CURRENT API client's transport, so hosted installer downloads use the configured ca_file and the SPKI pin (for the
+// server host) and follow a configuration change without rebuilding the executor (CORE-DS-51).
+type liveTransport struct{ a *Agent }
+
+func (t liveTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	c := t.a.api()
+	if c == nil {
+		return nil, errors.New("no server configured")
+	}
+	return c.HTTPClient().Transport.RoundTrip(r)
+}
+
+// downloadClient is the http.Client of software deployment downloads: the API client's TLS trust, no overall timeout (the engine bounds the transfer).
+func (a *Agent) downloadClient() *http.Client { return &http.Client{Transport: liveTransport{a}} }
+
 // ReportJob implements jobs.Reporter.
 func (a *Agent) ReportJob(ctx context.Context, r api.JobReport) error {
 	return a.api().ReportJob(ctx, r)
@@ -299,14 +324,14 @@ func (a *Agent) syncVerifier(st store.State) {
 	defer a.mu.Unlock()
 	if st.SigningPublicKey != "" {
 		if b, err := base64.StdEncoding.DecodeString(st.SigningPublicKey); err == nil && len(b) == ed25519.PublicKeySize {
-			a.verifier.PublicKey = ed25519.PublicKey(b)
+			a.verifier.SetKey(ed25519.PublicKey(b))
 		} else {
-			a.verifier.PublicKey = nil
+			a.verifier.SetKey(nil)
 		}
 	} else {
-		a.verifier.PublicKey = nil
+		a.verifier.SetKey(nil)
 	}
-	a.verifier.DeviceID = st.DeviceID
+	a.verifier.SetDevice(st.DeviceID)
 }
 
 func (a *Agent) newExecutor(ctx context.Context) {
@@ -348,7 +373,7 @@ func (a *Agent) newExecutor(ctx context.Context) {
 	}
 	e.DisablePatching = cfg.DisablePatching
 	// Software deployment (software_detect, software_install): withdrawn by config.disable_software only.
-	for typ, h := range (deploy.Engine{StateDir: a.o.Store.Dir}).Handlers() {
+	for typ, h := range (deploy.Engine{StateDir: a.o.Store.Dir, HTTP: a.downloadClient()}).Handlers() {
 		e.Remote[typ] = h
 	}
 	e.DisableSoftware = cfg.DisableSoftware
@@ -428,11 +453,16 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 		st.Dormant, st.DormantReason, st.LastError = false, "", ""
 		st.EnrolledAt = a.o.Now().UTC()
 		st.ServerFeatures, st.SoftwareHash = nil, "" // unknown until the new server says so
+		st.LogsConfigSeq, st.SignedConfigV = 0, 0    // per-server signing memory: a new enrolment may be a different server (review R3-3)
+		if resp.Config.SignedConfig > 0 {
+			st.SignedConfigV = resp.Config.SignedConfig // persisted with the rest of the enrolment state (review R4-2)
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	a.signedSeen.Store(int32(resp.Config.SignedConfig))
 	a.observeResponse(resp.ServerTime, a.o.Now())
 	st, _ := a.o.Store.LoadState()
 	a.syncVerifier(st)
@@ -1005,6 +1035,8 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 		a.hv.Ack()
 	}
 	a.sw.resync = hasFeature(resp.Features, featureSoftware) && hasFeature(resp.Resync, resyncSoftware)
+	a.noteSignedConfig(resp)
+	a.applyRollovers(resp)
 	a.configureLogs(resp)
 	a.configureChange(resp)
 	a.configureHypervisor(resp)
@@ -1050,7 +1082,229 @@ func (a *Agent) configureLogs(resp *api.CheckinResponse) {
 		a.logs.Configure(nil)
 		return
 	}
+	a.mu.Lock()
+	vf := &jobs.Verifier{PublicKey: a.verifier.Key()}
+	a.mu.Unlock()
+	st, _ := a.o.Store.LoadState()
+	seq, err := acceptLogsConfig(resp.Config.Logs, a.signingRequired(), a.bindingRequired(), vf.VerifyDomain, a.verifier.Device(), st.LogsConfigSeq)
+	if err != nil {
+		a.log.Error("log collection configuration refused", "err", err)
+		a.logs.Configure(nil)
+		return
+	}
+	if seq > st.LogsConfigSeq {
+		_ = a.o.Store.Update(func(s *store.State) error { s.LogsConfigSeq = seq; return nil })
+	}
 	a.logs.Configure(logs.Normalize(api.ParseLogsConfig(resp.Config.Logs)))
+}
+
+// checkBoundToDevice refuses a signed check definition that names another device. A definition without device_id (every server so far) passes.
+func checkBoundToDevice(raw []byte, deviceID string) error {
+	var w struct {
+		DeviceID json.RawMessage `json:"device_id"`
+	}
+	if json.Unmarshal(raw, &w) != nil || len(w.DeviceID) == 0 || string(w.DeviceID) == "null" {
+		return nil
+	}
+	if strings.Trim(string(w.DeviceID), `"`) != deviceID {
+		return errors.New("check definition is signed for a different device")
+	}
+	return nil
+}
+
+// LogsConfigSignDomain is the first line of the signed message of config.logs (domain separation from jobs, checks and the other configurations).
+const LogsConfigSignDomain = "rivetit-logs-config-v1"
+
+// acceptLogsConfig decides whether config.logs may be used. A signature, when present, must verify (domain-separated, over the canonical object).
+//
+// Binding (review CRR-2): the signed object carries device_id (a JSON STRING equal to this device) and seq (an integer). Once the server has announced
+// signed_config >= 2, or require_signed_config is set (bindingRequired), BOTH are mandatory: a missing, null, non-string, empty or foreign device_id and
+// a missing or lower seq are refused, so a config signed for another device or an older, wider one cannot be replayed. The same seq again is the
+// current configuration (the server sends it at every check-in) and is accepted. Below that version (older servers) the members are optional, but
+// when present they are checked strictly. It returns the sequence to remember. An unsigned block is accepted only while signing is not required.
+func acceptLogsConfig(raw json.RawMessage, required, bindingRequired bool, verify func(domain string, raw []byte, sig string) error, deviceID string, lastSeq int) (int, error) {
+	var w struct {
+		Signature string          `json:"signature"`
+		DeviceID  json.RawMessage `json:"device_id"`
+		Seq       json.RawMessage `json:"seq"`
+	}
+	_ = json.Unmarshal(raw, &w)
+	if w.Signature == "" {
+		if required || bindingRequired {
+			return lastSeq, errors.New("unsigned log configuration while signed configuration is required")
+		}
+		return lastSeq, nil
+	}
+	if err := verify(LogsConfigSignDomain, raw, w.Signature); err != nil {
+		return lastSeq, err
+	}
+	if len(w.DeviceID) > 0 && string(w.DeviceID) != "null" {
+		var id string
+		if err := json.Unmarshal(w.DeviceID, &id); err != nil || id == "" {
+			return lastSeq, errors.New("log configuration has a malformed device_id")
+		}
+		if id != deviceID {
+			return lastSeq, errors.New("log configuration is signed for a different device")
+		}
+	} else if bindingRequired {
+		return lastSeq, errors.New("log configuration is not bound to a device")
+	}
+	seq := lastSeq
+	if len(w.Seq) > 0 && string(w.Seq) != "null" {
+		var n int
+		if err := json.Unmarshal(w.Seq, &n); err != nil || n < 0 {
+			return lastSeq, errors.New("log configuration has a malformed seq")
+		}
+		if n < lastSeq {
+			return lastSeq, errors.New("log configuration is older than one already accepted")
+		}
+		seq = n
+	} else if bindingRequired {
+		return lastSeq, errors.New("log configuration has no sequence number")
+	}
+	return seq, nil
+}
+
+// bindingRequired is true once the server announced signed_config >= 2 (config.logs carries device_id and seq) or the local switch is set; the
+// announced version is remembered in memory and fails closed on an unreadable state, like signingRequired.
+func (a *Agent) bindingRequired() bool {
+	a.mu.Lock()
+	local := a.cfg.RequireSignedConfig
+	a.mu.Unlock()
+	if local || a.signedSeen.Load() >= 2 {
+		return true
+	}
+	st, err := a.o.Store.LoadState()
+	return err != nil || st.SignedConfigV >= 2
+}
+
+// trustFrom computes the trusted release keys and whether verification is required from ONE loaded state (st, err): the embedded keys plus learned ones,
+// minus revoked ones. A read error trusts nothing and requires verification.
+func trustFrom(st store.State, err error) ([]ed25519.PublicKey, bool) {
+	if err != nil {
+		return nil, true
+	}
+	keys := append(update.ParseKeys(update.EmbeddedReleaseKeys), update.ParseKeys(strings.Join(st.ReleaseKeys, ","))...)
+	revoked := map[string]bool{}
+	for _, r := range st.ReleaseRevoked {
+		revoked[r] = true
+	}
+	var out []ed25519.PublicKey
+	seen := map[string]bool{}
+	for _, k := range keys {
+		id := base64.StdEncoding.EncodeToString(k)
+		if !revoked[id] && !seen[id] {
+			seen[id] = true
+			out = append(out, k)
+		}
+	}
+	required := len(update.ParseKeys(update.EmbeddedReleaseKeys)) > 0 || len(st.ReleaseKeys) > 0 || len(st.ReleaseRevoked) > 0 || st.ReleaseRolloverSeq > 0
+	return out, required
+}
+
+// releaseTrust is the update Manager's single, consistent read of the trust state (review R4-1 polish): a read error is reported as such, never as an
+// empty key set.
+func (a *Agent) releaseTrust() ([]ed25519.PublicKey, bool, error) {
+	st, err := a.o.Store.LoadState()
+	if err != nil {
+		return nil, true, err
+	}
+	keys, required := trustFrom(st, nil)
+	return keys, required, nil
+}
+
+// releaseKeys is the trusted release public key set (embedded + learned - revoked); an unreadable state trusts nothing.
+func (a *Agent) releaseKeys() []ed25519.PublicKey {
+	st, err := a.o.Store.LoadState()
+	keys, _ := trustFrom(st, err)
+	return keys
+}
+
+// releaseRequired is true once release keys have ever been configured, or the state cannot be read.
+func (a *Agent) releaseRequired() bool {
+	st, err := a.o.Store.LoadState()
+	_, req := trustFrom(st, err)
+	return req
+}
+
+// applyRollovers applies the single message and the chain of a response, in sequence order (each must be the next one), so an agent that missed one
+// catches up in the same check-in.
+func (a *Agent) applyRollovers(resp *api.CheckinResponse) {
+	var all []api.ReleaseRollover
+	if resp.ReleaseRollover != nil {
+		all = append(all, *resp.ReleaseRollover)
+	}
+	all = append(all, resp.ReleaseRollovers...)
+	if len(all) > 32 {
+		all = all[:32]
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Seq < all[j].Seq })
+	for i := range all {
+		a.applyRollover(&all[i])
+	}
+}
+
+// applyRollover applies a signed release key rollover message (ignored when it does not verify or is not the next sequence number): it adds the new
+// key and retires the revoked ones.
+func (a *Agent) applyRollover(r *api.ReleaseRollover) {
+	if r == nil {
+		return
+	}
+	st, _ := a.o.Store.LoadState()
+	res, err := update.VerifyRollover(a.releaseKeys(), st.ReleaseRolloverSeq, *r)
+	if err != nil {
+		a.log.Warn("release key rollover refused", "err", err)
+		return
+	}
+	_ = a.o.Store.Update(func(s *store.State) error {
+		s.ReleaseKeys = append(s.ReleaseKeys, base64.StdEncoding.EncodeToString(res.NewKey))
+		s.ReleaseRevoked = append(s.ReleaseRevoked, res.Revoked...)
+		s.ReleaseRolloverSeq = r.Seq
+		return nil
+	})
+	a.log.Info("release signing key rolled over", "seq", r.Seq, "revoked", len(res.Revoked))
+}
+
+// updateDisabled is the local disable_update switch.
+func (a *Agent) updateDisabled() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg.DisableUpdate
+}
+
+// signingRequired reports whether unsigned check definitions and log configurations are refused: the local switch, or a server that announced
+// signed_config >= 1 at any time.
+func (a *Agent) signingRequired() bool {
+	a.mu.Lock()
+	local := a.cfg.RequireSignedConfig
+	a.mu.Unlock()
+	if local {
+		return true
+	}
+	if a.signedSeen.Load() >= 1 {
+		return true // remembered in memory once a server announced it: a later state.json problem cannot unset it
+	}
+	st, err := a.o.Store.LoadState()
+	if err != nil {
+		return true // unreadable state: fail closed (review CRR-3)
+	}
+	return st.SignedConfigV >= 1
+}
+
+// noteSignedConfig remembers the highest signing contract version the server announced.
+func (a *Agent) noteSignedConfig(resp *api.CheckinResponse) {
+	if resp.Config == nil || resp.Config.SignedConfig <= 0 {
+		return
+	}
+	if v := int32(resp.Config.SignedConfig); v > a.signedSeen.Load() {
+		a.signedSeen.Store(v)
+	}
+	_ = a.o.Store.Update(func(s *store.State) error {
+		if resp.Config.SignedConfig > s.SignedConfigV {
+			s.SignedConfigV = resp.Config.SignedConfig
+		}
+		return nil
+	})
 }
 
 // configureChange applies the change-monitoring config of a check-in response.
@@ -1073,6 +1327,39 @@ func (a *Agent) configureChange(resp *api.CheckinResponse) {
 	}
 	_ = a.chg.Configure(resp.Config.Change)
 }
+
+// updateTransientLimit is how many temporary failures one version may have before it is recorded as failed (a build whose selftest always times
+// out must not be downloaded every ten minutes for ever; review CR9).
+const updateTransientLimit = 6
+
+// noteUpdateFailure records one temporary failure of version. It returns the back-off before that version is tried again and whether the version is to
+// be given up: only repeated SELFTEST TIMEOUTS count for that, counted on their own, so a few network errors plus one slow selftest never add up to a
+// permanent failure (review R3-5).
+func (a *Agent) noteUpdateFailure(version string, err error) (backoff time.Duration, giveUp bool) {
+	if a.updTransient == nil {
+		a.updTransient, a.updSelfTest = map[string]int{}, map[string]int{}
+	}
+	a.updTransient[version]++
+	if errors.Is(err, update.ErrSelfTestTimeout) {
+		a.updSelfTest[version]++
+		giveUp = a.updSelfTest[version] >= updateTransientLimit
+	}
+	return updateBackoff(a.updTransient[version]), giveUp
+}
+
+// updateBackoff is the pause before the same version is tried again after the n-th temporary failure: 10 minutes, doubling, at most 24 hours. A
+// version is never given up for network, 429/5xx or shutdown errors (an on-path attacker or a flaky CDN must not be able to block a security update
+// for good, review CRR-7).
+func updateBackoff(n int) time.Duration {
+	d := updateRetryPause
+	for i := 1; i < n && d < 24*time.Hour; i++ {
+		d *= 2
+	}
+	return min(d, 24*time.Hour)
+}
+
+// updateRetryPause is how long a temporary self-update failure waits before the same version is tried again.
+const updateRetryPause = 10 * time.Minute
 
 // checkinBodyMax is the largest check-in body the agent builds: the request cap minus a margin for the retry-time clock correction fields.
 const checkinBodyMax = api.MaxRequestBytes - 32<<10
@@ -1114,11 +1401,20 @@ func (a *Agent) pollJobs(ctx context.Context) {
 }
 
 func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st store.State) {
-	if man == nil || a.upd == nil || a.upd.InProbation() {
+	if man == nil || a.upd == nil || a.upd.InProbation() || a.updateDisabled() {
 		return
 	}
 	if f := st.UpdateFailure; f != nil && f.Version == man.Version {
 		return // do not retry a version that already failed
+	}
+	if a.o.Now().Before(a.updRetryAt[man.Version]) { // per version: a long back-off of 1.2.0 must not delay a newly published 1.2.1
+		return
+	}
+	// The restart that follows kills a running job's process (a package manager or installer mid-transaction): wait for an idle executor. The server
+	// offers the manifest again at the next check-in (CORE-DS-49).
+	if e := a.executor(); e != nil && !e.Idle() {
+		a.log.Info("update offered but jobs are running; will apply it when they have finished", "version", man.Version)
+		return
 	}
 	pub, err := base64.StdEncoding.DecodeString(st.SigningPublicKey)
 	if err != nil {
@@ -1129,6 +1425,20 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 	a.mu.Unlock()
 	hosts := append([]string{c.Host()}, cfg.UpdateHosts...)
 	restart, err := a.upd.Apply(ctx, *man, ed25519.PublicKey(pub), c.HTTPClient(), c.Host(), a.token(), hosts)
+	var backoff time.Duration
+	var giveUp bool
+	if err != nil && update.Transient(err) {
+		backoff, giveUp = a.noteUpdateFailure(man.Version, err)
+	}
+	if err != nil && update.Transient(err) && !giveUp {
+		// shutdown, timeout, network, 429/5xx, slow selftest: keep the version eligible and try again after a pause (CORE-DS-15)
+		a.log.Warn("update attempt failed (temporary); will try again", "version", man.Version, "err", err)
+		if a.updRetryAt == nil {
+			a.updRetryAt = map[string]time.Time{}
+		}
+		a.updRetryAt[man.Version] = a.o.Now().Add(backoff)
+		return
+	}
 	if err != nil {
 		a.log.Error("update failed", "version", man.Version, "err", err)
 		_ = a.o.Store.Update(func(s *store.State) error {
@@ -1138,6 +1448,9 @@ func (a *Agent) maybeUpdate(ctx context.Context, man *api.UpdateManifest, st sto
 		})
 		return
 	}
+	delete(a.updTransient, man.Version)
+	delete(a.updSelfTest, man.Version)
+	delete(a.updRetryAt, man.Version)
 	if restart {
 		a.log.Info("update staged and activated; restarting", "version", man.Version)
 		a.mu.Lock()

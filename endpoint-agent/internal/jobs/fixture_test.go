@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -82,13 +83,17 @@ func TestServerSigningVectors(t *testing.T) {
 			t.Errorf("%s: %v", j.Name, err)
 			continue
 		}
-		if err := ver.Verify(list[0]); err != nil {
-			t.Errorf("%s: full verification failed: %v", j.Name, err)
+		// The shared vectors carry no device_id (they are signature vectors); since CORE-DS-76 an unbound job is refused. The device check is the LAST
+		// policy step, so ErrWrongDevice here proves that signature, expiry, type, script size and params bounds all passed (review CR11); any other
+		// error is a failure.
+		if err := ver.Verify(list[0]); !errors.Is(err, ErrWrongDevice) {
+			t.Errorf("%s: want ErrWrongDevice (unbound vector) after every other policy check passed, got %v", j.Name, err)
 		}
 		// a one-character tamper must fail
+		// (the untampered job reached the device check above, so a tampered one must stop EARLIER, at the signature: review CRR-8)
 		list[0].Raw = []byte(replaceOnce(string(list[0].Raw), `"attempt":`, `"attempt":9`))
-		if ver.Verify(list[0]) == nil {
-			t.Errorf("%s: tampered job verified", j.Name)
+		if err := ver.Verify(list[0]); !errors.Is(err, ErrBadSignature) {
+			t.Errorf("%s: tampered job: want ErrBadSignature, got %v", j.Name, err)
 		}
 	}
 

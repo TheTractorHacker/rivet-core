@@ -100,13 +100,23 @@ func RunBounded(ctx context.Context, s ExecSpec) ExecResult {
 	if len(out) > s.MaxOutput || total > int64(s.MaxOutput) {
 		res.Truncated = true
 		if len(out) > s.MaxOutput {
-			out = out[:s.MaxOutput]
-			for !utf8.ValidString(out) && len(out) > 0 {
-				out = out[:len(out)-1]
-			}
+			out = capUTF8(out, s.MaxOutput)
 		}
 		out += fmt.Sprintf("\n[output truncated: limit %d bytes, %d bytes produced]", s.MaxOutput, total)
 	}
 	res.Output = out
 	return res
+}
+
+// capUTF8 cuts s to at most max bytes, backing up at most three bytes so a multi-byte rune is not split at the cut. Invalid bytes earlier in the text
+// are kept as they are (CORE-DS-22: the old loop trimmed back to the first invalid byte).
+func capUTF8(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for i := 0; i < utf8.UTFMax-1 && cut > 0 && !utf8.RuneStart(s[cut]); i++ {
+		cut--
+	}
+	return s[:cut]
 }

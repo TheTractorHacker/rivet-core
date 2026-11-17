@@ -98,6 +98,12 @@ func (t *putTemp) Commit(dest string, mode os.FileMode, chmod, overwrite bool) e
 	if err := unix.Fstat(int(t.File.Fd()), &fst); err != nil {
 		return err
 	}
+	// CORE-DS-25: the agent runs as root, so the temp file is root-owned. Hand it to whoever owns the file being replaced, else the directory it goes
+	// into, so the user the file was delivered to can read it. Done before the mode (chown clears setuid/setgid) and best effort: an agent that is
+	// not root, or a filesystem that refuses, simply leaves the owner as it is.
+	if uid, gid, ok := t.deliveryOwner(dest, overwrite); ok {
+		_ = unix.Fchown(int(t.File.Fd()), int(uid), int(gid))
+	}
 	if chmod {
 		if err := unix.Fchmod(int(t.File.Fd()), uint32(mode)); err != nil {
 			return fmt.Errorf("%w: %v", errChmod, err)
@@ -133,6 +139,28 @@ func (t *putTemp) Commit(dest string, mode os.FileMode, chmod, overwrite bool) e
 	}
 	_ = unix.Unlinkat(t.dirfd, t.name, 0)
 	return nil
+}
+
+// deliveryOwner is the owner the delivered file should get (see Commit).
+func (t *putTemp) deliveryOwner(dest string, overwrite bool) (uid, gid uint32, ok bool) {
+	var dst, dir unix.Stat_t
+	var dstp *unix.Stat_t
+	if overwrite && unix.Fstatat(t.dirfd, dest, &dst, unix.AT_SYMLINK_NOFOLLOW) == nil {
+		dstp = &dst
+	}
+	if unix.Fstat(t.dirfd, &dir) != nil {
+		return 0, 0, false
+	}
+	uid, gid = ownerFor(&dir, dstp)
+	return uid, gid, true
+}
+
+// ownerFor picks the owner of a delivered file: the replaced regular file's, else the directory's.
+func ownerFor(dir, replaced *unix.Stat_t) (uid, gid uint32) {
+	if replaced != nil && replaced.Mode&unix.S_IFMT == unix.S_IFREG {
+		return replaced.Uid, replaced.Gid
+	}
+	return dir.Uid, dir.Gid
 }
 
 // Discard removes the temp name (relative to the directory descriptor) and releases the handles.

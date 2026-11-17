@@ -6,7 +6,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 
 	"rivetit-agent/internal/api"
 )
@@ -165,4 +168,47 @@ func TestOpenNoFollowRefusesASymlinkedAncestor(t *testing.T) {
 		t.Fatalf("plain open failed: %v", err)
 	}
 	f.Close()
+}
+
+// CORE-DS-25: the delivered file belongs to the replaced file's owner, else the directory's (a root-run agent would otherwise leave it root:root).
+func TestOwnerForDeliveredFile(t *testing.T) {
+	dir := &unix.Stat_t{Uid: 1000, Gid: 1000, Mode: unix.S_IFDIR | 0o755}
+	file := &unix.Stat_t{Uid: 1001, Gid: 1002, Mode: unix.S_IFREG | 0o644}
+	if u, g := ownerFor(dir, nil); u != 1000 || g != 1000 {
+		t.Errorf("new file: %d:%d", u, g)
+	}
+	if u, g := ownerFor(dir, file); u != 1001 || g != 1002 {
+		t.Errorf("replaced file: %d:%d", u, g)
+	}
+	link := &unix.Stat_t{Uid: 0, Gid: 0, Mode: unix.S_IFLNK}
+	if u, _ := ownerFor(dir, link); u != 1000 {
+		t.Errorf("a non-regular destination must not decide the owner: %d", u)
+	}
+}
+
+// As root the file really changes hands; elsewhere the put must at least still succeed.
+func TestFilePutDeliversToTheDirectoryOwner(t *testing.T) {
+	base := realDir(t)
+	dir := filepath.Join(base, "home")
+	os.Mkdir(dir, 0o755)
+	if os.Getuid() == 0 {
+		if err := os.Chown(dir, 4242, 4243); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := newFakeServer(t)
+	srv.content = []byte("hello")
+	res := fastFiles(base, srv).Put(context.Background(), putParams(filepath.Join(dir, "r.txt"), base, srv.content, false, nil), 4096)
+	if !res.OK {
+		t.Fatalf("%+v", res)
+	}
+	st, err := os.Stat(filepath.Join(dir, "r.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.Getuid() == 0 {
+		if u := st.Sys().(*syscall.Stat_t).Uid; u != 4242 {
+			t.Errorf("owner %d", u)
+		}
+	}
 }

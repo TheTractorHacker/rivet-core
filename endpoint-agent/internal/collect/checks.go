@@ -70,9 +70,17 @@ func resv(key, status, detail string, value float64) api.CheckResult {
 	return r
 }
 
+// signedCheckKey carries "this check definition carried a signature that verified" down to the checks whose parameters are only honoured when signed.
+type signedCheckKey struct{}
+
+func checkIsSigned(ctx context.Context) bool { v, _ := ctx.Value(signedCheckKey{}).(bool); return v }
+
 // RunCheck evaluates one check. Any collector error yields `unknown`.
 func (c *Collector) RunCheck(ctx context.Context, spec store.CheckSpec) api.CheckResult {
 	key := spec.Key
+	if spec.Signature == "" && c.RequireSigned != nil && c.RequireSigned() {
+		return res(key, Unknown, "unsigned check refused: this server signs every check definition")
+	}
 	if spec.Signature != "" || spec.Type == "script" {
 		// Scripts execute code, so they must be signed by the instance key.
 		// Other types are verified only when a signature is present.
@@ -84,6 +92,7 @@ func (c *Collector) RunCheck(ctx context.Context, spec store.CheckSpec) api.Chec
 			return res(key, Unknown, "check definition refused: "+err.Error())
 		}
 	}
+	ctx = context.WithValue(ctx, signedCheckKey{}, spec.Signature != "" && c.VerifyCheck != nil)
 	switch spec.Type {
 	case "service":
 		return c.checkService(ctx, key, spec.Params)

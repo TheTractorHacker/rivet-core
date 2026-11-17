@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	pathpkg "path"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -122,7 +123,26 @@ func (c *capBuf) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// systemTool maps the bare names of the Windows tools the checks run to their absolute path under %SystemRoot%\System32, so a directory on the
+// service's PATH that a user can write to is never searched (CORE-DS-18). Anything else, and every other OS, is returned unchanged.
+func systemTool(goos, systemRoot, name string) string {
+	if goos != "windows" || systemRoot == "" {
+		return name
+	}
+	sys32 := strings.TrimRight(systemRoot, `\/`) + `\System32\`
+	switch strings.ToLower(name) {
+	case "powershell.exe", "powershell":
+		return sys32 + `WindowsPowerShell\v1.0\powershell.exe`
+	case "tasklist", "tasklist.exe":
+		return sys32 + "tasklist.exe"
+	case "ping", "ping.exe":
+		return sys32 + "ping.exe"
+	}
+	return name
+}
+
 func execCapped(ctx context.Context, timeout time.Duration, name string, args ...string) (string, int, error) {
+	name = systemTool(runtime.GOOS, os.Getenv("SystemRoot"), name)
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
@@ -591,6 +611,10 @@ func (c *Collector) checkHTTP(ctx context.Context, key string, raw json.RawMessa
 		p.TimeoutMS = 10000
 	}
 	if p.VerifyTLS != nil {
+		if !*p.VerifyTLS && !checkIsSigned(ctx) {
+			// switching TLS verification off is only honoured from a check definition whose signature verified (CORE-DS-16)
+			return res(key, Unknown, "verify_tls:false needs a signed check definition")
+		}
 		verify = *p.VerifyTLS
 	}
 	if p.FollowRedirec != nil {
