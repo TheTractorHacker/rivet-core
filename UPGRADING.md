@@ -88,6 +88,9 @@ Agent (Go) side of the 2026-11-21 red-team findings. Nothing is required of an e
 * **CORE-AGENT-6.** File transfer now refuses the agent's own program files, service unit and the Mesh agent's identity even inside an allowed folder,
   and the server refuses them as transfer roots. An administrator who used `file_put` to replace the agent binary by hand must use a package upgrade,
   the installer or self-update instead.
+* **CORE-AGENT-2.** An `http`, `port` or `cert` check aimed at a link-local or cloud metadata address (169.254.x.x and the like) now reports
+  `unknown` "destination refused" instead of running, and the server refuses such literal targets when a check is saved. Nothing to do unless a
+  check deliberately watched such an address; `ntp` checks against Amazon Time Sync (169.254.169.123) keep working.
 * **Monitoring-only devices.** A device that must never run anything from the server sets all three of `disable_jobs`, `disable_script_checks` and
   `disable_update` in its `config.json` (endpoint-agent/README.md, "Monitoring-only profile"). `disable_jobs` alone still lets the server replace the
   agent binary (Chain C).

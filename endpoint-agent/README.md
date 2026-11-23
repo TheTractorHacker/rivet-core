@@ -333,7 +333,7 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 | File | Contents |
 |---|---|
-| `config.json` | operator config (also `disable_change`, `change_extra_roots`): `server_url`, `ca_file`, `pin_spki_sha256`, `department`, `mesh_node_id` (override), `max_concurrent_jobs` (default 1), `disable_jobs`, `disable_script_checks`, `update_hosts`, `buffer_max_samples` (100), `buffer_max_bytes` (1 MiB), `software_store_apps` (Windows: also list Microsoft Store apps in the software inventory; default off) |
+| `config.json` | operator config (also `disable_change`, `change_extra_roots`): `server_url`, `ca_file`, `pin_spki_sha256`, `department`, `mesh_node_id` (override), `max_concurrent_jobs` (default 1), `disable_jobs`, `disable_script_checks`, `disable_update`, `require_signed_config`, `checks_block_private` (network checks also refuse loopback and private addresses), `update_hosts`, `buffer_max_samples` (100), `buffer_max_bytes` (1 MiB), `software_store_apps` (Windows: also list Microsoft Store apps in the software inventory; default off) |
 | `state.json` | `install_id`, `device_id`, status, `seq`, pinned `signing_public_key`, server config (checks/intervals), last check-in/error, update failure |
 | `device.token` | the device credential: `v1:dpapi:<base64>` on Windows (`CryptProtectData`, machine scope + entropy), `v1:plain:<token>` `0600` on Linux |
 | `enroll.token` | one-shot enrollment token, only between an offline install and the first successful enrollment |
@@ -418,6 +418,16 @@ every check is included in every check-in. A failing collector gives `unknown`, 
 | `av` | `max_signature_age_days` (7), `require_realtime` (true) | Windows only: Defender service, real-time protection, signature age (`value` = days) |
 | `systemd_failed` | `ignore` (unit names, `prefix*`), `max_failed` (0) | Linux only: failed units; `value` = count |
 | `inodes` | optional `mount`, `warn_pct` 85, `fail_pct` 95 | Linux only: worst inode use of the mounts that have an inode table; `value` = percent |
+
+**Destination policy of the network checks (CORE-AGENT-2).** The `http`, `port` and `cert` (`host`) checks never connect to a link-local or cloud
+metadata / host-agent address: `169.254.0.0/16`, `fe80::/10`, `168.63.129.16` (Azure WireServer), `100.100.100.200` (Alibaba), `fd00:ec2::254` (AWS),
+`fd20:ce::254` (GCP), also written as IPv4-mapped or NAT64 IPv6. The decision is made in the dialer on the RESOLVED address of every connection, so a
+name that resolves (or is re-bound) to such an address and every redirect hop are covered; redirects stop after 5; a literal address in the URL is
+refused before any request; behind an `HTTP(S)_PROXY` the target name is also resolved by the agent first (best effort, the proxy resolves it again).
+A refused check reports `unknown` ("destination refused ..."), never ok/fail, so it cannot be used as a yes/no oracle. Loopback and private addresses
+stay allowed (monitoring internal services is the point); `"checks_block_private": true` in `config.json` refuses loopback, RFC 1918, CGNAT,
+unique-local and unspecified addresses too. `ntp` (UDP, which reads back nothing but a time, and must keep reaching Amazon Time Sync at
+169.254.169.123) and `ping` (the system tool) are not filtered. The server's `CheckCatalog` refuses the literal forms up front.
 
 The extended types (everything from `cpu` down) are the RMM Phase 3 additions: the agent announces `check:<type>` for the ones that exist on its platform, the server offers a type only to an agent that announced it, and the result may carry a numeric `value` for the server's threshold tiers (`params.thresholds`, `params.flap`, `params.ignore_parent` are read by the server and ignored here). Parsers have fixture tests (`internal/collect/testdata/checks`); the Windows commands (`powershell.exe`, `tasklist`, `ping`) are cross-compiled and vetted, not run in CI.
 

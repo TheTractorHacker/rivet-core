@@ -219,6 +219,27 @@ final class CheckCatalog
         return $v;
     }
 
+    /**
+     * True for a LITERAL link-local or cloud metadata / host-agent address (the agent's default-deny list, endpoint-agent/internal/collect/destpolicy.go):
+     * 169.254.0.0/16, fe80::/10, 168.63.129.16, 100.100.100.200, fd00:ec2::254, fd20:ce::254, also as IPv4-mapped or NAT64 (64:ff9b::/96) IPv6. A name
+     * returns false: only the agent can resolve it.
+     */
+    private static function metadataAddress(string $host): bool
+    {
+        if (filter_var($host, FILTER_VALIDATE_IP) === false) {
+            return false;
+        }
+        $b = (string) inet_pton($host);
+        if (strlen($b) === 16 && (str_starts_with($b, str_repeat("\0", 10) . "\xff\xff") || str_starts_with($b, "\x00\x64\xff\x9b" . str_repeat("\0", 8)))) {
+            $b = substr($b, 12);   // IPv4-mapped or NAT64: the IPv4 address it carries
+        }
+        if (strlen($b) === 4) {
+            return ($b[0] === "\xa9" && $b[1] === "\xfe") || in_array(inet_ntop($b), ['168.63.129.16', '100.100.100.200'], true);
+        }
+
+        return ($b[0] === "\xfe" && (ord($b[1]) & 0xc0) === 0x80) || in_array(inet_ntop($b), ['fd00:ec2::254', 'fd20:ce::254'], true);
+    }
+
     /** @param array<string,mixed> $p */
     private static function crossCheck(string $type, array $p): ?string
     {
@@ -230,6 +251,14 @@ final class CheckCatalog
         }
         if ($type === 'ntp' && isset($p['warn_ms'], $p['fail_ms']) && $p['fail_ms'] < $p['warn_ms']) {
             return 'ntp.fail_ms must not be below warn_ms.';
+        }
+        // CORE-AGENT-2 (server half, literal addresses only): link-local and cloud metadata endpoints cannot be monitored. The agent refuses them itself on
+        // the RESOLVED address of every connection (names, redirects); this only gives the technician the reason up front.
+        if (in_array($type, ['http', 'port', 'cert'], true)) {
+            $host = $type === 'http' ? (string) parse_url((string) ($p['url'] ?? ''), PHP_URL_HOST) : (string) ($p['host'] ?? '');
+            if ($host !== '' && self::metadataAddress(trim($host, '[]'))) {
+                return "$type: link-local and cloud metadata addresses (169.254.0.0/16, fe80::/10, fd00:ec2::254, 168.63.129.16 and the like) cannot be checked; the agent refuses them.";
+            }
         }
         if ($type === 'http' && isset($p['expect_min'], $p['expect_max']) && $p['expect_max'] < $p['expect_min']) {
             return 'http.expect_max must not be below expect_min.';

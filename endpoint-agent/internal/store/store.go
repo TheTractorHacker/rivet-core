@@ -47,6 +47,9 @@ type Config struct {
 	RequireSignedConfig bool `json:"require_signed_config,omitempty"`
 	// DisableUpdate is a local kill switch: never self-update (CORE-DS-26). Independent of disable_jobs, which does not stop updates.
 	DisableUpdate bool `json:"disable_update,omitempty"`
+	// ChecksBlockPrivate makes the http, port and cert-host checks refuse loopback, private (RFC 1918, ULA, CGNAT) and unspecified destinations too;
+	// link-local and cloud metadata addresses are always refused (CORE-AGENT-2). Off by default: monitoring internal services is the checks' main use.
+	ChecksBlockPrivate bool `json:"checks_block_private,omitempty"`
 }
 
 // Defaults applied on load.
