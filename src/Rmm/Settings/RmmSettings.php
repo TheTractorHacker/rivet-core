@@ -50,6 +50,12 @@ final class RmmSettings
     public const WRITABLE_ADDED_DS = ['mesh_token_ttl_exact', 'signed_config', 'release_rollover_json'];
 
     /**
+     * CORE-AGENT-4 (red team 2026-11-21): the signed-configuration level a NEW install starts at (written when the module is switched on for the first time
+     * and mints its signing key with no device enrolled). An existing install keeps what it has; {@see hardeningStatus()} warns while it is below this.
+     */
+    public const SIGNED_CONFIG_DEFAULT = 2;
+
+    /**
      * Server-side bounds for the intervals agents are told to use (design 13.3). The two floors are a DELIBERATE change from RivetIT's
      * original save handler (check-in 30 to 3600, collect 10 to 3600): they are capacity controls, because the check-in rate and the
      * sample rows per check-in are what a server pays for. Only a save clamps; a stored value below the new floor keeps working until
@@ -477,6 +483,7 @@ final class RmmSettings
         $int('enroll_max_ttl_h', 1, 720);
         $int('max_devices', 0, 1000000);
         $int('mesh_token_ttl_s', self::MESH_TOKEN_TTL_MIN_S, self::MESH_TOKEN_TTL_MAX_S);
+        $int('signed_config', 0, 2);   // CORE-AGENT-4: the hardening switch is part of the validated form (0 off, 1, 2 recommended)
         if (array_key_exists('unmatched_policy', $in)) {
             $out['unmatched_policy'] = in_array($in['unmatched_policy'], ['approval', 'auto_create'], true) ? $in['unmatched_policy'] : 'approval';
         }
@@ -586,6 +593,7 @@ final class RmmSettings
         $wasOff = (int) ($cfg['enabled'] ?? 0) !== 1;
         if ((string) $cfg['signing_public_key'] === '' || empty($cfg['signing_private_key_enc'])) {
             $this->generateSigningKey();
+            $this->defaultSignedConfigForNewInstall((int) ($cfg['signed_config'] ?? 0));
         }
         $this->integrationId();
         $this->set(['enabled' => 1]);
@@ -596,6 +604,51 @@ final class RmmSettings
                 // a warm start that cannot be recorded is simply not in force
             }
         }
+    }
+
+    /**
+     * CORE-AGENT-4: the very first switch-on of an install with no device enrolled is a new install: it starts with signed configuration at
+     * {@see SIGNED_CONFIG_DEFAULT}, so every agent that enrolls refuses unsigned checks and unsigned log configuration from its first check-in. An install
+     * that has devices keeps its value (they may run agents older than CORE-DS-16; see {@see hardeningStatus()} and UPGRADING.md). Never lowers a level;
+     * an administrator can still choose another one afterwards. Needs migration 0053 (without it nothing is written and the level stays off).
+     */
+    private function defaultSignedConfigForNewInstall(int $current): void
+    {
+        if ($current >= self::SIGNED_CONFIG_DEFAULT) {
+            return;
+        }
+        try {
+            if ((int) $this->sql->val('SELECT COUNT(*) FROM endpoint_agent_devices') > 0) {
+                return;
+            }
+            $this->set(['signed_config' => self::SIGNED_CONFIG_DEFAULT]);
+        } catch (\Throwable) {
+            // migration 0053 not applied yet: the level stays off, as before
+        }
+    }
+
+    /**
+     * CORE-AGENT-4: the state of the hardening switches for the administration page (a fixed, secret-free summary). `signed_config_warning` is a
+     * sentence to show prominently while signed configuration is below the recommended level: with it off, anyone who can change a check-in response
+     * (an in-path party, a database writer) can make every agent run unsigned http/port/cert checks and read their results back (red team Chain G).
+     *
+     * @return array{signed_config:int,signed_config_recommended:int,signed_config_ok:bool,signed_config_warning:?string,mesh_token_ttl_exact:bool,release_rollover_set:bool}
+     */
+    public function hardeningStatus(): array
+    {
+        $level = $this->signedConfigLevel();
+        $warning = match (true) {
+            $level >= self::SIGNED_CONFIG_DEFAULT => null,
+            $level === 1 => 'Signed configuration is at level 1: checks and the log configuration are signed, but the log configuration is not yet bound to the device. '
+                . 'Set it to 2 (agents that predate CORE-DS-16 ignore the setting, so it never breaks them; agents that know it keep it for good).',
+            default => 'Signed configuration is OFF: agents accept unsigned check definitions and an unsigned log configuration, so anyone who can change a check-in '
+                . 'response or the database can make every agent probe its network and report the results. Set it to 2. Agents that predate CORE-DS-16 ignore '
+                . 'the setting (no harm, no protection); agents that know it refuse unsigned checks from then on, and keep doing so.',
+        };
+        $cfg = $this->get();
+
+        return ['signed_config' => $level, 'signed_config_recommended' => self::SIGNED_CONFIG_DEFAULT, 'signed_config_ok' => $warning === null, 'signed_config_warning' => $warning,
+            'mesh_token_ttl_exact' => (int) ($cfg['mesh_token_ttl_exact'] ?? 0) === 1, 'release_rollover_set' => is_string($cfg['release_rollover_json'] ?? null) && $cfg['release_rollover_json'] !== ''];
     }
 
     /** Switch the master off. Nothing is deleted. */
@@ -861,7 +914,8 @@ final class RmmSettings
 
     /**
      * CORE-DS-16: is the signed-configuration contract on (`rmm_hardening_settings.signed_config`, migration 0053)? Then responses announce `config.signed_config: 1` and signed
-     * checks carry the device they are for. Off (the default, and when the column does not exist yet) the wire is exactly what it was.
+     * checks carry the device they are for. Off (the column default, an install whose devices predate the switch, and when the column does not exist yet) the wire
+     * is exactly what it was. A new install starts at {@see SIGNED_CONFIG_DEFAULT} (CORE-AGENT-4).
      */
     public function signedConfig(): bool
     {

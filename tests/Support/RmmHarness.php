@@ -260,9 +260,18 @@ final class RmmHarness
 
     // ------------------------------------------------------------------ scenario helpers
 
+    /**
+     * Switch the module on. A first switch-on of an empty install now starts with signed configuration at level 2 (CORE-AGENT-4); the harness keeps its rule that
+     * every test starts with the deep-scan switches off (see {@see wipe()}), so the tests of the unchanged wire still see it. Tests of the new-install default call
+     * `$h->module->settings()->enable()` themselves.
+     */
     public function enable(): void
     {
+        $fresh = (string) ($this->module->settings()->get(true)['signing_public_key'] ?? '') === '';
         $this->module->settings()->enable();
+        if ($fresh) {
+            $this->module->settings()->set(['signed_config' => 0]);
+        }
     }
 
     public function token(?int $client = null, int $ttlH = 24, int $maxUses = 5, string $ring = 'stable'): string

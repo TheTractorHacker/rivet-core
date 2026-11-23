@@ -174,9 +174,10 @@ final class EnrollmentService
 
     private function recordAttempt(string $ip, bool $ok, string $reason, string $selector): void
     {
-        $this->attempts->record(RmmProtocol::ENROLL_RATE_SALT, $ip, $ok, $reason, $selector);
-        if (!$ok) {
-            $this->audit->record('Enrollment Failed', 'Enrollment attempt rejected (' . $reason . ') from ' . $ip . ($selector !== '' ? ' using token ' . substr($selector, 0, 12) : ''), 0, 0);
+        $id = $this->attempts->insert(RmmProtocol::ENROLL_RATE_SALT, $ip, $ok, $reason, $selector);
+        // CORE-API-3: past the instance-wide threshold the audit log is sampled, never the enrollment refused
+        if (!$ok && ($tail = $this->attempts->auditSampling(AttemptLog::KIND_ENROLL, $id)) !== '') {
+            $this->audit->record('Enrollment Failed', 'Enrollment attempt rejected (' . $reason . ') from ' . $ip . ($selector !== '' ? ' using token ' . substr($selector, 0, 12) : '') . ($tail ?? ''), 0, 0);
         }
     }
 

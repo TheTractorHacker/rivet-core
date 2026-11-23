@@ -50,6 +50,24 @@ final class InventoryActions
     }
 
     /**
+     * A text field of a tag or group body that is a JSON array or object is refused (422) before anything is cast (red team 2026-11-21: it used to raise
+     * "Array to string conversion" and store "Array"). Absent, null, text and numbers are left as they were.
+     *
+     * @param array<string,mixed> $in
+     * @param list<string> $keys
+     */
+    private static function nonText(array $in, array $keys): ?ActionResult
+    {
+        foreach ($keys as $k) {
+            if (array_key_exists($k, $in) && $in[$k] !== null && !is_scalar($in[$k])) {
+                return ActionResult::fail(422, 'invalid', "$k must be text.");
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @return array{0:?array<string,mixed>,1:?ActionResult}
      */
     private function device(int $userId, int $deviceId, string $ability): array
@@ -108,7 +126,7 @@ final class InventoryActions
     /** @param array<string,mixed> $in {name, color?, description?} */
     public function createTag(RmmPrincipal $who, array $in): ActionResult
     {
-        if (($err = $this->role($who->userId, RmmAbility::DEVICE_MANAGE)) !== null) {
+        if (($err = $this->role($who->userId, RmmAbility::DEVICE_MANAGE) ?? self::nonText($in, ['name', 'color', 'description'])) !== null) {
             return $err;
         }
         try {
@@ -132,6 +150,9 @@ final class InventoryActions
         }
         if ($this->tags->find($tagId) === null) {
             return ActionResult::fail(404, 'not_found', 'Tag not found.');
+        }
+        if (($err = self::nonText($in, ['name', 'color', 'description'])) !== null) {
+            return $err;
         }
         try {
             $t = $this->tags->update($tagId, array_intersect_key($in, array_flip(['name', 'color', 'description'])));
@@ -164,7 +185,7 @@ final class InventoryActions
     /** @param array<string,mixed> $in {name, description?} */
     public function createGroup(RmmPrincipal $who, array $in): ActionResult
     {
-        if (($err = $this->role($who->userId, RmmAbility::DEVICE_MANAGE)) !== null) {
+        if (($err = $this->role($who->userId, RmmAbility::DEVICE_MANAGE) ?? self::nonText($in, ['name', 'description'])) !== null) {
             return $err;
         }
         try {
@@ -188,6 +209,9 @@ final class InventoryActions
         }
         if ($this->groups->find($groupId) === null) {
             return ActionResult::fail(404, 'not_found', 'Group not found.');
+        }
+        if (($err = self::nonText($in, ['name', 'description'])) !== null) {
+            return $err;
         }
         try {
             $g = $this->groups->update($groupId, array_intersect_key($in, array_flip(['name', 'description'])));
