@@ -76,15 +76,32 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
-## Red team 2026-11-21, endpoint agent fixes (unreleased; no migration)
+## Red team 2026-11-21 fixes (unreleased; no migration; read before updating)
 
-Agent (Go) side of the 2026-11-21 red-team findings. Nothing is required of an edition's PHP code; the items below are for whoever releases and runs agents.
+Fixes for the 2026-11-21 red-team report (agent, panel/data and RMM server/inbound monitoring). No migration and no breaking signature change (new
+arguments are optional and last). What to do, in order:
+
+1. **Whoever releases the agent, before the next `agent-v*` tag:** generate the release signing key OFFLINE and set the repository variable
+   `AGENT_RELEASE_KEYS` to its public half; a release tag without it fails on purpose. Build hosts: set `RELEASE_KEYS` (and `TRUST_KEYS` when the host
+   builds for one server) in `build-host.conf`. From the first anchored build on, sign every published binary offline (CORE-AGENT-1, below).
+2. **Editions, RMM settings page:** show `RmmReadModel::settingsSummary()['hardening']['signed_config_warning']` and offer raising `signed_config` to 2.
+   Existing installs are NOT migrated; new installs start at 2 (CORE-AGENT-4, below).
+3. **Editions that wire inbound monitoring:** give each client's sender its own secret limited to that client before handing a secret out, label or hide
+   the `_cap` counter rows, keep nested locks working, and stop reading `ticket_id` from the response (Chain A, below).
+4. **Edition code that matches one of the frozen pattern constants itself:** append the `D` modifier (CORE-DATA-3, below).
+5. **Operators:** check that no key id has a trailing newline (query below); Linux fleets with a custom `--state-dir`/`--install-dir`: fix ownership and
+   permissions before rolling out the new agent (CORE-AGENT-5); tell panel users which CSV shapes are now refused (CORE-API-1).
+
+### Endpoint agent
+
+Nothing is required of an edition's PHP code; these items are for whoever releases and runs agents.
 
 * **CORE-AGENT-1 (act before the next `agent-v*` tag).** Generate the release signing key pair OFFLINE and put only its public half in the repository
   variable `AGENT_RELEASE_KEYS` ([AGENT_BUILD.md, "Release signing key"](docs/rmm/AGENT_BUILD.md)). Without it the release gate fails the tag build on
   purpose. From the first anchored release on, every published agent binary needs its offline release signature in the edition (Agent binaries), or
   anchored agents refuse the update. Agents already deployed are unaffected until they install an anchored build. Self-hosted builds stamped
-  `RELEASE_BUILD=1` without `RELEASE_KEYS` refuse every self-update.
+  `RELEASE_BUILD=1` without `RELEASE_KEYS` refuse every self-update. A build host (`scripts/build-host.sh`) takes the same `RELEASE_KEYS`, `TRUST_KEYS`
+  and `RELEASE_BUILD` in `build-host.conf` ([BUILD_HOST.md](docs/rmm/BUILD_HOST.md)); left empty it keeps building unanchored agents.
 * **CORE-AGENT-6.** File transfer now refuses the agent's own program files, service unit and the Mesh agent's identity even inside an allowed folder,
   and the server refuses them as transfer roots. An administrator who used `file_put` to replace the agent binary by hand must use a package upgrade,
   the installer or self-update instead.
@@ -102,7 +119,7 @@ Agent (Go) side of the 2026-11-21 red-team findings. Nothing is required of an e
   `disable_update` in its `config.json` (endpoint-agent/README.md, "Monitoring-only profile"). `disable_jobs` alone still lets the server replace the
   agent binary (Chain C).
 
-## Red-team fixes 2026-11-21, panel and data (Unreleased; no migration)
+### Panel and data
 
 - **Panel CSV attachments (CORE-API-1 / CORE-DATA-1).** More CSV files are refused with 422 `attachment_rejected`: any cell (in any column, quote-aware, read with
   comma, semicolon and tab separators) that starts with `=`, `+`, `-`, `@` or a tab, unless the whole cell is a plain number. `- item`, `-- note`, `+1 (555) 123-4567`,
@@ -119,7 +136,7 @@ Agent (Go) side of the 2026-11-21 red-team findings. Nothing is required of an e
   escaping device text and the audit log where you render them; rows enrolled before keep what was sent.
 - **Webhooks (CORE-API-6).** A destination that resolves to the Azure Wire Server 168.63.129.16 is refused, even when listed in allowed networks.
 
-## Red team 2026-11-21 fixes (unreleased; no migration; read before updating)
+### RMM server and inbound monitoring
 
 - **Signed configuration (CORE-AGENT-4).** A NEW install (the first switch-on mints the signing key and no device is enrolled) now starts with
   `rmm_hardening_settings.signed_config = 2`, so every agent that enrolls refuses unsigned check definitions and an unsigned log configuration from its first
