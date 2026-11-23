@@ -115,6 +115,12 @@ type Agent struct {
 	clkHave      bool
 	clkWarned    time.Time // last time the clock warning was logged (once per hour)
 	timeRetrySeq uint64    // the seq a time refusal was already retried for
+	// The server-time floor for security decisions (CORE-AGENT-3): the latest server time ever observed (floorSrv) and the raw PC/monotonic reading
+	// when it was (floorAt). It only moves forward, so a response cannot wind the job-expiry clock back (see securityNow, clock.go).
+	floorSrv    time.Time
+	floorAt     time.Time
+	floorSaved  time.Time // the floor last written to state.json
+	floorWarned time.Time // last "server time went backwards" warning (once per hour)
 
 	tokCache struct {
 		mtime time.Time
@@ -160,6 +166,7 @@ func New(o Options) (*Agent, error) {
 	}
 	if st0, err := o.Store.LoadState(); err == nil {
 		a.loadClock(st0)
+		a.loadFloor(st0)
 	}
 	if a.meshRep == nil {
 		a.meshRep = &mesh.Reporter{StateDir: o.Store.Dir, Probe: mesh.Probe{GOOS: runtime.GOOS, ExtraPaths: []string{cfg.MeshAgentPath}}, Now: a.now, Override: a.meshNodeOverride}
@@ -181,7 +188,7 @@ func New(o Options) (*Agent, error) {
 	a.col.RequireSigned = a.signingRequired
 	a.runner = collect.NewCheckRunner(a.col)
 	a.ring = buffer.Open(o.Store.BufferPath(), cfg.BufferMaxSamples, cfg.BufferMaxBytes)
-	a.verifier = &jobs.Verifier{Now: a.now}
+	a.verifier = &jobs.Verifier{Now: a.securityNow} // expiry is a security decision: never earlier than the server-time floor (CORE-AGENT-3)
 	a.logs = logs.New(logs.Options{
 		Offset:    func() time.Duration { a.mu.Lock(); defer a.mu.Unlock(); return a.skew },
 		Readers:   logs.PlatformReaders(remote.ExecRunner{}),
@@ -454,6 +461,7 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 		st.EnrolledAt = a.o.Now().UTC()
 		st.ServerFeatures, st.SoftwareHash = nil, "" // unknown until the new server says so
 		st.LogsConfigSeq, st.SignedConfigV = 0, 0    // per-server signing memory: a new enrolment may be a different server (review R3-3)
+		st.ServerTimeFloor = ""                      // and its clock (CORE-AGENT-3): the new server's answers set a new floor
 		if resp.Config.SignedConfig > 0 {
 			st.SignedConfigV = resp.Config.SignedConfig // persisted with the rest of the enrolment state (review R4-2)
 		}
@@ -463,6 +471,7 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 		return nil, err
 	}
 	a.signedSeen.Store(int32(resp.Config.SignedConfig))
+	a.resetFloor()
 	a.observeResponse(resp.ServerTime, a.o.Now())
 	st, _ := a.o.Store.LoadState()
 	a.syncVerifier(st)

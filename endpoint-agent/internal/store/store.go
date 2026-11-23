@@ -119,6 +119,9 @@ type State struct {
 	DormantReason    string         `json:"dormant_reason,omitempty"`
 	UpdateFailure    *UpdateFailure `json:"update_failure,omitempty"`
 	EnrolledAt       time.Time      `json:"enrolled_at,omitempty"`
+	// ServerTimeFloor (RFC 3339) is the latest server time the agent has observed, kept so a restart cannot be used to wind the job-expiry clock
+	// back (CORE-AGENT-3). Written at most every few minutes; reset by a new enrolment.
+	ServerTimeFloor string `json:"server_time_floor,omitempty"`
 	// ServerFeatures is the "features" list of the LAST successful check-in
 	// response (absence = none), kept across restarts.
 	ServerFeatures []string `json:"server_features,omitempty"`
