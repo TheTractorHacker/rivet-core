@@ -6,7 +6,10 @@ namespace RivetCore\Monitoring\Inbound;
 
 /**
  * What the engine asks the edition to open. Plain text: subject and body contain sender-controlled strings and must be escaped by the
- * edition for its own storage (the edition's ticket functions usually expect sanitised input).
+ * edition for its own storage (the edition's ticket functions usually expect sanitised input). Contract since red team 2026-11-21 (Chain A): the
+ * engine never hands over markup in a subject, a body or a note (tag-shaped runs are removed, a stray '<' or '>' becomes '‹' or '›'), so a renderer
+ * that forgets to escape shows text, not elements; escaping on output stays the edition's job. Sender-chosen wording (a phishing line in a monitor
+ * name or message) is still text the sender chose: a sender limited to some clients can only put it in front of its own clients.
  *
  * @api
  */

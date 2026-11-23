@@ -2214,13 +2214,19 @@
         },
         "RivetCore\\Monitoring\\Inbound\\EngineConfig": {
             "kind": "final class",
+            "constants": {
+                "DEFAULT_MAX_OPENS_PER_HOUR_ALL": 600,
+                "DEFAULT_MAX_OPENS_PER_HOUR_PER_CLIENT": 300
+            },
             "methods": {
-                "__construct": "__construct(int $minConsecutiveDown = 1, int $minDownSeconds = 0, int $noteIntervalSeconds = 1800, int $maxOpensPerHour = 6, ?RivetCore\\Monitoring\\Inbound\\MonitorTarget $defaultTarget = NULL, string $priority = 'High', string $category = '', string $sourceLabel = 'Uptime Kuma')"
+                "__construct": "__construct(int $minConsecutiveDown = 1, int $minDownSeconds = 0, int $noteIntervalSeconds = 1800, int $maxOpensPerHour = 6, ?RivetCore\\Monitoring\\Inbound\\MonitorTarget $defaultTarget = NULL, string $priority = 'High', string $category = '', string $sourceLabel = 'Uptime Kuma', int $maxOpensPerHourPerClient = 300, int $maxOpensPerHourAll = 600)"
             },
             "properties": {
                 "category": "readonly string",
                 "defaultTarget": "readonly ?RivetCore\\Monitoring\\Inbound\\MonitorTarget",
                 "maxOpensPerHour": "readonly int",
+                "maxOpensPerHourAll": "readonly int",
+                "maxOpensPerHourPerClient": "readonly int",
                 "minConsecutiveDown": "readonly int",
                 "minDownSeconds": "readonly int",
                 "noteIntervalSeconds": "readonly int",
@@ -2231,6 +2237,7 @@
         "RivetCore\\Monitoring\\Inbound\\EngineOutcome": {
             "kind": "final class",
             "constants": {
+                "CAPPED": "capped",
                 "CLOSED_BY_HUMAN": "closed_by_human",
                 "DUPLICATE": "duplicate",
                 "FLAP_SUPPRESSED": "flap_suppressed",
@@ -2238,6 +2245,7 @@
                 "IGNORED_PENDING": "ignored_pending",
                 "NOTED": "noted",
                 "OPENED": "opened",
+                "OUT_OF_SCOPE": "out_of_scope",
                 "RESOLVED": "resolved",
                 "STALE": "stale",
                 "TEST": "test",
@@ -2259,15 +2267,17 @@
                 "MIN_SECRET_LENGTH": 16
             },
             "methods": {
-                "__construct": "__construct(array $secrets)",
+                "__construct": "__construct(array $secrets, array $senders = [])",
                 "authenticate": "authenticate(array $headers): bool",
+                "identify": "identify(array $headers): ?RivetCore\\Monitoring\\Inbound\\InboundSender",
                 "isConfigured": "isConfigured(): bool"
             }
         },
         "RivetCore\\Monitoring\\Inbound\\InboundEvent": {
             "kind": "final class",
             "methods": {
-                "__construct": "__construct(string $source, bool $isTest, ?RivetCore\\Monitoring\\Inbound\\MonitorStatus $status, string $monitorKey, string $monitorName, ?int $time, string $message = '', string $url = '', string $hostname = '', string $type = '', array $tags = [])"
+                "__construct": "__construct(string $source, bool $isTest, ?RivetCore\\Monitoring\\Inbound\\MonitorStatus $status, string $monitorKey, string $monitorName, ?int $time, string $message = '', string $url = '', string $hostname = '', string $type = '', array $tags = [], string $sender = '')",
+                "withSender": "withSender(string $senderId): RivetCore\\Monitoring\\Inbound\\InboundEvent"
             },
             "properties": {
                 "hostname": "readonly string",
@@ -2275,6 +2285,7 @@
                 "message": "readonly string",
                 "monitorKey": "readonly string",
                 "monitorName": "readonly string",
+                "sender": "readonly string",
                 "source": "readonly string",
                 "status": "readonly ?RivetCore\\Monitoring\\Inbound\\MonitorStatus",
                 "tags": "readonly array",
@@ -2300,6 +2311,23 @@
                 "body": "readonly array",
                 "headers": "readonly array",
                 "status": "readonly int"
+            }
+        },
+        "RivetCore\\Monitoring\\Inbound\\InboundSender": {
+            "kind": "final class",
+            "constants": {
+                "ID_PATTERN": "/^[a-z0-9][a-z0-9-]{0,11}$/D"
+            },
+            "methods": {
+                "incidentKey": "incidentKey(string $monitorKey): string",
+                "isShared": "isShared(): bool",
+                "mayReportFor": "mayReportFor(int $clientId): bool",
+                "named": "static named(string $id, ?array $clientIds = NULL): RivetCore\\Monitoring\\Inbound\\InboundSender",
+                "shared": "static shared(): RivetCore\\Monitoring\\Inbound\\InboundSender"
+            },
+            "properties": {
+                "clientIds": "readonly ?array",
+                "id": "readonly string"
             }
         },
         "RivetCore\\Monitoring\\Inbound\\Incident": {
@@ -2334,11 +2362,13 @@
         "RivetCore\\Monitoring\\Inbound\\IncidentEngine": {
             "kind": "final class",
             "constants": {
-                "FLAP_WINDOW_S": 3600
+                "CAP_SOURCE": "_cap",
+                "FLAP_WINDOW_S": 3600,
+                "SUMMARY_NOTES_MAX": 50
             },
             "methods": {
                 "__construct": "__construct(RivetCore\\Monitoring\\Inbound\\IncidentStoreInterface $store, RivetCore\\Monitoring\\Inbound\\TicketGatewayInterface $gateway, RivetCore\\Monitoring\\Inbound\\MonitorClientMapInterface $map, RivetCore\\Monitoring\\Inbound\\EngineConfig $config = RivetCore\\Monitoring\\Inbound\\EngineConfig, ?Closure $clock = NULL)",
-                "process": "process(RivetCore\\Monitoring\\Inbound\\InboundEvent $event): RivetCore\\Monitoring\\Inbound\\EngineOutcome"
+                "process": "process(RivetCore\\Monitoring\\Inbound\\InboundEvent $event, ?RivetCore\\Monitoring\\Inbound\\InboundSender $sender = NULL): RivetCore\\Monitoring\\Inbound\\EngineOutcome"
             }
         },
         "RivetCore\\Monitoring\\Inbound\\IncidentStoreInterface": {
@@ -9425,8 +9455,10 @@
             "methods": {
                 "testKeysDoNotCollide": "testKeysDoNotCollide(): void",
                 "testLockedReturnsValueAndReleasesOnException": "testLockedReturnsValueAndReleasesOnException(): void",
+                "testLocksOnDifferentKeysNest": "testLocksOnDifferentKeysNest(): void",
                 "testPutReplacesAndStoreHandsOutCopies": "testPutReplacesAndStoreHandsOutCopies(): void",
                 "testRoundTripKeepsEveryField": "testRoundTripKeepsEveryField(): void",
+                "testTheLongestEngineKeysRoundTrip": "testTheLongestEngineKeysRoundTrip(): void",
                 "testUnknownKeyIsNull": "testUnknownKeyIsNull(): void"
             }
         },
