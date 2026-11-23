@@ -34,8 +34,8 @@ final class RegexEndAnchorLintTest extends TestCase
                 => 'deny list of secret file names: "id_rsa\n" must still count as a secret file',
         ],
         'src/Rmm/Remote/PathPolicy.php' => [
-            '/^(id_rsa.*|id_ed25519.*|id_ecdsa.*|id_dsa.*|.*\.(pem|key|p12|pfx|kdbx|keystore|jks)|ssh_host_.*|ntds\.dit|pagefile\.sys|hiberfil\.sys|swapfile\.sys)$/i'
-                => 'deny list of transfer file names (the newline variant must still be denied); the file belongs to another change set',
+            '/^(id_rsa.*|id_ed25519.*|id_ecdsa.*|id_dsa.*|.*\.(pem|key|p12|pfx|kdbx|keystore|jks)|ssh_host_.*|ntds\.dit|pagefile\.sys|hiberfil\.sys|swapfile\.sys|rivetit-agent(\.exe)?(\.(new|prev|failed))?|meshagent\.msh|meshagent\.db.*)$/i'
+                => 'deny list of transfer file names, the agent\'s own files included since CORE-AGENT-6 (the newline variant must still be denied)',
         ],
         'src/Crypto/KeyGenerator.php' => [
             '/^[0-9a-fA-F]{64}$/'
@@ -59,10 +59,7 @@ final class RegexEndAnchorLintTest extends TestCase
     ];
 
     /** @var array<string,string> "path:line" => why that call site may use a frozen constant without D */
-    private const BARE_USE_EXCEPTIONS = [
-        'src/Rmm/Enrollment/EnrollmentService.php:265' => 'the enrollment token is split on "." first, so a newline can only end the secret part, whose SHA-256 then differs from the stored '
-            . 'hash (401); the file belongs to another change set of the 2026-11-21 fixes',
-    ];
+    private const BARE_USE_EXCEPTIONS = [];
 
     public function testEveryPatternAnchoredAtBothEndsSaysWhereTheValueEnds(): void
     {

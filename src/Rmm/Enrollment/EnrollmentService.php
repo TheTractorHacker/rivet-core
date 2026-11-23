@@ -263,7 +263,7 @@ final class EnrollmentService
         $parts = explode('.', $tokenStr);
         $selector = '';
         $row = null;
-        if (count($parts) === 3 && $parts[0] === RmmProtocol::ENROLL_TOKEN_PREFIX && preg_match(RmmProtocol::ENROLL_TOKEN_SELECTOR_RE, $parts[1]) === 1 && preg_match(RmmProtocol::ENROLL_TOKEN_SECRET_RE, $parts[2]) === 1) {
+        if (count($parts) === 3 && $parts[0] === RmmProtocol::ENROLL_TOKEN_PREFIX && preg_match(RmmProtocol::ENROLL_TOKEN_SELECTOR_RE . 'D', $parts[1]) === 1 && preg_match(RmmProtocol::ENROLL_TOKEN_SECRET_RE . 'D', $parts[2]) === 1) {
             $selector = $parts[1];
             $row = $this->sql->one('SELECT * FROM endpoint_agent_enrollment_tokens WHERE token_selector = ?', [$selector]);
         }
