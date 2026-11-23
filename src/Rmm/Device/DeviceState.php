@@ -20,7 +20,7 @@ final class DeviceState
     public const CAP_SOFTWARE_INVENTORY = 'software_inventory';
     /** The agent applies the effective policy delivered in `config.policy` (Phase 2). */
     public const CAP_POLICIES = 'policies';
-    private const CAP_RE = '/^[A-Za-z0-9_.:-]{1,64}$/';
+    private const CAP_RE = '/^[A-Za-z0-9_.:-]{1,64}$/D';
     private const MAX_CAPS = 64;
 
     public function __construct(private readonly Sql $sql)

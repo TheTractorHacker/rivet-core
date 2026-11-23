@@ -138,7 +138,7 @@ abstract class RequestContextConformanceTestCase extends TestCase
             }
             $id = $this->context()->requestId();
             if ($id !== null) {
-                $this->assertMatchesRegularExpression('/^[A-Za-z0-9._:-]{1,64}$/', $id, 'requestId() must be 1-64 characters of [A-Za-z0-9._:-]');
+                $this->assertMatchesRegularExpression('/^[A-Za-z0-9._:-]{1,64}$/D', $id, 'requestId() must be 1-64 characters of [A-Za-z0-9._:-]');
             }
             $this->addToAssertionCount(1);
         }

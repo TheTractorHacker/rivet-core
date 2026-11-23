@@ -86,7 +86,7 @@ abstract class EnvelopeConformanceTestCase extends TestCase
         $this->assertStringStartsWith('v3:kid-7:', $c);
         $this->assertStringNotContainsString($plain, $c);
         $this->assertSame('v3:kid-7', $e->label($c));
-        $this->assertSame(1, preg_match('/^v3:kid-7:[A-Za-z0-9+\/]+={0,2}$/', $c));
+        $this->assertSame(1, preg_match('/^v3:kid-7:[A-Za-z0-9+\/]+={0,2}$/D', $c));
     }
 
     public function testEverySealUsesAFreshNonce(): void

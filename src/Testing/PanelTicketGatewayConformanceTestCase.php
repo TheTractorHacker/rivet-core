@@ -168,9 +168,9 @@ abstract class PanelTicketGatewayConformanceTestCase extends TestCase
         if (!is_string($v)) {
             return null;
         }
-        if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $v) === 1) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/D', $v) === 1) {
             $t = strtotime($v . ' UTC');
-        } elseif (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/', $v) === 1) {
+        } elseif (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/D', $v) === 1) {
             $t = strtotime($v);
         } else {
             return null;

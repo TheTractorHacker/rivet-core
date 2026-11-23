@@ -287,7 +287,7 @@ final class MsiInspector
                 continue;
             }
             $v = rtrim(substr($b, $off + 8, $len), "\0");
-            if (preg_match('/^[\x20-\x7e]*$/', $v) === 1) {
+            if (preg_match('/^[\x20-\x7e]*$/D', $v) === 1) {
                 $out[$id] = $v;
             }
         }

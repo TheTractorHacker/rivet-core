@@ -81,7 +81,7 @@ final class ResponsibilityStore
 
     private static function validateKey(string $key): void
     {
-        if (!preg_match('/^(section|item):[^\x00-\x1f\x7f]{1,100}$/u', $key)) {
+        if (!preg_match('/^(section|item):[^\x00-\x1f\x7f]{1,100}$/uD', $key)) {
             throw new \InvalidArgumentException('Unknown compliance section.');
         }
     }

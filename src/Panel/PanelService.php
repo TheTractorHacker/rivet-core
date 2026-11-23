@@ -109,7 +109,7 @@ final class PanelService
         $this->requireTicketAccess($p);
         $requestId = null;
         if (isset($body['client_request_id'])) {
-            if (!is_string($body['client_request_id']) || preg_match(PanelProtocol::REQUEST_ID_RE, strtolower($body['client_request_id'])) !== 1) {
+            if (!is_string($body['client_request_id']) || preg_match(PanelProtocol::REQUEST_ID_RE . 'D', strtolower($body['client_request_id'])) !== 1) {
                 throw new ApiError(422, 'invalid', 'client_request_id must be a UUID.');
             }
             $requestId = strtolower($body['client_request_id']);
@@ -401,7 +401,7 @@ final class PanelService
         if (!isset($q[$key]) || $q[$key] === '') {
             return $default;
         }
-        if (preg_match('/^\d{1,18}$/', $q[$key]) !== 1) {
+        if (preg_match('/^\d{1,18}$/D', $q[$key]) !== 1) {
             throw new ApiError(422, 'invalid', "$key must be a non-negative integer.");
         }
 

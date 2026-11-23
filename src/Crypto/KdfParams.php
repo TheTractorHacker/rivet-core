@@ -59,10 +59,10 @@ final class KdfParams
     /** Parses the `<kdf>:<params>` part of a wrap. @throws InvalidKeyMaterial */
     public static function parse(string $kdf, string $params): self
     {
-        if ($kdf === self::ARGON2ID && preg_match('/^m=(\d{1,8}),t=(\d{1,3})$/', $params, $m) === 1) {
+        if ($kdf === self::ARGON2ID && preg_match('/^m=(\d{1,8}),t=(\d{1,3})$/D', $params, $m) === 1) {
             return self::checked(new self(self::ARGON2ID, (int) $m[1], (int) $m[2], 0));
         }
-        if ($kdf === self::PBKDF2 && preg_match('/^i=(\d{1,9})$/', $params, $m) === 1) {
+        if ($kdf === self::PBKDF2 && preg_match('/^i=(\d{1,9})$/D', $params, $m) === 1) {
             return self::checked(new self(self::PBKDF2, 0, 0, (int) $m[1]));
         }
         throw new InvalidKeyMaterial('Unknown or malformed key-derivation parameters.');

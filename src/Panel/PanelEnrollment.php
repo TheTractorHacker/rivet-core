@@ -187,7 +187,7 @@ final class PanelEnrollment
         $parts = explode('.', $tokenStr);
         $selector = '';
         $row = null;
-        if (count($parts) === 3 && $parts[0] === PanelProtocol::ENROLL_TOKEN_PREFIX && preg_match(PanelProtocol::ENROLL_TOKEN_SELECTOR_RE, $parts[1]) === 1 && preg_match(PanelProtocol::ENROLL_TOKEN_SECRET_RE, $parts[2]) === 1) {
+        if (count($parts) === 3 && $parts[0] === PanelProtocol::ENROLL_TOKEN_PREFIX && preg_match(PanelProtocol::ENROLL_TOKEN_SELECTOR_RE . 'D', $parts[1]) === 1 && preg_match(PanelProtocol::ENROLL_TOKEN_SECRET_RE . 'D', $parts[2]) === 1) {
             $selector = $parts[1];
             $row = $this->sql->one('SELECT * FROM endpoint_agent_enrollment_tokens WHERE token_selector = ?', [$selector]);
         }
@@ -217,7 +217,7 @@ final class PanelEnrollment
     private function validateDevice(array $dev): array
     {
         $install = $dev['install_id'] ?? null;
-        if (!is_string($install) || preg_match(PanelProtocol::INSTALL_ID_RE, strtolower($install)) !== 1) {
+        if (!is_string($install) || preg_match(PanelProtocol::INSTALL_ID_RE . 'D', strtolower($install)) !== 1) {
             throw new ApiError(422, 'invalid', 'device.install_id must be a UUID.');
         }
         $os = $dev['os'] ?? null;

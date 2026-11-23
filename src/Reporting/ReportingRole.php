@@ -62,7 +62,7 @@ final class ReportingRole
         self::ident($database, 64, 'database');
         self::ident($user, 32, 'user');
         self::password($password);
-        if (preg_match('/^[A-Za-z0-9_.%:\-]{1,60}$/', $host) !== 1) {
+        if (preg_match('/^[A-Za-z0-9_.%:\-]{1,60}$/D', $host) !== 1) {
             throw new \InvalidArgumentException('The host part may contain letters, digits and . _ % : - only.');
         }
         if ($maxConnections < 1 || $maxConnections > 100) {
@@ -124,7 +124,7 @@ final class ReportingRole
     public static function dropMariadbStatements(string $user = self::DEFAULT_USER, string $host = '%'): array
     {
         self::ident($user, 32, 'user');
-        if (preg_match('/^[A-Za-z0-9_.%:\-]{1,60}$/', $host) !== 1) {
+        if (preg_match('/^[A-Za-z0-9_.%:\-]{1,60}$/D', $host) !== 1) {
             throw new \InvalidArgumentException('The host part may contain letters, digits and . _ % : - only.');
         }
 

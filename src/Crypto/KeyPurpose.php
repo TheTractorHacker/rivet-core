@@ -25,7 +25,7 @@ final class KeyPurpose
     /** @throws InvalidKeyMaterial */
     public static function assertValid(string $purpose): void
     {
-        if (preg_match('/^[a-z0-9][a-z0-9._-]{0,47}$/', $purpose) !== 1) {
+        if (preg_match('/^[a-z0-9][a-z0-9._-]{0,47}$/D', $purpose) !== 1) {
             throw new InvalidKeyMaterial('A key purpose is 1-48 characters of [a-z0-9._-].');
         }
     }

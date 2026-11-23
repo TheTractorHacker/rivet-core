@@ -120,7 +120,7 @@ final class PanelApi
     {
         $this->method($req, ['GET', 'POST']);
         $raw = $req->pathSegments[0] ?? ($req->query['ticket_id'] ?? '');
-        $ticketId = preg_match('/^[1-9]\d{0,17}$/', $raw) === 1 ? (int) $raw : 0;
+        $ticketId = preg_match('/^[1-9]\d{0,17}$/D', $raw) === 1 ? (int) $raw : 0;
         if (strtoupper($req->method) === 'GET') {
             return $this->json(200, $this->service->chat($this->authenticate($req, 'read'), $ticketId, $req->query));
         }

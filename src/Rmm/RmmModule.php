@@ -317,7 +317,7 @@ final class RmmModule
     {
         $l = $this->options['client_label'] ?? 'client';
 
-        return preg_match('/^[a-z][a-z ]{0,29}$/', $l) === 1 ? $l : 'client';
+        return preg_match('/^[a-z][a-z ]{0,29}$/D', $l) === 1 ? $l : 'client';
     }
 
     public function sql(): Sql

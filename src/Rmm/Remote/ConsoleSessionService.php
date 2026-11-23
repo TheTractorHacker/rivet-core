@@ -64,7 +64,7 @@ final class ConsoleSessionService
     {
         $origin = $this->origin();
         $node = self::consoleNode($storedNode, $meshDomain);
-        if ($origin === null || $node === null || !ConsoleLink::validKind($kind) || preg_match('/^[0-9a-f]{16}$/', $sessionId) !== 1) {
+        if ($origin === null || $node === null || !ConsoleLink::validKind($kind) || preg_match('/^[0-9a-f]{16}$/D', $sessionId) !== 1) {
             return null;
         }
         $code = ConsoleLink::newCode();

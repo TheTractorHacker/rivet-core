@@ -33,7 +33,7 @@ final class CheckCatalog
      */
     public static function types(): array
     {
-        $host = '/^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$|^[0-9A-Fa-f:]{2,45}$/';
+        $host = '/^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$|^[0-9A-Fa-f:]{2,45}$/D';
 
         return [
             'cpu' => ['platforms' => ['windows', 'linux'], 'unit' => 'percent', 'fields' => [
@@ -41,29 +41,29 @@ final class CheckCatalog
             'memory' => ['platforms' => ['windows', 'linux'], 'unit' => 'percent', 'fields' => [
                 'metric' => ['enum', ['mem_used_pct', 'swap_used_pct', 'psi_some_avg10'], 'mem_used_pct'], 'warn_pct' => ['int', 1, 100, 85], 'fail_pct' => ['int', 1, 100, 95]]],
             'process' => ['platforms' => ['windows', 'linux'], 'unit' => 'count', 'fields' => [
-                'name' => ['str', 128, '/^[A-Za-z0-9._ +-]{1,128}$/', 'req' => true], 'min_count' => ['int', 0, 1000, 1], 'max_count' => ['int', 0, 100000, 0]]],
+                'name' => ['str', 128, '/^[A-Za-z0-9._ +-]{1,128}$/D', 'req' => true], 'min_count' => ['int', 0, 1000, 1], 'max_count' => ['int', 0, 100000, 0]]],
             'port' => ['platforms' => ['windows', 'linux'], 'unit' => 'ms', 'fields' => [
                 'host' => ['str', 253, $host, 'req' => true], 'port' => ['int', 1, 65535, 0, 'req' => true], 'timeout_ms' => ['int', 100, 30000, 3000], 'warn_ms' => ['int', 0, 30000, 0]]],
             'ping' => ['platforms' => ['windows', 'linux'], 'unit' => 'ms', 'fields' => [
                 'host' => ['str', 253, $host, 'req' => true], 'count' => ['int', 1, 10, 3], 'timeout_ms' => ['int', 200, 10000, 2000],
                 'warn_ms' => ['int', 0, 30000, 0], 'fail_ms' => ['int', 0, 30000, 0], 'warn_loss_pct' => ['int', 1, 100, 1], 'fail_loss_pct' => ['int', 1, 100, 100]]],
             'http' => ['platforms' => ['windows', 'linux'], 'unit' => 'ms', 'fields' => [
-                'url' => ['str', 2000, '#^https?://[^\s@/]+(/[^\s]*)?$#', 'req' => true], 'method' => ['enum', ['GET', 'HEAD'], 'GET'], 'expect_min' => ['int', 100, 599, 200], 'expect_max' => ['int', 100, 599, 399],
-                'timeout_ms' => ['int', 500, 60000, 10000], 'warn_ms' => ['int', 0, 60000, 0], 'contains' => ['str', 200, '/^[^\x00-\x1f]{0,200}$/'], 'verify_tls' => ['bool', true],
+                'url' => ['str', 2000, '#^https?://[^\s@/]+(/[^\s]*)?$#D', 'req' => true], 'method' => ['enum', ['GET', 'HEAD'], 'GET'], 'expect_min' => ['int', 100, 599, 200], 'expect_max' => ['int', 100, 599, 399],
+                'timeout_ms' => ['int', 500, 60000, 10000], 'warn_ms' => ['int', 0, 60000, 0], 'contains' => ['str', 200, '/^[^\x00-\x1f]{0,200}$/D'], 'verify_tls' => ['bool', true],
                 'cert_warn_days' => ['int', 0, 3650, 14], 'cert_fail_days' => ['int', 0, 3650, 3], 'follow_redirects' => ['bool', true]]],
             'cert' => ['platforms' => ['windows', 'linux'], 'unit' => 'days', 'fields' => [
-                'paths' => ['list', 10, 300, '#^(/|[A-Za-z]:[\\\\/])[^\x00-\x1f]*$#'], 'store' => ['str', 80, '/^(LocalMachine|CurrentUser)\\\\[A-Za-z0-9 _.-]{1,64}$/'],
+                'paths' => ['list', 10, 300, '#^(/|[A-Za-z]:[\\\\/])[^\x00-\x1f]*$#D'], 'store' => ['str', 80, '/^(LocalMachine|CurrentUser)\\\\[A-Za-z0-9 _.-]{1,64}$/D'],
                 'host' => ['str', 253, $host], 'port' => ['int', 1, 65535, 443], 'warn_days' => ['int', 0, 3650, 30], 'fail_days' => ['int', 0, 3650, 7]]],
             'ntp' => ['platforms' => ['windows', 'linux'], 'unit' => 'ms', 'fields' => [
                 'server' => ['str', 253, $host, 'default' => 'pool.ntp.org'], 'timeout_ms' => ['int', 500, 10000, 3000], 'warn_ms' => ['int', 1, 3600000, 1000], 'fail_ms' => ['int', 1, 3600000, 5000]]],
             'smart' => ['platforms' => ['windows', 'linux'], 'unit' => null, 'fields' => [
-                'devices' => ['list', 16, 32, '#^/dev/[A-Za-z0-9]{1,24}$#']]],
+                'devices' => ['list', 16, 32, '#^/dev/[A-Za-z0-9]{1,24}$#D']]],
             'av' => ['platforms' => ['windows'], 'unit' => 'days', 'fields' => [
                 'max_signature_age_days' => ['int', 1, 365, 7], 'require_realtime' => ['bool', true]]],
             'systemd_failed' => ['platforms' => ['linux'], 'unit' => 'count', 'fields' => [
-                'ignore' => ['list', 20, 128, '/^[A-Za-z0-9:_.@\\\\-]{1,128}$/'], 'max_failed' => ['int', 0, 1000, 0]]],
+                'ignore' => ['list', 20, 128, '/^[A-Za-z0-9:_.@\\\\-]{1,128}$/D'], 'max_failed' => ['int', 0, 1000, 0]]],
             'inodes' => ['platforms' => ['linux'], 'unit' => 'percent', 'fields' => [
-                'mount' => ['str', 200, '#^/[^\x00-\x1f]*$#'], 'warn_pct' => ['int', 1, 100, 85], 'fail_pct' => ['int', 1, 100, 95]]],
+                'mount' => ['str', 200, '#^/[^\x00-\x1f]*$#D'], 'warn_pct' => ['int', 1, 100, 85], 'fail_pct' => ['int', 1, 100, 95]]],
         ];
     }
 

@@ -27,7 +27,7 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class TransferService
 {
-    private const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
+    private const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D';
 
     public function __construct(
         private readonly Sql $sql,
@@ -125,7 +125,7 @@ final class TransferService
         if ($size > $limits['transfer_max_bytes']) {
             return self::fail(413, 'too_large', 'The file is larger than the transfer size limit (' . $limits['transfer_max_bytes'] . ' bytes).');
         }
-        if (preg_match('/^[0-9a-f]{64}$/', $sha256) !== 1) {
+        if (preg_match('/^[0-9a-f]{64}$/D', $sha256) !== 1) {
             return self::fail(422, 'invalid', 'sha256 must be the 64 lower-case hex characters of the file\'s SHA-256.');
         }
         if (($code = PathPolicy::check($path, $os, $this->remote->allowRootsFor($os))) !== null) {
@@ -364,7 +364,7 @@ final class TransferService
                 return ['http' => 200, 'body' => ['ok' => true, 'received' => $total, 'complete' => false]];
             }
             $actual = hash_file('sha256', $file);
-            if ($sha256 === null || preg_match('/^[0-9a-f]{64}$/', $sha256) !== 1 || !hash_equals((string) $actual, $sha256)) {
+            if ($sha256 === null || preg_match('/^[0-9a-f]{64}$/D', $sha256) !== 1 || !hash_equals((string) $actual, $sha256)) {
                 $failed = 'The file arrived damaged: its SHA-256 does not match what the device reported.';
                 $this->sql->run("UPDATE endpoint_agent_transfers SET state = 'failed', error = ?, received_bytes = ?, updated_at = ? WHERE transfer_id = ?", [$failed, $total, $now, $tid]);
                 @unlink($file);

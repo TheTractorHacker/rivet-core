@@ -200,13 +200,13 @@ final class EventCatalog
     public static function matchPattern(string $pattern): array
     {
         $pattern = trim($pattern);
-        if ($pattern === '' || strlen($pattern) > 150 || !preg_match('/^[a-z0-9_.*-]+$/', $pattern)) {
+        if ($pattern === '' || strlen($pattern) > 150 || !preg_match('/^[a-z0-9_.*-]+$/D', $pattern)) {
             return [];
         }
         if (!str_contains($pattern, '*')) {
             return self::has($pattern) ? [$pattern] : [];
         }
-        $re = '/^' . str_replace('\*', '.*', preg_quote($pattern, '/')) . '$/';
+        $re = '/^' . str_replace('\*', '.*', preg_quote($pattern, '/')) . '$/D';
         $out = [];
         foreach (self::all() as $e) {
             if (preg_match($re, $e->id) === 1) {

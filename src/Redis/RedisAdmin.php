@@ -111,7 +111,7 @@ final class RedisAdmin
         $miss = (int) ($flat['keyspace_misses'] ?? 0);
         $keys = 0;
         foreach ($flat as $k => $v) {
-            if (preg_match('/^db\d+$/', (string) $k)) $keys += is_array($v) ? (int) ($v['keys'] ?? 0) : (preg_match('/keys=(\d+)/', (string) $v, $m) ? (int) $m[1] : 0);
+            if (preg_match('/^db\d+$/D', (string) $k)) $keys += is_array($v) ? (int) ($v['keys'] ?? 0) : (preg_match('/keys=(\d+)/', (string) $v, $m) ? (int) $m[1] : 0);
         }
         $policy = (string) ($flat['maxmemory_policy'] ?? '');
         return [

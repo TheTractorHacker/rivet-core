@@ -100,7 +100,7 @@ final class MeshAgentSettings
     /** A whole number 0..255 from an int or a plain digit string; null for anything else (null, '', 1.5, '12abc', 256, -1). */
     public static function cleanHide(mixed $v): ?int
     {
-        if (is_string($v) && preg_match('/^[0-9]{1,3}$/', trim($v)) === 1) {
+        if (is_string($v) && preg_match('/^[0-9]{1,3}$/D', trim($v)) === 1) {
             $v = (int) trim($v);
         }
 

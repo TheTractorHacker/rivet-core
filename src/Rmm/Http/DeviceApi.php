@@ -244,7 +244,7 @@ final class DeviceApi
             $tid = $req->query['transfer_id'] ?? '';
             $token = $req->header('x-transfer-token') ?? '';
             $offset = isset($req->query['offset']) && ctype_digit($req->query['offset']) && strlen($req->query['offset']) <= 12 ? (int) $req->query['offset'] : null;
-            if (preg_match(RemoteProtocol::TRANSFER_TOKEN_RE, $token) !== 1 || $offset === null) {
+            if (preg_match(RemoteProtocol::TRANSFER_TOKEN_RE . 'D', $token) !== 1 || $offset === null) {
                 throw new ApiError(422, 'invalid', 'transfer_id, offset and the X-Transfer-Token header are required.');
             }
             $method = strtoupper($req->method);
@@ -427,7 +427,7 @@ final class DeviceApi
                 throw new ApiError(422, 'invalid', 'A JSON object or form body with token and arch is required.');
             }
             $token = $body['token'] ?? null;
-            if ($token === null && preg_match('/^Bearer\s+(\S+)$/i', (string) $req->header('authorization'), $m) === 1) {
+            if ($token === null && preg_match('/^Bearer\s+(\S+)$/iD', (string) $req->header('authorization'), $m) === 1) {
                 $token = $m[1];
             }
             $arch = $body['arch'] ?? null;

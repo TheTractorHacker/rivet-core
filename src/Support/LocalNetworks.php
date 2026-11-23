@@ -14,7 +14,7 @@ use RivetCore\Webhooks\NetworkList;
  */
 final class LocalNetworks
 {
-    private const SKIP_NAME = '/^(lo|docker\d*|br-.*|veth.*|virbr.*|cni.*|flannel.*|cali.*|vboxnet.*|vmnet.*|tun\d*|tap\d*)$/i';
+    private const SKIP_NAME = '/^(lo|docker\d*|br-.*|veth.*|virbr.*|cni.*|flannel.*|cali.*|vboxnet.*|vmnet.*|tun\d*|tap\d*)$/iD';
 
     /**
      * @param (callable():(array<string,mixed>|false))|null $interfaces defaults to net_get_interfaces()
@@ -69,6 +69,6 @@ final class LocalNetworks
         }
         $bin = str_pad(decbin($n & 0xffffffff), 32, '0', STR_PAD_LEFT);
 
-        return preg_match('/^1*0*$/', $bin) === 1 ? substr_count($bin, '1') : null;
+        return preg_match('/^1*0*$/D', $bin) === 1 ? substr_count($bin, '1') : null;
     }
 }

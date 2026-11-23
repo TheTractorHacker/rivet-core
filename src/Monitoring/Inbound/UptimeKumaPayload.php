@@ -149,7 +149,7 @@ final class UptimeKumaPayload implements PayloadParserInterface
         if (is_int($v) && $v > 0) {
             return $v;
         }
-        if (is_string($v) && preg_match('/^[1-9][0-9]{0,17}$/', $v) === 1) {
+        if (is_string($v) && preg_match('/^[1-9][0-9]{0,17}$/D', $v) === 1) {
             return (int) $v;
         }
 
@@ -186,7 +186,7 @@ final class UptimeKumaPayload implements PayloadParserInterface
         if ($s === '' || strlen($s) > 40) {
             return null;
         }
-        if (preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:?\d{2})?$/', $s) !== 1) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:?\d{2})?$/D', $s) !== 1) {
             return null;
         }
         try {

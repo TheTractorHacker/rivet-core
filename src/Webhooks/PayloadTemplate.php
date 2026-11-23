@@ -32,7 +32,7 @@ final class PayloadTemplate
     public const ENCODINGS = ['json', 'text', 'form'];
     public const FILTERS = ['default', 'json', 'upper', 'lower', 'trim', 'truncate'];
 
-    private const PATH_RE = '/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*$/';
+    private const PATH_RE = '/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*$/D';
     private const JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE;
 
     /**
@@ -197,7 +197,7 @@ final class PayloadTemplate
         $filters = [];
         foreach ($segments as $i => $seg) {
             $seg = trim($seg);
-            if (!preg_match('/^([a-z]+)(?::(.*))?$/s', $seg, $fm)) {
+            if (!preg_match('/^([a-z]+)(?::(.*))?$/sD', $seg, $fm)) {
                 return 'Invalid filter in ' . $shown . '.';
             }
             $name = $fm[1];
@@ -206,12 +206,12 @@ final class PayloadTemplate
                 return 'Unknown filter "' . $name . '" in ' . $shown . '. Allowed: ' . implode(', ', self::FILTERS) . '.';
             }
             if ($name === 'default') {
-                if ($arg === null || preg_match('/^"((?:[^"\\\\]|\\\\.)*)"$/s', trim($arg), $am) !== 1) {
+                if ($arg === null || preg_match('/^"((?:[^"\\\\]|\\\\.)*)"$/sD', trim($arg), $am) !== 1) {
                     return 'The default filter needs a quoted value, e.g. |default:"n/a" in ' . $shown . '.';
                 }
                 $filters[] = ['default', preg_replace('/\\\\(.)/s', '$1', $am[1])];
             } elseif ($name === 'truncate') {
-                if ($arg === null || preg_match('/^\s*(\d{1,5})\s*$/', $arg, $am) !== 1 || (int) $am[1] < 1) {
+                if ($arg === null || preg_match('/^\s*(\d{1,5})\s*$/D', $arg, $am) !== 1 || (int) $am[1] < 1) {
                     return 'The truncate filter needs a length, e.g. |truncate:80 in ' . $shown . '.';
                 }
                 $filters[] = ['truncate', (int) $am[1]];

@@ -33,7 +33,7 @@ final class ParamSchema
 
     public static function validName(string $name): bool
     {
-        return preg_match('/^[a-z][a-z0-9_]{0,31}$/', $name) === 1 && !in_array($name, self::RESERVED, true) && !str_starts_with($name, 'rivet');
+        return preg_match('/^[a-z][a-z0-9_]{0,31}$/D', $name) === 1 && !in_array($name, self::RESERVED, true) && !str_starts_with($name, 'rivet');
     }
 
     /**
@@ -150,7 +150,7 @@ final class ParamSchema
         }
         foreach (array_keys($supplied) as $k) {
             if (!isset($by[(string) $k])) {
-                return [null, [], 'Unknown parameter ' . (is_string($k) && preg_match('/^[A-Za-z0-9_]{1,40}$/', $k) === 1 ? $k : '(invalid name)') . '.'];
+                return [null, [], 'Unknown parameter ' . (is_string($k) && preg_match('/^[A-Za-z0-9_]{1,40}$/D', $k) === 1 ? $k : '(invalid name)') . '.'];
             }
         }
         $out = [];
@@ -198,7 +198,7 @@ final class ParamSchema
 
                 return [$v, null];
             case 'int':
-                if (is_string($v) && preg_match('/^-?\d{1,15}$/', trim($v)) === 1) {
+                if (is_string($v) && preg_match('/^-?\d{1,15}$/D', trim($v)) === 1) {
                     $v = (int) trim($v);
                 }
                 if (!is_int($v)) {

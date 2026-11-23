@@ -118,7 +118,7 @@ final class RemoteProtocol
      */
     public static function serviceName(mixed $v, string $os): ?string
     {
-        if (!is_string($v) || preg_match(self::SERVICE_NAME_RE, $v) !== 1) {
+        if (!is_string($v) || preg_match(self::SERVICE_NAME_RE . 'D', $v) !== 1) {
             return null;
         }
         if ($os === 'linux') {
@@ -134,7 +134,7 @@ final class RemoteProtocol
 
     public static function processName(mixed $v): ?string
     {
-        if (!is_string($v) || preg_match(self::PROCESS_NAME_RE, $v) !== 1 || trim($v) === '' || trim($v) !== $v) {
+        if (!is_string($v) || preg_match(self::PROCESS_NAME_RE . 'D', $v) !== 1 || trim($v) === '' || trim($v) !== $v) {
             return null;
         }
 
@@ -143,7 +143,7 @@ final class RemoteProtocol
 
     public static function pid(mixed $v): ?int
     {
-        if (is_string($v) && preg_match('/^[1-9][0-9]{0,7}$/', $v) === 1) {
+        if (is_string($v) && preg_match('/^[1-9][0-9]{0,7}$/D', $v) === 1) {
             $v = (int) $v;
         }
         if (!is_int($v) || $v < self::PID_MIN || $v > self::PID_MAX) {

@@ -50,7 +50,7 @@ final class PanelLimits
         $int = static fn (string $k, int $default, int $min, int $max): int => isset($o[$k]) && is_int($o[$k]) ? max($min, min($max, $o[$k])) : $default;
         $ext = $d->allowedExtensions;
         if (isset($o['allowedExtensions']) && is_array($o['allowedExtensions'])) {
-            $ext = array_values(array_unique(array_filter(array_map(static fn ($e): string => is_string($e) ? strtolower(ltrim($e, '.')) : '', $o['allowedExtensions']), static fn (string $e): bool => preg_match('/^[a-z0-9]{1,6}$/', $e) === 1)));
+            $ext = array_values(array_unique(array_filter(array_map(static fn ($e): string => is_string($e) ? strtolower(ltrim($e, '.')) : '', $o['allowedExtensions']), static fn (string $e): bool => preg_match('/^[a-z0-9]{1,6}$/D', $e) === 1)));
         }
 
         return new self(
