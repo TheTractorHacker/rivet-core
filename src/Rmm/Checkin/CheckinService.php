@@ -54,6 +54,15 @@ final class CheckinService
     private const SHED_STALE_SAMPLE_S = 900;
     /** Above this many bytes of work a check-in is processed inline even in queued mode (the job payload column is text). */
     public const MAX_QUEUED_PAYLOAD_BYTES = 60000;
+    /**
+     * CORE-API-2 (red team 2026-11-21): the plausible range of each device-reported number. A reading outside it is REJECTED (treated as missing, never clamped,
+     * so a faulty agent is not hidden behind a believable value): percentages 0 to 100, network rates up to 10 Tbit/s, disk operations up to 1e9 per second,
+     * a disk queue up to 1e6.
+     */
+    private const PCT_MAX = 100.0;
+    private const NET_BPS_MAX = 1.0e13;
+    private const IOPS_MAX = 1.0e9;
+    private const QUEUE_MAX = 1.0e6;
 
     public function __construct(
         private readonly Sql $sql,
@@ -489,10 +498,10 @@ final class CheckinService
         }
 
         // ---- health columns on the edition's RMM link ----
-        $health = ['cpu' => self::num($metrics['cpu_pct'] ?? null), 'mem' => self::num($metrics['mem_pct'] ?? null), 'disk' => null];
+        $health = ['cpu' => self::num($metrics['cpu_pct'] ?? null, 0.0, self::PCT_MAX), 'mem' => self::num($metrics['mem_pct'] ?? null, 0.0, self::PCT_MAX), 'disk' => null];
         $disks = is_array($metrics['disk'] ?? null) ? $metrics['disk'] : [];
         foreach ($disks as $dk) {
-            $u = is_array($dk) ? self::num($dk['used_pct'] ?? null) : null;
+            $u = is_array($dk) ? self::num($dk['used_pct'] ?? null, 0.0, self::PCT_MAX) : null;
             if ($u !== null && ($health['disk'] === null || $u > $health['disk'])) {
                 $health['disk'] = $u;
             }
@@ -610,13 +619,13 @@ final class CheckinService
             $out[] = ['asset_id' => $assetId, 'key' => $key, 'instance' => $inst, 'value' => $val, 'at' => $at, 'label' => $label];
         };
         if ($m !== null) {
-            $add('cpu.utilization', null, self::num($m['cpu_pct'] ?? null));
-            $add('memory.utilization', null, self::num($m['mem_pct'] ?? null));
+            $add('cpu.utilization', null, self::num($m['cpu_pct'] ?? null, 0.0, self::PCT_MAX));
+            $add('memory.utilization', null, self::num($m['mem_pct'] ?? null, 0.0, self::PCT_MAX));
             $disks = is_array($m['disk'] ?? null) ? array_slice($m['disk'], 0, self::MAX_DISKS) : [];
             foreach ($disks as $d) {
                 if (is_array($d) && is_string($d['mount'] ?? null) && $d['mount'] !== '') {
                     $mt = mb_substr($d['mount'], 0, 64);
-                    $add('disk.utilization', $mt, self::num($d['used_pct'] ?? null), $mt);
+                    $add('disk.utilization', $mt, self::num($d['used_pct'] ?? null, 0.0, self::PCT_MAX), $mt);
                     if ($extended) {
                         $add('disk.free_bytes', $mt, self::intOrNull($d['free_bytes'] ?? null), $mt);
                         $add('disk.total_bytes', $mt, self::intOrNull($d['total_bytes'] ?? null), $mt);
@@ -627,8 +636,8 @@ final class CheckinService
                 $this->extendedSamples($m, $add);
             }
             // The agent reports BITS per second; the metric registry stores bytes per second.
-            $rx = self::num($m['net_rx_bps'] ?? null);
-            $tx = self::num($m['net_tx_bps'] ?? null);
+            $rx = self::num($m['net_rx_bps'] ?? null, 0.0, self::NET_BPS_MAX);
+            $tx = self::num($m['net_tx_bps'] ?? null, 0.0, self::NET_BPS_MAX);
             $add('network.rx_bytes_per_s', 'total', $rx === null ? null : $rx / 8, 'All adapters');
             $add('network.tx_bytes_per_s', 'total', $tx === null ? null : $tx / 8, 'All adapters');
         }
@@ -671,15 +680,14 @@ final class CheckinService
         $cores = $m['cpu_core_pct'] ?? null;
         if (is_array($cores) && array_is_list($cores)) {
             foreach (array_slice($cores, 0, self::MAX_CORES) as $i => $v) {
-                $add('cpu.core.utilization', (string) $i, self::num($v), 'Core ' . $i);
+                $add('cpu.core.utilization', (string) $i, self::num($v, 0.0, self::PCT_MAX), 'Core ' . $i);
             }
         }
-        $add('disk.read_iops', 'total', self::num($m['disk_read_iops'] ?? null), 'All disks');
-        $add('disk.write_iops', 'total', self::num($m['disk_write_iops'] ?? null), 'All disks');
-        $add('disk.queue_length', 'total', self::num($m['disk_queue'] ?? null), 'All disks');
+        $add('disk.read_iops', 'total', self::num($m['disk_read_iops'] ?? null, 0.0, self::IOPS_MAX), 'All disks');
+        $add('disk.write_iops', 'total', self::num($m['disk_write_iops'] ?? null, 0.0, self::IOPS_MAX), 'All disks');
+        $add('disk.queue_length', 'total', self::num($m['disk_queue'] ?? null, 0.0, self::QUEUE_MAX), 'All disks');
         $add('network.errors', 'total', self::intOrNull($m['net_errors'] ?? null), 'All adapters');
-        $bat = self::num($m['battery_pct'] ?? null);
-        $add('battery.charge_percent', null, $bat !== null && $bat <= 100 ? $bat : null);   // a percentage: out of range is dropped, never clamped
+        $add('battery.charge_percent', null, self::num($m['battery_pct'] ?? null, 0.0, self::PCT_MAX));   // a percentage: out of range is dropped, never clamped
     }
 
     // ------------------------------------------------------------------ clock skew
@@ -832,21 +840,29 @@ final class CheckinService
      */
     private static function cleanMetrics(array $m): array
     {
-        $o = ['cpu_pct' => self::num($m['cpu_pct'] ?? null), 'mem_pct' => self::num($m['mem_pct'] ?? null), 'disk' => [],
-            'net_rx_bps' => self::num($m['net_rx_bps'] ?? null), 'net_tx_bps' => self::num($m['net_tx_bps'] ?? null)];
+        $o = ['cpu_pct' => self::num($m['cpu_pct'] ?? null, 0.0, self::PCT_MAX), 'mem_pct' => self::num($m['mem_pct'] ?? null, 0.0, self::PCT_MAX), 'disk' => [],
+            'net_rx_bps' => self::num($m['net_rx_bps'] ?? null, 0.0, self::NET_BPS_MAX), 'net_tx_bps' => self::num($m['net_tx_bps'] ?? null, 0.0, self::NET_BPS_MAX)];
         $disks = is_array($m['disk'] ?? null) ? array_slice($m['disk'], 0, self::MAX_DISKS) : [];
         foreach ($disks as $d) {
             if (is_array($d) && is_string($d['mount'] ?? null)) {
-                $o['disk'][] = ['mount' => mb_substr($d['mount'], 0, 64), 'used_pct' => self::num($d['used_pct'] ?? null)];
+                $o['disk'][] = ['mount' => mb_substr($d['mount'], 0, 64), 'used_pct' => self::num($d['used_pct'] ?? null, 0.0, self::PCT_MAX)];
             }
         }
 
         return $o;
     }
 
-    private static function num(mixed $v): ?float
+    /**
+     * A device-reported number, or null when it is not a finite number or (CORE-API-2) lies outside [$min, $max]: rejected, never clamped.
+     */
+    private static function num(mixed $v, ?float $min = null, ?float $max = null): ?float
     {
-        return (is_int($v) || is_float($v)) && is_finite((float) $v) ? (float) $v : null;
+        if ((!is_int($v) && !is_float($v)) || !is_finite((float) $v)) {
+            return null;
+        }
+        $f = (float) $v;
+
+        return ($min !== null && $f < $min) || ($max !== null && $f > $max) ? null : $f;
     }
 
     private static function intOrNull(mixed $v): ?int
