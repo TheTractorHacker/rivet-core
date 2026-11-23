@@ -440,8 +440,14 @@ truncation marker. Concurrency is `max_concurrent_jobs` (default 1 = strictly se
 `-EncodedCommand` (command line limit) and fail with `cannot_launch`.
 
 **Redaction** (`internal/jobs/redact.go`) removes, before output leaves the machine: `Bearer`/`Basic` credentials, `password|secret|token|api key|...=value`
-assignments, JWTs, GitHub/Slack/AWS/OpenAI-style tokens, private key blocks, `user:pass@` URLs, and the literal device and enrollment tokens.
-It is a safety net, not a guarantee: scripts must not print secrets.
+assignments (also with a prefix such as `DB_PASSWORD=`; an unquoted value after a password-like name, `password`, `passwd`, `passphrase`, is masked to the
+end of the line, other names stop at the first space), JWTs, GitHub/Slack/AWS/OpenAI/Stripe (`sk_live_`, `sk_test_`, `rk_live_`) tokens, private key blocks,
+the password of `scheme://user:pass@` and `scheme://:pass@` URLs, `Cookie:`/`Set-Cookie:` header lines, the `sig=` of a URL query (Azure SAS), the path of a
+`hooks.slack.com/services/` webhook, `net use \\host\share <password>` and `/user:<name> <password>`, `--pass`/`--password <value>`, `-p <value>` for
+mysql/mariadb/sshpass/mongo (not psql, where `-p` is the port), and the literal device and enrollment tokens. The same function masks log lines and change
+text. The server's `Rmm\Crypto\Redactor` masks the same shapes: both are checked against the one vector file `src/Rmm/Crypto/redaction-vectors.json`.
+It is a safety net, not a guarantee: every rule needs a marker (a name, a header, a switch, a URL shape), so a secret printed bare, a cookie on a line that
+does not start with the header name, a `net use` with a quoted user name, or a URL password containing `/` stays visible. Scripts must not print secrets.
 
 **Account and privilege.** Jobs run as the service account, `LocalSystem`. That is a **high-privilege capability**: anyone who can submit a
 `powershell` job runs code as SYSTEM on the endpoint. It must be gated server-side by its own permission, separate from inventory viewing and

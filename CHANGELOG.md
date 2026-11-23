@@ -2,6 +2,10 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## [Unreleased]
+
+- **CORE-DATA-2 / NEW-3 (agent side, Chain E)** the agent's `jobs.Redact` (job output, remote-tool results, log lines, change text) now also masks the password of `scheme://:pass@` URLs (empty user name), `Cookie:`/`Set-Cookie:` header lines, `net use \\host\share <password>` and `/user:<name> <password>`, `--pass`/`--password <value>`, `-p <value>` for mysql/mariadb/sshpass/mongo, `sk_live_`/`sk_test_`/`rk_live_` keys, the `sig=` of a URL query, `hooks.slack.com/services/` paths and prefixed names such as `DB_PASSWORD=`; an unquoted value after `password`/`passwd`/`passphrase` is masked to the end of the line. New shared vector file `src/Rmm/Crypto/redaction-vectors.json` (`[{name, input, expect_masked, expect_kept}]`), read by the Go test and by the PHP `Redactor` test.
+
 ## 1.0.0-rc.78 (inbound monitoring webhooks: Uptime Kuma; no migration)
 
 Additive only: no existing signature, constant or table changed. Core ships the shared logic; each edition adds the public endpoint, settings page, incident table and ticket adapter (`docs/design/edition-prompts-inbound-monitoring.md`).
