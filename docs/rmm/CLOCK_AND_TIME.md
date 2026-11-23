@@ -32,3 +32,12 @@ On Linux: `timedatectl status`, `timedatectl set-timezone Zone/Name`, `timedatec
 * It applies a correction only when the difference exceeds 60 seconds, never more than 24 hours, and only to what it sends. The server still checks every time against its own clock and window.
 * The estimate is kept in the agent's state directory (`clock_skew_s`), so a restart, or the service starting right after `enroll`, stamps correctly from the first check-in.
 * An agent older than rc.23 has none of this and is still limited by the server window (now 15 minutes).
+* **Signed job expiry uses a trusted floor, not the correction alone (CORE-AGENT-3).** The correction comes from the unsigned `server_time` of the
+  server's answers (or their `Date` header). A response that claimed a time far in the past could otherwise move the agent's clock back and make a signed
+  job that expired hours ago look current again (red team 2026-11-21, Chain H). The agent therefore checks a job's `expires_at` and `issued_at` against
+  the later of the corrected clock and the **server-time floor**: the latest server time it has ever seen, plus the time elapsed since on the PC's
+  monotonic clock. The floor only moves forward and is kept in `state.json` (`server_time_floor`, written at most every 5 minutes; a new enrolment starts a
+  new one). A PC whose clock or zone is wrong is unaffected (its offset and the floor come from the same answers). A server time that goes backwards by
+  more than 10 minutes is logged once an hour ("the server's time went backwards"). Side effect to know: if the SERVER's clock was ahead and is
+  corrected backwards by more than a job's lifetime, jobs created in the next stretch (as long as the correction) are refused as expired on devices that
+  saw the wrong time; they can be queued again once that window has passed.

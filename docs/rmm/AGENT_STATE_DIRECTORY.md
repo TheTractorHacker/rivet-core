@@ -63,3 +63,23 @@ No operator action. The temporary file is now created, chmodded and moved relati
 # Go toolchain floor (CORE-25)
 
 `endpoint-agent/go.mod` now says `go 1.27.4`; `make` refuses an older Go (`check-go`), CI uses `check-latest`, and `scripts/build-host.sh` builds in `golang:1.27.4` (it already pulled its image tag). Agent binaries built before this change (go1.27.1) are unchanged: rebuild and republish them to get the standard-library fixes.
+
+# Linux state and install directory ownership (CORE-AGENT-5)
+
+Red team 2026-11-21. The Linux counterpart of the Windows owner check above. Before the agent uses its state directory (`/var/lib/rivetit-agent`, or
+`--state-dir` / `RIVETIT_AGENT_STATE_DIR`) and before `install` / `setup` copies the binary into the install directory (`/opt/rivetit-agent` or
+`--install-dir`), it checks (`internal/store/perm_linux.go`):
+
+* the directory itself, read with `lstat`, is a real directory, not a symbolic link;
+* it, and every folder above it, is owned by root or by the account the agent runs as (so tests and non-root runs keep working);
+* none of them is writable by other accounts: group write is accepted only for the root group (or the invoking account's own group), world write
+  only on a folder ABOVE it that has the sticky bit (`/tmp`), where others cannot rename an entry they do not own.
+
+Why: whoever can write a directory can rename or replace the root-owned files inside it (the binary, `config.json`, `device.token`, `ca.pem`), whatever
+their own owner and mode. Before this check, a root install into a directory a local user had created first (the PoC used `/home/nobody/bin` and
+`/home/nobody/st`) let that user replace the binary the root service runs.
+
+A refused directory stops `install` (nothing is copied or enrolled) or the service start with a message naming the path, the owner or the mode, and
+what to do (`chown root:root`, `chmod go-w`, or another directory). The default directories are created by root and always pass. After a self-update,
+a new version that refuses an existing custom directory exits before it runs, and the CORE-DS-11 early-rollback restores the previous binary, so a
+device with such a layout stays on its old version (the update is reported as failed) until the directory is fixed.

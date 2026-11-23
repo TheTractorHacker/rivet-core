@@ -6,15 +6,24 @@ GO        ?= go
 VERSION   ?= 0.0.0-dev.$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 # RELEASE_KEYS: comma separated base64 ed25519 release PUBLIC keys compiled in as the update trust anchor (CORE-DS-26); empty = enforcement off.
+# The private half is generated and kept OFFLINE (docs/rmm/AGENT_BUILD.md "Release signing key"); it never goes to CI or this repository.
 RELEASE_KEYS ?=
 # TRUST_KEYS: the instance signing public key(s) that stamp installers for this build (CORE-DS-20); empty = trailer protected by its SHA-256 only.
 TRUST_KEYS ?=
-LDFLAGS   := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X rivetit-agent/internal/update.EmbeddedReleaseKeys=$(RELEASE_KEYS) -X rivetit-agent/internal/embed.EmbeddedTrustKeys=$(TRUST_KEYS)
+# RELEASE_BUILD=1 stamps the binary as a release build: with no trust anchor it refuses every self-update (CORE-AGENT-1, Chain C). CI sets it on agent-v*
+# tags and release dispatches only, together with RELEASE_KEYS; dev, test and build-host builds leave it empty and behave as before.
+RELEASE_BUILD ?=
+LDFLAGS   := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X rivetit-agent/internal/update.EmbeddedReleaseKeys=$(RELEASE_KEYS) -X rivetit-agent/internal/embed.EmbeddedTrustKeys=$(TRUST_KEYS) -X rivetit-agent/internal/update.ReleaseBuild=$(RELEASE_BUILD)
 BUILDFLAGS:= -trimpath -buildvcs=false
 DIST      := dist
 export CGO_ENABLED := 0
 
-.PHONY: check-go all build windows linux tarballs packages msi msi-image test vet lint fuzz e2e clean checksums dist clean-dist syso devtools sim
+.PHONY: check-go all build windows linux tarballs packages msi msi-image test vet lint fuzz e2e clean checksums dist clean-dist syso devtools sim check-release-keys
+
+# CI-ONLY release gate (never part of all/build/dist, so dev and PR builds keep working without keys): RELEASE_KEYS/TRUST_KEYS must be well-formed public
+# keys, a RELEASE_BUILD=1 build must carry at least one release key, and every binary in $(DIST) must embed them. See scripts/check-release-keys.sh.
+check-release-keys:
+	RELEASE_KEYS='$(RELEASE_KEYS)' TRUST_KEYS='$(TRUST_KEYS)' RELEASE_BUILD='$(RELEASE_BUILD)' ./scripts/check-release-keys.sh artifacts $(DIST)
 
 all: vet test build
 

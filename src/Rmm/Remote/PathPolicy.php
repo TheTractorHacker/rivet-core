@@ -22,9 +22,20 @@ final class PathPolicy
     public const NO_ALLOWED_ROOTS = 'no_allowed_roots';
     public const INVALID = 'invalid';
 
-    private const LINUX_DENY_PREFIX = ['/proc', '/sys', '/dev', '/run/secrets', '/root/.ssh', '/etc/sudoers.d', '/etc/rivetit', '/etc/rivetit-agent', '/var/lib/rivetit', '/var/lib/rivetit-agent', '/etc/ssl/private'];
+    /**
+     * Besides credentials: the agent's own program folder and systemd unit (with drop-ins), and the Mesh agent's install and units (CORE-AGENT-6). A file
+     * sent there replaces the agent (or the remote-access agent) and gets around the release key that protects self-update. The agent denies the same
+     * and also the folder of its running executable, which only the device knows.
+     */
+    private const LINUX_DENY_PREFIX = ['/proc', '/sys', '/dev', '/run/secrets', '/root/.ssh', '/etc/sudoers.d', '/etc/rivetit', '/etc/rivetit-agent', '/var/lib/rivetit', '/var/lib/rivetit-agent', '/etc/ssl/private',
+        '/opt/rivetit-agent',
+        '/etc/systemd/system/rivetit-agent.service', '/etc/systemd/system/rivetit-agent.service.d', '/etc/systemd/system/multi-user.target.wants/rivetit-agent.service',
+        '/lib/systemd/system/rivetit-agent.service', '/lib/systemd/system/rivetit-agent.service.d', '/usr/lib/systemd/system/rivetit-agent.service', '/usr/lib/systemd/system/rivetit-agent.service.d',
+        '/run/systemd/system/rivetit-agent.service', '/run/systemd/system/rivetit-agent.service.d',
+        '/usr/local/mesh_services', '/etc/systemd/system/meshagent.service', '/etc/systemd/system/meshagent.service.d', '/lib/systemd/system/meshagent.service', '/usr/lib/systemd/system/meshagent.service'];
     private const LINUX_DENY_EXACT = ['/etc/shadow', '/etc/gshadow', '/etc/sudoers', '/etc/security/opasswd', '/etc/shadow-', '/etc/gshadow-'];
-    private const DENY_NAME_RE = '/^(id_rsa.*|id_ed25519.*|id_ecdsa.*|id_dsa.*|.*\.(pem|key|p12|pfx|kdbx|keystore|jks)|ssh_host_.*|ntds\.dit|pagefile\.sys|hiberfil\.sys|swapfile\.sys)$/i';
+    /** Also the agent binary and its self-update siblings (.new, .prev, .failed) and the Mesh agent's identity files (.msh, .db) in any folder. */
+    private const DENY_NAME_RE = '/^(id_rsa.*|id_ed25519.*|id_ecdsa.*|id_dsa.*|.*\.(pem|key|p12|pfx|kdbx|keystore|jks)|ssh_host_.*|ntds\.dit|pagefile\.sys|hiberfil\.sys|swapfile\.sys|rivetit-agent(\.exe)?(\.(new|prev|failed))?|meshagent\.msh|meshagent\.db.*)$/i';
     private const DENY_ELEMENT = ['.ssh', '.gnupg'];
 
     /**
@@ -158,9 +169,10 @@ final class PathPolicy
             }
         }
         if ($windows) {
-            // <drive>:\Windows\System32\config, \Windows\NTDS, \ProgramData\RivetIT and the agent's own folder
+            // <drive>:\Windows\System32\config, \Windows\NTDS, \ProgramData\RivetIT, the agent's program folder (Program Files\RivetIT) and the Mesh agent's
             $lower = array_map('strtolower', array_slice($e, 1));
-            foreach ([['windows', 'system32', 'config'], ['windows', 'ntds'], ['windows', 'repair'], ['programdata', 'rivetit'], ['programdata', 'rivetit-agent']] as $deny) {
+            foreach ([['windows', 'system32', 'config'], ['windows', 'ntds'], ['windows', 'repair'], ['programdata', 'rivetit'], ['programdata', 'rivetit-agent'],
+                ['program files', 'rivetit'], ['program files (x86)', 'rivetit'], ['program files', 'mesh agent'], ['program files (x86)', 'mesh agent']] as $deny) {
                 if (self::isUnder($lower, $deny, false)) {
                     return true;
                 }
@@ -180,6 +192,10 @@ final class PathPolicy
         if (str_starts_with($joined, '/etc/ssh/ssh_host_')) {
             return true;
         }
+        // /opt/meshagent*: the Mesh agent folders the agent itself looks for
+        if (preg_match('#^/opt/meshagent[^/]*(/|$)#', $joined) === 1) {
+            return true;
+        }
 
         return false;
     }
@@ -191,7 +207,7 @@ final class PathPolicy
             self::NOT_ABSOLUTE => 'Give the full path of the file, starting at the root of the disk (for example /var/log/syslog or C:\\Logs\\app.log).',
             self::TRAVERSAL => 'The path must not contain .. or empty parts.',
             self::NOT_ALLOWED => 'That file is not inside a folder an administrator allowed for file transfer.',
-            self::DENY_LIST => 'That file is on the never-transfer list (password databases, private keys, system credential stores and the agent\'s own files).',
+            self::DENY_LIST => 'That file is on the never-transfer list (password databases, private keys, system credential stores, and the agent\'s and the Mesh agent\'s own program, service and state files).',
             self::NO_ALLOWED_ROOTS => 'No folder is allowed for file transfer yet. An administrator must add at least one folder first.',
             default => 'That path is not valid.',
         };

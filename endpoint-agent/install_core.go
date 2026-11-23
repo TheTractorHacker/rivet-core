@@ -84,6 +84,16 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 			return installResult{Kind: instFail, Msg: "the installer file is not locked against changes (installer not pinned); refusing to read it by path"}
 		}
 	}
+	if p.installDir == "" {
+		return installResult{Kind: instFail, Msg: "no install directory"}
+	}
+	// Windows: the program directory gets an explicit owner and a protected SYSTEM/Administrators DACL at creation, and a directory that already exists
+	// under another owner is refused, so a standard user can never replace the service binary or the .new/.prev files (CORE-DS-47). Linux: a symbolic
+	// link, or a directory (or any folder above it) owned by another account or writable by others, is refused (CORE-AGENT-5). Checked BEFORE anything is
+	// configured or enrolled, so a refused directory does not use up the one-shot enrollment token.
+	if err := store.EnsureProtectedDir(p.installDir); err != nil {
+		return installResult{Kind: instFail, Msg: err.Error()}
+	}
 	st, err := openStore(p.stateDir)
 	if err != nil {
 		return installResult{Kind: instConfig, Msg: err.Error()}
@@ -137,15 +147,7 @@ func performInstall(p installParams, ops sysOps, log *slog.Logger) installResult
 		return installResult{Kind: instNoToken, Msg: "an enrollment token is required for a first install"}
 	}
 
-	// 2. binary: only the unstamped bytes ever reach the program directory
-	if p.installDir == "" {
-		return installResult{Kind: instFail, Msg: "no install directory"}
-	}
-	// Windows: the program directory gets an explicit owner and a protected SYSTEM/Administrators DACL at creation, and a directory that already exists
-	// under another owner is refused, so a standard user can never replace the service binary or the .new/.prev files (CORE-DS-47).
-	if err := store.EnsureProtectedDir(p.installDir); err != nil {
-		return installResult{Kind: instFail, Msg: err.Error()}
-	}
+	// 2. binary: only the unstamped bytes ever reach the program directory (verified before enrolling, above)
 	if err := os.MkdirAll(p.installDir, 0o755); err != nil {
 		return installResult{Kind: instFail, Msg: err.Error()}
 	}

@@ -76,6 +76,32 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Red team 2026-11-21, endpoint agent fixes (unreleased; no migration)
+
+Agent (Go) side of the 2026-11-21 red-team findings. Nothing is required of an edition's PHP code; the items below are for whoever releases and runs agents.
+
+* **CORE-AGENT-1 (act before the next `agent-v*` tag).** Generate the release signing key pair OFFLINE and put only its public half in the repository
+  variable `AGENT_RELEASE_KEYS` ([AGENT_BUILD.md, "Release signing key"](docs/rmm/AGENT_BUILD.md)). Without it the release gate fails the tag build on
+  purpose. From the first anchored release on, every published agent binary needs its offline release signature in the edition (Agent binaries), or
+  anchored agents refuse the update. Agents already deployed are unaffected until they install an anchored build. Self-hosted builds stamped
+  `RELEASE_BUILD=1` without `RELEASE_KEYS` refuse every self-update.
+* **CORE-AGENT-6.** File transfer now refuses the agent's own program files, service unit and the Mesh agent's identity even inside an allowed folder,
+  and the server refuses them as transfer roots. An administrator who used `file_put` to replace the agent binary by hand must use a package upgrade,
+  the installer or self-update instead.
+* **CORE-AGENT-2.** An `http`, `port` or `cert` check aimed at a link-local or cloud metadata address (169.254.x.x and the like) now reports
+  `unknown` "destination refused" instead of running, and the server refuses such literal targets when a check is saved. Nothing to do unless a
+  check deliberately watched such an address; `ntp` checks against Amazon Time Sync (169.254.169.123) keep working.
+* **CORE-AGENT-5 (Linux custom directories).** A Linux agent now refuses a `--state-dir` / `--install-dir` that is a symbolic link, is owned by another
+  account, or sits in a folder other accounts can write. Default paths are unaffected. If a fleet used such a layout, fix the directory
+  (`chown root:root`, `chmod go-w`) before rolling out this agent version; an agent that is updated into a refused layout rolls back to its previous
+  binary (CORE-DS-11) and reports the update as failed.
+* **CORE-AGENT-4 (agent side).** After this update an agent refuses unsigned check definitions once its server has sent a fully signed check list
+  (every current Core server does). Nothing to do for Core-based editions. A custom or very old server that mixes signed and unsigned checks keeps
+  working (a mixed list never switches the rule on); to undo it on one device set `"allow_unsigned_checks": true` in `config.json`.
+* **Monitoring-only devices.** A device that must never run anything from the server sets all three of `disable_jobs`, `disable_script_checks` and
+  `disable_update` in its `config.json` (endpoint-agent/README.md, "Monitoring-only profile"). `disable_jobs` alone still lets the server replace the
+  agent binary (Chain C).
+
 ## Adopting the Rivet Console redeem and events routes (1.0.0-rc.70, provisional; migration 0051; optional, off by default)
 
 Needs the remote session policy / Rivet Console release (rc.68 and rc.69, PR #130) first. Nothing is required: with `remote_console` off (the default) every existing call behaves as before.

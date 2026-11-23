@@ -6,8 +6,9 @@ Status: agent side implemented (endpoint-agent PR E). Server side is a hand-off 
 The instance signature of an update (`Signer::signManifest`) covers only the lower-case SHA-256 text. Whoever can write the database, or holds the instance key, can offer any previously signed binary under any version, os, arch or `min_version`, and a leaked instance key cannot be rotated out remotely.
 
 ## Keys
-* **Release key**: an Ed25519 key pair held offline by the release owner (never on the server). Generate with any Ed25519 tool; the public key is base64 of the 32 raw bytes.
-* **Trust anchor**: the public key(s) compiled into the agent: `make ... RELEASE_KEYS=<b64>[,<b64>]` (ldflag `rivetit-agent/internal/update.EmbeddedReleaseKeys`). An agent with no embedded key and no rolled-over key skips the check (migration, see below).
+* **Release key**: an Ed25519 key pair held offline by the release owner (never on the server, never in CI). The public key is base64 of the 32 raw bytes. Generation, CI configuration, signing and rotation with OpenSSL: docs/rmm/AGENT_BUILD.md, "Release signing key and trust anchors".
+* **Trust anchor**: the public key(s) compiled into the agent: `make ... RELEASE_KEYS=<b64>[,<b64>]` (ldflag `rivetit-agent/internal/update.EmbeddedReleaseKeys`). CI passes it on every build from the repository variable `AGENT_RELEASE_KEYS`; the release gate `scripts/check-release-keys.sh` fails a release (agent-v* tag) without it. An agent with no embedded key and no rolled-over key skips the check (migration, see below), UNLESS it is a release-stamped build.
+* **Release stamp** (CORE-AGENT-1, Chain C step 2): `make ... RELEASE_BUILD=1` (ldflag `rivetit-agent/internal/update.ReleaseBuild=1`, set by CI on releases only). A release-stamped binary that trusts no release key refuses every update (`ErrNoReleaseKey`) instead of trusting the instance key alone. Unstamped binaries (dev, test, build host, everything already deployed) are unchanged. `rivetit-agent version --trust` shows both.
 
 ## Signed message (what the release key signs)
 `"rivetit-update-manifest-v1" + "\n" + canonical_json` where canonical JSON has exactly these keys, sorted, no whitespace, all strings:
@@ -33,7 +34,7 @@ signed by a key the agent currently trusts over `"rivetit-release-rollover-v1" +
 To retire a leaked key K1: sign `{new_key: K2, revoke: [K1], seq: N+1}` with a still-trusted key (K1 itself if K1 is the only one: do this before the attacker does). The server stores and relays the message and cannot create one.
 
 ## Local switch
-`config.json` `"disable_update": true` stops self-update entirely (independent of `disable_jobs`, which deliberately does not).
+`config.json` `"disable_update": true` stops self-update entirely (independent of `disable_jobs`, which deliberately does not). A monitoring-only device sets `disable_jobs`, `disable_script_checks` and `disable_update` together (endpoint-agent/README.md, "Monitoring-only profile").
 
 ## Migration
 1. Ship agents with `RELEASE_KEYS` empty plus the server change: nothing changes.

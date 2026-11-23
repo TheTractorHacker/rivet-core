@@ -333,7 +333,7 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 | File | Contents |
 |---|---|
-| `config.json` | operator config (also `disable_change`, `change_extra_roots`): `server_url`, `ca_file`, `pin_spki_sha256`, `department`, `mesh_node_id` (override), `max_concurrent_jobs` (default 1), `disable_jobs`, `disable_script_checks`, `update_hosts`, `buffer_max_samples` (100), `buffer_max_bytes` (1 MiB), `software_store_apps` (Windows: also list Microsoft Store apps in the software inventory; default off) |
+| `config.json` | operator config (also `disable_change`, `change_extra_roots`): `server_url`, `ca_file`, `pin_spki_sha256`, `department`, `mesh_node_id` (override), `max_concurrent_jobs` (default 1), `disable_jobs`, `disable_script_checks`, `disable_update`, `require_signed_config`, `allow_unsigned_checks` (undo the learned signed-checks rule), `checks_block_private` (network checks also refuse loopback and private addresses), `update_hosts`, `buffer_max_samples` (100), `buffer_max_bytes` (1 MiB), `software_store_apps` (Windows: also list Microsoft Store apps in the software inventory; default off) |
 | `state.json` | `install_id`, `device_id`, status, `seq`, pinned `signing_public_key`, server config (checks/intervals), last check-in/error, update failure |
 | `device.token` | the device credential: `v1:dpapi:<base64>` on Windows (`CryptProtectData`, machine scope + entropy), `v1:plain:<token>` `0600` on Linux |
 | `enroll.token` | one-shot enrollment token, only between an offline install and the first successful enrollment |
@@ -346,7 +346,22 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 Local kill switches (set in `config.json` by an administrator of the endpoint): `disable_jobs` (never execute server jobs) and
 `disable_script_checks`, plus (RMM Phases 6 and 8) `disable_remote` (the service, process and file tools fail with `disabled_locally`, and the agent stops announcing
-`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_software` (software_detect and software_install fail with `disabled_locally`; `software:detect`, `software:install` and `job:software_*` are not announced), `disable_patching` (patch_scan, patch_install and patch_configure fail with `disabled_locally`; `patch:scan`, `patch:install`, `patch:configure` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` and `logs:presets` are not announced) and `disable_change` (never watch the registry, files, groups or tasks, and forget what was kept; `change:monitor` is not announced). `change_extra_roots` (a list of absolute folders) adds file roots a signed change-monitoring file watch may read; the server can never widen that list and an extra root never unlocks a credential file.
+`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_software` (software_detect and software_install fail with `disabled_locally`; `software:detect`, `software:install` and `job:software_*` are not announced), `disable_patching` (patch_scan, patch_install and patch_configure fail with `disabled_locally`; `patch:scan`, `patch:install`, `patch:configure` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` and `logs:presets` are not announced) and `disable_change` (never watch the registry, files, groups or tasks, and forget what was kept; `change:monitor` is not announced). `change_extra_roots` (a list of absolute folders) adds file roots a signed change-monitoring file watch may read; the server can never widen that list and an extra root never unlocks a credential file. `disable_update` stops self-update entirely, and `require_signed_config` refuses unsigned check definitions and log configurations even from a server that does not sign them.
+
+**Monitoring-only profile.** A device that must never run anything the server sends needs THREE switches together: `disable_jobs` alone still lets the
+server (or anyone holding its signing key) replace the agent binary through self-update and run script checks (red team 2026-11-21, Chain C). Set:
+
+```json
+{ "disable_jobs": true, "disable_script_checks": true, "disable_update": true }
+```
+
+(merged into the existing `config.json`, then restart the service), and add `"require_signed_config": true` so injected unsigned http/port checks are
+refused too. Such a device is updated by hand (reinstall or package upgrade). Every other switch above only narrows what `disable_jobs` already blocks.
+
+**Trust anchors of a build.** `rivetit-agent version --trust` prints `release_keys=<n> trust_keys=<m> release_build=<true|false>`: how many offline
+release public keys (`RELEASE_KEYS`, CORE-DS-26) and installer trust keys (`TRUST_KEYS`, CORE-DS-20) the binary has compiled in, and whether it is a
+release-stamped build. A release build with `release_keys=0` refuses every self-update. Key generation, rotation and the release gate:
+[docs/rmm/AGENT_BUILD.md](../docs/rmm/AGENT_BUILD.md), "Release signing key".
 
 ## Patch management (RMM Phase 4)
 
@@ -404,6 +419,16 @@ every check is included in every check-in. A failing collector gives `unknown`, 
 | `systemd_failed` | `ignore` (unit names, `prefix*`), `max_failed` (0) | Linux only: failed units; `value` = count |
 | `inodes` | optional `mount`, `warn_pct` 85, `fail_pct` 95 | Linux only: worst inode use of the mounts that have an inode table; `value` = percent |
 
+**Destination policy of the network checks (CORE-AGENT-2).** The `http`, `port` and `cert` (`host`) checks never connect to a link-local or cloud
+metadata / host-agent address: `169.254.0.0/16`, `fe80::/10`, `168.63.129.16` (Azure WireServer), `100.100.100.200` (Alibaba), `fd00:ec2::254` (AWS),
+`fd20:ce::254` (GCP), also written as IPv4-mapped or NAT64 IPv6. The decision is made in the dialer on the RESOLVED address of every connection, so a
+name that resolves (or is re-bound) to such an address and every redirect hop are covered; redirects stop after 5; a literal address in the URL is
+refused before any request; behind an `HTTP(S)_PROXY` the target name is also resolved by the agent first (best effort, the proxy resolves it again).
+A refused check reports `unknown` ("destination refused ..."), never ok/fail, so it cannot be used as a yes/no oracle. Loopback and private addresses
+stay allowed (monitoring internal services is the point); `"checks_block_private": true` in `config.json` refuses loopback, RFC 1918, CGNAT,
+unique-local and unspecified addresses too. `ntp` (UDP, which reads back nothing but a time, and must keep reaching Amazon Time Sync at
+169.254.169.123) and `ping` (the system tool) are not filtered. The server's `CheckCatalog` refuses the literal forms up front.
+
 The extended types (everything from `cpu` down) are the RMM Phase 3 additions: the agent announces `check:<type>` for the ones that exist on its platform, the server offers a type only to an agent that announced it, and the result may carry a numeric `value` for the server's threshold tiers (`params.thresholds`, `params.flap`, `params.ignore_parent` are read by the server and ignored here). Parsers have fixture tests (`internal/collect/testdata/checks`); the Windows commands (`powershell.exe`, `tasklist`, `ping`) are cross-compiled and vetted, not run in CI.
 
 `agent_update` is always reported: `ok` ("agent 1.0.0") or `fail` with the last update failure.
@@ -414,6 +439,11 @@ minus `signature`, the same rule as jobs; vector `check_definition` in the serve
 script checks, and any other check whose signature is present but invalid, report `unknown` ("refused") and are never executed. `disable_script_checks`
 in `config.json` is a local kill switch. Note that a server holding the signing key can still sign malicious script checks: the server's signing key is
 the root of trust for script execution (jobs and checks alike).
+Other check types are refused unsigned once the server announces `config.signed_config` or `require_signed_config` is set, and (CORE-AGENT-4) as soon
+as this server has delivered one non-empty check list in which EVERY check verified: Core signs every check type whatever `signed_config` says, so an
+unsigned check after that can only have been added on the way (a TLS-inspecting proxy, Chain G) and reports `unknown` ("unsigned check refused").
+The learned requirement is kept in `state.json` (`checks_signed_seen`), forgotten by a new enrolment, and turned off (only it) by
+`"allow_unsigned_checks": true` in `config.json`; a server that never signed everything (an older one, the e2e fake server) keeps the old behaviour.
 
 ## Jobs
 
@@ -440,8 +470,14 @@ truncation marker. Concurrency is `max_concurrent_jobs` (default 1 = strictly se
 `-EncodedCommand` (command line limit) and fail with `cannot_launch`.
 
 **Redaction** (`internal/jobs/redact.go`) removes, before output leaves the machine: `Bearer`/`Basic` credentials, `password|secret|token|api key|...=value`
-assignments, JWTs, GitHub/Slack/AWS/OpenAI-style tokens, private key blocks, `user:pass@` URLs, and the literal device and enrollment tokens.
-It is a safety net, not a guarantee: scripts must not print secrets.
+assignments (also with a prefix such as `DB_PASSWORD=`; an unquoted value after a password-like name, `password`, `passwd`, `passphrase`, is masked to the
+end of the line, other names stop at the first space), JWTs, GitHub/Slack/AWS/OpenAI/Stripe (`sk_live_`, `sk_test_`, `rk_live_`) tokens, private key blocks,
+the password of `scheme://user:pass@` and `scheme://:pass@` URLs, `Cookie:`/`Set-Cookie:` header lines, the `sig=` of a URL query (Azure SAS), the path of a
+`hooks.slack.com/services/` webhook, `net use \\host\share <password>` and `/user:<name> <password>`, `--pass`/`--password <value>`, `-p <value>` for
+mysql/mariadb/sshpass/mongo (not psql, where `-p` is the port), and the literal device and enrollment tokens. The same function masks log lines and change
+text. The server's `Rmm\Crypto\Redactor` masks the same shapes: both are checked against the one vector file `src/Rmm/Crypto/redaction-vectors.json`.
+It is a safety net, not a guarantee: every rule needs a marker (a name, a header, a switch, a URL shape), so a secret printed bare, a cookie on a line that
+does not start with the header name, a `net use` with a quoted user name, or a URL password containing `/` stays visible. Scripts must not print secrets.
 
 **Account and privilege.** Jobs run as the service account, `LocalSystem`. That is a **high-privilege capability**: anyone who can submit a
 `powershell` job runs code as SYSTEM on the endpoint. It must be gated server-side by its own permission, separate from inventory viewing and
@@ -465,7 +501,9 @@ wire contract is `docs/rmm/PROTOCOL.md` 3.6 and 3.7, the operator guide `docs/rm
   failures; `file_put` downloads ranges into a temporary file (`.rivetit-xfer-<id>.tmp`, created exclusively, mode 0600) next to the destination, checks the byte count and the SHA-256 against the signed job and the server's headers,
   then renames it into place (an existing file is replaced only with `overwrite`, and a symlink destination is refused). The path policy is pure and tested for both operating systems on any host: absolute path only, no `..`, no
   alternate data streams, short names or reserved device names on Windows, symbolic links resolved before the decision, whole-element comparison against the signed allow list, and an always-on deny list (shadow, sudoers, SSH host keys,
-  private keys and certificates, credential stores, SAM and NTDS, the agent's own state folder) that wins over the allow list.
+  private keys and certificates, credential stores, SAM and NTDS, the agent's own state folder, and (CORE-AGENT-6) the agent's own binary, its `.new`/`.prev`/`.failed`
+  siblings, its install folder found from the running executable, its systemd unit and drop-ins, and the Mesh agent's install and identity files) that wins over the allow list.
+  Self-update does not go through this policy. `file_put` remains root/SYSTEM-equivalent: anything the list does not name can be replaced.
 * **Results** are one compact JSON document per job; lists are shortened to fit `max_output_bytes` (`"truncated": true`) and never cut mid-text; strings inside the document are redacted one by one so it stays valid JSON.
 
 **Log collection** (`internal/logs`). Off until a check-in response offers the feature `logs:collect` together with `config.logs`; the agent stops the moment a response does not. Linux: `journalctl --output=json` with

@@ -60,6 +60,9 @@ type Sys struct {
 	Client func(timeout time.Duration, verifyTLS bool, follow bool) *http.Client
 	Sleep  func(ctx context.Context, d time.Duration)
 	Now    func() time.Time
+	// StrictDest (config.json checks_block_private) makes the destination policy refuse loopback and private addresses too; link-local and cloud
+	// metadata addresses are always refused (CORE-AGENT-2, destpolicy.go).
+	StrictDest bool
 }
 
 func (s *Sys) now() time.Time {
@@ -86,23 +89,29 @@ func (c *Collector) sys() *Sys {
 	if c.X != nil {
 		return c.X
 	}
-	return DefaultSys()
+	x := DefaultSys()
+	if c.Cfg != nil {
+		x.StrictDest = c.Cfg().ChecksBlockPrivate
+	}
+	return x
 }
 
-// DefaultSys is the real operating system.
+// DefaultSys is the real operating system. Every connection a check makes goes through the destination policy (destpolicy.go).
 func DefaultSys() *Sys {
-	return &Sys{
+	s := &Sys{
 		GOOS:     goos(),
 		Exec:     execCapped,
 		ReadFile: readFileCapped,
 		ReadDir:  os.ReadDir,
-		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, network, addr)
-		},
-		Statfs: statfsInodes,
-		Client: defaultHTTPClient,
+		Statfs:   statfsInodes,
 	}
+	s.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return guardedDialer(s.StrictDest).DialContext(ctx, network, addr)
+	}
+	s.Client = func(timeout time.Duration, verifyTLS, follow bool) *http.Client {
+		return defaultHTTPClientPolicy(timeout, verifyTLS, follow, s.StrictDest)
+	}
+	return s
 }
 
 const maxExecOutput = 256 << 10
@@ -198,23 +207,23 @@ func readFileCapped(path string) ([]byte, error) {
 }
 
 func defaultHTTPClient(timeout time.Duration, verifyTLS, follow bool) *http.Client {
+	return defaultHTTPClientPolicy(timeout, verifyTLS, follow, false)
+}
+
+// defaultHTTPClientPolicy is the http check's client with the destination policy (resolved address checked on every connection, redirects capped at
+// maxRedirects and checked per hop).
+func defaultHTTPClientPolicy(timeout time.Duration, verifyTLS, follow, strict bool) *http.Client {
 	tr := &http.Transport{
 		Proxy:             http.ProxyFromEnvironment,
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: !verifyTLS, MinVersion: tls.VersionTLS12}, //nolint:gosec // opt-out is an explicit, signed check parameter
 		DisableKeepAlives: true,
 	}
-	cl := &http.Client{Timeout: timeout, Transport: tr}
-	if !follow {
-		cl.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	} else {
-		cl.CheckRedirect = func(_ *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return errors.New("stopped after 5 redirects")
-			}
-			return nil
-		}
-	}
-	return cl
+	return guardedHTTPClient(timeout, tr, follow, strict)
+}
+
+// refusedDest is the result of a check whose destination the policy refuses: unknown (never ok/fail, so it cannot be used as an oracle).
+func refusedDest(key string, err error) api.CheckResult {
+	return res(key, Unknown, firstLine(err.Error()))
 }
 
 // runExtended evaluates a check of an extended type. ok is false when the type is not an extended one.
@@ -496,11 +505,17 @@ func (c *Collector) checkPort(ctx context.Context, key string, raw json.RawMessa
 		p.TimeoutMS = 3000
 	}
 	x := c.sys()
+	if why := blockedHostLiteral(p.Host, x.StrictDest); why != "" {
+		return refusedDest(key, fmt.Errorf("%w: %s is a %s", ErrDestinationBlocked, p.Host, why))
+	}
 	dctx, cancel := context.WithTimeout(ctx, time.Duration(p.TimeoutMS)*time.Millisecond)
 	defer cancel()
 	start := x.now()
 	conn, err := x.Dial(dctx, "tcp", net.JoinHostPort(p.Host, strconv.Itoa(p.Port)))
 	ms := float64(x.now().Sub(start).Microseconds()) / 1000
+	if errors.Is(err, ErrDestinationBlocked) {
+		return refusedDest(key, err)
+	}
 	if err != nil {
 		return res(key, Fail, fmt.Sprintf("%s:%d unreachable: %s", p.Host, p.Port, netReason(err)))
 	}
@@ -629,6 +644,9 @@ func (c *Collector) checkHTTP(ctx context.Context, key string, raw json.RawMessa
 	}
 	x := c.sys()
 	where := redactURL(u)
+	if why := blockedHostLiteral(u.Hostname(), x.StrictDest); why != "" {
+		return refusedDest(key, fmt.Errorf("%w: %s is a %s", ErrDestinationBlocked, u.Hostname(), why))
+	}
 	req, err := http.NewRequestWithContext(ctx, p.Method, p.URL, nil)
 	if err != nil {
 		return res(key, Unknown, "invalid http check parameters")
@@ -636,6 +654,13 @@ func (c *Collector) checkHTTP(ctx context.Context, key string, raw json.RawMessa
 	req.Header.Set("User-Agent", "rivetit-agent-check")
 	start := x.now()
 	resp, err := x.Client(time.Duration(p.TimeoutMS)*time.Millisecond, verify, follow).Do(req)
+	if errors.Is(err, ErrDestinationBlocked) {
+		var ue *url.Error
+		if errors.As(err, &ue) && ue.Err != nil {
+			return refusedDest(key, fmt.Errorf("%s: %w", where, ue.Err))
+		}
+		return refusedDest(key, err)
+	}
 	if err != nil {
 		var ue *url.Error
 		reason := err.Error()
