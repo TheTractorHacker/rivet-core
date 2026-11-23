@@ -41,7 +41,7 @@ require '%ROOT%/vendor/autoload.php';
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 $mysqli = null; $db = null;
 if (getenv('RIVETCORE_TEST_DB_NAME')) {
-    $mysqli = new mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: '127.0.0.1', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '', getenv('RIVETCORE_TEST_DB_NAME'));
+    $mysqli = new mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: '127.0.0.1', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '', getenv('RIVETCORE_TEST_DB_NAME'), (int) (getenv('RIVETCORE_TEST_DB_PORT') ?: 0));
     $mysqli->set_charset('utf8mb4');
     $db = new RivetCore\Tests\Support\MysqliDatabase($mysqli);
     $clock0 = new RivetCore\Support\SystemClock();

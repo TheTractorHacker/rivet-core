@@ -29,7 +29,7 @@ final class ExampleAdapterConformanceTest extends DatabaseConformanceTestCase
         }
         if ($this->db === null) {
             mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-            $m = new \mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: '127.0.0.1', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '', $name);
+            $m = new \mysqli(getenv('RIVETCORE_TEST_DB_HOST') ?: '127.0.0.1', getenv('RIVETCORE_TEST_DB_USER') ?: 'root', getenv('RIVETCORE_TEST_DB_PASS') ?: '', $name, (int) (getenv('RIVETCORE_TEST_DB_PORT') ?: 0));
             $m->set_charset('utf8mb4');
             $this->db = new MysqliDatabaseAdapter($m);
         }
