@@ -120,8 +120,10 @@ Dev and pull-request builds are not release builds: with no keys configured they
 **4. A release build without an anchor refuses self-update.** A binary stamped `RELEASE_BUILD=1` that carries no release key (and has learned none by a
 rollover) refuses every update with "this agent trusts no release signing key ... self-update refused" instead of trusting the instance key alone (Chain C
 step 2). The gate makes such a build impossible in CI; the stamp is the second line of defence for a build made some other way. Unstamped binaries (every
-agent already deployed, dev builds, build-host builds) keep the old behaviour, so nothing in the field changes. The build host (`scripts/build-host.sh`)
-does not pass `RELEASE_KEYS` yet: an edition that builds its agent there ships it without the anchor until that is added (open item).
+agent already deployed, dev builds, build-host builds without `RELEASE_BUILD`) keep the old behaviour, so nothing in the field changes. The build host
+(`scripts/build-host.sh`) takes the same `RELEASE_KEYS`, `TRUST_KEYS` and `RELEASE_BUILD` from its config file (BUILD_HOST.md), validates them with
+the same rules before it asks for a job, passes them to `make dist`, and refuses to upload a binary that does not embed them; with nothing configured
+it builds unanchored agents as before.
 
 **5. Sign every release offline.** For each binary you publish (per os/arch) build the message of SIGNED_UPDATE_MANIFEST.md and sign it with the
 offline key; paste the base64 result as the binary's release signature in the edition (Agent binaries, `RmmAdmin::uploadBinary` option

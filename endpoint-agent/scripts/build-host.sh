@@ -56,6 +56,9 @@ load_config() {
   BUILD_CPUS="${BUILD_CPUS:-2}" BUILD_MEMORY="${BUILD_MEMORY:-4g}" BUILD_TIMEOUT_S="${BUILD_TIMEOUT_S:-1500}"
   HTTP_TIMEOUT="${HTTP_TIMEOUT:-120}"
   UPLOAD_LINUX_TARBALLS="${UPLOAD_LINUX_TARBALLS:-0}"
+  # CORE-AGENT-1 (Chain C): the trust anchors compiled into every agent built here, like CI's AGENT_RELEASE_KEYS / AGENT_TRUST_KEYS. PUBLIC keys only.
+  RELEASE_KEYS="${RELEASE_KEYS:-}" TRUST_KEYS="${TRUST_KEYS:-}" RELEASE_BUILD="${RELEASE_BUILD:-}"
+  check_anchors
   [ -n "$CORE_REPO" ] || die "CORE_REPO is not set in $CONF"
   case "$WORKDIR" in /*) ;; *) die "WORKDIR must be an absolute path" ;; esac
   if [ "$MODE" != dry ]; then
@@ -76,6 +79,38 @@ check_url() {
   SERVER_URL=${SERVER_URL%/}
 }
 need() { command -v "$1" >/dev/null 2>&1 || die "required program not found: $1"; }
+ANCHORS=""
+check_anchors() { # the rules of scripts/check-release-keys.sh validate; runs before any request, so a bad list never claims a job. Never prints a key.
+  case "$RELEASE_BUILD" in ''|0|false) RELEASE_BUILD="" ;; 1|true) RELEASE_BUILD=1 ;; *) die "RELEASE_BUILD must be 1 or empty" ;; esac
+  ANCHORS=$(python3 -I -c '
+import base64, binascii, re, sys
+def count(name, v):
+    if v == "":
+        return 0
+    if not re.fullmatch(r"[A-Za-z0-9+/=,]+", v):
+        sys.exit(name + " may only contain base64 characters and commas (no spaces or quotes)")
+    keys = v.split(",")
+    if "" in keys:
+        sys.exit(name + " has an empty entry (leading, trailing or doubled comma)")
+    if len(set(keys)) != len(keys):
+        sys.exit(name + " lists the same key twice")
+    for k in keys:
+        try:
+            raw = base64.b64decode(k, validate=True)
+        except binascii.Error:
+            sys.exit(name + " has an entry that is not base64")
+        if len(raw) == 64:
+            sys.exit(name + " has a 64-byte entry: that is an Ed25519 PRIVATE key. Put the public key here and treat this one as leaked.")
+        if len(raw) != 32:
+            sys.exit("%s has an entry of %d bytes; an Ed25519 public key is 32 bytes" % (name, len(raw)))
+        if base64.b64encode(raw).decode() != k:
+            sys.exit(name + " has an entry that is not in canonical base64 form")
+    return len(keys)
+r, t = count("RELEASE_KEYS", sys.argv[1]), count("TRUST_KEYS", sys.argv[2])
+if sys.argv[3] == "1" and r == 0:
+    sys.exit("RELEASE_BUILD=1 but RELEASE_KEYS is empty: the agents would ship with no update trust anchor (docs/rmm/AGENT_BUILD.md)")
+print("release_keys=%d trust_keys=%d release_build=%s" % (r, t, "true" if sys.argv[3] == "1" else "false"))' "$RELEASE_KEYS" "$TRUST_KEYS" "$RELEASE_BUILD" 2>&1) || die "${ANCHORS:-the trust anchors in $CONF are invalid}"
+}
 
 # ---------- JSON helpers (python3 standard library only) ----------
 jget() { # file dotted.path -> scalar text ("" for null/missing/non-scalar)
@@ -268,11 +303,12 @@ build_job() { # version ref targets msi(true|false) linux(true|false|"") -> file
   if [ "$(id -u)" = 0 ]; then BUILD_UID=10001 BUILD_GID=10001; chown -R "$BUILD_UID:$BUILD_GID" "$SRC" "$WORKDIR/gomod"
   else BUILD_UID=$(id -u) BUILD_GID=$(id -g); fi
   OUT="$SRC/endpoint-agent/dist"
-  log "building $version from $ref ($short) with $GO_IMAGE"
+  log "building $version from $ref ($short) with $GO_IMAGE; trust anchors: $ANCHORS"
   progress build_windows_amd64 10 "make dist $version from $ref ($short)"; creep 40 180
 
   docker_base "rbh-$$-dist"
-  STAGE_WATCH=dist_watch run_limited "make dist" docker "${DOCKER_ARGS[@]}" -v "$WORKDIR/gomod:/gomod" "$GO_IMAGE" make dist "VERSION=$version" "COMMIT=$short"
+  STAGE_WATCH=dist_watch run_limited "make dist" docker "${DOCKER_ARGS[@]}" -v "$WORKDIR/gomod:/gomod" "$GO_IMAGE" make dist "VERSION=$version" "COMMIT=$short" \
+    "RELEASE_KEYS=$RELEASE_KEYS" "TRUST_KEYS=$TRUST_KEYS" "RELEASE_BUILD=$RELEASE_BUILD"
   [ "$PSTAGE" != build_windows_amd64 ] || progress build_windows_arm64 40 "windows amd64 built, building arm64"
   progress build_windows_arm64 60 "windows executables built"
   if [ "$want_msi" = true ]; then
@@ -319,6 +355,15 @@ build_job() { # version ref targets msi(true|false) linux(true|false|"") -> file
   for f in "$OUT"/rivetit-agent-windows-*.exe; do
     grep -aqF -- "$version" "$f" || die "$(basename "$f") does not contain the version string $version"
   done
+  # CORE-AGENT-1: every agent binary carries every configured trust anchor (the MSI wraps the windows-amd64 exe checked here). A ref that predates
+  # the ldflags would build without them silently: refuse it instead of uploading unanchored agents.
+  local k
+  for f in "$OUT"/rivetit-agent-windows-*.exe "$OUT"/rivetit-agent-linux-amd64 "$OUT"/rivetit-agent-linux-arm64; do
+    [ -f "$f" ] || continue
+    for k in ${RELEASE_KEYS//,/ } ${TRUST_KEYS//,/ }; do
+      grep -aqF -- "$k" "$f" || die "$(basename "$f") does not embed the configured trust anchor ${k:0:8}... (does ref $ref predate RELEASE_KEYS/TRUST_KEYS?)"
+    done
+  done
   if [ "$want_msi" = true ]; then
     [ "$(head -c8 "$OUT/rivetit-agent-windows-amd64.msi" | od -An -t x1 | tr -d ' \n')" = d0cf11e0a1b11ae1 ] || die "the MSI is not an OLE compound file"
   fi
@@ -327,6 +372,15 @@ build_job() { # version ref targets msi(true|false) linux(true|false|"") -> file
     docker_base "rbh-$$-ver"
     local vout; vout=$(docker "${DOCKER_ARGS[@]}" --network none "$GO_IMAGE" "./dist/rivetit-agent-linux-$la" version 2>>"$LOG") || die "the Linux agent does not run"
     case "$vout" in "rivetit-agent $version ($short) "*) ;; *) die "the agent reports '$vout', expected version $version commit $short" ;; esac
+    if [ -n "$RELEASE_KEYS$TRUST_KEYS$RELEASE_BUILD" ]; then # the anchors went into the right variables and the release stamp took (refs with `version --trust`)
+      docker_base "rbh-$$-trust"
+      vout=$(docker "${DOCKER_ARGS[@]}" --network none "$GO_IMAGE" "./dist/rivetit-agent-linux-$la" version --trust 2>>"$LOG") || vout=""
+      case "$vout" in
+        "$ANCHORS") ;;
+        release_keys=*) die "the agent reports '$vout', expected '$ANCHORS'" ;;
+        *) log "WARNING: ref $ref has no 'version --trust'; the anchors were checked in the binaries only" ;;
+      esac
+    fi
   fi
   for f in "${lin[@]}"; do
     case "$f" in
