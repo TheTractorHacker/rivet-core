@@ -175,8 +175,17 @@ Every check is on the server and none trusts the client:
 - the declared content type must be the one that extension maps to,
 - the **magic bytes** must match (PNG, JPEG, GIF, WebP, PDF); text files (`txt`, `log`, `csv`) must be valid UTF-8 without NUL or control characters, must not start with `#!`, and must not
   contain HTML/script markup **anywhere** (1.0.0-rc.38; it used to be the first 8 KiB),
-- a text file must not **begin with a spreadsheet formula character** (`=`, `+`, `-`, `@`, a tab or a carriage return, after an optional byte-order mark), and a CSV must not
-  have a cell that starts with `=` or looks like a function or DDE call (`+cmd|' /C calc'!A0`, `@SUM(`) (1.0.0-rc.38; a cell that merely contains `=` or `|`, or a negative number, is fine),
+- a `txt` or `log` file must not **begin with a spreadsheet formula character** (`=`, `+`, `-`, `@`, a tab or a carriage return, after an optional byte-order mark),
+- in a CSV **no cell** may start with `=`, `+`, `-`, `@`, a tab or a line break (after white space, Unicode spaces included, and an optional quote) unless the whole cell is a
+  plain number (`-12.5`, `+3`, `1e5`, `+1,5`, `"-1,234.56"`, `-5%`, `+44 20 7946 0958`) or signs alone (`-`, `--`). The file is read quote-aware (RFC 4180) **once per
+  separator a spreadsheet may use** (comma, semicolon, tab, all three at once, and the one a first line `sep=X` names), because the reader, not the file, picks the separator,
+  and every reading must pass. No function name or DDE shape is enumerated (CORE-DS-33, reopened by the 2026-11-21 red-team findings CORE-API-1 / CORE-DATA-1 and closed).
+  A cell that merely contains `=`, `|` or `@` is fine. **Refused on purpose** (change the cell, or send the data as `.txt`, where only the first character is checked): a cell such as
+  `- item`, `-- note`, `+1 (555) 123-4567` or `@handle`; a comma-separated row whose *first* cell starts with a sign and has more cells after it (`-5,apples`: a semicolon
+  reader sees the whole row as one cell starting with `-`); a line that starts with `= + - @` inside a multi-line quoted cell that is not in the first column (a reader with
+  another separator sees that line as a new row); a cell that starts with a tab followed by text when the file is read with commas or semicolons; a quoted cell that is never
+  closed; a `sep=` line naming a letter, digit, space, quote or `= + - @ . , ' %`; and a file in which more than 100 000 plus one per 32 bytes of cells need a closer look
+  than the fast reader gives them (no ordinary CSV comes near it),
 - executables are recognised by content under any name (MZ, ELF, Mach-O, shebang), and ZIP and OLE containers (so Office documents, jar, apk, msi) are not accepted,
 - the stored filename is a sanitised basename (letters, digits, `. - _ ( ) [ ]` and space, at most 100 characters); the original name is never used as a path. A Windows
   device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`..`COM9`, `LPT1`..`LPT9`, with or without an extension) and a name that starts with `-` are refused (1.0.0-rc.38).

@@ -2,6 +2,12 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## [Unreleased]
+
+Red-team fixes of 2026-11-21, panel/data lane (pentest_reports/redteam/2026-11-21/rivetcore-REPORT.md).
+
+- **CORE-API-1 + CORE-DATA-1 (Low): CORE-DS-33 reopened and now closed.** The panel CSV formula check (`PanelAttachments::csvOk()`) let formulas through: a `+`, `-` or `@` cell was refused only when a function name and `(` followed at once (`+1+HYPERLINK(`, `-1+WEBSERVICE(` passed), a DDE `|` only within 80 characters, and `plainText()` looked at the first character of the file only. Now every cell is checked, quote-aware (RFC 4180), once per separator a spreadsheet may use (comma, semicolon, tab, all three, and a `sep=X` first line): a cell whose first character after white space (Unicode spaces too) and an optional quote is `= + - @`, a tab or a line break is refused unless the whole cell is a plain number (`-12.5`, `+3`, `1e5`, `+1,5`, `"-1,234.56"`, `-5%`) or signs alone (`-`); no function or DDE shape is enumerated, NEL/LS/PS count as line breaks, an unclosed quoted cell is refused. **Behaviour change:** cells such as `- item`, `-- note`, `+1 (555) 123-4567`, `@handle`, and a comma row whose first cell is signed (`-5,apples`) are now refused (docs/panel/PANEL_API.md lists them); a CSV that starts with a plain number (`-5`) is now accepted. Linear time (a bounded regex tokenizer plus a step budget; a 5 MiB adversarial file is decided in under half a second). `txt`/`log` keep the first-character check.
+
 ## 1.0.0-rc.78 (inbound monitoring webhooks: Uptime Kuma; no migration)
 
 Additive only: no existing signature, constant or table changed. Core ships the shared logic; each edition adds the public endpoint, settings page, incident table and ticket adapter (`docs/design/edition-prompts-inbound-monitoring.md`).

