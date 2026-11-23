@@ -1198,7 +1198,8 @@ func trustFrom(st store.State, err error) ([]ed25519.PublicKey, bool) {
 			out = append(out, k)
 		}
 	}
-	required := len(update.ParseKeys(update.EmbeddedReleaseKeys)) > 0 || len(st.ReleaseKeys) > 0 || len(st.ReleaseRevoked) > 0 || st.ReleaseRolloverSeq > 0
+	required := len(update.ParseKeys(update.EmbeddedReleaseKeys)) > 0 || len(st.ReleaseKeys) > 0 || len(st.ReleaseRevoked) > 0 || st.ReleaseRolloverSeq > 0 ||
+		update.IsReleaseBuild() // Chain C step 2: a release-stamped build never falls back to the instance key alone
 	return out, required
 }
 

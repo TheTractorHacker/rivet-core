@@ -76,6 +76,19 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Red team 2026-11-21, endpoint agent fixes (unreleased; no migration)
+
+Agent (Go) side of the 2026-11-21 red-team findings. Nothing is required of an edition's PHP code; the items below are for whoever releases and runs agents.
+
+* **CORE-AGENT-1 (act before the next `agent-v*` tag).** Generate the release signing key pair OFFLINE and put only its public half in the repository
+  variable `AGENT_RELEASE_KEYS` ([AGENT_BUILD.md, "Release signing key"](docs/rmm/AGENT_BUILD.md)). Without it the release gate fails the tag build on
+  purpose. From the first anchored release on, every published agent binary needs its offline release signature in the edition (Agent binaries), or
+  anchored agents refuse the update. Agents already deployed are unaffected until they install an anchored build. Self-hosted builds stamped
+  `RELEASE_BUILD=1` without `RELEASE_KEYS` refuse every self-update.
+* **Monitoring-only devices.** A device that must never run anything from the server sets all three of `disable_jobs`, `disable_script_checks` and
+  `disable_update` in its `config.json` (endpoint-agent/README.md, "Monitoring-only profile"). `disable_jobs` alone still lets the server replace the
+  agent binary (Chain C).
+
 ## Adopting the Rivet Console redeem and events routes (1.0.0-rc.70, provisional; migration 0051; optional, off by default)
 
 Needs the remote session policy / Rivet Console release (rc.68 and rc.69, PR #130) first. Nothing is required: with `remote_console` off (the default) every existing call behaves as before.

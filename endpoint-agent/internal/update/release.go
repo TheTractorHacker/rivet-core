@@ -28,6 +28,20 @@ const (
 // existing build keeps working with a server that does not send release signatures yet.
 var EmbeddedReleaseKeys string
 
+// ReleaseBuild marks a binary built as a RELEASE (CI on an agent-v* tag or a release dispatch: make ... RELEASE_BUILD=1, ldflag
+// "-X rivetit-agent/internal/update.ReleaseBuild=1"). A release-stamped build that carries no trust anchor (EmbeddedReleaseKeys empty and no key learned
+// through a rollover) refuses every self-update instead of trusting the instance signing key alone (Chain C step 2, CORE-AGENT-1): such a build is a
+// packaging mistake, and an update it would accept could come from anyone holding the server's key. Empty (every dev, test, build-host and existing
+// binary) keeps the old behaviour, so nothing already deployed changes.
+var ReleaseBuild string
+
+// IsReleaseBuild reports whether this binary was stamped as a release build.
+func IsReleaseBuild() bool { return ReleaseBuild == "1" || strings.EqualFold(ReleaseBuild, "true") }
+
+// ErrNoReleaseKey: release verification is required (a release-stamped build, or keys were configured and then all revoked) but no release key is
+// trusted, so no update can be verified. Permanent for the offered version.
+var ErrNoReleaseKey = errors.New("this agent trusts no release signing key (release build without a trust anchor, or every key revoked): self-update refused")
+
 // ManifestMessage is the exact byte string the release key signs: the domain line, a newline and the canonical JSON (sorted keys, no whitespace) of
 // {arch, kind, min_version, os, sha256, version}. The sha256 is lower-cased.
 func ManifestMessage(m api.UpdateManifest) []byte {
@@ -60,6 +74,9 @@ func verifyAny(keys []ed25519.PublicKey, msg []byte, sigB64 string) bool {
 
 // VerifyRelease checks the release signature and that the signed platform is the one this agent runs on.
 func VerifyRelease(keys []ed25519.PublicKey, m api.UpdateManifest, goos, goarch string) error {
+	if len(keys) == 0 {
+		return ErrNoReleaseKey
+	}
 	if m.ReleaseSignature == "" {
 		return errors.New("update has no release signature")
 	}

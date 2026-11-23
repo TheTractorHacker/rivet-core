@@ -346,7 +346,22 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 Local kill switches (set in `config.json` by an administrator of the endpoint): `disable_jobs` (never execute server jobs) and
 `disable_script_checks`, plus (RMM Phases 6 and 8) `disable_remote` (the service, process and file tools fail with `disabled_locally`, and the agent stops announcing
-`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_software` (software_detect and software_install fail with `disabled_locally`; `software:detect`, `software:install` and `job:software_*` are not announced), `disable_patching` (patch_scan, patch_install and patch_configure fail with `disabled_locally`; `patch:scan`, `patch:install`, `patch:configure` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` and `logs:presets` are not announced) and `disable_change` (never watch the registry, files, groups or tasks, and forget what was kept; `change:monitor` is not announced). `change_extra_roots` (a list of absolute folders) adds file roots a signed change-monitoring file watch may read; the server can never widen that list and an extra root never unlocks a credential file.
+`remote:*` and `job:svc_*`, `job:proc_*`, `job:file_*`) `disable_software` (software_detect and software_install fail with `disabled_locally`; `software:detect`, `software:install` and `job:software_*` are not announced), `disable_patching` (patch_scan, patch_install and patch_configure fail with `disabled_locally`; `patch:scan`, `patch:install`, `patch:configure` and `job:patch_*` are not announced) and `disable_logs` (never collect or ship logs; `logs:collect` and `logs:presets` are not announced) and `disable_change` (never watch the registry, files, groups or tasks, and forget what was kept; `change:monitor` is not announced). `change_extra_roots` (a list of absolute folders) adds file roots a signed change-monitoring file watch may read; the server can never widen that list and an extra root never unlocks a credential file. `disable_update` stops self-update entirely, and `require_signed_config` refuses unsigned check definitions and log configurations even from a server that does not sign them.
+
+**Monitoring-only profile.** A device that must never run anything the server sends needs THREE switches together: `disable_jobs` alone still lets the
+server (or anyone holding its signing key) replace the agent binary through self-update and run script checks (red team 2026-11-21, Chain C). Set:
+
+```json
+{ "disable_jobs": true, "disable_script_checks": true, "disable_update": true }
+```
+
+(merged into the existing `config.json`, then restart the service), and add `"require_signed_config": true` so injected unsigned http/port checks are
+refused too. Such a device is updated by hand (reinstall or package upgrade). Every other switch above only narrows what `disable_jobs` already blocks.
+
+**Trust anchors of a build.** `rivetit-agent version --trust` prints `release_keys=<n> trust_keys=<m> release_build=<true|false>`: how many offline
+release public keys (`RELEASE_KEYS`, CORE-DS-26) and installer trust keys (`TRUST_KEYS`, CORE-DS-20) the binary has compiled in, and whether it is a
+release-stamped build. A release build with `release_keys=0` refuses every self-update. Key generation, rotation and the release gate:
+[docs/rmm/AGENT_BUILD.md](../docs/rmm/AGENT_BUILD.md), "Release signing key".
 
 ## Patch management (RMM Phase 4)
 

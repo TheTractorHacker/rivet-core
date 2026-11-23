@@ -301,3 +301,29 @@ func TestEnrolSignedConfigSurvivesARestart(t *testing.T) {
 		t.Fatal("the announcement was lost across a restart")
 	}
 }
+
+// CORE-AGENT-1 / Chain C step 2: a release-stamped build with no embedded or learned release key requires release verification (and so refuses every
+// update, see update.ErrNoReleaseKey); an unstamped build (dev, test, build host, every binary already deployed) keeps the old behaviour.
+func TestReleaseBuildWithoutAnchorRequiresReleaseVerification(t *testing.T) {
+	r := newRig(t)
+	prevK, prevB := update.EmbeddedReleaseKeys, update.ReleaseBuild
+	defer func() { update.EmbeddedReleaseKeys, update.ReleaseBuild = prevK, prevB }()
+	update.EmbeddedReleaseKeys = ""
+	update.ReleaseBuild = ""
+	if r.a.releaseRequired() {
+		t.Fatal("an unstamped build without keys must keep the legacy behaviour")
+	}
+	update.ReleaseBuild = "1"
+	if !r.a.releaseRequired() || len(r.a.releaseKeys()) != 0 {
+		t.Fatalf("a release build without an anchor: required=%v keys=%d", r.a.releaseRequired(), len(r.a.releaseKeys()))
+	}
+	keys, required, err := r.a.releaseTrust()
+	if err != nil || !required || len(keys) != 0 {
+		t.Fatalf("releaseTrust: keys=%d required=%v err=%v", len(keys), required, err)
+	}
+	k, _, _ := ed25519.GenerateKey(rand.Reader)
+	update.EmbeddedReleaseKeys = base64.StdEncoding.EncodeToString(k)
+	if keys := r.a.releaseKeys(); len(keys) != 1 || !r.a.releaseRequired() {
+		t.Fatalf("a release build with an anchor: %d keys", len(keys))
+	}
+}
