@@ -4,6 +4,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -11,6 +12,10 @@ import (
 func ensureDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
+	}
+	// CORE-AGENT-5: a directory that already existed is not trusted merely because it is there (Linux; perm_linux.go).
+	if err := verifyOwnedDir(dir); err != nil {
+		return fmt.Errorf("refusing to use the agent state directory: %w", err)
 	}
 	return os.Chmod(dir, 0o700)
 }
@@ -49,5 +54,15 @@ func unprotect(scheme, blob string) ([]byte, error) {
 	return []byte(blob), nil
 }
 
-// EnsureProtectedDir is a Windows concern (explicit owner and DACL); elsewhere the installer's mkdir and chmod are enough.
-func EnsureProtectedDir(string) error { return nil }
+// EnsureProtectedDir creates the program (install) directory or verifies an existing one before the installer copies the binary into it: on Linux it
+// must not be a symbolic link, must be owned by root (or the account running the installer) and must not be writable by other accounts, and neither may
+// any folder above it (CORE-AGENT-5, the counterpart of the Windows owner and DACL check, CORE-DS-47). Other systems: create only.
+func EnsureProtectedDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := verifyOwnedDir(dir); err != nil {
+		return fmt.Errorf("refusing to install into %s: %w", dir, err)
+	}
+	return nil
+}

@@ -91,6 +91,10 @@ Agent (Go) side of the 2026-11-21 red-team findings. Nothing is required of an e
 * **CORE-AGENT-2.** An `http`, `port` or `cert` check aimed at a link-local or cloud metadata address (169.254.x.x and the like) now reports
   `unknown` "destination refused" instead of running, and the server refuses such literal targets when a check is saved. Nothing to do unless a
   check deliberately watched such an address; `ntp` checks against Amazon Time Sync (169.254.169.123) keep working.
+* **CORE-AGENT-5 (Linux custom directories).** A Linux agent now refuses a `--state-dir` / `--install-dir` that is a symbolic link, is owned by another
+  account, or sits in a folder other accounts can write. Default paths are unaffected. If a fleet used such a layout, fix the directory
+  (`chown root:root`, `chmod go-w`) before rolling out this agent version; an agent that is updated into a refused layout rolls back to its previous
+  binary (CORE-DS-11) and reports the update as failed.
 * **Monitoring-only devices.** A device that must never run anything from the server sets all three of `disable_jobs`, `disable_script_checks` and
   `disable_update` in its `config.json` (endpoint-agent/README.md, "Monitoring-only profile"). `disable_jobs` alone still lets the server replace the
   agent binary (Chain C).
