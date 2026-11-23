@@ -236,3 +236,86 @@ func TestAgentStateDirectoryIsAlwaysDenied(t *testing.T) {
 		}
 	}
 }
+
+// CORE-AGENT-6 / Chain J: file jobs can never touch the agent's own program files, service unit or the Mesh agent's identity, whatever the allow list
+// says. The red-team PoC (t_put.sh) replaced /opt/rivetit-agent/rivetit-agent with allow=/opt.
+func TestAgentOwnFilesAreAlwaysDenied(t *testing.T) {
+	type c struct{ goos, path, allow string }
+	p := map[string]PathPolicy{"linux": {GOOS: "linux"}, "windows": {GOOS: "windows"}}
+	for _, x := range []c{
+		{"linux", "/opt/rivetit-agent/rivetit-agent", "/opt"},
+		{"linux", "/opt/rivetit-agent/rivetit-agent.new", "/opt"},
+		{"linux", "/opt/rivetit-agent/anything", "/opt/rivetit-agent"},
+		{"linux", "/etc/systemd/system/rivetit-agent.service", "/etc/systemd"},
+		{"linux", "/etc/systemd/system/rivetit-agent.service.d/override.conf", "/etc/systemd"},
+		{"linux", "/etc/systemd/system/multi-user.target.wants/rivetit-agent.service", "/etc/systemd"},
+		{"linux", "/lib/systemd/system/rivetit-agent.service", "/lib/systemd"},
+		{"linux", "/usr/lib/systemd/system/rivetit-agent.service", "/usr/lib"},
+		{"linux", "/usr/local/bin/rivetit-agent", "/usr/local"},
+		{"linux", "/usr/local/bin/rivetit-agent.prev", "/usr/local"},
+		{"linux", "/usr/local/bin/rivetit-agent.failed", "/usr/local"},
+		{"linux", "/usr/local/mesh_services/meshagent/meshagent", "/usr/local"},
+		{"linux", "/usr/local/mesh_services/meshagent/meshagent.db", "/usr/local"},
+		{"linux", "/opt/meshagent-acme/meshagent", "/opt"},
+		{"linux", "/srv/elsewhere/meshagent.msh", "/srv"},
+		{"linux", "/etc/systemd/system/meshagent.service", "/etc/systemd"},
+		{"windows", `C:\Program Files\RivetIT\Agent\rivetit-agent.exe`, `C:\Program Files`},
+		{"windows", `C:\Program Files\RivetIT\Agent\rivetit-agent.exe.new`, `C:\Program Files`},
+		{"windows", `C:\Program Files\RivetIT\Agent\other.dll`, `C:\Program Files`},
+		{"windows", `C:\Program Files\Mesh Agent\MeshAgent.exe`, `C:\Program Files`},
+		{"windows", `C:\Program Files (x86)\Mesh Agent\MeshAgent.db`, `C:\Program Files (x86)`},
+		{"windows", `D:\Tools\RIVETIT-AGENT.EXE.PREV`, `D:\Tools`},
+	} {
+		if _, err := p[x.goos].Check(x.path, x.allow); reasonOf(err) != ReasonDenyList {
+			t.Errorf("%s %s (allow %s): %v", x.goos, x.path, x.allow, err)
+		}
+	}
+	// not over-broad: the rest of a shared folder, other units and other programs stay usable when allowed
+	for _, x := range []c{
+		{"linux", "/usr/local/bin/other-tool", "/usr/local"},
+		{"linux", "/etc/systemd/system/backup.service", "/etc/systemd"},
+		{"linux", "/opt/app/rivetit-agent.conf", "/opt/app"},
+		{"windows", `C:\Program Files\Other\app.exe`, `C:\Program Files`},
+	} {
+		if _, err := p[x.goos].Check(x.path, x.allow); err != nil {
+			t.Errorf("%s %s (allow %s) refused: %v", x.goos, x.path, x.allow, err)
+		}
+	}
+}
+
+// The install folder is found from the running executable, so a non-default --install-dir is covered; a binary in a shared folder denies only itself.
+func TestAgentProgramDenyFollowsTheExecutable(t *testing.T) {
+	custom := PathPolicy{GOOS: "linux", ExtraDeny: AgentProgramDeny("linux", "/srv/tools/rivetit-custom/agent-bin")}
+	for _, path := range []string{"/srv/tools/rivetit-custom/agent-bin", "/srv/tools/rivetit-custom/agent-bin.new", "/srv/tools/rivetit-custom/agent-bin.prev",
+		"/srv/tools/rivetit-custom/agent-bin.failed", "/srv/tools/rivetit-custom/helper.sh"} {
+		if _, err := custom.Check(path, "/srv/tools"); reasonOf(err) != ReasonDenyList {
+			t.Errorf("%s: %v", path, err)
+		}
+	}
+	shared := PathPolicy{GOOS: "linux", ExtraDeny: AgentProgramDeny("linux", "/usr/bin/agent-bin")}
+	if _, err := shared.Check("/usr/bin/agent-bin.prev", "/usr/bin"); reasonOf(err) != ReasonDenyList {
+		t.Errorf("sibling of a binary in a shared folder: %v", err)
+	}
+	if _, err := shared.Check("/usr/bin/other", "/usr/bin"); err != nil {
+		t.Errorf("a shared folder was denied as a whole: %v", err)
+	}
+	win := PathPolicy{GOOS: "windows", ExtraDeny: AgentProgramDeny("windows", `E:\Apps\RivetIT\Agent\rivetit-agent.exe`)}
+	if _, err := win.Check(`E:\Apps\RivetIT\Agent\x.txt`, `E:\Apps`); reasonOf(err) != ReasonDenyList {
+		t.Errorf("custom Windows install folder: %v", err)
+	}
+	if _, err := win.Check(`E:\Apps\Other\x.txt`, `E:\Apps`); err != nil {
+		t.Errorf("a neighbouring folder was denied: %v", err)
+	}
+	// the host policy adds the running executable (here the test binary) and its siblings
+	exe, err := os.Executable()
+	if err != nil {
+		t.Skip(err)
+	}
+	host := NewHostPolicy("")
+	host.GOOS = "linux"
+	for _, path := range []string{exe, exe + ".new", exe + ".prev"} {
+		if _, err := host.Check(path, filepath.Dir(exe)); reasonOf(err) != ReasonDenyList {
+			t.Errorf("host policy, running executable %s: %v", path, err)
+		}
+	}
+}

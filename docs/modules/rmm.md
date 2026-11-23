@@ -37,7 +37,7 @@ Required (all in `RivetCore\Rmm\Contracts`):
 | `rmm.token.manage` | create and revoke enrollment tokens, issue installers | `role_is_admin` |
 | `rmm.binary.publish` | upload agent binaries, make one current, manage releases and rings | `role_is_admin` |
 | `rmm.alert.manage` | acknowledge and resolve alerts, maintenance windows of one client or one device, a device's parent (Phase 3; needs `rmm.device.view` too) | suggested: like `rmm.job.run_saved` |
-| `rmm.admin` | module settings, switches, signing key, MeshCentral settings; Phase 2: policies, schedules, custom field definitions, secret field values, re-signing scripts; Phase 3: escalation policies, storm-control limits and maintenance windows that span clients (all, site, group, tag) | `role_is_admin` |
+| `rmm.admin` | module settings, switches, signing key, MeshCentral settings; Phase 2: policies, schedules, custom field definitions, secret field values, re-signing scripts; Phase 3: escalation policies, storm-control limits and maintenance windows that span clients (all, site, group, tag); sending a file to a device (`file_put`), which is **root/SYSTEM-equivalent** on every device in scope (it can write any file the never-transfer list does not name; the list only keeps the agent's own files and credentials out of reach, CORE-AGENT-6) | `role_is_admin` |
 
 A policy that enforces anything must deny an ability it does not know. An inactive account, a module-only login and the client scope (RivetIT: `user_client_permissions`) are the edition's rules; the client scope reaches Core through `RmmTenancyInterface::visibleClientIds()`.
 

@@ -65,7 +65,10 @@ type PathPolicy struct {
 }
 
 // NewHostPolicy is the policy of this machine: real symlink resolution, and the
-// agent's state directory (device token, enrollment secrets) always denied.
+// agent's state directory (device token, enrollment secrets) always denied, and
+// the agent's own program files (CORE-AGENT-6): the running binary, its update
+// siblings and its install folder, found from the running executable so a
+// non-default --install-dir is covered too.
 func NewHostPolicy(stateDir string) PathPolicy {
 	p := PathPolicy{GOOS: runtime.GOOS, Resolve: hostResolve}
 	if stateDir != "" {
@@ -82,9 +85,57 @@ func NewHostPolicy(stateDir string) PathPolicy {
 			pd = `C:\ProgramData`
 		}
 		p.ExtraDeny = append(p.ExtraDeny, pd+`\RivetIT`)
+		pf := os.Getenv("ProgramFiles")
+		if pf == "" {
+			pf = `C:\Program Files`
+		}
+		p.ExtraDeny = append(p.ExtraDeny, pf+`\RivetIT`)
+	}
+	if exe, err := os.Executable(); err == nil {
+		p.ExtraDeny = append(p.ExtraDeny, AgentProgramDeny(runtime.GOOS, exe)...)
+		if r, err := hostResolve(exe); err == nil && r != exe {
+			p.ExtraDeny = append(p.ExtraDeny, AgentProgramDeny(runtime.GOOS, r)...)
+		}
 	}
 	return p
 }
+
+// AgentProgramDeny lists what a file job must never touch about the running agent binary exe: the binary and its self-update siblings (.new, .prev,
+// .failed: replacing one of them is replacing the agent), and its folder when that folder is the agent's own (named like the agent, e.g.
+// /opt/rivetit-agent or C:\Program Files\RivetIT\Agent together with its RivetIT parent). A binary that sits in a shared folder (/usr/local/bin) denies
+// only itself and its siblings, so the rest of that folder stays usable. Self-update never goes through the file-job path policy: update.Manager stages,
+// verifies and swaps the binary itself, so this list cannot block an update.
+func AgentProgramDeny(goos, exe string) []string {
+	if exe == "" {
+		return nil
+	}
+	dir, base := path.Dir, path.Base
+	if goos == "windows" {
+		exe = strings.ReplaceAll(exe, "/", `\`)
+		dir = func(s string) string {
+			if i := strings.LastIndex(s, `\`); i > 0 {
+				return s[:i]
+			}
+			return s
+		}
+		base = func(s string) string { return s[strings.LastIndex(s, `\`)+1:] }
+	}
+	out := []string{exe, exe + ".new", exe + ".prev", exe + ".failed"}
+	d := dir(exe)
+	if d == exe {
+		return out
+	}
+	if agentFolderName(base(d)) {
+		out = append(out, d)
+	}
+	if p := dir(d); p != d && agentFolderName(base(p)) && strings.EqualFold(base(d), "agent") {
+		out = append(out, p) // <ProgramFiles>\RivetIT\Agent: the whole RivetIT folder
+	}
+	return out
+}
+
+// agentFolderName: a folder that belongs to the agent (rivetit-agent, RivetIT); never a shared one.
+func agentFolderName(name string) bool { return strings.Contains(strings.ToLower(name), "rivetit") }
 
 func (p PathPolicy) goos() string {
 	if p.GOOS == "" {
@@ -254,6 +305,17 @@ var (
 	linuxDenyTrees = [][]string{
 		{"etc", "sudoers.d"}, {"proc"}, {"sys"}, {"dev"}, {"run", "secrets"}, {"root", ".ssh"},
 		{"etc", "ssl", "private"}, {"var", "lib", "rivetit"}, // the server's PathPolicy denies these too (CORE-DS-77)
+		// The agent's own program files and service unit, and the Mesh agent's install and identity (CORE-AGENT-6): replacing any of them is replacing
+		// the agent (or the remote-access agent) and would get around the release key that protects self-update. The server's PathPolicy lists the same.
+		{"opt", "rivetit-agent"},
+		{"etc", "systemd", "system", "rivetit-agent.service"}, {"etc", "systemd", "system", "rivetit-agent.service.d"},
+		{"etc", "systemd", "system", "multi-user.target.wants", "rivetit-agent.service"},
+		{"lib", "systemd", "system", "rivetit-agent.service"}, {"lib", "systemd", "system", "rivetit-agent.service.d"},
+		{"usr", "lib", "systemd", "system", "rivetit-agent.service"}, {"usr", "lib", "systemd", "system", "rivetit-agent.service.d"},
+		{"run", "systemd", "system", "rivetit-agent.service"}, {"run", "systemd", "system", "rivetit-agent.service.d"},
+		{"usr", "local", "mesh_services"},
+		{"etc", "systemd", "system", "meshagent.service"}, {"etc", "systemd", "system", "meshagent.service.d"},
+		{"lib", "systemd", "system", "meshagent.service"}, {"usr", "lib", "systemd", "system", "meshagent.service"},
 	}
 	secretPrefixes = []string{"id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", "ssh_host_"}
 	secretSuffixes = []string{".pem", ".key", ".p12", ".pfx", ".kdbx", ".keystore", ".jks"}
@@ -269,6 +331,18 @@ func hasPrefixElems(k []string, prefix []string) bool {
 		}
 	}
 	return true
+}
+
+// agentFileName: the agent binary and its self-update siblings, and the Mesh agent's identity files (.msh settings, .db node key store), by name in any
+// folder (CORE-AGENT-6). The lower-cased last element is checked.
+func agentFileName(lower string) bool {
+	for _, b := range []string{"rivetit-agent", "rivetit-agent.exe"} {
+		switch lower {
+		case b, b + ".new", b + ".prev", b + ".failed":
+			return true
+		}
+	}
+	return lower == "meshagent.msh" || strings.HasPrefix(lower, "meshagent.db")
 }
 
 func secretName(lower string) bool {
@@ -317,6 +391,12 @@ func linuxDenied(k []string) bool {
 	if len(k) >= 3 && k[0] == "etc" && k[1] == "ssh" && strings.HasPrefix(k[2], "ssh_host_") {
 		return true
 	}
+	if len(k) >= 2 && k[0] == "opt" && strings.HasPrefix(k[1], "meshagent") { // /opt/meshagent*: the Mesh agent folders the agent itself discovers
+		return true
+	}
+	if len(k) > 0 && agentFileName(strings.ToLower(k[len(k)-1])) {
+		return true
+	}
 	for _, e := range k {
 		if e == ".ssh" || e == ".gnupg" || secretName(strings.ToLower(e)) {
 			return true
@@ -345,9 +425,13 @@ func windowsDenied(k []string) bool {
 			if e == "programdata" && n == "ssh" {
 				return true
 			}
+			// the agent's program folder and the Mesh agent's (CORE-AGENT-6; UNVERIFIED on Windows, pure path logic)
+			if (e == "program files" || e == "program files (x86)") && (n == "rivetit" || n == "mesh agent") {
+				return true
+			}
 		}
 	}
-	return false
+	return len(k) > 0 && agentFileName(k[len(k)-1])
 }
 
 // parseRoots reads the newline-separated allow list. Lines that are not valid

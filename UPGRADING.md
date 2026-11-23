@@ -85,6 +85,9 @@ Agent (Go) side of the 2026-11-21 red-team findings. Nothing is required of an e
   purpose. From the first anchored release on, every published agent binary needs its offline release signature in the edition (Agent binaries), or
   anchored agents refuse the update. Agents already deployed are unaffected until they install an anchored build. Self-hosted builds stamped
   `RELEASE_BUILD=1` without `RELEASE_KEYS` refuse every self-update.
+* **CORE-AGENT-6.** File transfer now refuses the agent's own program files, service unit and the Mesh agent's identity even inside an allowed folder,
+  and the server refuses them as transfer roots. An administrator who used `file_put` to replace the agent binary by hand must use a package upgrade,
+  the installer or self-update instead.
 * **Monitoring-only devices.** A device that must never run anything from the server sets all three of `disable_jobs`, `disable_script_checks` and
   `disable_update` in its `config.json` (endpoint-agent/README.md, "Monitoring-only profile"). `disable_jobs` alone still lets the server replace the
   agent binary (Chain C).

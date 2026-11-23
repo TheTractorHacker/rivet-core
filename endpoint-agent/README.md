@@ -486,7 +486,9 @@ wire contract is `docs/rmm/PROTOCOL.md` 3.6 and 3.7, the operator guide `docs/rm
   failures; `file_put` downloads ranges into a temporary file (`.rivetit-xfer-<id>.tmp`, created exclusively, mode 0600) next to the destination, checks the byte count and the SHA-256 against the signed job and the server's headers,
   then renames it into place (an existing file is replaced only with `overwrite`, and a symlink destination is refused). The path policy is pure and tested for both operating systems on any host: absolute path only, no `..`, no
   alternate data streams, short names or reserved device names on Windows, symbolic links resolved before the decision, whole-element comparison against the signed allow list, and an always-on deny list (shadow, sudoers, SSH host keys,
-  private keys and certificates, credential stores, SAM and NTDS, the agent's own state folder) that wins over the allow list.
+  private keys and certificates, credential stores, SAM and NTDS, the agent's own state folder, and (CORE-AGENT-6) the agent's own binary, its `.new`/`.prev`/`.failed`
+  siblings, its install folder found from the running executable, its systemd unit and drop-ins, and the Mesh agent's install and identity files) that wins over the allow list.
+  Self-update does not go through this policy. `file_put` remains root/SYSTEM-equivalent: anything the list does not name can be replaced.
 * **Results** are one compact JSON document per job; lists are shortened to fit `max_output_bytes` (`"truncated": true`) and never cut mid-text; strings inside the document are redacted one by one so it stays valid JSON.
 
 **Log collection** (`internal/logs`). Off until a check-in response offers the feature `logs:collect` together with `config.logs`; the agent stops the moment a response does not. Linux: `journalctl --output=json` with

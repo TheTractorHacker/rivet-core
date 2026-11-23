@@ -185,6 +185,25 @@ final class RemoteRulesTest extends TestCase
         yield 'windows pfx' => ['C:\\Data\\site.pfx', 'windows', $win, PathPolicy::DENY_LIST];
         yield 'windows agent dir' => ['C:\\ProgramData\\RivetIT\\state.json', 'windows', ['C:\\ProgramData'], PathPolicy::DENY_LIST];
         yield 'windows pagefile' => ['C:\\Data\\pagefile.sys', 'windows', $win, PathPolicy::DENY_LIST];
+        // CORE-AGENT-6 / Chain J: the agent's own program files, unit and the Mesh agent's identity, whatever the allow list says (PoC t_put.sh: allow=/opt)
+        yield 'agent binary under an allowed /opt' => ['/opt/rivetit-agent/rivetit-agent', 'linux', ['/opt/app', '/opt/rivetit-agent'], PathPolicy::DENY_LIST];
+        yield 'agent install dir' => ['/opt/rivetit-agent/other', 'linux', ['/opt/rivetit-agent'], PathPolicy::DENY_LIST];
+        yield 'agent binary in another folder' => ['/usr/local/bin/rivetit-agent', 'linux', ['/usr/local/bin'], PathPolicy::DENY_LIST];
+        yield 'agent update sibling' => ['/usr/local/bin/rivetit-agent.new', 'linux', ['/usr/local/bin'], PathPolicy::DENY_LIST];
+        yield 'agent rollback sibling' => ['/usr/local/bin/rivetit-agent.prev', 'linux', ['/usr/local/bin'], PathPolicy::DENY_LIST];
+        yield 'agent unit' => ['/etc/systemd/system/rivetit-agent.service', 'linux', ['/etc/systemd'], PathPolicy::DENY_LIST];
+        yield 'agent unit drop-in' => ['/etc/systemd/system/rivetit-agent.service.d/override.conf', 'linux', ['/etc/systemd'], PathPolicy::DENY_LIST];
+        yield 'agent unit in /usr/lib' => ['/usr/lib/systemd/system/rivetit-agent.service', 'linux', ['/usr/lib/systemd'], PathPolicy::DENY_LIST];
+        yield 'mesh install' => ['/usr/local/mesh_services/meshagent/meshagent', 'linux', ['/usr/local/mesh_services'], PathPolicy::DENY_LIST];
+        yield 'mesh opt folder' => ['/opt/meshagent-acme/meshagent', 'linux', ['/opt/meshagent-acme'], PathPolicy::DENY_LIST];
+        yield 'mesh identity anywhere' => ['/srv/data/meshagent.db', 'linux', $lin, PathPolicy::DENY_LIST];
+        yield 'mesh settings anywhere' => ['/srv/data/meshagent.msh', 'linux', $lin, PathPolicy::DENY_LIST];
+        yield 'other unit is not the agent' => ['/etc/systemd/system/backup.service', 'linux', ['/etc/systemd'], null];
+        yield 'a file merely named like the agent config' => ['/srv/data/rivetit-agent.conf', 'linux', $lin, null];
+        yield 'windows agent program folder' => ['C:\\Program Files\\RivetIT\\Agent\\rivetit-agent.exe', 'windows', ['C:\\Program Files'], PathPolicy::DENY_LIST];
+        yield 'windows agent sibling elsewhere' => ['D:\\Tools\\rivetit-agent.exe.prev', 'windows', ['D:\\Tools'], PathPolicy::DENY_LIST];
+        yield 'windows mesh agent folder' => ['C:\\Program Files\\Mesh Agent\\MeshAgent.exe', 'windows', ['C:\\Program Files'], PathPolicy::DENY_LIST];
+        yield 'windows other program' => ['C:\\Program Files\\Other\\app.exe', 'windows', ['C:\\Program Files'], null];
     }
 
     /** @param list<string> $roots */
@@ -199,7 +218,8 @@ final class RemoteRulesTest extends TestCase
         foreach (['/srv/shared', '/var/log', '/home/alice', '/opt/app/data'] as $r) {
             $this->assertTrue(PathPolicy::validRoot($r, 'linux'), $r);
         }
-        foreach (['/', '/etc', '/root', '/home', '/var', '/etc/ssh/ssh_host_rsa_key', '/proc/1', '/srv/../etc', 'srv/data', '', "/srv/a\0", '/srv//x', '/dev/shm', '/root/.ssh'] as $r) {
+        foreach (['/', '/etc', '/root', '/home', '/var', '/etc/ssh/ssh_host_rsa_key', '/proc/1', '/srv/../etc', 'srv/data', '', "/srv/a\0", '/srv//x', '/dev/shm', '/root/.ssh',
+            '/opt/rivetit-agent', '/usr/local/mesh_services', '/etc/systemd/system/rivetit-agent.service.d'] as $r) {
             $this->assertFalse(PathPolicy::validRoot($r, 'linux'), json_encode($r));
         }
         foreach (['C:\\Data', 'D:\\Shares\\Public', 'C:\\Users\\Public'] as $r) {
