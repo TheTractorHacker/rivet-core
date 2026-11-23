@@ -288,6 +288,53 @@ final class PanelTicketsTest extends PanelTestCase
         $this->assertCount(2, $small->gateway->created);
     }
 
+    /**
+     * CORE-API-8 (red team 2026-11-21): the cap was a COUNT and then a separate INSERT, so parallel creates with distinct request ids all passed the count before any of them
+     * was stored. Now the count and the reservation run under a lock on the device's row. Real processes on the scratch database race here (not one PHP process, not a
+     * single-threaded server): with a cap of 3, twelve processes making two attempts each, released at the same instant, create exactly 3 tickets.
+     */
+    public function testTheDailyCapHoldsWhenSeveralProcessesCreateAtOnce(): void
+    {
+        [$cap, $racers, $tries] = [3, 12, 2];
+        $contact = $this->p->gateway->addClientContact($this->p->clientA, 'Racer');
+        $dev = $this->p->device_for($this->p->clientA, $contact);
+        $startAt = microtime(true) + 2.0;
+        $procs = [];
+        $pipes = [];
+        for ($i = 0; $i < $racers; ++$i) {
+            $procs[$i] = proc_open([PHP_BINARY, __DIR__ . '/../../Support/panel_ticket_worker.php', (string) $dev['device_id'], (string) $this->p->clientA, (string) $contact, (string) $cap,
+                sprintf('%.6F', $startAt), (string) $tries], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes[$i]);
+            $this->assertIsResource($procs[$i]);
+        }
+        $codes = [];
+        foreach ($procs as $i => $proc) {
+            $out = trim((string) stream_get_contents($pipes[$i][1]));
+            $this->assertSame('', trim((string) stream_get_contents($pipes[$i][2])));
+            proc_close($proc);
+            array_push($codes, ...explode("\n", $out));
+        }
+        $counts = array_count_values($codes);
+        ksort($counts);
+        $this->assertSame(['201' => $cap, '429' => $racers * $tries - $cap], $counts, 'exactly the cap was created, every other attempt was refused: ' . json_encode($codes));
+        $this->assertSame($cap, (int) $this->p->rmm->one('SELECT COUNT(*) FROM panel_ticket_owner WHERE ticket_id IS NOT NULL AND device_id = ' . (int) $dev['device_id']));
+        $this->assertSame(0, (int) $this->p->rmm->one('SELECT COUNT(*) FROM panel_ticket_owner WHERE ticket_id IS NULL AND device_id = ' . (int) $dev['device_id']), 'no claim left behind');
+    }
+
+    /** CORE-API-8: the cap is checked after the replay lookup: a retry of a request that already has a ticket is answered, not counted and not refused at the cap. */
+    public function testARetryAtTheCapIsAReplayNotARefusal(): void
+    {
+        $small = new \RivetCore\Tests\Support\PanelHarness(['limits' => ['ticketsPerDayMax' => 1]]);
+        $contact = $small->gateway->addClientContact($small->clientA, 'X');
+        $dev = $small->device_for($small->clientA, $contact);
+        $create = fn (string $rid) => $small->call('POST', 'panel_tickets', ['subject' => 's', 'body' => 'b', 'client_request_id' => $rid], $dev['token']);
+        [$code, , $first] = $create(self::RID);
+        $this->assertSame(201, $code);
+        [$code, , $again] = $create(self::RID);
+        $this->assertSame([200, true, $first['ticket_id']], [$code, $again['replayed'], $again['ticket_id']], 'the retry is a replay');
+        $this->assertSame(429, $create('22222222-3333-4444-8555-666666666666')[0], 'a new request is refused at the cap');
+        $this->assertCount(1, $small->gateway->created);
+    }
+
     // ------------------------------------------------------------------ idempotent creation
 
     private const RID = '11111111-2222-4333-8444-555555555555';

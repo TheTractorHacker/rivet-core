@@ -124,13 +124,25 @@ final class PanelService
         $category = $this->category($p, $body['category_id'] ?? null);
         $attachments = PanelAttachments::validate($body['attachments'] ?? null, $this->limits);
 
-        $today = (int) $this->sql->val('SELECT COUNT(*) FROM panel_ticket_owner WHERE device_id = ? AND created_at > ?', [$p->deviceId, $this->sql->utcAt(-86400)]);
-        if ($today >= $this->limits->ticketsPerDayMax) {
-            throw new ApiError(429, 'rate_limited', 'This device has created too many tickets today.', ['Retry-After' => '3600']);
-        }
+        // CORE-API-8: the daily cap is counted and the claim inserted under a lock on this device's row, so parallel creates cannot all pass the count before any of
+        // them is stored (it was a COUNT and then a separate INSERT). The transaction holds only the lock, the count and the insert; the gateway runs after it commits.
+        // A retry of a request that already holds a claim is not a new ticket: it is neither counted nor refused here, and reserve() answers it below, outside the
+        // transaction (its duplicate-key path must not run inside one: PostgreSQL aborts a transaction on any error).
+        $claim = $this->sql->transaction(function () use ($p, $requestId): ?int {
+            $this->sql->one('SELECT device_id FROM endpoint_agent_devices WHERE device_id = ? FOR UPDATE', [$p->deviceId]);
+            if ($requestId !== null && $this->sql->one('SELECT owner_id FROM panel_ticket_owner WHERE device_id = ? AND request_id = ?', [$p->deviceId, $requestId]) !== null) {
+                return null;
+            }
+            $today = (int) $this->sql->val('SELECT COUNT(*) FROM panel_ticket_owner WHERE device_id = ? AND created_at > ?', [$p->deviceId, $this->sql->utcAt(-86400)]);
+            if ($today >= $this->limits->ticketsPerDayMax) {
+                throw new ApiError(429, 'rate_limited', 'This device has created too many tickets today.', ['Retry-After' => '3600']);
+            }
+
+            return $this->insertClaim($p, $requestId);
+        });
 
         // Reserve (device, request id) BEFORE the gateway is called: the unique key lets exactly one of several concurrent retries through.
-        $reservation = $this->reserve($p, $requestId);
+        $reservation = $claim !== null ? ['owner_id' => $claim] : $this->reserve($p, $requestId);
         if (is_int($reservation['replayed'] ?? null)) {
             return ['replayed' => true, 'ticket_id' => $reservation['replayed']];
         }
@@ -244,8 +256,7 @@ final class PanelService
     {
         $now = $this->sql->utcNow();
         try {
-            return ['owner_id' => $this->sql->insert('INSERT INTO panel_ticket_owner (ticket_id, device_id, client_id, contact_id, request_id, created_at) VALUES (NULL, ?, ?, ?, ?, ?)',
-                [$p->deviceId, $p->clientId, $p->contactId, $requestId, $now])];
+            return ['owner_id' => $this->insertClaim($p, $requestId)];
         } catch (DatabaseException $e) {
             $row = $requestId === null ? null : $this->sql->one('SELECT owner_id, ticket_id, contact_id, created_at FROM panel_ticket_owner WHERE device_id = ? AND request_id = ?', [$p->deviceId, $requestId]);
             if ($row === null) {
@@ -272,6 +283,13 @@ final class PanelService
     }
 
     /** Drop a claim whose gateway call failed. Best effort: if even this fails, the claim expires by itself after the TTL. */
+    /** The claim row (ticket_id NULL until the gateway has created the ticket); a duplicate (device, request id) throws the database's duplicate-key error. */
+    private function insertClaim(PanelPrincipal $p, ?string $requestId): int
+    {
+        return $this->sql->insert('INSERT INTO panel_ticket_owner (ticket_id, device_id, client_id, contact_id, request_id, created_at) VALUES (NULL, ?, ?, ?, ?, ?)',
+            [$p->deviceId, $p->clientId, $p->contactId, $requestId, $this->sql->utcNow()]);
+    }
+
     private function release(int $ownerId): void
     {
         try {

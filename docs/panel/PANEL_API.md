@@ -217,7 +217,7 @@ Per device, through the edition's limiter closure (the same shape and Redis `Rat
 | Bucket | Limit | Used by |
 |---|---|---|
 | `panel_read` | 120 per 60 s | me, categories, ticket list, chat read |
-| `panel_create` | 10 per 60 s (and 50 per 24 h, `PanelLimits::$ticketsPerDayMax`) | create ticket |
+| `panel_create` | 10 per 60 s (and 50 per 24 h, `PanelLimits::$ticketsPerDayMax`, counted and reserved under a lock on the device row so parallel creates cannot pass it; a retry with the same `client_request_id` is not counted) | create ticket |
 | `panel_chat` | 20 per 60 s (and 500 posts / 50 MiB per UTC day, `PanelLimits::$chatPostsPerDayMax` / `$chatBytesPerDayMax`, kept in `rmm_daily_budget`) | chat post |
 | `panel_authfail:<sha1 address>` | 30 per 60 s | failed credential checks per address (a valid call is not counted) |
 
