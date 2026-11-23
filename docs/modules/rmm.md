@@ -437,6 +437,16 @@ Constructor options of `RmmModule`: `binary_dir`, `transfer_dir` (Phase 6: where
 
 Device authentication, SYSTEM-level job execution and remote access make this a high-risk module: a focused review is required before it is enabled by default anywhere. Credentials are stored as hashes (device and enrollment tokens), the signing key and the Mesh login key are sealed with the edition's key, no read model contains a secret, job output is redacted and capped when it is stored, script text is never written to the audit log (a hash is), and every denial is a generic message.
 
+**Redaction of job output, logs and change text** (`Crypto\Redactor`, pattern-based and best effort: a secret in free text with no marker stays visible). It masks PEM
+private keys, `Authorization`/`Bearer`, JWTs, the value after secret-looking names (`password`, `token`, `api_key`, `DB_PASS`, `licenseKey`, ...; quoted values to the closing
+quote), `curl -u`, `mysql -p`, `sshpass -p`, PowerShell `-Password`, AWS/GitHub/Slack-bot keys, this product's own tokens and 64-hex strings, and since CORE-DATA-2 (red team
+2026-11-21): the password of `scheme://user:<password>@host` (also with an empty user, `redis://:pw@host`; only the password), the whole value of a `Cookie:`/`Set-Cookie:`
+header line (also curl -v's `< `/`> ` lines; not the word elsewhere), `--pass x` / `-pw x` / `-pass x`, the password of `net use \\server\share <password>` and after
+`/user:name`, a `sig=` query parameter (Azure SAS), Stripe `sk_live_`/`sk_test_`/`rk_live_` keys, the path of a `hooks.slack.com/services/` webhook, and the unquoted value of a
+password-like name (`password`, `passwd`, `passphrase`, `pwd`) to the end of its line (`password: a b c`). The rows of `src/Rmm/Crypto/redaction-vectors.json` are replayed by
+the Go agent's `jobs.Redact` too. The change monitor keeps the end-of-line rule off (`Redactor::redact($s, false)`), because its text must match the frozen rc.38 vectors the
+agent's change monitor replays. The rules stay linear: 800 KB of adversarial text is redacted in well under half a second.
+
 What is **verified**: the golden transcripts of the original replay identically through `DeviceApi` and `TechnicianApi` (`php scripts/rmm-golden/replay-core.php replay`); the RivetIT role matrix (`RoleMatrixTest`), deployment (`DeployTest`), administration (`AdminTest`), read models (`ReadModelTest`) and technician actions (`TechnicianTest`) run against a scratch database. **Not verified**: a real MeshCentral server (only `tests/Support/MockMeshCentral.php`; the Phase 6 terminal and files views use MeshCentral's `viewmode` 12 and 13 from its URL scheme and have not been opened in a real MeshCentral), the Windows installer on a Windows host, the Windows code of the Phase 6 and 8 agent (cross-compiled and vetted only), the Linux agent on a physical host.
 
 ## Client scoping matrix
