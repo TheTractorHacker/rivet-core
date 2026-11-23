@@ -81,6 +81,32 @@ final class TechnicianApi
     /** Largest request body (a script is at most 100 KiB; JSON escaping can inflate it). */
     public const MAX_BODY = 1048576;
 
+    /**
+     * CORE-API-7 (red team 2026-11-21): write routes whose handler reads and validates the body before the action checks the ability, so a caller without
+     * the ability got 400 or 422 (learning field names and body validity) instead of 403. The ability each action itself requires (any one of the list) is
+     * asked here BEFORE the body is read: role-level (client 0) for a fleet route, at the device's client for a route under a device (the device is already
+     * inside the caller's clients, else 404 as before). A caller the action would accept always passes, so no status code changes for an authorized caller;
+     * the action still runs its own complete check. Path pattern: '#' is a number; a leading '#' is the device id.
+     *
+     * @var list<array{0:list<string>,1:list<string>,2:list<string>}>
+     */
+    private const WRITE_PRECHECK = [
+        [['changes', 'settings'], ['PUT', 'PATCH', 'POST'], [RmmAbility::ADMIN, RmmAbility::CHANGE_MANAGE]],
+        [['changes', 'rules', 'recommended'], ['POST'], [RmmAbility::CHANGE_MANAGE]],
+        [['software_params', '#'], ['PUT', 'POST', 'DELETE'], [RmmAbility::SOFTWARE_MANAGE]],
+        [['software_packages', '#', 'versions', '#'], ['PUT', 'PATCH'], [RmmAbility::SOFTWARE_MANAGE]],
+        [['mesh', 'approve'], ['POST'], [RmmAbility::DEVICE_MANAGE]],
+        [['hypervisor', 'vms', '#'], ['PUT', 'PATCH'], [RmmAbility::HYPERVISOR_MANAGE]],
+        [['hypervisor', 'settings'], ['PUT', 'PATCH', 'POST'], [RmmAbility::ADMIN, RmmAbility::HYPERVISOR_MANAGE]],
+        [['patches', 'approve'], ['POST'], [RmmAbility::PATCH_MANAGE]],
+        [['patches', 'decline'], ['POST'], [RmmAbility::PATCH_MANAGE]],
+        [['#', 'parent'], ['PUT', 'POST'], [RmmAbility::ALERT_MANAGE]],
+        [['#', 'mesh', 'install'], ['POST'], [RmmAbility::REMOTE_MANAGE]],
+        [['#', 'mesh', 'uninstall'], ['POST'], [RmmAbility::REMOTE_MANAGE]],
+        [['#', 'tags'], ['POST'], [RmmAbility::DEVICE_MANAGE]],
+        [['#', 'hypervisor'], ['PUT', 'PATCH'], [RmmAbility::HYPERVISOR_MANAGE]],
+    ];
+
     public function __construct(
         private readonly RmmAuthorizer $authz,
         private readonly TechnicianActions $actions,
@@ -128,6 +154,9 @@ final class TechnicianApi
         $op = $seg[3] ?? null;
 
         if ($id === null) {
+            if (($pre = $this->writePrecheck($uid, $method, $seg, 0)) !== null) {
+                return $pre;
+            }
             if ($seg !== [] && $this->alerting !== null && in_array($seg[0], AlertingApi::FLEET, true)) {
                 return $this->alerting->fleet($req, $who, $seg);
             }
@@ -185,6 +214,9 @@ final class TechnicianApi
         $dev = $this->actions->visibleDevice($uid, $id);
         if ($dev === null) {
             return self::json(404, ['error' => 'Device not found.', 'code' => 'not_found']);
+        }
+        if (($pre = $this->writePrecheck($uid, $method, $seg, (int) $dev['client_id'])) !== null) {
+            return $pre;
         }
         $canSeeOutput = $this->authz->allowed($uid, RmmAbility::JOB_RUN_SAVED, (int) $dev['client_id']);
 
@@ -894,6 +926,38 @@ final class TechnicianApi
     private static function action(ActionResult $r, \Closure $body): RmmResponse
     {
         return $r->ok ? self::json($r->http, $body($r)) : self::failure($r);
+    }
+
+    /**
+     * CORE-API-7: the {@see WRITE_PRECHECK} answer for this request: null when the route is not listed or the caller holds one of its abilities (at
+     * `$clientId`), else the 403 the action would give, before any body is read.
+     *
+     * @param list<string> $seg
+     */
+    private function writePrecheck(int $uid, string $method, array $seg, int $clientId): ?RmmResponse
+    {
+        foreach (self::WRITE_PRECHECK as [$pattern, $methods, $abilities]) {
+            if (count($pattern) !== count($seg) || !in_array($method, $methods, true)) {
+                continue;
+            }
+            foreach ($pattern as $i => $p) {
+                if ($p === '#' ? !ctype_digit($seg[$i]) : $p !== $seg[$i]) {
+                    continue 2;
+                }
+            }
+            $first = null;
+            foreach ($abilities as $ability) {
+                $denied = $this->authz->check($uid, $ability, $clientId);
+                if ($denied === null) {
+                    return null;
+                }
+                $first ??= $denied;
+            }
+
+            return self::json(403, ['error' => (string) $first, 'code' => 'forbidden']);
+        }
+
+        return null;
     }
 
     /**
