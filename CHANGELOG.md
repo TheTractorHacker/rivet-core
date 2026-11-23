@@ -2,6 +2,10 @@
 
 All notable changes to RivetCore. Semantic versioning.
 
+## [Unreleased]
+
+- **Security: NEW-2 (red team 2026-11-21, Chain C step 3)** `RmmAdmin::uploadBinary`, `binaryAction`, `addExternalRelease`, `updateRelease`, `uploadMsiTemplate`, `msiTemplateAction`, `setReleaseSignature` and `setReleaseRollover` now carry the TEN-3 fleet-wide guard (as `clearUpdateFailures` already did): a caller whose access is limited to some clients gets 403 and nothing changes, whatever abilities the edition's role grants. Both editions map `rmm.binary.publish` to administrators today, so nothing changes for them.
+
 ## 1.0.0-rc.78 (inbound monitoring webhooks: Uptime Kuma; no migration)
 
 Additive only: no existing signature, constant or table changed. Core ships the shared logic; each edition adds the public endpoint, settings page, incident table and ticket adapter (`docs/design/edition-prompts-inbound-monitoring.md`).

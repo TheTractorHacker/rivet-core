@@ -61,10 +61,10 @@ final class TenantIsolationMatrixTest extends TestCase
         'PatchActions::getPolicy' => 'Reads one patch policy, a fleet-wide object: settings only. Its assignments are filtered to the caller\'s clients (testPolicyDetailsHideTheAssignmentsOfOtherClients); its writes are in the matrix.',
         'TechnicianActions::approveMeshNodes' => 'Bulk approve-and-map: every id goes through setMeshNode(), whose deviceFor() hides a device of another client; an id outside the caller\'s clients is reported per device as refused (HTTP 200 with a per-device result), never acted on.',
         // ---- RmmAdmin: fleet-wide agent releases and installer templates, gated by an administrative ability (no client or device is named)
-        'RmmAdmin::msiTemplateAction' => 'Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish.',
-        'RmmAdmin::setReleaseSignature' => 'Stores the offline release signature of a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish (CORE-DS-26).',
-        'RmmAdmin::binaryAction' => 'Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish.',
-        'RmmAdmin::updateRelease' => 'Changes the rollout percentage of an agent release: fleet-wide, no client owns it; needs rmm.binary.publish.',
+        'RmmAdmin::msiTemplateAction' => 'Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish and a caller not limited to some clients (TEN-3).',
+        'RmmAdmin::setReleaseSignature' => 'Stores the offline release signature of a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish and a caller not limited to some clients (TEN-3; CORE-DS-26).',
+        'RmmAdmin::binaryAction' => 'Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish and a caller not limited to some clients (TEN-3).',
+        'RmmAdmin::updateRelease' => 'Changes the rollout percentage of an agent release: fleet-wide, no client owns it; needs rmm.binary.publish and a caller not limited to some clients (TEN-3).',
         // ---- services below the actions: no principal, they act on a device row the caller already authorised
         'TransferService::listFor' => 'Service layer, no principal: RemoteActions::listTransfers() resolves the device and the ability first (matrix row).',
         'TransferService::receiveChunk' => 'Agent-facing: the device is authenticated by its own token and the transfer by a one-time token; find() is keyed by (transfer, device), see TransferService::find.',

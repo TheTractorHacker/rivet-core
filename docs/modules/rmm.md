@@ -35,7 +35,7 @@ Required (all in `RivetCore\Rmm\Contracts`):
 | `rmm.remote.launch` | open a MeshCentral session | `module_rmm_remote_connect >= 1`, not a module-only login |
 | `rmm.device.manage` | approve, reject, revoke, retire, transfer, re-enroll, rotate, set ring, map a MeshCentral node | `role_is_admin` |
 | `rmm.token.manage` | create and revoke enrollment tokens, issue installers | `role_is_admin` |
-| `rmm.binary.publish` | upload agent binaries, make one current, manage releases and rings | `role_is_admin` |
+| `rmm.binary.publish` | upload agent binaries, make one current, manage releases and rings (fleet-wide: also refused to a caller limited to some clients, TEN-3) | `role_is_admin` |
 | `rmm.alert.manage` | acknowledge and resolve alerts, maintenance windows of one client or one device, a device's parent (Phase 3; needs `rmm.device.view` too) | suggested: like `rmm.job.run_saved` |
 | `rmm.admin` | module settings, switches, signing key, MeshCentral settings; Phase 2: policies, schedules, custom field definitions, secret field values, re-signing scripts; Phase 3: escalation policies, storm-control limits and maintenance windows that span clients (all, site, group, tag) | `role_is_admin` |
 
@@ -599,10 +599,10 @@ MeshCentral does not separate clients: one Mesh account reaches every device of 
 | `AutoInstallActions::paramsOf` | n/a | no (not client-scoped) | Reads where the parameters of a catalog package are set (never a value); the client-scoped entries are filtered to the caller's clients. Writes are in the matrix. |
 | `TechnicianActions::approveMeshNodes` | n/a | no (not client-scoped) | Bulk approve-and-map: every id goes through setMeshNode(), whose deviceFor() hides a device of another client; an id outside the caller's clients is reported per device as refused, never acted on. |
 | `PatchActions::getPolicy` | n/a | no (not client-scoped) | Reads one patch policy, a fleet-wide object: settings only. Its assignments are filtered to the caller's clients (testPolicyDetailsHideTheAssignmentsOfOtherClients); its writes are in the matrix. |
-| `RmmAdmin::msiTemplateAction` | n/a | no (not client-scoped) | Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
-| `RmmAdmin::setReleaseSignature` | n/a | no (not client-scoped) | Stores the offline release signature of a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish (CORE-DS-26). |
-| `RmmAdmin::binaryAction` | n/a | no (not client-scoped) | Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
-| `RmmAdmin::updateRelease` | n/a | no (not client-scoped) | Changes the rollout percentage of an agent release: fleet-wide, no client owns it; needs rmm.binary.publish. |
+| `RmmAdmin::msiTemplateAction` | n/a | no (not client-scoped) | Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish and a caller not limited to some clients (TEN-3). |
+| `RmmAdmin::setReleaseSignature` | n/a | no (not client-scoped) | Stores the offline release signature of a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish and a caller not limited to some clients (TEN-3; CORE-DS-26). |
+| `RmmAdmin::binaryAction` | n/a | no (not client-scoped) | Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish and a caller not limited to some clients (TEN-3). |
+| `RmmAdmin::updateRelease` | n/a | no (not client-scoped) | Changes the rollout percentage of an agent release: fleet-wide, no client owns it; needs rmm.binary.publish and a caller not limited to some clients (TEN-3). |
 | `TransferService::listFor` | n/a | no (not client-scoped) | Service layer, no principal: RemoteActions::listTransfers() resolves the device and the ability first (matrix row). |
 | `TransferService::receiveChunk` | n/a | no (not client-scoped) | Agent-facing: the device is authenticated by its own token and the transfer by a one-time token; find() is keyed by (transfer, device), see TransferService::find. |
 | `TransferService::serveChunk` | n/a | no (not client-scoped) | Agent-facing: the device is authenticated by its own token and the transfer by a one-time token; find() is keyed by (transfer, device), see TransferService::find. |
