@@ -4496,11 +4496,22 @@
         },
         "RivetCore\\Rmm\\Enrollment\\AttemptLog": {
             "kind": "final class",
+            "constants": {
+                "AUDIT_FULL": 100,
+                "AUDIT_SAMPLE_EVERY": 100,
+                "AUDIT_WINDOW_S": 600,
+                "KIND_ENROLL": "enroll",
+                "KIND_INSTALLER": "installer",
+                "KIND_PANEL": "panel"
+            },
             "methods": {
                 "__construct": "__construct(RivetCore\\Rmm\\Support\\Sql $sql)",
+                "auditSampling": "auditSampling(string $kind, int $attemptId): ?string",
                 "byAddress": "byAddress(string $salt, string $ip, int $windowS): array",
                 "byInstallerSelector": "byInstallerSelector(string $selector, int $windowS): array",
+                "insert": "insert(string $salt, string $ip, bool $ok, string $reason, string $selector): int",
                 "ipHash": "static ipHash(string $salt, string $ip): string",
+                "limiterAddress": "static limiterAddress(string $ip): string",
                 "record": "record(string $salt, string $ip, bool $ok, string $reason, string $selector): void"
             }
         },

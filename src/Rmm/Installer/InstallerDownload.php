@@ -241,8 +241,10 @@ final class InstallerDownload
      */
     private function reject(string $reason, string $ip, string $selector, ?array $row): never
     {
-        $this->attempts->record(RmmProtocol::INSTALLER_RATE_SALT, $ip, false, 'installer_' . $reason, $selector);
-        $this->audit->record('Installer Download Rejected', "Installer download rejected ($reason) from $ip" . ($selector !== '' ? " using token $selector" : ''), $row !== null ? (int) $row['client_id'] : 0, 0);
+        $id = $this->attempts->insert(RmmProtocol::INSTALLER_RATE_SALT, $ip, false, 'installer_' . $reason, $selector);
+        if (($tail = $this->attempts->auditSampling(AttemptLog::KIND_INSTALLER, $id)) !== '') {   // CORE-API-3: sampled past the instance-wide threshold
+            $this->audit->record('Installer Download Rejected', "Installer download rejected ($reason) from $ip" . ($selector !== '' ? " using token $selector" : '') . ($tail ?? ''), $row !== null ? (int) $row['client_id'] : 0, 0);
+        }
         throw new ApiError(404, 'not_found', 'Not found.');
     }
 

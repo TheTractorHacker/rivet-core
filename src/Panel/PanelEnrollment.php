@@ -174,9 +174,9 @@ final class PanelEnrollment
 
     private function recordAttempt(string $ip, bool $ok, string $reason, string $selector): void
     {
-        $this->attempts->record(PanelProtocol::ENROLL_RATE_SALT, $ip, $ok, 'panel_' . $reason, $selector);
-        if (!$ok) {
-            $this->audit->record('Panel Enrollment Failed', 'Panel enrollment attempt rejected (' . $reason . ') from ' . substr($ip, 0, 64) . ($selector !== '' ? ' using token ' . substr($selector, 0, 12) : ''), 0, 0);
+        $id = $this->attempts->insert(PanelProtocol::ENROLL_RATE_SALT, $ip, $ok, 'panel_' . $reason, $selector);
+        if (!$ok && ($tail = $this->attempts->auditSampling(AttemptLog::KIND_PANEL, $id)) !== '') {   // CORE-API-3: sampled past the instance-wide threshold
+            $this->audit->record('Panel Enrollment Failed', 'Panel enrollment attempt rejected (' . $reason . ') from ' . substr($ip, 0, 64) . ($selector !== '' ? ' using token ' . substr($selector, 0, 12) : '') . ($tail ?? ''), 0, 0);
         }
     }
 
