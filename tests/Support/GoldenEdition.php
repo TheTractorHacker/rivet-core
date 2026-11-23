@@ -9,15 +9,6 @@ use RivetCore\Contracts\ClockInterface;
 use RivetCore\Redis\RateLimiter;
 use RivetCore\Rmm\Http\DeviceApi;
 use RivetCore\Rmm\Http\RmmRequest;
-use RivetCore\Rmm\Migration\Migration0014EndpointAgent;
-use RivetCore\Rmm\Migration\Migration0015EndpointAgentConverge;
-use RivetCore\Rmm\Migration\Migration0016ModuleSwitches;
-use RivetCore\Rmm\Migration\Migration0018InventoryFoundation;
-use RivetCore\Rmm\Migration\Migration0019PoliciesAndScripts;
-use RivetCore\Rmm\Migration\Migration0020AlertingMaturity;
-use RivetCore\Rmm\Migration\Migration0021ScaleStorage;
-use RivetCore\Rmm\Migration\Migration0022RemoteAndLogs;
-use RivetCore\Rmm\Migration\Migration0023MeshAgent;
 use RivetCore\Rmm\RmmModule;
 use RivetCore\Support\SystemClock;
 use RivetCore\Testing\InMemoryRmmAssets;
@@ -87,10 +78,15 @@ final class GoldenEdition
         );
     }
 
+    /**
+     * Every Core migration in order (CoreMigrations::all(), idempotent), so the golden server runs on the schema an edition has. It used to stop at 0044
+     * (red team 2026-11-21, Info), and the chains lab had to run the rest itself. The golden adapter's reset still empties the hardening switches, so the
+     * recorded wire is unchanged.
+     */
     public static function migrate(\mysqli $m): void
     {
         $db = new MysqliDatabase($m);
-        foreach ([new Migration0014EndpointAgent(), new Migration0015EndpointAgentConverge(), new Migration0016ModuleSwitches(), new Migration0018InventoryFoundation(), new Migration0019PoliciesAndScripts(), new Migration0020AlertingMaturity(), new Migration0021ScaleStorage(), new Migration0022RemoteAndLogs(), new Migration0023MeshAgent(), new \RivetCore\Rmm\Migration\Migration0031ClockSkew(), new \RivetCore\Rmm\Migration\Migration0032CheckSet(), new \RivetCore\Rmm\Migration\Migration0034MeshAfterApproval(), new \RivetCore\Rmm\Migration\Migration0035DeviceType(), new \RivetCore\Rmm\Migration\Migration0036Hypervisors(), new \RivetCore\Rmm\Migration\Migration0037AgentOs(), new \RivetCore\Rmm\Migration\Migration0039AutomationDisabled(), new \RivetCore\Panel\Migration\Migration0040PanelApi(), new \RivetCore\Rmm\Migration\Migration0041DailyBudget(), new \RivetCore\Rmm\Migration\Migration0042RmmDataStore(), new \RivetCore\Rmm\Migration\Migration0043RmmStoreDenormalisation(), new \RivetCore\Rmm\Migration\Migration0044RmmStoreSwitch()] as $mig) {
+        foreach (\RivetCore\Migration\CoreMigrations::all() as $mig) {
             $mig->up($db);
         }
     }
