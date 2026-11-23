@@ -76,6 +76,24 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Red team 2026-11-21 fixes (unreleased; no migration; read before updating)
+
+- **Signed configuration (CORE-AGENT-4).** A NEW install (the first switch-on mints the signing key and no device is enrolled) now starts with
+  `rmm_hardening_settings.signed_config = 2`, so every agent that enrolls refuses unsigned check definitions and an unsigned log configuration from its first
+  contact. **An existing install is not changed**: it keeps its value (0 unless you set it). `RmmReadModel::settingsSummary()['hardening']`
+  (`RmmSettings::hardeningStatus()`) carries `signed_config`, `signed_config_recommended` (2), `signed_config_ok` and `signed_config_warning`; show the
+  warning prominently on the RMM settings or hardening page. `signed_config` (0 to 2) is now part of the validated settings form (`RmmSettings::update()`,
+  `RmmAdmin::saveSettings()`), so the page can offer the switch. Raising it is safe for every agent: one that predates CORE-DS-16 ignores the announcement
+  (it neither breaks nor gains protection; verified against the agent source before CORE-DS-16 with a new install's enrollment and check-in answers), one
+  that knows it keeps requiring signatures even if the level is lowered again later.
+- **Inbound monitoring (Chain A, CORE-API-5, NEW-1).** Responses no longer carry `ticket_id`; heartbeat times in the future count as the arrival time;
+  per-client (300/h) and overall (600/h) ticket caps write counter rows with source `_cap` into your incident table (label or hide them in the admin view; your
+  `IncidentStoreInterface::locked()` must allow nested locks on different keys, which GET_LOCK does; rerun `IncidentStoreConformanceTestCase`). Before you give
+  a client its own Uptime Kuma, give that sender its own secret limited to that client (`InboundAuthenticator`'s second argument); a shared secret trusts its
+  holder with every client.
+- **Release operations (NEW-2).** `RmmAdmin`'s binary, release, MSI template, release signature and rollover operations refuse a caller limited to some clients
+  (403), like `clearUpdateFailures` already did. Nothing to change while `rmm.binary.publish` stays an administrator ability.
+
 ## Adopting the Rivet Console redeem and events routes (1.0.0-rc.70, provisional; migration 0051; optional, off by default)
 
 Needs the remote session policy / Rivet Console release (rc.68 and rc.69, PR #130) first. Nothing is required: with `remote_console` off (the default) every existing call behaves as before.

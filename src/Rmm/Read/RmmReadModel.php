@@ -1251,6 +1251,7 @@ final class RmmReadModel
         $out['features'] = $this->settings->features();
         $out['limits'] = $this->settings->limits();
         $out['service_base'] = $this->updates->serviceBase();
+        $out['hardening'] = $this->settings->hardeningStatus();   // CORE-AGENT-4: show `signed_config_warning` prominently while it is set
 
         return $out;
     }

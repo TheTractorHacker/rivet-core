@@ -7879,6 +7879,7 @@
                 "MESH_TOKEN_TTL_DEFAULT_S": 300,
                 "MESH_TOKEN_TTL_MAX_S": 3600,
                 "MESH_TOKEN_TTL_MIN_S": 60,
+                "SIGNED_CONFIG_DEFAULT": 2,
                 "WRITABLE": [
                     "enabled",
                     "service_url",
@@ -7941,6 +7942,7 @@
                 "features": "features(): array",
                 "generateSigningKey": "generateSigningKey(): string",
                 "get": "get(bool $fresh = false): array",
+                "hardeningStatus": "hardeningStatus(): array",
                 "hasExtendedChecks": "hasExtendedChecks(): bool",
                 "integrationId": "integrationId(): int",
                 "limitDefaults": "static limitDefaults(): array",

@@ -19,3 +19,9 @@ Status: agent side implemented (endpoint-agent PR E). The PHP server side below 
 
 ## Local switch
 `config.json` `"require_signed_config": true` makes an agent refuse unsigned checks/logs even from a server that never announces `signed_config`.
+
+## Server default (red team 2026-11-21, CORE-AGENT-4)
+A new install (first switch-on, signing key minted, no device enrolled) starts at `signed_config = 2`; an existing install keeps its value and
+`RmmSettings::hardeningStatus()` (also in `RmmReadModel::settingsSummary()['hardening']`) carries a warning until it is raised. The level is part of the
+validated settings form (`RmmSettings::update()`, 0 to 2). Announcing it is inert for an agent that predates this contract: the member is unknown to it and its
+check verifier covers the delivered object, `device_id` included (checked against the agent source before CORE-DS-16 with a new install's answers).
