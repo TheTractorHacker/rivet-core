@@ -8,6 +8,7 @@ use RivetCore\Panel\Contracts\PanelTicketGatewayInterface;
 use RivetCore\Rmm\Contracts\RmmAuditInterface;
 use RivetCore\Rmm\Contracts\RmmTenancyInterface;
 use RivetCore\Rmm\Enrollment\AttemptLog;
+use RivetCore\Rmm\Enrollment\DeviceValidator;
 use RivetCore\Rmm\Http\ApiError;
 use RivetCore\Rmm\Support\Sql;
 
@@ -224,15 +225,29 @@ final class PanelEnrollment
             throw new ApiError(422, 'invalid', 'device.os must be one of ' . implode(', ', PanelProtocol::OSES) . '.');
         }
 
+        // CORE-API-4: these three are stored in endpoint_agent_devices beside the agents' devices, listed to technicians, and the host name is written into the "Panel
+        // Enrolled" audit text (a stored-text sink the edition must escape when it renders it). They get what the agent path gives them (DeviceValidator::cleanHostname):
+        // the characters that open markup or leave an attribute (`<` `>` `"` backtick) and the backslash become `_`. The edition's output escaping stays the real defence.
+        $hostname = DeviceValidator::cleanHostname(PanelText::input($dev['hostname'] ?? null, 'device.hostname', 200, false), 200);
+        if ($hostname === null) {
+            throw new ApiError(422, 'invalid', 'device.hostname is required.');
+        }
+
         return [
             'install_id' => strtolower($install),
-            'hostname' => PanelText::input($dev['hostname'] ?? null, 'device.hostname', 200, false),
+            'hostname' => $hostname,
             'os' => $os,
-            'os_version' => PanelText::input($dev['os_version'] ?? '', 'device.os_version', 200, false, true),
-            'app_version' => PanelText::input($dev['app_version'] ?? '', 'device.app_version', 40, false, true),
+            'os_version' => self::inert(PanelText::input($dev['os_version'] ?? '', 'device.os_version', 200, false, true)),
+            'app_version' => self::inert(PanelText::input($dev['app_version'] ?? '', 'device.app_version', 40, false, true)),
             // CORE-DS-61: the credential this install already holds, if it still has one: the proof that lets an enrollment re-key an existing device
             'previous_token' => is_string($dev['previous_token'] ?? null) && str_starts_with($dev['previous_token'], PanelProtocol::DEVICE_TOKEN_PREFIX) && strlen($dev['previous_token']) <= 200 ? $dev['previous_token'] : null,
         ];
+    }
+
+    /** CORE-API-4: the markup and attribute characters {@see DeviceValidator::cleanHostname()} replaces, replaced the same way in a version string (same length). */
+    private static function inert(string $s): string
+    {
+        return str_replace(['<', '>', '"', '`', '\\'], '_', $s);
     }
 
     /**

@@ -203,6 +203,10 @@ ideally from a cookie-less origin, never inline from the application origin, and
 
 Input (subject, body, names, filenames): must be UTF-8; NUL, control characters, bidirectional overrides/isolates/marks, zero-width characters and line/paragraph
 separators are removed; the length is checked in characters; markup is kept as typed (stored as plain text; the edition's renderer must escape it).
+The enrolling device's `hostname`, `os_version` and `app_version` are the exception: they share `endpoint_agent_devices` with the agents' devices and are listed to
+technicians, so they get what the agent path gives a host name (`DeviceValidator::cleanHostname`): `<`, `>`, `"`, backtick and backslash become `_` (CORE-API-4, red team
+2026-11-21; rows written before that keep what was sent). The host name is also written into the `Panel Enrolled` audit text, which is stored text like any other: the
+edition escapes it where it shows the audit log.
 Output (every string the API returns): entities are decoded once, tags are stripped, the same invisible characters are removed and the two markup characters left are
 returned as `&lt;` and `&gt;`. A client renders the value as text, decoding exactly those two entities; even an `innerHTML` mistake is inert.
 
