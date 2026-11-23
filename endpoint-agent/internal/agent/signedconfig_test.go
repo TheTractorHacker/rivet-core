@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -325,5 +326,76 @@ func TestReleaseBuildWithoutAnchorRequiresReleaseVerification(t *testing.T) {
 	update.EmbeddedReleaseKeys = base64.StdEncoding.EncodeToString(k)
 	if keys := r.a.releaseKeys(); len(keys) != 1 || !r.a.releaseRequired() {
 		t.Fatalf("a release build with an anchor: %d keys", len(keys))
+	}
+}
+
+// checkResults runs one check-in (answered by checks) and one sample, and returns status|detail per check key.
+func checkResults(t *testing.T, r *rig, checks ...json.RawMessage) map[string]string {
+	t.Helper()
+	r.s.checkinFn = func(int, []byte) (int, any, http.Header) {
+		return 200, map[string]any{"ok": true, "next_check_in_s": 60, "jobs_pending": 0, "config": map[string]any{"checks": checks}}, nil
+	}
+	ctx := context.Background()
+	r.a.checkIn(ctx, 0)
+	r.a.sample(ctx)
+	snap := r.a.ring.Snapshot()
+	out := map[string]string{}
+	for _, c := range snap[len(snap)-1].Checks {
+		out[c.Key] = c.Status + "|" + c.Detail
+	}
+	return out
+}
+
+// CORE-AGENT-4 / Chain G (agent side): once this server has delivered a check list in which every check is signed (Core signs every check type even
+// with signed_config off), an unsigned check can only have been injected on the way and is refused, without waiting for the administrator to switch
+// signed_config on. A server that never signed everything keeps the old behaviour (older servers, the e2e fake server); allow_unsigned_checks undoes
+// the learned requirement; a new enrolment forgets it.
+func TestUnsignedChecksAreRefusedOnceTheServerSignedEveryCheck(t *testing.T) {
+	r := newRig(t)
+	r.enroll()
+	unsigned, _ := json.Marshal(map[string]any{"key": "injected", "type": "pending_reboot", "params": map[string]any{}, "interval_s": 30})
+	signed := r.s.signJob(map[string]any{"key": "real", "type": "pending_reboot", "params": map[string]any{}, "interval_s": 30})
+	// an older server (or one that has not signed everything yet): unsigned checks still run
+	if res := checkResults(t, r, unsigned); strings.HasPrefix(res["injected"], "unknown|") {
+		t.Fatalf("an unsigned check from a server that never signed was refused: %v", res)
+	}
+	if res := checkResults(t, r, signed, unsigned); strings.HasPrefix(res["injected"], "unknown|") {
+		t.Fatalf("a partly signed list must not switch the requirement on: %v", res)
+	}
+	// the server delivers a fully signed list: from now on an injected unsigned check is refused
+	if res := checkResults(t, r, signed); !strings.HasPrefix(res["real"], "ok|") {
+		t.Fatalf("the signed check did not run: %v", res)
+	}
+	res := checkResults(t, r, signed, unsigned)
+	if !strings.HasPrefix(res["injected"], "unknown|") || !strings.Contains(res["injected"], "refused") || !strings.HasPrefix(res["real"], "ok|") {
+		t.Fatalf("an unsigned check injected after a fully signed list ran: %v", res)
+	}
+	// it survives a restart
+	r.a = r.newAgent()
+	if res := checkResults(t, r, unsigned); !strings.HasPrefix(res["injected"], "unknown|") {
+		t.Fatalf("after a restart: %v", res)
+	}
+	// the local switch turns the learned requirement off
+	cfg, _ := r.st.LoadConfig()
+	cfg.AllowUnsignedChecks = true
+	r.st.SaveConfig(cfg)
+	r.a = r.newAgent()
+	if res := checkResults(t, r, unsigned); strings.HasPrefix(res["injected"], "unknown|") {
+		t.Fatalf("allow_unsigned_checks did not apply: %v", res)
+	}
+	// ... but never overrides require_signed_config
+	cfg.RequireSignedConfig = true
+	r.st.SaveConfig(cfg)
+	r.a = r.newAgent()
+	if res := checkResults(t, r, unsigned); !strings.HasPrefix(res["injected"], "unknown|") {
+		t.Fatalf("allow_unsigned_checks overrode require_signed_config: %v", res)
+	}
+	// a new enrolment (perhaps another server) forgets what the old server did
+	cfg.AllowUnsignedChecks, cfg.RequireSignedConfig = false, false
+	r.st.SaveConfig(cfg)
+	r.a = r.newAgent()
+	r.enroll()
+	if st, _ := r.st.LoadState(); st.ChecksSignedSeen || r.a.checksSigned.Load() {
+		t.Fatal("re-enrolment kept the learned requirement")
 	}
 }

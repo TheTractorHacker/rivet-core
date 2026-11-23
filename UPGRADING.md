@@ -95,6 +95,9 @@ Agent (Go) side of the 2026-11-21 red-team findings. Nothing is required of an e
   account, or sits in a folder other accounts can write. Default paths are unaffected. If a fleet used such a layout, fix the directory
   (`chown root:root`, `chmod go-w`) before rolling out this agent version; an agent that is updated into a refused layout rolls back to its previous
   binary (CORE-DS-11) and reports the update as failed.
+* **CORE-AGENT-4 (agent side).** After this update an agent refuses unsigned check definitions once its server has sent a fully signed check list
+  (every current Core server does). Nothing to do for Core-based editions. A custom or very old server that mixes signed and unsigned checks keeps
+  working (a mixed list never switches the rule on); to undo it on one device set `"allow_unsigned_checks": true` in `config.json`.
 * **Monitoring-only devices.** A device that must never run anything from the server sets all three of `disable_jobs`, `disable_script_checks` and
   `disable_update` in its `config.json` (endpoint-agent/README.md, "Monitoring-only profile"). `disable_jobs` alone still lets the server replace the
   agent binary (Chain C).

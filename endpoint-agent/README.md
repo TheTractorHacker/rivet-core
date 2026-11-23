@@ -333,7 +333,7 @@ On Linux the default is `/var/lib/rivetit-agent` (override with `--state-dir DIR
 
 | File | Contents |
 |---|---|
-| `config.json` | operator config (also `disable_change`, `change_extra_roots`): `server_url`, `ca_file`, `pin_spki_sha256`, `department`, `mesh_node_id` (override), `max_concurrent_jobs` (default 1), `disable_jobs`, `disable_script_checks`, `disable_update`, `require_signed_config`, `checks_block_private` (network checks also refuse loopback and private addresses), `update_hosts`, `buffer_max_samples` (100), `buffer_max_bytes` (1 MiB), `software_store_apps` (Windows: also list Microsoft Store apps in the software inventory; default off) |
+| `config.json` | operator config (also `disable_change`, `change_extra_roots`): `server_url`, `ca_file`, `pin_spki_sha256`, `department`, `mesh_node_id` (override), `max_concurrent_jobs` (default 1), `disable_jobs`, `disable_script_checks`, `disable_update`, `require_signed_config`, `allow_unsigned_checks` (undo the learned signed-checks rule), `checks_block_private` (network checks also refuse loopback and private addresses), `update_hosts`, `buffer_max_samples` (100), `buffer_max_bytes` (1 MiB), `software_store_apps` (Windows: also list Microsoft Store apps in the software inventory; default off) |
 | `state.json` | `install_id`, `device_id`, status, `seq`, pinned `signing_public_key`, server config (checks/intervals), last check-in/error, update failure |
 | `device.token` | the device credential: `v1:dpapi:<base64>` on Windows (`CryptProtectData`, machine scope + entropy), `v1:plain:<token>` `0600` on Linux |
 | `enroll.token` | one-shot enrollment token, only between an offline install and the first successful enrollment |
@@ -439,6 +439,11 @@ minus `signature`, the same rule as jobs; vector `check_definition` in the serve
 script checks, and any other check whose signature is present but invalid, report `unknown` ("refused") and are never executed. `disable_script_checks`
 in `config.json` is a local kill switch. Note that a server holding the signing key can still sign malicious script checks: the server's signing key is
 the root of trust for script execution (jobs and checks alike).
+Other check types are refused unsigned once the server announces `config.signed_config` or `require_signed_config` is set, and (CORE-AGENT-4) as soon
+as this server has delivered one non-empty check list in which EVERY check verified: Core signs every check type whatever `signed_config` says, so an
+unsigned check after that can only have been added on the way (a TLS-inspecting proxy, Chain G) and reports `unknown` ("unsigned check refused").
+The learned requirement is kept in `state.json` (`checks_signed_seen`), forgotten by a new enrolment, and turned off (only it) by
+`"allow_unsigned_checks": true` in `config.json`; a server that never signed everything (an older one, the e2e fake server) keeps the old behaviour.
 
 ## Jobs
 

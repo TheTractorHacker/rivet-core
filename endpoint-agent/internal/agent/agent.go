@@ -107,6 +107,7 @@ type Agent struct {
 	hv           *hypervisor.Manager  // Proxmox / Hyper-V visibility; idle until a check-in offers "hypervisor" with a signed configuration
 	chg          *change.Manager      // change monitoring; idle until a check-in offers change:monitor with a signed configuration
 	signedSeen   atomic.Int32         // highest signed_config version announced since start
+	checksSigned atomic.Bool          // this server has delivered a check list that was entirely signed (CORE-AGENT-4, see checkSigningRequired)
 	updTransient map[string]int       // temporary self-update failures per version (drives the back-off)
 	updSelfTest  map[string]int       // selftest timeouts per version (the only failures that can make a version permanent)
 	updRetryAt   map[string]time.Time // earliest next self-update attempt per version after a temporary failure (review R3-4)
@@ -185,7 +186,7 @@ func New(o Options) (*Agent, error) {
 		}
 		return checkBoundToDevice(c.Raw, a.verifier.Device())
 	}
-	a.col.RequireSigned = a.signingRequired
+	a.col.RequireSigned = a.checkSigningRequired
 	a.runner = collect.NewCheckRunner(a.col)
 	a.ring = buffer.Open(o.Store.BufferPath(), cfg.BufferMaxSamples, cfg.BufferMaxBytes)
 	a.verifier = &jobs.Verifier{Now: a.securityNow} // expiry is a security decision: never earlier than the server-time floor (CORE-AGENT-3)
@@ -462,6 +463,7 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 		st.ServerFeatures, st.SoftwareHash = nil, "" // unknown until the new server says so
 		st.LogsConfigSeq, st.SignedConfigV = 0, 0    // per-server signing memory: a new enrolment may be a different server (review R3-3)
 		st.ServerTimeFloor = ""                      // and its clock (CORE-AGENT-3): the new server's answers set a new floor
+		st.ChecksSignedSeen = false                  // and whether it signs its checks (CORE-AGENT-4)
 		if resp.Config.SignedConfig > 0 {
 			st.SignedConfigV = resp.Config.SignedConfig // persisted with the rest of the enrolment state (review R4-2)
 		}
@@ -471,10 +473,12 @@ func (a *Agent) Enroll(ctx context.Context, token string) (*api.EnrollResponse, 
 		return nil, err
 	}
 	a.signedSeen.Store(int32(resp.Config.SignedConfig))
+	a.checksSigned.Store(false)
 	a.resetFloor()
 	a.observeResponse(resp.ServerTime, a.o.Now())
 	st, _ := a.o.Store.LoadState()
 	a.syncVerifier(st)
+	a.noteSignedChecks(st.Checks)
 	a.o.Store.DropEnrollToken()
 	a.log.Info("enrolled", "device_id", resp.DeviceID.String(), "status", status)
 	return resp, nil
@@ -1045,6 +1049,9 @@ func (a *Agent) checkinSucceeded(ctx context.Context, in *store.Inflight, resp *
 	}
 	a.sw.resync = hasFeature(resp.Features, featureSoftware) && hasFeature(resp.Resync, resyncSoftware)
 	a.noteSignedConfig(resp)
+	if resp.Config != nil {
+		a.noteSignedChecks(toStoreChecks(resp.Config.Checks))
+	}
 	a.applyRollovers(resp)
 	a.configureLogs(resp)
 	a.configureChange(resp)
@@ -1299,6 +1306,45 @@ func (a *Agent) signingRequired() bool {
 		return true // unreadable state: fail closed (review CRR-3)
 	}
 	return st.SignedConfigV >= 1
+}
+
+// checkSigningRequired is RequireSigned of the check runner: signingRequired (the server announced signed_config, or require_signed_config), or
+// (CORE-AGENT-4, Chain G) this server has already delivered a check list in which EVERY check carried a valid signature. Core servers sign every
+// check type whatever signed_config says (RmmSettings::signCheckList), so from the first fully signed list on an unsigned check can only have been
+// injected on the way (a TLS-inspecting proxy, a tampered response) and is refused, without waiting for an administrator to switch signed_config on.
+// A server that has never signed everything (an older one, the e2e fake server) keeps the old behaviour. config.json "allow_unsigned_checks": true
+// turns this learned requirement (only this one) off; a new enrolment forgets it. config.logs is not covered: older servers signed checks before
+// they signed it.
+func (a *Agent) checkSigningRequired() bool {
+	if a.signingRequired() {
+		return true
+	}
+	a.mu.Lock()
+	allow := a.cfg.AllowUnsignedChecks
+	a.mu.Unlock()
+	if allow {
+		return false
+	}
+	if a.checksSigned.Load() {
+		return true
+	}
+	st, err := a.o.Store.LoadState()
+	return err != nil || st.ChecksSignedSeen
+}
+
+// noteSignedChecks learns that this server signs its checks: a non-empty list where every definition verifies against the pinned key.
+func (a *Agent) noteSignedChecks(checks []store.CheckSpec) {
+	if len(checks) == 0 || a.checksSigned.Load() || a.col == nil || a.col.VerifyCheck == nil {
+		return
+	}
+	for _, c := range checks {
+		if c.Signature == "" || a.col.VerifyCheck(c) != nil {
+			return
+		}
+	}
+	a.checksSigned.Store(true)
+	_ = a.o.Store.Update(func(s *store.State) error { s.ChecksSignedSeen = true; return nil })
+	a.log.Info("this server signs every check definition: unsigned checks are refused from now on")
 }
 
 // noteSignedConfig remembers the highest signing contract version the server announced.
