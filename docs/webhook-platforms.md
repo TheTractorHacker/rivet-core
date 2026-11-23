@@ -204,7 +204,7 @@ Start a Zap with "Webhooks by Zapier" > Catch Hook.
 - Preset id: `zapier`
 - Body format: `json`, method `POST`
 - URL: `https://hooks.zapier.com/hooks/catch/<account>/<hook>/`
-- Saved URL must match: `#^https://hooks\.zapier\.com/hooks/catch/\d+/[A-Za-z0-9]+/?$#`
+- Saved URL must match: `#^https://hooks\.zapier\.com/hooks/catch/\d+/[A-Za-z0-9]+/?$#D`
 - Authentication: **none**
 - Vendor docs: <https://help.zapier.com/hc/en-us/articles/8496288690317-Trigger-Zaps-from-webhooks>
 
@@ -239,7 +239,7 @@ Start a scenario with a Custom webhook module.
 - Preset id: `make`
 - Body format: `json`, method `POST`
 - URL: `https://hook.eu1.make.com/<token>`
-- Saved URL must match: `#^https://hook\.[A-Za-z0-9.-]*(?:make|integromat)\.com/[A-Za-z0-9]+/?$#`
+- Saved URL must match: `#^https://hook\.[A-Za-z0-9.-]*(?:make|integromat)\.com/[A-Za-z0-9]+/?$#D`
 - Authentication: **none**, header
 - Vendor docs: <https://www.make.com/en/help/tools/webhooks>
 
@@ -275,7 +275,7 @@ Free-tier workflows with an HTTP / Webhook trigger.
 - Preset id: `pipedream`
 - Body format: `json`, method `POST`
 - URL: `https://eoxxxxxxxxxxxxx.m.pipedream.net`
-- Saved URL must match: `#^https://[A-Za-z0-9]+\.m\.pipedream\.net(?:/\S*)?$#`
+- Saved URL must match: `#^https://[A-Za-z0-9]+\.m\.pipedream\.net(?:/\S*)?$#D`
 - Authentication: none, **hmac**, header, bearer
 - Vendor docs: <https://pipedream.com/docs/workflows/building-workflows/triggers/#http>
 
@@ -311,7 +311,7 @@ Trigger an applet with the Webhooks service (event name + key).
 - Preset id: `ifttt`
 - Body format: `template`, method `POST`
 - URL: `https://maker.ifttt.com/trigger/<event>/with/key/<key>`
-- Saved URL must match: `#^https://maker\.ifttt\.com/trigger/[A-Za-z0-9_-]+/(?:with/key|json/with/key)/[A-Za-z0-9_-]+/?$#`
+- Saved URL must match: `#^https://maker\.ifttt\.com/trigger/[A-Za-z0-9_-]+/(?:with/key|json/with/key)/[A-Za-z0-9_-]+/?$#D`
 - Authentication: **none**
 - Vendor docs: <https://ifttt.com/maker_webhooks>
 
@@ -348,7 +348,7 @@ Open-source home automation. Fire an automation with a webhook trigger.
 - Preset id: `home-assistant`
 - Body format: `json`, method `POST`
 - URL: `https://homeassistant.example.com/api/webhook/<webhook_id>`
-- Saved URL must match: `#^https?://\S+/api/webhook/[A-Za-z0-9_-]+$#`
+- Saved URL must match: `#^https?://\S+/api/webhook/[A-Za-z0-9_-]+$#D`
 - Authentication: **none**, hmac
 - Vendor docs: <https://www.home-assistant.io/docs/automation/trigger/#webhook-trigger>
 
@@ -511,7 +511,7 @@ Post to a channel with an incoming webhook (free).
 - Preset id: `discord`
 - Body format: `discord`, method `POST`
 - URL: `https://discord.com/api/webhooks/<id>/<token>`
-- Saved URL must match: `#^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api(?:/v\d+)?/webhooks/\d+/[A-Za-z0-9_-]+/?(?:\?.*)?$#`
+- Saved URL must match: `#^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api(?:/v\d+)?/webhooks/\d+/[A-Za-z0-9_-]+/?(?:\?.*)?$#D`
 - Authentication: **none**
 - Vendor docs: <https://discord.com/developers/docs/resources/webhook#execute-webhook>
 
@@ -551,7 +551,7 @@ Open-source (MIT/AGPL) team chat. Incoming webhook.
 - Preset id: `mattermost`
 - Body format: `slack_attachments`, method `POST`
 - URL: `https://mattermost.example.com/hooks/<token>`
-- Saved URL must match: `#^https?://\S+/hooks/[A-Za-z0-9]+/?$#`
+- Saved URL must match: `#^https?://\S+/hooks/[A-Za-z0-9]+/?$#D`
 - Authentication: **none**
 - Vendor docs: <https://developers.mattermost.com/integrate/webhooks/incoming/>
 
@@ -586,7 +586,7 @@ Open-source (MIT) team chat. Incoming webhook integration.
 - Preset id: `rocketchat`
 - Body format: `slack_attachments`, method `POST`
 - URL: `https://chat.example.com/hooks/<id>/<token>`
-- Saved URL must match: `#^https?://\S+/hooks/[^/\s]+/[^/\s]+/?$#`
+- Saved URL must match: `#^https?://\S+/hooks/[^/\s]+/[^/\s]+/?$#D`
 - Authentication: **none**
 - Vendor docs: <https://docs.rocket.chat/docs/incoming-webhook-script>
 
@@ -620,7 +620,7 @@ Slack incoming webhook (free workspaces included).
 - Preset id: `slack`
 - Body format: `slack`, method `POST`
 - URL: `https://hooks.slack.com/services/T000/B000/XXXX`
-- Saved URL must match: `#^https://hooks\.slack\.com/services/[A-Za-z0-9]+/[A-Za-z0-9]+/[A-Za-z0-9]+$#`
+- Saved URL must match: `#^https://hooks\.slack\.com/services/[A-Za-z0-9]+/[A-Za-z0-9]+/[A-Za-z0-9]+$#D`
 - Authentication: **none**
 - Vendor docs: <https://api.slack.com/messaging/webhooks>
 
@@ -656,7 +656,7 @@ Teams channel through a Workflows (Power Automate) webhook.
 - Preset id: `teams`
 - Body format: `teams`, method `POST`
 - URL: `https://prod-00.westus.logic.azure.com:443/workflows/<id>/triggers/manual/paths/invoke?api-version=2016-06-01&sp=...&sv=1.0&sig=...`
-- Saved URL must match: `#^https://[A-Za-z0-9.-]+\.(?:logic\.azure\.com|powerplatform\.com)(?::\d+)?/\S+$#`
+- Saved URL must match: `#^https://[A-Za-z0-9.-]+\.(?:logic\.azure\.com|powerplatform\.com)(?::\d+)?/\S+$#D`
 - Authentication: **none**
 - Vendor docs: <https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook>
 
@@ -692,7 +692,7 @@ Open-source Matrix bridge with generic inbound webhooks.
 - Preset id: `matrix-hookshot`
 - Body format: `matrix_hookshot`, method `POST`
 - URL: `https://hookshot.example.com/webhook/<uuid>`
-- Saved URL must match: `#^https?://\S+/webhook/[A-Za-z0-9-]+/?$#`
+- Saved URL must match: `#^https?://\S+/webhook/[A-Za-z0-9-]+/?$#D`
 - Authentication: **none**
 - Vendor docs: <https://matrix-org.github.io/matrix-hookshot/latest/setup/webhooks.html>
 
@@ -730,7 +730,7 @@ Send into a room directly with the Matrix client-server API and a bot access tok
 - Preset id: `matrix-client`
 - Body format: `matrix`, method `PUT`
 - URL: `https://matrix.example.org/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{txn}`
-- Saved URL must match: `#^https?://\S+/_matrix/client/v\d+/rooms/\S+/send/m\.room\.message/\S+$#`
+- Saved URL must match: `#^https?://\S+/_matrix/client/v\d+/rooms/\S+/send/m\.room\.message/\S+$#D`
 - Authentication: **bearer**
 - Vendor docs: <https://spec.matrix.org/latest/client-server-api/#put_matrixclientv3roomsroomidsendeventtypetxnid>
 
@@ -771,7 +771,7 @@ Telegram Bot API sendMessage to a chat, group or channel.
 - Preset id: `telegram`
 - Body format: `telegram`, method `POST`
 - URL: `https://api.telegram.org/bot{bot_token}/sendMessage`
-- Saved URL must match: `#^https://api\.telegram\.org/bot\d+:[A-Za-z0-9_-]+/sendMessage$#`
+- Saved URL must match: `#^https://api\.telegram\.org/bot\d+:[A-Za-z0-9_-]+/sendMessage$#D`
 - Authentication: **none**
 - Vendor docs: <https://core.telegram.org/bots/api#sendmessage>
 

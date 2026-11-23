@@ -79,7 +79,8 @@ final class ChangeProtocol
         if ($sudoers) {
             $s = preg_replace('/\b(NOPASSWD|PASSWD):/', "$1\u{E000}", $s) ?? $s;   // word boundary: "NOPASSWD:" and "PASSWD:" only, not "xPASSWD:"
         }
-        $s = \RivetCore\Rmm\Crypto\Redactor::redact($s);
+        // without the CORE-DATA-2 password-to-end-of-line rule: the change monitor's text must stay what the frozen rc.38 vectors say (the Go agent replays them too)
+        $s = \RivetCore\Rmm\Crypto\Redactor::redact($s, false);
         $s = self::harden($s);
         // command-line shapes that carry a password after a switch (best effort: a secret in free text with no marker stays visible)
         foreach ([

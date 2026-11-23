@@ -212,7 +212,7 @@ final class InstallerDownload
     {
         $parts = explode('.', $tokenStr);
         $well = count($parts) === 3 && $parts[0] === RmmProtocol::ENROLL_TOKEN_PREFIX
-            && preg_match(RmmProtocol::ENROLL_TOKEN_SELECTOR_RE, $parts[1]) === 1 && preg_match(RmmProtocol::ENROLL_TOKEN_SECRET_RE, $parts[2]) === 1;
+            && preg_match(RmmProtocol::ENROLL_TOKEN_SELECTOR_RE . 'D', $parts[1]) === 1 && preg_match(RmmProtocol::ENROLL_TOKEN_SECRET_RE . 'D', $parts[2]) === 1;
         $selector = $well ? $parts[1] : '';
         $row = $well ? $this->sql->one('SELECT * FROM endpoint_agent_enrollment_tokens WHERE token_selector = ?', [$selector]) : null;
         $match = hash_equals((string) ($row['token_hash'] ?? str_repeat('0', 64)), hash('sha256', $parts[2] ?? ''));

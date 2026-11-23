@@ -43,11 +43,11 @@ final class ReportingView
         public readonly array $related = [],
         public readonly string $note = '',
     ) {
-        if (preg_match('/^rpt_[a-z0-9_]+$/', $name) !== 1) {
+        if (preg_match('/^rpt_[a-z0-9_]+$/D', $name) !== 1) {
             throw new \InvalidArgumentException('A reporting view name must be rpt_ plus lowercase letters, digits and underscores: ' . $name);
         }
         foreach ($columns as [$c, $t]) {
-            if (preg_match('/^[a-z][a-z0-9_]*$/', $c) !== 1 || !in_array($t, self::TYPES, true)) {
+            if (preg_match('/^[a-z][a-z0-9_]*$/D', $c) !== 1 || !in_array($t, self::TYPES, true)) {
                 throw new \InvalidArgumentException("Bad column $c ($t) in $name.");
             }
         }

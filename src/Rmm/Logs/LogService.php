@@ -30,7 +30,7 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class LogService
 {
-    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
+    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/D';
     /** Rows deleted per statement and per transaction. */
     public const PRUNE_BATCH = 2000;
     /** Rows one housekeeping pass may delete in total. */

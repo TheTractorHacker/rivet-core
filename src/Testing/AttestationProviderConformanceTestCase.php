@@ -81,7 +81,7 @@ abstract class AttestationProviderConformanceTestCase extends TestCase
         $this->assertNull($r['next_due_on']);
         $this->assertNull($r['note']);
         $this->assertIsString(self::untyped($r['reviewed_on']));
-        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/', $r['reviewed_on']);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/D', $r['reviewed_on']);
     }
 
     public function testTheLastReviewRecordedWins(): void

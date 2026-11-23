@@ -67,6 +67,9 @@ final class McpDiagnostics
 
     /**
      * @param array{schema_ready:bool, module_on:bool, killed:bool, enabled:bool, issuer:string, audience:string, issuer_from_env:bool, audience_from_env:bool, configured:bool} $cfg as returned by McpConfig::resolve()
+     * @param string $baseHost this server's own public host name, FROM CONFIGURATION (the edition's configured base URL), never from the request (`Host`,
+     *        `X-Forwarded-Host` or any other header or parameter): the route check below fetches https://$baseHost/... from the server, without UrlPolicy, so a
+     *        request-supplied host would turn this admin page into a server-side request to wherever the requester points it (CORE-API-9, red team 2026-11-21).
      * @return list<array{status:string,label:string,detail:string}>
      */
     public function run(array $cfg, string $baseHost): array
@@ -129,7 +132,13 @@ final class McpDiagnostics
         return $out;
     }
 
-    /** @return array{status:string,label:string,detail:string} */
+    /**
+     * Fetches https://$host/.well-known/oauth-protected-resource and POSTs to https://$host/mcp, deliberately WITHOUT UrlPolicy: the server checking its own public
+     * name may resolve it to a private or loopback address, which UrlPolicy would refuse. That is safe only because $host is the configured base host passed to
+     * {@see run()}, never a value from the request (CORE-API-9, red team 2026-11-21).
+     *
+     * @return array{status:string,label:string,detail:string}
+     */
     private function routeCheck(string $host, string $issuer): array
     {
         $label = 'This server answers /mcp';

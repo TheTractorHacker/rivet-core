@@ -53,7 +53,7 @@ final readonly class Destination
             return false; // whitespace or control characters (a trailing newline would otherwise satisfy "$")
         }
 
-        return $this->urlPattern === null ? preg_match('#^https?://\S+$#i', $url) === 1 : preg_match($this->urlPattern, $url) === 1;
+        return $this->urlPattern === null ? preg_match('#^https?://\S+$#iD', $url) === 1 : preg_match($this->urlPattern, $url) === 1;
     }
 
     /**

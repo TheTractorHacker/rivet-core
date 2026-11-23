@@ -30,7 +30,7 @@ final class PanelAuthenticator
     public function authenticate(?string $authHeader, string $ip): PanelPrincipal
     {
         $token = null;
-        if ($authHeader !== null && preg_match(PanelProtocol::DEVICE_TOKEN_BEARER_RE, $authHeader, $m) === 1) {
+        if ($authHeader !== null && preg_match(PanelProtocol::DEVICE_TOKEN_BEARER_RE . 'D', $authHeader, $m) === 1) {
             $token = $m[1];
         }
         $hash = $token === null ? '' : hash('sha256', $token);

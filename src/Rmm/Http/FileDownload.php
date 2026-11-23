@@ -17,7 +17,7 @@ final class FileDownload
 
     public static function response(RmmFileBody $file, string $filename): RmmResponse
     {
-        if (preg_match('/^[A-Za-z0-9._-]{1,120}$/', $filename) !== 1) {
+        if (preg_match('/^[A-Za-z0-9._-]{1,120}$/D', $filename) !== 1) {
             $filename = self::FALLBACK_NAME;   // header injection is impossible: only this alphabet reaches a header
         }
 

@@ -291,6 +291,32 @@ final class PanelEnrollmentTest extends PanelTestCase
         $this->assertSame('PCeviltxt', $this->p->rmm->one('SELECT hostname FROM endpoint_agent_devices WHERE device_id=' . (int) $j['device_id']));
     }
 
+    /**
+     * CORE-API-4 (red team 2026-11-21, core-api/poc_panel_markup_and_devices.php): the host name, OS version and app version were stored with their markup, listed to
+     * technicians, and the host name went into the "Panel Enrolled" audit text. They get what the agent path gives them (DeviceValidator::cleanHostname): `<` `>` `"`
+     * backtick and backslash become `_`; every other character is kept, so a real name is unchanged.
+     */
+    public function testMarkupInTheDeviceNamesIsNeutralisedInTheRowAndTheAuditText(): void
+    {
+        [$c, , $j] = $this->p->enroll($this->p->mint()['token'], ['hostname' => '<img src=x onerror=alert(1)>"\'`&<script>\\x', 'os_version' => '<b>x</b>', 'app_version' => '<i>"1`\\']);
+        $this->assertSame(201, $c);
+        $row = $this->p->rmm->rows('SELECT hostname, os_version, agent_version FROM endpoint_agent_devices WHERE device_id=' . (int) $j['device_id'])[0];
+        $this->assertSame(['_img src=x onerror=alert(1)__\'_&_script__x', '_b_x_/b_', '_i__1__'], [$row['hostname'], $row['os_version'], $row['agent_version']]);
+        $audit = array_values(array_filter($this->p->rmm->audit->records(), static fn (array $r): bool => $r['action'] === 'Panel Enrolled'));
+        $this->assertNotEmpty($audit);
+        $this->assertStringContainsString('(_img src=x onerror=alert(1)__\'_&_script__x)', end($audit)['description']);
+        $this->assertDoesNotMatchRegularExpression('/[<>"`]/', end($audit)['description']);
+        // what the technician API lists
+        $this->p->rmm->enable();
+        [$code, $b] = $this->p->rmm->tech('GET', [(string) $j['device_id']], $this->p->rmm->principal(1, 'admin'));
+        $this->assertSame(200, $code);
+        $this->assertSame(['_img src=x onerror=alert(1)__\'_&_script__x', '_b_x_/b_', '_i__1__'], [$b['hostname'], $b['os_version'], $b['agent_version']]);
+        // a real name and version are unchanged
+        [, , $k] = $this->p->enroll($this->p->mint()['token'], ['hostname' => "FRONT-DESK_01.acme.local O'Brien & Co", 'os_version' => 'Windows 11 Pro 24H2 (26100.2605)', 'app_version' => '1.4.0-rc.2+build.7']);
+        $row = $this->p->rmm->rows('SELECT hostname, os_version, agent_version FROM endpoint_agent_devices WHERE device_id=' . (int) $k['device_id'])[0];
+        $this->assertSame(["FRONT-DESK_01.acme.local O'Brien & Co", 'Windows 11 Pro 24H2 (26100.2605)', '1.4.0-rc.2+build.7'], [$row['hostname'], $row['os_version'], $row['agent_version']]);
+    }
+
     public function testPanelDevicesAreVisibleInTheDeviceListButDoNotCountTowardsTheDeviceLimit(): void
     {
         $this->p->device_for();

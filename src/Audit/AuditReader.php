@@ -182,10 +182,10 @@ final class AuditReader
     private static function bound(mixed $value, string $dayTime): ?string
     {
         $v = trim((string) ($value ?? ''));
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $v)) {
             return $v . ' ' . $dayTime;
         }
-        if (preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/', $v)) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/D', $v)) {
             return str_replace('T', ' ', $v);
         }
 

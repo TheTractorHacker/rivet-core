@@ -94,7 +94,7 @@ final class MaintenanceSchedule
             return [null, 'recur_interval must be a whole number from 1 to 52.'];
         }
         $start = $in['local_start'] ?? null;
-        if (!is_string($start) || preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $start) !== 1) {
+        if (!is_string($start) || preg_match('/^([01]\d|2[0-3]):[0-5]\d$/D', $start) !== 1) {
             return [null, 'local_start must be HH:MM (24 hour).'];
         }
         $dur = $in['duration_min'] ?? null;
@@ -155,7 +155,7 @@ final class MaintenanceSchedule
             $p = strtolower(trim($p));
             if ($allowLast && $p === 'last') {
                 $out['last'] = 'last';
-            } elseif (preg_match('/^\d{1,2}$/', $p) === 1 && (int) $p >= $min && (int) $p <= $max) {
+            } elseif (preg_match('/^\d{1,2}$/D', $p) === 1 && (int) $p >= $min && (int) $p <= $max) {
                 $out[(int) $p] = (int) $p;
             } else {
                 return null;
@@ -169,7 +169,7 @@ final class MaintenanceSchedule
 
     public static function validZone(string $tz): bool
     {
-        if ($tz === '' || strlen($tz) > 64 || preg_match('/^[A-Za-z0-9_\/+-]+$/', $tz) !== 1) {
+        if ($tz === '' || strlen($tz) > 64 || preg_match('/^[A-Za-z0-9_\/+-]+$/D', $tz) !== 1) {
             return false;
         }
         try {
@@ -183,7 +183,7 @@ final class MaintenanceSchedule
 
     private static function validDate(mixed $v): bool
     {
-        if (!is_string($v) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) !== 1) {
+        if (!is_string($v) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $v, $m) !== 1) {
             return false;
         }
 
@@ -197,7 +197,7 @@ final class MaintenanceSchedule
             return null;
         }
         $hasZone = preg_match('/(Z|[+-]\d{2}:?\d{2})$/i', $v) === 1;
-        if (!$hasZone && preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/', $v) !== 1) {
+        if (!$hasZone && preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/D', $v) !== 1) {
             return null;
         }
         try {

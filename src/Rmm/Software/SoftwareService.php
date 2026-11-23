@@ -58,11 +58,11 @@ final class SoftwareService
         $base = $raw['base_hash'] ?? null;
         $items = $raw['items'] ?? [];
         $removed = $raw['removed'] ?? [];
-        if (!in_array($mode, ['full', 'delta'], true) || !is_string($hash) || preg_match('/^[0-9a-f]{64}$/', $hash) !== 1
+        if (!in_array($mode, ['full', 'delta'], true) || !is_string($hash) || preg_match('/^[0-9a-f]{64}$/D', $hash) !== 1
             || !is_array($items) || !array_is_list($items) || count($items) > self::MAX_ITEMS || !is_array($removed) || !array_is_list($removed) || count($removed) > self::MAX_REMOVED) {
             return null;
         }
-        if ($mode === 'delta' && (!is_string($base) || preg_match('/^[0-9a-f]{64}$/', $base) !== 1)) {
+        if ($mode === 'delta' && (!is_string($base) || preg_match('/^[0-9a-f]{64}$/D', $base) !== 1)) {
             return null;
         }
         $clean = [];
@@ -96,7 +96,7 @@ final class SoftwareService
 
     private static function date(mixed $v): ?string
     {
-        if (!is_string($v) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) !== 1 || !checkdate((int) $m[2], (int) $m[3], (int) $m[1]) || (int) $m[1] < 1990) {
+        if (!is_string($v) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $v, $m) !== 1 || !checkdate((int) $m[2], (int) $m[3], (int) $m[1]) || (int) $m[1] < 1990) {
             return null;
         }
 

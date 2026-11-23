@@ -31,8 +31,8 @@ final class JobService
 {
     public const MAX_SCRIPT_BYTES = RmmProtocol::JOB_MAX_SCRIPT_BYTES;
 
-    private const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
-    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
+    private const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D';
+    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/D';
 
     public function __construct(
         private readonly Sql $sql,
@@ -121,7 +121,7 @@ final class JobService
             return ['ok' => false, 'error' => 'At most 20 parameters.'];
         }
         foreach ($params as $k => $v) {
-            if (!is_string($k) || preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,63}$/', $k) !== 1 || !(is_null($v) || is_bool($v) || is_int($v) || (is_string($v) && strlen($v) <= 1024 && !str_contains($v, "\0")))) {
+            if (!is_string($k) || preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,63}$/D', $k) !== 1 || !(is_null($v) || is_bool($v) || is_int($v) || (is_string($v) && strlen($v) <= 1024 && !str_contains($v, "\0")))) {
                 return ['ok' => false, 'error' => 'Parameter names must be identifiers and values short strings, whole numbers or booleans.'];
             }
         }

@@ -334,7 +334,7 @@ final class RemoteApi
 
             return $bad ?? self::result($this->remote->createUpload($who, $id, $in['path'] ?? null, $in['size'] ?? null, $in['sha256'] ?? null, !empty($in['overwrite']), !empty($in['confirm'])));
         }
-        if (preg_match('/^[0-9a-fA-F-]{36}$/', $a) !== 1 || isset($seg[4])) {
+        if (preg_match('/^[0-9a-fA-F-]{36}$/D', $a) !== 1 || isset($seg[4])) {
             return self::notFound();
         }
         if ($b === null) {

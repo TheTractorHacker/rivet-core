@@ -694,7 +694,7 @@ final class PdfConverter
                 }
 
                 $name = $img['src'];
-                if (!is_string($name) || !preg_match('/^out-\d{1,6}_\d{1,6}\.(png|jpg|jpeg)$/', $name)) {
+                if (!is_string($name) || !preg_match('/^out-\d{1,6}_\d{1,6}\.(png|jpg|jpeg)$/D', $name)) {
                     continue;
                 }
 

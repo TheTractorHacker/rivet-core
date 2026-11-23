@@ -38,7 +38,7 @@ final class StarterInstaller
     public const SCRIPT_MARK = 'starter';
     public const STAGED_MARK = 'starter-updated';
     private const POLICY_RE = '/ \[starter\|([a-z0-9-]+)\|([a-z0-9-]+)\|(\d+\.\d+\.\d+)\|([0-9a-f]{64})\]$/';
-    private const NOTE_RE = '/^(starter|starter-updated)\|([a-z0-9-]+)\|([a-z0-9-]+)\|(\d+\.\d+\.\d+)\|([0-9a-f]{64})$/';
+    private const NOTE_RE = '/^(starter|starter-updated)\|([a-z0-9-]+)\|([a-z0-9-]+)\|(\d+\.\d+\.\d+)\|([0-9a-f]{64})$/D';
     private const SELECT_KEYS = ['pack', 'ids', 'tags', 'platform', 'risk', 'kinds', 'params', 'policy_params', 'q'];
 
     /** @var list<StarterPack> */
@@ -497,7 +497,7 @@ final class StarterInstaller
     {
         foreach (array_keys($in) as $k) {
             if (!in_array($k, self::SELECT_KEYS, true)) {
-                throw new \InvalidArgumentException('Unknown selection member ' . (preg_match('/^[A-Za-z0-9_]{1,40}$/', (string) $k) === 1 ? $k : '(invalid)') . '.');
+                throw new \InvalidArgumentException('Unknown selection member ' . (preg_match('/^[A-Za-z0-9_]{1,40}$/D', (string) $k) === 1 ? $k : '(invalid)') . '.');
             }
         }
         $pack = $in['pack'] ?? null;
@@ -587,7 +587,7 @@ final class StarterInstaller
         }
         foreach ($sel['ids'] as $id) {
             if (!isset($known[$id])) {
-                throw new \InvalidArgumentException('Unknown starter item ' . (preg_match('/^[a-z0-9-]{1,60}$/', $id) === 1 ? $id : '(invalid)') . '.');
+                throw new \InvalidArgumentException('Unknown starter item ' . (preg_match('/^[a-z0-9-]{1,60}$/D', $id) === 1 ? $id : '(invalid)') . '.');
             }
         }
 

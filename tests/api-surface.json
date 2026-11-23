@@ -4041,7 +4041,7 @@
                 "VALUE": "([\"']?\\s*[:=]\\s*)(?:(\")(?:[^\"\\\\\\r\\n]|\\\\.)*(\"?)|(')(?:[^'\\\\\\r\\n]|\\\\.)*('?)|[^\\s\"',;]+)"
             },
             "methods": {
-                "redact": "static redact(string $s): string"
+                "redact": "static redact(string $s, bool $passwordToEndOfLine = true): string"
             }
         },
         "RivetCore\\Rmm\\Crypto\\Signer": {

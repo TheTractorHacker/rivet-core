@@ -49,7 +49,7 @@ final class CheckinService
     public const MAX_DISKS = RmmProtocol::CHECKIN_MAX_DISKS;
     public const MAX_CORES = RmmProtocol::CHECKIN_MAX_CORES;
     public const MAX_INVENTORY_BYTES = RmmProtocol::CHECKIN_MAX_INVENTORY_BYTES;
-    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
+    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/D';
     /** At load-shedding level 1 buffered samples older than this are acknowledged but not ingested. */
     private const SHED_STALE_SAMPLE_S = 900;
     /** Above this many bytes of work a check-in is processed inline even in queued mode (the job payload column is text). */

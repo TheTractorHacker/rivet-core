@@ -51,7 +51,7 @@ final class LegacyUserKeyReader implements LegacyReader
             ? hash_pbkdf2('sha256', $this->password, $salt, self::ITERATIONS, 16, true)
             : hash_pbkdf2('sha256', $this->password, $salt, self::ITERATIONS, 16);
         $plain = LegacyCbc::decrypt(substr($payload, 32), $key, substr($payload, 16, 16), 0);
-        if ($plain === '' || preg_match('/^[\x21-\x7e]{1,128}$/', $plain) !== 1) {
+        if ($plain === '' || preg_match('/^[\x21-\x7e]{1,128}$/D', $plain) !== 1) {
             throw new DecryptionFailed('The value could not be decrypted.');
         }
 

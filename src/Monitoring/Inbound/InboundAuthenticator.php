@@ -46,7 +46,7 @@ final class InboundAuthenticator
             $v = is_array($value) ? (string) ($value[0] ?? '') : (string) $value;
             if ($lower === 'x-webhook-secret') {
                 $presented[] = trim($v);
-            } elseif ($lower === 'authorization' && preg_match('/^Bearer[ \t]+(\S+)[ \t]*$/i', $v, $m) === 1) {
+            } elseif ($lower === 'authorization' && preg_match('/^Bearer[ \t]+(\S+)[ \t]*$/iD', $v, $m) === 1) {
                 $presented[] = $m[1];
             }
         }

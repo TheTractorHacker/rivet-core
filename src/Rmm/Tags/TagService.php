@@ -19,8 +19,8 @@ final class TagService
     public const MAX_TAGS = 1000;
     public const MAX_PER_DEVICE = 50;
     public const NAME_MAX = 60;
-    private const NAME_RE = '/^[\p{L}\p{N}][\p{L}\p{N} _.:\/+-]{0,59}$/u';
-    private const COLOR_RE = '/^#[0-9a-fA-F]{6}$/';
+    private const NAME_RE = '/^[\p{L}\p{N}][\p{L}\p{N} _.:\/+-]{0,59}$/uD';
+    private const COLOR_RE = '/^#[0-9a-fA-F]{6}$/D';
 
     public function __construct(private readonly Sql $sql)
     {

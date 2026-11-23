@@ -102,6 +102,23 @@ Agent (Go) side of the 2026-11-21 red-team findings. Nothing is required of an e
   `disable_update` in its `config.json` (endpoint-agent/README.md, "Monitoring-only profile"). `disable_jobs` alone still lets the server replace the
   agent binary (Chain C).
 
+## Red-team fixes 2026-11-21, panel and data (Unreleased; no migration)
+
+- **Panel CSV attachments (CORE-API-1 / CORE-DATA-1).** More CSV files are refused with 422 `attachment_rejected`: any cell (in any column, quote-aware, read with
+  comma, semicolon and tab separators) that starts with `=`, `+`, `-`, `@` or a tab, unless the whole cell is a plain number. `- item`, `-- note`, `+1 (555) 123-4567`,
+  `@handle` and a comma row whose first cell is signed (`-5,apples`) are now refused (docs/panel/PANEL_API.md lists them). Tell panel users to send such data as `.txt`.
+- **Key ids (CORE-DATA-3).** A key id with a trailing newline is refused when a key ring is built (key file, `RIVETCORE_KEYRING`, `RIVETCORE_KEK_ID`). Before updating,
+  check that `RIVETCORE_KEK_ID` and the key file's key ids have no line end, and that no stored v3 value has one in its header (on each column the edition encrypts:
+  `WHERE col LIKE 'v3:%' AND LOCATE(CHAR(10), SUBSTRING_INDEX(col, ':', 2)) > 0`). Such a value can only exist where a key id was configured with a newline, and it would no
+  longer decrypt; Core's tests and the red team found none.
+- **Pattern constants.** `KeyRing::KID_PATTERN`, `RmmProtocol::*_RE`, `PanelProtocol::*_RE`, `RemoteProtocol::*_RE` and `StarterPack::ID_RE`/`PACK_ID_RE` keep their values;
+  their `$` also matches before a final newline. If edition code matches one of them itself, append the modifier: `preg_match(RmmProtocol::CHECK_KEY_RE . 'D', $v)`
+  (or use `RmmProtocol::matches()`).
+- **Redactor (CORE-DATA-2).** `Redactor::redact()` takes an optional second argument (`$passwordToEndOfLine`, default true); existing calls are unchanged and now mask more.
+- **Panel devices (CORE-API-4).** New and re-enrolled panel devices have `<` `>` `"` backtick and backslash replaced with `_` in host name, OS version and app version. Keep
+  escaping device text and the audit log where you render them; rows enrolled before keep what was sent.
+- **Webhooks (CORE-API-6).** A destination that resolves to the Azure Wire Server 168.63.129.16 is refused, even when listed in allowed networks.
+
 ## Adopting the Rivet Console redeem and events routes (1.0.0-rc.70, provisional; migration 0051; optional, off by default)
 
 Needs the remote session policy / Rivet Console release (rc.68 and rc.69, PR #130) first. Nothing is required: with `remote_console` off (the default) every existing call behaves as before.

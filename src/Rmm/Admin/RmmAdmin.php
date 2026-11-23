@@ -168,7 +168,7 @@ final class RmmAdmin
         }
         $domain = trim(is_scalar($in['mesh_domain'] ?? null) ? (string) $in['mesh_domain'] : '');
         $account = trim(is_scalar($in['mesh_account_template'] ?? null) ? (string) $in['mesh_account_template'] : RmmProtocol::MESH_DEFAULT_ACCOUNT_TEMPLATE);
-        if (preg_match('/^[A-Za-z0-9._{}-]{1,100}$/', $account) !== 1 || ($domain !== '' && preg_match('/^[A-Za-z0-9._-]{1,100}$/', $domain) !== 1)) {
+        if (preg_match('/^[A-Za-z0-9._{}-]{1,100}$/D', $account) !== 1 || ($domain !== '' && preg_match('/^[A-Za-z0-9._-]{1,100}$/D', $domain) !== 1)) {
             return ActionResult::fail(422, 'invalid', 'The MeshCentral domain and account name may only contain letters, digits and . _ -');
         }
         if (\RivetCore\Rmm\Mesh\MeshCookie::usesDisplayName($account)) {
@@ -189,7 +189,7 @@ final class RmmAdmin
         }
         $key = trim(is_scalar($in['mesh_login_key'] ?? null) ? (string) $in['mesh_login_key'] : '');
         if ($key !== '') {
-            if (preg_match('/^[0-9a-fA-F]{64,}$/', $key) !== 1) {
+            if (preg_match('/^[0-9a-fA-F]{64,}$/D', $key) !== 1) {
                 return ActionResult::fail(422, 'invalid', 'The login token key is the long hex string printed by "meshcentral --loginTokenKey".');
             }
             try {

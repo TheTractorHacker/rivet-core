@@ -229,7 +229,7 @@ final class PayloadFormatter
             $embed['fields'] = $fields;
         }
         $embed['footer'] = ['text' => EventSummary::clip(self::markdownEscape($app), 2048)];
-        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/', $timestamp) === 1) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/D', $timestamp) === 1) {
             $embed['timestamp'] = $timestamp;
         }
         // 6000 characters across title, description, footer and every field
@@ -322,7 +322,7 @@ final class PayloadFormatter
     private static function telegram(array $s, string $label, array $options): FormattedPayload
     {
         $chat = trim((string) ($options['chat_id'] ?? ''));
-        if ($chat === '' || preg_match('/^(-?\d{1,20}|@[A-Za-z0-9_]{3,64})$/', $chat) !== 1) {
+        if ($chat === '' || preg_match('/^(-?\d{1,20}|@[A-Za-z0-9_]{3,64})$/D', $chat) !== 1) {
             throw new \InvalidArgumentException('Telegram needs a chat_id (a number such as -1001234567890, or @channelname).');
         }
         $esc = static fn (string $t): string => htmlspecialchars($t, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -351,7 +351,7 @@ final class PayloadFormatter
         }
 
         return self::json([
-            'chat_id' => preg_match('/^-?\d+$/', $chat) === 1 ? (int) $chat : $chat,
+            'chat_id' => preg_match('/^-?\d+$/D', $chat) === 1 ? (int) $chat : $chat,
             'text' => $text,
             'parse_mode' => 'HTML',
             'link_preview_options' => ['is_disabled' => true],
@@ -468,7 +468,7 @@ final class PayloadFormatter
     private static function headerValue(string $v): string
     {
         $v = EventSummary::clean($v);
-        if (preg_match('/^[\x20-\x7E]*$/', $v) === 1) {
+        if (preg_match('/^[\x20-\x7E]*$/D', $v) === 1) {
             return $v;
         }
 

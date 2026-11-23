@@ -98,7 +98,7 @@ final class ConsoleLink
             return null;
         }
         $host = strtolower($p['host']);
-        if (preg_match('/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/', $host) !== 1 || str_contains($host, '..')) {
+        if (preg_match('/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/D', $host) !== 1 || str_contains($host, '..')) {
             return null;
         }
         $port = $p['port'] ?? null;
