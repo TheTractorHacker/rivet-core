@@ -184,3 +184,7 @@ paths = ['''(^|/)tests/Unit/Rmm/RedactorHardeningTest\.php$''']
 [[allowlists]]
 description = "Inbound webhook handler test uses a synthetic shared secret constant (s3cret-value-for-tests-...) that is not a credential; the first commit that added it cannot be rewritten."
 paths = ['''(^|/)tests/Unit/Monitoring/Inbound/InboundHandlerTest\.php$''']
+
+[[allowlists]]
+description = "CORE-DATA-2 redactor regression test (red team 2026-11-21): its 800 KB linear-time inputs repeat a made-up sk_live_ string of ten characters after the prefix, which is too short to be a Stripe key and authenticates nowhere; gitleaks' stripe rule reads it as a token."
+paths = ['''(^|/)tests/Unit/Rmm/RedactionSharedVectorsTest\.php$''']

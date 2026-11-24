@@ -106,8 +106,8 @@ abstract class IncidentStoreConformanceTestCase extends TestCase
     public function testTheLongestEngineKeysRoundTrip(): void
     {
         $source = str_repeat('s', 32);
-        $key = 'abcdefghijkl/' . str_repeat('9', 18);
-        $this->store()->put($this->full($source, $key));
-        self::assertEquals($this->full($source, $key), $this->store()->get($source, $key));
+        $monitor = str_repeat('a', 12) . '/' . str_repeat('9', 18);   // "<12-character sender>/<monitor id>": 31 characters
+        $this->store()->put($this->full($source, $monitor));
+        self::assertEquals($this->full($source, $monitor), $this->store()->get($source, $monitor));
     }
 }
