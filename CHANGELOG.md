@@ -4,6 +4,8 @@ All notable changes to RivetCore. Semantic versioning.
 
 ## [Unreleased]
 
+## 1.0.0-rc.79
+
 Red-team fixes of 2026-11-21 (pentest_reports/redteam/2026-11-21/rivetcore-REPORT.md).
 
 - **CORE-AGENT-4 (agent side) / Chain G** an agent that has received one non-empty check list in which every check verified (Core signs every check type regardless of `signed_config`) refuses unsigned checks from then on, without waiting for `signed_config` to be switched on (`state.json` `checks_signed_seen`, sticky, reset by a new enrolment; `config.json` `allow_unsigned_checks` turns only this learned rule off). Servers that never sign everything (older ones, the e2e fake server) see no change; `config.logs` keeps its existing rule. The server default for new installs (`signed_config` 2) is not part of this change.
