@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"net/http"
 	"os"
 	"runtime"
 	"strings"
@@ -203,5 +204,43 @@ func TestReleaseTrustIsReadOnce(t *testing.T) {
 	man.ReleaseSignature = base64.StdEncoding.EncodeToString(ed25519.Sign(priv, ManifestMessage(man)))
 	if restart, err := e.apply(m, man); err != nil || !restart || calls != 1 {
 		t.Fatalf("restart=%v err=%v calls=%d", restart, err, calls)
+	}
+}
+
+// CORE-AGENT-1 / Chain C step 2: when release verification is required but no release key is trusted (a release-stamped build without an anchor, or every
+// key revoked), Apply refuses with ErrNoReleaseKey BEFORE downloading, even for a manifest that carries an instance signature and a release_signature,
+// and the refusal is permanent for that version (not retried as transient).
+func TestNoTrustedReleaseKeyRefusesBeforeDownload(t *testing.T) {
+	e := newEnv(t)
+	hits := 0
+	e.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++; w.Write(e.body) })
+	m := e.mgr("1.0.0")
+	m.ReleaseTrust = func() ([]ed25519.PublicKey, bool, error) { return nil, true, nil }
+	_, priv := relKey(t)
+	man := e.manifest("1.1.0")
+	man.OS, man.Arch = runtime.GOOS, runtime.GOARCH
+	man.ReleaseSignature = base64.StdEncoding.EncodeToString(ed25519.Sign(priv, ManifestMessage(man)))
+	restart, err := e.apply(m, man)
+	if restart || !errors.Is(err, ErrNoReleaseKey) || Transient(err) {
+		t.Fatalf("restart=%v err=%v transient=%v", restart, err, Transient(err))
+	}
+	if hits != 0 {
+		t.Fatalf("downloaded %d times before refusing", hits)
+	}
+	// an agent that never had release keys and is not a release build keeps the legacy behaviour (existing deployments)
+	m.ReleaseTrust = func() ([]ed25519.PublicKey, bool, error) { return nil, false, nil }
+	if restart, err := e.apply(m, e.manifest("1.1.0")); err != nil || !restart {
+		t.Fatalf("legacy (no anchor, not a release build) update refused: %v", err)
+	}
+}
+
+func TestReleaseBuildStamp(t *testing.T) {
+	prev := ReleaseBuild
+	defer func() { ReleaseBuild = prev }()
+	for v, want := range map[string]bool{"": false, "0": false, "no": false, "1": true, "true": true, "TRUE": true} {
+		ReleaseBuild = v
+		if IsReleaseBuild() != want {
+			t.Errorf("ReleaseBuild=%q: IsReleaseBuild()=%v", v, !want)
+		}
 	}
 }

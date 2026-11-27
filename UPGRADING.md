@@ -76,6 +76,84 @@ the public API freeze (docblock `@api`/`@internal` and array-shape annotations, 
 (`docs/security/`), and the adapter conformance kit under `RivetCore\Testing` ([ADR-009](docs/architecture/ADR-009-test-helpers-in-package.md)).
 If a release candidate breaks something that this guide did not warn about, that is a bug in the release candidate: report it.
 
+## Red team 2026-11-21 fixes (unreleased; no migration; read before updating)
+
+Fixes for the 2026-11-21 red-team report (agent, panel/data and RMM server/inbound monitoring). No migration and no breaking signature change (new
+arguments are optional and last). What to do, in order:
+
+1. **Whoever releases the agent, before the next `agent-v*` tag:** generate the release signing key OFFLINE and set the repository variable
+   `AGENT_RELEASE_KEYS` to its public half; a release tag without it fails on purpose. Build hosts: set `RELEASE_KEYS` (and `TRUST_KEYS` when the host
+   builds for one server) in `build-host.conf`. From the first anchored build on, sign every published binary offline (CORE-AGENT-1, below).
+2. **Editions, RMM settings page:** show `RmmReadModel::settingsSummary()['hardening']['signed_config_warning']` and offer raising `signed_config` to 2.
+   Existing installs are NOT migrated; new installs start at 2 (CORE-AGENT-4, below).
+3. **Editions that wire inbound monitoring:** give each client's sender its own secret limited to that client before handing a secret out, label or hide
+   the `_cap` counter rows, keep nested locks working, and stop reading `ticket_id` from the response (Chain A, below).
+4. **Edition code that matches one of the frozen pattern constants itself:** append the `D` modifier (CORE-DATA-3, below).
+5. **Operators:** check that no key id has a trailing newline (query below); Linux fleets with a custom `--state-dir`/`--install-dir`: fix ownership and
+   permissions before rolling out the new agent (CORE-AGENT-5); tell panel users which CSV shapes are now refused (CORE-API-1).
+
+### Endpoint agent
+
+Nothing is required of an edition's PHP code; these items are for whoever releases and runs agents.
+
+* **CORE-AGENT-1 (act before the next `agent-v*` tag).** Generate the release signing key pair OFFLINE and put only its public half in the repository
+  variable `AGENT_RELEASE_KEYS` ([AGENT_BUILD.md, "Release signing key"](docs/rmm/AGENT_BUILD.md)). Without it the release gate fails the tag build on
+  purpose. From the first anchored release on, every published agent binary needs its offline release signature in the edition (Agent binaries), or
+  anchored agents refuse the update. Agents already deployed are unaffected until they install an anchored build. Self-hosted builds stamped
+  `RELEASE_BUILD=1` without `RELEASE_KEYS` refuse every self-update. A build host (`scripts/build-host.sh`) takes the same `RELEASE_KEYS`, `TRUST_KEYS`
+  and `RELEASE_BUILD` in `build-host.conf` ([BUILD_HOST.md](docs/rmm/BUILD_HOST.md)); left empty it keeps building unanchored agents.
+* **CORE-AGENT-6.** File transfer now refuses the agent's own program files, service unit and the Mesh agent's identity even inside an allowed folder,
+  and the server refuses them as transfer roots. An administrator who used `file_put` to replace the agent binary by hand must use a package upgrade,
+  the installer or self-update instead.
+* **CORE-AGENT-2.** An `http`, `port` or `cert` check aimed at a link-local or cloud metadata address (169.254.x.x and the like) now reports
+  `unknown` "destination refused" instead of running, and the server refuses such literal targets when a check is saved. Nothing to do unless a
+  check deliberately watched such an address; `ntp` checks against Amazon Time Sync (169.254.169.123) keep working.
+* **CORE-AGENT-5 (Linux custom directories).** A Linux agent now refuses a `--state-dir` / `--install-dir` that is a symbolic link, is owned by another
+  account, or sits in a folder other accounts can write. Default paths are unaffected. If a fleet used such a layout, fix the directory
+  (`chown root:root`, `chmod go-w`) before rolling out this agent version; an agent that is updated into a refused layout rolls back to its previous
+  binary (CORE-DS-11) and reports the update as failed.
+* **CORE-AGENT-4 (agent side).** After this update an agent refuses unsigned check definitions once its server has sent a fully signed check list
+  (every current Core server does). Nothing to do for Core-based editions. A custom or very old server that mixes signed and unsigned checks keeps
+  working (a mixed list never switches the rule on); to undo it on one device set `"allow_unsigned_checks": true` in `config.json`.
+* **Monitoring-only devices.** A device that must never run anything from the server sets all three of `disable_jobs`, `disable_script_checks` and
+  `disable_update` in its `config.json` (endpoint-agent/README.md, "Monitoring-only profile"). `disable_jobs` alone still lets the server replace the
+  agent binary (Chain C).
+
+### Panel and data
+
+- **Panel CSV attachments (CORE-API-1 / CORE-DATA-1).** More CSV files are refused with 422 `attachment_rejected`: any cell (in any column, quote-aware, read with
+  comma, semicolon and tab separators) that starts with `=`, `+`, `-`, `@` or a tab, unless the whole cell is a plain number. `- item`, `-- note`, `+1 (555) 123-4567`,
+  `@handle` and a comma row whose first cell is signed (`-5,apples`) are now refused (docs/panel/PANEL_API.md lists them). Tell panel users to send such data as `.txt`.
+- **Key ids (CORE-DATA-3).** A key id with a trailing newline is refused when a key ring is built (key file, `RIVETCORE_KEYRING`, `RIVETCORE_KEK_ID`). Before updating,
+  check that `RIVETCORE_KEK_ID` and the key file's key ids have no line end, and that no stored v3 value has one in its header (on each column the edition encrypts:
+  `WHERE col LIKE 'v3:%' AND LOCATE(CHAR(10), SUBSTRING_INDEX(col, ':', 2)) > 0`). Such a value can only exist where a key id was configured with a newline, and it would no
+  longer decrypt; Core's tests and the red team found none.
+- **Pattern constants.** `KeyRing::KID_PATTERN`, `RmmProtocol::*_RE`, `PanelProtocol::*_RE`, `RemoteProtocol::*_RE` and `StarterPack::ID_RE`/`PACK_ID_RE` keep their values;
+  their `$` also matches before a final newline. If edition code matches one of them itself, append the modifier: `preg_match(RmmProtocol::CHECK_KEY_RE . 'D', $v)`
+  (or use `RmmProtocol::matches()`).
+- **Redactor (CORE-DATA-2).** `Redactor::redact()` takes an optional second argument (`$passwordToEndOfLine`, default true); existing calls are unchanged and now mask more.
+- **Panel devices (CORE-API-4).** New and re-enrolled panel devices have `<` `>` `"` backtick and backslash replaced with `_` in host name, OS version and app version. Keep
+  escaping device text and the audit log where you render them; rows enrolled before keep what was sent.
+- **Webhooks (CORE-API-6).** A destination that resolves to the Azure Wire Server 168.63.129.16 is refused, even when listed in allowed networks.
+
+### RMM server and inbound monitoring
+
+- **Signed configuration (CORE-AGENT-4).** A NEW install (the first switch-on mints the signing key and no device is enrolled) now starts with
+  `rmm_hardening_settings.signed_config = 2`, so every agent that enrolls refuses unsigned check definitions and an unsigned log configuration from its first
+  contact. **An existing install is not changed**: it keeps its value (0 unless you set it). `RmmReadModel::settingsSummary()['hardening']`
+  (`RmmSettings::hardeningStatus()`) carries `signed_config`, `signed_config_recommended` (2), `signed_config_ok` and `signed_config_warning`; show the
+  warning prominently on the RMM settings or hardening page. `signed_config` (0 to 2) is now part of the validated settings form (`RmmSettings::update()`,
+  `RmmAdmin::saveSettings()`), so the page can offer the switch. Raising it is safe for every agent: one that predates CORE-DS-16 ignores the announcement
+  (it neither breaks nor gains protection; verified against the agent source before CORE-DS-16 with a new install's enrollment and check-in answers), one
+  that knows it keeps requiring signatures even if the level is lowered again later.
+- **Inbound monitoring (Chain A, CORE-API-5, NEW-1).** Responses no longer carry `ticket_id`; heartbeat times in the future count as the arrival time;
+  per-client (300/h) and overall (600/h) ticket caps write counter rows with source `_cap` into your incident table (label or hide them in the admin view; your
+  `IncidentStoreInterface::locked()` must allow nested locks on different keys, which GET_LOCK does; rerun `IncidentStoreConformanceTestCase`). Before you give
+  a client its own Uptime Kuma, give that sender its own secret limited to that client (`InboundAuthenticator`'s second argument); a shared secret trusts its
+  holder with every client.
+- **Release operations (NEW-2).** `RmmAdmin`'s binary, release, MSI template, release signature and rollover operations refuse a caller limited to some clients
+  (403), like `clearUpdateFailures` already did. Nothing to change while `rmm.binary.publish` stays an administrator ability.
+
 ## Adopting the Rivet Console redeem and events routes (1.0.0-rc.70, provisional; migration 0051; optional, off by default)
 
 Needs the remote session policy / Rivet Console release (rc.68 and rc.69, PR #130) first. Nothing is required: with `remote_console` off (the default) every existing call behaves as before.

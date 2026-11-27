@@ -174,9 +174,10 @@ final class EnrollmentService
 
     private function recordAttempt(string $ip, bool $ok, string $reason, string $selector): void
     {
-        $this->attempts->record(RmmProtocol::ENROLL_RATE_SALT, $ip, $ok, $reason, $selector);
-        if (!$ok) {
-            $this->audit->record('Enrollment Failed', 'Enrollment attempt rejected (' . $reason . ') from ' . $ip . ($selector !== '' ? ' using token ' . substr($selector, 0, 12) : ''), 0, 0);
+        $id = $this->attempts->insert(RmmProtocol::ENROLL_RATE_SALT, $ip, $ok, $reason, $selector);
+        // CORE-API-3: past the instance-wide threshold the audit log is sampled, never the enrollment refused
+        if (!$ok && ($tail = $this->attempts->auditSampling(AttemptLog::KIND_ENROLL, $id)) !== '') {
+            $this->audit->record('Enrollment Failed', 'Enrollment attempt rejected (' . $reason . ') from ' . $ip . ($selector !== '' ? ' using token ' . substr($selector, 0, 12) : '') . ($tail ?? ''), 0, 0);
         }
     }
 
@@ -262,7 +263,7 @@ final class EnrollmentService
         $parts = explode('.', $tokenStr);
         $selector = '';
         $row = null;
-        if (count($parts) === 3 && $parts[0] === RmmProtocol::ENROLL_TOKEN_PREFIX && preg_match(RmmProtocol::ENROLL_TOKEN_SELECTOR_RE, $parts[1]) === 1 && preg_match(RmmProtocol::ENROLL_TOKEN_SECRET_RE, $parts[2]) === 1) {
+        if (count($parts) === 3 && $parts[0] === RmmProtocol::ENROLL_TOKEN_PREFIX && preg_match(RmmProtocol::ENROLL_TOKEN_SELECTOR_RE . 'D', $parts[1]) === 1 && preg_match(RmmProtocol::ENROLL_TOKEN_SECRET_RE . 'D', $parts[2]) === 1) {
             $selector = $parts[1];
             $row = $this->sql->one('SELECT * FROM endpoint_agent_enrollment_tokens WHERE token_selector = ?', [$selector]);
         }

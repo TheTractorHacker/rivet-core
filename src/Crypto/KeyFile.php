@@ -69,7 +69,7 @@ final class KeyFile
     public static function decodeKey(#[\SensitiveParameter] string $encoded): string
     {
         $encoded = trim($encoded);
-        if (preg_match('/^[0-9a-fA-F]{64}$/', $encoded) === 1) {
+        if (preg_match('/^[0-9a-fA-F]{64}$/D', $encoded) === 1) {
             return (string) hex2bin($encoded);
         }
         if (str_starts_with($encoded, 'base64:')) {

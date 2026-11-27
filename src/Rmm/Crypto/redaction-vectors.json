@@ -1,0 +1,182 @@
+[
+  {
+    "name": "url_userinfo_password",
+    "input": "DATABASE_URL=postgres://app:Fx-S3cr3t-db-41\u0040db.internal:5432/app",
+    "expect_masked": ["Fx-S3cr3t-db-41"],
+    "expect_kept": ["postgres://app:", "@db.internal:5432/app"]
+  },
+  {
+    "name": "url_userinfo_empty_username",
+    "input": "REDIS_URL=redis://:Fx-redis-pass-77@cache.internal:6379/0",
+    "expect_masked": ["Fx-redis-pass-77"],
+    "expect_kept": ["redis://:", "@cache.internal:6379/0"]
+  },
+  {
+    "name": "url_userinfo_git_remote",
+    "input": "origin  https://deploy:Fx-gitpass-123\u0040git.internal/acme/erp.git (fetch)",
+    "expect_masked": ["Fx-gitpass-123"],
+    "expect_kept": ["https://deploy:", "@git.internal/acme/erp.git (fetch)"]
+  },
+  {
+    "name": "cookie_request_header",
+    "input": "Cookie: PHPSESSID=Fx0session0cookie0value0123; theme=dark",
+    "expect_masked": ["Fx0session0cookie0value0123"],
+    "expect_kept": ["Cookie:"]
+  },
+  {
+    "name": "set_cookie_response_header",
+    "input": "Set-Cookie: PHPSESSID=Fx0session0cookie0value0456; path=/; HttpOnly",
+    "expect_masked": ["Fx0session0cookie0value0456"],
+    "expect_kept": ["Set-Cookie:"]
+  },
+  {
+    "name": "set_cookie_curl_verbose_line_only",
+    "input": "< HTTP/1.1 200 OK\n< set-cookie: sessionid=Fx0curl0cookie0value0789; Secure\n< Content-Type: text/html",
+    "expect_masked": ["Fx0curl0cookie0value0789"],
+    "expect_kept": ["< HTTP/1.1 200 OK", "< set-cookie:", "< Content-Type: text/html"]
+  },
+  {
+    "name": "net_use_password_after_share",
+    "input": "net use Z: \\\\nas01\\backup Fx-NasPass-9 /user:ACME\\backup",
+    "expect_masked": ["Fx-NasPass-9"],
+    "expect_kept": ["net use Z: \\\\nas01\\backup ", "/user:ACME\\backup"]
+  },
+  {
+    "name": "net_use_password_after_user_switch",
+    "input": "net use \\\\nas01\\backup /user:ACME\\backup Fx-NasPass-10 /persistent:no",
+    "expect_masked": ["Fx-NasPass-10"],
+    "expect_kept": ["net use \\\\nas01\\backup /user:ACME\\backup ", "/persistent:no"]
+  },
+  {
+    "name": "dash_dash_pass_value",
+    "input": "mysqldump --user root --pass Fx-mysql-pass-5 erp > /backup/erp.sql",
+    "expect_masked": ["Fx-mysql-pass-5"],
+    "expect_kept": ["mysqldump --user root --pass ", "erp > /backup/erp.sql"]
+  },
+  {
+    "name": "dash_dash_password_value",
+    "input": "backup-tool --password Fx-tool-pass-11 --host nas01",
+    "expect_masked": ["Fx-tool-pass-11"],
+    "expect_kept": ["backup-tool --", "--host nas01"]
+  },
+  {
+    "name": "mysql_dash_p_separate_value",
+    "input": "mysql -h db.internal -u root -p Fx-mysql-p-12 erp",
+    "expect_masked": ["Fx-mysql-p-12"],
+    "expect_kept": ["mysql -h db.internal -u root -p "]
+  },
+  {
+    "name": "mysql_dash_p_attached_value",
+    "input": "mysql -uroot -pFx-attached-13 erp",
+    "expect_masked": ["Fx-attached-13"],
+    "expect_kept": ["mysql -uroot -p"]
+  },
+  {
+    "name": "sshpass_dash_p_value",
+    "input": "sshpass -p Fx-sshpass-14 ssh admin@host01.internal",
+    "expect_masked": ["Fx-sshpass-14"],
+    "expect_kept": ["sshpass -p ", "ssh admin@host01.internal"]
+  },
+  {
+    "name": "stripe_live_secret_key",
+    "input": "charge failed for sk_live\u005fFxFixture0000000000000001.",
+    "expect_masked": ["FxFixture0000000000000001"],
+    "expect_kept": ["charge failed for "]
+  },
+  {
+    "name": "stripe_test_secret_key",
+    "input": "test charge with sk_test\u005fFxFixture0000000000000002, retrying",
+    "expect_masked": ["FxFixture0000000000000002"],
+    "expect_kept": ["test charge with ", ", retrying"]
+  },
+  {
+    "name": "stripe_restricted_live_key",
+    "input": "using (rk_live\u005fFxFixture0000000000000003) for reports",
+    "expect_masked": ["FxFixture0000000000000003"],
+    "expect_kept": ["using (", ") for reports"]
+  },
+  {
+    "name": "azure_sas_sig_in_url_query",
+    "input": "uploading to https://acct.blob.core.windows.net/backup/db.bak?sv=2022-11-02&sr=b&sig=Fx0sas0signature0value%3D&se=2026-12-01",
+    "expect_masked": ["Fx0sas0signature0value"],
+    "expect_kept": ["https://acct.blob.core.windows.net/backup/db.bak?sv=2022-11-02&sr=b&sig=", "&se=2026-12-01"]
+  },
+  {
+    "name": "slack_incoming_webhook",
+    "input": "curl -X POST https://hooks.slack.com\/services/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001 -d @msg.json",
+    "expect_masked": ["Fx0slack0webhook0secret0001"],
+    "expect_kept": ["https://hooks.slack.com/services/", " -d @msg.json"]
+  },
+  {
+    "name": "password_unquoted_value_masked_to_end_of_line",
+    "input": "password: correct horse battery staple\nuser: alice",
+    "expect_masked": ["correct", "horse battery staple"],
+    "expect_kept": ["password:", "user: alice"]
+  },
+  {
+    "name": "prefixed_password_name",
+    "input": "DB_PASSWORD=Fx-db-pass-15",
+    "expect_masked": ["Fx-db-pass-15"],
+    "expect_kept": ["DB_PASSWORD="]
+  },
+  {
+    "name": "control_password_equals_is_masked",
+    "input": "password=Fx-control-masked-1",
+    "expect_masked": ["Fx-control-masked-1"],
+    "expect_kept": ["password="]
+  },
+  {
+    "name": "control_authorization_bearer_is_masked",
+    "input": "Authorization: Bearer FxBearerToken0123456789",
+    "expect_masked": ["FxBearerToken0123456789"],
+    "expect_kept": ["Authorization:"]
+  },
+  {
+    "name": "keep_non_password_name_value_stops_at_space",
+    "input": "token=Fx-token-16 user=alice",
+    "expect_masked": ["Fx-token-16"],
+    "expect_kept": ["user=alice"]
+  },
+  {
+    "name": "keep_url_without_userinfo",
+    "input": "git clone https://git.internal/acme/erp.git && ssh deploy@git.internal && redis-cli -u redis://cache.internal:6379/0",
+    "expect_masked": [],
+    "expect_kept": ["https://git.internal/acme/erp.git", "ssh deploy@git.internal", "redis://cache.internal:6379/0"]
+  },
+  {
+    "name": "keep_sig_outside_url_query",
+    "input": "gpg verify: sig=good, trust=full",
+    "expect_masked": [],
+    "expect_kept": ["sig=good, trust=full"]
+  },
+  {
+    "name": "keep_cookie_word_not_at_line_start",
+    "input": "found 3 cookies; cookie: header missing on 2 requests",
+    "expect_masked": [],
+    "expect_kept": ["cookie: header missing on 2 requests"]
+  },
+  {
+    "name": "keep_psql_dash_p_port",
+    "input": "psql -h db.internal -p 5432 -U app erp",
+    "expect_masked": [],
+    "expect_kept": ["psql -h db.internal -p 5432 -U app erp"]
+  },
+  {
+    "name": "keep_net_use_without_password",
+    "input": "net use Z: \\\\nas01\\backup /persistent:yes",
+    "expect_masked": [],
+    "expect_kept": ["net use Z: \\\\nas01\\backup /persistent:yes"]
+  },
+  {
+    "name": "keep_passive_switch",
+    "input": "lftp --passive --user bob ftp.internal",
+    "expect_masked": [],
+    "expect_kept": ["lftp --passive --user bob ftp.internal"]
+  },
+  {
+    "name": "keep_bare_stripe_prefixes",
+    "input": "live keys start with sk_live_ and test keys with sk_test_",
+    "expect_masked": [],
+    "expect_kept": ["live keys start with sk_live_ and test keys with sk_test_"]
+  }
+]

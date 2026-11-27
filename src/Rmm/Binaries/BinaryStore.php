@@ -127,7 +127,7 @@ final class BinaryStore
     {
         $name = (string) $row['storage_name'];
         $dir = $this->storageDir();
-        if ($dir === null || preg_match(RmmProtocol::BINARY_STORAGE_NAME_RE, $name) !== 1) {
+        if ($dir === null || preg_match(RmmProtocol::BINARY_STORAGE_NAME_RE . 'D', $name) !== 1) {
             throw new \RuntimeException('bad storage name');   // never build a path from anything else (no traversal)
         }
 

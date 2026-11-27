@@ -35,9 +35,9 @@ Required (all in `RivetCore\Rmm\Contracts`):
 | `rmm.remote.launch` | open a MeshCentral session | `module_rmm_remote_connect >= 1`, not a module-only login |
 | `rmm.device.manage` | approve, reject, revoke, retire, transfer, re-enroll, rotate, set ring, map a MeshCentral node | `role_is_admin` |
 | `rmm.token.manage` | create and revoke enrollment tokens, issue installers | `role_is_admin` |
-| `rmm.binary.publish` | upload agent binaries, make one current, manage releases and rings | `role_is_admin` |
+| `rmm.binary.publish` | upload agent binaries, make one current, manage releases and rings (fleet-wide: also refused to a caller limited to some clients, TEN-3) | `role_is_admin` |
 | `rmm.alert.manage` | acknowledge and resolve alerts, maintenance windows of one client or one device, a device's parent (Phase 3; needs `rmm.device.view` too) | suggested: like `rmm.job.run_saved` |
-| `rmm.admin` | module settings, switches, signing key, MeshCentral settings; Phase 2: policies, schedules, custom field definitions, secret field values, re-signing scripts; Phase 3: escalation policies, storm-control limits and maintenance windows that span clients (all, site, group, tag) | `role_is_admin` |
+| `rmm.admin` | module settings, switches, signing key, MeshCentral settings; Phase 2: policies, schedules, custom field definitions, secret field values, re-signing scripts; Phase 3: escalation policies, storm-control limits and maintenance windows that span clients (all, site, group, tag); sending a file to a device (`file_put`), which is **root/SYSTEM-equivalent** on every device in scope (it can write any file the never-transfer list does not name; the list only keeps the agent's own files and credentials out of reach, CORE-AGENT-6) | `role_is_admin` |
 
 A policy that enforces anything must deny an ability it does not know. An inactive account, a module-only login and the client scope (RivetIT: `user_client_permissions`) are the edition's rules; the client scope reaches Core through `RmmTenancyInterface::visibleClientIds()`.
 
@@ -437,6 +437,16 @@ Constructor options of `RmmModule`: `binary_dir`, `transfer_dir` (Phase 6: where
 
 Device authentication, SYSTEM-level job execution and remote access make this a high-risk module: a focused review is required before it is enabled by default anywhere. Credentials are stored as hashes (device and enrollment tokens), the signing key and the Mesh login key are sealed with the edition's key, no read model contains a secret, job output is redacted and capped when it is stored, script text is never written to the audit log (a hash is), and every denial is a generic message.
 
+**Redaction of job output, logs and change text** (`Crypto\Redactor`, pattern-based and best effort: a secret in free text with no marker stays visible). It masks PEM
+private keys, `Authorization`/`Bearer`, JWTs, the value after secret-looking names (`password`, `token`, `api_key`, `DB_PASS`, `licenseKey`, ...; quoted values to the closing
+quote), `curl -u`, `mysql -p`, `sshpass -p`, PowerShell `-Password`, AWS/GitHub/Slack-bot keys, this product's own tokens and 64-hex strings, and since CORE-DATA-2 (red team
+2026-11-21): the password of `scheme://user:<password>@host` (also with an empty user, `redis://:pw@host`; only the password), the whole value of a `Cookie:`/`Set-Cookie:`
+header line (also curl -v's `< `/`> ` lines; not the word elsewhere), `--pass x` / `-pw x` / `-pass x`, the password of `net use \\server\share <password>` and after
+`/user:name`, a `sig=` query parameter (Azure SAS), Stripe `sk_live_`/`sk_test_`/`rk_live_` keys, the path of a `hooks.slack.com/services/` webhook, and the unquoted value of a
+password-like name (`password`, `passwd`, `passphrase`, `pwd`) to the end of its line (`password: a b c`). The rows of `src/Rmm/Crypto/redaction-vectors.json` are replayed by
+the Go agent's `jobs.Redact` too. The change monitor keeps the end-of-line rule off (`Redactor::redact($s, false)`), because its text must match the frozen rc.38 vectors the
+agent's change monitor replays. The rules stay linear: 800 KB of adversarial text is redacted in well under half a second.
+
 What is **verified**: the golden transcripts of the original replay identically through `DeviceApi` and `TechnicianApi` (`php scripts/rmm-golden/replay-core.php replay`); the RivetIT role matrix (`RoleMatrixTest`), deployment (`DeployTest`), administration (`AdminTest`), read models (`ReadModelTest`) and technician actions (`TechnicianTest`) run against a scratch database. **Not verified**: a real MeshCentral server (only `tests/Support/MockMeshCentral.php`; the Phase 6 terminal and files views use MeshCentral's `viewmode` 12 and 13 from its URL scheme and have not been opened in a real MeshCentral), the Windows installer on a Windows host, the Windows code of the Phase 6 and 8 agent (cross-compiled and vetted only), the Linux agent on a physical host.
 
 ## Client scoping matrix
@@ -599,10 +609,10 @@ MeshCentral does not separate clients: one Mesh account reaches every device of 
 | `AutoInstallActions::paramsOf` | n/a | no (not client-scoped) | Reads where the parameters of a catalog package are set (never a value); the client-scoped entries are filtered to the caller's clients. Writes are in the matrix. |
 | `TechnicianActions::approveMeshNodes` | n/a | no (not client-scoped) | Bulk approve-and-map: every id goes through setMeshNode(), whose deviceFor() hides a device of another client; an id outside the caller's clients is reported per device as refused, never acted on. |
 | `PatchActions::getPolicy` | n/a | no (not client-scoped) | Reads one patch policy, a fleet-wide object: settings only. Its assignments are filtered to the caller's clients (testPolicyDetailsHideTheAssignmentsOfOtherClients); its writes are in the matrix. |
-| `RmmAdmin::msiTemplateAction` | n/a | no (not client-scoped) | Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
-| `RmmAdmin::setReleaseSignature` | n/a | no (not client-scoped) | Stores the offline release signature of a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish (CORE-DS-26). |
-| `RmmAdmin::binaryAction` | n/a | no (not client-scoped) | Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish. |
-| `RmmAdmin::updateRelease` | n/a | no (not client-scoped) | Changes the rollout percentage of an agent release: fleet-wide, no client owns it; needs rmm.binary.publish. |
+| `RmmAdmin::msiTemplateAction` | n/a | no (not client-scoped) | Activates or retires an MSI installer template: a fleet-wide release asset no client owns; needs rmm.binary.publish and a caller not limited to some clients (TEN-3). |
+| `RmmAdmin::setReleaseSignature` | n/a | no (not client-scoped) | Stores the offline release signature of a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish and a caller not limited to some clients (TEN-3; CORE-DS-26). |
+| `RmmAdmin::binaryAction` | n/a | no (not client-scoped) | Publishes, promotes or retires a hosted agent binary: a fleet-wide release asset no client owns; needs rmm.binary.publish and a caller not limited to some clients (TEN-3). |
+| `RmmAdmin::updateRelease` | n/a | no (not client-scoped) | Changes the rollout percentage of an agent release: fleet-wide, no client owns it; needs rmm.binary.publish and a caller not limited to some clients (TEN-3). |
 | `TransferService::listFor` | n/a | no (not client-scoped) | Service layer, no principal: RemoteActions::listTransfers() resolves the device and the ability first (matrix row). |
 | `TransferService::receiveChunk` | n/a | no (not client-scoped) | Agent-facing: the device is authenticated by its own token and the transfer by a one-time token; find() is keyed by (transfer, device), see TransferService::find. |
 | `TransferService::serveChunk` | n/a | no (not client-scoped) | Agent-facing: the device is authenticated by its own token and the transfer by a one-time token; find() is keyed by (transfer, device), see TransferService::find. |

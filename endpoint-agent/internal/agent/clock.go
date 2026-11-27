@@ -28,7 +28,93 @@ const (
 	// differences are latency and Date-header rounding and are smoothed.
 	clockStep      = 30 * time.Second
 	clockWarnEvery = time.Hour
+	// floorPersistEvery bounds how often the server-time floor is written to state.json; floorWarnBack is how far back a server time must go before the
+	// agent logs it (an NTP step of a few seconds is normal).
+	floorPersistEvery = 5 * time.Minute
+	floorWarnBack     = 10 * time.Minute
 )
+
+// Trusted time for security decisions (CORE-AGENT-3, red team 2026-11-21 Chain H). The skew correction above exists for PCs whose clock or time zone
+// is wrong, and it is driven by server_time, which is not signed: a response could put it up to a day in the past and so make a signed job that expired
+// hours ago look current again. Signed job expiry therefore uses securityNow: the corrected clock, but never earlier than the server-time FLOOR, the
+// latest server time ever observed plus the monotonic time elapsed since. The floor only moves forward. A mis-clocked PC keeps
+// working, because its offset is learned from the same server answers that raise the floor; only a server time that goes BACKWARDS cannot widen a
+// signature's validity window. The floor survives a restart (state.json, server_time_floor), without the elapsed time, which only makes it lower
+// (more lenient), never higher.
+
+// securityNow is the clock signed jobs are checked against: max(corrected clock, floor + elapsed).
+func (a *Agent) securityNow() time.Time {
+	cor := a.now()
+	a.mu.Lock()
+	fs, fa := a.floorSrv, a.floorAt
+	a.mu.Unlock()
+	if fs.IsZero() {
+		return cor
+	}
+	el := a.o.Now().Sub(fa)
+	if el < 0 {
+		el = 0 // a wall clock without a monotonic reading that was set back: never lower the floor below what was observed
+	}
+	if f := fs.Add(el); f.After(cor) {
+		return f
+	}
+	return cor
+}
+
+// raiseFloor folds one observed server time in (server, read at the raw local clock local); a time that is not later than the floor projected to
+// local is ignored. Implausible values were already dropped by observeServerTime.
+func (a *Agent) raiseFloor(server, local time.Time) {
+	a.mu.Lock()
+	if !a.floorSrv.IsZero() {
+		el := local.Sub(a.floorAt)
+		if el < 0 {
+			el = 0
+		}
+		if !server.After(a.floorSrv.Add(el)) {
+			back := a.floorSrv.Add(el).Sub(server)
+			warn := back > floorWarnBack && (a.floorWarned.IsZero() || local.Sub(a.floorWarned) >= clockWarnEvery || local.Before(a.floorWarned))
+			if warn {
+				a.floorWarned = local
+			}
+			a.mu.Unlock()
+			if warn {
+				a.log.Warn("the server's time went backwards; signed jobs keep being checked against the latest server time seen (expired jobs stay refused)", "behind_s", int64(back.Seconds()))
+			}
+			return
+		}
+	}
+	a.floorSrv, a.floorAt = server, local
+	save := a.floorSaved.IsZero() || server.Sub(a.floorSaved) >= floorPersistEvery
+	if save {
+		a.floorSaved = server
+	}
+	a.mu.Unlock()
+	if save {
+		v := server.UTC().Format(time.RFC3339)
+		_ = a.o.Store.Update(func(st *store.State) error { st.ServerTimeFloor = v; return nil })
+	}
+}
+
+// resetFloor forgets the floor (a new enrolment may be another server with its own clock).
+func (a *Agent) resetFloor() {
+	a.mu.Lock()
+	a.floorSrv, a.floorAt, a.floorSaved = time.Time{}, time.Time{}, time.Time{}
+	a.mu.Unlock()
+}
+
+// loadFloor restores the persisted floor at start-up; the elapsed time is counted from now (lenient: the downtime is not added).
+func (a *Agent) loadFloor(st store.State) {
+	if st.ServerTimeFloor == "" {
+		return
+	}
+	t, err := time.Parse(time.RFC3339, st.ServerTimeFloor)
+	if err != nil {
+		return
+	}
+	a.mu.Lock()
+	a.floorSrv, a.floorAt, a.floorSaved = t, a.o.Now(), t
+	a.mu.Unlock()
+}
 
 // ClockOffset is the current estimate of server time minus the PC clock and whether
 // the correction is being applied.
@@ -82,6 +168,7 @@ func (a *Agent) observeServerTime(server, local time.Time, reset bool) {
 		a.log.Warn("ignoring an implausible server time", "server_time", server.UTC().Format(time.RFC3339), "pc_time", local.UTC().Format(time.RFC3339))
 		return
 	}
+	a.raiseFloor(server, local)
 	a.mu.Lock()
 	switch {
 	case !a.clkHave || reset:

@@ -421,7 +421,7 @@ final class UpdateService
         if (!RmmProtocol::matches(RmmProtocol::AGENT_VERSION_RE, $version) || !RmmProtocol::matches(RmmProtocol::AGENT_VERSION_RE, $minVersion)) {
             return 'Versions must look like 1.2.3.';
         }
-        if (preg_match('/^[0-9a-f]{64}$/', strtolower($sha256)) !== 1) {
+        if (preg_match('/^[0-9a-f]{64}$/D', strtolower($sha256)) !== 1) {
             return 'sha256 must be 64 hex characters.';
         }
         $p = parse_url($url);
@@ -525,7 +525,7 @@ final class UpdateService
     public function platformOk(array $row): ?bool
     {
         $name = (string) $row['storage_name'];
-        if ($this->binaryDir === null || preg_match(RmmProtocol::BINARY_STORAGE_NAME_RE, $name) !== 1) {
+        if ($this->binaryDir === null || preg_match(RmmProtocol::BINARY_STORAGE_NAME_RE . 'D', $name) !== 1) {
             return null;
         }
         $path = rtrim($this->binaryDir, '/') . '/' . $name;
@@ -544,7 +544,7 @@ final class UpdateService
     public function openBinary(array $row, string $trailer = '', ?string $expectOs = null): array
     {
         $name = (string) $row['storage_name'];
-        if ($this->binaryDir === null || preg_match(RmmProtocol::BINARY_STORAGE_NAME_RE, $name) !== 1) {
+        if ($this->binaryDir === null || preg_match(RmmProtocol::BINARY_STORAGE_NAME_RE . 'D', $name) !== 1) {
             return [null, 'The stored agent binary is missing or damaged.'];   // never build a path from anything else (no traversal)
         }
         $path = rtrim($this->binaryDir, '/') . '/' . $name;

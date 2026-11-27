@@ -85,8 +85,8 @@ cannot render, and bad extra headers fail the attempt without contacting the end
 `UrlPolicy::vet($url)` returns `{host, port, ips}` or `null`. It allows only http/https, no userinfo, no control
 characters, and a host whose every resolved address is public. Constructor:
 `(bool $allowPrivate = false, ?\Closure $resolver = null, array $allowedNetworks = [])`. With `allowedNetworks`, a private
-address passes only when inside a listed CIDR; loopback, unspecified, link-local (cloud metadata), multicast and
-broadcast/reserved addresses are never allowed, even if listed. `isSafe()` and static `isPublicIp()` are helpers.
+address passes only when inside a listed CIDR; loopback, unspecified, link-local (cloud metadata), multicast,
+broadcast/reserved addresses, the Alibaba and Tailscale service addresses and the Azure Wire Server 168.63.129.16 are never allowed, even if listed. `isSafe()` and static `isPublicIp()` are helpers.
 
 `NetworkList::parse($textOrList)` normalises admin input and returns `{networks, errors}`: only private space (10/8,
 172.16/12, 192.168/16, 100.64/10, fc00::/7), no wider than /8 (IPv4) or /48 (IPv6), at most 16 entries

@@ -19,3 +19,11 @@ Status: agent side implemented (endpoint-agent PR E). The PHP server side below 
 
 ## Local switch
 `config.json` `"require_signed_config": true` makes an agent refuse unsigned checks/logs even from a server that never announces `signed_config`.
+
+Learned requirement for checks (CORE-AGENT-4, red team 2026-11-21): once the server has delivered a non-empty check list (enrolment or check-in) in which every check carries a signature that verifies, the agent refuses unsigned checks from then on (`State.ChecksSignedSeen`, sticky, reset by a new enrolment), even if `signed_config` is never announced. Core already signs every check type (`RmmSettings::signCheckList`), so nothing changes on the wire. `config.logs` is not covered by this (older servers signed checks before they signed logs). `config.json` `"allow_unsigned_checks": true` turns the learned requirement off; it never overrides `require_signed_config` or an announced `signed_config`. The server default for NEW installs (`signed_config` 2) is the server's half of CORE-AGENT-4.
+
+## Server default (red team 2026-11-21, CORE-AGENT-4)
+A new install (first switch-on, signing key minted, no device enrolled) starts at `signed_config = 2`; an existing install keeps its value and
+`RmmSettings::hardeningStatus()` (also in `RmmReadModel::settingsSummary()['hardening']`) carries a warning until it is raised. The level is part of the
+validated settings form (`RmmSettings::update()`, 0 to 2). Announcing it is inert for an agent that predates this contract: the member is unknown to it and its
+check verifier covers the delivered object, `device_id` included (checked against the agent source before CORE-DS-16 with a new install's answers).

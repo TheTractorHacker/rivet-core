@@ -49,7 +49,7 @@ final class CronSchedule
             $step = 1;
             if (str_contains($item, '/')) {
                 [$item, $st] = explode('/', $item, 2);
-                if (preg_match('/^\d{1,3}$/', $st) !== 1 || (int) $st < 1) {
+                if (preg_match('/^\d{1,3}$/D', $st) !== 1 || (int) $st < 1) {
                     throw new \InvalidArgumentException("Cron $label: the step must be a positive number.");
                 }
                 $step = (int) $st;
@@ -59,9 +59,9 @@ final class CronSchedule
                 if ($max === 7) {
                     $b = 6;
                 }
-            } elseif (preg_match('/^(\d{1,2})-(\d{1,2})$/', $item, $m) === 1) {
+            } elseif (preg_match('/^(\d{1,2})-(\d{1,2})$/D', $item, $m) === 1) {
                 [$a, $b] = [(int) $m[1], (int) $m[2]];
-            } elseif (preg_match('/^\d{1,2}$/', $item) === 1) {
+            } elseif (preg_match('/^\d{1,2}$/D', $item) === 1) {
                 $a = (int) $item;
                 $b = $step > 1 ? $max : $a;
             } else {

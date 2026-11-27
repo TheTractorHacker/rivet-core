@@ -32,7 +32,7 @@ final class DeviceRepository
     public function authenticate(?string $authHeader): array
     {
         $token = null;
-        if ($authHeader !== null && preg_match(RmmProtocol::DEVICE_TOKEN_BEARER_RE, $authHeader, $m) === 1) {
+        if ($authHeader !== null && preg_match(RmmProtocol::DEVICE_TOKEN_BEARER_RE . 'D', $authHeader, $m) === 1) {
             $token = $m[1];
         }
         $hash = $token === null ? '' : hash('sha256', $token);

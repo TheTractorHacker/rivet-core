@@ -277,7 +277,7 @@ final class CustomFieldService
                 if (is_string($value)) {
                     $value = trim($value);
                 }
-                if ((!is_int($value) && !is_float($value) && !(is_string($value) && preg_match('/^-?\d{1,15}(\.\d{1,6})?$/', $value) === 1)) || (is_float($value) && !is_finite($value))) {
+                if ((!is_int($value) && !is_float($value) && !(is_string($value) && preg_match('/^-?\d{1,15}(\.\d{1,6})?$/D', $value) === 1)) || (is_float($value) && !is_finite($value))) {
                     throw new \InvalidArgumentException('A number field takes a number.');
                 }
 

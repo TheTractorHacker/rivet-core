@@ -849,7 +849,7 @@ class DocxConverter
             $styleEl = self::child($pPr, 'pStyle');
             if ($styleEl !== null) {
                 $style = strtolower(str_replace([' ', '-', '_'], '', (string) self::attr($styleEl, 'val')));
-                if (preg_match('/^heading([1-6])$/', $style, $m) === 1) {
+                if (preg_match('/^heading([1-6])$/D', $style, $m) === 1) {
                     $tag = 'h' . $m[1];
                 } elseif ($style === 'title') {
                     $tag = 'h1';
@@ -1338,7 +1338,7 @@ class DocxConverter
         $entry = implode('/', $parts);
 
         // The only place we will read media from.
-        if (preg_match('#^word/media/[A-Za-z0-9._-]+$#', $entry) !== 1) {
+        if (preg_match('#^word/media/[A-Za-z0-9._-]+$#D', $entry) !== 1) {
             $this->warn('An image reference pointing outside word/media/ was ignored.');
             return null;
         }

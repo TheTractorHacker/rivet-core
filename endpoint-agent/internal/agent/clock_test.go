@@ -3,10 +3,13 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
 
+	"rivetit-agent/internal/api"
+	"rivetit-agent/internal/jobs"
 	"rivetit-agent/internal/store"
 )
 
@@ -251,4 +254,128 @@ func TestShiftCheckinMovesEveryTimeAndKeepsTheRest(t *testing.T) {
 	if _, ok := shiftCheckin([]byte(`{"collected_at":"nope"}`), time.Minute, nil); ok {
 		t.Fatal("a body without a valid collected_at is not shifted")
 	}
+}
+
+// expiredJob is a correctly signed job for this device that expired 23 h ago (the t_skew.sh PoC shape).
+func expiredJob(t *testing.T, r *rig, id string, issued, expires time.Time) api.Job {
+	t.Helper()
+	raw := r.s.signJob(map[string]any{"job_id": id, "device_id": 7, "attempt": 1, "type": jobs.ScriptType(), "script": "echo revived",
+		"timeout_s": 30, "max_output_bytes": 1024, "issued_at": issued.UTC().Format(time.RFC3339), "expires_at": expires.UTC().Format(time.RFC3339)})
+	b, _ := json.Marshal(map[string]any{"jobs": []json.RawMessage{raw}})
+	list, err := api.UnmarshalJobs(b)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("jobs: %v", err)
+	}
+	return list[0]
+}
+
+// CORE-AGENT-3 / Chain H: a check-in answer whose server_time is 23.5 h in the past must not revive a signed job that expired 23 h ago. Before the fix the
+// skew-corrected clock went back 23.5 h and the job verified (t_skew.sh: "SKEW-RAN uid=0(root)").
+func TestServerTimeInThePastCannotReviveAnExpiredJob(t *testing.T) {
+	r := newRig(t)
+	r.enroll()
+	r.strictServer(900*time.Second, true, nil) // honest server time first: this is what sets the floor
+	if out := r.a.checkIn(context.Background(), 0); !out.ok {
+		t.Fatalf("%+v", out)
+	}
+	real := time.Now()
+	job := expiredJob(t, r, "expired-skew", real.Add(-26*time.Hour), real.Add(-23*time.Hour))
+	if err := r.a.verifier.Verify(job); !errors.Is(err, jobs.ErrExpired) {
+		t.Fatalf("control (honest clock): %v", err)
+	}
+	r.strictServer(900*time.Second, true, func() any { return time.Now().Add(-23*time.Hour - 30*time.Minute).UTC().Format(time.RFC3339) })
+	r.a.checkIn(context.Background(), 0)
+	if !within(r.a.now(), time.Now().Add(-23*time.Hour-30*time.Minute), time.Minute) {
+		t.Fatalf("the stamps must still follow the (claimed) server clock: %v", r.a.now())
+	}
+	if err := r.a.verifier.Verify(job); !errors.Is(err, jobs.ErrExpired) {
+		t.Fatalf("a server_time in the past revived an expired job: %v", err)
+	}
+	if !within(r.a.securityNow(), time.Now(), time.Minute) {
+		t.Fatalf("securityNow %v is not the floor", r.a.securityNow())
+	}
+	// the floor survives a restart: a fresh process that only ever hears the lying server still refuses the job
+	a2 := r.newAgent()
+	st, _ := r.st.LoadState()
+	a2.syncVerifier(st)
+	if err := a2.verifier.Verify(job); !errors.Is(err, jobs.ErrExpired) {
+		t.Fatalf("after a restart: %v", err)
+	}
+	// a job that is genuinely valid (issued by the real server now) still runs
+	fresh := expiredJob(t, r, "fresh", time.Now(), time.Now().Add(time.Hour))
+	if err := r.a.verifier.Verify(fresh); err != nil {
+		t.Fatalf("a valid job was refused: %v", err)
+	}
+}
+
+// The judge's constraint: a PC whose clock or time zone is wrong keeps receiving jobs (the reason the skew correction exists). The floor comes from the
+// same server answers, so it agrees with the corrected clock.
+func TestMisClockedPCsStillAcceptCurrentJobs(t *testing.T) {
+	for _, d := range []time.Duration{-13 * time.Hour, -5 * time.Hour, -20 * time.Minute, 20 * time.Minute, 5 * time.Hour, 13*time.Hour + 30*time.Minute} {
+		r := skewedRig(t, d)
+		r.strictServer(900*time.Second, true, nil)
+		r.a.checkIn(context.Background(), 0)
+		r.a.checkIn(context.Background(), 0)
+		real := time.Now()
+		if err := r.a.verifier.Verify(expiredJob(t, r, "ok", real.Add(-time.Minute), real.Add(time.Hour))); err != nil {
+			t.Fatalf("PC clock %v: a current job was refused: %v", d, err)
+		}
+		if err := r.a.verifier.Verify(expiredJob(t, r, "old", real.Add(-3*time.Hour), real.Add(-2*time.Hour))); !errors.Is(err, jobs.ErrExpired) {
+			t.Fatalf("PC clock %v: an expired job was accepted: %v", d, err)
+		}
+		// the PC clock is fixed and the service restarts (the floor is restored from state.json): still fine. (A clock that is fixed while the
+		// process runs is covered by Go's monotonic clock, which the floor's elapsed time uses; this fake clock has no monotonic reading.)
+		r.clk.Advance(-d)
+		a2 := r.newAgent()
+		st, _ := r.st.LoadState()
+		a2.syncVerifier(st)
+		a2.checkIn(context.Background(), 0)
+		if err := a2.verifier.Verify(expiredJob(t, r, "ok2", real.Add(-time.Minute), real.Add(time.Hour))); err != nil {
+			t.Fatalf("PC clock %v then fixed: a current job was refused: %v", d, err)
+		}
+	}
+}
+
+// The floor's elapsed time is the monotonic clock in production (time.Now): a floor observed now is still in force a moment later.
+func TestFloorAdvancesWithTheMonotonicClock(t *testing.T) {
+	r := newRig(t) // real clock
+	r.enroll()
+	now := time.Now()
+	r.a.raiseFloor(now, now)
+	time.Sleep(20 * time.Millisecond)
+	sn := r.a.securityNow()
+	if sn.Before(now.Add(20 * time.Millisecond)) {
+		t.Fatalf("floor did not advance: %v", sn)
+	}
+	// an older server time never lowers it
+	r.a.raiseFloor(now.Add(-time.Hour), time.Now())
+	if r.a.floorSrv != now {
+		t.Fatal("an older server time replaced the floor")
+	}
+}
+
+// A new enrolment (possibly another server) starts a new floor.
+func TestEnrolmentResetsTheServerTimeFloor(t *testing.T) {
+	r := newRig(t)
+	r.enroll()
+	r.a.raiseFloor(time.Now().Add(6*time.Hour), time.Now())
+	if st, _ := r.st.LoadState(); st.ServerTimeFloor == "" {
+		t.Fatal("the floor was not persisted")
+	}
+	r.enroll()
+	if st, _ := r.st.LoadState(); st.ServerTimeFloor != "" && !within(mustParse(t, st.ServerTimeFloor), time.Now(), time.Minute) {
+		t.Fatalf("re-enrolment kept the old floor %s", st.ServerTimeFloor)
+	}
+	if r.a.securityNow().After(time.Now().Add(time.Hour)) {
+		t.Fatalf("re-enrolment kept the old floor in memory: %v", r.a.securityNow())
+	}
+}
+
+func mustParse(t *testing.T, s string) time.Time {
+	t.Helper()
+	v, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
 }

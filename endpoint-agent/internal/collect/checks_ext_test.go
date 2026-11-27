@@ -599,12 +599,29 @@ func TestCertCheckFilesDirsAndEndpoint(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 
+	// Every NotAfter of the store listing is dated from now when the test runs: the fixture's fixed dates are for the parser test above, and
+	// as calendar dates they expire (2026-12-01 fell inside the 7-day fail window on 2026-11-24 and turned this Warn into a Fail everywhere).
+	store := cfixture(t, "certstore.txt")
+	for fixed, in := range map[string]time.Duration{
+		"2026-12-01T10:00:00.0000000Z": 60 * 24 * time.Hour,  // PowerShell's 7-digit fraction
+		"2027-03-15T00:00:00.0000000Z": 120 * 24 * time.Hour, // ditto
+		"2026-11-03T08:30:00Z":         9*24*time.Hour + time.Hour,
+	} {
+		if !strings.Contains(store, fixed) {
+			t.Fatalf("certstore.txt no longer has %s: date every line of the listing from now", fixed)
+		}
+		layout := time.RFC3339
+		if strings.Contains(fixed, ".") {
+			layout = "2006-01-02T15:04:05.0000000Z07:00"
+		}
+		store = strings.ReplaceAll(store, fixed, time.Now().Add(in).UTC().Format(layout))
+	}
 	w, _, wx := extCol("windows")
 	wx.Exec = func(_ context.Context, _ time.Duration, name string, args ...string) (string, int, error) {
 		if name != "powershell.exe" || !strings.Contains(strings.Join(args, " "), `Cert:\LocalMachine\My`) {
 			t.Fatalf("%s %v", name, args)
 		}
-		return strings.ReplaceAll(cfixture(t, "certstore.txt"), "2026-11-03T08:30:00Z", time.Now().Add(9*24*time.Hour+time.Hour).UTC().Format(time.RFC3339)), 0, nil
+		return store, 0, nil
 	}
 	r = w.RunCheck(context.Background(), xspec("cert", `{"store":"LocalMachine\\My"}`))
 	if r.Status != Warn || *r.Value != 9 || !strings.Contains(r.Detail, "old.corp.test") {

@@ -6,7 +6,7 @@ namespace RivetCore\Monitoring\Inbound;
 
 /**
  * The answer for the edition's endpoint file: send {@see self::$status}, the headers and {@see self::json()}. The body holds fixed
- * tokens and ids only: never the request body, a secret or an exception message.
+ * tokens only: never a ticket id, the request body, a secret or an exception message.
  *
  * @api
  */

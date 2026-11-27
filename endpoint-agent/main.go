@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"rivetit-agent/internal/embed"
+	"rivetit-agent/internal/update"
 )
 
 // Set at build time via -ldflags "-X main.version=... -X main.commit=...".
@@ -29,7 +30,7 @@ Commands:
   enroll      exchange an enrollment token for a device credential
   rotate      re-enroll with a new token, rotating the device credential (same identity)
   status      show enrollment/health state (no network traffic)
-  version     print the version
+  version     print the version   [--trust: the build's trust anchors: release key count, installer trust key count, release stamp]
   selftest    verify the binary starts (used by the updater)
 
 Common flags: --state-dir DIR (default: %%ProgramData%%\RivetIT\Agent on Windows, /var/lib/rivetit-agent on Linux)
@@ -66,6 +67,11 @@ func main() {
 	case "uninstall":
 		code = cmdUninstall(args)
 	case "version", "--version", "-v":
+		if len(args) == 1 && args[0] == "--trust" {
+			// Read by the CI release gate (scripts/check-release-keys.sh): what this binary will trust, never a key itself.
+			fmt.Printf("release_keys=%d trust_keys=%d release_build=%t\n", len(update.ParseKeys(update.EmbeddedReleaseKeys)), embed.TrustKeyCount(), update.IsReleaseBuild())
+			break
+		}
 		fmt.Printf("rivetit-agent %s (%s) %s/%s\n", version, commit, runtime.GOOS, runtime.GOARCH)
 	case "selftest":
 		fmt.Printf("rivetit-agent selftest ok version=%s os=%s arch=%s\n", version, runtime.GOOS, runtime.GOARCH)

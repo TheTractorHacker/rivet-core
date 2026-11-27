@@ -22,7 +22,7 @@ final class HypervisorService
 {
     /** CORE-DS-43: storage rows one device may hold, missing ones included (a report carries at most 200). */
     private const MAX_STORAGE_ROWS = 600;
-    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
+    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/D';
     private const VM_KEY_RE = '/^(?:(qemu|lxc)\/[1-9][0-9]{0,8}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
     private readonly \RivetCore\Rmm\Store\HypervisorHistoryStore $vmHistory;

@@ -47,6 +47,12 @@ type Config struct {
 	RequireSignedConfig bool `json:"require_signed_config,omitempty"`
 	// DisableUpdate is a local kill switch: never self-update (CORE-DS-26). Independent of disable_jobs, which does not stop updates.
 	DisableUpdate bool `json:"disable_update,omitempty"`
+	// AllowUnsignedChecks turns off the learned requirement that checks be signed once the server has delivered a fully signed list (CORE-AGENT-4).
+	// It never overrides require_signed_config or a server's signed_config announcement.
+	AllowUnsignedChecks bool `json:"allow_unsigned_checks,omitempty"`
+	// ChecksBlockPrivate makes the http, port and cert-host checks refuse loopback, private (RFC 1918, ULA, CGNAT) and unspecified destinations too;
+	// link-local and cloud metadata addresses are always refused (CORE-AGENT-2). Off by default: monitoring internal services is the checks' main use.
+	ChecksBlockPrivate bool `json:"checks_block_private,omitempty"`
 }
 
 // Defaults applied on load.
@@ -119,6 +125,12 @@ type State struct {
 	DormantReason    string         `json:"dormant_reason,omitempty"`
 	UpdateFailure    *UpdateFailure `json:"update_failure,omitempty"`
 	EnrolledAt       time.Time      `json:"enrolled_at,omitempty"`
+	// ServerTimeFloor (RFC 3339) is the latest server time the agent has observed, kept so a restart cannot be used to wind the job-expiry clock
+	// back (CORE-AGENT-3). Written at most every few minutes; reset by a new enrolment.
+	ServerTimeFloor string `json:"server_time_floor,omitempty"`
+	// ChecksSignedSeen: this server once delivered a check list that was entirely signed, so unsigned checks are refused from then on (CORE-AGENT-4).
+	// Only ever set; reset by a new enrolment.
+	ChecksSignedSeen bool `json:"checks_signed_seen,omitempty"`
 	// ServerFeatures is the "features" list of the LAST successful check-in
 	// response (absence = none), kept across restarts.
 	ServerFeatures []string `json:"server_features,omitempty"`

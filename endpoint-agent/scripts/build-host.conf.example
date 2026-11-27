@@ -23,6 +23,17 @@ WORKDIR=/var/lib/rivetit-build-host
 #GO_IMAGE=golang:1.27
 #MSI_IMAGE=rivetit-msitools:0.103-2
 
+# Agent trust anchors (CORE-AGENT-1; docs/rmm/AGENT_BUILD.md "Release signing key and trust anchors"), the same values CI takes from the
+# AGENT_RELEASE_KEYS / AGENT_TRUST_KEYS repository variables. PUBLIC keys only: comma separated base64 of 32-byte Ed25519 public keys. A 64-byte value
+# (a private key) is refused. Empty (the default) builds unanchored agents, as before.
+#   RELEASE_KEYS   the offline release signing public key(s): agents built here accept only updates signed with that key.
+#   TRUST_KEYS     your server's signing public key(s) (installer trust anchor) when this host builds agents for one instance only. Such agents
+#                  enrol only from an installer that server stamped: the MSI property mode (SERVER=...) is refused (SIGNED_INSTALLER_TRAILER.md).
+#   RELEASE_BUILD  1 = stamp the binaries as release builds (needs RELEASE_KEYS; such a build without a key refuses every self-update).
+#RELEASE_KEYS=
+#TRUST_KEYS=
+#RELEASE_BUILD=
+
 # Limits for each build container, and the whole job (seconds; default 1500 = 25 minutes).
 #BUILD_CPUS=2
 #BUILD_MEMORY=4g

@@ -72,7 +72,7 @@ final class KeyRing
     /** @throws InvalidKeyMaterial */
     public static function assertKid(string $kid): void
     {
-        if (preg_match(self::KID_PATTERN, $kid) !== 1) {
+        if (preg_match(self::KID_PATTERN . 'D', $kid) !== 1) {
             throw new InvalidKeyMaterial('A key id is 1-32 characters of [A-Za-z0-9_.-] and starts with a letter or digit (no colon).');
         }
     }

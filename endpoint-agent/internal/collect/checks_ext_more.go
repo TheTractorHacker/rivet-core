@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -105,9 +106,15 @@ func (c *Collector) checkCert(ctx context.Context, key string, raw json.RawMessa
 		if !safeHost(p.Host) || p.Port < 1 || p.Port > 65535 {
 			return res(key, Unknown, "invalid cert check parameters")
 		}
+		if why := blockedHostLiteral(p.Host, x.StrictDest); why != "" {
+			return refusedDest(key, fmt.Errorf("%w: %s is a %s", ErrDestinationBlocked, p.Host, why))
+		}
 		dctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		raw, err := x.Dial(dctx, "tcp", net.JoinHostPort(p.Host, strconv.Itoa(p.Port)))
+		if errors.Is(err, ErrDestinationBlocked) {
+			return refusedDest(key, err)
+		}
 		if err != nil {
 			return res(key, Fail, fmt.Sprintf("%s:%d unreachable: %s", p.Host, p.Port, netReason(err)))
 		}

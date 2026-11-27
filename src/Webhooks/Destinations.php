@@ -186,7 +186,7 @@ final class Destinations
         );
         $d[] = self::make(
             'home-assistant', 'Home Assistant', 'home', 'Open-source home automation. Fire an automation with a webhook trigger.', 'json', 'POST',
-            'https://homeassistant.example.com/api/webhook/<webhook_id>', '#^https?://\S+/api/webhook/[A-Za-z0-9_-]+$#', ['none', 'hmac'], 'none', null, [], [],
+            'https://homeassistant.example.com/api/webhook/<webhook_id>', '#^https?://\S+/api/webhook/[A-Za-z0-9_-]+$#D', ['none', 'hmac'], 'none', null, [], [],
             'https://www.home-assistant.io/docs/automation/trigger/#webhook-trigger',
             [
                 'In Home Assistant create an automation with the trigger type Webhook.',
@@ -268,7 +268,7 @@ final class Destinations
         // ---------------------------------------------------------------- team chat
         $d[] = self::make(
             'discord', 'Discord', 'chat', 'Post to a channel with an incoming webhook (free).', 'discord', 'POST',
-            'https://discord.com/api/webhooks/<id>/<token>', '#^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api(?:/v\d+)?/webhooks/\d+/[A-Za-z0-9_-]+/?(?:\?.*)?$#', ['none'], 'none', null,
+            'https://discord.com/api/webhooks/<id>/<token>', '#^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api(?:/v\d+)?/webhooks/\d+/[A-Za-z0-9_-]+/?(?:\?.*)?$#D', ['none'], 'none', null,
             [new DestinationField('username', 'Display name', 'text', false, 'Overrides the webhook\'s default name for these messages.', 'option', 'username', 'RivetIT')],
             [],
             'https://discord.com/developers/docs/resources/webhook#execute-webhook',
@@ -288,7 +288,7 @@ final class Destinations
         );
         $d[] = self::make(
             'mattermost', 'Mattermost', 'chat', 'Open-source (MIT/AGPL) team chat. Incoming webhook.', 'slack_attachments', 'POST',
-            'https://mattermost.example.com/hooks/<token>', '#^https?://\S+/hooks/[A-Za-z0-9]+/?$#', ['none'], 'none', null, [], [],
+            'https://mattermost.example.com/hooks/<token>', '#^https?://\S+/hooks/[A-Za-z0-9]+/?$#D', ['none'], 'none', null, [], [],
             'https://developers.mattermost.com/integrate/webhooks/incoming/',
             [
                 'Main menu > Integrations > Incoming Webhooks > Add Incoming Webhook (an admin may need to enable incoming webhooks first).',
@@ -305,7 +305,7 @@ final class Destinations
         );
         $d[] = self::make(
             'rocketchat', 'Rocket.Chat', 'chat', 'Open-source (MIT) team chat. Incoming webhook integration.', 'slack_attachments', 'POST',
-            'https://chat.example.com/hooks/<id>/<token>', '#^https?://\S+/hooks/[^/\s]+/[^/\s]+/?$#', ['none'], 'none', null, [], [],
+            'https://chat.example.com/hooks/<id>/<token>', '#^https?://\S+/hooks/[^/\s]+/[^/\s]+/?$#D', ['none'], 'none', null, [], [],
             'https://docs.rocket.chat/docs/incoming-webhook-script',
             [
                 'Administration > Workspace > Integrations > New > Incoming.',
@@ -321,7 +321,7 @@ final class Destinations
         );
         $d[] = self::make(
             'slack', 'Slack', 'chat', 'Slack incoming webhook (free workspaces included).', 'slack', 'POST',
-            'https://hooks.slack.com/services/T000/B000/XXXX', '#^https://hooks\.slack\.com/services/[A-Za-z0-9]+/[A-Za-z0-9]+/[A-Za-z0-9]+$#', ['none'], 'none', null, [], [],
+            'https://hooks.slack.com/services/T000/B000/XXXX', '#^https://hooks\.slack\.com/services/[A-Za-z0-9]+/[A-Za-z0-9]+/[A-Za-z0-9]+$#D', ['none'], 'none', null, [], [],
             'https://api.slack.com/messaging/webhooks',
             [
                 'Create a Slack app (api.slack.com/apps) and enable Incoming Webhooks.',
@@ -340,7 +340,7 @@ final class Destinations
         $d[] = self::make(
             'teams', 'Microsoft Teams', 'chat', 'Teams channel through a Workflows (Power Automate) webhook.', 'teams', 'POST',
             'https://prod-00.westus.logic.azure.com:443/workflows/<id>/triggers/manual/paths/invoke?api-version=2016-06-01&sp=...&sv=1.0&sig=...',
-            '#^https://[A-Za-z0-9.-]+\.(?:logic\.azure\.com|powerplatform\.com)(?::\d+)?/\S+$#', ['none'], 'none', null, [], [],
+            '#^https://[A-Za-z0-9.-]+\.(?:logic\.azure\.com|powerplatform\.com)(?::\d+)?/\S+$#D', ['none'], 'none', null, [], [],
             'https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook',
             [
                 'In Teams open the channel > ... > Workflows and pick "Post to a channel when a webhook request is received".',
@@ -358,7 +358,7 @@ final class Destinations
         );
         $d[] = self::make(
             'matrix-hookshot', 'Matrix (hookshot)', 'chat', 'Open-source Matrix bridge with generic inbound webhooks.', 'matrix_hookshot', 'POST',
-            'https://hookshot.example.com/webhook/<uuid>', '#^https?://\S+/webhook/[A-Za-z0-9-]+/?$#', ['none'], 'none', null,
+            'https://hookshot.example.com/webhook/<uuid>', '#^https?://\S+/webhook/[A-Za-z0-9-]+/?$#D', ['none'], 'none', null,
             [new DestinationField('username', 'Display name', 'text', false, 'Name shown for the bridged message.', 'option', 'username', 'RivetIT')],
             [],
             'https://matrix-org.github.io/matrix-hookshot/latest/setup/webhooks.html',
@@ -376,7 +376,7 @@ final class Destinations
         );
         $d[] = self::make(
             'matrix-client', 'Matrix (client API)', 'chat', 'Send into a room directly with the Matrix client-server API and a bot access token.', 'matrix', 'PUT',
-            'https://matrix.example.org/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{txn}', '#^https?://\S+/_matrix/client/v\d+/rooms/\S+/send/m\.room\.message/\S+$#', ['bearer'], 'bearer', null,
+            'https://matrix.example.org/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{txn}', '#^https?://\S+/_matrix/client/v\d+/rooms/\S+/send/m\.room\.message/\S+$#D', ['bearer'], 'bearer', null,
             [new DestinationField('room_id', 'Room ID', 'text', true, 'Internal room id such as !abc123:example.org (not the alias). The bot must be joined to the room.', 'url', '', '!abc123:example.org')],
             [],
             'https://spec.matrix.org/latest/client-server-api/#put_matrixclientv3roomsroomidsendeventtypetxnid',
@@ -396,7 +396,7 @@ final class Destinations
         );
         $d[] = self::make(
             'telegram', 'Telegram', 'chat', 'Telegram Bot API sendMessage to a chat, group or channel.', 'telegram', 'POST',
-            'https://api.telegram.org/bot{bot_token}/sendMessage', '#^https://api\.telegram\.org/bot\d+:[A-Za-z0-9_-]+/sendMessage$#', ['none'], 'none', null,
+            'https://api.telegram.org/bot{bot_token}/sendMessage', '#^https://api\.telegram\.org/bot\d+:[A-Za-z0-9_-]+/sendMessage$#D', ['none'], 'none', null,
             [
                 new DestinationField('bot_token', 'Bot token', 'secret', true, 'From @BotFather, like 123456:ABC-DEF.', 'url', '', '123456:ABC-DEF1234ghIkl'),
                 new DestinationField('chat_id', 'Chat ID', 'text', true, 'Numeric id (negative for groups and channels) or @channelname. The bot must be a member.', 'option', 'chat_id', '-1001234567890'),
@@ -420,7 +420,7 @@ final class Destinations
         // ---------------------------------------------------------------- hosted automation (free tiers)
         $d[] = self::make(
             'zapier', 'Zapier (Catch Hook)', 'automation', 'Start a Zap with "Webhooks by Zapier" > Catch Hook.', 'json', 'POST',
-            'https://hooks.zapier.com/hooks/catch/<account>/<hook>/', '#^https://hooks\.zapier\.com/hooks/catch/\d+/[A-Za-z0-9]+/?$#', ['none'], 'none', null, [], [],
+            'https://hooks.zapier.com/hooks/catch/<account>/<hook>/', '#^https://hooks\.zapier\.com/hooks/catch/\d+/[A-Za-z0-9]+/?$#D', ['none'], 'none', null, [], [],
             'https://help.zapier.com/hc/en-us/articles/8496288690317-Trigger-Zaps-from-webhooks',
             [
                 'Create a Zap with the trigger Webhooks by Zapier > Catch Hook.',
@@ -437,7 +437,7 @@ final class Destinations
         );
         $d[] = self::make(
             'make', 'Make (Integromat)', 'automation', 'Start a scenario with a Custom webhook module.', 'json', 'POST',
-            'https://hook.eu1.make.com/<token>', '#^https://hook\.[A-Za-z0-9.-]*(?:make|integromat)\.com/[A-Za-z0-9]+/?$#', ['none', 'header'], 'none', null, [], [],
+            'https://hook.eu1.make.com/<token>', '#^https://hook\.[A-Za-z0-9.-]*(?:make|integromat)\.com/[A-Za-z0-9]+/?$#D', ['none', 'header'], 'none', null, [], [],
             'https://www.make.com/en/help/tools/webhooks',
             [
                 'Create a scenario and add Webhooks > Custom webhook as the first module.',
@@ -455,7 +455,7 @@ final class Destinations
         );
         $d[] = self::make(
             'pipedream', 'Pipedream', 'automation', 'Free-tier workflows with an HTTP / Webhook trigger.', 'json', 'POST',
-            'https://eoxxxxxxxxxxxxx.m.pipedream.net', '#^https://[A-Za-z0-9]+\.m\.pipedream\.net(?:/\S*)?$#', ['none', 'hmac', 'header', 'bearer'], 'hmac', null, [], [],
+            'https://eoxxxxxxxxxxxxx.m.pipedream.net', '#^https://[A-Za-z0-9]+\.m\.pipedream\.net(?:/\S*)?$#D', ['none', 'hmac', 'header', 'bearer'], 'hmac', null, [], [],
             'https://pipedream.com/docs/workflows/building-workflows/triggers/#http',
             [
                 'Create a workflow and choose the trigger "New HTTP / Webhook Requests".',
@@ -473,7 +473,7 @@ final class Destinations
         );
         $d[] = self::make(
             'ifttt', 'IFTTT Webhooks', 'automation', 'Trigger an applet with the Webhooks service (event name + key).', 'template', 'POST',
-            'https://maker.ifttt.com/trigger/<event>/with/key/<key>', '#^https://maker\.ifttt\.com/trigger/[A-Za-z0-9_-]+/(?:with/key|json/with/key)/[A-Za-z0-9_-]+/?$#', ['none'], 'none', null, [], [],
+            'https://maker.ifttt.com/trigger/<event>/with/key/<key>', '#^https://maker\.ifttt\.com/trigger/[A-Za-z0-9_-]+/(?:with/key|json/with/key)/[A-Za-z0-9_-]+/?$#D', ['none'], 'none', null, [], [],
             'https://ifttt.com/maker_webhooks',
             [
                 'Connect the Webhooks service in IFTTT and open its Documentation page to find your key.',

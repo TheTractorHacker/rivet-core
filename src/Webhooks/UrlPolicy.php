@@ -185,11 +185,13 @@ final class UrlPolicy
         '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12',
         '192.0.0.0/24', '192.0.2.0/24', '192.88.99.0/24', '192.168.0.0/16', '198.18.0.0/15',
         '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/4', '240.0.0.0/4',
+        '168.63.129.16/32',   // CORE-API-6: the Azure Wire Server (platform endpoint of every Azure VM), not a public destination
     ];
 
     /** Never reachable even when listed in allowedNetworks: this-network, loopback, link-local/metadata, multicast, reserved/broadcast. */
-    /** CORE-DS-73: the Alibaba (100.100.100.200) and Tailscale (100.100.100.100) service addresses live inside 100.64/10, which an administrator may list. */
-    private const NEVER_ALLOWED_V4 = ['0.0.0.0/8', '127.0.0.0/8', '169.254.0.0/16', '224.0.0.0/4', '240.0.0.0/4', '100.100.100.200/32', '100.100.100.100/32'];
+    /** CORE-DS-73: the Alibaba (100.100.100.200) and Tailscale (100.100.100.100) service addresses live inside 100.64/10, which an administrator may list. CORE-API-6 (red team
+     * 2026-11-21): the Azure Wire Server 168.63.129.16 (health probes, DHCP, guest agent); it is in NON_PUBLIC_V4 too, because this list is only consulted for an address that is not public. */
+    private const NEVER_ALLOWED_V4 = ['0.0.0.0/8', '127.0.0.0/8', '169.254.0.0/16', '224.0.0.0/4', '240.0.0.0/4', '100.100.100.200/32', '100.100.100.100/32', '168.63.129.16/32'];
 
     /** CORE-DS-73: includes the AWS IMDS IPv6 address, which lies inside fc00::/7. */
     private const NEVER_ALLOWED_V6 = ['::/128', '::1/128', 'fe80::/10', 'ff00::/8', 'fd00:ec2::254/128'];

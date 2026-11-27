@@ -331,6 +331,12 @@ final class PatchActions
         if ($err !== null) {
             return $err;
         }
+        // CORE-API-7: the role may manage patches at all, before the update ids are read or looked up (the per-client check on the matched rows follows)
+        if (($denied = $this->authz->check($who->userId, RmmAbility::PATCH_MANAGE, 0)) !== null) {
+            $this->audit->record('Patch Denied', "User {$who->userId} denied " . ($approve ? 'approving' : 'declining') . " updates: $denied", 0, 0);
+
+            return ActionResult::fail(403, 'forbidden', $denied);
+        }
         $f = [];
         $ids = $in['update_ids'] ?? null;
         if (!is_array($ids) || !array_is_list($ids) || $ids === [] || count($ids) > 200) {
@@ -373,14 +379,7 @@ final class PatchActions
             return $allowedClient[$r['client_id']] ??= $this->authz->check($who->userId, RmmAbility::PATCH_MANAGE, $r['client_id']) === null;
         }));
         if ($rows === []) {
-            $denied = $this->authz->check($who->userId, RmmAbility::PATCH_MANAGE, 0);
-            if ($denied !== null) {
-                $this->audit->record('Patch Denied', "User {$who->userId} denied " . ($approve ? 'approving' : 'declining') . " updates: $denied", 0, 0);
-
-                return ActionResult::fail(403, 'forbidden', $denied);
-            }
-
-            return ActionResult::fail(404, 'not_found', 'No such update.');
+            return ActionResult::fail(404, 'not_found', 'No such update.');   // the role-level refusal (403) already happened above, before the lookup
         }
         if (($off = $this->featureOff()) !== null) {
             return $off;

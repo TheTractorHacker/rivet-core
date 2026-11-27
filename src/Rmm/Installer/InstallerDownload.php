@@ -212,7 +212,7 @@ final class InstallerDownload
     {
         $parts = explode('.', $tokenStr);
         $well = count($parts) === 3 && $parts[0] === RmmProtocol::ENROLL_TOKEN_PREFIX
-            && preg_match(RmmProtocol::ENROLL_TOKEN_SELECTOR_RE, $parts[1]) === 1 && preg_match(RmmProtocol::ENROLL_TOKEN_SECRET_RE, $parts[2]) === 1;
+            && preg_match(RmmProtocol::ENROLL_TOKEN_SELECTOR_RE . 'D', $parts[1]) === 1 && preg_match(RmmProtocol::ENROLL_TOKEN_SECRET_RE . 'D', $parts[2]) === 1;
         $selector = $well ? $parts[1] : '';
         $row = $well ? $this->sql->one('SELECT * FROM endpoint_agent_enrollment_tokens WHERE token_selector = ?', [$selector]) : null;
         $match = hash_equals((string) ($row['token_hash'] ?? str_repeat('0', 64)), hash('sha256', $parts[2] ?? ''));
@@ -241,8 +241,10 @@ final class InstallerDownload
      */
     private function reject(string $reason, string $ip, string $selector, ?array $row): never
     {
-        $this->attempts->record(RmmProtocol::INSTALLER_RATE_SALT, $ip, false, 'installer_' . $reason, $selector);
-        $this->audit->record('Installer Download Rejected', "Installer download rejected ($reason) from $ip" . ($selector !== '' ? " using token $selector" : ''), $row !== null ? (int) $row['client_id'] : 0, 0);
+        $id = $this->attempts->insert(RmmProtocol::INSTALLER_RATE_SALT, $ip, false, 'installer_' . $reason, $selector);
+        if (($tail = $this->attempts->auditSampling(AttemptLog::KIND_INSTALLER, $id)) !== '') {   // CORE-API-3: sampled past the instance-wide threshold
+            $this->audit->record('Installer Download Rejected', "Installer download rejected ($reason) from $ip" . ($selector !== '' ? " using token $selector" : '') . ($tail ?? ''), $row !== null ? (int) $row['client_id'] : 0, 0);
+        }
         throw new ApiError(404, 'not_found', 'Not found.');
     }
 

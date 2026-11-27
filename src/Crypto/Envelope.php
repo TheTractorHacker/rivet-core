@@ -54,7 +54,7 @@ final class Envelope implements EnvelopeInterface
         }
         $parts = explode(':', $stored, 3);
 
-        return count($parts) === 3 && preg_match(KeyRing::KID_PATTERN, $parts[1]) === 1 ? $parts[1] : null;
+        return count($parts) === 3 && preg_match(KeyRing::KID_PATTERN . 'D', $parts[1]) === 1 ? $parts[1] : null;
     }
 
     public function seal(#[\SensitiveParameter] string $plaintext, string $context): string

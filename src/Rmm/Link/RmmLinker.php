@@ -86,7 +86,8 @@ final class RmmLinker
                 $ramGb = (string) round(((float) $inv['memory_total_bytes']) / 1073741824, 1);
             }
         }
-        $r = static fn (?float $v): ?int => $v === null ? null : (int) round($v);
+        // CORE-API-2: defence in depth (CheckinService already rejects these): a percentage outside 0..100, or not finite, is unknown, never a cast of garbage
+        $r = static fn (?float $v): ?int => $v === null || !is_finite($v) || $v < 0.0 || $v > 100.0 ? null : (int) round($v);
         $data = [
             'hostname' => (string) $dev['hostname'],
             'os_version' => (string) $dev['os_version'],

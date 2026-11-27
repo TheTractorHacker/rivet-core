@@ -5,8 +5,8 @@ declare(strict_types=1);
 /*
  * A minimal, runnable "edition": everything an application has to provide to use RivetCore, in one file.
  *
- *   RIVETCORE_EXAMPLE_DB_HOST/NAME/USER/PASS   a SCRATCH MariaDB/MySQL database (falls back to RIVETCORE_TEST_DB_*); the Core tables are
- *                                              created in it. The name must contain "scratch", "example" or "test".
+ *   RIVETCORE_EXAMPLE_DB_HOST/PORT/NAME/USER/PASS   a SCRATCH MariaDB/MySQL database (falls back to RIVETCORE_TEST_DB_*); the Core tables are
+ *                                                   created in it. The name must contain "scratch", "example" or "test".
  *   php docs/examples/minimal-edition.php
  *
  * It wires: the database adapter, settings, request context, clock, audit trail, a job queue with a worker, signed webhooks (with a fake
@@ -34,7 +34,7 @@ if (!preg_match('/scratch|example|test/i', $name)) {
     exit(2);
 }
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-$mysqli = new mysqli($env('DB_HOST') ?: '127.0.0.1', $env('DB_USER') ?: 'root', $env('DB_PASS'), $name);
+$mysqli = new mysqli($env('DB_HOST') ?: '127.0.0.1', $env('DB_USER') ?: 'root', $env('DB_PASS'), $name, (int) ($env('DB_PORT') ?: 0));
 $mysqli->set_charset('utf8mb4');
 $db = new MysqliDatabaseAdapter($mysqli);
 

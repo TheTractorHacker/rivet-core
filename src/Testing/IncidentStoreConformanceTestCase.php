@@ -13,7 +13,9 @@ use RivetCore\Monitoring\Inbound\IncidentStoreInterface;
  *
  * Checks: unknown key is null; put/get round-trips every field (nulls and the opens list included); put replaces; the store hands out
  * copies (changing a returned Incident without put() changes nothing); keys with another source or monitor never collide; locked() returns
- * the closure's value, lets get/put run inside, releases the lock when the closure throws (and rethrows), and can be taken again afterwards.
+ * the closure's value, lets get/put run inside, releases the lock when the closure throws (and rethrows), and can be taken again afterwards;
+ * locks on different keys nest (the engine holds a monitor's lock while it takes its ticket-cap counters' locks, source "_cap") and the
+ * longest keys the engine uses (a 32-character source, a 31-character "<sender>/<monitor id>") round-trip.
  *
  * @api
  */
@@ -86,5 +88,26 @@ abstract class IncidentStoreConformanceTestCase extends TestCase
         }
         self::assertSame('boom', $message, 'The exception must propagate.');
         self::assertSame(1, $s->locked('uptime-kuma', 'lk', static fn (): int => 1));
+    }
+
+    public function testLocksOnDifferentKeysNest(): void
+    {
+        $s = $this->store();
+        $got = $s->locked('uptime-kuma', 'n1', static fn (): string => $s->locked('_cap', 'client:3', static fn (): string => $s->locked('_cap', 'all', static function () use ($s): string {
+            $s->put(new Incident('_cap', 'all', Incident::OPEN, 7, 7, 3, 1000, 1000, null, null, [2, 1]));
+
+            return 'inner';
+        })));
+        self::assertSame('inner', $got);
+        self::assertSame([2, 1], $s->get('_cap', 'all')?->opens);
+        self::assertSame(2, $s->locked('_cap', 'all', static fn (): int => 2), 'the nested locks were released');
+    }
+
+    public function testTheLongestEngineKeysRoundTrip(): void
+    {
+        $source = str_repeat('s', 32);
+        $monitor = str_repeat('a', 12) . '/' . str_repeat('9', 18);   // "<12-character sender>/<monitor id>": 31 characters
+        $this->store()->put($this->full($source, $monitor));
+        self::assertEquals($this->full($source, $monitor), $this->store()->get($source, $monitor));
     }
 }

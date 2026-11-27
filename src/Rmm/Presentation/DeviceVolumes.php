@@ -141,7 +141,7 @@ final class DeviceVolumes
             $lbl = $r['label'];
             $pseudo = $r['total'] === 0 || in_array($r['fs'], self::PSEUDO_FS, true) || str_starts_with($r['fs'], 'cgroup') || str_starts_with($r['fs'], 'fuse.');
             if ($family === 'windows') {
-                $pseudo = $pseudo || preg_match('/^[A-Za-z]:\\\\?$/', $mount) !== 1 || preg_match('/recovery|system reserved|^efi/i', $lbl) === 1;
+                $pseudo = $pseudo || preg_match('/^[A-Za-z]:\\\\?$/D', $mount) !== 1 || preg_match('/recovery|system reserved|^efi/i', $lbl) === 1;
             } else {
                 foreach (self::PSEUDO_PREFIX as $p) {
                     $pseudo = $pseudo || $mount === $p || str_starts_with($mount, $p . '/');
@@ -149,7 +149,7 @@ final class DeviceVolumes
             }
             $out[] = ['mount' => $mount, 'label' => $lbl !== '' ? $lbl : $mount, 'fs_type' => $r['fs'] !== '' ? $r['fs'] : null, 'source' => $r['source'], 'used_pct' => $pct,
                 'free_bytes' => $r['free'], 'total_bytes' => $r['total'], 'level' => $pct === null ? null : self::level($pct, $thr['disk']), 'pseudo' => $pseudo,
-                'minor' => in_array($mount, self::MINOR_MOUNTS, true), 'system' => $mount === '/' || preg_match('/^[Cc]:\\\\?$/', $mount) === 1];
+                'minor' => in_array($mount, self::MINOR_MOUNTS, true), 'system' => $mount === '/' || preg_match('/^[Cc]:\\\\?$/D', $mount) === 1];
         }
 
         return $out;
@@ -199,7 +199,7 @@ final class DeviceVolumes
     private static function guessPool(array $mounts): string
     {
         foreach ($mounts as $m) {
-            if (preg_match('#^/([A-Za-z0-9_.-]+)$#', $m, $g) === 1 && $g[1] !== 'var') {
+            if (preg_match('#^/([A-Za-z0-9_.-]+)$#D', $m, $g) === 1 && $g[1] !== 'var') {
                 $others = array_filter($mounts, static fn (string $o): bool => str_starts_with($o, $m . '/'));
                 if ($others !== []) {
                     return $g[1];

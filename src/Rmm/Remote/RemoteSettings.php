@@ -41,8 +41,8 @@ final class RemoteSettings
         . 'Collection is capped per device and for the whole fleet and old entries are deleted, but choose narrow sources (warnings and errors from a few channels or services), '
         . 'keep retention short and watch the storage figure shown here before you turn it on for a large fleet.';
 
-    private const CHANNEL_RE = '/^[A-Za-z0-9][A-Za-z0-9 _.\/%-]{0,99}$/';
-    private const UNIT_RE = '/^[A-Za-z0-9][A-Za-z0-9:_.@-]{0,199}$/';
+    private const CHANNEL_RE = '/^[A-Za-z0-9][A-Za-z0-9 _.\/%-]{0,99}$/D';
+    private const UNIT_RE = '/^[A-Za-z0-9][A-Za-z0-9:_.@-]{0,199}$/D';
 
     /** @var array<string,mixed>|null */
     private ?array $cache = null;

@@ -321,10 +321,10 @@ final class StarterPack
         if (($pack['format'] ?? null) !== self::FORMAT) {
             throw new \InvalidArgumentException('pack.json: format must be ' . self::FORMAT . '.');
         }
-        if (!is_string($pack['id'] ?? null) || preg_match(self::PACK_ID_RE, $pack['id']) !== 1) {
+        if (!is_string($pack['id'] ?? null) || preg_match(self::PACK_ID_RE . 'D', $pack['id']) !== 1) {
             throw new \InvalidArgumentException('pack.json: id is 3 to 30 lower case letters, digits and -.');
         }
-        if (!is_string($pack['version'] ?? null) || preg_match('/^\d{1,4}\.\d{1,4}\.\d{1,4}$/', $pack['version']) !== 1) {
+        if (!is_string($pack['version'] ?? null) || preg_match('/^\d{1,4}\.\d{1,4}\.\d{1,4}$/D', $pack['version']) !== 1) {
             throw new \InvalidArgumentException('pack.json: version is MAJOR.MINOR.PATCH.');
         }
         if (!is_string($pack['name'] ?? null) || $pack['name'] === '' || mb_strlen($pack['name']) > 100) {
@@ -372,7 +372,7 @@ final class StarterPack
     {
         $names = [];
         foreach (array_keys($this->files) as $path) {
-            if (preg_match('#^scripts/(windows|linux)/([a-z0-9-]{3,50})\.json$#', $path, $m) !== 1) {
+            if (preg_match('#^scripts/(windows|linux)/([a-z0-9-]{3,50})\.json$#D', $path, $m) !== 1) {
                 continue;
             }
             $d = $this->json($path);
@@ -388,7 +388,7 @@ final class StarterPack
         }
         ksort($this->scripts, SORT_STRING);
         foreach (array_keys($this->files) as $path) {
-            if (preg_match('#^scripts/(windows|linux)/([a-z0-9-]{3,50})\.(ps1|sh)$#', $path, $m) === 1 && !isset($this->files["scripts/{$m[1]}/{$m[2]}.json"])) {
+            if (preg_match('#^scripts/(windows|linux)/([a-z0-9-]{3,50})\.(ps1|sh)$#D', $path, $m) === 1 && !isset($this->files["scripts/{$m[1]}/{$m[2]}.json"])) {
                 throw new \InvalidArgumentException("$path has no metadata file.");
             }
         }
@@ -408,7 +408,7 @@ final class StarterPack
             }
         }
         $id = $d['id'] ?? null;
-        if (!is_string($id) || preg_match(self::ID_RE, $id) !== 1) {
+        if (!is_string($id) || preg_match(self::ID_RE . 'D', $id) !== 1) {
             throw $fail('id is 3 to 60 lower case letters, digits and -');
         }
         $name = $d['name'] ?? null;
@@ -435,7 +435,7 @@ final class StarterPack
             throw $fail('tags are 1 to ' . self::MAX_AUTHOR_TAGS . ' words');
         }
         foreach ($tags as $t) {
-            if (!is_string($t) || preg_match('/^[a-z0-9][a-z0-9 _.:-]{0,29}$/', $t) !== 1 || $t === 'starter' || str_starts_with($t, 'risk:')) {
+            if (!is_string($t) || preg_match('/^[a-z0-9][a-z0-9 _.:-]{0,29}$/D', $t) !== 1 || $t === 'starter' || str_starts_with($t, 'risk:')) {
                 throw $fail('a tag is 1 to 30 lower case letters, digits and _ . : - (not "starter" or "risk:...")');
             }
         }
@@ -512,7 +512,7 @@ final class StarterPack
     private function set0(mixed $s): array
     {
         $fail = static fn (string $why): \InvalidArgumentException => new \InvalidArgumentException("checks.json: $why");
-        if (!is_array($s) || !is_string($s['id'] ?? null) || preg_match(self::ID_RE, $s['id']) !== 1) {
+        if (!is_array($s) || !is_string($s['id'] ?? null) || preg_match(self::ID_RE . 'D', $s['id']) !== 1) {
             throw $fail('a set needs an id');
         }
         $id = $s['id'];
@@ -529,7 +529,7 @@ final class StarterPack
         }
         $params = [];
         foreach ((array) ($s['params'] ?? []) as $p) {
-            if (!is_array($p) || !is_string($p['name'] ?? null) || preg_match('/^[a-z][a-z0-9_]{0,31}$/', $p['name']) !== 1 || !in_array($p['type'] ?? null, ['string', 'int', 'list'], true)) {
+            if (!is_array($p) || !is_string($p['name'] ?? null) || preg_match('/^[a-z][a-z0-9_]{0,31}$/D', $p['name']) !== 1 || !in_array($p['type'] ?? null, ['string', 'int', 'list'], true)) {
                 throw $fail("set $id: a parameter needs a name and a type of string, int or list");
             }
             $params[] = ['name' => $p['name'], 'type' => $p['type'], 'label' => (string) ($p['label'] ?? $p['name']), 'description' => (string) ($p['description'] ?? ''),
@@ -568,7 +568,7 @@ final class StarterPack
         $names = [];
         foreach ($list as $p) {
             $fail = static fn (string $why): \InvalidArgumentException => new \InvalidArgumentException("policies.json: $why");
-            if (!is_array($p) || !is_string($p['id'] ?? null) || preg_match(self::ID_RE, $p['id']) !== 1) {
+            if (!is_array($p) || !is_string($p['id'] ?? null) || preg_match(self::ID_RE . 'D', $p['id']) !== 1) {
                 throw $fail('a policy needs an id');
             }
             $id = $p['id'];
@@ -627,7 +627,7 @@ final class StarterPack
         }
         switch ($def['type']) {
             case 'int':
-                if (is_string($v) && preg_match('/^-?\d{1,9}$/', trim($v)) === 1) {
+                if (is_string($v) && preg_match('/^-?\d{1,9}$/D', trim($v)) === 1) {
                     $v = (int) trim($v);
                 }
                 if (!is_int($v) || $v < 0 || $v > 1000000) {
@@ -676,7 +676,7 @@ final class StarterPack
         }
         if (count($node) === 1 && isset($node['$file']) && is_string($node['$file'])) {
             $rel = $node['$file'];
-            if (preg_match('#^checks/[A-Za-z0-9._-]{1,80}$#', $rel) !== 1 || !is_file($dir . '/' . $rel)) {
+            if (preg_match('#^checks/[A-Za-z0-9._-]{1,80}$#D', $rel) !== 1 || !is_file($dir . '/' . $rel)) {
                 throw new \InvalidArgumentException("Check script $rel is not in the pack.");
             }
             $text = (string) file_get_contents($dir . '/' . $rel);

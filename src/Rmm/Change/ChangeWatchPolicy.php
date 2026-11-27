@@ -34,7 +34,7 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
     {
         // No control character, no invisible or format character (a zero-width space makes a lookalike), no padding: a name is judged exactly as it is, never cleaned first.
         if ($target === '' || strlen($target) > self::MAX_LEN || !mb_check_encoding($target, 'UTF-8') || preg_match('/[\x00-\x1f\x7f]|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u', $target) === 1
-            || preg_match('/^[\s\p{Z}]|[\s\p{Z}]$/u', $target) === 1) {
+            || preg_match('/^[\s\p{Z}]|[\s\p{Z}]$/uD', $target) === 1) {
             return false;
         }
 
@@ -124,7 +124,7 @@ class ChangeWatchPolicy implements ChangeWatchPolicyInterface
     /** A segment with a space (of any kind) at either end. */
     private static function padded(string $s): bool
     {
-        return preg_match('/^[\s\p{Z}]|[\s\p{Z}]$/u', $s) === 1;
+        return preg_match('/^[\s\p{Z}]|[\s\p{Z}]$/uD', $s) === 1;
     }
 
     private function fileAllowed(string $path): bool

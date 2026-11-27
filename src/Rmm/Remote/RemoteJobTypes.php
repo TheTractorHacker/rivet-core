@@ -17,7 +17,7 @@ use RivetCore\Rmm\Job\JobTypeRegistry;
  */
 final class RemoteJobTypes
 {
-    private const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
+    private const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D';
 
     public static function register(JobTypeRegistry $r): void
     {
@@ -117,7 +117,7 @@ final class RemoteJobTypes
         }
         $name = $p['name'] ?? null;
         $action = $p['action'] ?? null;
-        if (!is_string($name) || preg_match(RemoteProtocol::SERVICE_NAME_RE, $name) !== 1) {
+        if (!is_string($name) || preg_match(RemoteProtocol::SERVICE_NAME_RE . 'D', $name) !== 1) {
             return [$p, 'That is not a valid service name (letters, digits and _ . @ $ : - only, no spaces, not starting with a symbol).'];
         }
         if (!is_string($action) || !in_array($action, RemoteProtocol::SERVICE_ACTIONS, true)) {
@@ -212,7 +212,7 @@ final class RemoteJobTypes
         if (!is_int($size) || $size < 0 || $size > RemoteProtocol::TRANSFER_HARD_MAX_BYTES) {
             return [$p, 'size is out of range.'];
         }
-        if (!is_string($p['sha256'] ?? null) || preg_match('/^[0-9a-f]{64}$/', $p['sha256']) !== 1) {
+        if (!is_string($p['sha256'] ?? null) || preg_match('/^[0-9a-f]{64}$/D', $p['sha256']) !== 1) {
             return [$p, 'sha256 must be 64 lower-case hex characters.'];
         }
         $over = $p['overwrite'] ?? false;
@@ -220,7 +220,7 @@ final class RemoteJobTypes
             return [$p, 'overwrite must be true or false.'];
         }
         $mode = $p['mode'] ?? '0640';
-        if (!is_string($mode) || preg_match('/^0?[0-7]{3}$/', $mode) !== 1) {
+        if (!is_string($mode) || preg_match('/^0?[0-7]{3}$/D', $mode) !== 1) {
             return [$p, 'mode must be an octal file mode such as 0640.'];
         }
 
@@ -234,7 +234,7 @@ final class RemoteJobTypes
         if (!is_string($p['transfer_id'] ?? null) || preg_match(self::UUID_RE, $p['transfer_id']) !== 1) {
             return 'transfer_id must be a UUID.';
         }
-        if (!is_string($p['token'] ?? null) || preg_match(RemoteProtocol::TRANSFER_TOKEN_RE, $p['token']) !== 1) {
+        if (!is_string($p['token'] ?? null) || preg_match(RemoteProtocol::TRANSFER_TOKEN_RE . 'D', $p['token']) !== 1) {
             return 'token must be 64 lower-case hex characters.';
         }
         $path = $p['path'] ?? null;

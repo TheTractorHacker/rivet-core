@@ -17,7 +17,7 @@ final class FieldPlaceholders
 
     public static function validName(string $name): bool
     {
-        return preg_match('/^[a-z][a-z0-9_]{0,39}$/', $name) === 1;
+        return preg_match('/^[a-z][a-z0-9_]{0,39}$/D', $name) === 1;
     }
 
     /** @return list<string> the field names a text refers to, in order, without repeats */
@@ -33,7 +33,7 @@ final class FieldPlaceholders
     /** The field name when the whole text is exactly one placeholder, else null. */
     public static function whole(string $text): ?string
     {
-        return preg_match('/^\s*\{\{\s*field\.([a-z][a-z0-9_]{0,39})\s*\}\}\s*$/', $text, $m) === 1 ? $m[1] : null;
+        return preg_match('/^\s*\{\{\s*field\.([a-z][a-z0-9_]{0,39})\s*\}\}\s*$/D', $text, $m) === 1 ? $m[1] : null;
     }
 
     /**

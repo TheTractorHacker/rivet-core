@@ -112,7 +112,7 @@ class JobRunner
         $t = self::tail($f['log'], 12);
         $exit = null;
         foreach (array_reverse($t['lines']) as $line) {
-            if (preg_match('/^\[exit (\d+)\]$/', $line, $m)) { $exit = (int) $m[1]; break; }
+            if (preg_match('/^\[exit (\d+)\]$/D', $line, $m)) { $exit = (int) $m[1]; break; }
         }
         return [
             'running' => $running,

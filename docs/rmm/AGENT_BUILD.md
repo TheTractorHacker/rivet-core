@@ -79,6 +79,79 @@ All builds use `-trimpath -buildvcs=false`, `CGO_ENABLED=0`, `-ldflags "-s -w -X
 `rsrc_windows_{amd64,arm64}.syso` (regenerate with `make syso`). Two builds with the same Go toolchain, `VERSION` and `COMMIT` are byte-identical; CI runs `make dist` a second time and `diff -r`s the two trees.
 Pin the Go version (`go.mod` plus the image tag) in release pipelines: a different toolchain produces different bytes.
 
+### Release signing key and trust anchors (CORE-AGENT-1)
+
+An agent built without a trust anchor checks an update only against the instance signing key it learned at enrolment. Whoever holds that key (or controls the
+server, or the database) can then push any binary to every device, which runs it as root/SYSTEM (red team 2026-11-21, Chain C). The anchor is an
+**offline release key**: its public half is compiled into the agent with `RELEASE_KEYS`, and from then on every update must also carry a release signature
+made with the private half (contract: [SIGNED_UPDATE_MANIFEST.md](../design/SIGNED_UPDATE_MANIFEST.md)). The server never holds the private key and cannot
+create a release signature.
+
+**1. Generate the key pair OFFLINE (the release owner, once).** On a machine that never runs CI or the server, ideally offline, with OpenSSL 3.x:
+
+```
+umask 077
+openssl genpkey -algorithm ed25519 -out rivetit-release-1.key          # PRIVATE: never into CI, this repository, a server or a chat
+openssl pkey -in rivetit-release-1.key -pubout -outform DER | tail -c 32 | base64 -w0 > rivetit-release-1.pub
+printf '%s' "$(cat rivetit-release-1.pub)" | base64 -d | wc -c           # must print 32
+```
+
+Keep `rivetit-release-1.key` offline (an encrypted USB stick in a safe, a password manager vault, or a hardware token) and make one backup kept apart.
+Losing it means the fleet can only be moved to a new key by rebuilding and reinstalling agents (or by a rollover signed while you still had it). The
+`.pub` file (44 characters of base64) is the only thing that ever leaves that machine.
+
+**2. Configure CI with the PUBLIC key.** In this repository: Settings > Secrets and variables > Actions > **Variables** > `AGENT_RELEASE_KEYS` = the
+content of `rivetit-release-1.pub` (comma separated when two keys are trusted during a rotation). It is a public key, so a variable is fine (a secret
+works too). `AGENT_TRUST_KEYS` (the installer trust anchor, `TRUST_KEYS`, CORE-DS-20) stays EMPTY for the shared Core binary: the instance key of an
+edition's server is not known here. An edition that builds its own agent for one instance sets it to that instance's signing public key.
+
+**3. What CI does.** Every `make dist`, `make packages` and `make msi` call in `.github/workflows/endpoint-agent.yml` passes `RELEASE_KEYS`,
+`TRUST_KEYS` and `RELEASE_BUILD`. A release (tag `agent-v*` or a dispatch from `main`) sets `RELEASE_BUILD=1`, which stamps the binary as a release
+build. The release gate `scripts/check-release-keys.sh` (also `make check-release-keys`; CI only, never part of `make all`/`dist`) runs twice:
+
+* before building (`validate`): the key lists must be canonical base64 of 32-byte public keys, no spaces, no duplicates; a 64-byte value (a private key)
+  is refused; **a release with an empty `RELEASE_KEYS` fails**;
+* after building (`artifacts dist`): every binary must contain every configured key, and `dist/rivetit-agent-linux-amd64 version --trust` must report
+  `release_keys=<n> trust_keys=<m> release_build=true`.
+
+Dev and pull-request builds are not release builds: with no keys configured they build and pass the gate exactly as before. Check any binary with
+`rivetit-agent version --trust`.
+
+**4. A release build without an anchor refuses self-update.** A binary stamped `RELEASE_BUILD=1` that carries no release key (and has learned none by a
+rollover) refuses every update with "this agent trusts no release signing key ... self-update refused" instead of trusting the instance key alone (Chain C
+step 2). The gate makes such a build impossible in CI; the stamp is the second line of defence for a build made some other way. Unstamped binaries (every
+agent already deployed, dev builds, build-host builds without `RELEASE_BUILD`) keep the old behaviour, so nothing in the field changes. The build host
+(`scripts/build-host.sh`) takes the same `RELEASE_KEYS`, `TRUST_KEYS` and `RELEASE_BUILD` from its config file (BUILD_HOST.md), validates them with
+the same rules before it asks for a job, passes them to `make dist`, and refuses to upload a binary that does not embed them; with nothing configured
+it builds unanchored agents as before.
+
+**5. Sign every release offline.** For each binary you publish (per os/arch) build the message of SIGNED_UPDATE_MANIFEST.md and sign it with the
+offline key; paste the base64 result as the binary's release signature in the edition (Agent binaries, `RmmAdmin::uploadBinary` option
+`release_signature` or `RmmAdmin::setReleaseSignature`):
+
+```
+printf 'rivetit-update-manifest-v1\n{"arch":"amd64","kind":"agent_update","min_version":"","os":"linux","sha256":"<lower-case sha256 of the binary>","version":"1.2.3"}' > msg.bin
+openssl pkeyutl -sign -inkey rivetit-release-1.key -rawin -in msg.bin | base64 -w0
+```
+
+The JSON must be byte-exact: keys sorted, no spaces, every value a string (`min_version` is `""` when unset). The first agent build that carries
+`RELEASE_KEYS` is installed by the previous build (which has no key and does not check it); every release after that one MUST be signed, or anchored
+agents refuse it (the failure is recorded per version and shown on the device).
+
+**6. Rotation and compromise (signed rollover).** To move to a new key, generate `rivetit-release-2.key` offline as in step 1, then sign a rollover with
+a key the fleet trusts now and publish it in the edition (`RmmAdmin::setReleaseRollover`; the server relays it, it cannot create one):
+
+```
+printf 'rivetit-release-rollover-v1\n{"kind":"release_key_rollover","new_key":"%s","revoke":[],"seq":1}' "$(cat rivetit-release-2.pub)" > roll.bin
+openssl pkeyutl -sign -inkey rivetit-release-1.key -rawin -in roll.bin | base64 -w0
+```
+
+`seq` is exactly the previous rollover's `seq` + 1 (1 for the first); `revoke` is a sorted JSON list of base64 public keys (`[]` when empty). Set
+`AGENT_RELEASE_KEYS` to `<key1>,<key2>` so new builds embed both, sign releases with the new key, and once the fleet has applied the rollover publish a
+second one (signed with key 2, `"revoke":["<key1>"]`, `seq` + 1) and drop key 1 from the variable. **If the private key leaks**, publish a rollover that
+revokes it (signed with it or any other still-trusted key) at once, before the attacker publishes his own; an agent applies only the next `seq`, so the
+first valid message wins. Then rebuild with the new key only.
+
 ### Linux packages
 
 `make packages VERSION=X.Y.Z` runs nfpm (`goreleaser/nfpm` image, `NFPM_IMAGE=` to change the tag) in Docker and writes `dist/packages/rivetit-agent_<ver>_<arch>.deb` and `.rpm` for amd64 and arm64
@@ -112,11 +185,12 @@ The server can hand out the per-client installer as an `.msi` as well as the sta
 
 ### Release steps
 
-1. Merge to the default branch; CI must be green (vet x5, `go test -race`, fuzz, `run_e2e.sh`, `run_linux_container_e2e.sh`, reproducibility diff, packages).
+1. Merge to the default branch; CI must be green (vet x5, `go test -race`, fuzz, `run_e2e.sh`, `run_linux_container_e2e.sh`, reproducibility diff, packages). The repository variable
+   `AGENT_RELEASE_KEYS` must hold the release public key, or the release gate fails the tag build (see "Release signing key" above).
 2. Tag `agent-vX.Y.Z[-beta.N]` on that commit **in rivet-core** (`git tag agent-v0.1.0-beta.2 && git push origin agent-v0.1.0-beta.2`). A suffixed tag is published as a pre-release.
 3. The `release` job attaches the Windows exes, the Windows amd64 MSI template (with `SHA256SUMS.msi`), Linux binaries, tarballs, packages, `install-linux.sh` and `SHA256SUMS` to that GitHub Release of rivet-core (title and notes are edition-neutral).
-4. In each edition: Administration > Endpoint agent (RMM) > Agent binaries > upload the binaries for the architectures you use (the server signs the update manifest with its own ed25519 key; the agent trusts that
-   key, not the release). Download per-department installers from there. Linux installers need a server with Linux support (RMM module).
+4. In each edition: Administration > Endpoint agent (RMM) > Agent binaries > upload the binaries for the architectures you use (the server signs the update manifest with its own ed25519 key) together with
+   the offline release signature of each binary (above, "Release signing key"): an agent built with `RELEASE_KEYS` refuses an update without one. Download per-department installers from there. Linux installers need a server with Linux support (RMM module).
 5. Optional Authenticode signing: enable the gated step in the workflow *before* the checksums are computed.
 
 ### Real systemd pass

@@ -3,6 +3,11 @@ name: Endpoint agent
 # Builds, tests and (on agent-v* tags) releases the Go endpoint agent (Windows and Linux) in endpoint-agent/.
 # Tags `agent-vX.Y.Z[-suffix]` in THIS repository publish the release; editions download the binaries from there.
 # The unsigned path needs NO secrets. Authenticode signing is a disabled, secret-gated step below.
+# Trust anchors (CORE-AGENT-1, Chain C): every make call passes RELEASE_KEYS / TRUST_KEYS from the repository VARIABLES AGENT_RELEASE_KEYS /
+# AGENT_TRUST_KEYS (public keys only, comma separated base64; the private release key never comes near CI) and RELEASE_BUILD=1 on a release
+# (agent-v* tag or a dispatch from main). scripts/check-release-keys.sh is the release gate: a release with no release key fails; dev/PR builds
+# without keys keep working. TRUST_KEYS stays empty for the shared Core binary (the instance key is not known here); an edition that builds its
+# own agent for one instance sets it. Key generation, rotation and the signed rollover: docs/rmm/AGENT_BUILD.md "Release signing key".
 
 on:
   # Run workflow from the GitHub Actions tab (or an edition's Agent updates page) with a version number: builds from main and publishes agent-vX.Y.Z.
@@ -65,6 +70,19 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "commit=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      - name: Trust anchors and release gate (CORE-AGENT-1)
+        id: anchors
+        env:
+          RELEASE_KEYS: ${{ vars.AGENT_RELEASE_KEYS }}
+          TRUST_KEYS: ${{ vars.AGENT_TRUST_KEYS }}
+          IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/agent-v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+        run: |
+          rb=""
+          if [[ "$IS_RELEASE" == true ]]; then rb=1; fi
+          # validates the key lists (they are written into make command lines) and fails a release that has no release key
+          RELEASE_BUILD="$rb" scripts/check-release-keys.sh validate
+          echo "release_build=$rb" >> "$GITHUB_OUTPUT"
+
       - name: go vet (linux/amd64, linux/arm64, windows/amd64, windows/arm64, test tags)
         run: |
           go vet ./...
@@ -73,8 +91,8 @@ jobs:
           GOOS=windows GOARCH=arm64 go vet ./...
           go vet -tags 'devtools agenttest' ./...
 
-      - name: shellcheck (install script, e2e scripts, package scripts)
-        run: shellcheck -S warning scripts/install-linux.sh e2e/*.sh packaging/*.sh packaging/msi/*.sh
+      - name: shellcheck (install script, release gate, e2e scripts, package scripts)
+        run: shellcheck -S warning scripts/install-linux.sh scripts/check-release-keys.sh e2e/*.sh packaging/*.sh packaging/msi/*.sh
 
       - name: go test -race
         run: go test -race -count=1 ./...
@@ -88,18 +106,38 @@ jobs:
       - name: Linux end-to-end in a root container (install script, unit, update swap, offline buffering, module_disabled)
         run: ./e2e/run_linux_container_e2e.sh
 
-      - name: Build (-trimpath, version ldflags) and checksum
-        run: make dist VERSION='${{ steps.ver.outputs.version }}' COMMIT='${{ steps.ver.outputs.commit }}'
+      - name: Build (-trimpath, version ldflags, trust anchors) and checksum
+        env:
+          RELEASE_KEYS: ${{ vars.AGENT_RELEASE_KEYS }}
+          TRUST_KEYS: ${{ vars.AGENT_TRUST_KEYS }}
+          RELEASE_BUILD: ${{ steps.anchors.outputs.release_build }}
+        run: make dist VERSION='${{ steps.ver.outputs.version }}' COMMIT='${{ steps.ver.outputs.commit }}' RELEASE_KEYS="$RELEASE_KEYS" TRUST_KEYS="$TRUST_KEYS" RELEASE_BUILD="$RELEASE_BUILD"
 
       - name: Reproducibility (a second build must be byte-identical)
+        env:
+          RELEASE_KEYS: ${{ vars.AGENT_RELEASE_KEYS }}
+          TRUST_KEYS: ${{ vars.AGENT_TRUST_KEYS }}
+          RELEASE_BUILD: ${{ steps.anchors.outputs.release_build }}
         run: |
           cp -r dist dist-first
-          make dist VERSION='${{ steps.ver.outputs.version }}' COMMIT='${{ steps.ver.outputs.commit }}'
+          make dist VERSION='${{ steps.ver.outputs.version }}' COMMIT='${{ steps.ver.outputs.commit }}' RELEASE_KEYS="$RELEASE_KEYS" TRUST_KEYS="$TRUST_KEYS" RELEASE_BUILD="$RELEASE_BUILD"
           diff -r dist-first dist
           rm -rf dist-first
 
       - name: .deb and .rpm packages (nfpm, in Docker)
-        run: make packages VERSION='${{ steps.ver.outputs.version }}'
+        env:
+          RELEASE_KEYS: ${{ vars.AGENT_RELEASE_KEYS }}
+          TRUST_KEYS: ${{ vars.AGENT_TRUST_KEYS }}
+          RELEASE_BUILD: ${{ steps.anchors.outputs.release_build }}
+        run: make packages VERSION='${{ steps.ver.outputs.version }}' COMMIT='${{ steps.ver.outputs.commit }}' RELEASE_KEYS="$RELEASE_KEYS" TRUST_KEYS="$TRUST_KEYS" RELEASE_BUILD="$RELEASE_BUILD"
+
+      # `make packages` rebuilds the Linux binaries it packages: check the final dist/ (what is uploaded and packaged) carries the anchors.
+      - name: Release gate on the built binaries (every binary embeds the configured keys)
+        env:
+          RELEASE_KEYS: ${{ vars.AGENT_RELEASE_KEYS }}
+          TRUST_KEYS: ${{ vars.AGENT_TRUST_KEYS }}
+          RELEASE_BUILD: ${{ steps.anchors.outputs.release_build }}
+        run: make check-release-keys RELEASE_KEYS="$RELEASE_KEYS" TRUST_KEYS="$TRUST_KEYS" RELEASE_BUILD="$RELEASE_BUILD"
 
       # ---- Authenticode signing: DISABLED by default -------------------------------------------
       # Not performed unless you (1) flip `if: false` to the condition below, (2) add these repository
@@ -184,8 +222,32 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "commit=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      - name: Trust anchors and release gate (CORE-AGENT-1)
+        id: anchors
+        env:
+          RELEASE_KEYS: ${{ vars.AGENT_RELEASE_KEYS }}
+          TRUST_KEYS: ${{ vars.AGENT_TRUST_KEYS }}
+          IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/agent-v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+        run: |
+          rb=""
+          if [[ "$IS_RELEASE" == true ]]; then rb=1; fi
+          # validates the key lists (they are written into make command lines) and fails a release that has no release key
+          RELEASE_BUILD="$rb" scripts/check-release-keys.sh validate
+          echo "release_build=$rb" >> "$GITHUB_OUTPUT"
+
       - name: MSI template (built twice and compared, tables checked, trailer round trip)
-        run: make msi VERSION='${{ steps.ver.outputs.version }}' COMMIT='${{ steps.ver.outputs.commit }}'
+        env:
+          RELEASE_KEYS: ${{ vars.AGENT_RELEASE_KEYS }}
+          TRUST_KEYS: ${{ vars.AGENT_TRUST_KEYS }}
+          RELEASE_BUILD: ${{ steps.anchors.outputs.release_build }}
+        run: make msi VERSION='${{ steps.ver.outputs.version }}' COMMIT='${{ steps.ver.outputs.commit }}' RELEASE_KEYS="$RELEASE_KEYS" TRUST_KEYS="$TRUST_KEYS" RELEASE_BUILD="$RELEASE_BUILD"
+
+      - name: Release gate on the Windows binaries the MSI wraps
+        env:
+          RELEASE_KEYS: ${{ vars.AGENT_RELEASE_KEYS }}
+          TRUST_KEYS: ${{ vars.AGENT_TRUST_KEYS }}
+          RELEASE_BUILD: ${{ steps.anchors.outputs.release_build }}
+        run: make check-release-keys RELEASE_KEYS="$RELEASE_KEYS" TRUST_KEYS="$TRUST_KEYS" RELEASE_BUILD="$RELEASE_BUILD"
 
       - name: Checksum
         run: cd dist && sha256sum rivetit-agent-windows-amd64.msi > SHA256SUMS.msi

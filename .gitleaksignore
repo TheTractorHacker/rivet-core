@@ -2,3 +2,5 @@
 f269b2cb1577c51a928c3e16e0c9c131e09a3a64:tests/Unit/Rmm/RemoteSession/RemoteSessionStorageTest.php:generic-api-key:82
 6fa9adcbbcbe8d128d45da6d12afa5a88272191d:tests/Integration/JobsAutomationWebhookTest.php:generic-api-key:114
 c8e387cacf3aef2019cb0832203f7ea393b16b6e:tests/Unit/Rmm/RemoteSession/RemoteSessionStorageTest.php:generic-api-key:82
+# Red team 2026-11-21 integration: the inbound monitoring conformance kit's longest-key fixture ('abcdefghijkl/' . 18 nines, a store key, not a credential) in the RMM lane's commit; the line was rewritten at the branch head, the commit keeps it.
+d5767b95ca76f03074fdbd7a317d1643d8aea7b1:src/Testing/IncidentStoreConformanceTestCase.php:generic-api-key:109

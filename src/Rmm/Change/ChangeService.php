@@ -35,7 +35,7 @@ use RivetCore\Rmm\Support\Sql;
  */
 final class ChangeService
 {
-    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
+    private const TIME_RE = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/D';
     public const PRUNE_BATCH = 2000;
     public const PRUNE_RUN_CAP = 100000;
     /** The most change events published for one batch (a mass change must not become a webhook storm). */

@@ -139,26 +139,31 @@ class MockServer(unittest.TestCase):
         self.assertEqual(post(self.base, "status", {"job_id": "j1", "state": "failed", "note": "a", "stage": "clone", "pct": 7, "elapsed_s": 5})[0], 200)
 
 
-class ScriptNoDocker(unittest.TestCase):
+class ScriptHelpers:
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="bh-unit-")
         self.work = os.path.join(self.tmp, "work")
 
-    def conf(self, url, refs="main v*", mode=0o600, token=TOKEN):
+    def conf(self, url, refs="main v*", mode=0o600, token=TOKEN, extra="", repo=None):
         p = os.path.join(self.tmp, "build-host.conf")
         with open(p, "w") as f:
-            f.write('SERVER_URL=%s\nTOKEN=%s\nCORE_REPO=%s\nALLOWED_REFS="%s"\nWORKDIR=%s\n' % (url, token, self.tmp, refs, self.work))
+            f.write('SERVER_URL=%s\nTOKEN=%s\nCORE_REPO=%s\nALLOWED_REFS="%s"\nWORKDIR=%s\n' % (url, token, repo or self.tmp, refs, self.work))
+            f.write(extra)
         os.chmod(p, mode)
         return p
 
-    def run_script(self, conf, *args, allow_http=True):
+    def run_script(self, conf, *args, allow_http=True, path=None):
         env = dict(os.environ, BUILD_HOST_RETRY_DELAY="1")
+        if path:
+            env["PATH"] = path + os.pathsep + env["PATH"]
         if allow_http:
             env["BUILD_HOST_ALLOW_HTTP"] = "1"
         else:
             env.pop("BUILD_HOST_ALLOW_HTTP", None)
         return subprocess.run(["bash", SCRIPT, "--config", conf, *args], capture_output=True, text=True, env=env, timeout=120)
 
+
+class ScriptNoDocker(ScriptHelpers, unittest.TestCase):
     def test_http_refused_without_override(self):
         mock, srv, base = start(); self.addCleanup(srv.shutdown)
         r = self.run_script(self.conf(base), allow_http=False)
@@ -218,6 +223,79 @@ class ScriptNoDocker(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)  # needs a usable docker daemon (true on CI runners)
         self.assertIn("OK build host", r.stdout)
         self.assertNotEqual(mock.state, "building")
+
+
+class TrustAnchors(ScriptHelpers, unittest.TestCase):
+    """CORE-AGENT-1 (Chain C): RELEASE_KEYS / TRUST_KEYS / RELEASE_BUILD from build-host.conf reach `make dist` like CI's, are checked before any
+    request (a bad list never claims a job), and no key value is ever printed or sent. Keys are random bytes made here, never real keys."""
+
+    @staticmethod
+    def key(n=32):
+        return base64.b64encode(os.urandom(n)).decode()
+
+    def test_a_bad_anchor_list_is_refused_before_any_request(self):
+        pub, private = self.key(), self.key(64)
+        cases = {
+            'RELEASE_KEYS=%s\n' % private: "PRIVATE key",
+            'TRUST_KEYS=%s\n' % private: "PRIVATE key",
+            'RELEASE_KEYS=%s\n' % self.key(31): "31 bytes",
+            'RELEASE_KEYS=%s,%s\n' % (pub, pub): "twice",
+            'RELEASE_KEYS=%s,\n' % pub: "empty entry",
+            'RELEASE_KEYS="%s %s"\n' % (pub, self.key()): "base64 characters",
+            'RELEASE_KEYS=%s\n' % pub.rstrip("="): "not base64",
+            'RELEASE_BUILD=1\n': "RELEASE_KEYS is empty",
+            'RELEASE_BUILD=yes\nRELEASE_KEYS=%s\n' % pub: "RELEASE_BUILD must be 1 or empty",
+        }
+        for extra, why in cases.items():
+            mock, srv, base = start(); self.addCleanup(srv.shutdown)
+            r = self.run_script(self.conf(base, extra=extra))
+            self.assertNotEqual(r.returncode, 0, why)
+            self.assertIn(why, r.stderr)
+            self.assertEqual(mock.events, [], why)  # nothing was asked of the server, no job claimed
+            self.assertNotIn(private, r.stdout + r.stderr)
+            self.assertNotIn(pub, r.stdout + r.stderr)
+
+    def test_valid_anchors_are_accepted(self):
+        mock, srv, base = start(job_id=""); self.addCleanup(srv.shutdown)
+        r = self.run_script(self.conf(base, extra="RELEASE_KEYS=%s,%s\nTRUST_KEYS=%s\nRELEASE_BUILD=1\n" % (self.key(), self.key(), self.key())))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("no job", r.stderr)
+
+    def test_make_dist_receives_the_anchors(self):
+        # A source repository with just enough for sync_source, and a `docker` that records the build command and fails it (no Docker build here).
+        repo = os.path.join(self.tmp, "src")
+        os.makedirs(os.path.join(repo, "endpoint-agent"))
+        for name, text in (("Makefile", "dist:\n"), ("go.mod", "module rivetit-agent\n\ngo 1.27.4\n")):
+            with open(os.path.join(repo, "endpoint-agent", name), "w") as f:
+                f.write(text)
+        git = ["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"]
+        for cmd in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "x"]):
+            subprocess.run(git + cmd, check=True, capture_output=True)
+        bindir, record = os.path.join(self.tmp, "bin"), os.path.join(self.tmp, "docker-argv")
+        os.makedirs(bindir)
+        with open(os.path.join(bindir, "docker"), "w") as f:
+            f.write('#!/bin/sh\ncase "$1" in run) for a in "$@"; do printf "%%s\\n" "$a"; done >>"%s"; exit 3 ;; esac\nexit 0\n' % record)
+        os.chmod(os.path.join(bindir, "docker"), 0o755)
+        rel, rel2, trust = self.key(), self.key(), self.key()
+        mock, srv, base = start(); self.addCleanup(srv.shutdown)
+        r = self.run_script(self.conf(base, repo=repo, extra="RELEASE_KEYS=%s,%s\nTRUST_KEYS=%s\nRELEASE_BUILD=1\n" % (rel, rel2, trust)), path=bindir)
+        self.assertNotEqual(r.returncode, 0)  # the fake docker fails the build on purpose
+        self.assertEqual(mock.state, "failed")
+        argv = open(record).read().split("\n")
+        i = argv.index("make")
+        self.assertEqual(argv[i + 1:i + 2], ["dist"])
+        for want in ("VERSION=1.2.3", "RELEASE_KEYS=%s,%s" % (rel, rel2), "TRUST_KEYS=%s" % trust, "RELEASE_BUILD=1"):
+            self.assertIn(want, argv[i:], want)
+        self.assertIn("trust anchors: release_keys=2 trust_keys=1 release_build=true", r.stderr)
+        for k in (rel, rel2, trust):  # the keys are public, but the log, the status notes and the log tail sent to the server carry counts only
+            self.assertNotIn(k, r.stdout + r.stderr)
+            self.assertNotIn(k, json.dumps(mock.snapshot()))
+
+    def test_the_script_checks_the_anchors_in_the_built_binaries(self):
+        text = open(SCRIPT).read()
+        self.assertIn('"RELEASE_KEYS=$RELEASE_KEYS" "TRUST_KEYS=$TRUST_KEYS" "RELEASE_BUILD=$RELEASE_BUILD"', text)
+        self.assertIn('does not embed the configured trust anchor', text)
+        self.assertIn('version --trust', text)
 
 
 class ShippedFiles(unittest.TestCase):

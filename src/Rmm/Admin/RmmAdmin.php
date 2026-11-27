@@ -32,6 +32,8 @@ use RivetCore\Rmm\Update\UpdateService;
  * Every method authorizes the principal itself (ability `rmm.admin`, `rmm.binary.publish` or `rmm.token.manage`), works while the module
  * is switched off (turning it on is one of the operations) and returns an {@see \RivetCore\Rmm\Technician\ActionResult}. Nothing is
  * written when validation fails. Whenever a mirrored setting changes, the zero-database state file follows (RmmSettings does that).
+ * The `rmm.binary.publish` operations (binaries, releases, MSI templates, release signature and rollover) also refuse a caller limited to
+ * some clients (TEN-3): what they change reaches every client.
  *
  * @api
  */
@@ -168,7 +170,7 @@ final class RmmAdmin
         }
         $domain = trim(is_scalar($in['mesh_domain'] ?? null) ? (string) $in['mesh_domain'] : '');
         $account = trim(is_scalar($in['mesh_account_template'] ?? null) ? (string) $in['mesh_account_template'] : RmmProtocol::MESH_DEFAULT_ACCOUNT_TEMPLATE);
-        if (preg_match('/^[A-Za-z0-9._{}-]{1,100}$/', $account) !== 1 || ($domain !== '' && preg_match('/^[A-Za-z0-9._-]{1,100}$/', $domain) !== 1)) {
+        if (preg_match('/^[A-Za-z0-9._{}-]{1,100}$/D', $account) !== 1 || ($domain !== '' && preg_match('/^[A-Za-z0-9._-]{1,100}$/D', $domain) !== 1)) {
             return ActionResult::fail(422, 'invalid', 'The MeshCentral domain and account name may only contain letters, digits and . _ -');
         }
         if (\RivetCore\Rmm\Mesh\MeshCookie::usesDisplayName($account)) {
@@ -189,7 +191,7 @@ final class RmmAdmin
         }
         $key = trim(is_scalar($in['mesh_login_key'] ?? null) ? (string) $in['mesh_login_key'] : '');
         if ($key !== '') {
-            if (preg_match('/^[0-9a-fA-F]{64,}$/', $key) !== 1) {
+            if (preg_match('/^[0-9a-fA-F]{64,}$/D', $key) !== 1) {
                 return ActionResult::fail(422, 'invalid', 'The login token key is the long hex string printed by "meshcentral --loginTokenKey".');
             }
             try {
@@ -282,7 +284,7 @@ final class RmmAdmin
      */
     public function uploadBinary(RmmPrincipal $by, string $tmpPath, string $version, string $arch, array $opts = []): ActionResult
     {
-        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH) ?? $this->fleetWide($by)) !== null) {
             return $d;
         }
         $ring = (string) ($opts['release_ring'] ?? '');
@@ -323,7 +325,7 @@ final class RmmAdmin
      */
     public function uploadMsiTemplate(RmmPrincipal $by, string $tmpPath, string $version, string $arch, array $opts = []): ActionResult
     {
-        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH) ?? $this->fleetWide($by)) !== null) {
             return $d;
         }
         try {
@@ -348,7 +350,7 @@ final class RmmAdmin
      */
     public function msiTemplateAction(RmmPrincipal $by, int $templateId, string $action): ActionResult
     {
-        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH) ?? $this->fleetWide($by)) !== null) {
             return $d;
         }
         $t = $this->sql->one('SELECT * FROM endpoint_agent_msi_templates WHERE template_id = ?', [$templateId]);
@@ -380,7 +382,7 @@ final class RmmAdmin
      */
     public function setReleaseSignature(RmmPrincipal $by, int $binaryId, string $signatureB64): ActionResult
     {
-        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH) ?? $this->fleetWide($by)) !== null) {
             return $d;
         }
         if (($why = $this->updates->setReleaseSignature($binaryId, $signatureB64)) !== null) {
@@ -396,7 +398,7 @@ final class RmmAdmin
      */
     public function setReleaseRollover(RmmPrincipal $by, string $json): ActionResult
     {
-        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH) ?? $this->fleetWide($by)) !== null) {
             return $d;
         }
         if (($why = $this->updates->setReleaseRollover($json)) !== null) {
@@ -414,7 +416,7 @@ final class RmmAdmin
      */
     public function binaryAction(RmmPrincipal $by, int $binaryId, string $action, string $ring = 'pilot', int $pct = 10): ActionResult
     {
-        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH) ?? $this->fleetWide($by)) !== null) {
             return $d;
         }
         $b = $this->sql->one('SELECT * FROM endpoint_agent_binaries WHERE binary_id = ?', [$binaryId]);
@@ -448,7 +450,7 @@ final class RmmAdmin
     /** Offer a package hosted elsewhere (a legacy manual release). */
     public function addExternalRelease(RmmPrincipal $by, string $version, string $url, string $sha256, string $minVersion, string $ring, int $pct, string $notes, string $os = AgentOs::WINDOWS): ActionResult
     {
-        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH) ?? $this->fleetWide($by)) !== null) {
             return $d;
         }
         $err = $this->updates->addRelease(trim($version), trim($url), trim($sha256), trim($minVersion) !== '' ? trim($minVersion) : '0.0.0', $ring, $pct, trim($notes), $by->userId, $os);
@@ -493,7 +495,7 @@ final class RmmAdmin
     /** Change the rollout percentage and the active flag of a release (0 pauses a rollout, inactive withdraws it). */
     public function updateRelease(RmmPrincipal $by, int $releaseId, int $pct, bool $active): ActionResult
     {
-        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH)) !== null) {
+        if (($d = $this->deny($by, RmmAbility::BINARY_PUBLISH) ?? $this->fleetWide($by)) !== null) {
             return $d;
         }
         if (!$this->binaries->updateRelease($releaseId, $pct, $active)) {
@@ -570,5 +572,16 @@ final class RmmAdmin
         $denied = $this->authz->check($by->userId, $ability, $clientId, $requireEnabled);
 
         return $denied === null ? null : ActionResult::fail(403, 'forbidden', $denied);
+    }
+
+    /**
+     * TEN-3 (red team 2026-11-21 NEW-2): agent binaries, releases, rings, MSI templates, release signatures and the release-key rollover reach every device and every
+     * installer of every client, so a caller whose access is limited to some clients may not change them, whatever abilities his role carries (the ability
+     * check alone asks for client 0, which is inside every scope). Same rule as {@see clearUpdateFailures()} with no device.
+     */
+    private function fleetWide(RmmPrincipal $by): ?ActionResult
+    {
+        return $this->authz->visibleClientIds($by->userId) === null ? null
+            : ActionResult::fail(403, 'forbidden', 'Agent binaries, releases and installer templates reach every client; ask an administrator whose access is not limited to some clients.');
     }
 }

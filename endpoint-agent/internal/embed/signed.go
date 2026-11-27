@@ -21,6 +21,9 @@ var EmbeddedTrustKeys string
 // TrustAnchorActive reports whether this build carries an installer trust anchor (EmbeddedTrustKeys).
 func TrustAnchorActive() bool { return len(trustKeys()) > 0 }
 
+// TrustKeyCount is the number of valid installer trust keys compiled in (`rivetit-agent version --trust`).
+func TrustKeyCount() int { return len(trustKeys()) }
+
 func trustKeys() []ed25519.PublicKey {
 	var out []ed25519.PublicKey
 	for _, s := range strings.Split(EmbeddedTrustKeys, ",") {

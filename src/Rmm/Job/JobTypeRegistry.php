@@ -55,7 +55,7 @@ final class JobTypeRegistry
 
     public function register(JobType $type): void
     {
-        if (strlen($type->type) < 1 || strlen($type->type) > 20 || preg_match('/^[a-z][a-z0-9_]*$/', $type->type) !== 1) {
+        if (strlen($type->type) < 1 || strlen($type->type) > 20 || preg_match('/^[a-z][a-z0-9_]*$/D', $type->type) !== 1) {
             throw new \InvalidArgumentException('a job type is 1 to 20 characters of a-z, 0-9 and _');
         }
         $this->types[$type->type] = $type;

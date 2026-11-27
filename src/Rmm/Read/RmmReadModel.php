@@ -463,7 +463,7 @@ final class RmmReadModel
         if ($denied !== null) {
             return ActionResult::fail(403, 'forbidden', $denied);
         }
-        $d = $deviceId > 0 && preg_match('/^[0-9a-fA-F-]{36}$/', $jobId) === 1 ? $this->devices->find($deviceId) : null;
+        $d = $deviceId > 0 && preg_match('/^[0-9a-fA-F-]{36}$/D', $jobId) === 1 ? $this->devices->find($deviceId) : null;
         $client = $d === null ? 0 : (int) $d['client_id'];
         if ($d === null || $authz->check($who->userId, RmmAbility::DEVICE_VIEW, $client) !== null) {
             return ActionResult::fail(404, 'not_found', 'Not found.');
@@ -1251,6 +1251,7 @@ final class RmmReadModel
         $out['features'] = $this->settings->features();
         $out['limits'] = $this->settings->limits();
         $out['service_base'] = $this->updates->serviceBase();
+        $out['hardening'] = $this->settings->hardeningStatus();   // CORE-AGENT-4: show `signed_config_warning` prominently while it is set
 
         return $out;
     }
